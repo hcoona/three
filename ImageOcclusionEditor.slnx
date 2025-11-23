@@ -1,0 +1,16 @@
+<Solution>
+    <Configurations>
+        <Platform Name="x64" />
+    </Configurations>
+    <Folder Name="/Licenses/">
+        <File Path="LICENSE" />
+        <File Path="LICENSE.GPL3.txt" />
+        <File Path="LICENSE.MIT.txt" />
+    </Folder>
+    <Folder Name="/Resources/">
+        <File Path="imageocclusioneditor.ico" />
+    </Folder>
+    <Project Path="ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj">
+        <Platform Project="x64" />
+    </Project>
+</Solution>

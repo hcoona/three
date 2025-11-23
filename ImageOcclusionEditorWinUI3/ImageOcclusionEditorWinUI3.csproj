@@ -1,0 +1,61 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net9.0-windows10.0.22000.0</TargetFramework>
+        <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+        <RootNamespace>ImageOcclusionEditorWinUI3</RootNamespace>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <Platforms>x64</Platforms>
+        <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+
+        <AssemblyName>ImageOcclusionEditor</AssemblyName>
+        <ApplicationIcon>..\imageocclusioneditor.ico</ApplicationIcon>
+    </PropertyGroup>
+
+    <PropertyGroup Label="Features">
+        <Nullable>enable</Nullable>
+
+        <PublishAot>true</PublishAot>
+        <ControlFlowGuard>Guard</ControlFlowGuard>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <SatelliteResourceLanguages>en-us</SatelliteResourceLanguages>
+        <NeutralLanguage>en-us</NeutralLanguage>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+        <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+        <DebugType>none</DebugType>
+        <DebugSymbols>false</DebugSymbols>
+        <EmbedUntrackedSources>false</EmbedUntrackedSources>
+    </PropertyGroup>
+
+    <PropertyGroup Label="WinUI">
+        <UseWinUI>true</UseWinUI>
+        <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+        <WindowsPackageType>None</WindowsPackageType>
+        <EnableMsixTooling>true</EnableMsixTooling>
+        <SelfContained>true</SelfContained>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="FileSignatures" />
+        <PackageReference Include="IO.Github.Hcoona.Pngcs" />
+        <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
+        <PackageReference Include="Microsoft.WindowsAppSDK" />
+        <PackageReference Include="Svg.Skia" />
+        <PackageReference Include="System.Private.Uri" />
+        <PackageReference Include="System.Text.Json" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Manifest Include="$(ApplicationManifest)" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="svg-edit\**">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+</Project>
