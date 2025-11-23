@@ -1,0 +1,19 @@
+{
+  "manifest_version": 2,
+  "name": "<%= name %>",
+  "version": "<%= version %>",
+
+  "description": "<%= description %>",
+
+  "icons": {
+    "32": "icon-32.png",
+    "48": "icon-48.png"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://store.steampowered.com/account/history/"],
+      "js": ["index.js"]
+    }
+  ]
+}
