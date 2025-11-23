@@ -1,0 +1,92 @@
+= Precompiled Math
+:math:
+:imagesdir: images
+:stem: latexmath
+
+== Equations in normal blocks
+
+[latexmath]
+++++
+k_{n+1} = n^2 + k_n^2 - k_{n-1}
+++++
+
+Some useful text! Formula for quadratic root:
+
+[stem]
+++++
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+++++
+
+Inline equation works too! latexmath:[a^2+b^2=c^2]. Or as stem
+stem:[a^2+b^2=c^2]. Pretty nice, huh?
+
+== Equations in table cells
+
+Equations in asciidoc style table cells work, too!
+
+[%header]
+|===
+| Demo | Contents
+| Inline Equation in *Asciidoc* Cells
+a|
+
+This is an *inline* equation: latexmath:[a^2+b^2=c^2].
+
+| Block Equation in *Asciidoc* Cells
+a| The following is a stem block:
+[stem]
+++++
+a^2+b^2=c^2+d^2
+++++
+
+| Inline Equation in *Normal* Cell
+| This is an *inline* equation: latexmath:[a^2+b^2=c^2].
+
+| Inline Equation in *Header* Cell
+h| This is an *inline* equation: latexmath:[a^2+b^2=c^2].
+
+| Inline Equation in *Emphasis* Cell
+e| This is an *inline* equation: latexmath:[a^2+b^2=c^2].
+
+| Inline Equation in *Monospaced* Cell
+m| This is an *inline* equation: latexmath:[a^2+b^2=c^2].
+
+| Inline Equation in *Strong* Cell
+s| This is an *inline* equation: latexmath:[a^2+b^2=c^2].
+
+| Inline Equation in *Verse* Cell
+v| This is an *inline* equation: latexmath:[a^2+b^2=c^2].
+
+| Inline Equation in *Literal* Cell
+l| This is an *inline* equation: latexmath:[a^2+b^2=c^2].
+
+|===
+
+== Equations in section titles
+
+=== Proof of stem:[a^2+b^2=c^2]
+
+==== Proof of stem:[a^2+b^2=c^2]
+
+== LaTeX environments
+
+[latexmath]
+++++
+\begin{gather*}
+  \alpha_a :: F a \to G a \\
+  \alpha_b :: F b \to G b
+\end{gather*}
+++++
+
+[latexmath]
+++++
+\begin{align*}
+  F & = m \frac{dv}{dt} \\
+  v & = \frac{dx}{dt}
+\end{align*}
+++++
+
+[latexmath,preamble=\usepackage[libertine]{newtxmath} \expandafter\let\csname not=\endcsname\relax \expandafter\let\csname not<\endcsname\relax \expandafter\let\csname not>\endcsname\relax \usepackage{unicode-math} \setmathfont{LibertinusMath-Regular.otf}]
+++++
+F f \Colon F a \to F b
+++++

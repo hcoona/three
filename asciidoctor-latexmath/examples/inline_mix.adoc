@@ -1,0 +1,26 @@
+= Inline & Block Mix
+:stem: latexmath
+:latexmath-format: svg
+:latexmath-timeout: 90
+
+This document demonstrates how inline macros and display blocks coexist. Inline
+formulas inherit document attributes but can be overridden individually.
+
+In classical mechanics the kinetic energy is given by latexmath:[T = \tfrac{1}{2} m v^2], while the
+potential energy of a mass-spring system is latexmath:[V = \tfrac{1}{2} k x^2].
+
+[latexmath, lagrangian-density, svg, preamble="\\usepackage{bm}"]
+++++
+\mathcal{L}(\phi, \partial_\mu \phi) = \frac{1}{2} \partial_\mu \phi \, \partial^\mu \phi - V(\phi)
+++++
+
+Inline attributes can override options per occurrence, for example a higher
+precision PNG render inside a paragraph:
+
+... and the dispersion relation latexmath:[\omega(k) = c |k|,format=png,ppi=300,keep-artifacts=true] completes the trio.
+
+Render with:
+
+```
+bundle exec asciidoctor -r ./lib/asciidoctor-latexmath.rb examples/inline_mix.adoc
+```
