@@ -1,0 +1,6 @@
+/ConsoleLoggerParameters:Verbosity=Minimal;Summary;ForceNoAlign
+/MaxCPUCount
+/BinaryLogger
+/IgnoreProjectExtensions:.sln,.slnx
+# See static graph build information at https://github.com/dotnet/msbuild/blob/main/documentation/specs/static-graph.md
+/GraphBuild

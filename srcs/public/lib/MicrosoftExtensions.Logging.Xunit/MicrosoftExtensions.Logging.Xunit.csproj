@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net462;net8.0;net9.0</TargetFrameworks>
+    <RootNamespace>Microsoft.Extensions.Logging.Xunit</RootNamespace>
+
+    <Nullable Condition="'$(TargetFramework)' != 'netstandard2.0' AND '$(TargetFramework)' != 'net462'">enable</Nullable>
+
+    <PackageId>MicrosoftExtensions.Logging.Xunit</PackageId>
+    <PackageDescription>Xunit integration for Microsoft.Extensions.Logging. Provides ILogger implementation that forwards log messages to Xunit's ITestOutputHelper for easy debugging and test output visibility.</PackageDescription>
+    <PackageTags>logging xunit testing microsoft-extensions test-output debugging</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <Target Name="SetPackageReleaseNotes" BeforeTargets="GenerateNuspec">
+    <ReadLinesFromFile File="$(MSBuildProjectDirectory)\ReleaseNotes.md">
+      <Output TaskParameter="Lines" ItemName="ReleaseNotesLines" />
+    </ReadLinesFromFile>
+    <PropertyGroup>
+      <PackageReleaseNotes>@(ReleaseNotesLines, '%0A')</PackageReleaseNotes>
+    </PropertyGroup>
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="ReleaseNotes.md" />
+  </ItemGroup>
+
+</Project>

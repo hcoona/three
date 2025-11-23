@@ -1,0 +1,10 @@
+This repository is licensed primarily under the GNU General Public License,
+version 3 or any later version (GPL-3.0-or-later). See LICENSE.GPLv3.txt
+for the complete terms.
+
+Exception:
+
+The library built from sources under srcs/public/lib is licensed under the
+GNU Lesser General Public License, version 3 or any later version
+(LGPL-3.0-or-later), with an additional linking exception. See
+LICENSE.LGPLv3-linking-exception.txt for details.

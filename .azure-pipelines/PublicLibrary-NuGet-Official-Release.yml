@@ -1,0 +1,126 @@
+trigger: none
+
+pr: none
+
+pool:
+  vmImage: 'windows-latest'
+
+parameters:
+- name: project
+  type: string
+
+variables:
+  isWindows: true
+  buildConfiguration: 'Release'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+
+stages:
+- stage: build
+  displayName: 'Build'
+  jobs:
+  - job: build
+    displayName: 'Build'
+    steps:
+    - checkout: self
+      clean: true
+      fetchDepth: -1
+
+    - task: UseDotNet@2
+      displayName: 'Install DotNet SDK'
+      inputs:
+        useGlobalJson: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Install NBGV Tool'
+      inputs:
+        command: custom
+        custom: tool
+        arguments: install --tool-path $(Agent.ToolsDirectory) nbgv
+
+    - script: $(Agent.ToolsDirectory)/nbgv cloud -a
+      displayName: NBGV set environment variables
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Pack Project'
+      env:
+        MSBUILDDISABLENODEREUSE: '1'
+      inputs:
+        command: 'pack'
+        packagesToPack: '${{ parameters.project }}'
+        configuration: '$(buildConfiguration)'
+        packDirectory: $(System.DefaultWorkingDirectory)/out/packages
+        arguments: '-m:1'
+        buildProperties: 'PublicRelease=true;RestoreLockedMode=true'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Artifacts'
+      inputs:
+        targetPath: $(System.DefaultWorkingDirectory)/out
+        artifactName: OneDotNet-build
+
+- stage: release
+  displayName: 'Release'
+  dependsOn: build
+  condition: succeeded()
+  jobs:
+  - deployment: release
+    displayName: 'Release'
+    environment: 'OneDotNet-Official'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: UseDotNet@2
+            displayName: 'Install DotNet SDK'
+
+          - task: AzureKeyVault@2
+            displayName: Get ApiKey from Azure KeyVault
+            inputs:
+              connectedServiceName: 'Isolated'
+              keyVaultName: 'shuaizhang-akv'
+              secretsFilter: 'NuGetOrgApiKey'
+
+          - pwsh: |
+              Get-ChildItem -Path "$(Pipeline.Workspace)\OneDotNet-build" -Recurse
+              Get-ChildItem -Path "$(Pipeline.Workspace)\OneDotNet-build\packages" -Filter *.nupkg | ForEach-Object {
+                dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --api-key $(NuGetOrgApiKey) --skip-duplicate
+              }
+              Get-ChildItem -Path "$(Pipeline.Workspace)\OneDotNet-build\packages" -Filter *.snupkg | ForEach-Object {
+                dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --api-key $(NuGetOrgApiKey) --skip-duplicate
+              }
+            displayName: 'Push Packages to nuget.org'
+
+- stage: post_release
+  displayName: 'Post Release'
+  dependsOn: release
+  condition: succeeded()
+  jobs:
+  - job: post_release
+    displayName: 'Post Release'
+    steps:
+    - checkout: self
+      clean: true
+      fetchDepth: -1
+      persistCredentials: true
+
+    - task: UseDotNet@2
+      displayName: 'Install DotNet SDK'
+      inputs:
+        useGlobalJson: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Install NBGV Tool'
+      inputs:
+        command: custom
+        custom: tool
+        arguments: install --tool-path $(Agent.ToolsDirectory) nbgv
+
+    - pwsh: |
+        git config "user.name" "Azure DevOps Build Bot"
+        git config "user.email" "zhangshuai.ustc+devopsbot@gmail.com"
+        $(Agent.ToolsDirectory)/nbgv tag -p '${{ parameters.project }}'
+        $tag = git describe --tags --abbrev=0
+        git -c http.extraheader="AUTHORIZATION: bearer $(System.AccessToken)" push origin $tag
+      displayName: 'Create Git Tag'
+      env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
