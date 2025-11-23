@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net462;net8.0;net9.0</TargetFrameworks>
+    <RootNamespace>IO.Github.Hcoona.Collections</RootNamespace>
+
+    <Nullable Condition="'$(TargetFramework)' != 'netstandard2.0' AND '$(TargetFramework)' != 'net462'">enable</Nullable>
+
+    <PackageId>IO.Github.Hcoona.Collections.CircularList</PackageId>
+    <PackageDescription>A high-performance circular list implementation for .NET with O(1) insertion and removal operations. Supports all .NET Standard frameworks and provides efficient buffer management for queue operations and cyclic data structures.</PackageDescription>
+    <PackageTags>collections circular list buffer queue performance</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <Target Name="SetPackageReleaseNotes" BeforeTargets="GenerateNuspec">
+    <ReadLinesFromFile File="$(MSBuildProjectDirectory)\ReleaseNotes.md">
+      <Output TaskParameter="Lines" ItemName="ReleaseNotesLines" />
+    </ReadLinesFromFile>
+    <PropertyGroup>
+      <PackageReleaseNotes>@(ReleaseNotesLines, '%0A')</PackageReleaseNotes>
+    </PropertyGroup>
+  </Target>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0' OR '$(TargetFramework)' == 'net462'">
+    <PackageReference Include="System.Memory" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="ReleaseNotes.md" />
+  </ItemGroup>
+
+</Project>

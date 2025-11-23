@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+
+    <!-- Downgrade Analysis Mode for Maintenance Project -->
+    <AnalysisMode>Minimum</AnalysisMode>
+  </PropertyGroup>
+
+  <!-- TODO(shuaizhang): Enable StyleCop. -->
+  <ItemGroup>
+    <GlobalPackageReference Remove="StyleCop.Analyzers" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(EnlistmentRoot)\srcs\public\lib\Hjg.Pngcs\Hjg.Pngcs.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="testsuite1\*.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

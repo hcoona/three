@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
+  "version": "2.0-beta",
+  "pathFilters": [
+    "^srcs/public/CircularList",
+    "^srcs/public/Memoization",
+    "^srcs/public/MicrosoftExtensions.Logging.MSTest",
+    "^srcs/public/MicrosoftExtensions.Logging.Xunit",
+    "^srcs/public/MicrosoftExtensions.Options.DedupChangeExtensions",
+    "^srcs/public/PhiFailureDetector",
+    "^srcs/public/WebHdfs.Extensions.FileProviders"
+  ],
+  "gitCommitIdShortFixedLength": 7,
+  "gitCommitIdShortAutoMinimum": 7,
+  "nugetPackageVersion": {
+    "semVer": 2
+  },
+  "publicReleaseRefSpec": [
+    "^refs/heads/main$",
+    "^refs/heads/release/.*$"
+  ],
+  "cloudBuild": {
+    "buildNumber": {
+      "enabled": false
+    }
+  },
+  "inherit": false
+}

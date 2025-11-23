@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net462;net8.0;net9.0</TargetFrameworks>
+    <RootNamespace>Microsoft.Extensions.Options</RootNamespace>
+
+    <Nullable Condition="'$(TargetFramework)' != 'netstandard2.0' AND '$(TargetFramework)' != 'net462'">enable</Nullable>
+    <IsAotCompatible Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net7.0'))">false</IsAotCompatible>
+
+    <PackageId>MicrosoftExtensions.Options.DedupChangeExtensions</PackageId>
+    <PackageDescription>This project helps prevent duplicated change callbacks for `IOptionsMonitor`. Provides deduplication extensions to reduce noise in configuration change notifications and improve application performance.</PackageDescription>
+    <PackageTags>aspnetcore options configuration deduplication monitoring</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0' OR '$(TargetFramework)' == 'net9.0'">
+    <NoWarn>$(NoWarn);SYSLIB0011</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <EnableUnsafeBinaryFormatterSerialization>true</EnableUnsafeBinaryFormatterSerialization>
+  </PropertyGroup>
+
+  <Target Name="SetPackageReleaseNotes" BeforeTargets="GenerateNuspec">
+    <ReadLinesFromFile File="$(MSBuildProjectDirectory)\ReleaseNotes.md">
+      <Output TaskParameter="Lines" ItemName="ReleaseNotesLines" />
+    </ReadLinesFromFile>
+    <PropertyGroup>
+      <PackageReleaseNotes>@(ReleaseNotesLines, '%0A')</PackageReleaseNotes>
+    </PropertyGroup>
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="System.Runtime.Serialization.Formatters" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net462'">
+    <PackageReference Include="System.ValueTuple" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="ReleaseNotes.md" />
+  </ItemGroup>
+
+</Project>

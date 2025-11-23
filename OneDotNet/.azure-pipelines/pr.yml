@@ -1,0 +1,45 @@
+trigger: none
+
+pr:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - '*'
+    - .azure-pipelines
+    - .azure-pipelines/common/build.yml
+    exclude:
+    - .azure-pipelines/Clocks.Net
+    - .azure-pipelines/common
+    - .editorconfig
+    - .gitattributes
+    - .gitignore
+    - LICENSE
+    - README.md
+    - renovate.json
+
+strategy:
+  matrix:
+    linux:
+      imageName: 'ubuntu-latest'
+      osSuffix: 'linux'
+      isWindows: false
+    windows:
+      imageName: 'windows-latest'
+      osSuffix: 'windows'
+      isWindows: true
+
+pool:
+  vmImage: $(imageName)
+
+variables:
+  buildConfiguration: 'Debug'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+
+steps:
+- template: /.azure-pipelines/common/build.yml@self
+  parameters:
+    isOfficial: 'false'
+    packProjects: 'false'
+    projects: 'dirs.proj'

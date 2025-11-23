@@ -1,0 +1,66 @@
+trigger: none
+
+pr: none
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  osSuffix: 'windows'
+  isWindows: true
+  buildConfiguration: 'Debug'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+
+stages:
+- stage: build
+  displayName: 'Build'
+  jobs:
+  - job: build
+    displayName: 'Build'
+    steps:
+    - template: /.azure-pipelines/common/build.yml@self
+      parameters:
+        isOfficial: 'false'
+        packProjects: 'true'
+        projects: 'dirs.proj'
+
+- stage: release
+  displayName: 'Release'
+  dependsOn: build
+  condition: succeeded()
+  jobs:
+  - deployment: release
+    displayName: 'Release'
+    environment: 'OneDotNet-Buddy'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: NuGetToolInstaller@1
+            displayName: 'Install NuGet'
+
+          - task: NuGetAuthenticate@1
+            displayName: 'Authenticate to Azure Artifacts'
+
+          - task: NuGetCommand@2
+            displayName: 'NuGet push nupkg'
+            inputs:
+              command: push
+              publishVstsFeed: 'Public/OneDotNet_ReleasePackages'
+              packagesToPush: '$(Pipeline.Workspace)/OneDotNet-windows/packages/**/*.nupkg'
+              allowPackageConflicts: true
+
+          - pwsh: |
+              $path = '$(Pipeline.Workspace)/OneDotNet-windows/packages'
+              $snupkgs = @(Get-ChildItem $path -Recurse -Include *.snupkg -ErrorAction SilentlyContinue)
+              if ($snupkgs.Count -gt 0) { Write-Output "Found $($snupkgs.Count) snupkg"; Write-Output "##vso[task.setvariable variable=HasSnupkg]true" } else { Write-Output 'No snupkg found'; }
+            displayName: 'Detect snupkg'
+
+          - task: NuGetCommand@2
+            condition: eq(variables['HasSnupkg'], 'true')
+            displayName: 'NuGet push snupkg symbols'
+            inputs:
+              command: push
+              publishVstsFeed: 'Public/OneDotNet_ReleasePackages'
+              packagesToPush: '$(Pipeline.Workspace)/OneDotNet-windows/packages/**/*.snupkg'
+              allowPackageConflicts: true
