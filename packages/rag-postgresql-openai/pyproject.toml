@@ -1,0 +1,34 @@
+[project]
+name = "rag-postgresql-openai"
+version = "0.0.0-dev"
+description = "This project demonstrates the use of RAG (Retrieval-Augmented Generation) with PostgreSQL and OpenAI."
+readme = "README.md"
+authors = [
+    { name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }
+]
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+    "beautifulsoup4>=4.13.4",
+    "cohere>=5.15.0",
+    "html2text>=2025.4.15",
+    "lxml>=5.4.0",
+    "openai>=1.77.0",
+    "openai-agents>=0.0.14",
+    "pgvector>=0.4.1",
+    "psycopg[binary]>=3.2.7",
+    "pydantic>=2.11.4",
+    "python-slugify[unidecode]>=8.0.4",
+    "tiktoken>=0.9.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "python-dotenv>=1.1.0",
+    "streamlit>=1.45.0",
+]

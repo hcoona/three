@@ -1,0 +1,26 @@
+[project]
+name = "llm-text-splitter"
+version = "0.0.0-dev"
+description = "This project provides a text splitter based on LLMs."
+readme = "README.md"
+authors = [
+    { name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }
+]
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+    "openai>=1.77.0",
+    "openai-agents>=0.0.14",
+    "pydantic>=2.11.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "python-dotenv>=1.1.0",
+    "streamlit>=1.45.0",
+]

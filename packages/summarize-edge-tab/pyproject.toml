@@ -1,0 +1,17 @@
+[project]
+name = "summarize-edge-tab"
+version = "0.0.0-dev"
+description = "This project will summarize the content of a web page."
+readme = "README.md"
+authors = [
+    { name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }
+]
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+    "openai>=1.77.0",
+    "openai-agents>=0.0.14",
+    "playwright>=1.53.0",
+    "pydantic>=2.11.4",
+]
