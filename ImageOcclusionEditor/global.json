@@ -1,0 +1,11 @@
+{
+  "sdk": {
+    "version": "9.0.304",
+    "rollForward": "latestMinor"
+  },
+  "msbuild-sdks": {
+    "DotNet.ReproducibleBuilds.Isolated": "1.2.25",
+    "Microsoft.Build.CopyOnWrite": "1.0.334",
+    "Microsoft.Build.NoTargets": "3.7.56"
+  }
+}

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <!-- https://learn.microsoft.com/en-us/dotnet/core/runtime-config/globalization#invariant-mode -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <Deterministic>true</Deterministic>
+
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Pipeline build must follow lock file instead of update them. -->
+    <RestoreLockedMode Condition="'$(TF_BUILD)' == 'true'">true</RestoreLockedMode>
+    <RestorePackagesConfig>true</RestorePackagesConfig>
+    <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
+    <RestoreEnablePackagePruning>true</RestoreEnablePackagePruning>
+
+    <!-- https://devblogs.microsoft.com/nuget/introducing-central-package-management/ -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <EnablePackageVersionOverride>false</EnablePackageVersionOverride>
+  </PropertyGroup>
+
+  <Sdk Name="DotNet.ReproducibleBuilds.Isolated" />
+  <Sdk Name="Microsoft.Build.CopyOnWrite" />
+
+  <PropertyGroup Label="SourceLink">
+    <PackageProjectUrl>https://github.com/hcoona/ImageOcclusionEditor</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/hcoona/ImageOcclusionEditor</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <GlobalPackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.25" />
+    <GlobalPackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" />
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.7.115" />
+  </ItemGroup>
+</Project>
