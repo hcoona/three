@@ -1,0 +1,13 @@
+# Licensing Notice
+
+This repository is a polyglot monorepo that aggregates several independently
+maintained projects. Each project keeps its original licensing terms. To
+determine the license that governs a specific codebase or asset, read the
+`LICENSE`, `COPYING`, or equivalent notice located inside that project’s
+subdirectory. Those files describe the exact permissions, obligations, and
+exceptions that apply.
+
+If you plan to redistribute or contribute to code in this monorepo, make sure
+you comply with the license of the project you touch. When in doubt, review the
+license file packaged with that project or consult its upstream repository for
+the canonical text.
