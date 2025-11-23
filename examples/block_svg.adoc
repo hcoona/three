@@ -1,0 +1,21 @@
+= SVG Block Example
+:stem: latexmath
+:latexmath-format: svg
+:latexmath-keep-artifacts: false
+
+This document renders a standalone display equation into an SVG image using the
+extension defaults. The block attribute syntax mirrors `asciidoctor-diagram`.
+
+[latexmath, euler-eq, svg]
+++++
+\int_0^{\infty} e^{-x^2} \, dx = \frac{\sqrt{\pi}}{2}
+++++
+
+To try it locally run:
+
+```
+bundle exec asciidoctor -r ./lib/asciidoctor-latexmath.rb examples/block_svg.adoc
+```
+
+The resulting SVG is stored under `<outdir>/.asciidoctor/latexmath` and linked
+from the generated HTML via `<img role="math" alt="…">` markup.

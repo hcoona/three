@@ -1,0 +1,25 @@
+= Error Placeholder Demo
+:stem: latexmath
+:latexmath-format: svg
+:latexmath-on-error: log
+:latexmath-cache: false
+
+This document intentionally triggers a LaTeX compilation error so you can see
+the structured placeholder that is injected when `on-error=log` is active.
+
+[latexmath, broken-example, svg]
+++++
+% Missing right brace causes LaTeX to fail
+\begin{equation}
+E = mc^{2
+\end{equation}
+++++
+
+Render the file and inspect the generated HTML:
+
+```
+bundle exec asciidoctor -r ./lib/asciidoctor-latexmath.rb examples/error_placeholder.adoc
+```
+
+The placeholder `<pre>` block includes the captured command line, stdout/stderr
+snippets, and the original source so authors can debug quickly.

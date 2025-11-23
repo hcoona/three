@@ -1,0 +1,36 @@
+= PNG Cache Walkthrough
+:stem: latexmath
+:latexmath-format: png
+:latexmath-ppi: 240
+:latexmath-cache: true
+:imagesoutdir: build/site/images
+
+This sample shows how PNG output honours the cache between runs. Render the
+document twice to observe the "cache hit" statistic and zero external tool
+spawns on the second pass.
+
+[latexmath, newton-law, png]
+++++
+\vec{F} = m \vec{a}
+++++
+
+[latexmath, bernoulli, png]
+++++
+P(t) = \frac{e^{rt}}{1 + C e^{rt}}
+++++
+
+First run (cold cache):
+
+```
+bundle exec asciidoctor -r ./lib/asciidoctor-latexmath.rb examples/png_cached.adoc
+```
+
+Second run (warm cache) – expect the log line to report `cache_hits=2` and
+`avg_render_ms` unchanged:
+
+```
+bundle exec asciidoctor -r ./lib/asciidoctor-latexmath.rb examples/png_cached.adoc
+```
+
+The cached PNGs live under `build/site/.asciidoctor/latexmath/`. Remove that
+folder to force a fresh render.

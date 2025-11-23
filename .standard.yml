@@ -1,0 +1,7 @@
+ruby_version: 3.2
+parallel: true
+ignore:
+  - "vendor/**/*"
+  - "tmp/**/*"
+plugins:
+  - standard-performance
