@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nbgv-python"
+version = "1.1.0b1"
+description = "Python wrapper around the Nerdbank.GitVersioning CLI"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception" }
+authors = [
+    { name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" },
+]
+keywords = ["nbgv", "versioning", "hatch"]
+dependencies = [
+    "packaging>=24.0",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+    "Operating System :: OS Independent",
+    "Framework :: Hatch",
+]
+
+[project.scripts]
+nbgv-python = "nbgv_python.cli:main"
+
+[project.entry-points."hatch"]
+nbgv = "nbgv_python.hatch_plugin"
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.25.0",
+    "pytest>=8.3.3",
+]
