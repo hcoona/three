@@ -1,0 +1,18 @@
+{
+  "name": "steam-account-history-to-csv",
+  "version": "1.0.0",
+  "description": "Convert Steam account history table into csv file for further edits in Excel",
+  "main": "index.js",
+  "author": "Shuai Zhang <zhangshuai.ustc@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "gulp": "^3.9.1",
+    "gulp-sourcemaps": "^2.6.2",
+    "gulp-template": "^4.0.0",
+    "gulp-tslint": "^8.1.2",
+    "gulp-typescript": "^3.2.3",
+    "rimraf": "^2.6.2",
+    "tslint": "^5.8.0",
+    "typescript": "^2.6.2"
+  }
+}
