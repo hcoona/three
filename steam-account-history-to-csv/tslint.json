@@ -1,6 +1,0 @@
-{
-  "lintOptions": {
-    "typeCheck": true
-  },
-  "extends": "tslint:recommended"
-}

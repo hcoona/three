@@ -2,18 +2,25 @@
   "name": "steam-account-history-to-csv",
   "version": "1.0.0",
   "description": "Convert Steam account history table into csv file for further edits in Excel",
-  "main": "index.js",
+  "type": "module",
+  "private": true,
   "author": "Shuai Zhang <zhangshuai.ustc@gmail.com>",
   "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "build": "pnpm run clean && pnpm run build:ts && pnpm run build:assets",
+    "build:ts": "tsdown --config tsdown.config.ts",
+    "build:assets": "node ./scripts/build-assets.mjs"
+  },
   "devDependencies": {
-    "gulp": "^3.9.1",
-    "gulp-sourcemaps": "^2.6.2",
-    "gulp-template": "^4.0.0",
-    "gulp-tslint": "^8.1.2",
-    "gulp-typescript": "^3.2.3",
-    "rimraf": "^2.6.2",
-    "tslint": "^5.8.0",
-    "typescript": "^2.6.2"
+    "@types/node": "^22.10.2",
+    "rimraf": "^6.0.1",
+    "tsdown": "^0.16.6",
+    "typescript": "^5.6.3"
   },
   "packageManager": "pnpm@10.22.0"
 }

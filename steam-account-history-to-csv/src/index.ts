@@ -3,120 +3,157 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
  */
 
-function normalizeContent(content: string): string {
-  if (content[0] === "\u0008") {
-    return content.slice(1)
-  } else {
-    return content;
+const WALLET_HISTORY_SELECTOR = '.wallet_history_table';
+const WALLET_ROW_CLASS = 'wallet_table_row';
+const PAYMENT_CLASS = 'wth_payment';
+const EXPORT_BUTTON_CLASS = 'btnv6_blue_hoverfade btn_small';
+const EXPORT_FILENAME = 'wallet_history.csv';
+
+function normalizeContent(content: string | null | undefined): string {
+  if (!content || content.length === 0) {
+    return '';
   }
+
+  return content[0] === '\u0008' ? content.slice(1) : content;
+}
+
+function getTrimmedText(node: Element): string {
+  return normalizeContent(node.textContent).trim();
 }
 
 function parseWalletHistoryTableHeader(table: HTMLTableElement): string[] {
-  let tHead = table.tHead;
+  const head = table.tHead;
+  if (!head) {
+    throw new Error('Wallet history table header is missing.');
+  }
 
-  let titles0 = tHead.children[0];
-  let titles1 = tHead.children[1];
+  const [firstRow, secondRow] = Array.from(head.rows);
+  if (!firstRow || !secondRow) {
+    throw new Error('Wallet history header must have two rows.');
+  }
 
-  let arrayTitles0 = <HTMLTableCellElement[]>Array.prototype.slice.call(titles0.children);
-  let arrayTitles1 = <HTMLTableCellElement[]>Array.prototype.slice.call(titles1.children);
+  const titleRowValues = Array.from(firstRow.cells).map((cell) => normalizeContent(cell.textContent ?? ''));
+  const lastTitle = titleRowValues.at(-1) ?? '';
+  const nestedTitles = Array.from(secondRow.cells).map(
+    (cell) => `${lastTitle}:${normalizeContent(cell.textContent ?? '')}`,
+  );
 
-  let title0Contents = arrayTitles0.map(elem => normalizeContent(elem.textContent));
-  let title1Contents = arrayTitles1.map(elem => title0Contents[title0Contents.length - 1] + ":" + normalizeContent(elem.textContent))
-
-  let titleContents = title0Contents.slice(0, title0Contents.length - 1).concat(title1Contents);
-
-  return titleContents;
+  return titleRowValues.slice(0, -1).concat(nestedTitles);
 }
 
 function parseWalletHistoryTableBody(table: HTMLTableElement): string[][] {
-  let tBody = table.tBodies[0];
-  let rows = (<HTMLTableRowElement[]>Array.prototype.slice.call(tBody.children)).filter(row => row.classList.contains("wallet_table_row"));
+  const body = table.tBodies.item(0);
+  if (!body) {
+    throw new Error('Wallet history table body is missing.');
+  }
+
+  const rows = Array.from(body.rows).filter((row) => row.classList.contains(WALLET_ROW_CLASS));
   return rows.map(parseWalletHistoryTableRow);
 }
 
 function parseWalletHistoryTableRow(row: HTMLTableRowElement): string[] {
-  let cells = <HTMLTableCellElement[]>Array.prototype.slice.call(row.children);
+  const cells = Array.from(row.cells);
+  if (cells.length < 6) {
+    throw new Error('Wallet history row has insufficient cells.');
+  }
+
   try {
-    return [
-      parseDate(cells[0]),
-      parseItems(cells[1]).join("|"),
-      parseType(cells[2]).join("|"),
-      parseTotal(cells[3]).join("|"),
-      parseWalletChange(cells[4]),
-      parseWalletBalance(cells[5])
-    ].map(v => '"' + v + '"');
-  } catch (e) {
-    console.error('Error: "' + (<Error>e).message + '" occurred on row: "' + row + '"');
-    throw e
+    const values = [
+      parseDateCell(cells[0]),
+      parseMultiValueCell(cells[1]).join('|'),
+      parseMultiValueCell(cells[2]).join('|'),
+      parseMultiValueCell(cells[3]).join('|'),
+      parseSimpleCell(cells[4]),
+      parseSimpleCell(cells[5]),
+    ];
+    return values.map(quoteCsvValue);
+  } catch (error) {
+    console.error('Failed to parse wallet history row.', { error, row });
+    throw error;
   }
 }
 
 function getCellChildrenWithoutPayment(cell: HTMLTableCellElement): HTMLElement[] {
-  return (<HTMLElement[]>Array.prototype.slice.call(cell.children))
-    .filter(item => !item.classList.contains("wth_payment"));
+  return Array.from(cell.children).filter(
+    (child): child is HTMLElement => child instanceof HTMLElement && !child.classList.contains(PAYMENT_CLASS),
+  );
 }
 
-function parseDate(cell: HTMLTableCellElement): string {
-  return cell.textContent.trim();
+function parseDateCell(cell: HTMLTableCellElement): string {
+  return getTrimmedText(cell);
 }
 
-function parseItems(cell: HTMLTableCellElement): string[] {
+function parseMultiValueCell(cell: HTMLTableCellElement): string[] {
   if (cell.children.length === 0) {
-    return [cell.textContent.trim()];
-  } else {
-    return getCellChildrenWithoutPayment(cell).map(item => item.textContent.trim());
+    return [getTrimmedText(cell)];
   }
+
+  return getCellChildrenWithoutPayment(cell).map((child) => getTrimmedText(child));
 }
 
-function parseType(cell: HTMLTableCellElement): string[] {
-  if (cell.children.length === 0) {
-    return [cell.textContent.trim()];
-  } else {
-    return getCellChildrenWithoutPayment(cell).map(item => item.textContent.trim());
+function parseSimpleCell(cell: HTMLTableCellElement): string {
+  return getTrimmedText(cell);
+}
+
+function quoteCsvValue(value: string): string {
+  const sanitized = value.replace(/"/g, '""');
+  return `"${sanitized}"`;
+}
+
+function generateCsv(table: HTMLTableElement): string {
+  const header = parseWalletHistoryTableHeader(table);
+  const rows = parseWalletHistoryTableBody(table);
+  const csvLines = [header.join(',')].concat(rows.map((row) => row.join(',')));
+  return csvLines.join('\n');
+}
+
+function downloadCsv(csvContents: string): void {
+  const blob = new Blob(['\ufeff', csvContents], { type: 'text/csv' });
+  const anchor = document.createElement('a');
+  anchor.href = window.URL.createObjectURL(blob);
+  anchor.download = EXPORT_FILENAME;
+  const body = document.body;
+  if (!body) {
+    console.error('Document body is unavailable.');
+    return;
   }
+
+  body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
-function parseTotal(cell: HTMLTableCellElement): string[] {
-  if (cell.children.length === 0) {
-    return [cell.textContent.trim()];
-  } else {
-    return getCellChildrenWithoutPayment(cell).map(item => item.textContent.trim());
+function handleExportClick(): void {
+  const table = document.querySelector<HTMLTableElement>(WALLET_HISTORY_SELECTOR);
+  if (!table) {
+    console.error('Steam wallet history table not found.');
+    return;
   }
-}
-
-function parseWalletChange(cell: HTMLTableCellElement): string {
-  return cell.textContent.trim();
-}
-
-function parseWalletBalance(cell: HTMLTableCellElement): string {
-  return cell.textContent.trim();
-}
-
-let exportBtnContent = document.createElement("span");
-exportBtnContent.textContent = "Export CSV";
-
-let exportBtn = document.createElement("span");
-exportBtn.className = "btnv6_blue_hoverfade btn_small";
-exportBtn.appendChild(exportBtnContent);
-exportBtn.onclick = () => {
-  let table = <HTMLTableElement>document.getElementsByClassName("wallet_history_table")[0];
 
   try {
-    let titleContents = parseWalletHistoryTableHeader(table);
-    let bodyContents = parseWalletHistoryTableBody(table);
-
-    let csvContents = [titleContents.join(",")].concat(bodyContents.map(g => g.join(","))).join("\n");
-    let csvBlob = new Blob(["\ufeff", csvContents], { type: "text/csv" }); // UTF-8 BOM
-
-    let pom = document.createElement("a");
-    pom.href = window.URL.createObjectURL(csvBlob);
-    pom.download = "wallet_history.csv";
-    document.body.appendChild(pom);
-    pom.click();
-  } catch (e) {
-    console.error(e);
+    const csvContents = generateCsv(table);
+    downloadCsv(csvContents);
+  } catch (error) {
+    console.error('Failed to export wallet history.', error);
   }
 }
 
-let mainContentDiv = document.getElementById("main_content");
-mainContentDiv.insertBefore(exportBtn, mainContentDiv.firstChild);
+function insertExportButton(): void {
+  const exportBtn = document.createElement('span');
+  exportBtn.className = EXPORT_BUTTON_CLASS;
+  exportBtn.addEventListener('click', handleExportClick);
+
+  const exportLabel = document.createElement('span');
+  exportLabel.textContent = 'Export CSV';
+  exportBtn.appendChild(exportLabel);
+
+  const mainContent = document.getElementById('main_content');
+  if (!mainContent) {
+    console.error('Steam wallet main content container not found.');
+    return;
+  }
+
+  mainContent.insertBefore(exportBtn, mainContent.firstChild);
+}
+
+insertExportButton();
