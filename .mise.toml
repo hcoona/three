@@ -1,3 +1,18 @@
 [tools]
+# Runtimes
+go = "latest"
 node = "24"
+python = "3"
+
+# Package Managers
 pnpm = "10"
+
+# Utilities
+"pipx:prek" = "latest"
+pkl = "latest"
+
+# Linters and Formatters
+"go:github.com/B1NARY-GR0UP/nwa" = "latest"
+taplo = "latest"
+typos = "latest"
+uv = "latest"

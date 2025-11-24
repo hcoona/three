@@ -1,3 +1,8 @@
+/**
+ * Copyright 2017 Shuai Zhang
+ * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+ */
+
 function normalizeContent(content: string): string {
   if (content[0] === "\u0008") {
     return content.slice(1)

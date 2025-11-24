@@ -1,0 +1,29 @@
+# Copyright 2017 Shuai Zhang
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
+nwa:
+  holder: 'Shuai Zhang'
+  year: '2017'
+  spdxids: 'LGPL-3.0-or-later WITH LGPL-3.0-linking-exception'
+  style:
+    - 'ts:line'
+    - 'js:line'
+
+  skip:
+    - 'assets/**'
+    - 'dist/**'
+    - 'LICENSES/**'
+    - 'COPYING'
+    - 'COPYING.LESSER'
+    - 'LICENSE'
+    - '**/pnpm-lock.yaml'
+    - '**/pnpm-workspace.yaml'
+    # Unsupported file types
+    - '**/*.json'
+    - '**/.editorconfig'
+    - '**/.gitignore'
+  path:
+    - 'src/**'
+    - '.nwa-config.yaml'
+    - '*.js'
+    - '*.ts'
