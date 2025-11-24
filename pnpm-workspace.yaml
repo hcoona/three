@@ -1,0 +1,12 @@
+packages:
+  - hexo-renderer-asciidoc
+  - steam-account-history-to-csv
+
+linkWorkspacePackages: true
+
+onlyBuiltDependencies:
+  - hexo-util
+
+saveWorkspaceProtocol: true
+
+sharedWorkspaceLockfile: true

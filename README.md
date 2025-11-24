@@ -25,6 +25,21 @@ The first two pillars were **OnePython** and **OneDotNet**. Adding the rest of m
 | Steam Account History to CSV | `steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
 | Hexo Renderer AsciiDoc       | `hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
 
+## JavaScript/pnpm workspace
+
+The `hexo-renderer-asciidoc/` and `steam-account-history-to-csv/` folders now live inside a shared [pnpm workspace](https://pnpm.io/workspaces) rooted at the repo top level. This keeps dependency resolution predictable (`sharedWorkspaceLockfile: true`) and links local packages when their versions match (`linkWorkspacePackages: true`). The workspace no longer forces a specific Node version, so you can develop with whatever LTS (or locally installed) runtime you already have; each package’s own `engines` field—Hexo still requires Node ≥ 20.19—continues to act as the source of truth.
+
+Development flow:
+
+1. Enable Corepack (once per machine) so the `packageManager` setting can download pnpm for you.
+2. From the repo root, run `pnpm install` to hydrate every workspace project and refresh the single `pnpm-lock.yaml`.
+3. Use the root scripts from `package.json`:
+    - `pnpm run build` → runs `build` in every workspace package.
+    - `pnpm run test` / `pnpm run lint` / `pnpm run format` → fan out with `--if-present`, so packages missing a script are skipped.
+4. When pnpm warns about blocked install scripts (for example `hexo-util`), review and allow them with `pnpm approve-builds` to stay compliant with pnpm 10’s hardened defaults.
+
+For publishing/versioning, follow pnpm’s [Changesets guide](https://pnpm.io/using-changesets) so both packages can share a single release workflow.
+
 [asciidoctor-upstream]: https://github.com/hcoona/asciidoctor-latexmath
 [asciidoctor-commit]: https://github.com/hcoona/asciidoctor-latexmath/commit/514d685558dc1c8215d0b1e42ff5ea2762ecd3b2
 [ioe-upstream]: https://github.com/hcoona/ImageOcclusionEditor
