@@ -7,6 +7,11 @@ determine the license that governs a specific codebase or asset, read the
 subdirectory. Those files describe the exact permissions, obligations, and
 exceptions that apply.
 
+When a project does not ship its own explicit license file, the default license
+is **LGPL-3.0-or-later WITH LGPL-3.0-linking-exception**. Canonical copies of
+the shared license texts live in the repository root (`COPYING`, `COPYING.LESSER`,
+and `LICENSES/`), and packaging workflows will include them where required.
+
 If you plan to redistribute or contribute to code in this monorepo, make sure
 you comply with the license of the project you touch. When in doubt, review the
 license file packaged with that project or consult its upstream repository for

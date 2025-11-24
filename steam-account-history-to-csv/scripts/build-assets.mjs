@@ -1,10 +1,12 @@
-import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { getVersionInfo, getBrowserExtensionVersion, projectRoot } from './version-utils.mjs';
+import { getBrowserExtensionVersion, getVersionInfo, projectRoot } from './version-utils.mjs';
 
 const rootDir = projectRoot;
 const assetsDir = path.join(rootDir, 'assets');
 const distDir = path.join(rootDir, 'dist');
+const monorepoRoot = path.resolve(rootDir, '..');
+const SHARED_LICENSE_ENTRIES = ['COPYING', 'COPYING.LESSER', 'LICENSES'];
 
 async function loadJson(filePath) {
   const content = await readFile(filePath, 'utf8');
@@ -42,9 +44,41 @@ async function copyIcons() {
   );
 }
 
+async function copyEntry(source, target) {
+  const info = await stat(source).catch(() => null);
+  if (!info) {
+    throw new Error(`Missing license artifact at ${source}`);
+  }
+
+  await rm(target, { recursive: true, force: true });
+  if (info.isDirectory()) {
+    await cp(source, target, { recursive: true });
+    return;
+  }
+
+  await mkdir(path.dirname(target), { recursive: true });
+  await cp(source, target);
+}
+
+async function copyProjectLicense() {
+  const source = path.join(rootDir, 'LICENSE');
+  const target = path.join(distDir, 'LICENSE');
+  await copyEntry(source, target);
+}
+
+async function copySharedLicenses() {
+  for (const entry of SHARED_LICENSE_ENTRIES) {
+    const source = path.join(monorepoRoot, entry);
+    const target = path.join(distDir, entry);
+    await copyEntry(source, target);
+  }
+}
+
 async function main() {
   await buildManifest();
   await copyIcons();
+  await copyProjectLicense();
+  await copySharedLicenses();
 }
 
 await main();
