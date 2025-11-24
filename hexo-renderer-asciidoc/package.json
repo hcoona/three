@@ -1,6 +1,6 @@
 {
   "name": "hexo-renderer-asciidoc",
-  "version": "3.0.0",
+  "version": "0.0.0-placeholder",
   "description": "Asciidoc renderer plugin for hexo",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -11,8 +11,8 @@
     "ChangeLog.md"
   ],
   "scripts": {
-    "prepack": "node scripts/npm-readme.cjs prepack",
-    "postpack": "node scripts/npm-readme.cjs postpack",
+    "prepack": "pnpm run version:stamp && node scripts/npm-readme.cjs prepack",
+    "postpack": "node scripts/npm-readme.cjs postpack && pnpm run version:reset",
     "lint": "pnpm run lint:biome && pnpm run lint:md",
     "lint:biome": "pnpm exec biome lint --reporter summary .",
     "lint:md": "pnpm exec prettier --check \"**/*.{md,mdx,markdown}\"",
@@ -25,6 +25,8 @@
     "typecheck": "tsc",
     "build": "tsdown",
     "prepublishOnly": "pnpm run build",
+    "version:stamp": "node ./scripts/nbgv-version.mjs stamp",
+    "version:reset": "node ./scripts/nbgv-version.mjs reset",
     "test": "vitest run",
     "test:watch": "vitest",
     "test-cov": "vitest run --coverage"
@@ -65,6 +67,7 @@
     "@vitest/coverage-v8": "^4.0.9",
     "hexo": "8.1.1",
     "markdownlint-cli2": "0.19.1",
+    "nerdbank-gitversioning": "^3.7.91",
     "prettier": "3.6.2",
     "tsdown": "^0.16.4",
     "typescript": "^5.6.3",

@@ -1,9 +1,8 @@
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { getVersionInfo, getBrowserExtensionVersion, projectRoot } from './version-utils.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, '..');
+const rootDir = projectRoot;
 const assetsDir = path.join(rootDir, 'assets');
 const distDir = path.join(rootDir, 'dist');
 
@@ -13,15 +12,18 @@ async function loadJson(filePath) {
 }
 
 async function buildManifest() {
-  const [pkg, manifest] = await Promise.all([
+  const [pkg, manifest, versionInfo] = await Promise.all([
     loadJson(path.join(rootDir, 'package.json')),
     loadJson(path.join(assetsDir, 'manifest.json')),
+    getVersionInfo(),
   ]);
+
+  const browserVersion = getBrowserExtensionVersion(versionInfo);
 
   const nextManifest = {
     ...manifest,
     name: pkg.displayName ?? pkg.name ?? manifest.name,
-    version: pkg.version ?? manifest.version,
+    version: browserVersion,
     description: pkg.description ?? manifest.description,
   };
 

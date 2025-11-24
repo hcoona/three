@@ -1,7 +1,8 @@
 {
   "name": "steam-account-history-to-csv",
-  "version": "1.0.0",
+  "version": "0.0.0-placeholder",
   "description": "Convert Steam account history table into csv file for further edits in Excel",
+  "displayName": "Steam Account History to CSV",
   "type": "module",
   "private": true,
   "author": "Shuai Zhang <zhangshuai.ustc@gmail.com>",
@@ -12,12 +13,17 @@
   "scripts": {
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
-    "build": "pnpm run clean && pnpm run build:ts && pnpm run build:assets",
+    "build": "node ./scripts/nbgv-version.mjs run pnpm run build:inner",
+    "build:inner": "pnpm run clean && pnpm run build:ts && pnpm run build:assets",
     "build:ts": "tsdown --config tsdown.config.ts",
-    "build:assets": "node ./scripts/build-assets.mjs"
+    "build:assets": "node ./scripts/build-assets.mjs",
+    "version:stamp": "node ./scripts/nbgv-version.mjs stamp",
+    "version:reset": "node ./scripts/nbgv-version.mjs reset",
+    "version:preview": "node ./scripts/nbgv-version.mjs preview"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "nerdbank-gitversioning": "^3.7.91",
     "rimraf": "^6.0.1",
     "tsdown": "^0.16.6",
     "typescript": "^5.6.3"
