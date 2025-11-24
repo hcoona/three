@@ -1,11 +1,13 @@
 [tools]
 # Runtimes
+dotnet = "10"
 go = "latest"
 node = "24"
 python = "3"
 
 # Package Managers
 pnpm = "10"
+uv = "latest"
 
 # Utilities
 "pipx:prek" = "latest"
@@ -15,4 +17,3 @@ pkl = "latest"
 "go:github.com/B1NARY-GR0UP/nwa" = "latest"
 taplo = "latest"
 typos = "latest"
-uv = "latest"

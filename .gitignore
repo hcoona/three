@@ -872,3 +872,6 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/dotnetcore,csharp,python,ruby,node,vim,visualstudiocode,windows,macos,linux
+
+# Include .config directory for dotnet tools
+!/.config
