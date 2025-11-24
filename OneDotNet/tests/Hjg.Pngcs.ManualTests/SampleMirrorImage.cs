@@ -38,7 +38,7 @@ namespace SampleTests
             PngReader pngr = FileHelper.CreatePngReader(orig);
             PngWriter pngw = FileHelper.CreatePngWriter(dest, pngr.ImgInfo, true);
             pngr.SetUnpackedMode(true); // we dont want to do the unpacking ourselves, we want a sample per array element
-            pngw.SetUseUnPackedMode(true); // not really necesary here, as we pass the ImageLine, but anyway...
+            pngw.SetUseUnPackedMode(true); // not really necessary here, as we pass the ImageLine, but anyway...
             pngw.CopyChunksFirst(pngr, ChunkCopyBehaviour.COPY_ALL_SAFE);
             for (int row = 0; row < pngr.ImgInfo.Rows; row++)
             {

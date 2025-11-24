@@ -45,10 +45,10 @@ namespace SamplesTests
             string recov = TestsHelper.addSuffixToName(orig, "_recov");
             long crc0 = 0;
             bool interlaced;
-            bool palete;
+            bool palette;
             {
                 PngReader pngr = FileHelper.CreatePngReader(orig);
-                palete = pngr.ImgInfo.Indexed;
+                palette = pngr.ImgInfo.Indexed;
                 PngHelperInternal.InitCrcForTests(pngr);
                 pngr.SetUnpackedMode(true);
                 interlaced = pngr.IsInterlaced();
@@ -99,7 +99,7 @@ namespace SamplesTests
                 TestsHelper.testCrcEquals(recov, crc0);
             }
 
-            if (palete && File.Exists(truecolor))
+            if (palette && File.Exists(truecolor))
             {
                 additionalTestPalette(orig, truecolor);
             }
@@ -107,7 +107,7 @@ namespace SamplesTests
 
         private static void additionalTestPalette(string orig, string truecolor)
         {
-            // covnert to true color 8 bits and check equality
+            // convert to true color 8 bits and check equality
             PngReader pngr = FileHelper.CreatePngReader(orig);
             PngChunkPLTE plte = pngr.GetMetadata().GetPLTE();
             PngChunkTRNS trns = pngr.GetMetadata().GetTRNS();
@@ -223,7 +223,7 @@ namespace SamplesTests
                 catch (Exception e)
                 {
                     if (fi.Name.StartsWith('x'))
-                    { // suppposed to fail
+                    { // supposed to fail
                         Console.Out.WriteLine("ok error with " + name + " " + e.Message);
                     }
                     else

@@ -44,7 +44,7 @@ namespace SamplesTests
             PngWriter png = FileHelper.CreatePngWriter(filename, imi, true);
             // add some optional metadata (chunks)
             png.GetMetadata().SetDpi(100.0);
-            png.GetMetadata().SetTimeNow(0); // 0 seconds fron now = now
+            png.GetMetadata().SetTimeNow(0); // 0 seconds from now = now
             png.GetMetadata().SetText(PngChunkTextVar.KEY_Title, "Just a text image");
             PngChunk chunk = png.GetMetadata().SetText("my key", "my text .. bla bla");
             chunk.Priority = true; // this chunk will be written as soon as possible

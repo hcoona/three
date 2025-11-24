@@ -38,7 +38,7 @@ namespace SamplesTests
 
         public static void testWrite(string src, string target)
         {
-            // for writing is not necesary to register
+            // for writing is not necessary to register
             DummyClass c = new DummyClass();
             c.name = "Hernán";
             c.age = 45;
@@ -58,7 +58,7 @@ namespace SamplesTests
             pngw.CopyChunksLast(pngr, ChunkCopyBehaviour.COPY_ALL);
             pngr.End();
             pngw.End();
-            Console.Out.WriteLine("Done. Writen : " + target);
+            Console.Out.WriteLine("Done. Written : " + target);
         }
 
         public static void testRead(string file)

@@ -1,0 +1,35 @@
+[files]
+extend-exclude = [
+  'packages.lock.json',
+  "OneDotNet/srcs/private/app/OxfordWordlistExtractor/*.html",
+  "OneDotNet/tests/OxfordDictExtractor.Tests/**/*.html"]
+
+[default]
+locale = "en"
+extend-ignore-re = [
+  '\b[0-9a-f]{7,10}\b',
+  '\b[0-9A-Fa-f]{32,}\b',                                               # HEX (MD5, SHA256, etc.)
+  '(?i)\{?[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\}?',
+  '(?:^|[^A-Za-z0-9+/=])[A-Za-z0-9+/]{40,}={0,2}(?:$|[^A-Za-z0-9+/=])', # Base64
+  '(?:^|[^A-Za-z0-9_=-])[A-Za-z0-9_-]{40,}={0,2}(?:$|[^A-Za-z0-9_=-])', # Base64URL
+  '\bCC-BY-NC-ND-4.0\b',
+  '\bPNGs?\b',
+]
+
+[default.extend-words]
+hexo = 'hexo'
+Asciidoc = 'Asciidoc'
+Asciidoctor = 'Asciidoctor'
+
+[type.gitignore]
+extend-glob = ['.gitignore']
+extend-ignore-re = ['(?m)^\s*[^#\r\n].*$']
+extend-words = { Paket = 'Paket' }
+
+[type.TestZlib]
+extend-glob = ["TestZlib.cs"]
+extend-words = { ist = 'ist' }
+
+[type."index.ts"]
+extend-glob = ["index.ts"]
+extend-ignore-re = ["const PAYMENT_CLASS = 'wth_payment';"]

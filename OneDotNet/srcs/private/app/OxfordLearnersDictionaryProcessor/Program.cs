@@ -59,8 +59,8 @@ IServiceCollection services = kernelBuilder.Services;
 // Raw HTML Update Time:      WordList_RawHtml_<WordListName>_LastWriteTimeUtc
 // Word Metadata:             WordList_WordMetadata_<WordListName>_<LastWriteTimeUtc>_<ContentHash>
 // Word Metadata Update Time: WordList_WordMetadata_<WordListName>_LastWriteTimeUtc
-// Word Raw HTML:             Word_RawHtml_<LastSegementOfLink>
-// Word Raw HTML Update Time: Word_RawHtml_<LastSegementOfLink>_LastWriteTimeUtc
+// Word Raw HTML:             Word_RawHtml_<LastSegmentOfLink>
+// Word Raw HTML Update Time: Word_RawHtml_<LastSegmentOfLink>_LastWriteTimeUtc
 var cache = Cache.CreateLru(100 * 1024 * 1024);
 var options = new DbOptions()
     .SetCreateIfMissing(true)
