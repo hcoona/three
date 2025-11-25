@@ -875,3 +875,6 @@ $RECYCLE.BIN/
 
 # Include .config directory for dotnet tools
 !/.config
+
+# Include workspace-level mcp configuration
+!.vscode/mcp.json

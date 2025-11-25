@@ -21,7 +21,9 @@
     "vscode": {
       "extensions": [
         "mads-hartmann.bash-ide-vscode",
-        "EditorConfig.EditorConfig"
+        "EditorConfig.EditorConfig",
+        "tekumara.typos-vscode",
+        "DavidAnson.vscode-markdownlint"
       ]
     }
   }
