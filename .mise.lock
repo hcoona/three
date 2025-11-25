@@ -59,6 +59,14 @@ url = "https://github.com/pnpm/pnpm/releases/download/v10.22.0/pnpm-win-x64.exe"
 version = "3.12.12"
 backend = "core:python"
 
+[[tools.ruby]]
+version = "3.4.7"
+backend = "core:ruby"
+
+[tools.ruby.platforms.windows-x64]
+checksum = "blake3:d1984b7a7de8b3c7182352e9a772c25d7f5a7210f7d4c1bf728542c22726b1ff"
+size = 16190958
+
 [[tools.taplo]]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"

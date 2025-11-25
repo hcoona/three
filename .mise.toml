@@ -5,6 +5,7 @@ go = "latest"
 java = "lts"
 node = "24"
 python = "3"
+ruby = "3.4"
 
 # Package Managers
 pnpm = "10"
