@@ -1,0 +1,28 @@
+{
+  "image": "mcr.microsoft.com/devcontainers/base:2-debian-13",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "configureZshAsDefaultShell": "true",
+      "username": "vscode",
+      "userUid": "1000",
+      "userGid": "1000",
+      "upgradePackages": "true",
+      "nonFreePackages": "true"
+    },
+    "ghcr.io/devcontainers-extra/features/apt-get-packages:1": {
+      "packages": "ruby"
+    },
+    "ghcr.io/devcontainers-extra/features/mise:1": {}
+  },
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "postCreateCommand": "mise trust && mise use -g jq bitwarden chezmoi git-lfs && mise link ruby@3.3 /usr/bin/ruby && mise install && git lfs install && git lfs checkout && echo 'eval \"$(mise activate bash)\"' >> ~/.bashrc && echo 'eval \"$(mise activate zsh)\"' >> ~/.zshrc",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "mads-hartmann.bash-ide-vscode",
+        "EditorConfig.EditorConfig"
+      ]
+    }
+  }
+}

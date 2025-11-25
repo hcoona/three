@@ -60,12 +60,12 @@ version = "3.12.12"
 backend = "core:python"
 
 [[tools.ruby]]
-version = "3.4.7"
+version = "3.3.10"
 backend = "core:ruby"
 
 [tools.ruby.platforms.windows-x64]
-checksum = "blake3:d1984b7a7de8b3c7182352e9a772c25d7f5a7210f7d4c1bf728542c22726b1ff"
-size = 16190958
+checksum = "blake3:81b493cd1dc67e0ed4499da45271bb4945575926afe5a4d5866a9d2524d5cb67"
+size = 15049824
 
 [[tools.taplo]]
 version = "0.10.0"
