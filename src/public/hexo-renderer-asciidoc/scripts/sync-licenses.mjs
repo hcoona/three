@@ -15,8 +15,38 @@ import { fileURLToPath } from 'node:url';
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(moduleDir, '..');
-const monorepoRoot = path.resolve(packageRoot, '..');
 const LICENSE_ENTRIES = ['COPYING', 'COPYING.LESSER', 'LICENSES'];
+
+async function pathExists(entryPath) {
+  try {
+    await stat(entryPath);
+    return true;
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function findMonorepoRoot(startDir) {
+  let current = startDir;
+  const { root } = path.parse(current);
+  while (true) {
+    for (const marker of ['pnpm-workspace.yaml', '.git']) {
+      if (await pathExists(path.join(current, marker))) {
+        return current;
+      }
+    }
+    if (current === root) {
+      break;
+    }
+    current = path.dirname(current);
+  }
+  throw new Error(`Unable to locate pnpm workspace root when starting from ${startDir}.`);
+}
+
+const monorepoRoot = await findMonorepoRoot(packageRoot);
 
 function log(message) {
   process.stdout.write(`[sync-licenses] ${message}\n`);

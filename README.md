@@ -22,12 +22,12 @@ The first two pillars were **OnePython** and **OneDotNet**. Adding the rest of m
 | ImageOcclusionEditor         | `ImageOcclusionEditor/`         | [Repo][ioe-upstream]         | [e08f834][ioe-commit]         |
 | OneDotNet                    | `OneDotNet/`                    | [Repo][onedotnet-upstream]   | [17f2224][onedotnet-commit]   |
 | OnePython                    | `OnePython/`                    | [Repo][onepython-upstream]   | [21ef6d5][onepython-commit]   |
-| Steam Account History to CSV | `steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
-| Hexo Renderer AsciiDoc       | `hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
+| Steam Account History to CSV | `src/public/steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
+| Hexo Renderer AsciiDoc       | `src/public/hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
 
 ## JavaScript/pnpm workspace
 
-The `hexo-renderer-asciidoc/` and `steam-account-history-to-csv/` folders now live inside a shared [pnpm workspace](https://pnpm.io/workspaces) rooted at the repo top level. This keeps dependency resolution predictable (`sharedWorkspaceLockfile: true`) and links local packages when their versions match (`linkWorkspacePackages: true`). The workspace no longer forces a specific Node version, so you can develop with whatever LTS (or locally installed) runtime you already have; each package’s own `engines` field—Hexo still requires Node ≥ 20.19—continues to act as the source of truth.
+The `src/public/hexo-renderer-asciidoc/` and `src/public/steam-account-history-to-csv/` folders share a [pnpm workspace](https://pnpm.io/workspaces) that still lives at the repo root even though the projects moved under `src/public/`. The nested layout keeps the repo top level tidy while preserving predictable dependency resolution (`sharedWorkspaceLockfile: true`) and automatic linking between workspace packages (`linkWorkspacePackages: true`). As before, the workspace does not pin a Node version—each package’s own `engines` entry (Hexo still wants Node ≥ 20.19) remains authoritative.
 
 Development flow:
 

@@ -15,7 +15,7 @@ importers:
         specifier: 3.6.2
         version: 3.6.2
 
-  hexo-renderer-asciidoc:
+  src/public/hexo-renderer-asciidoc:
     dependencies:
       asciidoctor:
         specifier: 3.0.4
@@ -61,7 +61,7 @@ importers:
         specifier: ^4.0.9
         version: 4.0.13(@types/debug@4.1.12)(@types/node@22.19.1)
 
-  steam-account-history-to-csv:
+  src/public/steam-account-history-to-csv:
     devDependencies:
       '@types/node':
         specifier: ^22.10.2

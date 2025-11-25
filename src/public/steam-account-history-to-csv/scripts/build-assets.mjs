@@ -5,8 +5,36 @@ import { getBrowserExtensionVersion, getVersionInfo, projectRoot } from './versi
 const rootDir = projectRoot;
 const assetsDir = path.join(rootDir, 'assets');
 const distDir = path.join(rootDir, 'dist');
-const monorepoRoot = path.resolve(rootDir, '..');
 const SHARED_LICENSE_ENTRIES = ['COPYING', 'COPYING.LESSER', 'LICENSES'];
+
+async function pathExists(candidate) {
+  try {
+    await stat(candidate);
+    return true;
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function findMonorepoRoot(startDir) {
+  let current = startDir;
+  const { root } = path.parse(current);
+  while (true) {
+    for (const marker of ['pnpm-workspace.yaml', '.git']) {
+      if (await pathExists(path.join(current, marker))) {
+        return current;
+      }
+    }
+    if (current === root) {
+      break;
+    }
+    current = path.dirname(current);
+  }
+  throw new Error(`Unable to locate pnpm workspace root when starting from ${startDir}.`);
+}
 
 async function loadJson(filePath) {
   const content = await readFile(filePath, 'utf8');
@@ -66,7 +94,7 @@ async function copyProjectLicense() {
   await copyEntry(source, target);
 }
 
-async function copySharedLicenses() {
+async function copySharedLicenses(monorepoRoot) {
   for (const entry of SHARED_LICENSE_ENTRIES) {
     const source = path.join(monorepoRoot, entry);
     const target = path.join(distDir, entry);
@@ -75,10 +103,11 @@ async function copySharedLicenses() {
 }
 
 async function main() {
+  const monorepoRoot = await findMonorepoRoot(rootDir);
   await buildManifest();
   await copyIcons();
   await copyProjectLicense();
-  await copySharedLicenses();
+  await copySharedLicenses(monorepoRoot);
 }
 
 await main();
