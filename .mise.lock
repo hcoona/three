@@ -15,6 +15,15 @@ url = "https://dl.google.com/go/go1.25.4.windows-amd64.zip"
 version = "0.7.7"
 backend = "go:github.com/B1NARY-GR0UP/nwa"
 
+[[tools.java]]
+version = "25.0.1"
+backend = "core:java"
+
+[tools.java.platforms.windows-x64]
+checksum = "sha256:2bbae75bc31a848b7cb5f297270efb7bef9bba0deeec6a671625563dc090ad69"
+size = 221632591
+url = "https://download.java.net/java/GA/jdk25.0.1/2fbf10d8c78e40bd87641c434705079d/8/GPL/openjdk-25.0.1_windows-x64_bin.zip"
+
 [[tools.node]]
 version = "24.11.0"
 backend = "core:node"

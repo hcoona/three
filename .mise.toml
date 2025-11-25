@@ -2,6 +2,7 @@
 # Runtimes
 dotnet = "10"
 go = "latest"
+java = "lts"
 node = "24"
 python = "3"
 
