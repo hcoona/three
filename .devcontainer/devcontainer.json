@@ -23,7 +23,16 @@
         "mads-hartmann.bash-ide-vscode",
         "EditorConfig.EditorConfig",
         "tekumara.typos-vscode",
-        "DavidAnson.vscode-markdownlint"
+        "DavidAnson.vscode-markdownlint",
+        "asciidoctor.asciidoctor-vscode",
+        "tamasfe.even-better-toml",
+        "github.vscode-github-actions",
+        "eamodio.gitlens",
+        "exiasr.hadolint",
+        "hverlin.mise-vscode",
+        "george-alisson.html-preview-vscode",
+        "biomejs.biome",
+        "esbenp.prettier-vscode"
       ]
     }
   }
