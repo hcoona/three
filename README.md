@@ -18,8 +18,8 @@ The first two pillars were **OnePython** and **OneDotNet**. Adding the rest of m
 
 | Project                      | Directory                       | Upstream                     | Commit                        |
 | ---------------------------- | ------------------------------- | ---------------------------- | ----------------------------- |
-| Asciidoctor LaTeXMath        | `asciidoctor-latexmath/`        | [Repo][asciidoctor-upstream] | [514d685][asciidoctor-commit] |
-| ImageOcclusionEditor         | `ImageOcclusionEditor/`         | [Repo][ioe-upstream]         | [e08f834][ioe-commit]         |
+| Asciidoctor LaTeXMath        | `src/public/asciidoctor-latexmath/`        | [Repo][asciidoctor-upstream] | [514d685][asciidoctor-commit] |
+| ImageOcclusionEditor         | `src/public/ImageOcclusionEditor/`         | [Repo][ioe-upstream]         | [e08f834][ioe-commit]         |
 | OneDotNet                    | `OneDotNet/`                    | [Repo][onedotnet-upstream]   | [17f2224][onedotnet-commit]   |
 | OnePython                    | `OnePython/`                    | [Repo][onepython-upstream]   | [21ef6d5][onepython-commit]   |
 | Steam Account History to CSV | `src/public/steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
