@@ -22,7 +22,7 @@
     "version:preview": "node ./scripts/nbgv-version.mjs preview"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
+    "@types/node": "^24.10.1",
     "nerdbank-gitversioning": "^3.7.91",
     "rimraf": "^6.0.1",
     "tsdown": "^0.16.7",
