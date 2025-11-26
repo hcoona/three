@@ -7,6 +7,7 @@ import conventionalConfig from '@commitlint/config-conventional';
 import type { Plugin, UserConfig } from '@commitlint/types';
 import { RuleConfigSeverity } from '@commitlint/types';
 import { apStyleTitleCase } from 'ap-style-title-case';
+// Commit type from conventional-commits-parser is the same type used by @commitlint/types for rule definitions
 import type { Commit } from 'conventional-commits-parser';
 
 const baseTypeEnumRule = conventionalConfig?.rules?.['type-enum'] ?? [];
