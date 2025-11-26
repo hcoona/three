@@ -90,11 +90,13 @@ repos:
     entry: pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path
     language: system
     pass_filenames: true
+    files: .*\.ps1$|.*\.psm1$|.*\.psd1$
   - id: pwsh-script-analyzer
     name: Pwsh Script Analyzer
     entry: pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path
     language: system
     pass_filenames: true
+    files: .*\.ps1$|.*\.psm1$|.*\.psd1$
   - id: csharpier
     name: Csharpier
     entry: dotnet tool run csharpier check
