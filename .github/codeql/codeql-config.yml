@@ -1,0 +1,19 @@
+# Copyright 2015 Shuai Zhang
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
+name: three-codeql-config
+
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - '**/bin'
+  - '**/obj'
+  - '**/node_modules'
+  - '**/dist'
+  - '**/build'
+  - '**/.cache'
+  - '**/.venv'
+  - '**/__pycache__'
+  - '**/.pytest_cache'
+  - '**/coverage'

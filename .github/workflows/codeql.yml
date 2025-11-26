@@ -1,0 +1,75 @@
+# Copyright 2015 Shuai Zhang
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.txt'
+  merge_group:
+    branches:
+      - main
+  schedule:
+    - cron: '31 7 * * 3'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  checks: write
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build_mode: none
+            dependency_caching: false
+          - language: csharp
+            build_mode: none
+            dependency_caching: false
+          - language: javascript-typescript
+            build_mode: none
+            dependency_caching: false
+          - language: python
+            build_mode: none
+            dependency_caching: false
+          - language: ruby
+            build_mode: none
+            dependency_caching: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          config-file: .github/codeql/codeql-config.yml
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build_mode }}
+          dependency-caching: ${{ matrix.dependency_caching }}
+
+      - if: ${{ matrix.build_mode == 'autobuild' }}
+        name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:${{ matrix.language }}'
