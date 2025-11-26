@@ -6,6 +6,11 @@ backend = "vfox:dotnet"
 version = "1.25.4"
 backend = "core:go"
 
+[tools.go.platforms.linux-x64]
+checksum = "sha256:9fa5ffeda4170de60f67f3aa0f824e426421ba724c21e133c1e35d6159ca1bec"
+size = 59766394
+url = "https://dl.google.com/go/go1.25.4.linux-amd64.tar.gz"
+
 [tools.go.platforms.windows-x64]
 checksum = "sha256:6dad204d42719795f22067553b2b042c0e710b32c5a00f6c67892865167fdfd0"
 size = 67441487
@@ -31,6 +36,11 @@ backend = "go:mvdan.cc/sh/v3/cmd/shfmt"
 version = "2.14.0"
 backend = "aqua:hadolint/hadolint"
 
+[tools.hadolint.platforms.linux-x64]
+checksum = "sha256:6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47"
+size = 54727336
+url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-x86_64"
+
 [[tools.hk]]
 version = "1.25.0"
 backend = "aqua:jdx/hk"
@@ -43,6 +53,11 @@ url = "https://github.com/jdx/hk/releases/download/v1.25.0/hk-x86_64-unknown-lin
 [[tools.java]]
 version = "25.0.1"
 backend = "core:java"
+
+[tools.java.platforms.linux-x64]
+checksum = "sha256:514db33011f2c81fa9c589f7712735b42b9d2575db8f817d3be40a92d2ef7ad8"
+size = 222490107
+url = "https://download.java.net/java/GA/jdk25.0.1/2fbf10d8c78e40bd87641c434705079d/8/GPL/openjdk-25.0.1_linux-x64_bin.tar.gz"
 
 [tools.java.platforms.windows-x64]
 checksum = "sha256:2bbae75bc31a848b7cb5f297270efb7bef9bba0deeec6a671625563dc090ad69"
@@ -65,6 +80,11 @@ backend = "pipx:prek"
 [[tools.pkl]]
 version = "0.30.0"
 backend = "aqua:apple/pkl"
+
+[tools.pkl.platforms.linux-x64]
+checksum = "sha256:182a50a2c84bb002010ea45c8982c1e63b54e7e6a40e939bb5eb70beaad38cd7"
+size = 99355968
+url = "https://github.com/apple/pkl/releases/download/0.30.0/pkl-linux-amd64"
 
 [[tools.pnpm]]
 version = "10.23.0"
@@ -108,6 +128,11 @@ url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellche
 [[tools.taplo]]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
+
+[tools.taplo.platforms.linux-x64]
+checksum = "blake3:4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead8e2"
+size = 5116068
+url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"
 
 [[tools.typos]]
 version = "1.39.2"
