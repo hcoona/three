@@ -110,9 +110,13 @@ local bash_linters = new Mapping<String, Step> {
 }
 
 local pwsh_linters = new Mapping<String, Step> {
+  local powershell_files = List("*.ps1", "*.psm1", "*.psd1")
+
   ["pwsh-formatter"] {
     profiles = List("medium")
     batch = true
+    glob = powershell_files
+    stage = powershell_files
     check =
       "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path {{files}}"
     fix =
@@ -122,6 +126,8 @@ local pwsh_linters = new Mapping<String, Step> {
   ["pwsh-script-analyzer"] {
     profiles = List("medium")
     batch = true
+    glob = powershell_files
+    stage = powershell_files
     check =
       "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path {{files}}"
     fix =
