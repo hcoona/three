@@ -1,0 +1,133 @@
+default_stages:
+- pre-commit
+fail_fast: false
+minimum_pre_commit_version: 3.0.0
+repos:
+- repo: local
+  hooks:
+  - id: typos
+    name: Typos
+    entry: typos -c .typos.toml
+    language: system
+    pass_filenames: true
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock)
+  - id: editorconfig-check
+    name: Editorconfig Check
+    entry: editorconfig-checker
+    language: system
+    pass_filenames: true
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock)
+  - id: actionlint
+    name: Actionlint
+    entry: actionlint
+    language: system
+    pass_filenames: true
+    files: \.github/workflows/.*\.(yml|yaml)$
+  - id: markdownlint-cli2
+    name: Markdownlint Cli2
+    entry: pnpm exec -- markdownlint-cli2
+    language: system
+    pass_filenames: true
+    files: .*\.md$
+  - id: markdown-prettier
+    name: Markdown Prettier
+    entry: pnpm exec -- prettier --check
+    language: system
+    pass_filenames: true
+    files: .*\.md$
+  - id: pkl-eval
+    name: Pkl Eval
+    entry: pkl eval
+    language: system
+    pass_filenames: true
+    files: .*\.pkl$
+  - id: pkl-format
+    name: Pkl Format
+    entry: pkl format --silent
+    language: system
+    pass_filenames: true
+    files: .*\.pkl$
+  - id: json-biome
+    name: Json Biome
+    entry: pnpm exec -- biome check
+    language: system
+    pass_filenames: true
+    files: .*\.json$|.*\.jsonc$
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock)
+  - id: yaml-prettier
+    name: Yaml Prettier
+    entry: pnpm exec -- prettier --check
+    language: system
+    pass_filenames: true
+    files: .*\.yml$|.*\.yaml$
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock)
+  - id: taplo
+    name: Taplo
+    entry: pnpm exec -- taplo check
+    language: system
+    pass_filenames: true
+    files: .*\.toml$
+  - id: hadolint
+    name: Hadolint
+    entry: hadolint
+    language: system
+    pass_filenames: true
+    files: Dockerfile$|.*\.Dockerfile$|Dockerfile\..*$
+  - id: shellcheck
+    name: Shellcheck
+    entry: shellcheck
+    language: system
+    pass_filenames: true
+    files: .*\.sh$|.*\.bash$
+  - id: shfmt
+    name: Shfmt
+    entry: shfmt
+    language: system
+    pass_filenames: true
+    files: .*\.sh$|.*\.bash$
+  - id: pwsh-formatter
+    name: Pwsh Formatter
+    entry: pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path
+    language: system
+    pass_filenames: true
+  - id: pwsh-script-analyzer
+    name: Pwsh Script Analyzer
+    entry: pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path
+    language: system
+    pass_filenames: true
+  - id: csharpier
+    name: Csharpier
+    entry: dotnet tool run csharpier check
+    language: system
+    pass_filenames: true
+    files: .*\.cs$
+  - id: dotnet-lock-verify
+    name: Dotnet Lock Verify
+    entry: dotnet restore --locked-mode
+    language: system
+    pass_filenames: true
+    files: .*\.csproj$|.*\.props$|.*\.targets$|global\.json$|nuget\.config$|packages\.lock\.json$
+  - id: ruff
+    name: Ruff
+    entry: uv run ruff check
+    language: system
+    pass_filenames: true
+    files: .*\.py$
+  - id: ruff_format
+    name: Ruff_format
+    entry: uv run ruff format --check
+    language: system
+    pass_filenames: true
+    files: .*\.py$
+  - id: uv-lock
+    name: Uv Lock
+    entry: uv lock --check
+    language: system
+    pass_filenames: true
+    files: pyproject\.toml$|uv\.lock$
+  - id: pre-commit-config
+    name: Pre Commit Config
+    entry: pwsh -NoLogo -NoProfile -File eng/pre-commit/Test-PklEvalSync.ps1 -Source .pre-commit-config.pkl -Target .pre-commit-config.yaml -Format yaml
+    language: system
+    pass_filenames: false
+    files: \.pre-commit-config\.pkl$|\.pre-commit-config\.yaml$|hk\.pkl$|src/private/hk/.*.*/.*\.pkl$|PklProject$|PklProject\.deps\.json$

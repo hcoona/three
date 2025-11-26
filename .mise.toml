@@ -4,6 +4,7 @@ dotnet = "10"
 go = "latest"
 java = "lts"
 node = "24"
+powershell = "7"
 python = "3"
 ruby = "3.3"
 
@@ -12,10 +13,78 @@ pnpm = "10"
 uv = "latest"
 
 # Utilities
+hk = "latest"
 "pipx:prek" = "latest"
 pkl = "latest"
 
+#
 # Linters and Formatters
+#
+
+# General
 "go:github.com/B1NARY-GR0UP/nwa" = "latest"
+"go:github.com/editorconfig-checker/editorconfig-checker/v3/cmd/editorconfig-checker" = "latest"
 taplo = "latest"
 typos = "latest"
+
+# Pipeline
+"go:github.com/rhysd/actionlint/cmd/actionlint" = "latest"
+
+# Bash
+shellcheck = "latest"
+"go:mvdan.cc/sh/v3/cmd/shfmt" = "latest"
+
+# Dockerfile
+hadolint = "latest"
+
+#
+# Environment Variables
+#
+
+[env]
+
+DOTNET_SYSTEM_GLOBALIZATION_INVARIANT = "1"
+DOTNET_SYSTEM_GLOBALIZATION_PREDEFINED_CULTURES_ONLY = "0"
+
+HK_PROFILE = "small,medium"
+
+#
+# Bootstrap
+#
+
+[tasks.bootstrap]
+description = "Bootstrap the external tools"
+depends = ["bootstrap:pwsh", "bootstrap:node", "bootstrap:dotnet-tools"]
+
+[tasks."bootstrap:pwsh"]
+description = "Bootstrap the PowerShell modules"
+run = '''
+pwsh -NoLogo -Command "Install-Module -Name 'PSScriptAnalyzer' -Force -Scope CurrentUser"
+'''
+
+[tasks."bootstrap:node"]
+description = "Bootstrap the Node.js packages"
+run = "pnpm install --frozen-lockfile"
+
+[tasks."bootstrap:dotnet-tools"]
+description = "Bootstrap the .NET tools"
+run = "dotnet tool restore"
+
+#
+# Tasks
+#
+
+[tasks.slngen]
+description = "Generate .NET solution file for local development"
+run = 'dotnet slngen --nologo --ignoreMainProject --launch false --loadprojects false --folders true --collapsefolders true -o main.sln'
+
+[tasks.update-pre-commit-config]
+description = "Update .pre-commit-config.yaml from .pre-commit-config.pkl"
+run = 'pkl eval .pre-commit-config.pkl -o .pre-commit-config.yaml'
+sources = [
+  ".pre-commit-config.pkl",
+  "hk.pkl",
+  "src/private/hk/**/*.pkl",
+  "PklProject",
+  "PklProject.deps.json",
+]

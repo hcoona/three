@@ -1,0 +1,16 @@
+import "@hk/Config.pkl"
+
+local GlobList =
+  List(
+    ".env",
+    "*.env",
+    ".env.*",
+  )
+
+dotenv_linter = new Config.Step {
+  batch = true
+  glob = GlobList
+  stage = GlobList
+  check = "dotenv-linter {{files}}"
+  fix = "dotenv-linter --fix {{files}}"
+}

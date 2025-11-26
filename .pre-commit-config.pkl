@@ -1,0 +1,180 @@
+// Generate .pre-commit-config.yaml from hk.pkl configuration
+//
+// This Pkl module transforms hk step definitions into pre-commit format
+
+import "hk.pkl"
+
+// Convert glob pattern to regex
+local function globToRegex(glob: String): String =
+  let (
+    // Handle brace expansion: *.{yml,yaml} -> \.(yml|yaml)$
+    withBraces =
+      if (glob.contains("{") && glob.contains("}"))
+        let (start = glob.indexOf("{"))
+        let (end = glob.indexOf("}"))
+        let (braceContent = glob.substring(start + 1, end))
+        let (alternatives = braceContent.split(",").join("|"))
+        let (before = glob.substring(0, start))
+        let (after = glob.substring(end + 1, glob.length))
+          before + "(" + alternatives + ")" + after
+      else
+        glob
+  )
+  let (
+    // Escape dots and convert wildcards
+    regex = withBraces.replaceAll(".", "\\.").replaceAll("*", ".*")
+  )
+    if (withBraces.startsWith("*."))
+      regex + "$"
+    else if (withBraces.startsWith("."))
+      regex + "$"
+    else
+      regex + "$"
+
+// Convert exclude list to regex pattern
+local function excludeListToRegex(excludeList: List): String =
+  let (
+    patterns =
+      excludeList.map((patternAny) ->
+        let (pattern = patternAny.toString())
+        // Process glob patterns in correct order (before escaping special chars)
+        // 1. Replace **/ with a placeholder that won't be escaped
+        let (step1 = pattern.replaceAll("**/", "<<<ANYDIR>>>"))
+        // 2. Replace remaining ** with another placeholder
+        let (step2 = step1.replaceAll("**", "<<<ANYCHARS>>>"))
+        // 3. Replace single * with another placeholder
+        let (step3 = step2.replaceAll("*", "<<<DIRCHARS>>>"))
+        // 4. Now escape dots
+        let (step4 = step3.replaceAll(".", "\\."))
+        // 5. Replace placeholders with actual regex
+        let (step5 = step4.replaceAll("<<<ANYDIR>>>", ".*/"))
+        let (step6 = step5.replaceAll("<<<ANYCHARS>>>", ".*"))
+        let (step7 = step6.replaceAll("<<<DIRCHARS>>>", "[^/]*"))
+          step7
+      )
+  )
+    "(" + patterns.join("|") + ")"
+
+// Normalize nullable values into a List for easier processing
+local function normalizeList(value: Any?): List =
+  if (value == null)
+    List()
+  else if (value is List)
+    value
+  else
+    List(value)
+
+// Convert a single step to pre-commit hook
+//
+// Key semantic mapping:
+// - hk batch=true: run command multiple times in parallel with file batches
+//   -> pre-commit pass_filenames=true: pass filenames as args
+// - hk batch=false (default): run command once with all files
+//   -> pre-commit pass_filenames=true if {{files}} in command, false otherwise
+// - hk {{files}} template -> remove it, pre-commit handles file passing
+local function stepToHook(id: String, step: Any): Dynamic? =
+  let (stepDyn = (step as Typed).toDynamic())
+  let (profiles = normalizeList(stepDyn.profiles))
+    if (
+      stepDyn._type == "step"
+        && (
+          profiles.isEmpty
+            || profiles.contains("small")
+            || profiles.contains("medium")
+        )
+    )
+      let (
+        checkCmd =
+          if (stepDyn.check is String)
+            stepDyn.check
+          else if (stepDyn.check != null && stepDyn.check.linux != null)
+            stepDyn.check.linux
+          else
+            ""
+      )
+      let (prefix = if (stepDyn.prefix != null) stepDyn.prefix else "")
+      let (hasFilesPlaceholder = checkCmd.contains("{{files}}") || checkCmd.contains("{{ files }}"))
+      let (rawEntry = if (prefix != "") prefix + " " + checkCmd else checkCmd)
+      // Remove {{files}} placeholders - pre-commit handles file passing
+      // Also remove shell redirections (>, >>, 2>&1, etc.) since pre-commit
+      // appends files at the end
+      let (
+        entry =
+          rawEntry
+            .replaceAll("{{files}}", "")
+            .replaceAll("{{ files }}", "")
+            .replaceAll(">/dev/null", "")
+            .replaceAll("2>/dev/null", "")
+            .replaceAll("2>&1", "")
+            .replaceAll("  ", " ")
+            .trim()
+      )
+      // Determine pass_filenames based on whether command expects files
+      // Key rule: pass filenames when batch mode is enabled or {{files}} placeholder was used
+      let (isBatch = stepDyn.batch == true)
+      let (passFilenames = isBatch || hasFilesPlaceholder)
+      let (stagePatterns = normalizeList(stepDyn.stage))
+      let (globPatterns = normalizeList(stepDyn.glob))
+      let (
+        filePattern =
+          if (!stagePatterns.isEmpty)
+            stagePatterns.map((g) -> globToRegex(g.toString())).join("|")
+          else if (!globPatterns.isEmpty)
+            globPatterns.map((g) -> globToRegex(g.toString())).join("|")
+          else
+            null
+      )
+      let (excludePatterns = normalizeList(stepDyn.exclude))
+        new Dynamic {
+          ["id"] = id
+          ["name"] = id.split("-").map((s) -> s.capitalize()).join(" ")
+          ["entry"] = entry
+          ["language"] = "system"
+          ["pass_filenames"] = passFilenames
+          when (filePattern != null) {
+            ["files"] = filePattern
+          }
+          when (!excludePatterns.isEmpty) {
+            ["exclude"] = excludeListToRegex(excludePatterns)
+          }
+        }
+    else
+      null
+
+// Process steps from a group or single step
+local function processItem(name: String, item: Any): List =
+  let (itemDyn = (item as Typed).toDynamic())
+    if (itemDyn._type == "step")
+      let (hook = stepToHook(name, item))
+        if (hook != null) List(hook) else List()
+    else if (itemDyn._type == "group")
+      itemDyn.steps.keys
+        .toList()
+        .flatMap((stepName) ->
+          let (step = itemDyn.steps[stepName])
+          let (hook = stepToHook(stepName, step))
+            if (hook != null) List(hook) else List()
+        )
+    else
+      List()
+
+// Process all steps from hooks
+local preCommitHook = hk.hooks["pre-commit"]
+local allHooks: List =
+  preCommitHook.steps.keys.toList().flatMap((name) -> processItem(name, preCommitHook.steps[name]))
+
+// Output pre-commit config
+output {
+  renderer = new YamlRenderer {}
+  value = new {
+    default_stages = List("pre-commit")
+    fail_fast = false
+    minimum_pre_commit_version = "3.0.0"
+    repos = new Listing {
+      new {
+        repo = "local"
+        hooks = allHooks
+      }
+    }
+  }
+}

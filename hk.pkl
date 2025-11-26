@@ -1,0 +1,238 @@
+amends "@hk/Config.pkl"
+import "@hk/Builtins.pkl"
+
+import "src/private/hk/Steps.pkl"
+
+min_hk_version = "1.20.0"
+display_skip_reasons =
+  List(
+    "profile-not-enabled",
+    "profile-explicitly-disabled",
+    "no-command-for-run-type",
+    "no-files-to-process",
+    "condition-false",
+    "disabled-by-env",
+    "disabled-by-cli",
+  )
+warnings = List("missing-profiles")
+
+local general_exclude_list =
+  List(
+    ".pre-commit-config.yaml",
+    "**/packages.lock.json",
+    "project.assets.json",
+    "package-lock.json",
+    "PklProject.deps.json",
+    "pnpm-lock.yaml",
+    "uv.lock",
+    ".mise.lock",
+  )
+
+local general_linters = new Mapping<String, Step> {
+  ["typos"] = (Steps.typos) {
+    profiles = List("small")
+    exclude = general_exclude_list
+  }
+
+  ["editorconfig-check"] = (Steps.editorconfig_check) {
+    profiles = List("medium")
+    exclude = general_exclude_list
+    check = "editorconfig-checker {{files}}"
+  }
+}
+
+local pipeline_linters = new Mapping<String, Step> {
+  ["actionlint"] = Builtins.actionlint
+}
+
+local document_linters = new Mapping<String, Step> {
+  ["markdownlint-cli2"] = (Steps.markdownlint_cli2) {
+    profiles = List("small")
+    prefix = "pnpm exec --"
+  }
+
+  ["markdown-prettier"] = (Builtins.prettier) {
+    profiles = List("small")
+    glob = "*.md"
+    stage = "*.md"
+    prefix = "pnpm exec --"
+  }
+}
+
+local configuration_linters = new Mapping<String, Step> {
+  ["pkl-eval"] = (Builtins.pkl) {
+    profiles = List("small")
+  }
+
+  ["pkl-format"] = (Steps.pkl_format) {
+    profiles = List("small")
+  }
+
+  ["json-biome"] = (Builtins.biome) {
+    profiles = List("small")
+    exclude = general_exclude_list
+    glob = List("*.json", "*.jsonc")
+    stage = List("*.json", "*.jsonc")
+    prefix = "pnpm exec --"
+  }
+
+  ["yaml-prettier"] = (Builtins.prettier) {
+    profiles = List("small")
+    exclude = general_exclude_list
+    glob = List("*.yml", "*.yaml")
+    stage = List("*.yml", "*.yaml")
+    prefix = "pnpm exec --"
+  }
+
+  ["taplo"] = (Builtins.taplo) {
+    profiles = List("small")
+    prefix = "pnpm exec --"
+  }
+}
+
+local docker_linters = new Mapping<String, Step> {
+  ["hadolint"] = (Builtins.hadolint) {
+    profiles = List("small")
+    glob = List("Dockerfile", "*.Dockerfile", "Dockerfile.*")
+  }
+}
+
+local bash_linters = new Mapping<String, Step> {
+  ["shellcheck"] = (Builtins.shellcheck) {
+    profiles = List("small")
+  }
+
+  ["shfmt"] = (Builtins.shfmt) {
+    profiles = List("small")
+    check = "shfmt {{files}}"
+    fix = "shfmt -w {{files}}"
+  }
+}
+
+local pwsh_linters = new Mapping<String, Step> {
+  ["pwsh-formatter"] {
+    profiles = List("medium")
+    batch = true
+    check =
+      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path {{files}}"
+    fix =
+      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Fix -Path {{files}}"
+  }
+
+  ["pwsh-script-analyzer"] {
+    profiles = List("medium")
+    batch = true
+    check =
+      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path {{files}}"
+    fix =
+      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Fix -Path {{files}}"
+  }
+}
+
+local dotnet_linters = new Mapping<String, Step> {
+  ["csharpier"] = (Steps.csharpier) {
+    profiles = List("medium")
+    prefix = "dotnet tool run"
+  }
+
+  ["dotnet-lock-verify"] = (Steps.dotnet_lock_verify) {
+    profiles = List("medium")
+  }
+}
+
+local python_linters = new Mapping<String, Step> {
+  ["ruff"] = (Builtins.ruff) {
+    profiles = List("small")
+    prefix = "uv run"
+  }
+
+  ["ruff_format"] = (Builtins.ruff_format) {
+    profiles = List("small")
+    prefix = "uv run"
+  }
+
+  ["uv-lock"] = (Steps.uv_lock) {
+    profiles = List("small")
+  }
+}
+
+local ci = read?("prop:CI")?.toBoolean() ?? false
+local function getTestPklEvalSyncCommand(
+  source: String,
+  target: String,
+  format: String,
+  properties: List<String>,
+): String =
+  (
+    List(
+      "pwsh",
+      "-NoLogo",
+      "-NoProfile",
+      if (ci) "-NonInteractive" else "",
+      "-File",
+      "eng/pre-commit/Test-PklEvalSync.ps1",
+      "-Source",
+      source,
+      "-Target",
+      target,
+      "-Format",
+      format,
+      if (properties.isEmpty) "" else "-Properties " + properties.join(","),
+    )
+  ).join(" ")
+
+local code_generation_guard = new Mapping<String, Step> {
+  ["pre-commit-config"] {
+    local file_list =
+      List(
+        ".pre-commit-config.pkl",
+        ".pre-commit-config.yaml",
+        "hk.pkl",
+        "src/private/hk/**/*.pkl",
+        "PklProject",
+        "PklProject.deps.json",
+      )
+    profiles = List("small")
+    glob = file_list
+    stage = file_list
+    check =
+      getTestPklEvalSyncCommand(
+        ".pre-commit-config.pkl",
+        ".pre-commit-config.yaml",
+        "yaml",
+        List(),
+      )
+    fix = "pkl eval -f yaml .pre-commit-config.pkl -o .pre-commit-config.yaml"
+  }
+}
+
+local all_steps = new Mapping<String, Step> {
+  ...general_linters
+  ...pipeline_linters
+  ...document_linters
+  ...configuration_linters
+  ...docker_linters
+  ...bash_linters
+  ...pwsh_linters
+  ...dotnet_linters
+  ...python_linters
+  ...code_generation_guard
+}
+
+hooks = new {
+  ["pre-commit"] {
+    fix = false
+    stash = "git"
+    steps = all_steps
+  }
+
+  ["check"] {
+    fix = false
+    steps = all_steps
+  }
+
+  ["fix"] {
+    fix = true
+    steps = all_steps
+  }
+}

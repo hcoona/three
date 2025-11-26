@@ -1,0 +1,19 @@
+import "@hk/Config.pkl"
+
+local GlobList =
+  List(
+    "*.csproj",
+    "*.props",
+    "*.targets",
+    "global.json",
+    "nuget.config",
+    "packages.lock.json",
+  )
+
+dotnet_lock_verify = new Config.Step {
+  batch = true
+  glob = GlobList
+  stage = GlobList
+  check = "dotnet restore --locked-mode"
+  fix = "dotnet restore --forced-evaluate"
+}

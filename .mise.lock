@@ -15,6 +15,31 @@ url = "https://dl.google.com/go/go1.25.4.windows-amd64.zip"
 version = "0.7.7"
 backend = "go:github.com/B1NARY-GR0UP/nwa"
 
+[[tools."go:github.com/editorconfig-checker/editorconfig-checker/v3/cmd/editorconfig-checker"]]
+version = "3.6.0"
+backend = "go:github.com/editorconfig-checker/editorconfig-checker/v3/cmd/editorconfig-checker"
+
+[[tools."go:github.com/rhysd/actionlint/cmd/actionlint"]]
+version = "1.7.9"
+backend = "go:github.com/rhysd/actionlint/cmd/actionlint"
+
+[[tools."go:mvdan.cc/sh/v3/cmd/shfmt"]]
+version = "3.12.0"
+backend = "go:mvdan.cc/sh/v3/cmd/shfmt"
+
+[[tools.hadolint]]
+version = "2.14.0"
+backend = "aqua:hadolint/hadolint"
+
+[[tools.hk]]
+version = "1.25.0"
+backend = "aqua:jdx/hk"
+
+[tools.hk.platforms.linux-x64]
+checksum = "sha256:7021d44c38e34ca2ee46f3536f906de59e5e89d67439d3400e1bd707235ebb4f"
+size = 7281217
+url = "https://github.com/jdx/hk/releases/download/v1.25.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+
 [[tools.java]]
 version = "25.0.1"
 backend = "core:java"
@@ -50,6 +75,15 @@ checksum = "sha256:6e5f25fad67ba1b4fe1050c8992ced33ce8689245a834ddec149940a20c2b
 size = 65766780
 url = "https://github.com/pnpm/pnpm/releases/download/v10.23.0/pnpm-linux-x64"
 
+[[tools.powershell]]
+version = "7.5.4"
+backend = "aqua:PowerShell/PowerShell"
+
+[tools.powershell.platforms.linux-x64]
+checksum = "sha256:1fd7983fe56ca9e6233f126925edb24bf6b6b33e356b69996d925c4db94e2fef"
+size = 75396784
+url = "https://github.com/PowerShell/PowerShell/releases/download/v7.5.4/powershell-7.5.4-linux-x64.tar.gz"
+
 [[tools.python]]
 version = "3.14.0"
 backend = "core:python"
@@ -61,6 +95,15 @@ backend = "core:ruby"
 [tools.ruby.platforms.windows-x64]
 checksum = "blake3:81b493cd1dc67e0ed4499da45271bb4945575926afe5a4d5866a9d2524d5cb67"
 size = 15049824
+
+[[tools.shellcheck]]
+version = "0.11.0"
+backend = "aqua:koalaman/shellcheck"
+
+[tools.shellcheck.platforms.linux-x64]
+checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+size = 2559196
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
 
 [[tools.taplo]]
 version = "0.10.0"

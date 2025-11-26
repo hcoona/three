@@ -878,3 +878,6 @@ $RECYCLE.BIN/
 
 # Include workspace-level mcp configuration
 !.vscode/mcp.json
+
+# Exclude pkl lsp cache
+/.pkl-lsp/

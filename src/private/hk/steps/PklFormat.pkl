@@ -1,0 +1,9 @@
+import "@hk/Config.pkl"
+
+pkl_format = new Config.Step {
+  batch = true
+  check = "pkl format --silent {{files}}"
+  fix = "pkl format --silent --write {{files}}"
+  glob = "*.pkl"
+  stage = "*.pkl"
+}
