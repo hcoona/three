@@ -232,6 +232,15 @@ hooks = new {
     steps = all_steps
   }
 
+  ["commit-msg"] {
+    steps {
+      ["commitlint"] {
+        prefix = "pnpm exec --"
+        check = "commitlint --edit {{commit_msg_file}}"
+      }
+    }
+  }
+
   ["check"] {
     fix = false
     steps = all_steps
