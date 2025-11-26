@@ -16,7 +16,7 @@
   },
   "remoteUser": "vscode",
   "updateRemoteUserUID": true,
-  "postCreateCommand": "mise trust && mise use -g jq bitwarden chezmoi git-lfs && mise link ruby@3.3 /usr/bin/ruby && mise install && git lfs install && git lfs checkout && echo 'eval \"$(mise activate bash)\"' >> ~/.bashrc && echo 'eval \"$(mise activate zsh)\"' >> ~/.zshrc",
+  "postCreateCommand": "mise trust && mise use -g jq bitwarden chezmoi git-lfs && mise link ruby@3.3 /usr/bin/ruby && mise plugins install dotnet https://github.com/version-fox/vfox-dotnet -f && mise install && git lfs install && git lfs checkout && echo 'eval \"$(mise activate bash)\"' >> ~/.bashrc && echo 'eval \"$(mise activate zsh)\"' >> ~/.zshrc",
   "customizations": {
     "vscode": {
       "extensions": [

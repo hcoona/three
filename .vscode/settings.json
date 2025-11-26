@@ -8,6 +8,10 @@
     "editor.defaultFormatter": "biomejs.biome"
   },
 
+  "[yaml]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
   "[javascript]": {
     "editor.defaultFormatter": "biomejs.biome"
   },
