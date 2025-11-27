@@ -109,6 +109,12 @@ repos:
     language: system
     pass_filenames: true
     files: .*\.csproj$|.*\.props$|.*\.targets$|global\.json$|nuget\.config$|packages\.lock\.json$
+  - id: biome
+    name: Biome
+    entry: pnpm exec -- biome check
+    language: system
+    pass_filenames: true
+    files: .*\.js$|.*\.cjs$|.*\.mjs$|.*\.jsx$|.*\.ts$|.*\.cts$|.*\.mts$|.*\.tsx$
   - id: ruff
     name: Ruff
     entry: uv run ruff check
@@ -133,3 +139,10 @@ repos:
     language: system
     pass_filenames: false
     files: \.pre-commit-config\.pkl$|\.pre-commit-config\.yaml$|hk\.pkl$|src/private/hk/.*.*/.*\.pkl$|PklProject$|PklProject\.deps\.json$
+  - id: commitlint
+    name: Commitlint
+    entry: pnpm exec -- commitlint --strict --edit
+    language: system
+    pass_filenames: false
+    stages:
+    - commit-msg
