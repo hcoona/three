@@ -144,10 +144,10 @@ size = 8219249
 url = "https://github.com/crate-ci/typos/releases/download/v1.39.2/typos-v1.39.2-x86_64-unknown-linux-musl.tar.gz"
 
 [[tools.uv]]
-version = "0.9.12"
+version = "0.9.13"
 backend = "aqua:astral-sh/uv"
 
 [tools.uv.platforms.linux-x64]
-checksum = "sha256:3621344419cedb7625f0c07c54e876d0a6bb5576b39879b118ed96a6d104fd11"
-size = 21947636
-url = "https://github.com/astral-sh/uv/releases/download/0.9.12/uv-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:04cf326d2d742ce5c8890fdc0b9f71bd707be8640979bf6e53ddd52da74dfb41"
+size = 21914060
+url = "https://github.com/astral-sh/uv/releases/download/0.9.13/uv-x86_64-unknown-linux-musl.tar.gz"
