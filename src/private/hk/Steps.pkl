@@ -1,3 +1,4 @@
+import "steps/Commitlint.pkl"
 import "steps/Csharpier.pkl"
 import "steps/DotenvLinter.pkl"
 import "steps/DotnetLockVerify.pkl"
@@ -15,3 +16,4 @@ csharpier = Csharpier.csharpier
 dotnet_lock_verify = DotnetLockVerify.dotnet_lock_verify
 uv_lock = UvLock.uv_lock
 pkl_format = PklFormat.pkl_format
+commitlint = Commitlint.commitlint

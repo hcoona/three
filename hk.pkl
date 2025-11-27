@@ -146,6 +146,19 @@ local dotnet_linters = new Mapping<String, Step> {
   }
 }
 
+local javascript_typescript_linters = new Mapping<String, Step> {
+  local javascript_files = List("*.js", "*.cjs", "*.mjs", "*.jsx")
+  local typescript_files = List("*.ts", "*.cts", "*.mts", "*.tsx")
+  local javascript_typescript_files = javascript_files + typescript_files
+
+  ["biome"] = (Builtins.biome) {
+    profiles = List("small")
+    prefix = "pnpm exec --"
+    glob = javascript_typescript_files
+    stage = javascript_typescript_files
+  }
+}
+
 local python_linters = new Mapping<String, Step> {
   ["ruff"] = (Builtins.ruff) {
     profiles = List("small")
@@ -212,6 +225,10 @@ local code_generation_guard = new Mapping<String, Step> {
   }
 }
 
+local commit_message_linters = new Mapping<String, Step> {
+  ["commitlint"] = Steps.commitlint
+}
+
 local all_steps = new Mapping<String, Step> {
   ...general_linters
   ...pipeline_linters
@@ -221,6 +238,7 @@ local all_steps = new Mapping<String, Step> {
   ...bash_linters
   ...pwsh_linters
   ...dotnet_linters
+  ...javascript_typescript_linters
   ...python_linters
   ...code_generation_guard
 }
@@ -230,6 +248,10 @@ hooks = new {
     fix = false
     stash = "git"
     steps = all_steps
+  }
+
+  ["commit-msg"] {
+    steps = commit_message_linters
   }
 
   ["check"] {
