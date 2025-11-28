@@ -160,17 +160,31 @@ local javascript_typescript_linters = new Mapping<String, Step> {
 }
 
 local python_linters = new Mapping<String, Step> {
+  local python_files = List("*.py", "*.pyi")
+  local python_notebook_files = List("*.ipynb")
+  local all_python_files = python_files + python_notebook_files
+
   ["ruff"] = (Builtins.ruff) {
     profiles = List("small")
     prefix = "uv run"
+    glob = all_python_files
+    stage = all_python_files
   }
 
   ["ruff_format"] = (Builtins.ruff_format) {
     profiles = List("small")
     prefix = "uv run"
+    glob = all_python_files
+    stage = all_python_files
   }
 
   ["uv-lock"] = (Steps.uv_lock) {
+    profiles = List("small")
+  }
+}
+
+local dotenv_linter = new Mapping<String, Step> {
+  ["dotenv-linter"] = (Steps.dotenv_linter) {
     profiles = List("small")
   }
 }
@@ -240,6 +254,7 @@ local all_steps = new Mapping<String, Step> {
   ...dotnet_linters
   ...javascript_typescript_linters
   ...python_linters
+  ...dotenv_linter
   ...code_generation_guard
 }
 
