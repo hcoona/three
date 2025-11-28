@@ -4,6 +4,7 @@ dotnet = "10"
 go = "latest"
 java = "lts"
 node = "24"
+pkl = "0.30.0"
 powershell = "7"
 python = "3"
 ruby = "3.3"
@@ -12,10 +13,9 @@ ruby = "3.3"
 pnpm = "10"
 uv = "latest"
 
-# Utilities
+# Git Commit Hook Manager
 hk = "latest"
 "pipx:prek" = "latest"
-pkl = "latest"
 
 #
 # Linters and Formatters
