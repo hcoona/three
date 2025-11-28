@@ -21,7 +21,7 @@ jobs:
     name: Validate
     runs-on: ubuntu-latest
     env:
-      MISE_DISABLE_TOOLS: dotnet,go,java,node,powershell,python,ruby
+      MISE_DISABLE_TOOLS: dotnet,go,java,node,powershell,python,ruby,pkl
 
     steps:
       - name: Checkout
@@ -67,6 +67,11 @@ jobs:
         with:
           ruby-version: '3.3'
           bundler-cache: true
+
+      - name: Install pkl
+        uses: pkl-community/setup-pkl@a862c198115338598d769aaf03f5fa8c5123036e # v0
+        with:
+          pkl-version: 0.30.0
 
       - name: Mise Install Tools
         uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5 # v3
