@@ -20,6 +20,8 @@ jobs:
   validation:
     name: Validate
     runs-on: ubuntu-latest
+    env:
+      MISE_DISABLE_TOOLS: dotnet,go,java,node,powershell,python,ruby
 
     steps:
       - name: Checkout
