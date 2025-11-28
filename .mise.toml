@@ -37,6 +37,9 @@ shellcheck = "latest"
 # Dockerfile
 hadolint = "latest"
 
+# .env
+dotenv-linter = "latest"
+
 #
 # Environment Variables
 #
