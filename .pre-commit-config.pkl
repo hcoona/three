@@ -6,6 +6,9 @@ import "hk.pkl"
 
 // Convert glob pattern to regex
 local function globToRegex(glob: String): String =
+  let (altOpenPlaceholder = "<<<ALT_OPEN>>>")
+  let (altClosePlaceholder = "<<<ALT_CLOSE>>>")
+  let (altOrPlaceholder = "<<<ALT_OR>>>")
   let (
     // Handle brace expansion: *.{yml,yaml} -> \.(yml|yaml)$
     withBraces =
@@ -13,23 +16,50 @@ local function globToRegex(glob: String): String =
         let (start = glob.indexOf("{"))
         let (end = glob.indexOf("}"))
         let (braceContent = glob.substring(start + 1, end))
-        let (alternatives = braceContent.split(",").join("|"))
+        let (alternatives = braceContent.split(",").join(altOrPlaceholder))
         let (before = glob.substring(0, start))
         let (after = glob.substring(end + 1, glob.length))
-          before + "(" + alternatives + ")" + after
+          before + altOpenPlaceholder + alternatives + altClosePlaceholder + after
       else
         glob
   )
   let (
-    // Escape dots and convert wildcards
-    regex = withBraces.replaceAll(".", "\\.").replaceAll("*", ".*")
+    placeholderGlob =
+      withBraces
+        .replaceAll("**/", "<<<ANYDIR>>>")
+        .replaceAll("**", "<<<ANYCHARS>>>")
+        .replaceAll("*", "<<<DIRCHARS>>>")
+        .replaceAll("?", "<<<SINGLECHAR>>>")
   )
-    if (withBraces.startsWith("*."))
-      regex + "$"
-    else if (withBraces.startsWith("."))
-      regex + "$"
-    else
-      regex + "$"
+  let (
+    // Escape dots and convert wildcards, then restore placeholders
+    escaped =
+      placeholderGlob
+        .replaceAll("\\", "\\\\")
+        .replaceAll(".", "\\.")
+        .replaceAll("+", "\\+")
+        .replaceAll("(", "\\(")
+        .replaceAll(")", "\\)")
+        .replaceAll("{", "\\{")
+        .replaceAll("}", "\\}")
+        .replaceAll("[", "\\[")
+        .replaceAll("]", "\\]")
+        .replaceAll("^", "\\^")
+        .replaceAll("$", "\\$")
+        .replaceAll("|", "\\|")
+  )
+  let (
+    regex =
+      escaped
+        .replaceAll("<<<ANYDIR>>>", "(?:.*/)*")
+        .replaceAll("<<<ANYCHARS>>>", ".*")
+        .replaceAll("<<<DIRCHARS>>>", "[^/]*")
+        .replaceAll("<<<SINGLECHAR>>>", "[^/]")
+        .replaceAll(altOpenPlaceholder, "(")
+        .replaceAll(altClosePlaceholder, ")")
+        .replaceAll(altOrPlaceholder, "|")
+  )
+    regex + "$"
 
 // Convert exclude list to regex pattern
 local function excludeListToRegex(excludeList: List): String =
