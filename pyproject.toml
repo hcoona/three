@@ -52,7 +52,6 @@ select = [
   "G",    # flake8-logging-format: promote safe, lazy logging string formatting.
   "I",    # isort rules: keep imports deterministic and grouped.
   "ICN",  # flake8-import-conventions: standardize common import aliases.
-  "INP",  # flake8-no-pep420: forbid implicit namespace packages.
   "ISC",  # flake8-implicit-str-concat: highlight unintended string concatenations.
   "N",    # pep8-naming: enforce consistent naming conventions.
   "PGH",  # pygrep-hooks: catch anti-patterns via lightweight AST searches.
@@ -74,6 +73,9 @@ select = [
   "UP",   # pyupgrade: modernize syntax to the minimum supported Python.
   "W",    # pycodestyle warnings: additional whitespace and formatting checks.
   "YTT",  # flake8-2020: ban Python 2 compatibility shims that no longer apply.
+]
+ignore = [
+  "COM812",  # Conflicts with formatter-managed trailing commas.
 ]
 
 [tool.ruff.lint.pydocstyle]
