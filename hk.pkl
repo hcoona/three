@@ -45,7 +45,7 @@ local pipeline_linters = new Mapping<String, Step> {
   ["actionlint"] = Builtins.actionlint
 }
 
-local document_linters = new Mapping<String, Step> {
+local markdown_linters = new Mapping<String, Step> {
   ["markdownlint-cli2"] = (Steps.markdownlint_cli2) {
     profiles = List("small")
     prefix = "pnpm exec --"
@@ -59,7 +59,7 @@ local document_linters = new Mapping<String, Step> {
   }
 }
 
-local configuration_linters = new Mapping<String, Step> {
+local pkl_linters = new Mapping<String, Step> {
   ["pkl-eval"] = (Builtins.pkl) {
     profiles = List("small")
   }
@@ -67,7 +67,9 @@ local configuration_linters = new Mapping<String, Step> {
   ["pkl-format"] = (Steps.pkl_format) {
     profiles = List("small")
   }
+}
 
+local json_linters = new Mapping<String, Step> {
   ["json-biome"] = (Builtins.biome) {
     profiles = List("small")
     exclude = general_exclude_list
@@ -75,7 +77,9 @@ local configuration_linters = new Mapping<String, Step> {
     stage = List("*.json", "*.jsonc")
     prefix = "pnpm exec --"
   }
+}
 
+local yaml_linters = new Mapping<String, Step> {
   ["yaml-prettier"] = (Builtins.prettier) {
     profiles = List("small")
     exclude = general_exclude_list
@@ -83,10 +87,22 @@ local configuration_linters = new Mapping<String, Step> {
     stage = List("*.yml", "*.yaml")
     prefix = "pnpm exec --"
   }
+}
 
-  ["taplo"] = (Builtins.taplo) {
+local toml_linters = new Mapping<String, Step> {
+  ["toml-taplo-check"] = (Builtins.taplo) {
     profiles = List("small")
     prefix = "pnpm exec --"
+  }
+
+  ["toml-taplo-format"] {
+    profiles = List("small")
+    prefix = "pnpm exec --"
+    glob = "**/*.toml"
+    stage = "<JOB_FILES>"
+    check = "taplo format --check {{ files }}"
+    check_diff = "taplo format --check --diff {{ files }}"
+    fix = "taplo format {{ files }}"
   }
 }
 
@@ -246,8 +262,11 @@ local commit_message_linters = new Mapping<String, Step> {
 local all_steps = new Mapping<String, Step> {
   ...general_linters
   ...pipeline_linters
-  ...document_linters
-  ...configuration_linters
+  ...markdown_linters
+  ...pkl_linters
+  ...json_linters
+  ...yaml_linters
+  ...toml_linters
   ...docker_linters
   ...bash_linters
   ...pwsh_linters

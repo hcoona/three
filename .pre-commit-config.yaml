@@ -22,7 +22,7 @@ repos:
     entry: actionlint
     language: system
     pass_filenames: true
-    files: \.github/workflows/.*\.(yml|yaml)$
+    files: \.github/workflows/.*\.yml$|\.github/workflows/.*\.yaml$
   - id: markdownlint-cli2
     name: Markdownlint Cli2
     entry: pnpm exec -- markdownlint-cli2
@@ -40,7 +40,7 @@ repos:
     entry: pkl eval
     language: system
     pass_filenames: true
-    files: .*\.pkl$
+    files: .*.*/.*\.pkl$
   - id: pkl-format
     name: Pkl Format
     entry: pkl format --silent
@@ -61,12 +61,18 @@ repos:
     pass_filenames: true
     files: .*\.yml$|.*\.yaml$
     exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock)
-  - id: taplo
-    name: Taplo
+  - id: toml-taplo-check
+    name: Toml Taplo Check
     entry: pnpm exec -- taplo check
     language: system
     pass_filenames: true
-    files: .*\.toml$
+    files: .*.*/.*\.toml$
+  - id: toml-taplo-format
+    name: Toml Taplo Format
+    entry: pnpm exec -- taplo format --check
+    language: system
+    pass_filenames: true
+    files: .*.*/.*\.toml$
   - id: hadolint
     name: Hadolint
     entry: hadolint
@@ -78,13 +84,13 @@ repos:
     entry: shellcheck
     language: system
     pass_filenames: true
-    files: .*\.sh$|.*\.bash$
+    files: .*.*/.*\.sh$|.*.*/.*\.bash$
   - id: shfmt
     name: Shfmt
     entry: shfmt
     language: system
     pass_filenames: true
-    files: .*\.sh$|.*\.bash$
+    files: .*.*/.*\.sh$|.*.*/.*\.bash$|.*.*/.*\.mksh$|.*.*/.*\.bats$|.*.*/.*\.zsh$
   - id: pwsh-formatter
     name: Pwsh Formatter
     entry: pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path
@@ -123,7 +129,7 @@ repos:
     files: .*\.py$|.*\.pyi$|.*\.ipynb$
   - id: ruff_format
     name: Ruff_format
-    entry: uv run ruff format --check
+    entry: uv run ruff format --force-exclude --check
     language: system
     pass_filenames: true
     files: .*\.py$|.*\.pyi$|.*\.ipynb$

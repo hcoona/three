@@ -121,8 +121,18 @@ local function stepToHook(hookName: String, id: String, step: Any): Dynamic? =
           else
             isBatch || hasFilesPlaceholder
       )
-      let (stagePatterns = normalizeList(stepDyn.stage))
+      let (rawStagePatterns = normalizeList(stepDyn.stage))
       let (globPatterns = normalizeList(stepDyn.glob))
+      let (
+        stagePatterns =
+          rawStagePatterns.flatMap((patternAny) ->
+            let (pattern = patternAny.toString())
+              if (pattern == "<JOB_FILES>")
+                globPatterns
+              else
+                List(patternAny)
+          )
+      )
       let (
         filePattern =
           if (!stagePatterns.isEmpty)
