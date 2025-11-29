@@ -881,3 +881,6 @@ $RECYCLE.BIN/
 
 # Exclude pkl lsp cache
 /.pkl-lsp/
+
+# Exclude nbgv-python generated version file
+_version.py

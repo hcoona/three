@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version as get_version_info
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as get_version_info
 
 RAW_VERSION: str = ""
 SEMVER2: str = ""
@@ -13,19 +14,30 @@ GIT_COMMIT: str = ""
 
 def pep440_version(value: str) -> str:
     """Normalize arbitrary version strings to a PEP 440 representation."""
-
     return value
 
 
 try:  # pragma: no cover - exercised via Hatch build
     from ._version import (  # type: ignore[attr-defined]
         GIT_COMMIT as _GENERATED_COMMIT,
+    )
+    from ._version import (
         PEP440_VERSION as _GENERATED_PEP440,
+    )
+    from ._version import (
         RAW_VERSION as _GENERATED_RAW,
+    )
+    from ._version import (
         SEMVER2 as _GENERATED_SEMVER2,
+    )
+    from ._version import (
         VERSION_TUPLE as _GENERATED_TUPLE,
-        pep440_version as _generated_pep440,
+    )
+    from ._version import (
         __version__ as _generated_version,
+    )
+    from ._version import (
+        pep440_version as _generated_pep440,
     )
 except ImportError:
     try:
@@ -48,18 +60,17 @@ else:
 
 
 __all__ = [
+    "GIT_COMMIT",
+    "PEP440_VERSION",
     "RAW_VERSION",
     "SEMVER2",
-    "PEP440_VERSION",
     "VERSION_TUPLE",
-    "GIT_COMMIT",
-    "pep440_version",
     "__version__",
     "get_version",
+    "pep440_version",
 ]
 
 
 def get_version() -> str:
     """Return the installed package version."""
-
     return __version__
