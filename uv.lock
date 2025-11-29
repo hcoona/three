@@ -231,8 +231,7 @@ wheels = [
 
 [[package]]
 name = "azure-document-intelligence-lab"
-version = "0.1.0"
-source = { editable = "labs/azure-document-intelligence-lab" }
+source = { editable = "src/lab/azure-document-intelligence-lab" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },
@@ -397,7 +396,7 @@ wheels = [
 [[package]]
 name = "chrome-mcp-client"
 version = "0.0.0.dev0"
-source = { editable = "packages/chrome-mcp-client" }
+source = { virtual = "OnePython/packages/chrome-mcp-client" }
 dependencies = [
     { name = "fastmcp" },
     { name = "typer" },
@@ -763,7 +762,7 @@ wheels = [
 [[package]]
 name = "git-commit-heatmap"
 version = "0.0.0.dev0"
-source = { editable = "packages/git-commit-heatmap" }
+source = { virtual = "OnePython/packages/git-commit-heatmap" }
 dependencies = [
     { name = "gitpython" },
     { name = "matplotlib" },
@@ -898,7 +897,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "pyrefly" },
-    { name = "pyright" },
+    { name = "pytest" },
     { name = "ruff" },
 ]
 
@@ -907,7 +906,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pyrefly", specifier = ">=0.25.0" },
-    { name = "pyright", specifier = ">=1.1.400" },
+    { name = "pytest", specifier = ">=8.3.4" },
     { name = "ruff", specifier = ">=0.11.8" },
 ]
 
@@ -929,7 +928,7 @@ wheels = [
 [[package]]
 name = "html-sm-processor"
 version = "0.0.0.dev0"
-source = { editable = "packages/html-sm-processor" }
+source = { editable = "OnePython/packages/html-sm-processor" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "cairosvg" },
@@ -1349,7 +1348,7 @@ wheels = [
 [[package]]
 name = "llm-text-splitter"
 version = "0.0.0.dev0"
-source = { editable = "packages/llm-text-splitter" }
+source = { editable = "OnePython/packages/llm-text-splitter" }
 dependencies = [
     { name = "openai" },
     { name = "openai-agents" },
@@ -1614,7 +1613,7 @@ wheels = [
 [[package]]
 name = "music-flash-card-generator"
 version = "0.0.0.dev0"
-source = { editable = "packages/music-flash-card-generator" }
+source = { virtual = "OnePython/packages/music-flash-card-generator" }
 dependencies = [
     { name = "ninja-syntax" },
 ]
@@ -1636,7 +1635,7 @@ wheels = [
 
 [[package]]
 name = "nbgv-hatch-demo"
-source = { editable = "labs/nbgv-hatch-demo" }
+source = { editable = "src/lab/nbgv-hatch-demo" }
 dependencies = [
     { name = "nbgv-python" },
 ]
@@ -1647,7 +1646,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "nbgv-python", editable = "packages/nbgv-python" }]
+requires-dist = [{ name = "nbgv-python", editable = "OnePython/packages/nbgv-python" }]
 
 [package.metadata.requires-dev]
 dev = [{ name = "hatch", specifier = ">=1.9.1" }]
@@ -1655,7 +1654,7 @@ dev = [{ name = "hatch", specifier = ">=1.9.1" }]
 [[package]]
 name = "nbgv-python"
 version = "1.1.0b1"
-source = { editable = "packages/nbgv-python" }
+source = { editable = "OnePython/packages/nbgv-python" }
 dependencies = [
     { name = "packaging" },
 ]
@@ -1702,15 +1701,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ce/91/5393b8a282f84a67a0d6a5b388304d2fc1b735776b001a08b078ac9ab1ca/niquests-3.14.0.tar.gz", hash = "sha256:86e484c2c60444aa96069c15f6295af6e25a8bad50781e1326df1b5c7ab48339", size = 971901, upload-time = "2025-03-30T19:05:46.519Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/58/f8/cfce8c89eb33a922e80defbe00b94809863cadc49c4c446863409520ca94/niquests-3.14.0-py3-none-any.whl", hash = "sha256:68e0a7e9f338466b3606945fffd11f75e3c90af7498aa9336ef03812323b7e36", size = 164876, upload-time = "2025-03-30T19:05:44.357Z" },
-]
-
-[[package]]
-name = "nodeenv"
-version = "1.9.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/43/16/fc88b08840de0e0a72a2f9d8c6bae36be573e475a6326ae854bcc549fc45/nodeenv-1.9.1.tar.gz", hash = "sha256:6ec12890a2dab7946721edbfbcd91f3319c6ccc9aec47be7c7e6b7011ee6645f", size = 47437, upload-time = "2024-06-04T18:44:11.171Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d2/1d/1b658dbd2b9fa9c4c9f32accbfc0205d532c8c6194dc0f2a4c0428e7128a/nodeenv-1.9.1-py2.py3-none-any.whl", hash = "sha256:ba11c9782d29c27c70ffbdda2d7415098754709be8a7056d79a737cd901155c9", size = 22314, upload-time = "2024-06-04T18:44:08.352Z" },
 ]
 
 [[package]]
@@ -2270,19 +2260,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyright"
-version = "1.1.400"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "nodeenv" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/cb/c306618a02d0ee8aed5fb8d0fe0ecfed0dbf075f71468f03a30b5f4e1fe0/pyright-1.1.400.tar.gz", hash = "sha256:b8a3ba40481aa47ba08ffb3228e821d22f7d391f83609211335858bf05686bdb", size = 3846546, upload-time = "2025-04-24T12:55:18.907Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/a5/5d285e4932cf149c90e3c425610c5efaea005475d5f96f1bfdb452956c62/pyright-1.1.400-py3-none-any.whl", hash = "sha256:c80d04f98b5a4358ad3a35e241dbf2a408eee33a40779df365644f8054d2517e", size = 5563460, upload-time = "2025-04-24T12:55:17.002Z" },
-]
-
-[[package]]
 name = "pytest"
 version = "9.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2463,7 +2440,7 @@ wheels = [
 [[package]]
 name = "rag-postgresql-openai"
 version = "0.0.0.dev0"
-source = { editable = "packages/rag-postgresql-openai" }
+source = { editable = "OnePython/packages/rag-postgresql-openai" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "cohere" },
@@ -2772,7 +2749,7 @@ wheels = [
 [[package]]
 name = "summarize-edge-tab"
 version = "0.0.0.dev0"
-source = { editable = "packages/summarize-edge-tab" }
+source = { virtual = "OnePython/packages/summarize-edge-tab" }
 dependencies = [
     { name = "openai" },
     { name = "openai-agents" },
@@ -2791,7 +2768,7 @@ requires-dist = [
 [[package]]
 name = "supermemo-mcp"
 version = "0.0.0.dev0"
-source = { editable = "packages/supermemo-mcp" }
+source = { editable = "OnePython/packages/supermemo-mcp" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "fastmcp" },
@@ -2949,7 +2926,7 @@ wheels = [
 [[package]]
 name = "transcribe"
 version = "0.0.0.dev0"
-source = { editable = "packages/transcribe" }
+source = { virtual = "OnePython/packages/transcribe" }
 dependencies = [
     { name = "audioop-lts" },
     { name = "azure-identity" },
@@ -3221,7 +3198,7 @@ wheels = [
 [[package]]
 name = "windows-app-mcp"
 version = "0.0.0.dev0"
-source = { editable = "packages/windows-app-mcp" }
+source = { editable = "OnePython/packages/windows-app-mcp" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "fastmcp" },

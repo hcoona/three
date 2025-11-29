@@ -6,9 +6,9 @@ import argparse
 import json
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 
 @dataclass(slots=True)
@@ -33,7 +33,6 @@ class ParsedVersion:
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the stub command."""
-
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command != "get-version":
@@ -121,7 +120,7 @@ def _detect_git_commit(path: Path) -> str:
 
 
 def _run_command(command: Iterable[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603,S607 - intentional stub helper
+    return subprocess.run(  # noqa: S603 - intentional stub helper
         tuple(command),
         check=False,
         capture_output=True,

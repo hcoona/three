@@ -1,0 +1,99 @@
+[project]
+name = "hcoona-one-python"
+version = "0.0.0-dev"
+description = "This is the root mono-repository for HCOONa's One Python project."
+authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
+dependencies = []
+readme = "README.md"
+requires-python = ">= 3.12"
+license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
+classifiers = ["Private :: Do Not Upload"]
+
+[dependency-groups]
+dev = ["pyrefly>=0.25.0", "pytest>=8.3.4", "ruff>=0.11.8"]
+
+[tool.uv.workspace]
+members = ["src/lab/*", "OnePython/packages/*"]
+
+[tool.uv.sources]
+nbgv-python = { workspace = true }
+
+[tool.pyrefly]
+project-includes = ["src/lab/**", "OnePython/packages/**"]
+project-excludes = ['.venv/**', 'dist/**']
+
+[tool.ruff]
+target-version = "py312"  # Enforce Python 3.12 syntax/stdlib expectations repository-wide.
+line-length = 80  # Google Python Style Guide recommends an 80-character maximum line length.
+
+[tool.ruff.format]
+quote-style = "double"  # Prefer double quotes for consistency with Google style guidance.
+indent-style = "space"  # Four-space indentation keeps codebases uniform.
+
+[tool.ruff.lint]
+select = [
+  "A",    # flake8-builtins: prevent accidentally shadowing Python builtins.
+  "ANN",  # flake8-annotations: require explicit type annotations per Google style.
+  "ARG",  # flake8-unused-arguments: detect unused function arguments.
+  "B",    # flake8-bugbear: catch common logic errors and design pitfalls.
+  "BLE",  # flake8-blind-except: forbid bare `except:` blocks that hide bugs.
+  "C4",   # flake8-comprehensions: encourage efficient list/set/dict comprehensions.
+  "C90",  # mccabe: keep cyclomatic complexity within maintainable bounds.
+  "COM",  # flake8-commas: enforce trailing commas for cleaner diffs.
+  "D",    # pydocstyle: require docstrings that match the Google docstring format.
+  "DTZ",  # flake8-datetimez: ensure timezone-aware datetime usage.
+  "E",    # pycodestyle errors: baseline PEP 8 compliance.
+  "EM",   # flake8-errmsg: demand descriptive exception/error messages.
+  "ERA",  # eradicate: disallow commented-out or dead code blocks.
+  "EXE",  # flake8-executable: validate shebangs and executable bit consistency.
+  "F",    # pyflakes: catch undefined names and other correctness issues.
+  "FA",   # flake8-future-annotations: ensure postponed evaluation of annotations where needed.
+  "FBT",  # flake8-boolean-trap: warn when default booleans make APIs confusing.
+  "G",    # flake8-logging-format: promote safe, lazy logging string formatting.
+  "I",    # isort rules: keep imports deterministic and grouped.
+  "ICN",  # flake8-import-conventions: standardize common import aliases.
+  "INP",  # flake8-no-pep420: forbid implicit namespace packages.
+  "ISC",  # flake8-implicit-str-concat: highlight unintended string concatenations.
+  "N",    # pep8-naming: enforce consistent naming conventions.
+  "PGH",  # pygrep-hooks: catch anti-patterns via lightweight AST searches.
+  "PIE",  # flake8-pie: miscellaneous Python best practices.
+  "PL",   # pylint rule subset: extra structural and readability checks.
+  "PT",   # flake8-pytest-style: ensure idiomatic pytest usage.
+  "PTH",  # flake8-use-pathlib: encourage modern `pathlib` APIs.
+  "PYI",  # flake8-pyi: keep stub files consistent when present.
+  "Q",    # flake8-quotes: enforce consistent quoting rules.
+  "RET",  # flake8-return: enforce explicit and consistent return statements.
+  "RUF",  # Ruff-specific rules: adopt Ruff's curated best practices.
+  "S",    # flake8-bandit: basic security-sensitive pattern detection.
+  "SIM",  # flake8-simplify: replace complex constructs with simpler forms.
+  "SLF",  # flake8-self: guard against direct access to private members.
+  "T10",  # flake8-debugger: ban breakpoints and debugger calls.
+  "T20",  # flake8-print: forbid stray print statements in library code.
+  "TCH",  # flake8-type-checking: keep typing imports behind TYPE_CHECKING blocks.
+  "TRY",  # tryceratops: enforce well-structured exception handling.
+  "UP",   # pyupgrade: modernize syntax to the minimum supported Python.
+  "W",    # pycodestyle warnings: additional whitespace and formatting checks.
+  "YTT",  # flake8-2020: ban Python 2 compatibility shims that no longer apply.
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"  # Match the Google Python Style Guide docstring structure.
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+  "ANN",  # Allow missing annotations in tests for faster scaffolding.
+  "FBT",  # Permit boolean-parameter conveniences in test helpers.
+  "PLR2004",  # Permit descriptive magic numbers in test data.
+  "S101",  # Allow bare `assert` statements commonly used by pytest.
+]
+"**/tests/**" = [
+  "ANN",  # Nested test packages can skip strict annotation enforcement.
+  "S101",  # Nested tests may use bare asserts for readability.
+]
+"**/*_test.py" = [
+  "ANN",  # Relax annotation requirements in standalone test modules.
+  "S101",  # Allow bare asserts when pytest rewrites them anyway.
+]
+
+[tool.pytest.ini_options]
+testpaths = ["src/lab", "OnePython/packages"]
