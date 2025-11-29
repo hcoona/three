@@ -26,6 +26,9 @@ importers:
       ap-style-title-case:
         specifier: ^2.0.0
         version: 2.0.0
+      markdownlint-cli2:
+        specifier: 0.19.1
+        version: 0.19.1
       prettier:
         specifier: 3.6.2
         version: 3.6.2
