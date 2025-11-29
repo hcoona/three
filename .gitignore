@@ -884,3 +884,7 @@ $RECYCLE.BIN/
 
 # Exclude nbgv-python generated version file
 _version.py
+
+# Include src/*/lib directories
+!src/private/lib/
+!src/public/lib/

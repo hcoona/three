@@ -16,18 +16,18 @@ The first two pillars were **OnePython** and **OneDotNet**. Adding the rest of m
 
 ## Projects included
 
-| Project                      | Directory                       | Upstream                     | Commit                        |
-| ---------------------------- | ------------------------------- | ---------------------------- | ----------------------------- |
-| Asciidoctor LaTeXMath        | `src/public/asciidoctor-latexmath/`        | [Repo][asciidoctor-upstream] | [514d685][asciidoctor-commit] |
-| ImageOcclusionEditor         | `src/public/ImageOcclusionEditor/`         | [Repo][ioe-upstream]         | [e08f834][ioe-commit]         |
-| OneDotNet                    | `OneDotNet/`                    | [Repo][onedotnet-upstream]   | [17f2224][onedotnet-commit]   |
-| OnePython                    | `OnePython/`                    | [Repo][onepython-upstream]   | [21ef6d5][onepython-commit]   |
-| Steam Account History to CSV | `src/public/steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
-| Hexo Renderer AsciiDoc       | `src/public/hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
+| Project                      | Directory                                      | Upstream                     | Commit                        |
+| ---------------------------- | ---------------------------------------------- | ---------------------------- | ----------------------------- |
+| Asciidoctor LaTeXMath        | `src/public/lib/asciidoctor-latexmath/`        | [Repo][asciidoctor-upstream] | [514d685][asciidoctor-commit] |
+| ImageOcclusionEditor         | `src/public/app/ImageOcclusionEditor/`         | [Repo][ioe-upstream]         | [e08f834][ioe-commit]         |
+| OneDotNet                    | `OneDotNet/`                                   | [Repo][onedotnet-upstream]   | [17f2224][onedotnet-commit]   |
+| OnePython                    | `OnePython/`                                   | [Repo][onepython-upstream]   | [21ef6d5][onepython-commit]   |
+| Steam Account History to CSV | `src/public/lib/steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
+| Hexo Renderer AsciiDoc       | `src/public/lib/hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
 
 ## JavaScript/pnpm workspace
 
-The `src/public/hexo-renderer-asciidoc/` and `src/public/steam-account-history-to-csv/` folders share a [pnpm workspace](https://pnpm.io/workspaces) that still lives at the repo root even though the projects moved under `src/public/`. The nested layout keeps the repo top level tidy while preserving predictable dependency resolution (`sharedWorkspaceLockfile: true`) and automatic linking between workspace packages (`linkWorkspacePackages: true`). As before, the workspace does not pin a Node version—each package’s own `engines` entry (Hexo still wants Node ≥ 20.19) remains authoritative.
+The `src/public/lib/hexo-renderer-asciidoc/` and `src/public/lib/steam-account-history-to-csv/` folders share a [pnpm workspace](https://pnpm.io/workspaces) that still lives at the repo root even though the projects moved under `src/public/lib/`. The nested layout keeps the repo top level tidy while preserving predictable dependency resolution (`sharedWorkspaceLockfile: true`) and automatic linking between workspace packages (`linkWorkspacePackages: true`). As before, the workspace does not pin a Node version—each package’s own `engines` entry (Hexo still wants Node ≥ 20.19) remains authoritative.
 
 Development flow:
 

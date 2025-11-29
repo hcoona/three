@@ -1,6 +1,6 @@
 packages:
-  - src/public/hexo-renderer-asciidoc
-  - src/public/steam-account-history-to-csv
+  - src/public/lib/hexo-renderer-asciidoc
+  - src/public/lib/steam-account-history-to-csv
 
 linkWorkspacePackages: true
 
