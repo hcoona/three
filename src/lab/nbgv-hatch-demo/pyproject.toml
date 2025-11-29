@@ -1,8 +1,5 @@
 [build-system]
-requires = [
-    "hatchling>=1.24",
-    "nbgv-python",
-]
+requires = ["hatchling>=1.24", "nbgv-python"]
 build-backend = "hatchling.build"
 
 [project]
@@ -10,24 +7,20 @@ name = "nbgv-hatch-demo"
 description = "Sample project that exercises the nbgv-python Hatch version source."
 readme = "README.md"
 requires-python = ">=3.12"
-authors = [
-    { name = "Sample Maintainer" },
-]
+authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
 keywords = ["nbgv", "hatch", "versioning"]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Private :: Do Not Upload",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Private :: Do Not Upload",
 ]
 dynamic = ["version"]
 dependencies = ["nbgv-python"]
 
 [dependency-groups]
-dev = [
-    "hatch>=1.9.1",
-]
+dev = ["hatch>=1.9.1"]
 
 [tool.hatch.version]
 source = "nbgv"
