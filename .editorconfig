@@ -14,5 +14,11 @@ indent_size = 4
 [*.ps1]
 indent_size = 4
 
+[*.{py,pyi}]
+indent_size = 4
+
+[*.ipynb]
+indent_size = unset
+
 [*.cs]
 indent_size = 4

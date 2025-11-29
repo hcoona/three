@@ -3,12 +3,31 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import json
+import logging
 import subprocess
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+else:  # pragma: no cover - runtime alias for postponed evaluation
+    Iterable = collections.abc.Iterable
+
+
+MIN_RELEASE_SEGMENTS = 3
+MISSING_VERSION_FILE_MESSAGE = "version.json not found"
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -20,12 +39,14 @@ class ParsedVersion:
 
     @property
     def semver1(self) -> str:
+        """SemVer1 format (prerelease sanitized)."""
         if self.prerelease is None:
             return self.release
         return f"{self.release}-{self.prerelease.replace('.', '')}"
 
     @property
     def semver2(self) -> str:
+        """SemVer2 format preserving prerelease separators."""
         if self.prerelease is None:
             return self.release
         return f"{self.release}-{self.prerelease}"
@@ -40,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.format != "json":
         parser.error("only --format json is supported")
     payload = _load_payload(args.project)
-    print(json.dumps(payload))
+    LOGGER.info(json.dumps(payload))
     return 0
 
 
@@ -55,7 +76,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--project",
         dest="project",
         default=None,
-        help="Path to the project directory (defaults to current working directory)",
+        help=(
+            "Path to the project directory "
+            "(defaults to current working directory)"
+        ),
     )
     return parser
 
@@ -64,14 +88,14 @@ def _load_payload(project: str | None) -> dict[str, object]:
     project_dir = Path(project or Path.cwd())
     version_json = _find_version_json(project_dir)
     if not version_json.exists():
-        raise SystemExit("version.json not found")
+        raise SystemExit(MISSING_VERSION_FILE_MESSAGE)
     data = json.loads(version_json.read_text(encoding="utf-8"))
     raw_version = str(data.get("version", "0.0"))
     parsed = _parse_version(raw_version)
     release_parts = parsed.release.split(".")
-    while len(release_parts) < 3:
+    while len(release_parts) < MIN_RELEASE_SEGMENTS:
         release_parts.append("0")
-    release = ".".join(release_parts[:3])
+    release = ".".join(release_parts[:MIN_RELEASE_SEGMENTS])
     assembly_semver = release
     assembly_file_semver = f"{release}.0"
     informational = parsed.semver2
