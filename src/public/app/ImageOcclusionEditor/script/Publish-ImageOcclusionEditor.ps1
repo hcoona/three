@@ -1,4 +1,4 @@
-﻿<#
+<#
 .COPYRIGHT
     Copyright (C) 2025 Shuai Zhang
 
@@ -38,9 +38,9 @@
 .NOTES
     Requires .NET SDK and necessary workloads.
 #>
-[CmdletBinding(PositionalBinding=$false)]
+[CmdletBinding(PositionalBinding = $false)]
 param(
-    [ValidateSet('Debug','Release')]
+    [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [string]$OutputRoot
 )
@@ -111,7 +111,7 @@ $stopwatch.Stop()
 if ($exit -ne 0) {
     throw "dotnet publish failed, exit code: $exit"
 }
-Write-Information ("Publish done in {0}s" -f [Math]::Round($stopwatch.Elapsed.TotalSeconds,2))
+Write-Information ("Publish done in {0}s" -f [Math]::Round($stopwatch.Elapsed.TotalSeconds, 2))
 
 # Generate SBOM via CycloneDX (shared helper)
 try {

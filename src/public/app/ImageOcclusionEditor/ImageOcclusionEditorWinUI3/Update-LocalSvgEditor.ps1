@@ -1,4 +1,4 @@
-﻿<#
+<#
 .COPYRIGHT
     Copyright (C) 2025 Shuai Zhang
 
@@ -156,10 +156,10 @@ function Get-SvgEditPackage {
         Write-Verbose "Save to: $OutputPath"
 
         $webRequest = @{
-            Uri = $Url
-            OutFile = $OutputPath
+            Uri             = $Url
+            OutFile         = $OutputPath
             UseBasicParsing = $true
-            TimeoutSec = 300
+            TimeoutSec      = 300
         }
         Invoke-WebRequest @webRequest
 
@@ -186,7 +186,7 @@ function Expand-TgzFile {
     #>
     param(
         [Parameter(Mandatory)]
-        [ValidateScript({Test-Path $_ -PathType Leaf})]
+        [ValidateScript({ Test-Path $_ -PathType Leaf })]
         [string]$TgzPath,
 
         [Parameter(Mandatory)]
@@ -234,7 +234,7 @@ function Copy-EditorFile {
     #>
     param(
         [Parameter(Mandatory)]
-        [ValidateScript({Test-Path $_ -PathType Container})]
+        [ValidateScript({ Test-Path $_ -PathType Container })]
         [string]$SourcePath,
 
         [Parameter(Mandatory)]

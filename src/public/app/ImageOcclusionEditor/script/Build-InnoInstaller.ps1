@@ -50,7 +50,7 @@ pwsh -File .\script\Build-InnoInstaller.ps1 -Configuration Release
 
 [CmdletBinding(PositionalBinding = $false, SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param(
-    [ValidateSet('Release','Debug')]
+    [ValidateSet('Release', 'Debug')]
     [string]$Configuration = 'Release',
 
     [string]$InnoSetupCompiler,
@@ -70,14 +70,14 @@ $PSStyle.OutputRendering = 'Ansi'
 function Write-Status {
     param(
         [Parameter(Mandatory)][string]$Message,
-        [ValidateSet('Info','Warn','Error','Success')]
+        [ValidateSet('Info', 'Warn', 'Error', 'Success')]
         [string]$Level = 'Info'
     )
     # Use Write-Information/Warning/Error for host-agnostic output. Avoid non-ASCII symbols for encoding portability.
     switch ($Level) {
-        'Info'    { Write-Information "[>] $Message" -InformationAction Continue }
-        'Warn'    { Write-Warning     "[!] $Message" }
-        'Error'   { Write-Error       "[x] $Message" }
+        'Info' { Write-Information "[>] $Message" -InformationAction Continue }
+        'Warn' { Write-Warning     "[!] $Message" }
+        'Error' { Write-Error       "[x] $Message" }
         'Success' { Write-Information "[OK] $Message" -InformationAction Continue }
     }
 }
@@ -85,12 +85,12 @@ function Write-Status {
 # Load shared helpers and resolve repo paths
 . (Join-Path $PSScriptRoot 'Helpers.ps1')
 $ScriptDir = $PSScriptRoot
-$RepoRoot  = Get-RepoRoot
+$RepoRoot = Get-RepoRoot
 # WinUI3 csproj sits in project folder at repo root
 $WinUIProj = Join-Path $RepoRoot 'ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj'
 # Use Setup.iss in the same directory as this script
-$SetupDir  = $ScriptDir
-$SetupIss  = Join-Path $SetupDir  'Setup.iss'
+$SetupDir = $ScriptDir
+$SetupIss = Join-Path $SetupDir  'Setup.iss'
 
 if (-not (Test-Path -Path $WinUIProj -PathType Leaf)) {
     throw "WinUI3 project not found: $WinUIProj"
@@ -152,12 +152,14 @@ $definePublishDir = '/DPublishDir=' + $PublishOutputPath
 $expectedInstaller = Join-Path $InstallerOutputPath 'ImageOcclusionEditorWinUI3_Setup.exe'
 if (Test-Path -LiteralPath $expectedInstaller) {
     Write-Status "Installer built: $expectedInstaller" 'Success'
-} else {
+}
+else {
     # Fallback: list most recent .exe in output folder
     $latest = Get-ChildItem -LiteralPath $InstallerOutputPath -Filter '*.exe' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($latest) {
         Write-Status "Installer built (detected): $($latest.FullName)" 'Success'
-    } else {
+    }
+    else {
         Write-Status 'ISCC finished but no installer .exe was found in the output folder.' 'Error'
         throw 'Installer output not found.'
     }

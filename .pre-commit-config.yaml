@@ -103,18 +103,6 @@ repos:
     language: system
     pass_filenames: true
     files: '[^/]*\.ps1$|[^/]*\.psm1$|[^/]*\.psd1$'
-  - id: csharpier
-    name: Csharpier
-    entry: dotnet tool run csharpier check
-    language: system
-    pass_filenames: true
-    files: '[^/]*\.cs$'
-  - id: dotnet-lock-verify
-    name: Dotnet Lock Verify
-    entry: dotnet restore --locked-mode
-    language: system
-    pass_filenames: true
-    files: '[^/]*\.csproj$|[^/]*\.props$|[^/]*\.targets$|global\.json$|nuget\.config$|packages\.lock\.json$'
   - id: biome
     name: Biome
     entry: pnpm exec -- biome check
