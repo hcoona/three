@@ -17,84 +17,84 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <Window
-    x:Class="ImageOcclusionEditorWinUI3.MainWindow"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:ImageOcclusionEditorWinUI3"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d"
-    Title="SuperMemo Image Occlusion Editor">
+  x:Class="ImageOcclusionEditorWinUI3.MainWindow"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:ImageOcclusionEditorWinUI3"
+  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  mc:Ignorable="d"
+  Title="SuperMemo Image Occlusion Editor">
 
-    <Window.SystemBackdrop>
-        <MicaBackdrop />
-    </Window.SystemBackdrop>
+  <Window.SystemBackdrop>
+    <MicaBackdrop />
+  </Window.SystemBackdrop>
 
-    <Grid Loaded="Grid_Loaded">
-        <!-- Define two rows: main content area and bottom button panel -->
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+  <Grid Loaded="Grid_Loaded">
+    <!-- Define two rows: main content area and bottom button panel -->
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
 
-        <!-- WebView2 for SVG Editor (fills remaining space) -->
-        <!-- Using explicit Source to test if WebView2 works -->
-        <WebView2 x:Name="webView"
-                  Grid.Row="0"
-                  DefaultBackgroundColor="White" />
+    <!-- WebView2 for SVG Editor (fills remaining space) -->
+    <!-- Using explicit Source to test if WebView2 works -->
+    <WebView2 x:Name="webView"
+      Grid.Row="0"
+      DefaultBackgroundColor="White" />
 
-        <!-- Bottom Panel for Buttons -->
-        <Border Grid.Row="1"
-                Background="{ThemeResource LayerFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                BorderThickness="0,1,0,0"
-                Padding="16,12,16,16">
+    <!-- Bottom Panel for Buttons -->
+    <Border Grid.Row="1"
+      Background="{ThemeResource LayerFillColorDefaultBrush}"
+      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+      BorderThickness="0,1,0,0"
+      Padding="16,12,16,16">
 
-            <!-- Button Container aligned to the right -->
-            <Grid HorizontalAlignment="Right">
-                <StackPanel Orientation="Horizontal" 
-                           Spacing="12">
+      <!-- Button Container aligned to the right -->
+      <Grid HorizontalAlignment="Right">
+        <StackPanel Orientation="Horizontal"
+          Spacing="12">
 
-                    <!-- Cancel Button -->
-                    <Button Content="Cancel (ESC)"
-                            MinWidth="160"
-                            MinHeight="36"
-                            Padding="16,8"
-                            Style="{StaticResource DefaultButtonStyle}"
-                            Click="BtnCancel_Click">
-                        <Button.KeyboardAccelerators>
-                            <KeyboardAccelerator Key="Escape" />
-                        </Button.KeyboardAccelerators>
-                    </Button>
+          <!-- Cancel Button -->
+          <Button Content="Cancel (ESC)"
+            MinWidth="160"
+            MinHeight="36"
+            Padding="16,8"
+            Style="{StaticResource DefaultButtonStyle}"
+            Click="BtnCancel_Click">
+            <Button.KeyboardAccelerators>
+              <KeyboardAccelerator Key="Escape" />
+            </Button.KeyboardAccelerators>
+          </Button>
 
-                    <!-- Save Button -->
-                    <Button Content="Save (Ctrl+Shift+S)"
-                            MinWidth="160"
-                            MinHeight="36"
-                            Padding="16,8"
-                            Style="{StaticResource AccentButtonStyle}"
-                            Click="BtnSave_Click">
-                        <Button.KeyboardAccelerators>
-                            <KeyboardAccelerator Key="S" 
-                                               Modifiers="Control,Shift" />
-                        </Button.KeyboardAccelerators>
-                    </Button>
+          <!-- Save Button -->
+          <Button Content="Save (Ctrl+Shift+S)"
+            MinWidth="160"
+            MinHeight="36"
+            Padding="16,8"
+            Style="{StaticResource AccentButtonStyle}"
+            Click="BtnSave_Click">
+            <Button.KeyboardAccelerators>
+              <KeyboardAccelerator Key="S"
+                Modifiers="Control,Shift" />
+            </Button.KeyboardAccelerators>
+          </Button>
 
-                    <!-- Save & Exit Button -->
-                    <Button Content="Save &amp; Exit (Ctrl+S)"
-                            MinWidth="160"
-                            MinHeight="36"
-                            Padding="16,8"
-                            Style="{StaticResource AccentButtonStyle}"
-                            Click="BtnSaveExit_Click">
-                        <Button.KeyboardAccelerators>
-                            <KeyboardAccelerator Key="S" 
-                                               Modifiers="Control" />
-                        </Button.KeyboardAccelerators>
-                    </Button>
+          <!-- Save & Exit Button -->
+          <Button Content="Save &amp; Exit (Ctrl+S)"
+            MinWidth="160"
+            MinHeight="36"
+            Padding="16,8"
+            Style="{StaticResource AccentButtonStyle}"
+            Click="BtnSaveExit_Click">
+            <Button.KeyboardAccelerators>
+              <KeyboardAccelerator Key="S"
+                Modifiers="Control" />
+            </Button.KeyboardAccelerators>
+          </Button>
 
-                </StackPanel>
-            </Grid>
-        </Border>
-    </Grid>
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
 </Window>

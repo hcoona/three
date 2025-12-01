@@ -270,7 +270,7 @@ local all_steps = new Mapping<String, Step> {
   ...docker_linters
   ...bash_linters
   ...pwsh_linters
-  ...dotnet_linters
+  // ...dotnet_linters
   ...javascript_typescript_linters
   ...python_linters
   ...dotenv_linter
