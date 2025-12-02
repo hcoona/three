@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-#requires -Version 7.5
+#requires -Version 7.4
 #requires -Modules PSScriptAnalyzer
 
 <#
