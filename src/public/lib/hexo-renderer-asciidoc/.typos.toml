@@ -3,11 +3,7 @@
 
 [default]
 # Project specific terms that should not be flagged.
-extend-ignore-re = [
-  "(?i)asciidoc",
-  "(?i)asciidoctor",
-  "(?i)hexo"
-]
+extend-ignore-re = ["(?i)asciidoc", "(?i)asciidoctor", "(?i)hexo"]
 
 [files]
 extend-exclude = [
@@ -16,12 +12,12 @@ extend-exclude = [
   "node_modules/**",
   "coverage/**",
   "dist/**",
-  ".pnpm-store/**"
+  ".pnpm-store/**",
 ]
 
 [type.changelog]
 extend-glob = ["ChangeLog.md"]
 extend-ignore-re = [
   # Ignore short git commit SHAs that appear in inline code, e.g. `daa954f`.
-  "`[0-9a-f]{7,10}`"
+  "`[0-9a-f]{7,10}`",
 ]

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
  */
 
+// biome-ignore-all lint/suspicious/noConsole: this unofficial cli tool uses console output intentionally
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

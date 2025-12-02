@@ -25,8 +25,8 @@ All three storefronts require thorough local testing before submission and gener
 
 1. Install dependencies: run `pnpm install --filter steam-account-history-to-csv...` from the repo root (or `pnpm install` inside this package).
 2. Execute `pnpm build`:
-   - `tsdown` bundles `src/index.ts` into `dist/index.js` (IIFE format with source maps).
-   - `scripts/build-assets.mjs` copies `assets/manifest.json` (injecting name/version/description) and the icons into `dist/`.
+    - `tsdown` bundles `src/index.ts` into `dist/index.js` (IIFE format with source maps).
+    - `scripts/build-assets.mjs` copies `assets/manifest.json` (injecting name/version/description) and the icons into `dist/`.
 3. Zip the contents of `dist/` and submit the archive to your target stores:
-   - **Chrome / Edge:** upload the ZIP as-is. When bumping versions, update `package.json`—the asset script automatically syncs `manifest.json`.
-   - **Firefox:** upload the same ZIP, ensuring it contains files only (no parent directory). Wait for AMO validation to pass before final submission.
+    - **Chrome / Edge:** upload the ZIP as-is. When bumping versions, update `package.json`—the asset script automatically syncs `manifest.json`.
+    - **Firefox:** upload the same ZIP, ensuring it contains files only (no parent directory). Wait for AMO validation to pass before final submission.

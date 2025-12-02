@@ -16,6 +16,7 @@ asciidoctor-latexmath 为 Asciidoctor 提供离线 `latexmath` 渲染能力，�
 > 2025-10-02 更新：依据宪法 v2.0.0 (P1 Processor Duo Only) 设计收缩为仅 BlockProcessor + InlineMacroProcessor；移除早期草案中的 BlockMacroProcessor 支持。
 
 ### 功能性需求
+
 - 处理 `[latexmath]` 块 与 `latexmath:` 内联宏，仅使用 `BlockProcessor` 与 `InlineMacroProcessor`；显式不支持 `latexmath::` 块宏（宪法 P1）。
 - 支持 `pdflatex`、`xelatex`、`lualatex`、`tectonic` 等编译器，允许按元素覆盖。
 - 支持输出 `pdf` / `svg` / `png`，自动对接 `imagesdir` / `imagesoutdir` 与资源基名策略。
@@ -23,12 +24,14 @@ asciidoctor-latexmath 为 Asciidoctor 提供离线 `latexmath` 渲染能力，�
 - 覆盖 `AsciidoctorLatexmathAttributes.md` 列出的全部属性与选项，包括 `nocache`、`keep-artifacts` 等。
 
 ### 非功能性需求
+
 - 渲染失败时提供可操作提示，指向日志及保留产物，支持 CI 与本地诊断。
 - 在并行/多线程渲染下保持缓存目录安全，避免竞争条件。
 - 以最小侵入方式融入 Asciidoctor 构建，允许运行于受限环境（如 CI、沙箱）。
 - 预留可扩展接口，支持未来的 MathJax 回退、SVG 优化或新格式。
 
 ### 非目标
+
 - 不进行 AsciiMath → LaTeX 的转换；沿用 Asciidoctor `stem` 语义。
 - 不提供浏览器端渲染方案；专注于离线静态资产生产。
 
@@ -236,7 +239,7 @@ package "Asciidoctor::Latexmath" {
 ## 渲染流程
 
 1. **捕获阶段**：Processor 从 AST 收集 LaTeX 内容（块 / 内联），通过 `RequestFactory` 构造 `RenderRequest`。解析元素属性、`%nocache` / `cache=` 等标记，补齐请求上下文。
-2. **渲染器选择**：`RendererBuilder` 基于格式选择 *固定阶段列表* 生成 `CompositeRenderer`；`CachingRenderer` 包裹结果，先查 `DiskCache` 再决定是否执行。
+2. **渲染器选择**：`RendererBuilder` 基于格式选择 _固定阶段列表_ 生成 `CompositeRenderer`；`CachingRenderer` 包裹结果，先查 `DiskCache` 再决定是否执行。
 3. **管线执行**：`CompositeRenderer` 顺序执行管线步骤，例如 `PdflatexRenderer` → `Pdf2SvgRenderer` 或 `PdflatexRenderer` → `MagickRenderer`。每一步产生的文件通过临时目录管理，符合 `latexmath-keep-artifacts` 策略。
 4. **产物处理**：渲染成功后写入 `imagesoutdir`，生成 JSON 元数据（尺寸、checksum、生成时间），不记录命令版本；需要时保留 `.tex`/`.log`。
 5. **集成返回**：Processor 构造图像块或内联节点；v1 仅返回文件引用，data URI 行为由核心 `:data-uri:` 决定。
@@ -244,33 +247,39 @@ package "Asciidoctor::Latexmath" {
 ## 组件职责
 
 ### Layer 0 — ExtensionRegistry
+
 - 注册三个 Processor，并注入共享 `Configuration`、`RendererBuilder` 与 `DiskCache` 实例。
 - 与 Asciidoctor logger 集成，初始化统计指标（渲染次数、缓存命中率）。
 
 ### Layer 1 — Configuration & RendererBuilder
+
 - `Configuration.from_document` 读取文档级属性，计算默认格式、缓存目录、artifact 目录及渲染错误策略。
 - `RendererBuilder` 负责：
-  - 固定阶段装配：format → 预定义阶段序列（如 svg: [Pdflatex, Pdf→Svg]）。
-  - 阶段序列调整需伴随 ext_version bump 与测试更新。
-  - 外部命令检测：仅判断可用性；缺失报错，不回退次级阶段。
+    - 固定阶段装配：format → 预定义阶段序列（如 svg: [Pdflatex, Pdf→Svg]）。
+    - 阶段序列调整需伴随 ext_version bump 与测试更新。
+    - 外部命令检测：仅判断可用性；缺失报错，不回退次级阶段。
 
 ### Layer 2 — Processors
+
 - `LatexmathBlockProcessor`：构造 `Asciidoctor::Block` 结果，支持 `[%nocache]`、`options="keep-artifacts"` 等开关。
 - `LatexmathInlineMacroProcessor`：输出内联节点，交由 Asciidoctor 核心决定是否生成 data URI。
 - 不实现 BlockMacroProcessor；`latexmath::` 语法被忽略或记录一次警告（与 Clarifications 一致）。
 - 两类 Processor 均不使用 `TreeProcessor`，符合约束。
 
 ### Layer 3 — RequestFactory & RenderRequest
+
 - 将 Asciidoctor 属性映射为请求选项（preamble、engine、format、cache-dir、png dpi）。
 - 生成 `content_hash`，结合 `Configuration` 形成缓存键，保证不同 preamble / 引擎 / 格式不会误命中。
 - 负责规范化输出基名、处理 `target` 覆写、内联命名属性。
 
 ### Layer 4 — Renderer 抽象
+
 - `IRenderer` 定义最小接口；所有 Renderer 返回最终产物路径。
 - `CompositeRenderer` 按顺序执行若干 Renderer，每个步骤都校验输入/输出类型以捕捉配置错误。
 - `CachingRenderer` 调用 `DiskCache`，缓存键字段：ext_version, content_hash, format, preamble_hash, ppi, entry_type；不含引擎/工具名称或版本。
 
 ### Layer 5 — 具体 Renderer
+
 - `PdflatexRenderer`：负责 `.tex` → `.pdf`，读取 `pdflatex`、`latexmath-preamble`、`latexmath-keep-artifacts`。
 - `Pdf2SvgRenderer` / `DvisvgmRenderer`：执行 PDF → SVG；优先 `dvisvgm`，可强制覆盖为 `pdf2svg`。
 - `PdftoppmRenderer` / `MagickRenderer` / `GhostscriptRenderer`：执行 PDF → PNG，尊重 `latexmath-ppi`。
@@ -279,12 +288,12 @@ package "Asciidoctor::Latexmath" {
 ## 缓存与元数据
 
 - `DiskCache` 以内容寻址的目录结构存储：
-  - `cache/<digest>/artifact`：最终文件；
-  - `cache/<digest>/metadata.json`：`{version,key,format,content_hash,preamble_hash,ppi,entry_type,created_at,checksum,size_bytes}`。
+    - `cache/<digest>/artifact`：最终文件；
+    - `cache/<digest>/metadata.json`：`{version,key,format,content_hash,preamble_hash,ppi,entry_type,created_at,checksum,size_bytes}`。
 - 支持：
-  - 文档级 `:latexmath-cache: false` 或元素级 `cache=false`、`%nocache`；
-  - `latexmath-cache-dir` 覆写缓存位置，兼容 asciidoctor-diagram；
-  - 并发加锁：使用 `File.flock` 或原子 `Dir.mktmpdir` + `FileUtils.mv`。失败时抛出带路径提示的异常。
+    - 文档级 `:latexmath-cache: false` 或元素级 `cache=false`、`%nocache`；
+    - `latexmath-cache-dir` 覆写缓存位置，兼容 asciidoctor-diagram；
+    - 并发加锁：使用 `File.flock` 或原子 `Dir.mktmpdir` + `FileUtils.mv`。失败时抛出带路径提示的异常。
 - 元数据中记录的校验和可协助判断缓存腐化；CLI 提供清理子命令（待后续实现）。
 
 ### 缓存键示意图
@@ -333,20 +342,20 @@ hasher --> digest
 
 ## 属性支持矩阵
 
-| 属性 / 选项 | 生效层级 | 解析组件 | 消费组件 |
-| --- | --- | --- | --- |
-| `stem` | 文档 | 用户配置（外部） | 启用 Processor 注册 |
-| `latexmath-format` / 元素级 `format=` | 文档 / 元素 | Configuration / RequestFactory | RendererBuilder（决定管线） |
-| `latexmath-cache` / `%nocache` / `cache=` | 文档 / 元素 | Configuration / Processors | CachingRenderer / DiskCache |
-| `latexmath-cache-dir` / `cache-dir=` | 文档 / 元素 | Configuration | DiskCache |
-| `latexmath-preamble` / `preamble=` | 文档 / 元素 | RequestFactory | PdflatexRenderer |
-| `latexmath-keep-artifacts` / `keep-artifacts` 选项 | 文档 / 元素 | Configuration / Processors | PdflatexRenderer、CompositeRenderer（保留临时文件） |
-| `latexmath-artifacts-dir` / `artifacts-dir=` | 文档 / 元素 | Configuration | RendererBuilder（决定落盘路径） |
-| `pdflatex` | 文档 / 元素 | Configuration / RequestFactory | PdflatexRenderer |
-| `latexmath-pdf2svg` / `pdf2svg=` | 文档 / 元素 | RequestFactory | Pdf2SvgRenderer、DvisvgmRenderer |
-| `latexmath-png-tool` / `png-tool=` | 文档 / 元素 | RequestFactory | PdftoppmRenderer、MagickRenderer、GhostscriptRenderer |
-| `latexmath-ppi` / `ppi=` | 文档 / 元素 | RequestFactory | PNG 渲染器 |
-| `latexmath-on-error` / `on-error=` | 文档 / 元素 | Configuration / Processors | ErrorPlaceholderBuilder、RendererPipeline |
+| 属性 / 选项                                        | 生效层级    | 解析组件                       | 消费组件                                              |
+| -------------------------------------------------- | ----------- | ------------------------------ | ----------------------------------------------------- |
+| `stem`                                             | 文档        | 用户配置（外部）               | 启用 Processor 注册                                   |
+| `latexmath-format` / 元素级 `format=`              | 文档 / 元素 | Configuration / RequestFactory | RendererBuilder（决定管线）                           |
+| `latexmath-cache` / `%nocache` / `cache=`          | 文档 / 元素 | Configuration / Processors     | CachingRenderer / DiskCache                           |
+| `latexmath-cache-dir` / `cache-dir=`               | 文档 / 元素 | Configuration                  | DiskCache                                             |
+| `latexmath-preamble` / `preamble=`                 | 文档 / 元素 | RequestFactory                 | PdflatexRenderer                                      |
+| `latexmath-keep-artifacts` / `keep-artifacts` 选项 | 文档 / 元素 | Configuration / Processors     | PdflatexRenderer、CompositeRenderer（保留临时文件）   |
+| `latexmath-artifacts-dir` / `artifacts-dir=`       | 文档 / 元素 | Configuration                  | RendererBuilder（决定落盘路径）                       |
+| `pdflatex`                                         | 文档 / 元素 | Configuration / RequestFactory | PdflatexRenderer                                      |
+| `latexmath-pdf2svg` / `pdf2svg=`                   | 文档 / 元素 | RequestFactory                 | Pdf2SvgRenderer、DvisvgmRenderer                      |
+| `latexmath-png-tool` / `png-tool=`                 | 文档 / 元素 | RequestFactory                 | PdftoppmRenderer、MagickRenderer、GhostscriptRenderer |
+| `latexmath-ppi` / `ppi=`                           | 文档 / 元素 | RequestFactory                 | PNG 渲染器                                            |
+| `latexmath-on-error` / `on-error=`                 | 文档 / 元素 | Configuration / Processors     | ErrorPlaceholderBuilder、RendererPipeline             |
 
 所有属性均支持 CLI `-a` 覆写，与 asciidoctor-diagram 的属性模型保持一致。
 

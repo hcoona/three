@@ -5,6 +5,7 @@
 你要整理的文档应该包括
 
 呈现给最终用户的视角
+
 1. 文档级别 attribute 还是块级别 attribute
 2. 如果是块级别 attribute，还需要进一步看 positional, named, options, etc.
 

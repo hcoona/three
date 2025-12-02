@@ -61,4 +61,4 @@ list continuation:: a plus sign (`{plus}`) on a line by itself
 
 . A literal paragraph does not require a list continuation.
 
- $ gem install asciidoctor
+  $ gem install asciidoctor

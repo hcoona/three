@@ -26,6 +26,9 @@ local general_exclude_list =
     "pnpm-lock.yaml",
     "uv.lock",
     ".mise.lock",
+    "**/.github/**",
+    "**/.specify/**",
+    "**/specs/**/*.md",
   )
 
 local general_linters = new Mapping<String, Step> {
@@ -48,11 +51,13 @@ local pipeline_linters = new Mapping<String, Step> {
 local markdown_linters = new Mapping<String, Step> {
   ["markdownlint-cli2"] = (Steps.markdownlint_cli2) {
     profiles = List("small")
+    exclude = general_exclude_list
     prefix = "pnpm exec --"
   }
 
   ["markdown-prettier"] = (Builtins.prettier) {
     profiles = List("small")
+    exclude = general_exclude_list
     glob = "*.md"
     stage = "*.md"
     prefix = "pnpm exec --"
@@ -116,10 +121,12 @@ local docker_linters = new Mapping<String, Step> {
 local bash_linters = new Mapping<String, Step> {
   ["shellcheck"] = (Builtins.shellcheck) {
     profiles = List("small")
+    exclude = general_exclude_list
   }
 
   ["shfmt"] = (Builtins.shfmt) {
     profiles = List("small")
+    exclude = general_exclude_list
     check = "shfmt {{files}}"
     fix = "shfmt -w {{files}}"
   }
@@ -130,6 +137,7 @@ local pwsh_linters = new Mapping<String, Step> {
 
   ["pwsh-formatter"] {
     profiles = List("medium")
+    exclude = general_exclude_list
     batch = true
     glob = powershell_files
     stage = powershell_files
@@ -141,6 +149,7 @@ local pwsh_linters = new Mapping<String, Step> {
 
   ["pwsh-script-analyzer"] {
     profiles = List("medium")
+    exclude = general_exclude_list
     batch = true
     glob = powershell_files
     stage = powershell_files

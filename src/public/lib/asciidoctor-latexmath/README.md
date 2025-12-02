@@ -5,30 +5,30 @@ Offline `latexmath` rendering for Asciidoctor documents powered by your local La
 ## Table of Contents
 
 - [asciidoctor-latexmath](#asciidoctor-latexmath)
-  - [Table of Contents](#table-of-contents)
-  - [Overview](#overview)
-  - [Features](#features)
-  - [Security Note](#security-note)
-  - [How It Works](#how-it-works)
-  - [Output Formats](#output-formats)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-    - [Using RubyGems](#using-rubygems)
-    - [Using Bundler](#using-bundler)
-    - [From Source](#from-source)
-  - [Quick Start](#quick-start)
-  - [Document Attributes](#document-attributes)
-    - [Document-level configuration](#document-level-configuration)
-      - [Font size control](#font-size-control)
-    - [Element attributes \& options](#element-attributes--options)
-  - [Caching](#caching)
-  - [Why asciidoctor-latexmath?](#why-asciidoctor-latexmath)
-  - [Accessibility \& Semantics](#accessibility--semantics)
-  - [Statistics Line](#statistics-line)
-  - [Troubleshooting](#troubleshooting)
-  - [Contributing](#contributing)
-  - [Author](#author)
-  - [License](#license)
+    - [Table of Contents](#table-of-contents)
+    - [Overview](#overview)
+    - [Features](#features)
+    - [Security Note](#security-note)
+    - [How It Works](#how-it-works)
+    - [Output Formats](#output-formats)
+    - [Prerequisites](#prerequisites)
+    - [Installation](#installation)
+        - [Using RubyGems](#using-rubygems)
+        - [Using Bundler](#using-bundler)
+        - [From Source](#from-source)
+    - [Quick Start](#quick-start)
+    - [Document Attributes](#document-attributes)
+        - [Document-level configuration](#document-level-configuration)
+            - [Font size control](#font-size-control)
+        - [Element attributes \& options](#element-attributes--options)
+    - [Caching](#caching)
+    - [Why asciidoctor-latexmath?](#why-asciidoctor-latexmath)
+    - [Accessibility \& Semantics](#accessibility--semantics)
+    - [Statistics Line](#statistics-line)
+    - [Troubleshooting](#troubleshooting)
+    - [Contributing](#contributing)
+    - [Author](#author)
+    - [License](#license)
 
 ## Overview
 
@@ -63,11 +63,11 @@ All processing happens locally, which keeps your documentation builds reproducib
 
 ## Output Formats
 
-| Format | Description | Typical Use Cases |
-| ------ | ----------- | ----------------- |
-| `pdf`  | Keeps the raw LaTeX PDF output for backends that accept vector PDFs. | Asciidoctor PDF, print-ready workflows |
-| `svg`  | Converts the PDF to scalable vector graphics. | Responsive HTML output, retina displays |
-| `png`  | Rasterizes the PDF into a bitmap image. | Legacy HTML pipelines, slide decks |
+| Format | Description                                                          | Typical Use Cases                       |
+| ------ | -------------------------------------------------------------------- | --------------------------------------- |
+| `pdf`  | Keeps the raw LaTeX PDF output for backends that accept vector PDFs. | Asciidoctor PDF, print-ready workflows  |
+| `svg`  | Converts the PDF to scalable vector graphics.                        | Responsive HTML output, retina displays |
+| `png`  | Rasterizes the PDF into a bitmap image.                              | Legacy HTML pipelines, slide decks      |
 
 ## Prerequisites
 
@@ -153,24 +153,24 @@ The extension replaces both expressions with rendered images that match the form
 
 ### Document-level configuration
 
-| Attribute | Aliases / CLI | Description | Values | Default |
-| --------- | ------------- | ----------- | ------ | ------- |
-| `stem` | `-a stem=latexmath` | Enables global stem support so bare `stem:[...]` calls delegate to this extension. | `latexmath`, `tex` | *(not set)* |
-| `latexmath-format` | `-a latexmath-format=svg` | Desired output format for every rendered asset. | `svg`, `pdf`, `png` | `svg` |
-| `latexmath-preamble` | `-a latexmath-preamble=...` | Additional LaTeX preamble injected before `\begin{document}`. Per-expression `preamble=` overrides the document value. | Raw LaTeX | *(empty)* |
-| `latexmath-fontsize` | `-a latexmath-fontsize=12pt` | Appends a font-size option to the standalone `\documentclass`. Expressions can override with `fontsize=`. | Values ending with `pt` (e.g., `10pt`, `12pt`) | `12pt` |
-| `latexmath-ppi` | `-a latexmath-ppi=300` | Pixels-per-inch for PNG renders. Ignored for SVG/PDF. | Integer 72–600 | `300` |
-| `latexmath-timeout` | `-a latexmath-timeout=120` | Maximum wall-clock time (seconds) each expression may consume before the renderer aborts and raises/places a placeholder. | Positive integer | `120` |
-| `latexmath-cache` | `-a latexmath-cache=false` | Toggle the on-disk cache. `false` forces regeneration without persisting results. | `true`, `false` | `true` |
-| `latexmath-cachedir` | `-a latexmath-cachedir=build/.cache/latexmath` | Cache location precedence: element `cachedir=` → `:latexmath-cachedir:` → `<outdir>/<imagesdir>` (when present) → `<outdir>/.asciidoctor/latexmath`. | Path | `<outdir>/.asciidoctor/latexmath` |
-| `latexmath-keep-artifacts` | `-a latexmath-keep-artifacts=true` | Retain intermediate `.tex`, `.log`, and PDF files for debugging. | `true`, `false` | `false` |
-| `latexmath-artifacts-dir` | `-a latexmath-artifacts-dir=build/latexmath-artifacts` | Destination for kept artifacts when `latexmath-keep-artifacts` is enabled. | Path | `<cachedir>/artifacts` |
-| `pdflatex` / `latexmath-pdflatex` | `-a pdflatex=tectonic` | Document-wide LaTeX engine command. Elements can override with `pdflatex=`. | `pdflatex`, `xelatex`, `lualatex`, `tectonic`, or absolute path | `pdflatex` |
-| `latexmath-svg-tool` | `-a latexmath-svg-tool=pdf2svg` | Preferred SVG converter (`dvisvgm` or `pdf2svg`). Paths are allowed. | Tool id or absolute path | auto-detect (`dvisvgm` then `pdf2svg`) |
-| `latexmath-pdf2svg` | `-a latexmath-pdf2svg=/opt/bin/dvisvgm` | Legacy alias for the SVG converter attribute. Logs a one-time info message then normalizes to `latexmath-svg-tool`. | Path | *(same as above)* |
-| `latexmath-png-tool` | `-a latexmath-png-tool=magick` | Preferred PNG conversion tool. | `pdftoppm`, `magick`, `gs`, or path | auto-detect (`pdftoppm`, `magick`, `gs`) |
-| `latexmath-pdftoppm` | `-a latexmath-pdftoppm=/opt/bin/pdftoppm` | Legacy alias for PNG converter selection. Logs a one-time info message. | Path | *(same as above)* |
-| `latexmath-on-error` | `-a latexmath-on-error=abort` | Rendering failure policy. `log` inserts an HTML placeholder, `abort` stops the build. | `log`, `abort` | `log` |
+| Attribute                         | Aliases / CLI                                          | Description                                                                                                                                          | Values                                                          | Default                                  |
+| --------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------- |
+| `stem`                            | `-a stem=latexmath`                                    | Enables global stem support so bare `stem:[...]` calls delegate to this extension.                                                                   | `latexmath`, `tex`                                              | _(not set)_                              |
+| `latexmath-format`                | `-a latexmath-format=svg`                              | Desired output format for every rendered asset.                                                                                                      | `svg`, `pdf`, `png`                                             | `svg`                                    |
+| `latexmath-preamble`              | `-a latexmath-preamble=...`                            | Additional LaTeX preamble injected before `\begin{document}`. Per-expression `preamble=` overrides the document value.                               | Raw LaTeX                                                       | _(empty)_                                |
+| `latexmath-fontsize`              | `-a latexmath-fontsize=12pt`                           | Appends a font-size option to the standalone `\documentclass`. Expressions can override with `fontsize=`.                                            | Values ending with `pt` (e.g., `10pt`, `12pt`)                  | `12pt`                                   |
+| `latexmath-ppi`                   | `-a latexmath-ppi=300`                                 | Pixels-per-inch for PNG renders. Ignored for SVG/PDF.                                                                                                | Integer 72–600                                                  | `300`                                    |
+| `latexmath-timeout`               | `-a latexmath-timeout=120`                             | Maximum wall-clock time (seconds) each expression may consume before the renderer aborts and raises/places a placeholder.                            | Positive integer                                                | `120`                                    |
+| `latexmath-cache`                 | `-a latexmath-cache=false`                             | Toggle the on-disk cache. `false` forces regeneration without persisting results.                                                                    | `true`, `false`                                                 | `true`                                   |
+| `latexmath-cachedir`              | `-a latexmath-cachedir=build/.cache/latexmath`         | Cache location precedence: element `cachedir=` → `:latexmath-cachedir:` → `<outdir>/<imagesdir>` (when present) → `<outdir>/.asciidoctor/latexmath`. | Path                                                            | `<outdir>/.asciidoctor/latexmath`        |
+| `latexmath-keep-artifacts`        | `-a latexmath-keep-artifacts=true`                     | Retain intermediate `.tex`, `.log`, and PDF files for debugging.                                                                                     | `true`, `false`                                                 | `false`                                  |
+| `latexmath-artifacts-dir`         | `-a latexmath-artifacts-dir=build/latexmath-artifacts` | Destination for kept artifacts when `latexmath-keep-artifacts` is enabled.                                                                           | Path                                                            | `<cachedir>/artifacts`                   |
+| `pdflatex` / `latexmath-pdflatex` | `-a pdflatex=tectonic`                                 | Document-wide LaTeX engine command. Elements can override with `pdflatex=`.                                                                          | `pdflatex`, `xelatex`, `lualatex`, `tectonic`, or absolute path | `pdflatex`                               |
+| `latexmath-svg-tool`              | `-a latexmath-svg-tool=pdf2svg`                        | Preferred SVG converter (`dvisvgm` or `pdf2svg`). Paths are allowed.                                                                                 | Tool id or absolute path                                        | auto-detect (`dvisvgm` then `pdf2svg`)   |
+| `latexmath-pdf2svg`               | `-a latexmath-pdf2svg=/opt/bin/dvisvgm`                | Legacy alias for the SVG converter attribute. Logs a one-time info message then normalizes to `latexmath-svg-tool`.                                  | Path                                                            | _(same as above)_                        |
+| `latexmath-png-tool`              | `-a latexmath-png-tool=magick`                         | Preferred PNG conversion tool.                                                                                                                       | `pdftoppm`, `magick`, `gs`, or path                             | auto-detect (`pdftoppm`, `magick`, `gs`) |
+| `latexmath-pdftoppm`              | `-a latexmath-pdftoppm=/opt/bin/pdftoppm`              | Legacy alias for PNG converter selection. Logs a one-time info message.                                                                              | Path                                                            | _(same as above)_                        |
+| `latexmath-on-error`              | `-a latexmath-on-error=abort`                          | Rendering failure policy. `log` inserts an HTML placeholder, `abort` stops the build.                                                                | `log`, `abort`                                                  | `log`                                    |
 
 > Deprecated alias: `latexmath-cache-dir` / `cache-dir` is still accepted (emits a one-time INFO log) but you should prefer `latexmath-cachedir` / `cachedir`.
 
@@ -189,26 +189,26 @@ The renderer always emits `\documentclass[preview,border=2pt,<size>]{standalone}
 
 ### Element attributes & options
 
-| Attribute / Option | Applies To | Description | Values / Notes |
-| ------------------ | ---------- | ----------- | -------------- |
-| `target=` (first positional attribute) | Block | Explicit output basename (may include subdirectories). | Filename |
-| `format` (second positional attribute) | Block | Overrides output format for this expression only. | `svg`, `pdf`, `png` |
-| `format=` | Block / Inline | Keyword attribute equivalent to the positional format override. | `svg`, `pdf`, `png` |
-| `preamble=` | Block / Inline | Replaces the document-level preamble for this expression. | Raw LaTeX |
-| `fontsize=` | Block / Inline | Overrides the `\documentclass` font-size option for this expression. | Values ending with `pt` (e.g., `10pt`, `12pt`) |
-| `ppi=` | Block / Inline | Per-expression PNG density (only used when `format=png`). | Integer 72–600 |
-| `timeout=` | Block / Inline | Overrides the timeout for the current expression. | Positive integer |
-| `cache=` | Block / Inline | Enables/disables cache usage for the expression. | `true`, `false` |
-| `%nocache` option | Block | Shortcut that skips both cache read and write. | Use as `[latexmath%nocache]` |
-| `keep-artifacts` option | Block | Preserve intermediate files for this expression. | `[latexmath, options="keep-artifacts"]` |
-| `artifacts-dir=` / `artifactsdir=` | Block / Inline | Custom artifact directory when `keep-artifacts` is active. | Path |
-| `cachedir=` / `cache-dir=` | Block / Inline | Store/read cache entries for this expression in a custom directory. Logs a deprecation warning when `cache-dir=` is used. | Path |
-| `pdflatex=` | Block / Inline | Per-expression engine command (allows flags or absolute paths). | Command string |
-| `latexmath-svg-tool=` / `latexmath-pdf2svg=` | Block / Inline | Choose a specific SVG converter or executable path. | Tool id / path |
-| `latexmath-png-tool=` / `latexmath-pdftoppm=` | Block / Inline | Choose a specific PNG converter or executable path. | Tool id / path |
-| `on-error=` | Block / Inline | Override the error handling policy locally. | `log`, `abort` |
-| `role=` | Block / Inline | Adds additional roles/CSS classes; the extension always reapplies the `math` role and accessible markup. | Space-separated roles |
-| `align=` | Block | Aligns the enclosing block (`left`, `center`, `right`). | CSS alignment keyword |
+| Attribute / Option                            | Applies To     | Description                                                                                                               | Values / Notes                                 |
+| --------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `target=` (first positional attribute)        | Block          | Explicit output basename (may include subdirectories).                                                                    | Filename                                       |
+| `format` (second positional attribute)        | Block          | Overrides output format for this expression only.                                                                         | `svg`, `pdf`, `png`                            |
+| `format=`                                     | Block / Inline | Keyword attribute equivalent to the positional format override.                                                           | `svg`, `pdf`, `png`                            |
+| `preamble=`                                   | Block / Inline | Replaces the document-level preamble for this expression.                                                                 | Raw LaTeX                                      |
+| `fontsize=`                                   | Block / Inline | Overrides the `\documentclass` font-size option for this expression.                                                      | Values ending with `pt` (e.g., `10pt`, `12pt`) |
+| `ppi=`                                        | Block / Inline | Per-expression PNG density (only used when `format=png`).                                                                 | Integer 72–600                                 |
+| `timeout=`                                    | Block / Inline | Overrides the timeout for the current expression.                                                                         | Positive integer                               |
+| `cache=`                                      | Block / Inline | Enables/disables cache usage for the expression.                                                                          | `true`, `false`                                |
+| `%nocache` option                             | Block          | Shortcut that skips both cache read and write.                                                                            | Use as `[latexmath%nocache]`                   |
+| `keep-artifacts` option                       | Block          | Preserve intermediate files for this expression.                                                                          | `[latexmath, options="keep-artifacts"]`        |
+| `artifacts-dir=` / `artifactsdir=`            | Block / Inline | Custom artifact directory when `keep-artifacts` is active.                                                                | Path                                           |
+| `cachedir=` / `cache-dir=`                    | Block / Inline | Store/read cache entries for this expression in a custom directory. Logs a deprecation warning when `cache-dir=` is used. | Path                                           |
+| `pdflatex=`                                   | Block / Inline | Per-expression engine command (allows flags or absolute paths).                                                           | Command string                                 |
+| `latexmath-svg-tool=` / `latexmath-pdf2svg=`  | Block / Inline | Choose a specific SVG converter or executable path.                                                                       | Tool id / path                                 |
+| `latexmath-png-tool=` / `latexmath-pdftoppm=` | Block / Inline | Choose a specific PNG converter or executable path.                                                                       | Tool id / path                                 |
+| `on-error=`                                   | Block / Inline | Override the error handling policy locally.                                                                               | `log`, `abort`                                 |
+| `role=`                                       | Block / Inline | Adds additional roles/CSS classes; the extension always reapplies the `math` role and accessible markup.                  | Space-separated roles                          |
+| `align=`                                      | Block          | Aligns the enclosing block (`left`, `center`, `right`).                                                                   | CSS alignment keyword                          |
 
 Inline macros support the same keyword attributes except for positional `target=`/`format`. Attributes follow asciidoctor-diagram precedence: element attribute → element options → document attribute → default.
 
@@ -224,13 +224,13 @@ By default, cache files live under `<outdir>/.asciidoctor/latexmath`. Override t
 
 ## Why asciidoctor-latexmath?
 
-| Feature | asciidoctor-latexmath | asciidoctor-mathematical |
-| ------- | --------------------- | ------------------------- |
-| Input types | `latexmath` (block + inline) | `latexmath` and `stem` |
-| Rendering backend | Local LaTeX engine (`pdflatex` / `xelatex` / `lualatex` / `tectonic`) | Native Mathematical library |
-| Output formats | PDF, SVG, PNG | PNG (default) / SVG |
-| Accessibility defaults | `role="math"` + `alt` attributes derived from source | Requires manual markup |
-| External dependencies | Leverages standard LaTeX installation | Requires the Mathematical gem and Cairo stack |
+| Feature                | asciidoctor-latexmath                                                 | asciidoctor-mathematical                      |
+| ---------------------- | --------------------------------------------------------------------- | --------------------------------------------- |
+| Input types            | `latexmath` (block + inline)                                          | `latexmath` and `stem`                        |
+| Rendering backend      | Local LaTeX engine (`pdflatex` / `xelatex` / `lualatex` / `tectonic`) | Native Mathematical library                   |
+| Output formats         | PDF, SVG, PNG                                                         | PNG (default) / SVG                           |
+| Accessibility defaults | `role="math"` + `alt` attributes derived from source                  | Requires manual markup                        |
+| External dependencies  | Leverages standard LaTeX installation                                 | Requires the Mathematical gem and Cairo stack |
 
 ## Accessibility & Semantics
 
@@ -240,7 +240,7 @@ Rendered output keeps formulas accessible by emitting `<img>` elements with `rol
 
 When logging at INFO (the default), the extension prints a single summary line per run:
 
-```
+```text
 latexmath stats: renders=<int> cache_hits=<int> avg_render_ms=<int> avg_hit_ms=<int>
 ```
 
