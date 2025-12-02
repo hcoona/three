@@ -1,8 +1,9 @@
-import { readFile, writeFile } from 'node:fs/promises';
+// biome-ignore-all lint/suspicious/noConsole: this unofficial cli tool uses console output intentionally
 import { spawn } from 'node:child_process';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import * as nbgv from 'nerdbank-gitversioning';
-import { getVersionInfo, getBrowserExtensionVersion, projectRoot } from './version-utils.mjs';
+import { getBrowserExtensionVersion, getVersionInfo, projectRoot } from './version-utils.mjs';
 
 const packageJsonPath = path.join(projectRoot, 'package.json');
 const PLACEHOLDER_VERSION = '0.0.0-placeholder';

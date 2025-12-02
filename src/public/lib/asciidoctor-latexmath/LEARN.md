@@ -5,6 +5,7 @@
 ## 1. asciidoctor-mathematical 的 LaTeX 处理机制
 
 ### 1.1 扩展结构概述
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-mathematical/lib/asciidoctor-mathematical/extension.rb` (行 1-10)
 
 - 使用 `Asciidoctor::Extensions::Treeprocessor` 作为基类
@@ -12,6 +13,7 @@
 - 定义了内联数学宏的正则表达式: `/\\?(stem|(?:latex|ascii)math):([a-z,]*)\[(.*?[^\\])\]/m`
 
 ### 1.2 主处理流程
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-mathematical/lib/asciidoctor-mathematical/extension.rb` (行 11-50)
 
 ```ruby
@@ -47,6 +49,7 @@ end
 ```
 
 ### 1.3 行间数学块处理
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-mathematical/lib/asciidoctor-mathematical/extension.rb` (行 53-78)
 
 ```ruby
@@ -63,7 +66,15 @@ def handle_stem_block(stem, mathematical, image_output_dir, image_target_dir, fo
   end
 
   # 生成图像
-  img_target, img_width, img_height = make_equ_image content, stem.id, false, mathematical, image_output_dir, image_target_dir, format, inline
+  img_target, img_width, img_height = make_equ_image
+    content,
+    stem.id,
+    false,
+    mathematical,
+    image_output_dir,
+    image_target_dir,
+    format,
+    inline
 
   # 替换原块为图像块
   parent = stem.parent
@@ -83,9 +94,11 @@ end
 ```
 
 ### 1.4 内联数学处理
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-mathematical/lib/asciidoctor-mathematical/extension.rb` (行 110-144)
 
 关键特性:
+
 - 使用正则表达式 `StemInlineMacroRx` 匹配内联数学宏
 - 支持转义 (`\stem:` 不会被处理)
 - 支持替换参数 (substitution parameters)
@@ -111,7 +124,15 @@ if text && text.include?(':') && (text.include?('stem:') || text.include?('math:
     end
 
     source_modified = true
-    img_target, img_width, img_height = make_equ_image eq_data, nil, true, mathematical, image_output_dir, image_target_dir, format, inline
+    img_target, img_width, img_height = make_equ_image
+      eq_data,
+      nil,
+      true,
+      mathematical,
+      image_output_dir,
+      image_target_dir,
+      format,
+      inline
     if inline
       %(pass:[<span class="steminline">#{img_target}</span>])
     else
@@ -122,6 +143,7 @@ end
 ```
 
 ### 1.5 图像生成与缓存
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-mathematical/lib/asciidoctor-mathematical/extension.rb` (行 153-171)
 
 ```ruby
@@ -150,6 +172,7 @@ end
 ## 2. asciidoctor-diagram TikZ 处理机制
 
 ### 2.1 扩展注册结构
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-diagram/lib/asciidoctor-diagram/tikz.rb`
 
 ```ruby
@@ -177,6 +200,7 @@ end
 ```
 
 ### 2.2 TikZ Converter 实现
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-diagram/lib/asciidoctor-diagram/tikz/converter.rb` (行 8-20)
 
 ```ruby
@@ -197,6 +221,7 @@ end
 ```
 
 ### 2.3 LaTeX 文档生成与工具链调用
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-diagram/lib/asciidoctor-diagram/tikz/converter.rb` (行 22-66)
 
 ```ruby
@@ -241,7 +266,14 @@ END
   # 生成 PDF
   pdf = generate_file(latexpath, 'tex', 'pdf', latex) do |tool_path, input_path, output_path|
     {
-        :args => [tool_path, '-shell-escape', '-file-line-error', '-interaction=nonstopmode', '-output-directory', Platform.native_path(File.dirname(output_path)), Platform.native_path(input_path)],
+        :args => [
+          tool_path,
+          '-shell-escape',
+          '-file-line-error',
+          '-interaction=nonstopmode',
+          '-output-directory',
+          Platform.native_path(File.dirname(output_path)),
+          Platform.native_path(input_path)],
         :out_file => "#{File.dirname(input_path)}/#{File.basename(input_path, '.*')}.pdf"
     }
   end
@@ -263,6 +295,7 @@ end
 ## 3. 通用 Diagram 处理框架 (diagram_processor.rb)
 
 ### 3.1 处理器类型与继承关系
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-diagram/lib/asciidoctor-diagram/diagram_processor.rb` (行 384-474)
 
 ```ruby
@@ -295,6 +328,7 @@ end
 ```
 
 ### 3.2 核心处理流程
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-diagram/lib/asciidoctor-diagram/diagram_processor.rb` (行 63-130)
 
 ```ruby
@@ -330,6 +364,7 @@ end
 ```
 
 ### 3.3 图像生成与缓存机制
+
 **来源:** `/workspace/asciidoctor-extensions/asciidoctor-diagram/lib/asciidoctor-diagram/diagram_processor.rb` (行 169-225)
 
 ```ruby
@@ -344,7 +379,9 @@ def create_image_block(parent, source, format, converter)
 
   # 缓存检查
   if use_cache && File.exist?(metadata_file)
-    metadata = File.open(metadata_file, 'r') {|f| JSON.load(f, nil, :symbolize_names => true, :create_additions => false) }
+    metadata = File.open(metadata_file, 'r') {
+      |f| JSON.load(f, nil, :symbolize_names => true, :create_additions => false)
+    }
   else
     metadata = {}
   end
@@ -395,22 +432,27 @@ end
 ## 4. 关键设计要点总结
 
 ### 4.1 扩展类型选择
+
 - **TreeProcessor**: 适用于需要全文档扫描和处理的场景 (如 mathematical)
 - **BlockProcessor + BlockMacroProcessor + InlineMacroProcessor**: 适用于特定语法块的处理 (如 tikz)
 
 ### 4.2 图像生成策略
+
 - **asciidoctor-mathematical**: 依赖外部库 (Mathematical gem) 直接生成图像数据
 - **asciidoctor-diagram**: 通过 CLI 工具链 (pdflatex, pdf2svg) 生成图像文件
 
 ### 4.3 缓存机制
+
 - **mathematical**: 基于内容 MD5 哈希生成文件名，自动缓存
 - **diagram**: 使用 `.cache` 文件存储元数据，支持 `nocache` 选项
 
 ### 4.4 格式支持
+
 - **mathematical**: PNG/SVG, 通过 Mathematical 库配置
 - **tikz**: PDF/SVG, 通过 LaTeX 工具链生成
 
 ### 4.5 LaTeX 处理流程
+
 1. **内容解析**: 识别 latexmath/asciimath 语法
 2. **LaTeX 包装**: 添加适当的定界符 ($...$ 或 $$...$$)
 3. **图像生成**: 调用相应的渲染引擎
@@ -420,15 +462,18 @@ end
 ## 5. Processor 组合策略与触发时机
 
 ### 5.1 同时覆盖三种语法入口
+
 - `tikz` 扩展同时注册了块、块宏与内联宏处理器，并复用同一个 `TikZConverter`，从而覆盖 `[tikz]....`、`tikz::[]` 与 `tikz:[]` 三种语法形式。参见 `tikz/extension.rb` (行 1-16)。
 - 这一结构说明：要为 `latexmath` 提供一致体验，也可以定义三个处理器并共用同一渲染核心（例如统一的 AST→SVG/MathML 逻辑），再在注册阶段把它们绑定到同名宏。[Asciidoctor Extensions Register](https://docs.asciidoctor.org/asciidoctor/latest/extensions/register/)
 
 ### 5.2 不同处理器的触发时机
+
 - **Treeprocessor**：`MathematicalTreeprocessor#process` 会在文档 AST 构建完后遍历所有 `:stem` 节点，再去处理散文块与章节标题，这表明 Treeprocessor 获取的是“全局 AST 视图”。参见 `asciidoctor-mathematical/extension.rb` (行 11-50)。官方文档也说明 Treeprocessor 在内联替换之前运行，可用于跨块分析。[Tree Processor 文档](https://docs.asciidoctor.org/asciidoctor/latest/extensions/tree-processor/)
 - **BlockProcessor / BlockMacroProcessor**：在解析阶段就会被触发，从 `DiagramBlockProcessor` 与 `DiagramBlockMacroProcessor` 继承结构可见，它们直接将源内容包装成 `DiagramSource` 并交由 `DiagramProcessor#process` 生成块节点。参见 `diagram_processor.rb` (行 380-419)。[Block Processor 文档](https://docs.asciidoctor.org/asciidoctor/latest/extensions/block-processor/)、[Block Macro Processor 文档](https://docs.asciidoctor.org/asciidoctor/latest/extensions/block-macro-processor/)
 - **InlineMacroProcessor**：在块转换的内联替换阶段调用。`DiagramInlineMacroProcessor#process` 先复用块转换逻辑，再把结果转成内联节点，说明其工作发生在块内容即将写出之前。参见 `diagram_processor.rb` (行 432-457)。[Inline Macro Processor 文档](https://docs.asciidoctor.org/asciidoctor/latest/extensions/inline-macro-processor/)
 
 ### 5.3 属性快照与替换控制
+
 - `DiagramInlineMacroProcessor#process` 会复制块级结果的属性，并显式移除 `subs`，避免 Asciidoctor 对已渲染好的内联节点再次做替换。参见 `diagram_processor.rb` (行 439-455)。
 - `handle_inline_stem` 在处理每个内联公式时都会重新读取文档的 `stem` 相关属性，并按需决定替换列表 (`node.resolve_pass_subs`) 与输出包装格式。参见 `asciidoctor-mathematical/extension.rb` (行 118-141)。这提供了一个“即时读取并固化配置”的范式，适合在多文件 include 场景下捕获当时的属性值。
 - 结合以上两点，实现 latexmath 扩展时，可在对应 Processor 内部将关键属性写回节点或渲染结果，避免后续文档中的属性改动影响已经处理的内容。
@@ -446,32 +491,32 @@ end
 
 - **阅读材料**: `README.md`（项目概览、属性列表、缓存章节）与 `asciidoctor-diagram/README.adoc`（配置及处理流程简介）。
 - **关键结论**:
-  - 保持与 asciidoctor-diagram 一致的属性命名与缓存目录结构（`<outdir>/.asciidoctor/...`）。
-  - 渲染流程需显式分离“捕获 → 渲染 → 集成”三个阶段，并针对内联模式提供 data URI 与嵌入式 SVG 双策略。
-  - 允许用户通过 `pdflatex`、`latexmath-pdf2svg` 等属性覆盖命令，确保跨平台兼容。
+    - 保持与 asciidoctor-diagram 一致的属性命名与缓存目录结构（`<outdir>/.asciidoctor/...`）。
+    - 渲染流程需显式分离“捕获 → 渲染 → 集成”三个阶段，并针对内联模式提供 data URI 与嵌入式 SVG 双策略。
+    - 允许用户通过 `pdflatex`、`latexmath-pdf2svg` 等属性覆盖命令，确保跨平台兼容。
 - **后续行动**: 在 `DESIGN.md` 中固化整体架构、组件职责、PlantUML 类图；实现阶段遵循该文档拆分模块。
 
 ## 8. 2025-10-01 设计抽象优化
 
 - **目的**: 进一步提升渲染管线的可组合性、缓存可替换性，以及对命令链路的扩展能力。
 - **新增思路**:
-  - 在注册阶段引入 `ToolchainDetector`，一次性确定 pdf2svg/dvisvgm/latexmath-png-tool 可用性；
-  - 通过 `RendererCatalog` 维护目标格式到 Renderer 的映射，块/宏/内联公用同一套装饰后的 Renderer；
-  - `RendererFactory` 依据探测结果拼接 `RendererPipeline`，将 `LatexEngineStage` 与多个 `ExternalToolStage` 组合成 LaTeX→PDF→目标格式链路；
-  - `CachingRenderer` 继续以装饰器形式包裹，缓存键中囊括块级属性（格式覆盖、工具选择）；
-  - 三个 Processor（块、块宏、内联）直接使用 Catalog，不再依赖独立的 RenderManager 层。
+    - 在注册阶段引入 `ToolchainDetector`，一次性确定 pdf2svg/dvisvgm/latexmath-png-tool 可用性；
+    - 通过 `RendererCatalog` 维护目标格式到 Renderer 的映射，块/宏/内联公用同一套装饰后的 Renderer；
+    - `RendererFactory` 依据探测结果拼接 `RendererPipeline`，将 `LatexEngineStage` 与多个 `ExternalToolStage` 组合成 LaTeX→PDF→目标格式链路；
+    - `CachingRenderer` 继续以装饰器形式包裹，缓存键中囊括块级属性（格式覆盖、工具选择）；
+    - 三个 Processor（块、块宏、内联）直接使用 Catalog，不再依赖独立的 RenderManager 层。
 - **产出**: `DESIGN.md` 更新后的类图、时序图与正文说明，改写 Renderer 抽象以匹配组合式渲染策略。
 
 ## 9. 2025-10-02 架构细化与属性对齐
 
 - **阅读材料**:
-  - `class-digram-v2.plantuml`（Lines 1-170）：确认最新分层架构，包含 `ExtensionRegistry`→`RendererBuilder`→`IRenderer` 的拓扑关系以及 `DiskCache` 缓存包装。
-  - `AsciidoctorLatexmathAttributes.md`（Lines 1-180）：梳理 `latexmath-format`、`latexmath-cache`、`latexmath-preamble`、`latexmath-png-tool` 等全量属性及块级 `nocache`/`keep-artifacts` 选项。
+    - `class-digram-v2.plantuml`（Lines 1-170）：确认最新分层架构，包含 `ExtensionRegistry`→`RendererBuilder`→`IRenderer` 的拓扑关系以及 `DiskCache` 缓存包装。
+    - `AsciidoctorLatexmathAttributes.md`（Lines 1-180）：梳理 `latexmath-format`、`latexmath-cache`、`latexmath-preamble`、`latexmath-png-tool` 等全量属性及块级 `nocache`/`keep-artifacts` 选项。
 - **关键结论**:
-  - 采用六层设计（入口、配置、处理器、请求、渲染抽象、具体渲染器），每层保持单一职责，满足系统设计最佳实践。
-  - `RendererBuilder` 负责生成确定性管线，不做运行时回退，缓存键须含 pipeline 签名、内容哈希、模式、ppi 与引擎版本，确保与 asciidoctor-diagram 的缓存一致性。
-  - Processor 全面依赖 `BlockProcessor` / `BlockMacroProcessor` / `InlineMacroProcessor`，拒绝 TreeProcessor，实现目标语法覆盖。
-  - `Configuration` 需对 `latexmath-cache-dir`、`latexmath-artifacts-dir`、`imagesoutdir` 做统一解析，并提供 `inline_data_uri?` 钩子以支持内联渲染策略。
+    - 采用六层设计（入口、配置、处理器、请求、渲染抽象、具体渲染器），每层保持单一职责，满足系统设计最佳实践。
+    - `RendererBuilder` 负责生成确定性管线，不做运行时回退，缓存键须含 pipeline 签名、内容哈希、模式、ppi 与引擎版本，确保与 asciidoctor-diagram 的缓存一致性。
+    - Processor 全面依赖 `BlockProcessor` / `BlockMacroProcessor` / `InlineMacroProcessor`，拒绝 TreeProcessor，实现目标语法覆盖。
+    - `Configuration` 需对 `latexmath-cache-dir`、`latexmath-artifacts-dir`、`imagesoutdir` 做统一解析，并提供 `inline_data_uri?` 钩子以支持内联渲染策略。
 - **后续行动**:
-  - 在 `DESIGN.md` 中替换旧类图与描述，记录新的管线层次、缓存与元数据需求。
-  - 制定属性→组件映射矩阵，明确每个属性的解析与消费位置，为实现阶段提供检查清单。
+    - 在 `DESIGN.md` 中替换旧类图与描述，记录新的管线层次、缓存与元数据需求。
+    - 制定属性→组件映射矩阵，明确每个属性的解析与消费位置，为实现阶段提供检查清单。

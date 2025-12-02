@@ -7,5 +7,11 @@ version = 1
 [[annotations]]
 SPDX-FileCopyrightText = "2025 Shuai Zhang"
 SPDX-License-Identifier = "CC-BY-NC-ND-4.0"
-path = [".editorconfig", ".gitignore", ".vscode/settings.json", "README.md", "sample.adoc"]
+path = [
+  ".editorconfig",
+  ".gitignore",
+  ".vscode/settings.json",
+  "README.md",
+  "sample.adoc",
+]
 precedence = "override"

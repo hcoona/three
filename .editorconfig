@@ -15,7 +15,11 @@ indent_size = unset
 indent_size = unset
 
 [*.md]
-indent_size = 4
+# Markdown files are managed by prettier.
+indent_size = unset
+
+[*.adoc]
+indent_size = 2
 
 [*.ps1]
 indent_size = 4

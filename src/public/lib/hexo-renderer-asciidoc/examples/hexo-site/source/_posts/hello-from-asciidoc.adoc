@@ -35,9 +35,9 @@ code that ships to npm.
 pnpm add hexo-renderer-asciidoc
 ----
 . Restart Hexo. The framework auto-discovers renderers and routes the supported
-   extensions through this package—no extra configuration necessary.
+  extensions through this package—no extra configuration necessary.
 . Keep your posts under `source/_posts/*.adoc` and Hexo will take care of the
-   rest.
+  rest.
 
 == What this example proves
 

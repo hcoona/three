@@ -41,7 +41,6 @@ https://docs.asciidoctor.org/asciidoctor/latest/extensions/inline-macro-processo
 
     ）用 **BlockProcessor**。如果你更喜欢 `latexmath::[]` 这种“块宏”语法，则用 **BlockMacroProcessor**。之所以要分开，是因为 Asciidoctor 的扩展 API 把“内联”和“块级”当成两类节点与生命周期来处理，返回的节点类型也不同。[Asciidoctor Docs+2Asciidoctor Docs+2](https://docs.asciidoctor.org/asciidoc/latest/stem/?utm_source=chatgpt.com)
 
-
 推荐实现思路
 ======
 
@@ -50,7 +49,6 @@ https://docs.asciidoctor.org/asciidoctor/latest/extensions/inline-macro-processo
 2. **HTML 后端**：在内联用 `\(...\)` 包起来，块级用 `\[...\]`；再用 **DocinfoProcessor** 在 `<head>` 注入 MathJax/KaTeX。[Asciidoctor Docs+1](https://docs.asciidoctor.org/asciidoctor/latest/extensions/inline-macro-processor/?utm_source=chatgpt.com)
 
 3. **PDF 后端**：优先走现成的 **asciidoctor-mathematical**（它会处理 `latexmath` 与 `stem` 的块与内联，并把表达式渲染成 SVG/PNG），或参考 Asciidoctor PDF 的 STEM 支持。[GitHub+1](https://github.com/asciidoctor-contrib/asciidoctor-mathematical?utm_source=chatgpt.com)
-
 
 极简 Ruby 骨架（可放在自定义扩展里）
 =====================
@@ -137,7 +135,6 @@ latexmath::[] 这种“块宏”语法 是指什么
 
 * **用途**：适合一整段数学公式的显示，而不是句子里插一句公式。
 
-
 ### 区别
 
 * **内联宏（inline macro）**：比如 `latexmath:[e^{i\pi}+1=0]`，它会出现在一行文字中。
@@ -146,7 +143,6 @@ latexmath::[] 这种“块宏”语法 是指什么
 
 * **普通块（block）**：比如 `[latexmath] ++++ ... ++++`，这种写法是“带角色的块”，和块宏不同，它可以跨多行。
 
-
 ### 扩展开发时的处理器
 
 * 如果要支持 `latexmath::[]` 这种写法，应写 **BlockMacroProcessor**。
@@ -154,7 +150,6 @@ latexmath::[] 这种“块宏”语法 是指什么
 * 如果要支持 `latexmath:[...]`（内联），就写 **InlineMacroProcessor**。
 
 * 如果要支持 `[latexmath] ++++ ... ++++` 这种成块内容，则要用 **BlockProcessor**。
-
 
 * * *
 
@@ -180,7 +175,6 @@ latexmath::[] 这种“块宏”语法 是指什么
 
 * **原因**：它嵌在段落文字中，要返回的是一个 inline 节点。
 
-
 ### 2. 块宏
 
 * **语法**：`latexmath::[ \int_0^\infty e^{-x^2} dx ]`
@@ -188,7 +182,6 @@ latexmath::[] 这种“块宏”语法 是指什么
 * **Processor**：`BlockMacroProcessor`
 
 * **原因**：整行就是一个宏调用，要生成一个 block 节点。
-
 
 ### 3. 标记块
 
@@ -204,7 +197,6 @@ latexmath::[] 这种“块宏”语法 是指什么
 * **Processor**：`BlockProcessor`
 
 * **原因**：这是一个带 role 的显式块（`[latexmath]`），需要处理多行原始内容。
-
 
 * * *
 
@@ -247,7 +239,6 @@ Treeprocessor 好像计算时机和 InlineMacroProcessor, BlockProcessor, BlockM
 
 5. **（可选）DocinfoProcessor / Postprocessor**：前者在生成文档时插入 `<head>`/`<footer>` 片段，后者对最终输出再加工（比如注入脚本）。官方文档亦有说明。[Asciidoctor Docs](https://docs.asciidoctor.org/asciidoctorj/latest/extensions/extensions-introduction/?utm_source=chatgpt.com)
 
-
 对你插件设计的具体影响
 ===========
 
@@ -271,7 +262,6 @@ Treeprocessor 好像计算时机和 InlineMacroProcessor, BlockProcessor, BlockM
 * **Treeprocessor 的定位**
     适合**在统一的 AST 层面**做跨块的收尾工作（如给所有数学块打标、把源码中的占位文本替换掉、统计清单等），但不要指望它拿到已经“内联展开”的片段——那些在随后的转换阶段才发生。[Asciidoctor Docs](https://docs.asciidoctor.org/asciidoctor/latest/extensions/tree-processor/?utm_source=chatgpt.com)
 
-
 实操建议
 ====
 
@@ -280,7 +270,6 @@ Treeprocessor 好像计算时机和 InlineMacroProcessor, BlockProcessor, BlockM
 * **控制二次替换**：内联处理器返回的节点若是原样注入（如 HTML/MathJax 标记），请给节点/块设 `subs`，避免再次被替换（或只保留你需要的替换）。[Asciidoctor Docs](https://docs.asciidoctor.org/asciidoc/latest/subs/apply-subs-to-blocks/?utm_source=chatgpt.com)
 
 * **需要统一收尾**（比如统计/注入资源）：再加一个 Treeprocessor；真正的脚本注入放到 Docinfo/Postprocessor。[Asciidoctor Docs+1](https://docs.asciidoctor.org/asciidoctor/latest/extensions/tree-processor/?utm_source=chatgpt.com)
-
 
 如果你愿意，我可以把你现有的目标（KaTeX/MathJax、HTML/PDF 后端）代入，给出一份按上述时机精确设置 `subs` 与返回节点类型的最小可用扩展示例。
 
@@ -302,13 +291,11 @@ Treeprocessor 好像计算时机和 InlineMacroProcessor, BlockProcessor, BlockM
 
 * **BlockMacroProcessor / BlockProcessor**（处理 `latexmath::[]` 和 `[latexmath] ++++...++++`）是在**解析阶段**就触发，把行/块直接变成节点。[Asciidoctor Docs+1](https://docs.asciidoctor.org/asciidoctorj/latest/extensions/block-macro-processor/?utm_source=chatgpt.com)
 
-
 关于 include 与作用域（为什么 Treeprocessor 很难“还原每个文件里的重定义”）：
 
 * include 并**不引入新的属性作用域**；被包含文件里的属性赋值等价于在**包含点**写入，从那一点**向后生效，直到被再次修改或 unset**。[discuss.asciidoctor.org+1](https://discuss.asciidoctor.org/Understanding-include-directive-and-file-path-td3137.html?utm_source=chatgpt.com)
 
 * 少数结构（例如**表格单元格**）会形成“嵌套文档”，其中定义的新属性**不会影响父文档**；但这不适用于 include。[Asciidoctor Docs](https://docs.asciidoctor.org/asciidoc/latest/tables/format-cell-content/?utm_source=chatgpt.com)
-
 
 对插件设计的实际建议
 ----------
@@ -326,7 +313,6 @@ Treeprocessor 好像计算时机和 InlineMacroProcessor, BlockProcessor, BlockM
     * 约定**在 include 前后成对设置/还原**（作者手动 `:foo: x`…`:!foo:` 或恢复旧值）；
 
     * 或写一个 **Preprocessor / IncludeProcessor**，在展开 include 时**白名单地保存/恢复**相关属性（把旧值压栈，include 返回后弹栈还原）。这样就不用 Treeprocessor 去“猜历史”。[Asciidoctor Docs](https://docs.asciidoctor.org/asciidoc/latest/directives/include/?utm_source=chatgpt.com)
-
 
 如果你告诉我具体有哪些属性需要“快照”（例如编号策略、渲染后端选择等），我可以把上述策略改成一份最小可用的示例代码给你。
 
@@ -349,7 +335,6 @@ Treeprocessor 好像计算时机和 InlineMacroProcessor, BlockProcessor, BlockM
 * **InlineMacroProcessor**：在**输出生成阶段**、转换块内容时触发，但仍按文档顺序处理；它在所在段落转换的那一刻读取属性，也能拿到**该位置**的有效值（不会被后文的重新赋值“穿越”影响）。[Asciidoctor Docs](https://docs.asciidoctor.org/asciidoctorj/latest/extensions/conversion-process-overview/)
 
 * **include 的属性作用域**：`include::` 不是子文档，不引入新作用域；被包含文件里的属性赋值等同于在**包含点**写入，并从那里向后生效（直到再次修改或 unset）。因此各处理器在触发点读取到的就是你想要的“此处此刻”的属性状态。[Asciidoctor Docs+1](https://docs.asciidoctor.org/asciidoc/latest/directives/include/?utm_source=chatgpt.com)
-
 
 ### 实操要点（如何“固化”以避免后续变化影响）
 
@@ -375,7 +360,6 @@ Treeprocessor 好像计算时机和 InlineMacroProcessor, BlockProcessor, BlockM
 
     * 属性条目（`:name: value`）在赋值前会先做“header substitutions”，所以 `{attr}` 在属性值里会提前被展开；宏（含自定义宏）的内容则在 **macros** 步骤参与替换。设计参数解析时要考虑这一点。[Asciidoctor Docs+1](https://docs.asciidoctor.org/asciidoc/latest/attributes/attribute-entry-substitutions/?utm_source=chatgpt.com)
 
-
 ### 什么时候需要更进一步的手段？
 
 * 如果你想要“每个 include 文件各自成作用域、退出还原”的**强隔离语义**（Asciidoctor 默认没有），就需要自己加一层：
@@ -384,13 +368,11 @@ Treeprocessor 好像计算时机和 InlineMacroProcessor, BlockProcessor, BlockM
 
 * 另外，**Treeprocessor** 运行在块级解析结束、内联尚未处理之前；它看不到“内联宏已解析后的节点”，也不保留“属性随文演化历史”。不要指望用它来回溯每个位置的属性值，改用上面“在各 processor 处即时固化”的策略。[Asciidoctor Docs](https://docs.asciidoctor.org/asciidoctor/latest/extensions/tree-processor/?utm_source=chatgpt.com)
 
-
 ### 小结
 
 * **结论**：只用 InlineMacroProcessor、BlockProcessor、BlockMacroProcessor 就能覆盖三种语法，并正确响应跨文件的属性重赋值——关键是**在触发点读取并固化属性**。
 
 * **若需 include 级作用域**：再配合 Include/Preprocessor 做属性栈管理即可。[Asciidoctor Docs+1](https://docs.asciidoctor.org/asciidoctorj/latest/extensions/conversion-process-overview/)
-
 
 需要的话，我可以给你一份最小可用的示例：三类 processor 都把 `:math-engine:`, `:eqnum:` 等配置在触发时读出并固化到节点（含合适的 `subs` 设置），开箱即用。
 ***** End Conversation

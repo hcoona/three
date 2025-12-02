@@ -2,9 +2,7 @@
   "last_updated": "2025-10-07T16:00:00Z",
   "status": "green",
   "current_focus": "Stabilization and documentation tidy-up after completing Phase 3.7 coverage tasks.",
-  "completed_tasks": [
-    "T001-T087"
-  ],
+  "completed_tasks": ["T001-T087"],
   "pending_tasks": [],
   "plan": [
     {
