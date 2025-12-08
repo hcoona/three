@@ -15,13 +15,13 @@
     "format": "pnpm -r --if-present format"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.7",
-    "@commitlint/cli": "^20.1.0",
-    "@commitlint/config-conventional": "^20.0.0",
-    "@commitlint/format": "^20.0.0",
-    "@commitlint/types": "^20.0.0",
+    "@biomejs/biome": "2.3.8",
+    "@commitlint/cli": "^20.2.0",
+    "@commitlint/config-conventional": "^20.2.0",
+    "@commitlint/format": "^20.2.0",
+    "@commitlint/types": "^20.2.0",
     "ap-style-title-case": "^2.0.0",
-    "markdownlint-cli2": "0.19.1",
-    "prettier": "3.6.2"
+    "markdownlint-cli2": "0.20.0",
+    "prettier": "3.7.4"
   }
 }
