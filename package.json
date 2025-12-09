@@ -3,7 +3,6 @@
   "private": true,
   "description": "Workspace root for pnpm-managed packages in this repository.",
   "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
-  "packageManager": "pnpm@10.22.0",
   "engines": {
     "node": ">=20.19.0"
   },
