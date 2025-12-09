@@ -99,7 +99,7 @@ hk install          # Register git hooks (lint, format, tests)
 | ----------------- | ------------------------------------------------------------------- |
 | `pnpm lint`       | Run Biome for JS/TS/JSON and Markdownlint/Prettier for docs.        |
 | `pnpm format`     | Apply the same formatters with `--write`.                           |
-| `pnpm typecheck`  | Run `tsc --noEmit` for strict type safety.                          |
+| `pnpm typecheck`  | Run `tsgo --noEmit` for strict type safety.                         |
 | `pnpm test`       | Execute the entire Vitest suite (including doctests + integration). |
 | `pnpm test:watch` | Rerun the impacted tests in watch mode.                             |
 | `pnpm test-cov`   | Generate text + LCOV coverage via V8.                               |

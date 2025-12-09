@@ -26,7 +26,7 @@
     "hooks:install": "hk install",
     "hooks:check": "hk check",
     "hooks:fix": "hk fix",
-    "typecheck": "tsc",
+    "typecheck": "tsgo --noEmit",
     "build": "tsdown",
     "prepublishOnly": "pnpm run build",
     "version:stamp": "node ./scripts/nbgv-version.mjs stamp",
@@ -74,7 +74,8 @@
     "nerdbank-gitversioning": "^3.7.91",
     "prettier": "3.7.4",
     "tsdown": "^0.17.0",
-    "typescript": "^5.6.3",
+    "typescript": "^5.9.3",
+    "@typescript/native-preview": "^7.0.0-dev.20251208.1",
     "vitest": "^4.0.15"
   },
   "exports": {
@@ -84,6 +85,5 @@
       "import": "./dist/index.cjs",
       "default": "./dist/index.cjs"
     }
-  },
-  "packageManager": "pnpm@10.22.0"
+  }
 }
