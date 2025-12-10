@@ -29,25 +29,33 @@ permissions:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
     strategy:
       fail-fast: false
       matrix:
         include:
           - language: actions
+            os: ubuntu-latest
             build_mode: none
             dependency_caching: false
           - language: csharp
+            os: windows-latest
             build_mode: none
             dependency_caching: false
           - language: javascript-typescript
+            os: ubuntu-latest
             build_mode: none
             dependency_caching: false
           - language: python
+            os: ubuntu-latest
             build_mode: none
             dependency_caching: false
           - language: ruby
+            os: ubuntu-latest
             build_mode: none
             dependency_caching: false
 
@@ -57,6 +65,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup .NET SDK
+        if: matrix.language == 'csharp'
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore .NET Dependencies
+        if: matrix.language == 'csharp'
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          dotnet restore dirs.proj -p:RestoreLockedMode=true
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -64,6 +87,13 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build_mode }}
           dependency-caching: ${{ matrix.dependency_caching }}
+
+      - name: Build (C# for CodeQL)
+        if: matrix.language == 'csharp'
+        shell: pwsh
+        run: |
+          dotnet build dirs.proj -c Release --no-restore -p:RestoreLockedMode=true -bl:codeql.binlog
+          "CODEQL_EXTRACTOR_CSHARP_OPTION_BINLOG=codeql.binlog" >> $env:GITHUB_ENV
 
       - if: ${{ matrix.build_mode == 'autobuild' }}
         name: Autobuild
