@@ -1764,7 +1764,7 @@ wheels = [
 
 [[package]]
 name = "nbgv-hatch-demo"
-source = { editable = "src/lab/nbgv-hatch-demo" }
+source = { editable = "src/sample/nbgv-hatch-demo" }
 dependencies = [
     { name = "nbgv-python" },
 ]
