@@ -19,7 +19,8 @@
     <ControlFlowGuard>Guard</ControlFlowGuard>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <DefaultLanguage>en-us</DefaultLanguage>
     <SatelliteResourceLanguages>en-us</SatelliteResourceLanguages>
     <NeutralLanguage>en-us</NeutralLanguage>
   </PropertyGroup>
