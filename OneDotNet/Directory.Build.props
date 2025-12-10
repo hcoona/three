@@ -112,7 +112,8 @@
     <AnalysisMode>Recommended</AnalysisMode>
     <!-- CA2253: Temporarily. -->
     <!-- CA2254: https://stackoverflow.com/questions/70955861/the-logging-message-template-should-not-vary-between-calls-ca2254-when-only-pa -->
-    <NoWarn>$(NoWarn);CA2253;CA2254</NoWarn>
+    <!-- NETSDK1187: Ignore until Test Framework fix it. -->
+    <NoWarn>$(NoWarn);CA2253;CA2254;NETSDK1187</NoWarn>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
