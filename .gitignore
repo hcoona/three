@@ -888,3 +888,6 @@ _version.py
 # Include src/*/lib directories
 !src/private/lib/
 !src/public/lib/
+
+# Include C# app.manifest
+!app.manifest

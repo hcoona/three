@@ -3,7 +3,7 @@ version = "4.0.0"
 backend = "aqua:dotenv-linter/dotenv-linter"
 
 [[tools.dotnet]]
-version = "10.0.0"
+version = "10.0.1"
 backend = "vfox:dotnet"
 
 [[tools.go]]

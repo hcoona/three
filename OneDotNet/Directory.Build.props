@@ -3,8 +3,8 @@
   <PropertyGroup>
     <EnlistmentRoot>$(MSBuildThisFileDirectory.TrimEnd('\\'))</EnlistmentRoot>
 
-    <CurrentTargetFramework>net9.0</CurrentTargetFramework>
-    <CurrentWpfTargetFramework>net9.0-windows</CurrentWpfTargetFramework>
+    <CurrentTargetFramework>net10.0</CurrentTargetFramework>
+    <CurrentWpfTargetFramework>net10.0-windows</CurrentWpfTargetFramework>
 
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
@@ -23,6 +23,9 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
     <CentralPackageVersionOverrideEnabled>false</CentralPackageVersionOverrideEnabled>
+
+    <!-- Workaround: https://github.com/dotnet/sdk/issues/49917 -->
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
   </PropertyGroup>
 
   <Sdk Name="DotNet.ReproducibleBuilds.Isolated" />
@@ -35,9 +38,9 @@
   </PropertyGroup>
 
   <PropertyGroup Label="SourceLink">
-    <ProjectUrl>https://dev.azure.com/zhangshuai89/Public/_git/OneDotNet</ProjectUrl>
-    <PackageProjectUrl>https://dev.azure.com/zhangshuai89/Public/_git/OneDotNet</PackageProjectUrl>
-    <RepositoryUrl>https://zhangshuai89@dev.azure.com/zhangshuai89/Public/_git/OneDotNet</RepositoryUrl>
+    <ProjectUrl>https://github.com/hcoona/three</ProjectUrl>
+    <PackageProjectUrl>https://github.com/hcoona/three</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/hcoona/three.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
@@ -69,7 +72,7 @@
 
   <ItemGroup>
     <GlobalPackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.25" />
-    <GlobalPackageReference Include="Microsoft.SourceLink.AzureRepos.Git" Version="8.0.0" />
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.7.115" />
     <GlobalPackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" />
   </ItemGroup>
