@@ -119,6 +119,40 @@ jobs:
             --from-ref "$BASE" \
             --to-ref "$HEAD"
 
+  windows-dotnet:
+    name: Build .NET (Windows)
+    runs-on: windows-latest
+    needs: validation
+
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore dotnet tools
+        run: |
+          dotnet tool restore
+
+      - name: Restore
+        run: dotnet restore dirs.proj -p:RestoreLockedMode=true
+
+      - name: Build
+        run: dotnet build dirs.proj -c Release --no-restore -p:RestoreLockedMode=true
+
+      - name: Test
+        run: dotnet test dirs.proj -c Release --no-build -p:RestoreLockedMode=true
+
   tests:
     name: Test & Build
     runs-on: ubuntu-latest
