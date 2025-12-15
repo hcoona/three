@@ -73,7 +73,7 @@
     "markdownlint-cli2": "0.20.0",
     "nerdbank-gitversioning": "^3.7.91",
     "prettier": "3.7.4",
-    "tsdown": "^0.17.0",
+    "tsdown": "^0.17.4",
     "typescript": "^5.9.3",
     "@typescript/native-preview": "^7.0.0-dev.20251208.1",
     "vitest": "^4.0.15"

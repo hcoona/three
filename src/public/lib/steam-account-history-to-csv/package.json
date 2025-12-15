@@ -25,7 +25,7 @@
     "@types/node": "^22.10.2",
     "nerdbank-gitversioning": "^3.7.91",
     "rimraf": "^6.0.1",
-    "tsdown": "^0.17.0",
+    "tsdown": "^0.17.4",
     "typescript": "^5.9.3",
     "@typescript/native-preview": "^7.0.0-dev.20251208.1"
   }
