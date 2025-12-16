@@ -1,0 +1,406 @@
+name: Buddy Release (Python)
+
+on:
+  push:
+    tags:
+      - "release/*/v*"
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "UV workspace package name (must match <project> in release/<project>/v* tag)"
+        required: true
+        type: string
+      version:
+        description: "PEP440 version (leading v allowed; will be stripped)"
+        required: true
+        type: string
+      target:
+        description: "Target commit for release/tag when manually triggered (defaults to current commit)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: buddy-${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  publish-python:
+    name: Publish Python package
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: '3.14'
+      OWNER_KIND: ${{ github.event.repository.owner.type }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Setup Python 3
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache-dependency-glob: 'uv.lock'
+
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
+
+      - name: Resolve release inputs
+        id: meta
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            ref_name="${GITHUB_REF_NAME}"
+            if [[ ! "${ref_name}" =~ ^release/.+/v.+$ ]]; then
+              echo "Tag ${ref_name} must follow release/<project>/v<version>" >&2
+              exit 1
+            fi
+            project="${ref_name#release/}"
+            project="${project%%/v*}"
+            version="${ref_name##*/v}"
+            tag_name="${ref_name}"
+            target="${GITHUB_REF}"
+          else
+            project="${{ inputs.project }}"
+            version="${{ inputs.version }}"
+            tag_name="release/${project}/v${version}"
+            target="${{ inputs.target }}"
+          fi
+
+          if [[ -z "${project}" || -z "${version}" ]]; then
+            echo "project or version is empty" >&2
+            exit 1
+          fi
+
+          if [[ ! "${project}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Invalid project name: ${project}. Allowed characters: A-Z a-z 0-9 . _ -" >&2
+            exit 1
+          fi
+
+          if [[ ! "${version}" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
+            echo "Invalid version format for shell safety: ${version}. Allowed characters: A-Z a-z 0-9 . _ + -" >&2
+            exit 1
+          fi
+
+          if [[ "${version}" =~ ^[vV] ]]; then
+            version="${version#?}"
+          fi
+
+          if [[ -z "${version}" ]]; then
+            echo "version is empty after stripping leading v" >&2
+            exit 1
+          fi
+
+          VERSION="${version}" uv run --script - <<'PY'
+          # /// script
+          # requires-python = ">=3.14"
+          # dependencies = ["packaging>=24.0"]
+
+          from __future__ import annotations
+
+          import os
+          import sys
+          from packaging.version import Version, InvalidVersion
+
+          v = os.environ["VERSION"]
+
+          try:
+              Version(v)
+          except InvalidVersion as exc:
+              sys.exit(f"Invalid version (must be PEP 440): {v}. Error: {exc}")
+          PY
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            resolved_target=$(git rev-list -n1 "${GITHUB_REF}")
+          else
+            if [[ -z "${target}" ]]; then
+              resolved_target=$(git rev-parse HEAD)
+            else
+              resolved_target="${target}"
+            fi
+          fi
+
+          if [[ -z "${resolved_target}" ]]; then
+            echo "Resolved target commit is empty" >&2
+            exit 1
+          fi
+
+          target="${resolved_target}"
+
+          pkg_dir=$(PROJECT="${project}" python - <<'PY'
+            import os
+            import sys
+            import tomllib
+            from pathlib import Path
+            from tomllib import TOMLDecodeError
+
+            name = os.environ["PROJECT"]
+            matches = []
+            for path in Path(".").rglob("pyproject.toml"):
+              try:
+                data = tomllib.loads(path.read_text())
+              except (TOMLDecodeError, OSError) as exc:
+                print(f"Skip {path}: {exc}", file=sys.stderr)
+                continue
+              if data.get("project", {}).get("name") == name:
+                matches.append(path.parent)
+            if not matches:
+              sys.exit(f"No pyproject.toml with project.name={name} found")
+            matches = sorted(matches, key=lambda p: len(str(p)))
+            print(matches[0])
+          PY
+          )
+
+          if [[ ! -d "${pkg_dir}" ]]; then
+            echo "Package directory does not exist: ${pkg_dir}" >&2
+            exit 1
+          fi
+
+          changelog="${pkg_dir}/CHANGELOG.md"
+          has_changelog="false"
+          if [[ -f "${changelog}" ]]; then
+            has_changelog="true"
+          fi
+
+          # shellcheck disable=SC2129
+          echo "project=${project}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
+          echo "target=${target}" >> "${GITHUB_OUTPUT}"
+          echo "package_dir=${pkg_dir}" >> "${GITHUB_OUTPUT}"
+          echo "has_changelog=${has_changelog}" >> "${GITHUB_OUTPUT}"
+          echo "changelog=${changelog}" >> "${GITHUB_OUTPUT}"
+          echo "dist_dir=${pkg_dir}/dist" >> "${GITHUB_OUTPUT}"
+          echo "dist_glob=${pkg_dir}/dist/*" >> "${GITHUB_OUTPUT}"
+          echo "release_title=${project} v${version}" >> "${GITHUB_OUTPUT}"
+          echo "run_url=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "${{ steps.meta.outputs.package_dir }}"
+          uv build
+
+      - name: Verify built version matches tag
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "${{ steps.meta.outputs.package_dir }}"
+          python - <<'PY'
+          import io
+          import os
+          import re
+          import sys
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          expected = os.environ["EXPECTED"]
+          dist = Path("dist")
+          artifacts = sorted(dist.glob("*"))
+          if not artifacts:
+            sys.exit("No build artifacts found")
+          versions = set()
+          expected_types = {"wheel (.whl)", "sdist (.tar.gz)"}
+          for path in artifacts:
+            name = path.name
+            if path.suffix == ".whl":
+              with zipfile.ZipFile(path) as zf:
+                meta = next((n for n in zf.namelist() if n.endswith("METADATA")), None)
+                if not meta:
+                  sys.exit(f"{name} is missing METADATA")
+                content = zf.read(meta).decode()
+                for line in content.splitlines():
+                  if line.startswith("Version:"):
+                    versions.add(line.split(":", 1)[1].strip())
+                    break
+            elif path.suffixes[-2:] == [".tar", ".gz"]:
+              with tarfile.open(path, mode="r:gz") as tf:
+                member = next((m for m in tf.getmembers() if m.name.endswith("PKG-INFO")), None)
+                if member is None:
+                  sys.exit(f"{name} is missing PKG-INFO")
+                with tf.extractfile(member) as fh:
+                  for line in io.TextIOWrapper(fh, encoding="utf-8"):
+                    if line.startswith("Version:"):
+                      versions.add(line.split(":", 1)[1].strip())
+                      break
+            else:
+                sys.exit(
+                    "Unknown artifact type: "
+                    f"{name}. Expected one of {sorted(expected_types)}. "
+                    f"All artifacts: {[p.name for p in artifacts]}"
+                )
+
+          if versions != {expected}:
+            sys.exit(f"Built artifact version mismatch: expected {expected}, got {sorted(versions)}")
+          PY
+        env:
+          EXPECTED: ${{ steps.meta.outputs.version }}
+
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        env:
+          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
+          PROJECT: ${{ steps.meta.outputs.project }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          RUN_URL: ${{ steps.meta.outputs.run_url }}
+        run: |
+          set -Eeuo pipefail
+          notes_file="${{ runner.temp }}/release-notes.md"
+          if [[ "${{ steps.meta.outputs.has_changelog }}" == "true" ]]; then
+            cp "${{ steps.meta.outputs.changelog }}" "${notes_file}"
+          else
+          cat <<EOF > "${notes_file}"
+          ## Release notes
+
+          This project does not provide CHANGELOG.md. Using default placeholder notes.
+
+          - Tag: ${TAG_NAME}
+          - Package: ${PROJECT}
+          - Version: ${VERSION}
+          - Build: ${RUN_URL}
+          EOF
+          fi
+          echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ steps.meta.outputs.dist_glob }}
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
+          RELEASE_TITLE: ${{ steps.meta.outputs.release_title }}
+          TARGET: ${{ steps.meta.outputs.target }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+          DIST_GLOB: ${{ steps.meta.outputs.dist_glob }}
+        run: |
+          set -Eeuo pipefail
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release edit "${TAG_NAME}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
+          else
+            gh release create "${TAG_NAME}" --target "${TARGET}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
+          fi
+          gh release upload "${TAG_NAME}" "${DIST_GLOB}" --clobber
+
+      - name: Delete existing GitHub Packages version (if any)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          PROJECT: ${{ steps.meta.outputs.project }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          OWNER_KIND: ${{ env.OWNER_KIND }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          api="https://api.github.com"
+          if [[ "${OWNER_KIND}" == "Organization" ]]; then
+            base="${api}/orgs/${OWNER}"
+          else
+            base="${api}/users/${OWNER}"
+          fi
+          pkg_url="${base}/packages/pypi/${PROJECT}"
+
+          status=$(curl -sSL -o /tmp/pkg.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${pkg_url}" || true)
+
+          if [[ "${status}" == "404" ]]; then
+            echo "Package ${PROJECT} not published yet; skipping delete"
+            exit 0
+          fi
+
+          if [[ "${status}" != "200" ]]; then
+            echo "Failed to query existing package, status ${status}" >&2
+            cat /tmp/pkg.json >&2
+            exit 1
+          fi
+
+          versions_status=$(curl -sSL -o /tmp/pkg_versions.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${pkg_url}/versions?per_page=100")
+
+          page=1
+          version_id=""
+          while true; do
+            if [[ "${versions_status}" != "200" ]]; then
+              echo "Failed to get package versions (page ${page}), status ${versions_status}" >&2
+              cat /tmp/pkg_versions.json >&2
+              exit 1
+            fi
+
+            version_id=$(jq -r --arg v "${VERSION}" '
+              .[] | select(.name == $v or .metadata.version == $v or .metadata.package.version == $v) | .id' /tmp/pkg_versions.json | head -n 1)
+
+            if [[ -n "${version_id}" && "${version_id}" != "null" ]]; then
+              break
+            fi
+
+            items_count=$(jq 'length' /tmp/pkg_versions.json)
+            if [[ "${items_count}" -lt 100 ]]; then
+              break
+            fi
+
+            page=$((page + 1))
+            versions_status=$(curl -sSL -o /tmp/pkg_versions.json -w "%{http_code}" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${pkg_url}/versions?per_page=100&page=${page}")
+          done
+
+          if [[ -z "${version_id}" || "${version_id}" == "null" ]]; then
+            echo "No published version ${VERSION} found across ${page} page(s); nothing to delete"
+            exit 0
+          fi
+
+          delete_status=$(curl -sSL -o /tmp/delete_pkg.log -w "%{http_code}" \
+            -X DELETE \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${pkg_url}/versions/${version_id}")
+
+          if [[ "${delete_status}" != "204" ]]; then
+            echo "Failed to delete existing package version, status ${delete_status}" >&2
+            cat /tmp/delete_pkg.log >&2
+            exit 1
+          fi
+
+          echo "Deleted existing package version ${VERSION} (id=${version_id})"
+
+      - name: Publish to GitHub Packages (Python)
+        env:
+          UV_PUBLISH_URL: https://pypi.pkg.github.com/${{ github.repository_owner }}/
+          UV_PUBLISH_USERNAME: ${{ github.actor }}
+          UV_PUBLISH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "${{ steps.meta.outputs.package_dir }}"
+          uv publish
