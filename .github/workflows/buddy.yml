@@ -116,6 +116,7 @@ jobs:
           # /// script
           # requires-python = ">=3.14"
           # dependencies = ["packaging>=24.0"]
+          # ///
 
           from __future__ import annotations
 
@@ -149,26 +150,26 @@ jobs:
           target="${resolved_target}"
 
           pkg_dir=$(PROJECT="${project}" python - <<'PY'
-            import os
-            import sys
-            import tomllib
-            from pathlib import Path
-            from tomllib import TOMLDecodeError
+          import os
+          import sys
+          import tomllib
+          from pathlib import Path
+          from tomllib import TOMLDecodeError
 
-            name = os.environ["PROJECT"]
-            matches = []
-            for path in Path(".").rglob("pyproject.toml"):
-              try:
-                data = tomllib.loads(path.read_text())
-              except (TOMLDecodeError, OSError) as exc:
-                print(f"Skip {path}: {exc}", file=sys.stderr)
-                continue
-              if data.get("project", {}).get("name") == name:
-                matches.append(path.parent)
-            if not matches:
-              sys.exit(f"No pyproject.toml with project.name={name} found")
-            matches = sorted(matches, key=lambda p: len(str(p)))
-            print(matches[0])
+          name = os.environ["PROJECT"]
+          matches = []
+          for path in Path(".").rglob("pyproject.toml"):
+            try:
+              data = tomllib.loads(path.read_text())
+            except (TOMLDecodeError, OSError) as exc:
+              print(f"Skip {path}: {exc}", file=sys.stderr)
+              continue
+            if data.get("project", {}).get("name") == name:
+              matches.append(path.parent)
+          if not matches:
+            sys.exit(f"No pyproject.toml with project.name={name} found")
+          matches = sorted(matches, key=lambda p: len(str(p)))
+          print(matches[0])
           PY
           )
 
@@ -191,8 +192,8 @@ jobs:
           echo "package_dir=${pkg_dir}" >> "${GITHUB_OUTPUT}"
           echo "has_changelog=${has_changelog}" >> "${GITHUB_OUTPUT}"
           echo "changelog=${changelog}" >> "${GITHUB_OUTPUT}"
-          echo "dist_dir=${pkg_dir}/dist" >> "${GITHUB_OUTPUT}"
-          echo "dist_glob=${pkg_dir}/dist/*" >> "${GITHUB_OUTPUT}"
+          echo "dist_dir=${GITHUB_WORKSPACE}/out" >> "${GITHUB_OUTPUT}"
+          echo "dist_glob=${GITHUB_WORKSPACE}/out/*" >> "${GITHUB_OUTPUT}"
           echo "release_title=${project} v${version}" >> "${GITHUB_OUTPUT}"
           echo "run_url=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
 
@@ -201,13 +202,13 @@ jobs:
         run: |
           set -Eeuo pipefail
           cd "${{ steps.meta.outputs.package_dir }}"
-          uv build
+          uv build --out-dir "${GITHUB_WORKSPACE}/out"
 
       - name: Verify built version matches tag
         shell: bash
         run: |
           set -Eeuo pipefail
-          cd "${{ steps.meta.outputs.package_dir }}"
+          cd "${GITHUB_WORKSPACE}"
           python - <<'PY'
           import io
           import os
@@ -218,7 +219,7 @@ jobs:
           from pathlib import Path
 
           expected = os.environ["EXPECTED"]
-          dist = Path("dist")
+          dist = Path("out")
           artifacts = sorted(dist.glob("*"))
           if not artifacts:
             sys.exit("No build artifacts found")
@@ -226,6 +227,8 @@ jobs:
           expected_types = {"wheel (.whl)", "sdist (.tar.gz)"}
           for path in artifacts:
             name = path.name
+            if name == ".gitignore":
+              continue
             if path.suffix == ".whl":
               with zipfile.ZipFile(path) as zf:
                 meta = next((n for n in zf.namelist() if n.endswith("METADATA")), None)
@@ -301,106 +304,30 @@ jobs:
           DIST_GLOB: ${{ steps.meta.outputs.dist_glob }}
         run: |
           set -Eeuo pipefail
+
+          # If manually triggered, force update the tag to the target commit
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "Force updating tag ${TAG_NAME} to ${TARGET}..."
+            git tag -f "${TAG_NAME}" "${TARGET}"
+            git push -f origin "${TAG_NAME}"
+          fi
+
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
-            gh release edit "${TAG_NAME}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
+            gh release edit "${TAG_NAME}" --prerelease --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}" --target "${TARGET}"
           else
-            gh release create "${TAG_NAME}" --target "${TARGET}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
-          fi
-          gh release upload "${TAG_NAME}" "${DIST_GLOB}" --clobber
-
-      - name: Delete existing GitHub Packages version (if any)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          OWNER: ${{ github.repository_owner }}
-          PROJECT: ${{ steps.meta.outputs.project }}
-          VERSION: ${{ steps.meta.outputs.version }}
-          OWNER_KIND: ${{ env.OWNER_KIND }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          api="https://api.github.com"
-          if [[ "${OWNER_KIND}" == "Organization" ]]; then
-            base="${api}/orgs/${OWNER}"
-          else
-            base="${api}/users/${OWNER}"
-          fi
-          pkg_url="${base}/packages/pypi/${PROJECT}"
-
-          status=$(curl -sSL -o /tmp/pkg.json -w "%{http_code}" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${pkg_url}" || true)
-
-          if [[ "${status}" == "404" ]]; then
-            echo "Package ${PROJECT} not published yet; skipping delete"
-            exit 0
+            gh release create "${TAG_NAME}" --prerelease --target "${TARGET}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
           fi
 
-          if [[ "${status}" != "200" ]]; then
-            echo "Failed to query existing package, status ${status}" >&2
-            cat /tmp/pkg.json >&2
-            exit 1
-          fi
-
-          versions_status=$(curl -sSL -o /tmp/pkg_versions.json -w "%{http_code}" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${pkg_url}/versions?per_page=100")
-
-          page=1
-          version_id=""
-          while true; do
-            if [[ "${versions_status}" != "200" ]]; then
-              echo "Failed to get package versions (page ${page}), status ${versions_status}" >&2
-              cat /tmp/pkg_versions.json >&2
-              exit 1
+          # Filter out .gitignore files from the upload list
+          FILES=()
+          DIR="${DIST_GLOB%/*}"
+          shopt -s nullglob
+          for f in "$DIR"/*; do
+            if [[ "$f" != *.gitignore ]]; then
+              FILES+=("$f")
             fi
-
-            version_id=$(jq -r --arg v "${VERSION}" '
-              .[] | select(.name == $v or .metadata.version == $v or .metadata.package.version == $v) | .id' /tmp/pkg_versions.json | head -n 1)
-
-            if [[ -n "${version_id}" && "${version_id}" != "null" ]]; then
-              break
-            fi
-
-            items_count=$(jq 'length' /tmp/pkg_versions.json)
-            if [[ "${items_count}" -lt 100 ]]; then
-              break
-            fi
-
-            page=$((page + 1))
-            versions_status=$(curl -sSL -o /tmp/pkg_versions.json -w "%{http_code}" \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "${pkg_url}/versions?per_page=100&page=${page}")
           done
 
-          if [[ -z "${version_id}" || "${version_id}" == "null" ]]; then
-            echo "No published version ${VERSION} found across ${page} page(s); nothing to delete"
-            exit 0
+          if [[ ${#FILES[@]} -gt 0 ]]; then
+            gh release upload "${TAG_NAME}" "${FILES[@]}" --clobber
           fi
-
-          delete_status=$(curl -sSL -o /tmp/delete_pkg.log -w "%{http_code}" \
-            -X DELETE \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${pkg_url}/versions/${version_id}")
-
-          if [[ "${delete_status}" != "204" ]]; then
-            echo "Failed to delete existing package version, status ${delete_status}" >&2
-            cat /tmp/delete_pkg.log >&2
-            exit 1
-          fi
-
-          echo "Deleted existing package version ${VERSION} (id=${version_id})"
-
-      - name: Publish to GitHub Packages (Python)
-        env:
-          UV_PUBLISH_URL: https://pypi.pkg.github.com/${{ github.repository_owner }}/
-          UV_PUBLISH_USERNAME: ${{ github.actor }}
-          UV_PUBLISH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          cd "${{ steps.meta.outputs.package_dir }}"
-          uv publish
