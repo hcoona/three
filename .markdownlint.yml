@@ -188,6 +188,7 @@ MD044:
   names:
     - JavaScript
     - Python
+    - nbgv-python
     - SuperBench
 
 # Images should have alternate text (alt text)
