@@ -50,7 +50,7 @@ def test_hatch_plugin_writes_file(
     data = plugin.get_version_data()
 
     written = (tmp_path / "build" / "_version.py").read_text(encoding="utf-8")
-    assert written == "__version__ = '1.2.3b1'\n"
+    assert written == "__version__ = '1.2.3-beta.1'\n"
     assert data["version"] == "1.2.3b1"
     assert "template_fields" in data
     fields = plugin.get_template_fields()

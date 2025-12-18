@@ -73,8 +73,8 @@ The plugin normalizes the chosen value to a PEP 440 compliant version, so SemVer
     ```
 
 - The generated mapping includes `version`, `normalized_version`, `version_tuple`, and every key exposed by `nbgv get-version`.
-    - `version` relays the raw value selected by `version-field` (defaults to `SemVer2`).
-    - `normalized_version` applies PEP 440 normalization to that value using `packaging.version.Version` so `1.2.3-beta.1` becomes `1.2.3b1`.
+    - `version` relays the raw value selected by `version-field` (defaults to `SemVer2`). Use this if you need the exact string returned by NBGV (e.g. `1.2.3-beta.1`).
+    - `normalized_version` applies PEP 440 normalization to that value using `packaging.version.Version` so `1.2.3-beta.1` becomes `1.2.3b1`. Use this for Python `__version__` strings.
     - `version_tuple` expands into a Python tuple using either the selected NBGV variables (`mode = "nbgv"`, respecting `normalized-prerelease` when enabled) or the parsed PEP 440 segments (`mode = "pep440"`).
 
 ### Writing Version Files
@@ -87,7 +87,7 @@ The plugin normalizes the chosen value to a PEP 440 compliant version, so SemVer
     ```toml
     [tool.hatch.version.nbgv.write]
     file = "src/pkg/_version.py"
-    template = "__version__ = '{version}'"
+    template = "__version__ = '{normalized_version}'"
     ```
 
 - When `template` is omitted the plugin mirrors `versioningit`: `.py` files render `__version__ = "{normalized_version}"` (falling back to `version` if normalization was not provided), while `.txt` or extension-less files render `{version}`.
