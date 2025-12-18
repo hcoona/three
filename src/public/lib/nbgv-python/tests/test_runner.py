@@ -68,8 +68,8 @@ def test_forward_propagates_passthrough_commands(
 ) -> None:
     """Ensure `forward()` executes commands without capturing output."""
     target_file = tmp_path / "marker.txt"
-    # Pass the file path relative to the working directory to verify cwd support
-    runner.forward(["touch", str(target_file)])
+    # Pass the file name relative to the working directory to verify cwd support
+    runner.forward(["touch", target_file.name], cwd=tmp_path)
     assert target_file.read_text(encoding="utf-8") == "ok"
 
 
