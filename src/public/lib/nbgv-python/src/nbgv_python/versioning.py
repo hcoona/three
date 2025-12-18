@@ -19,7 +19,10 @@ _LABEL_MAP = {
 }
 
 _SEMVER_PATTERN = re.compile(
-    r"^(?P<core>\d+(?:\.\d+)*)(?:-(?P<pre>[^+]+))?(?:\+(?P<local>.+))?$"
+    r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
+    r"(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"
+    r"(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
+    r"(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 )
 
 _SPLIT_PATTERN = re.compile(r"[.\-]")
@@ -53,9 +56,12 @@ def _convert_semver_to_pep440(candidate: str) -> str | None:
     match = _SEMVER_PATTERN.match(candidate)
     if not match:
         return None
-    core = match.group("core")
-    prerelease = match.group("pre")
-    local = match.group("local")
+    major = match.group("major")
+    minor = match.group("minor")
+    patch = match.group("patch")
+    core = f"{major}.{minor}.{patch}"
+    prerelease = match.group("prerelease")
+    local = match.group("buildmetadata")
     result = core
     local_parts: list[str] = []
     if local:
@@ -78,7 +84,27 @@ def _convert_prerelease(text: str) -> tuple[str, list[str]] | None:
     tokens = [token for token in _SPLIT_PATTERN.split(text) if token]
     if not tokens:
         return None
-    label_token = tokens[0]
+
+    label, number, extra_tokens = _parse_label_token(tokens[0])
+    remainder_tokens = extra_tokens + tokens[1:]
+
+    if label not in _LABEL_MAP:
+        return _handle_unrecognized_prerelease(
+            text, label, number, remainder_tokens
+        )
+
+    if not number:
+        number_index = _first_numeric_index(remainder_tokens)
+        if number_index is not None:
+            number = str(int(remainder_tokens.pop(number_index)))
+    if not number:
+        number = "0"
+    mapped = _LABEL_MAP[label]
+    suffix = f"{mapped}{number}"
+    return suffix, remainder_tokens
+
+
+def _parse_label_token(label_token: str) -> tuple[str, str, list[str]]:
     match = re.match(r"(?P<label>[A-Za-z]+)(?P<number>\d*)$", label_token)
     if match:
         label = match.group("label").lower()
@@ -94,18 +120,29 @@ def _convert_prerelease(text: str) -> tuple[str, list[str]] | None:
             )
             if chunk
         ]
-    remainder_tokens.extend(tokens[1:])
-    if label not in _LABEL_MAP:
-        return None
-    if not number:
-        number_index = _first_numeric_index(remainder_tokens)
-        if number_index is not None:
-            number = str(int(remainder_tokens.pop(number_index)))
-    if not number:
-        number = "0"
-    mapped = _LABEL_MAP[label]
-    suffix = f"{mapped}{number}"
-    return suffix, remainder_tokens
+    return label, number, remainder_tokens
+
+
+def _handle_unrecognized_prerelease(
+    text: str, label: str, number: str, remainder_tokens: list[str]
+) -> tuple[str, list[str]]:
+    dev_number = "0"
+    if number:
+        dev_number = number
+        if remainder_tokens:
+            _raise_complex_prerelease_error(text)
+    elif remainder_tokens:
+        if not remainder_tokens[0].isdigit():
+            _raise_complex_prerelease_error(text)
+        dev_number = remainder_tokens[0]
+        if len(remainder_tokens) > 1:
+            _raise_complex_prerelease_error(text)
+    return f".dev{dev_number}", [label]
+
+
+def _raise_complex_prerelease_error(text: str) -> None:
+    msg = f"Cannot map complex prerelease tag '{text}' to PEP 440 dev version."
+    raise RuntimeError(msg)
 
 
 def _first_numeric_index(parts: list[str]) -> int | None:
