@@ -24,8 +24,8 @@ classifiers = [
 [project.urls]
 Repository = "https://github.com/hcoona/three"
 Issues = "https://github.com/hcoona/three/issues"
-Documentation = "https://github.com/hcoona/three/blob/main/OnePython/packages/nbgv-python/README.md"
-Changelog = "https://github.com/hcoona/three/blob/main/OnePython/packages/nbgv-python/CHANGELOG.md"
+Documentation = "https://github.com/hcoona/three/blob/main/src/public/lib/nbgv-python/README.md"
+Changelog = "https://github.com/hcoona/three/blob/main/src/public/lib/nbgv-python/CHANGELOG.md"
 
 [project.scripts]
 nbgv-python = "nbgv_python.cli:main"
