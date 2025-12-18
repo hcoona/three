@@ -138,3 +138,18 @@ def test_build_template_fields_pep440_epoch_forced() -> None:
         config=config,
     )
     assert fields["version_tuple"].startswith("(0, 1, 2, 3")
+
+
+def test_build_template_fields_single_element_tuple() -> None:
+    """Single element tuples should include a trailing comma."""
+    info = {"VersionMajor": 1}
+    config = TemplateFieldsConfig(
+        version_tuple=VersionTupleConfig(mode="nbgv", fields=("VersionMajor",))
+    )
+    fields = build_template_fields(
+        version="1.0.0",
+        normalized_version="1.0.0",
+        version_info=info,
+        config=config,
+    )
+    assert fields["version_tuple"] == "(1,)"

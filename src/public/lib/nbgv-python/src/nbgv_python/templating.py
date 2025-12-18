@@ -153,7 +153,11 @@ def _render_pep440_tuple(value: str, config: VersionTupleConfig) -> str:
 
 def _format_tuple(parts: list[str]) -> str:
     inner = ", ".join(parts)
-    return f"({inner})" if parts else "()"
+    if not parts:
+        return "()"
+    if len(parts) == 1:
+        return f"({inner},)"
+    return f"({inner})"
 
 
 def _format_component(
