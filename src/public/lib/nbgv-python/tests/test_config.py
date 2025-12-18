@@ -3,14 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from nbgv_python.config import PluginConfig
 from nbgv_python.templating import DEFAULT_NBGV_FIELDS
 
 
 def test_plugin_config_defaults(tmp_path: Path) -> None:
     """Ensure defaults use the project root and SemVer2 field."""
-
     config = PluginConfig.from_mapping(tmp_path, None)
     assert config.command is None
     assert config.version_field == "SemVer2"
@@ -24,7 +22,6 @@ def test_plugin_config_defaults(tmp_path: Path) -> None:
 
 def test_plugin_config_parses_command_and_directory(tmp_path: Path) -> None:
     """String commands should be normalised and directories resolved."""
-
     mapping = {
         "command": "python stub.py",
         "working-directory": "src/project",
@@ -41,14 +38,12 @@ def test_plugin_config_parses_command_and_directory(tmp_path: Path) -> None:
 
 def test_plugin_config_rejects_unknown_keys(tmp_path: Path) -> None:
     """Reject unsupported configuration options."""
-
     with pytest.raises(ValueError):
         PluginConfig.from_mapping(tmp_path, {"unexpected": 1})
 
 
 def test_plugin_config_parses_template_and_write(tmp_path: Path) -> None:
     """Template and write configuration should be interpreted correctly."""
-
     target_file = tmp_path / "build" / "_version.py"
     mapping = {
         "template-fields": {
@@ -80,6 +75,5 @@ def test_plugin_config_parses_template_and_write(tmp_path: Path) -> None:
 
 def test_plugin_config_invalid_epoch(tmp_path: Path) -> None:
     """Epoch must be a non-negative integer."""
-
     with pytest.raises(ValueError):
         PluginConfig.from_mapping(tmp_path, {"epoch": -1})

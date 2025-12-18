@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
-from typing import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 from .errors import NbgvNotFoundError
 
@@ -14,7 +14,6 @@ ENV_COMMAND_OVERRIDE = "NBGV_PYTHON_COMMAND"
 
 def _is_string_sequence(value: object) -> bool:
     """Return True when *value* behaves like a sequence of strings."""
-
     if isinstance(value, (bytes, bytearray)):
         return False
     if isinstance(value, str):
@@ -24,7 +23,6 @@ def _is_string_sequence(value: object) -> bool:
 
 def parse_command_tokens(command: str | Sequence[str]) -> list[str]:
     """Normalise a command specification into a list of tokens."""
-
     if isinstance(command, str):
         text = command.strip()
         if not text:
@@ -39,7 +37,11 @@ def parse_command_tokens(command: str | Sequence[str]) -> list[str]:
     cleaned: list[str] = []
     for token in tokens:
         stripped = token.strip()
-        if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
+        if (
+            len(stripped) >= 2
+            and stripped[0] == stripped[-1]
+            and stripped[0] in {'"', "'"}
+        ):
             stripped = stripped[1:-1]
         if stripped:
             cleaned.append(stripped)
@@ -56,7 +58,6 @@ def discover_command(
     which: Callable[[str], str | None] = shutil.which,
 ) -> list[str]:
     """Return the command tokens that should be used to call `nbgv`."""
-
     if command is not None:
         return parse_command_tokens(command)
 

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, Sequence
 
-from .command import ENV_COMMAND_OVERRIDE, discover_command, parse_command_tokens
+from .command import (
+    ENV_COMMAND_OVERRIDE,
+    discover_command,
+    parse_command_tokens,
+)
 from .errors import (
     NbgvCommandError,
     NbgvError,
@@ -49,7 +53,6 @@ def get_version(
     command: str | Sequence[str] | None = None,
 ) -> GitVersion:
     """Return version metadata for *project_dir* via the `nbgv` CLI."""
-
     runner = NbgvRunner(command=command)
     return runner.get_version(project_dir)
 
@@ -61,6 +64,5 @@ def forward(
     command: str | Sequence[str] | None = None,
 ) -> int:
     """Forward *args* to the `nbgv` CLI using the shared command resolver."""
-
     runner = NbgvRunner(command=command)
     return runner.forward(args, cwd=project_dir)

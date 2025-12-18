@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from nbgv_python.versioning import normalize_version_field
 
 
@@ -20,12 +19,10 @@ from nbgv_python.versioning import normalize_version_field
 )
 def test_normalize_version_field(value: str, expected: str) -> None:
     """Ensure semver-like values are converted to PEP 440."""
-
     assert normalize_version_field(value, field="simple_version") == expected
 
 
 def test_normalize_version_field_rejects_invalid() -> None:
     """Invalid values raise a runtime error with context."""
-
     with pytest.raises(RuntimeError):
         normalize_version_field("not-a-version", field="simple_version")

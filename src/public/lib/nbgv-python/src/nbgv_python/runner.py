@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from .command import discover_command
 from .errors import NbgvCommandError, NbgvJsonError
@@ -14,7 +14,6 @@ from .models import GitVersion
 
 def _coerce_path(value: Path | str | None) -> str | None:
     """Convert *value* to a string path understood by `subprocess`."""
-
     if value is None:
         return None
     return str(Path(value))
@@ -29,7 +28,6 @@ class NbgvRunner:
     @property
     def command(self) -> tuple[str, ...]:
         """Return the resolved base command tokens."""
-
         return self._command
 
     def run(
@@ -40,13 +38,11 @@ class NbgvRunner:
         capture_output: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         """Execute `nbgv` with *args* and return the completed process."""
-
         process = self._execute(args, cwd=cwd, capture_output=capture_output)
         return process
 
     def get_version(self, project_dir: Path | str = ".") -> GitVersion:
         """Return version metadata for *project_dir* using `nbgv get-version`."""
-
         project_path = Path(project_dir)
         args = (
             "get-version",
@@ -75,7 +71,6 @@ class NbgvRunner:
         cwd: Path | str | None = None,
     ) -> int:
         """Forward arguments directly to `nbgv` without capturing output."""
-
         iterable = tuple(args or ())
         process = self._execute(iterable, cwd=cwd, capture_output=False)
         return process.returncode
@@ -88,9 +83,8 @@ class NbgvRunner:
         capture_output: bool,
     ) -> subprocess.CompletedProcess[str]:
         """Run the command and raise `NbgvCommandError` on failure."""
-
         full_command = (*self._command, *args)
-        process = subprocess.run(  # noqa: S603, S607 (intentional invocation)
+        process = subprocess.run(  # noqa: S603 (intentional invocation)
             full_command,
             cwd=_coerce_path(cwd),
             check=False,
@@ -100,7 +94,9 @@ class NbgvRunner:
         if process.returncode != 0:
             stdout = process.stdout if capture_output else None
             stderr = process.stderr if capture_output else None
-            raise NbgvCommandError(full_command, process.returncode, stdout, stderr)
+            raise NbgvCommandError(
+                full_command, process.returncode, stdout, stderr
+            )
         return process
 
 

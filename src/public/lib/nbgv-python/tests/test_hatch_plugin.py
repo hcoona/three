@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from nbgv_python.hatch_plugin import NbgvVersionSource
 from nbgv_python.models import GitVersion
 
@@ -20,9 +19,10 @@ class DummyRunner:
         return GitVersion.from_payload(payload)
 
 
-def test_hatch_plugin_writes_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hatch_plugin_writes_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Plugin should normalise the version and write templated files."""
-
     monkeypatch.setattr("nbgv_python.hatch_plugin.NbgvRunner", DummyRunner)
     config = {
         "version-field": "SimpleVersion",
@@ -34,7 +34,9 @@ def test_hatch_plugin_writes_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
             "version-tuple": {"mode": "pep440"},
         },
     }
-    plugin = NbgvVersionSource(str(tmp_path), {"source": "nbgv", "nbgv": config})
+    plugin = NbgvVersionSource(
+        str(tmp_path), {"source": "nbgv", "nbgv": config}
+    )
 
     data = plugin.get_version_data()
 
@@ -47,9 +49,10 @@ def test_hatch_plugin_writes_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert fields["version_tuple"].startswith("(1, 2, 3")
 
 
-def test_hatch_plugin_applies_epoch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hatch_plugin_applies_epoch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Configured epoch should prefix the normalized version."""
-
     monkeypatch.setattr("nbgv_python.hatch_plugin.NbgvRunner", DummyRunner)
     config = {
         "version-field": "SimpleVersion",
@@ -58,7 +61,9 @@ def test_hatch_plugin_applies_epoch(tmp_path: Path, monkeypatch: pytest.MonkeyPa
             "version-tuple": {"mode": "pep440", "epoch": True},
         },
     }
-    plugin = NbgvVersionSource(str(tmp_path), {"source": "nbgv", "nbgv": config})
+    plugin = NbgvVersionSource(
+        str(tmp_path), {"source": "nbgv", "nbgv": config}
+    )
 
     data = plugin.get_version_data()
 

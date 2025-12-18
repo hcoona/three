@@ -28,7 +28,6 @@ _NON_ALNUM_PATTERN = re.compile(r"[^0-9a-zA-Z]")
 
 def normalize_version_field(value: object, *, field: str) -> str:
     """Return a PEP 440 compliant version string for *value*."""
-
     candidate = str(value)
     try:
         return str(Version(candidate))
@@ -83,10 +82,14 @@ def _convert_prerelease(text: str) -> tuple[str, list[str]] | None:
         number = match.group("number")
         remainder_tokens: list[str] = []
     else:
-        label = ''.join(ch for ch in label_token if ch.isalpha()).lower()
-        number = ''.join(ch for ch in label_token if ch.isdigit())
+        label = "".join(ch for ch in label_token if ch.isalpha()).lower()
+        number = "".join(ch for ch in label_token if ch.isdigit())
         remainder_tokens = [
-            chunk for chunk in _SPLIT_PATTERN.split(label_token[len(label) + len(number) :]) if chunk
+            chunk
+            for chunk in _SPLIT_PATTERN.split(
+                label_token[len(label) + len(number) :]
+            )
+            if chunk
         ]
     remainder_tokens.extend(tokens[1:])
     if label not in _LABEL_MAP:
@@ -98,9 +101,7 @@ def _convert_prerelease(text: str) -> tuple[str, list[str]] | None:
     if not number:
         number = "0"
     mapped = _LABEL_MAP[label]
-    suffix = (
-        f"{mapped}{number}" if mapped != ".dev" else f"{mapped}{number}"
-    )
+    suffix = f"{mapped}{number}" if mapped != ".dev" else f"{mapped}{number}"
     return suffix, remainder_tokens
 
 

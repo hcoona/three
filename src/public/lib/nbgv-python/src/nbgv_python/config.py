@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .command import parse_command_tokens
 from .templating import TemplateFieldsConfig, VersionTupleConfig
@@ -36,9 +37,8 @@ class PluginConfig:
         cls,
         root: Path,
         config: Mapping[str, Any] | None,
-    ) -> "PluginConfig":
+    ) -> PluginConfig:
         """Parse user configuration under `[tool.hatch.version.nbgv]`."""
-
         data = dict(config or {})
         template_fields_mapping = data.pop("template-fields", None)
         write_mapping = data.pop("write", None)
@@ -51,8 +51,12 @@ class PluginConfig:
         command_value = data.get("command")
         command_tokens: tuple[str, ...] | None = None
         if command_value is not None:
-            if isinstance(command_value, Sequence) and not isinstance(command_value, str):
-                command_tokens = tuple(parse_command_tokens(tuple(command_value)))
+            if isinstance(command_value, Sequence) and not isinstance(
+                command_value, str
+            ):
+                command_tokens = tuple(
+                    parse_command_tokens(tuple(command_value))
+                )
             else:
                 command_tokens = tuple(parse_command_tokens(str(command_value)))
 
@@ -142,7 +146,9 @@ def _parse_version_tuple(mapping: Any) -> VersionTupleConfig:
     fields_value = data.pop("fields", defaults.fields)
     epoch = data.pop("epoch", defaults.epoch)
     double_quote = data.pop("double-quote", defaults.double_quote)
-    normalized_prerelease = data.pop("normalized-prerelease", defaults.normalized_prerelease)
+    normalized_prerelease = data.pop(
+        "normalized-prerelease", defaults.normalized_prerelease
+    )
     if data:
         keys = ", ".join(sorted(data))
         msg = f"Unsupported version-tuple keys: {keys}"
@@ -161,7 +167,9 @@ def _parse_version_tuple(mapping: Any) -> VersionTupleConfig:
             msg = "'fields' cannot contain empty names"
             raise ValueError(msg)
         nbgv_fields = (candidate,)
-    elif isinstance(fields_value, Sequence) and not isinstance(fields_value, str):
+    elif isinstance(fields_value, Sequence) and not isinstance(
+        fields_value, str
+    ):
         collected: list[str] = []
         for element in fields_value:
             if not isinstance(element, str) or not element.strip():

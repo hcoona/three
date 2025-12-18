@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
@@ -43,7 +44,6 @@ def build_template_fields(
     config: TemplateFieldsConfig | None = None,
 ) -> dict[str, Any]:
     """Produce the mapping used to render templates."""
-
     tmpl_config = config or TemplateFieldsConfig()
     final_version = version
     normalized = normalized_version or normalize_version_field(
@@ -93,9 +93,7 @@ def _render_nbgv_tuple(
             try:
                 value = _lookup_metadata_field(version_info, field)
             except KeyError as exc:  # pragma: no cover - configuration error
-                message = (
-                    "Version tuple field '{field}' was not emitted by 'nbgv get-version'."
-                ).format(field=field)
+                message = f"Version tuple field '{field}' was not emitted by 'nbgv get-version'."
                 raise RuntimeError(message) from exc
         if value is None:
             continue
@@ -125,7 +123,9 @@ def _render_pep440_tuple(value: str, config: VersionTupleConfig) -> str:
         components.append(str(parsed.epoch))
     components.extend(str(number) for number in parsed.release)
     if parsed.pre:
-        components.append(_quote(f"{parsed.pre[0]}{parsed.pre[1]}", config.double_quote))
+        components.append(
+            _quote(f"{parsed.pre[0]}{parsed.pre[1]}", config.double_quote)
+        )
     if parsed.post is not None:
         components.append(_quote("post", config.double_quote))
         components.append(str(parsed.post))
@@ -183,8 +183,8 @@ def _extract_normalized_prerelease(value: str) -> str | None:
 
 
 __all__ = [
+    "DEFAULT_NBGV_FIELDS",
     "TemplateFieldsConfig",
     "VersionTupleConfig",
     "build_template_fields",
-    "DEFAULT_NBGV_FIELDS",
 ]
