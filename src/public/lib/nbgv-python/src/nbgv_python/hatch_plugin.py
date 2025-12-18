@@ -54,7 +54,7 @@ class NbgvVersionSource(VersionSourceInterface):
             normalized = f"{config.epoch}!{normalized}"
         metadata = version.as_dict(include_raw=True)
         fields = build_template_fields(
-            version=normalized,
+            version=selected,
             normalized_version=normalized,
             version_info=metadata,
             config=config.template_fields,

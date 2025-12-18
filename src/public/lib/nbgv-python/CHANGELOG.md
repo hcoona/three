@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: The `version` template field now contains the raw NBGV version string instead of the PEP 440 normalized version. Use `normalized_version` for the PEP 440 compliant string.
+
 ### Fixed
 
 - Fix `GitVersion` mapping protocol implementation to raise `KeyError` for missing keys
