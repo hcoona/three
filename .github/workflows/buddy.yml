@@ -112,25 +112,7 @@ jobs:
             exit 1
           fi
 
-          VERSION="${version}" uv run --script - <<'PY'
-          # /// script
-          # requires-python = ">=3.14"
-          # dependencies = ["packaging>=24.0"]
-          # ///
-
-          from __future__ import annotations
-
-          import os
-          import sys
-          from packaging.version import Version, InvalidVersion
-
-          v = os.environ["VERSION"]
-
-          try:
-              Version(v)
-          except InvalidVersion as exc:
-              sys.exit(f"Invalid version (must be PEP 440): {v}. Error: {exc}")
-          PY
+          uv run --script eng/scripts/validate_pep440_version.py "${version}"
 
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             resolved_target=$(git rev-list -n1 "${GITHUB_REF}")
@@ -149,29 +131,7 @@ jobs:
 
           target="${resolved_target}"
 
-          pkg_dir=$(PROJECT="${project}" python - <<'PY'
-          import os
-          import sys
-          import tomllib
-          from pathlib import Path
-          from tomllib import TOMLDecodeError
-
-          name = os.environ["PROJECT"]
-          matches = []
-          for path in Path(".").rglob("pyproject.toml"):
-            try:
-              data = tomllib.loads(path.read_text())
-            except (TOMLDecodeError, OSError) as exc:
-              print(f"Skip {path}: {exc}", file=sys.stderr)
-              continue
-            if data.get("project", {}).get("name") == name:
-              matches.append(path.parent)
-          if not matches:
-            sys.exit(f"No pyproject.toml with project.name={name} found")
-          matches = sorted(matches, key=lambda p: len(str(p)))
-          print(matches[0])
-          PY
-          )
+          pkg_dir=$(uv run --script eng/scripts/find_python_project_path.py "${project}")
 
           if [[ ! -d "${pkg_dir}" ]]; then
             echo "Package directory does not exist: ${pkg_dir}" >&2
@@ -208,57 +168,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          cd "${GITHUB_WORKSPACE}"
-          python - <<'PY'
-          import io
-          import os
-          import re
-          import sys
-          import tarfile
-          import zipfile
-          from pathlib import Path
-
-          expected = os.environ["EXPECTED"]
-          dist = Path("out")
-          artifacts = sorted(dist.glob("*"))
-          if not artifacts:
-            sys.exit("No build artifacts found")
-          versions = set()
-          expected_types = {"wheel (.whl)", "sdist (.tar.gz)"}
-          for path in artifacts:
-            name = path.name
-            if name == ".gitignore":
-              continue
-            if path.suffix == ".whl":
-              with zipfile.ZipFile(path) as zf:
-                meta = next((n for n in zf.namelist() if n.endswith("METADATA")), None)
-                if not meta:
-                  sys.exit(f"{name} is missing METADATA")
-                content = zf.read(meta).decode()
-                for line in content.splitlines():
-                  if line.startswith("Version:"):
-                    versions.add(line.split(":", 1)[1].strip())
-                    break
-            elif path.suffixes[-2:] == [".tar", ".gz"]:
-              with tarfile.open(path, mode="r:gz") as tf:
-                member = next((m for m in tf.getmembers() if m.name.endswith("PKG-INFO")), None)
-                if member is None:
-                  sys.exit(f"{name} is missing PKG-INFO")
-                with tf.extractfile(member) as fh:
-                  for line in io.TextIOWrapper(fh, encoding="utf-8"):
-                    if line.startswith("Version:"):
-                      versions.add(line.split(":", 1)[1].strip())
-                      break
-            else:
-                sys.exit(
-                    "Unknown artifact type: "
-                    f"{name}. Expected one of {sorted(expected_types)}. "
-                    f"All artifacts: {[p.name for p in artifacts]}"
-                )
-
-          if versions != {expected}:
-            sys.exit(f"Built artifact version mismatch: expected {expected}, got {sorted(versions)}")
-          PY
+          uv run --script eng/scripts/verify_python_artifact_version.py "${EXPECTED}" "${GITHUB_WORKSPACE}/out"
         env:
           EXPECTED: ${{ steps.meta.outputs.version }}
 

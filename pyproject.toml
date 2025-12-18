@@ -104,6 +104,9 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
   "ANN",  # Relax annotation requirements in standalone test modules.
   "S101", # Allow bare asserts when pytest rewrites them anyway.
 ]
+"**/scripts/**/*.py" = [
+  "T201", # Allow print statements in scripts for simplicity.
+]
 
 [tool.pytest.ini_options]
 testpaths = ["src/lab", "OnePython/packages"]
