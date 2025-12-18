@@ -1,6 +1,9 @@
-name: Buddy Release (Python)
+name: Official Release (Python)
 
 on:
+  push:
+    tags:
+      - "release/*/v*"
   workflow_dispatch:
     inputs:
       project:
@@ -24,13 +27,14 @@ permissions:
   attestations: write
 
 concurrency:
-  group: buddy-${{ github.workflow }}-${{ github.ref || github.run_id }}
+  group: official-${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   publish-python:
     name: Publish Python package
     runs-on: ubuntu-latest
+    environment: pypi
     env:
       PYTHON_VERSION: '3.14'
     steps:
@@ -148,8 +152,8 @@ jobs:
           echo "package_dir=${pkg_dir}" >> "${GITHUB_OUTPUT}"
           echo "has_changelog=${has_changelog}" >> "${GITHUB_OUTPUT}"
           echo "changelog=${changelog}" >> "${GITHUB_OUTPUT}"
-          echo "dist_dir=${GITHUB_WORKSPACE}/out" >> "${GITHUB_OUTPUT}"
-          echo "dist_glob=${GITHUB_WORKSPACE}/out/*" >> "${GITHUB_OUTPUT}"
+          echo "dist_dir=${{ github.workspace }}/out" >> "${GITHUB_OUTPUT}"
+          echo "dist_glob=${{ github.workspace }}/out/*" >> "${GITHUB_OUTPUT}"
           echo "release_title=${project} v${version}" >> "${GITHUB_OUTPUT}"
           echo "run_url=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
 
@@ -158,13 +162,13 @@ jobs:
         run: |
           set -Eeuo pipefail
           cd "${{ steps.meta.outputs.package_dir }}"
-          uv build --out-dir "${GITHUB_WORKSPACE}/out"
+          uv build --out-dir "${{ github.workspace }}/out"
 
       - name: Verify built version matches tag
         shell: bash
         run: |
           set -Eeuo pipefail
-          uv run --script eng/scripts/verify_python_artifact_version.py "${EXPECTED}" "${GITHUB_WORKSPACE}/out"
+          uv run --script eng/scripts/verify_python_artifact_version.py "${EXPECTED}" "${{ github.workspace }}/out"
         env:
           EXPECTED: ${{ steps.meta.outputs.version }}
 
@@ -200,6 +204,11 @@ jobs:
         with:
           subject-path: ${{ steps.meta.outputs.dist_glob }}
 
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1
+        with:
+          packages-dir: ${{ github.workspace }}/out/
+
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -219,9 +228,9 @@ jobs:
           fi
 
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
-            gh release edit "${TAG_NAME}" --prerelease --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}" --target "${TARGET}"
+            gh release edit "${TAG_NAME}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}" --target "${TARGET}"
           else
-            gh release create "${TAG_NAME}" --prerelease --target "${TARGET}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
+            gh release create "${TAG_NAME}" --target "${TARGET}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
           fi
 
           # Filter out .gitignore files from the upload list
