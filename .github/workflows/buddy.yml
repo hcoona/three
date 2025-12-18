@@ -79,6 +79,9 @@ jobs:
           else
             project="${{ inputs.project }}"
             version="${{ inputs.version }}"
+            if [[ "${version}" =~ ^[vV] ]]; then
+              version="${version#?}"
+            fi
             tag_name="release/${project}/v${version}"
             target="${{ inputs.target }}"
           fi
