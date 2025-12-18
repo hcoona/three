@@ -30,6 +30,8 @@ def test_require_raises_for_missing_key(payload: dict[str, object]) -> None:
     version = GitVersion.from_payload(payload)
     with pytest.raises(KeyError):
         version.require("does_not_exist")
+    with pytest.raises(KeyError):
+        _ = version["does_not_exist"]
 
 
 def test_as_dict_optionally_includes_raw(payload: dict[str, object]) -> None:
