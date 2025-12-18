@@ -1775,7 +1775,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "nbgv-python", editable = "OnePython/packages/nbgv-python" }]
+requires-dist = [{ name = "nbgv-python", editable = "src/public/lib/nbgv-python" }]
 
 [package.metadata.requires-dev]
 dev = [{ name = "hatch", specifier = ">=1.9.1" }]
@@ -1783,7 +1783,7 @@ dev = [{ name = "hatch", specifier = ">=1.9.1" }]
 [[package]]
 name = "nbgv-python"
 version = "1.1.0b1"
-source = { editable = "OnePython/packages/nbgv-python" }
+source = { editable = "src/public/lib/nbgv-python" }
 dependencies = [
     { name = "packaging" },
 ]
