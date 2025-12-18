@@ -21,7 +21,6 @@ permissions:
   contents: write
   packages: write
   id-token: write
-  attestations: write
 
 concurrency:
   group: buddy-${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -194,11 +193,6 @@ jobs:
           EOF
           fi
           echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
-
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: ${{ steps.meta.outputs.dist_glob }}
 
       - name: Create or update GitHub release
         env:
