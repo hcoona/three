@@ -47,7 +47,7 @@ class GitVersion(Mapping[str, Any]):
 
     def __getitem__(self, key: str) -> Any:  # noqa: ANN401
         """Return the value for *key*."""
-        return self.get(key)
+        return self.require(key)
 
     def __iter__(self) -> Iterator[str]:
         """Return an iterator over the keys."""
