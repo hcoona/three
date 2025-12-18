@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from nbgv_python.templating import (
     TemplateFieldsConfig,
     VersionTupleConfig,
@@ -11,7 +10,6 @@ from nbgv_python.templating import (
 
 def test_build_template_fields_default() -> None:
     """Default configuration should expose core fields."""
-
     info = {
         "SimpleVersion": "1.2.3",
         "VersionMajor": 1,
@@ -34,14 +32,13 @@ def test_build_template_fields_default() -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-    ("1.2.3a1", "(0, 1, 2, 3, \"a1\")"),
-    ("1.2.3.post1", "(0, 1, 2, 3, \"post\", 1)"),
+        ("1.2.3a1", '(0, 1, 2, 3, "a1")'),
+        ("1.2.3.post1", '(0, 1, 2, 3, "post", 1)'),
         ("1!1.2.3", "(1, 1, 2, 3)"),
     ],
 )
 def test_build_template_fields_pep440(value: str, expected: str) -> None:
     """PEP 440 tuples should include release metadata."""
-
     config = TemplateFieldsConfig(
         version_tuple=VersionTupleConfig(mode="pep440", epoch=True)
     )
@@ -56,7 +53,6 @@ def test_build_template_fields_pep440(value: str, expected: str) -> None:
 
 def test_build_template_fields_pep440_epoch_default_absent() -> None:
     """PEP 440 tuple omits epoch when not configured and value lacks one."""
-
     config = TemplateFieldsConfig(
         version_tuple=VersionTupleConfig(mode="pep440", epoch=None)
     )
@@ -71,7 +67,6 @@ def test_build_template_fields_pep440_epoch_default_absent() -> None:
 
 def test_build_template_fields_nbgv_custom_fields() -> None:
     """Custom field lists should project NBGV metadata in order."""
-
     info = {
         "SemVer2": "1.2.3-beta.1+abc",
         "PrereleaseVersionNoLeadingHyphen": "beta.1",
@@ -101,7 +96,6 @@ def test_build_template_fields_nbgv_custom_fields() -> None:
 
 def test_build_template_fields_nbgv_normalized_prerelease() -> None:
     """Normalized prerelease option should collapse beta.1 -> b1."""
-
     info = {
         "SemVer2": "1.2.3-beta.1+abc",
         "PrereleaseVersionNoLeadingHyphen": "beta.1",
@@ -132,7 +126,6 @@ def test_build_template_fields_nbgv_normalized_prerelease() -> None:
 
 def test_build_template_fields_pep440_epoch_forced() -> None:
     """PEP 440 tuple includes epoch when forced even if zero."""
-
     config = TemplateFieldsConfig(
         version_tuple=VersionTupleConfig(mode="pep440", epoch=True)
     )

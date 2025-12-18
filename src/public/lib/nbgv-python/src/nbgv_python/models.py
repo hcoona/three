@@ -18,7 +18,6 @@ _SPECIAL_TOKEN_FIXES = {
 
 def _to_snake_case(name: str) -> str:
     """Convert a PascalCase identifier to snake_case."""
-
     first_pass = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
     second_pass = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", first_pass)
     snake = second_pass.replace("-", "_").lower()
@@ -35,9 +34,8 @@ class GitVersion(Mapping[str, Any]):
     raw: dict[str, Any]
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, Any]) -> "GitVersion":
+    def from_payload(cls, payload: Mapping[str, Any]) -> GitVersion:
         """Create an instance from the JSON dictionary returned by `nbgv`."""
-
         if not isinstance(payload, Mapping):
             msg = "Payload must be a mapping"
             raise TypeError(msg)
@@ -58,17 +56,14 @@ class GitVersion(Mapping[str, Any]):
 
     def keys(self) -> Iterable[str]:  # type: ignore[override]
         """Return the available snake_case field names."""
-
         return self._aliases.keys()
 
     def values(self) -> Iterable[Any]:  # type: ignore[override]
         """Return the values corresponding to the snake_case keys."""
-
         return self._aliases.values()
 
     def items(self) -> Iterable[tuple[str, Any]]:  # type: ignore[override]
         """Return `(key, value)` pairs for the snake_case mapping."""
-
         return self._aliases.items()
 
     @overload
@@ -81,7 +76,6 @@ class GitVersion(Mapping[str, Any]):
 
     def get(self, key: str, default: _T | None = None) -> Any | _T | None:
         """Return a value using either snake_case or the original key names."""
-
         if key in self._aliases:
             return self._aliases[key]
         if key in self.raw:
@@ -97,7 +91,6 @@ class GitVersion(Mapping[str, Any]):
 
     def require(self, key: str) -> Any:
         """Return a value or raise `KeyError` when it is unavailable."""
-
         sentinel = object()
         value = self.get(key, default=sentinel)
         if value is sentinel:
@@ -106,7 +99,6 @@ class GitVersion(Mapping[str, Any]):
 
     def as_dict(self, *, include_raw: bool = False) -> dict[str, Any]:
         """Return a copy of the snake_case mapping or the combined mapping."""
-
         if include_raw:
             merged = dict(self._aliases)
             merged.update(self.raw)

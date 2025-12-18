@@ -28,7 +28,6 @@ class NbgvVersionSource(VersionSourceInterface):
 
     def get_version_data(self) -> dict[str, Any]:
         """Return the version mapping consumed by hatchling."""
-
         mapping = {}
         if self.config is not None:
             mapping = dict(self.config.get("nbgv", {}))
@@ -38,11 +37,11 @@ class NbgvVersionSource(VersionSourceInterface):
         version = runner.get_version(config.working_directory)
         selected = version.get(config.version_field)
         if selected is None:
-            message = (
-                "Field '{field}' was not produced by 'nbgv get-version'"
-            ).format(field=config.version_field)
+            message = f"Field '{config.version_field}' was not produced by 'nbgv get-version'"
             raise RuntimeError(message)
-        normalized = normalize_version_field(selected, field=config.version_field)
+        normalized = normalize_version_field(
+            selected, field=config.version_field
+        )
         if config.epoch is not None:
             normalized = f"{config.epoch}!{normalized}"
         metadata = version.as_dict(include_raw=True)
@@ -74,14 +73,12 @@ class NbgvVersionSource(VersionSourceInterface):
 
     def get_template_fields(self) -> dict[str, Any] | None:
         """Expose template fields for potential build hooks."""
-
         return self._template_fields
 
 
 @hookimpl
 def hatch_register_version_source() -> type[VersionSourceInterface]:
     """Register the nbgv version source with hatch."""
-
     return NbgvVersionSource
 
 

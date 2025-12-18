@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,15 +16,18 @@ class WriteConfig:
     encoding: str = "utf-8"
 
 
-def write_version_file(config: WriteConfig, fields: Mapping[str, object]) -> None:
+def write_version_file(
+    config: WriteConfig, fields: Mapping[str, object]
+) -> None:
     """Render *fields* into the configured file using the template."""
-
     template = config.template or _default_template(config.file, fields)
     try:
         rendered = template.format(**fields)
     except KeyError as exc:  # pragma: no cover - easier to diagnose via error
         missing = exc.args[0]
-        raise RuntimeError(f"Template references unknown field: {missing}") from exc
+        raise RuntimeError(
+            f"Template references unknown field: {missing}"
+        ) from exc
     path = config.file
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"{rendered}\n", encoding=config.encoding)

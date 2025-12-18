@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import pytest
-
 from nbgv_python.models import GitVersion
 
 
 @pytest.fixture(name="payload")
 def payload_fixture() -> dict[str, object]:
     """Return a representative payload for GitVersion tests."""
-
     return {
         "SimpleVersion": "1.2.3",
         "NuGetPackageVersion": "1.2.3",
@@ -18,7 +16,6 @@ def payload_fixture() -> dict[str, object]:
 
 def test_git_version_normalises_snake_case(payload: dict[str, object]) -> None:
     """Ensure PascalCase keys receive snake_case aliases."""
-
     version = GitVersion.from_payload(payload)
     assert version["simple_version"] == "1.2.3"
     assert version["SimpleVersion"] == "1.2.3"
@@ -28,7 +25,6 @@ def test_git_version_normalises_snake_case(payload: dict[str, object]) -> None:
 
 def test_require_raises_for_missing_key(payload: dict[str, object]) -> None:
     """Verify `require` raises when a field is absent."""
-
     version = GitVersion.from_payload(payload)
     with pytest.raises(KeyError):
         version.require("does_not_exist")
@@ -36,7 +32,6 @@ def test_require_raises_for_missing_key(payload: dict[str, object]) -> None:
 
 def test_as_dict_optionally_includes_raw(payload: dict[str, object]) -> None:
     """`as_dict(include_raw=True)` should merge original keys."""
-
     version = GitVersion.from_payload(payload)
     merged = version.as_dict(include_raw=True)
     assert "SimpleVersion" in merged
