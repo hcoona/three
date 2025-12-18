@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeVar, overload
 
@@ -51,23 +51,16 @@ class GitVersion(Mapping[str, Any]):
 
     def __iter__(self) -> Iterator[str]:
         """Return an iterator over the keys."""
-        return iter(self._aliases)
+        yield from self._aliases
+        for key in self.raw:
+            if key not in self._aliases:
+                yield key
 
     def __len__(self) -> int:
         """Return the number of items."""
-        return len(self._aliases)
-
-    def keys(self) -> Iterable[str]:  # type: ignore[override]
-        """Return the available snake_case field names."""
-        return self._aliases.keys()
-
-    def values(self) -> Iterable[Any]:  # type: ignore[override]
-        """Return the values corresponding to the snake_case keys."""
-        return self._aliases.values()
-
-    def items(self) -> Iterable[tuple[str, Any]]:  # type: ignore[override]
-        """Return `(key, value)` pairs for the snake_case mapping."""
-        return self._aliases.items()
+        return len(self._aliases) + sum(
+            1 for key in self.raw if key not in self._aliases
+        )
 
     @overload
     def get(

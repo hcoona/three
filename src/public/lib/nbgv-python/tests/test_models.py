@@ -40,3 +40,12 @@ def test_as_dict_optionally_includes_raw(payload: dict[str, object]) -> None:
     merged = version.as_dict(include_raw=True)
     assert "SimpleVersion" in merged
     assert merged["nuget_package_version"] == "1.2.3"
+
+
+def test_git_version_iterates_all_keys(payload: dict[str, object]) -> None:
+    """Ensure iteration yields both snake_case aliases and raw keys."""
+    version = GitVersion.from_payload(payload)
+    keys = list(version)
+    assert "simple_version" in keys
+    assert "SimpleVersion" in keys
+    assert len(version) == len(keys)

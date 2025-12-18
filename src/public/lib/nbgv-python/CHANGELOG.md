@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix `GitVersion` mapping protocol implementation to raise `KeyError` for missing keys
+- Fix `GitVersion` mapping protocol behavior (missing keys now raise `KeyError`; iteration/length reflect all supported keys)
 - Ensure single-element version tuples are rendered with a trailing comma
 - Fix documentation links in project metadata
 
