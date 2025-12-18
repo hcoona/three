@@ -1,2 +1,5 @@
+*.sf2 filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+OneDotNet/srcs/private/app/OxfordWordlistExtractor/*.html linguist-vendored
 OneDotNet/tests/OxfordDictExtractor.Tests/examples/*.html linguist-vendored
-OnePython/packages/supermemo-mcp/references/*.ahk linguist-vendored
+src/private/app/supermemo-mcp/references/*.ahk linguist-vendored
