@@ -15,7 +15,7 @@ from nbgv_python.versioning import normalize_version_field
         ("1.2.3-rc.4", "1.2.3rc4"),
         ("1.2.3-pre.2+sha", "1.2.3rc2+sha"),
         ("1.2.3-dev.5", "1.2.3.dev5"),
-        ("1.2.3-gabcdef", "1.2.3+gabcdef"),
+        ("1.2.3-gabcdef", "1.2.3.dev0+gabcdef"),
         ("1.2.3-alpha.1.gabcdef", "1.2.3a1+gabcdef"),
     ],
 )
@@ -28,3 +28,23 @@ def test_normalize_version_field_rejects_invalid() -> None:
     """Invalid values raise a runtime error with context."""
     with pytest.raises(RuntimeError):
         normalize_version_field("not-a-version", field="simple_version")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Unrecognized prerelease label with numeric token and extra tokens.
+        "1.2.3-ci.1.extra",
+        # Unrecognized prerelease label with non-numeric remainder.
+        "1.2.3-unknown.extra",
+        # Unrecognized prerelease label with an embedded number and extra
+        # tokens.
+        "1.2.3-ci1.extra",
+    ],
+)
+def test_normalize_version_field_rejects_complex_unrecognized_prerelease(
+    value: str,
+) -> None:
+    """Complex unrecognized prerelease tags should raise a runtime error."""
+    with pytest.raises(RuntimeError):
+        normalize_version_field(value, field="simple_version")

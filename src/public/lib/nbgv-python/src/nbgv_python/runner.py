@@ -89,20 +89,20 @@ class NbgvRunner:
     ) -> subprocess.CompletedProcess[str]:
         """Run the command and raise `NbgvCommandError` on failure."""
         full_command = (*self._command, *args)
-        process = subprocess.run(  # noqa: S603 (intentional invocation)
-            full_command,
-            cwd=_coerce_path(cwd),
-            check=False,
-            capture_output=capture_output,
-            text=True,
-        )
-        if process.returncode != 0:
-            stdout = process.stdout if capture_output else None
-            stderr = process.stderr if capture_output else None
-            raise NbgvCommandError(
-                full_command, process.returncode, stdout, stderr
+        try:
+            return subprocess.run(  # noqa: S603 (intentional invocation)
+                full_command,
+                cwd=_coerce_path(cwd),
+                check=True,
+                capture_output=capture_output,
+                text=True,
             )
-        return process
+        except subprocess.CalledProcessError as exc:
+            stdout = exc.stdout if capture_output else None
+            stderr = exc.stderr if capture_output else None
+            raise NbgvCommandError(
+                full_command, exc.returncode, stdout, stderr
+            ) from exc
 
 
 __all__ = [
