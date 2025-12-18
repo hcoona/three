@@ -132,7 +132,7 @@ repos:
     entry: uv lock --check
     language: system
     pass_filenames: true
-    files: pyproject\.toml$|uv\.lock$
+    files: (?:.*/)*pyproject\.toml$|uv\.lock$
   - id: dotenv-linter
     name: Dotenv Linter
     entry: dotenv-linter check

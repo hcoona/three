@@ -817,7 +817,7 @@ wheels = [
 [[package]]
 name = "git-commit-heatmap"
 version = "0.0.0.dev0"
-source = { virtual = "OnePython/packages/git-commit-heatmap" }
+source = { virtual = "src/private/app/git-commit-heatmap" }
 dependencies = [
     { name = "gitpython" },
     { name = "matplotlib" },
@@ -959,7 +959,7 @@ wheels = [
 [[package]]
 name = "html-sm-processor"
 version = "0.0.0.dev0"
-source = { editable = "OnePython/packages/html-sm-processor" }
+source = { editable = "src/private/app/html-sm-processor" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "cairosvg" },
@@ -1407,7 +1407,7 @@ wheels = [
 [[package]]
 name = "llm-text-splitter"
 version = "0.0.0.dev0"
-source = { editable = "OnePython/packages/llm-text-splitter" }
+source = { editable = "src/private/app/llm-text-splitter" }
 dependencies = [
     { name = "openai" },
     { name = "openai-agents" },
@@ -1742,7 +1742,7 @@ wheels = [
 [[package]]
 name = "music-flash-card-generator"
 version = "0.0.0.dev0"
-source = { virtual = "OnePython/packages/music-flash-card-generator" }
+source = { virtual = "src/private/app/music-flash-card-generator" }
 dependencies = [
     { name = "ninja-syntax" },
 ]
@@ -1782,7 +1782,7 @@ dev = [{ name = "hatch", specifier = ">=1.9.1" }]
 
 [[package]]
 name = "nbgv-python"
-version = "1.1.0b2"
+version = "1.2.0b1"
 source = { editable = "src/public/lib/nbgv-python" }
 dependencies = [
     { name = "packaging" },
@@ -2649,7 +2649,7 @@ wheels = [
 [[package]]
 name = "rag-postgresql-openai"
 version = "0.0.0.dev0"
-source = { editable = "OnePython/packages/rag-postgresql-openai" }
+source = { editable = "src/private/app/rag-postgresql-openai" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "cohere" },
@@ -2990,7 +2990,7 @@ wheels = [
 [[package]]
 name = "supermemo-mcp"
 version = "0.0.0.dev0"
-source = { editable = "OnePython/packages/supermemo-mcp" }
+source = { editable = "src/private/app/supermemo-mcp" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "fastmcp" },
@@ -3170,7 +3170,7 @@ wheels = [
 [[package]]
 name = "transcribe"
 version = "0.0.0.dev0"
-source = { virtual = "OnePython/packages/transcribe" }
+source = { virtual = "src/private/app/transcribe" }
 dependencies = [
     { name = "audioop-lts" },
     { name = "azure-identity" },

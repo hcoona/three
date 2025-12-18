@@ -1,0 +1,17 @@
+[project]
+name = "git-commit-heatmap"
+version = "0.0.0-dev"
+description = "This project will draw a heatmap of git commits."
+readme = "README.md"
+authors = [
+    { name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }
+]
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+    "gitpython>=3.1.44",
+    "matplotlib>=3.10.3",
+    "pandas>=2.2.3",
+    "seaborn>=0.13.2",
+]

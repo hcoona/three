@@ -1,0 +1,22 @@
+[project]
+name = "html-sm-processor"
+version = "0.0.0-dev"
+description = "This project will process the HTML for SuperMemo."
+readme = "README.md"
+authors = [
+    { name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }
+]
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+    "beautifulsoup4>=4.13.4",
+    "cairosvg>=2.7.1",
+    "lxml>=5.4.0",
+    "matplotlib>=3.10.3",
+    "niquests>=3.14.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
