@@ -20,7 +20,12 @@ class NbgvVersionSource(VersionSourceInterface):
 
     PLUGIN_NAME = "nbgv"
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover
+    def __init__(
+        self,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> None:  # pragma: no cover
+        """Initialize the plugin."""
         super().__init__(*args, **kwargs)
         self._config: PluginConfig | None = None
         self._version_data: dict[str, Any] | None = None
@@ -37,7 +42,10 @@ class NbgvVersionSource(VersionSourceInterface):
         version = runner.get_version(config.working_directory)
         selected = version.get(config.version_field)
         if selected is None:
-            message = f"Field '{config.version_field}' was not produced by 'nbgv get-version'"
+            message = (
+                f"Field '{config.version_field}' was not produced by "
+                "'nbgv get-version'"
+            )
             raise RuntimeError(message)
         normalized = normalize_version_field(
             selected, field=config.version_field
@@ -65,6 +73,7 @@ class NbgvVersionSource(VersionSourceInterface):
     def set_version(  # pragma: no cover - hatch isolates CLI so we cannot test
         self, version: str, version_data: dict[str, Any]
     ) -> None:
+        """Raise an error as version setting is not supported."""
         message = (
             "The nbgv hatch plugin does not support mutating the project "
             "version. Create a Git tag instead."

@@ -2,25 +2,30 @@
 
 from __future__ import annotations
 
+import logging
 import sys
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from .errors import NbgvCommandError, NbgvNotFoundError
 from .runner import NbgvRunner
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point used by the console script."""
+    logging.basicConfig(format="%(message)s", level=logging.INFO)
     arguments = list(argv if argv is not None else sys.argv[1:])
     try:
         runner = NbgvRunner()
         return runner.forward(arguments)
-    except NbgvNotFoundError as exc:
-        print(exc, file=sys.stderr)
+    except NbgvNotFoundError:
+        logging.exception("nbgv executable not found")
         return 127
     except NbgvCommandError as exc:
         if exc.stderr:
-            print(exc.stderr, file=sys.stderr)
+            logging.exception(exc.stderr)
         return exc.returncode
 
 

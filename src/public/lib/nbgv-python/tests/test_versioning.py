@@ -1,3 +1,5 @@
+"""Tests for version normalization."""
+
 from __future__ import annotations
 
 import pytest

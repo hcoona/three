@@ -1,12 +1,17 @@
+"""Tests for the CLI runner."""
+
 from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from nbgv_python.errors import NbgvCommandError
 from nbgv_python.runner import NbgvRunner
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _write_stub(tmp_path: Path) -> Path:
@@ -72,4 +77,4 @@ def test_forward_raises_when_cli_fails(runner: NbgvRunner) -> None:
     """Raise `NbgvCommandError` when the CLI exits with a failure code."""
     with pytest.raises(NbgvCommandError) as exc:
         runner.forward(["fail"])
-    assert exc.value.returncode == 5
+    assert exc.value.returncode == 5  # noqa: PLR2004

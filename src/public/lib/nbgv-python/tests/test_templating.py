@@ -1,3 +1,5 @@
+"""Tests for template field generation."""
+
 from __future__ import annotations
 
 import pytest

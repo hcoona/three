@@ -38,7 +38,7 @@ def parse_command_tokens(command: str | Sequence[str]) -> list[str]:
     for token in tokens:
         stripped = token.strip()
         if (
-            len(stripped) >= 2
+            len(stripped) >= 2  # noqa: PLR2004
             and stripped[0] == stripped[-1]
             and stripped[0] in {'"', "'"}
         ):

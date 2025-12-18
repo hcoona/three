@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from packaging.version import InvalidVersion, Version
 
 from .versioning import normalize_version_field
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 DEFAULT_NBGV_FIELDS: tuple[str, ...] = (
     "VersionMajor",
@@ -93,13 +95,18 @@ def _render_nbgv_tuple(
             try:
                 value = _lookup_metadata_field(version_info, field)
             except KeyError as exc:  # pragma: no cover - configuration error
-                message = f"Version tuple field '{field}' was not emitted by 'nbgv get-version'."
+                message = (
+                    f"Version tuple field '{field}' was not emitted by "
+                    "'nbgv get-version'."
+                )
                 raise RuntimeError(message) from exc
         if value is None:
             continue
         if isinstance(value, str) and value == "":
             continue
-        components.append(_format_component(value, config.double_quote))
+        components.append(
+            _format_component(value, double_quote=config.double_quote)
+        )
     return _format_tuple(components)
 
 
@@ -107,10 +114,11 @@ def _render_pep440_tuple(value: str, config: VersionTupleConfig) -> str:
     try:
         parsed = Version(value)
     except InvalidVersion:
-        raise RuntimeError(
+        msg = (
             "PEP 440 normalization is enabled but the version is invalid: "
             f"{value}"
-        ) from None
+        )
+        raise RuntimeError(msg) from None
     components: list[str] = []
     include_epoch = False
     if config.epoch is True:
@@ -124,17 +132,22 @@ def _render_pep440_tuple(value: str, config: VersionTupleConfig) -> str:
     components.extend(str(number) for number in parsed.release)
     if parsed.pre:
         components.append(
-            _quote(f"{parsed.pre[0]}{parsed.pre[1]}", config.double_quote)
+            _quote(
+                f"{parsed.pre[0]}{parsed.pre[1]}",
+                double_quote=config.double_quote,
+            )
         )
     if parsed.post is not None:
-        components.append(_quote("post", config.double_quote))
+        components.append(_quote("post", double_quote=config.double_quote))
         components.append(str(parsed.post))
     if parsed.dev is not None:
-        components.append(_quote("dev", config.double_quote))
+        components.append(_quote("dev", double_quote=config.double_quote))
         components.append(str(parsed.dev))
     if parsed.local is not None:
-        components.append(_quote("+", config.double_quote))
-        components.append(_quote(parsed.local, config.double_quote))
+        components.append(_quote("+", double_quote=config.double_quote))
+        components.append(
+            _quote(parsed.local, double_quote=config.double_quote)
+        )
     return _format_tuple(components)
 
 
@@ -143,9 +156,13 @@ def _format_tuple(parts: list[str]) -> str:
     return f"({inner})" if parts else "()"
 
 
-def _format_component(value: Any, double_quote: bool) -> str:
+def _format_component(
+    value: Any,  # noqa: ANN401
+    *,
+    double_quote: bool,
+) -> str:
     if isinstance(value, bool):
-        return _quote(str(value).lower(), double_quote)
+        return _quote(str(value).lower(), double_quote=double_quote)
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
@@ -153,15 +170,18 @@ def _format_component(value: Any, double_quote: bool) -> str:
     text = str(value)
     if text.isdigit():
         return str(int(text))
-    return _quote(text, double_quote)
+    return _quote(text, double_quote=double_quote)
 
 
-def _quote(text: str, double_quote: bool) -> str:
+def _quote(text: str, *, double_quote: bool) -> str:
     quote = '"' if double_quote else "'"
     return f"{quote}{text}{quote}"
 
 
-def _lookup_metadata_field(info: Mapping[str, Any], name: str) -> Any:
+def _lookup_metadata_field(
+    info: Mapping[str, Any],
+    name: str,
+) -> Any:  # noqa: ANN401
     if name in info:
         return info[name]
     lowered = name.lower()

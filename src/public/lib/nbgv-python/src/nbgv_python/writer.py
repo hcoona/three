@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,9 +28,8 @@ def write_version_file(
         rendered = template.format(**fields)
     except KeyError as exc:  # pragma: no cover - easier to diagnose via error
         missing = exc.args[0]
-        raise RuntimeError(
-            f"Template references unknown field: {missing}"
-        ) from exc
+        msg = f"Template references unknown field: {missing}"
+        raise RuntimeError(msg) from exc
     path = config.file
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"{rendered}\n", encoding=config.encoding)
@@ -41,10 +43,11 @@ def _default_template(path: Path, fields: Mapping[str, object]) -> str:
         return '__version__ = "{version}"'
     if suffix in {".txt", ""}:
         return "{version}"
-    raise RuntimeError(
+    msg = (
         "No default template is defined for files with suffix "
         f"'{path.suffix}'. Please specify 'template'."
     )
+    raise RuntimeError(msg)
 
 
 __all__ = [

@@ -1,10 +1,15 @@
+"""Tests for configuration parsing."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from nbgv_python.config import PluginConfig
 from nbgv_python.templating import DEFAULT_NBGV_FIELDS
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_plugin_config_defaults(tmp_path: Path) -> None:
@@ -38,7 +43,7 @@ def test_plugin_config_parses_command_and_directory(tmp_path: Path) -> None:
 
 def test_plugin_config_rejects_unknown_keys(tmp_path: Path) -> None:
     """Reject unsupported configuration options."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unsupported configuration keys"):
         PluginConfig.from_mapping(tmp_path, {"unexpected": 1})
 
 
@@ -66,7 +71,7 @@ def test_plugin_config_parses_template_and_write(tmp_path: Path) -> None:
     assert config.template_fields.version_tuple.epoch is True
     assert config.template_fields.version_tuple.double_quote is False
     assert config.template_fields.version_tuple.normalized_prerelease is True
-    assert config.epoch == 2
+    assert config.epoch == 2  # noqa: PLR2004
     assert config.write is not None
     assert config.write.file == target_file
     assert config.write.template == "__version__ = '{version}'"
@@ -75,5 +80,5 @@ def test_plugin_config_parses_template_and_write(tmp_path: Path) -> None:
 
 def test_plugin_config_invalid_epoch(tmp_path: Path) -> None:
     """Epoch must be a non-negative integer."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="'epoch' must be an integer >= 0"):
         PluginConfig.from_mapping(tmp_path, {"epoch": -1})
