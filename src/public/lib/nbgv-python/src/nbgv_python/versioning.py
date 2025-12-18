@@ -37,13 +37,16 @@ def normalize_version_field(value: object, *, field: str) -> str:
             try:
                 return str(Version(converted))
             except InvalidVersion as exc:  # pragma: no cover - defensive branch
-                raise RuntimeError(
-                    f"Field '{field}' produced '{candidate}' which could not be "
-                    "normalized to a PEP 440 version."
-                ) from exc
-    raise RuntimeError(
-        f"Field '{field}' produced '{candidate}' which is not a valid PEP 440 version."
+                msg = (
+                    f"Field '{field}' produced '{candidate}' which could not "
+                    "be normalized to a PEP 440 version."
+                )
+                raise RuntimeError(msg) from exc
+    msg = (
+        f"Field '{field}' produced '{candidate}' which is not a valid "
+        "PEP 440 version."
     )
+    raise RuntimeError(msg)
 
 
 def _convert_semver_to_pep440(candidate: str) -> str | None:
@@ -101,7 +104,7 @@ def _convert_prerelease(text: str) -> tuple[str, list[str]] | None:
     if not number:
         number = "0"
     mapped = _LABEL_MAP[label]
-    suffix = f"{mapped}{number}" if mapped != ".dev" else f"{mapped}{number}"
+    suffix = f"{mapped}{number}"
     return suffix, remainder_tokens
 
 

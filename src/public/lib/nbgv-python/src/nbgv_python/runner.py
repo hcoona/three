@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .command import discover_command
 from .errors import NbgvCommandError, NbgvJsonError
 from .models import GitVersion
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 
 def _coerce_path(value: Path | str | None) -> str | None:
@@ -23,6 +26,7 @@ class NbgvRunner:
     """High-level wrapper responsible for invoking the `nbgv` CLI."""
 
     def __init__(self, command: str | Sequence[str] | None = None) -> None:
+        """Initialize the runner with an optional command override."""
         self._command = tuple(discover_command(command))
 
     @property
@@ -38,11 +42,10 @@ class NbgvRunner:
         capture_output: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         """Execute `nbgv` with *args* and return the completed process."""
-        process = self._execute(args, cwd=cwd, capture_output=capture_output)
-        return process
+        return self._execute(args, cwd=cwd, capture_output=capture_output)
 
     def get_version(self, project_dir: Path | str = ".") -> GitVersion:
-        """Return version metadata for *project_dir* using `nbgv get-version`."""
+        """Return version metadata for *project_dir*."""
         project_path = Path(project_dir)
         args = (
             "get-version",
@@ -56,7 +59,9 @@ class NbgvRunner:
             cwd=project_path,
             capture_output=True,
         )
-        assert process.stdout is not None  # for type checkers only
+        if process.stdout is None:  # pragma: no cover
+            msg = "stdout is None"
+            raise RuntimeError(msg)
         try:
             payload = json.loads(process.stdout)
         except json.JSONDecodeError as exc:

@@ -1,17 +1,26 @@
+"""Tests for the hatchling plugin integration."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
 from nbgv_python.hatch_plugin import NbgvVersionSource
 from nbgv_python.models import GitVersion
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
+
 
 class DummyRunner:
+    """Mock runner that returns a fixed version."""
+
     def __init__(self, *_, **__):
-        pass
+        """Initialize the dummy runner."""
 
     def get_version(self, _cwd: Path) -> GitVersion:
+        """Return a fixed version payload."""
         payload = {
             "SimpleVersion": "1.2.3-beta.1",
             "SemVer2": "1.2.3-beta.1+gabcdef",

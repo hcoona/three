@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .command import (
     ENV_COMMAND_OVERRIDE,
@@ -25,6 +24,10 @@ from .templating import (
 )
 from .versioning import normalize_version_field
 from .writer import WriteConfig, write_version_file
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+    from pathlib import Path
 
 __all__ = [
     "ENV_COMMAND_OVERRIDE",

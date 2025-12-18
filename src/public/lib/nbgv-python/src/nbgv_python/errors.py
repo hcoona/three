@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 class NbgvError(RuntimeError):
@@ -14,6 +17,7 @@ class NbgvNotFoundError(NbgvError):
     """Raised when the nbgv CLI executable cannot be resolved."""
 
     def __init__(self, search_paths: Sequence[str] | None = None) -> None:
+        """Initialize the error with the paths searched."""
         self.search_paths = list(search_paths or [])
         super().__init__(
             "Unable to locate the 'nbgv' CLI. Install it with "
@@ -32,6 +36,7 @@ class NbgvCommandError(NbgvError):
     stderr: str | None
 
     def __str__(self) -> str:  # pragma: no cover - format logic only
+        """Return a string representation of the error."""
         pieces: list[str] = [
             "nbgv command failed",
             f"exit code={self.returncode}",
@@ -46,5 +51,6 @@ class NbgvJsonError(NbgvError):
     """Raised when CLI JSON output cannot be parsed."""
 
     def __init__(self, message: str, raw_output: str) -> None:
+        """Initialize the error with the message and raw output."""
         super().__init__(message)
         self.raw_output = raw_output

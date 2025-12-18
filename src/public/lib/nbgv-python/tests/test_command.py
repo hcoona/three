@@ -1,3 +1,5 @@
+"""Tests for command discovery and parsing."""
+
 from __future__ import annotations
 
 import os
@@ -52,7 +54,7 @@ def test_discover_command_raises_when_not_found(
 ) -> None:
     """Raise an explicit error when the command cannot be resolved."""
     monkeypatch.delenv(ENV_COMMAND_OVERRIDE, raising=False)
-    monkeypatch.setenv("PATH", os.pathsep.join(["/tmp", "/usr/bin"]))
+    monkeypatch.setenv("PATH", os.pathsep.join(["/tmp", "/usr/bin"]))  # noqa: S108
     with pytest.raises(NbgvNotFoundError) as exc:
         discover_command(env=os.environ, which=lambda _: None)
     assert "/usr/bin" in " ".join(exc.value.search_paths)

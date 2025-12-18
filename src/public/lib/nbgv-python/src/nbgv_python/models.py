@@ -45,13 +45,16 @@ class GitVersion(Mapping[str, Any]):
             aliases[_to_snake_case(key)] = value
         return cls(aliases, raw)
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str) -> Any:  # noqa: ANN401
+        """Return the value for *key*."""
         return self.get(key)
 
     def __iter__(self) -> Iterator[str]:
+        """Return an iterator over the keys."""
         return iter(self._aliases)
 
     def __len__(self) -> int:
+        """Return the number of items."""
         return len(self._aliases)
 
     def keys(self) -> Iterable[str]:  # type: ignore[override]
@@ -67,14 +70,26 @@ class GitVersion(Mapping[str, Any]):
         return self._aliases.items()
 
     @overload
-    def get(self, key: str, default: None = ...) -> Any | None:  # type: ignore[override]
+    def get(
+        self,
+        key: str,
+        default: None = ...,
+    ) -> Any | None:  # type: ignore[override]  # noqa: ANN401
         ...
 
     @overload
-    def get(self, key: str, default: _T) -> Any | _T:  # type: ignore[override]
+    def get(
+        self,
+        key: str,
+        default: _T,
+    ) -> Any | _T:  # type: ignore[override]  # noqa: ANN401
         ...
 
-    def get(self, key: str, default: _T | None = None) -> Any | _T | None:
+    def get(
+        self,
+        key: str,
+        default: _T | None = None,
+    ) -> Any | _T | None:
         """Return a value using either snake_case or the original key names."""
         if key in self._aliases:
             return self._aliases[key]
@@ -89,7 +104,7 @@ class GitVersion(Mapping[str, Any]):
                 return value
         return default
 
-    def require(self, key: str) -> Any:
+    def require(self, key: str) -> Any:  # noqa: ANN401
         """Return a value or raise `KeyError` when it is unavailable."""
         sentinel = object()
         value = self.get(key, default=sentinel)

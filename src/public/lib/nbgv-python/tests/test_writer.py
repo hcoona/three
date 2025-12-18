@@ -1,9 +1,14 @@
+"""Tests for file writing."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from nbgv_python.writer import WriteConfig, write_version_file
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_write_version_file(tmp_path: Path) -> None:
@@ -36,7 +41,7 @@ def test_write_version_file_default_template_python_prefers_normalized(
 def test_write_version_file_default_template_python_fallback(
     tmp_path: Path,
 ) -> None:
-    """Python default template falls back to 'version' when normalized is missing."""
+    """Python default template falls back to 'version'."""
     target = tmp_path / "_version.py"
     config = WriteConfig(file=target)
     write_version_file(config, {"version": "1.2.3"})
@@ -47,5 +52,5 @@ def test_write_version_file_unknown_suffix(tmp_path: Path) -> None:
     """Unknown suffix without template raises an error."""
     target = tmp_path / "version.json"
     config = WriteConfig(file=target)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="No default template is defined"):
         write_version_file(config, {"version": "1.2.3"})

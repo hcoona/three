@@ -93,7 +93,7 @@ class PluginConfig:
         )
 
 
-def _parse_epoch(value: Any) -> int:
+def _parse_epoch(value: Any) -> int:  # noqa: ANN401
     if isinstance(value, bool):
         msg = "'epoch' must be an integer >= 0"
         raise TypeError(msg)
@@ -118,7 +118,7 @@ def _parse_epoch(value: Any) -> int:
     return epoch
 
 
-def _parse_template_fields(mapping: Any) -> TemplateFieldsConfig:
+def _parse_template_fields(mapping: Any) -> TemplateFieldsConfig:  # noqa: ANN401
     if mapping is None:
         return TemplateFieldsConfig()
     if not isinstance(mapping, Mapping):
@@ -134,7 +134,9 @@ def _parse_template_fields(mapping: Any) -> TemplateFieldsConfig:
     return TemplateFieldsConfig(version_tuple=version_tuple)
 
 
-def _parse_version_tuple(mapping: Any) -> VersionTupleConfig:
+def _parse_version_tuple(  # noqa: C901, PLR0912, PLR0915
+    mapping: Any,  # noqa: ANN401
+) -> VersionTupleConfig:
     if mapping is None:
         return VersionTupleConfig()
     if not isinstance(mapping, Mapping):
@@ -185,13 +187,13 @@ def _parse_version_tuple(mapping: Any) -> VersionTupleConfig:
         raise ValueError(msg)
     if epoch is not None and not isinstance(epoch, bool):
         msg = "'epoch' must be a boolean when provided"
-        raise ValueError(msg)
+        raise TypeError(msg)
     if not isinstance(double_quote, bool):
         msg = "'double-quote' must be a boolean"
-        raise ValueError(msg)
+        raise TypeError(msg)
     if not isinstance(normalized_prerelease, bool):
         msg = "'normalized-prerelease' must be a boolean"
-        raise ValueError(msg)
+        raise TypeError(msg)
     return VersionTupleConfig(
         mode=normalized_mode,
         fields=nbgv_fields,
@@ -201,7 +203,10 @@ def _parse_version_tuple(mapping: Any) -> VersionTupleConfig:
     )
 
 
-def _parse_write_config(root: Path, mapping: Any) -> WriteConfig | None:
+def _parse_write_config(
+    root: Path,
+    mapping: Any,  # noqa: ANN401
+) -> WriteConfig | None:
     if mapping is None:
         return None
     if not isinstance(mapping, Mapping):
