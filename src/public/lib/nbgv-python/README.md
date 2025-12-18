@@ -32,65 +32,63 @@ Additional configuration keys include:
 
 - `command` (override CLI invocation)
 - `working-directory` (relative path for the repository root)
-- `epoch` *(default: `null`)* – when provided, this non-negative integer is prepended to the normalized version to emit a PEP 440 epoch (for example `2!1.2.3`). Leave it unset or `null` to omit the epoch entirely.
+- `epoch` _(default: `null`)_ – when provided, this non-negative integer is prepended to the normalized version to emit a PEP 440 epoch (for example `2!1.2.3`). Leave it unset or `null` to omit the epoch entirely.
 
 The plugin normalizes the chosen value to a PEP 440 compliant version, so SemVer pre-release tags such as `-beta.1` are mapped to `b1` automatically.
 
 ### Template Fields
 
 - Extend the available template variables via the optional `template-fields` table. Supported options and defaults are:
+    - `version-tuple.mode` _(default: `"nbgv"`)_ – choose how to build the tuple. Use `"nbgv"` (default) to assemble components from the Nerdbank.GitVersioning JSON payload, or `"pep440"` to parse the normalized version string.
+    - `version-tuple.fields` _(default: `["VersionMajor", "VersionMinor", "BuildNumber", "PrereleaseVersionNoLeadingHyphen"]`)_ – when `mode = "nbgv"`, this ordered list determines which NBGV variables populate the tuple. Empty strings and `null` values are skipped.
+    - `version-tuple.normalized-prerelease` _(default: `false`)_ – when `mode = "nbgv"`, convert the `PrereleaseVersionNoLeadingHyphen` entry to its PEP 440 shorthand (for example `beta.1` → `b1`).
+    - `version-tuple.epoch` _(default: `null`)_ – only applies when `mode = "pep440"`. Keep it `null` to emit the epoch only when the source string already includes a non-zero epoch (e.g., `2!1.0.0`), set `true` to force inclusion, or `false` to suppress it.
+    - `version-tuple.double-quote` _(default: `true`)_ – controls whether string parts in the tuple use double quotes (`""`) or single quotes (`''`).
 
-  - `version-tuple.mode` *(default: `"nbgv"`)* – choose how to build the tuple. Use `"nbgv"` (default) to assemble components from the Nerdbank.GitVersioning JSON payload, or `"pep440"` to parse the normalized version string.
-  - `version-tuple.fields` *(default: `["VersionMajor", "VersionMinor", "BuildNumber", "PrereleaseVersionNoLeadingHyphen"]`)* – when `mode = "nbgv"`, this ordered list determines which NBGV variables populate the tuple. Empty strings and `null` values are skipped.
-  - `version-tuple.normalized-prerelease` *(default: `false`)* – when `mode = "nbgv"`, convert the `PrereleaseVersionNoLeadingHyphen` entry to its PEP 440 shorthand (for example `beta.1` → `b1`).
-  - `version-tuple.epoch` *(default: `null`)* – only applies when `mode = "pep440"`. Keep it `null` to emit the epoch only when the source string already includes a non-zero epoch (e.g., `2!1.0.0`), set `true` to force inclusion, or `false` to suppress it.
-  - `version-tuple.double-quote` *(default: `true`)* – controls whether string parts in the tuple use double quotes (`""`) or single quotes (`''`).
+    ```toml
+    [tool.hatch.version.nbgv.template-fields.version-tuple]
+    fields = [
+      "VersionMajor",
+      "VersionMinor",
+      "BuildNumber",
+      "PrereleaseVersionNoLeadingHyphen",
+    ]
+    double-quote = false
+    ```
 
-  ```toml
-  [tool.hatch.version.nbgv.template-fields.version-tuple]
-  fields = [
-    "VersionMajor",
-    "VersionMinor",
-    "BuildNumber",
-    "PrereleaseVersionNoLeadingHyphen",
-  ]
-  double-quote = false
-  ```
+    ```toml
+    [tool.hatch.version.nbgv.template-fields.version-tuple]
+    mode = "pep440"
+    epoch = true
+    ```
 
-  ```toml
-  [tool.hatch.version.nbgv.template-fields.version-tuple]
-  mode = "pep440"
-  epoch = true
-  ```
+    ```toml
+    [tool.hatch.version.nbgv.template-fields.version-tuple]
+    normalized-prerelease = true
+    ```
 
-  ```toml
-  [tool.hatch.version.nbgv.template-fields.version-tuple]
-  normalized-prerelease = true
-  ```
-
-  ```toml
-  [tool.hatch.version.nbgv]
-  epoch = 2
-  ```
+    ```toml
+    [tool.hatch.version.nbgv]
+    epoch = 2
+    ```
 
 - The generated mapping includes `version`, `normalized_version`, `version_tuple`, and every key exposed by `nbgv get-version`.
-  - `version` relays the raw value selected by `version-field` (defaults to `SemVer2`).
-  - `normalized_version` applies PEP 440 normalization to that value using `packaging.version.Version` so `1.2.3-beta.1` becomes `1.2.3b1`.
-  - `version_tuple` expands into a Python tuple using either the selected NBGV variables (`mode = "nbgv"`, respecting `normalized-prerelease` when enabled) or the parsed PEP 440 segments (`mode = "pep440"`).
+    - `version` relays the raw value selected by `version-field` (defaults to `SemVer2`).
+    - `normalized_version` applies PEP 440 normalization to that value using `packaging.version.Version` so `1.2.3-beta.1` becomes `1.2.3b1`.
+    - `version_tuple` expands into a Python tuple using either the selected NBGV variables (`mode = "nbgv"`, respecting `normalized-prerelease` when enabled) or the parsed PEP 440 segments (`mode = "pep440"`).
 
 ### Writing Version Files
 
 - Emit a templated artifact (for example `src/pkg/_version.py`) during build. The `write` table accepts the following keys:
+    - `file` _(required)_ – relative or absolute path of the generated file.
+    - `template` _(optional)_ – custom format string. When omitted, `.py` files default to `__version__ = "{normalized_version}"` when that field is available (otherwise `version` is used), while `.txt` or extension-less files default to `{version}`; other suffixes require an explicit template.
+    - `encoding` _(optional, default: `"utf-8"`)_ – text encoding used when writing the file.
 
-  - `file` *(required)* – relative or absolute path of the generated file.
-  - `template` *(optional)* – custom format string. When omitted, `.py` files default to `__version__ = "{normalized_version}"` when that field is available (otherwise `version` is used), while `.txt` or extension-less files default to `{version}`; other suffixes require an explicit template.
-  - `encoding` *(optional, default: `"utf-8"`)* – text encoding used when writing the file.
-
-  ```toml
-  [tool.hatch.version.nbgv.write]
-  file = "src/pkg/_version.py"
-  template = "__version__ = '{version}'"
-  ```
+    ```toml
+    [tool.hatch.version.nbgv.write]
+    file = "src/pkg/_version.py"
+    template = "__version__ = '{version}'"
+    ```
 
 - When `template` is omitted the plugin mirrors `versioningit`: `.py` files render `__version__ = "{normalized_version}"` (falling back to `version` if normalization was not provided), while `.txt` or extension-less files render `{version}`.
 - The target path is resolved relative to the project root and created on demand; remember to include it in your source distribution configuration if needed.

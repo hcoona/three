@@ -5,17 +5,18 @@ post_slug: nbgv-python-architecture
 microsoft_alias: copilot
 featured_image: https://devblogs.microsoft.com/azuremigrate/wp-content/uploads/sites/113/2023/01/microsoft-logo.png
 categories:
-  - Architecture
+    - Architecture
 tags:
-  - nbgv
-  - python
-  - hatchling
+    - nbgv
+    - python
+    - hatchling
 ai_note: This document was prepared with AI assistance.
 summary: High-level architecture mapping Nerdbank.GitVersioning concepts onto a Python package that integrates with hatchling.
 post_date: 2025-11-08
 ---
 
-<!-- markdownlint-disable-next-line MD041 -->
+# nbgv-python Architecture Overview
+
 ## Context
 
 - Nerdbank.GitVersioning exposes version metadata through the `nbgv` .NET CLI, which returns structured JSON for `get-version` and mutates repository state for commands like `set-cloud-build-version`.

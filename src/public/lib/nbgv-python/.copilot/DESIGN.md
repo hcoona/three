@@ -5,17 +5,18 @@ post_slug: nbgv-python-design
 microsoft_alias: copilot
 featured_image: https://devblogs.microsoft.com/azuremigrate/wp-content/uploads/sites/113/2023/01/microsoft-logo.png
 categories:
-  - Architecture
+    - Architecture
 tags:
-  - design
-  - nbgv
-  - hatch
+    - design
+    - nbgv
+    - hatch
 ai_note: This document was prepared with AI assistance.
 summary: Design blueprint for implementing the nbgv-python package with hatchling integration and CLI delegation.
 post_date: 2025-11-08
 ---
 
-<!-- markdownlint-disable-next-line MD041 -->
+# nbgv-python Design Plan
+
 ## Functional Scope
 
 - Expose a Python API for retrieving version metadata through the `nbgv` CLI and reusing the JSON payload in automation tasks.
@@ -38,11 +39,11 @@ post_date: 2025-11-08
 
 - CLI JSON payload is preserved unmodified under `GitVersion.raw`, while `GitVersion.fields` holds snake_case aliases.
 - Hatch configuration schema:
-  - `command` (optional `str | list[str]`): override of the CLI invocation.
-  - `version-field` (`str`, default `SemVer2`): which `GitVersion` attribute to emit as the package version.
-  - `working-directory` (`str`, default project root): directory passed to the CLI for resolving repository metadata.
-  - `epoch` (`int`, optional, default `null`): prepend a PEP 440 epoch (e.g., `2!`) to the normalized version when supplied; omit or set to `null` to skip the epoch.
-  - `template-fields.version-tuple` (mapping): controls tuple generation for templated artifacts. Defaults to `mode = "nbgv"` with `fields = ["VersionMajor", "VersionMinor", "BuildNumber", "PrereleaseVersionNoLeadingHyphen"]` and `normalized-prerelease = false`; when set to `mode = "pep440"` the tuple is derived from the normalized PEP 440 version and honours the `epoch` toggle.
+    - `command` (optional `str | list[str]`): override of the CLI invocation.
+    - `version-field` (`str`, default `SemVer2`): which `GitVersion` attribute to emit as the package version.
+    - `working-directory` (`str`, default project root): directory passed to the CLI for resolving repository metadata.
+    - `epoch` (`int`, optional, default `null`): prepend a PEP 440 epoch (e.g., `2!`) to the normalized version when supplied; omit or set to `null` to skip the epoch.
+    - `template-fields.version-tuple` (mapping): controls tuple generation for templated artifacts. Defaults to `mode = "nbgv"` with `fields = ["VersionMajor", "VersionMinor", "BuildNumber", "PrereleaseVersionNoLeadingHyphen"]` and `normalized-prerelease = false`; when set to `mode = "pep440"` the tuple is derived from the normalized PEP 440 version and honours the `epoch` toggle.
 
 ## Error Handling Strategy
 
