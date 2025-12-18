@@ -1,7 +1,7 @@
 amends "@hk/Config.pkl"
 import "@hk/Builtins.pkl"
 
-import "src/private/hk/Steps.pkl"
+import "src/private/lib/hk/Steps.pkl"
 
 min_hk_version = "1.20.0"
 display_skip_reasons =
