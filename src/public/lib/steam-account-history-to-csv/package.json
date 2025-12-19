@@ -11,21 +11,26 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "clean": "rimraf dist",
-    "typecheck": "tsgo --noEmit",
-    "build": "node ./scripts/nbgv-version.mjs run pnpm run build:inner",
-    "build:inner": "pnpm run clean && pnpm run build:ts && pnpm run build:assets",
-    "build:ts": "tsdown --config tsdown.config.ts",
-    "build:assets": "node ./scripts/build-assets.mjs",
+    "postinstall": "wxt prepare",
+    "clean": "wxt clean",
+    "typecheck": "wxt prepare && tsgo --noEmit",
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "dev:edge": "wxt -b edge",
+    "build": "node ./scripts/nbgv-version.mjs run wxt build",
+    "build:firefox": "node ./scripts/nbgv-version.mjs run wxt build -b firefox",
+    "build:edge": "node ./scripts/nbgv-version.mjs run wxt build -b edge",
+    "zip": "node ./scripts/nbgv-version.mjs run wxt zip",
+    "zip:firefox": "node ./scripts/nbgv-version.mjs run wxt zip -b firefox",
+    "zip:edge": "node ./scripts/nbgv-version.mjs run wxt zip -b edge",
     "version:stamp": "node ./scripts/nbgv-version.mjs stamp",
     "version:reset": "node ./scripts/nbgv-version.mjs reset",
     "version:preview": "node ./scripts/nbgv-version.mjs preview"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "wxt": "^0.20.13",
     "nerdbank-gitversioning": "^3.7.91",
-    "rimraf": "^6.0.1",
-    "tsdown": "^0.18.0",
     "typescript": "^5.9.3",
     "@typescript/native-preview": "^7.0.0-dev.20251214.1"
   }

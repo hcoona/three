@@ -12,6 +12,8 @@ nwa:
   skip:
     - 'assets/**'
     - 'dist/**'
+    - '.output/**'
+    - '.wxt/**'
     - 'LICENSES/**'
     - 'COPYING'
     - 'COPYING.LESSER'

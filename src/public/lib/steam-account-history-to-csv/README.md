@@ -23,10 +23,37 @@ All three storefronts require thorough local testing before submission and gener
 
 ## Build & package
 
-1. Install dependencies: run `pnpm install --filter steam-account-history-to-csv...` from the repo root (or `pnpm install` inside this package).
-2. Execute `pnpm build`:
-    - `tsdown` bundles `src/index.ts` into `dist/index.js` (IIFE format with source maps).
-    - `scripts/build-assets.mjs` copies `assets/manifest.json` (injecting name/version/description) and the icons into `dist/`.
-3. Zip the contents of `dist/` and submit the archive to your target stores:
-    - **Chrome / Edge:** upload the ZIP as-is. When bumping versions, update `package.json`—the asset script automatically syncs `manifest.json`.
-    - **Firefox:** upload the same ZIP, ensuring it contains files only (no parent directory). Wait for AMO validation to pass before final submission.
+This package is built with [WXT](https://wxt.dev). WXT generates `manifest.json` from `wxt.config.ts` and the `src/entrypoints/*` files.
+
+There is no checked-in `manifest.json` file. Icons are discovered from `public/` (for example `public/icon-32.png`, `public/icon-48.png`).
+
+Versioning is driven by Nerdbank.GitVersioning (NBGV):
+
+- `manifest.version` is a browser-safe numeric dotted version derived from NBGV's `SimpleVersion` + `VersionHeight`.
+- `manifest.version_name` keeps the full stamped NBGV version string (for display in extension UIs).
+
+### Install
+
+Run `pnpm install` from the repo root (recommended). This package also has a `postinstall` hook that runs `wxt prepare` to generate local type definitions.
+
+### Dev
+
+- `pnpm dev` (Chrome)
+- `pnpm dev:firefox`
+- `pnpm dev:edge`
+
+### Build
+
+- `pnpm build` (Chrome MV3)
+- `pnpm build:firefox` (Firefox MV2)
+- `pnpm build:edge` (Edge MV3)
+
+Build outputs are written to `.output/`.
+
+### Package (ZIP)
+
+- `pnpm zip` (Chrome)
+- `pnpm zip:firefox`
+- `pnpm zip:edge`
+
+Zips are created under `.output/` and are ready to upload to the respective stores.
