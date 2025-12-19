@@ -1,12 +1,15 @@
 // biome-ignore-all lint/suspicious/noConsole: this unofficial cli tool uses console output intentionally
 import { spawn } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import * as nbgv from 'nerdbank-gitversioning';
 import { getBrowserExtensionVersion, getVersionInfo, projectRoot } from './version-utils.mjs';
 
 const packageJsonPath = path.join(projectRoot, 'package.json');
 const PLACEHOLDER_VERSION = '0.0.0-placeholder';
+
+const BIN_DIR = path.join(projectRoot, 'node_modules', '.bin');
+const WXT_EXECUTABLE = process.platform === 'win32' ? path.join(BIN_DIR, 'wxt.cmd') : path.join(BIN_DIR, 'wxt');
 
 async function loadPackageJson() {
   const content = await readFile(packageJsonPath, 'utf8');
@@ -44,33 +47,9 @@ async function stampVersion() {
   }
 }
 
-function spawnAsync(command, args) {
+function spawnAsync(executablePath, args) {
   return new Promise((resolve, reject) => {
-    const binDir = path.join(projectRoot, 'node_modules', '.bin');
-    const pathKey =
-      Object.keys(process.env).find((k) => k.toLowerCase() === 'path') ??
-      // Fallback for unusual environments.
-      'PATH';
-    const existingPath = process.env[pathKey] ?? '';
-    const env = {
-      ...process.env,
-      [pathKey]: existingPath ? `${binDir}${path.delimiter}${existingPath}` : binDir,
-    };
-
-    const child =
-      process.platform === 'win32'
-        ? spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', command, ...args], {
-            stdio: 'inherit',
-            shell: false,
-            cwd: projectRoot,
-            env,
-          })
-        : spawn(command, args, {
-            stdio: 'inherit',
-            shell: false,
-            cwd: projectRoot,
-            env,
-          });
+    const child = spawn(executablePath, args, { stdio: 'inherit', shell: false, cwd: projectRoot });
     child.on('error', reject);
     child.on('exit', (code, signal) => {
       if (code === 0) {
@@ -85,6 +64,21 @@ function spawnAsync(command, args) {
       }
     });
   });
+}
+
+async function resolveRunExecutable(toolName) {
+  // CodeQL: Avoid executing an attacker-chosen program name from argv.
+  // We only support running known tools from this repo's local toolchain.
+  if (toolName === 'wxt') {
+    try {
+      await access(WXT_EXECUTABLE);
+    } catch {
+      throw new Error(`Cannot find wxt executable at ${WXT_EXECUTABLE}. Did you run pnpm install in this package?`);
+    }
+    return WXT_EXECUTABLE;
+  }
+
+  throw new Error(`Unsupported tool "${toolName}". Only "wxt" is allowed for the run subcommand.`);
 }
 
 async function previewVersion() {
@@ -131,13 +125,24 @@ async function main() {
 
   if (command === 'run') {
     if (rest.length === 0) {
-      console.error('Usage: node ./scripts/nbgv-version.mjs run <command> [args...]');
+      console.error('Usage: node ./scripts/nbgv-version.mjs run wxt [args...]');
       process.exitCode = 1;
       return;
     }
 
+    let executable;
     try {
-      await runWithStampedVersion(rest[0], rest.slice(1));
+      executable = await resolveRunExecutable(rest[0]);
+    } catch (error) {
+      process.exitCode = 1;
+      if (error?.message) {
+        console.error(error.message);
+      }
+      return;
+    }
+
+    try {
+      await runWithStampedVersion(executable, rest.slice(1));
     } catch (error) {
       if (typeof error.exitCode === 'number') {
         process.exitCode = error.exitCode;
@@ -151,7 +156,7 @@ async function main() {
     return;
   }
 
-  console.error('Usage: node ./scripts/nbgv-version.mjs <stamp|reset|preview|run ...>');
+  console.error('Usage: node ./scripts/nbgv-version.mjs <stamp|reset|preview|run wxt ...>');
   process.exitCode = 1;
 }
 
