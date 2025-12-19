@@ -92,7 +92,7 @@ jobs:
         if: matrix.language == 'csharp'
         shell: pwsh
         run: |
-          dotnet build dirs.proj -c Release --no-restore -p:RestoreLockedMode=true -bl:codeql.binlog
+          dotnet build dirs.proj -c Debug --no-restore -p:RestoreLockedMode=true -bl:codeql.binlog
           "CODEQL_EXTRACTOR_CSHARP_OPTION_BINLOG=codeql.binlog" >> $env:GITHUB_ENV
 
       - if: ${{ matrix.build_mode == 'autobuild' }}
