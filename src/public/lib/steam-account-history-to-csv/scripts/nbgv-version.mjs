@@ -46,7 +46,31 @@ async function stampVersion() {
 
 function spawnAsync(command, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'inherit', shell: false, cwd: projectRoot });
+    const binDir = path.join(projectRoot, 'node_modules', '.bin');
+    const pathKey =
+      Object.keys(process.env).find((k) => k.toLowerCase() === 'path') ??
+      // Fallback for unusual environments.
+      'PATH';
+    const existingPath = process.env[pathKey] ?? '';
+    const env = {
+      ...process.env,
+      [pathKey]: existingPath ? `${binDir}${path.delimiter}${existingPath}` : binDir,
+    };
+
+    const child =
+      process.platform === 'win32'
+        ? spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', command, ...args], {
+            stdio: 'inherit',
+            shell: false,
+            cwd: projectRoot,
+            env,
+          })
+        : spawn(command, args, {
+            stdio: 'inherit',
+            shell: false,
+            cwd: projectRoot,
+            env,
+          });
     child.on('error', reject);
     child.on('exit', (code, signal) => {
       if (code === 0) {
