@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
+EXIT_CODE_NBGV_NOT_FOUND = 127
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point used by the console script."""
     logging.basicConfig(format="%(message)s", level=logging.INFO)
@@ -20,12 +23,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         runner = NbgvRunner()
         return runner.forward(arguments)
-    except NbgvNotFoundError:
-        logging.exception("nbgv executable not found")
-        return 127
+    except NbgvNotFoundError as exc:
+        logging.error(str(exc))  # noqa: TRY400
+        if exc.search_paths:
+            logging.debug("Searched PATH entries: %s", exc.search_paths)
+        return EXIT_CODE_NBGV_NOT_FOUND
     except NbgvCommandError as exc:
+        # Always log the exception so users get the command + exit code context.
+        logging.error(str(exc))  # noqa: TRY400
+        # stderr can contain additional useful details; keep it available for
+        # diagnostics without dropping the higher-level context above.
         if exc.stderr:
-            logging.exception(exc.stderr)
+            logging.debug("nbgv stderr:\n%s", exc.stderr.rstrip())
         return exc.returncode
 
 

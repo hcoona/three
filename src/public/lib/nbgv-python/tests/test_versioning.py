@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from nbgv_python.errors import NbgvVersionNormalizationError
 from nbgv_python.versioning import normalize_version_field
 
 
@@ -26,8 +27,9 @@ def test_normalize_version_field(value: str, expected: str) -> None:
 
 def test_normalize_version_field_rejects_invalid() -> None:
     """Invalid values raise a runtime error with context."""
-    with pytest.raises(RuntimeError):
+    with pytest.raises(NbgvVersionNormalizationError) as exc:
         normalize_version_field("not-a-version", field="simple_version")
+    assert exc.value.field == "simple_version"
 
 
 @pytest.mark.parametrize(
@@ -46,5 +48,6 @@ def test_normalize_version_field_rejects_complex_unrecognized_prerelease(
     value: str,
 ) -> None:
     """Complex unrecognized prerelease tags should raise a runtime error."""
-    with pytest.raises(RuntimeError):
+    with pytest.raises(NbgvVersionNormalizationError) as exc:
         normalize_version_field(value, field="simple_version")
+    assert exc.value.field == "simple_version"

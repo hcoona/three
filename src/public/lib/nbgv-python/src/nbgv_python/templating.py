@@ -166,7 +166,7 @@ def _format_component(
     double_quote: bool,
 ) -> str:
     if isinstance(value, bool):
-        return _quote(str(value).lower(), double_quote=double_quote)
+        return "True" if value else "False"
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):

@@ -54,3 +54,17 @@ class NbgvJsonError(NbgvError):
         """Initialize the error with the message and raw output."""
         super().__init__(message)
         self.raw_output = raw_output
+
+
+class NbgvVersionNormalizationError(NbgvError):
+    """Raised when a version field cannot be normalized to a PEP 440 version."""
+
+    def __init__(self, *, field: str, value: object, message: str) -> None:
+        """Initialize the error.
+
+        Captures the source field name, the original value, and a human-readable
+        error message.
+        """
+        self.field = field
+        self.value = value
+        super().__init__(message)

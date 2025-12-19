@@ -6,6 +6,8 @@ import re
 
 from packaging.version import InvalidVersion, Version
 
+from .errors import NbgvVersionNormalizationError
+
 _LABEL_MAP = {
     "a": "a",
     "alpha": "a",
@@ -34,8 +36,8 @@ def normalize_version_field(value: object, *, field: str) -> str:
     candidate = str(value)
     try:
         return str(Version(candidate))
-    except InvalidVersion:
-        converted = _convert_semver_to_pep440(candidate)
+    except InvalidVersion as original_exc:
+        converted = _convert_semver_to_pep440(candidate, field=field)
         if converted is not None:
             try:
                 return str(Version(converted))
@@ -44,15 +46,23 @@ def normalize_version_field(value: object, *, field: str) -> str:
                     f"Field '{field}' produced '{candidate}' which could not "
                     "be normalized to a PEP 440 version."
                 )
-                raise RuntimeError(msg) from exc
-    msg = (
-        f"Field '{field}' produced '{candidate}' which is not a valid "
-        "PEP 440 version."
-    )
-    raise RuntimeError(msg)
+                raise NbgvVersionNormalizationError(
+                    field=field,
+                    value=value,
+                    message=msg,
+                ) from exc
+        msg = (
+            f"Field '{field}' produced '{candidate}' which is not a valid "
+            "PEP 440 version."
+        )
+        raise NbgvVersionNormalizationError(
+            field=field,
+            value=value,
+            message=msg,
+        ) from original_exc
 
 
-def _convert_semver_to_pep440(candidate: str) -> str | None:
+def _convert_semver_to_pep440(candidate: str, *, field: str) -> str | None:
     match = _SEMVER_PATTERN.match(candidate)
     if not match:
         return None
@@ -67,7 +77,7 @@ def _convert_semver_to_pep440(candidate: str) -> str | None:
     if local:
         local_parts.extend(_normalize_local_parts(local))
     if prerelease:
-        pre_result = _convert_prerelease(prerelease)
+        pre_result = _convert_prerelease(prerelease, field=field)
         if pre_result is None:
             local_parts[:0] = _normalize_local_parts(prerelease)
         else:
@@ -80,7 +90,11 @@ def _convert_semver_to_pep440(candidate: str) -> str | None:
     return result
 
 
-def _convert_prerelease(text: str) -> tuple[str, list[str]] | None:
+def _convert_prerelease(
+    text: str,
+    *,
+    field: str,
+) -> tuple[str, list[str]] | None:
     tokens = [token for token in _SPLIT_PATTERN.split(text) if token]
     if not tokens:
         return None
@@ -90,7 +104,11 @@ def _convert_prerelease(text: str) -> tuple[str, list[str]] | None:
 
     if label not in _LABEL_MAP:
         return _handle_unrecognized_prerelease(
-            text, label, number, remainder_tokens
+            text,
+            label,
+            number,
+            remainder_tokens,
+            field=field,
         )
 
     if not number:
@@ -124,25 +142,34 @@ def _parse_label_token(label_token: str) -> tuple[str, str, list[str]]:
 
 
 def _handle_unrecognized_prerelease(
-    text: str, label: str, number: str, remainder_tokens: list[str]
+    text: str,
+    label: str,
+    number: str,
+    remainder_tokens: list[str],
+    *,
+    field: str,
 ) -> tuple[str, list[str]]:
     dev_number = "0"
     if number:
         dev_number = number
         if remainder_tokens:
-            _raise_complex_prerelease_error(text)
+            _raise_complex_prerelease_error(text, field=field)
     elif remainder_tokens:
         if not remainder_tokens[0].isdigit():
-            _raise_complex_prerelease_error(text)
+            _raise_complex_prerelease_error(text, field=field)
         dev_number = remainder_tokens[0]
         if len(remainder_tokens) > 1:
-            _raise_complex_prerelease_error(text)
+            _raise_complex_prerelease_error(text, field=field)
     return f".dev{dev_number}", [label]
 
 
-def _raise_complex_prerelease_error(text: str) -> None:
+def _raise_complex_prerelease_error(text: str, *, field: str) -> None:
     msg = f"Cannot map complex prerelease tag '{text}' to PEP 440 dev version."
-    raise RuntimeError(msg)
+    raise NbgvVersionNormalizationError(
+        field=field,
+        value=text,
+        message=msg,
+    )
 
 
 def _first_numeric_index(parts: list[str]) -> int | None:

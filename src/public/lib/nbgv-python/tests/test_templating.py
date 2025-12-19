@@ -153,3 +153,37 @@ def test_build_template_fields_single_element_tuple() -> None:
         config=config,
     )
     assert fields["version_tuple"] == "(1,)"
+
+
+def test_build_template_fields_nbgv_boolean_component() -> None:
+    """Boolean metadata should render as Python boolean literals."""
+    info = {
+        "VersionMajor": True,
+    }
+    config = TemplateFieldsConfig(
+        version_tuple=VersionTupleConfig(mode="nbgv", fields=("VersionMajor",))
+    )
+    fields = build_template_fields(
+        version="1.0.0",
+        normalized_version="1.0.0",
+        version_info=info,
+        config=config,
+    )
+    assert fields["version_tuple"] == "(True,)"
+
+
+def test_build_template_fields_nbgv_boolean_component_false() -> None:
+    """False should render as the unquoted literal 'False'."""
+    info = {
+        "VersionMajor": False,
+    }
+    config = TemplateFieldsConfig(
+        version_tuple=VersionTupleConfig(mode="nbgv", fields=("VersionMajor",))
+    )
+    fields = build_template_fields(
+        version="1.0.0",
+        normalized_version="1.0.0",
+        version_info=info,
+        config=config,
+    )
+    assert fields["version_tuple"] == "(False,)"

@@ -14,6 +14,7 @@ from .errors import (
     NbgvError,
     NbgvJsonError,
     NbgvNotFoundError,
+    NbgvVersionNormalizationError,
 )
 from .models import GitVersion
 from .runner import NbgvRunner
@@ -37,6 +38,7 @@ __all__ = [
     "NbgvJsonError",
     "NbgvNotFoundError",
     "NbgvRunner",
+    "NbgvVersionNormalizationError",
     "TemplateFieldsConfig",
     "VersionTupleConfig",
     "WriteConfig",
