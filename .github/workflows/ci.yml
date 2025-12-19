@@ -148,10 +148,10 @@ jobs:
         run: dotnet restore dirs.proj -p:RestoreLockedMode=true
 
       - name: Build
-        run: dotnet build dirs.proj -c Release --no-restore -p:RestoreLockedMode=true
+        run: dotnet build dirs.proj -c Debug --no-restore -p:RestoreLockedMode=true
 
       - name: Test
-        run: dotnet test dirs.proj -c Release --no-build -p:RestoreLockedMode=true
+        run: dotnet test dirs.proj -c Debug --no-build -p:RestoreLockedMode=true
 
   node-tests:
     name: Test & Build (Node.js ${{ matrix.node-version }})
