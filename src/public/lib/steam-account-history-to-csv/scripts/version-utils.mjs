@@ -6,8 +6,8 @@ export const MAX_BROWSER_VERSION_PART = 65535;
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 export const projectRoot = path.resolve(moduleDir, '..');
 
-export async function getVersionInfo() {
-  const versionInfo = await nbgv.getVersion(projectRoot);
+export async function getVersionInfo(root = projectRoot) {
+  const versionInfo = await nbgv.getVersion(root);
   return versionInfo;
 }
 
