@@ -83,6 +83,7 @@ export default defineConfig({
 
       assets.push(
         { absoluteSrc: path.join(projectRoot, 'PRIVACY.md'), relativeDest: 'PRIVACY.md' },
+        { absoluteSrc: path.join(projectRoot, 'README.user.md'), relativeDest: 'README.md' },
         { absoluteSrc: path.join(projectRoot, 'LICENSE'), relativeDest: 'LICENSE' },
         { absoluteSrc: path.join(monorepoRoot, 'COPYING'), relativeDest: 'COPYING' },
         { absoluteSrc: path.join(monorepoRoot, 'COPYING.LESSER'), relativeDest: 'COPYING.LESSER' },
