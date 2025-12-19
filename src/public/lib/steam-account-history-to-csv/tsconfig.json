@@ -1,16 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "moduleDetection": "force",
-    "verbatimModuleSyntax": true,
-    "resolveJsonModule": true,
     "isolatedModules": true,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
@@ -19,9 +11,8 @@
     "noUnusedParameters": true,
     "useUnknownInCatchVariables": true,
     "noFallthroughCasesInSwitch": true,
-    "rootDir": ".",
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "tsdown.config.ts"],
-  "exclude": ["dist", "node_modules"]
+  "include": ["src/**/*.ts", "wxt.config.ts"],
+  "exclude": ["dist", ".output", ".wxt", "node_modules"]
 }

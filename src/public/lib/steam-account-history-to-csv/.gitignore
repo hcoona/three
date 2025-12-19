@@ -190,3 +190,7 @@ $RECYCLE.BIN/
 
 # dist
 /dist
+
+# wxt
+/.output
+/.wxt

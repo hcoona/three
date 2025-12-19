@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
  */
 
+import { defineContentScript } from 'wxt/utils/define-content-script';
+
 const WALLET_HISTORY_SELECTOR = '.wallet_history_table';
 const WALLET_ROW_CLASS = 'wallet_table_row';
 const PAYMENT_CLASS = 'wth_payment';
@@ -112,6 +114,7 @@ function downloadCsv(csvContents: string): void {
   const anchor = document.createElement('a');
   anchor.href = window.URL.createObjectURL(blob);
   anchor.download = EXPORT_FILENAME;
+
   const body = document.body;
   if (!body) {
     console.error('Document body is unavailable.');
@@ -156,4 +159,11 @@ function insertExportButton(): void {
   mainContent.insertBefore(exportBtn, mainContent.firstChild);
 }
 
-insertExportButton();
+export default defineContentScript({
+  matches: ['https://store.steampowered.com/account/history/'],
+  runAt: 'document_idle',
+
+  main() {
+    insertExportButton();
+  },
+});
