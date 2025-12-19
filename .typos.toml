@@ -2,7 +2,8 @@
 extend-exclude = [
   'packages.lock.json',
   "OneDotNet/srcs/private/app/OxfordWordlistExtractor/*.html",
-  "OneDotNet/tests/OxfordDictExtractor.Tests/**/*.html"]
+  "OneDotNet/tests/OxfordDictExtractor.Tests/**/*.html",
+]
 
 [default]
 locale = "en"
@@ -30,6 +31,6 @@ extend-words = { Paket = 'Paket' }
 extend-glob = ["TestZlib.cs"]
 extend-words = { ist = 'ist' }
 
-[type."index.ts"]
-extend-glob = ["index.ts"]
+[type."account-history.content.ts"]
+extend-glob = ["account-history.content.ts"]
 extend-ignore-re = ["const PAYMENT_CLASS = 'wth_payment';"]
