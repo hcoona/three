@@ -11,13 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **BREAKING**: The `version` template field now contains the raw NBGV version string instead of the PEP 440 normalized version. Use `normalized_version` for the PEP 440 compliant string.
 - **BREAKING**: Map unrecognized prerelease labels to `.dev` suffixes to preserve version ordering (e.g., `1.0.0-ci` becomes `1.0.0.dev0+ci`, `1.0.0-ci.1` becomes `1.0.0.dev1+ci`). Complex prerelease tags that cannot be mapped will now raise an error.
+- **BREAKING**: Render boolean version-tuple components as Python boolean literals (`True`/`False`) instead of quoted strings.
 
 ### Fixed
 
+- Avoid accidental path duplication when invoking `nbgv get-version` with a relative project directory
 - Fix `GitVersion` mapping protocol behavior (missing keys now raise `KeyError`; iteration/length reflect all supported keys)
 - Ensure single-element version tuples are rendered with a trailing comma
 - Fix documentation links in project metadata
 - Use strict SemVer 2.0 regex for version parsing
+- Raise `NbgvVersionNormalizationError` when version normalization fails, instead of a generic `RuntimeError`.
 
 ## [1.1.0] - 2025-12-17
 

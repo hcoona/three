@@ -46,7 +46,7 @@ class NbgvRunner:
 
     def get_version(self, project_dir: Path | str = ".") -> GitVersion:
         """Return version metadata for *project_dir*."""
-        project_path = Path(project_dir)
+        project_path = Path(project_dir).expanduser().resolve(strict=False)
         args = (
             "get-version",
             "--format",
@@ -56,7 +56,7 @@ class NbgvRunner:
         )
         process = self._execute(
             args,
-            cwd=project_path,
+            cwd=None,
             capture_output=True,
         )
         if process.stdout is None:  # pragma: no cover
@@ -75,7 +75,12 @@ class NbgvRunner:
         *,
         cwd: Path | str | None = None,
     ) -> int:
-        """Forward arguments directly to `nbgv` without capturing output."""
+        """Forward arguments directly to `nbgv` without capturing output.
+
+        Raises:
+            NbgvCommandError: When the underlying CLI exits with a
+            non-zero code.
+        """
         iterable = tuple(args or ())
         process = self._execute(iterable, cwd=cwd, capture_output=False)
         return process.returncode
