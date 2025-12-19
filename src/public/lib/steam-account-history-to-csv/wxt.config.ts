@@ -131,4 +131,6 @@ export default defineConfig({
       );
     },
   },
+
+  modules: ['@wxt-dev/auto-icons'],
 });
