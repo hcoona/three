@@ -47,11 +47,11 @@ PEP440_VERSION = "{normalized_version}"
 VERSION_TUPLE = {version_tuple}
 
 __all__ = [
-    "RAW_VERSION",
-    "SIMPLE_VERSION",
-    "SEMVER2",
     "GIT_COMMIT",
     "PEP440_VERSION",
+    "RAW_VERSION",
+    "SEMVER2",
+    "SIMPLE_VERSION",
     "VERSION_TUPLE",
     "__version__",
     "pep440_version",
@@ -60,7 +60,6 @@ __all__ = [
 
 def pep440_version(value: str) -> str:
     """Normalize arbitrary version strings to a PEP 440 representation."""
-
     return _nbgv_normalize(value, field="template")
 
 
