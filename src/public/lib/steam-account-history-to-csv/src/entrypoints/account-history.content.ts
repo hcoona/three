@@ -10,6 +10,8 @@ const WALLET_ROW_CLASS = 'wallet_table_row';
 const PAYMENT_CLASS = 'wth_payment';
 const EXPORT_BUTTON_CLASS = 'btnv6_blue_hoverfade btn_small';
 const EXPORT_FILENAME = 'wallet_history.csv';
+const EXPORT_BUTTON_ID = 'steam_wallet_history_export_csv';
+const CSV_EOL = '\r\n';
 
 function normalizeContent(content: string | null | undefined): string {
   if (!content || content.length === 0) {
@@ -105,14 +107,16 @@ function quoteCsvValue(value: string): string {
 function generateCsv(table: HTMLTableElement): string {
   const header = parseWalletHistoryTableHeader(table);
   const rows = parseWalletHistoryTableBody(table);
-  const csvLines = [header.join(',')].concat(rows.map((row) => row.join(',')));
-  return csvLines.join('\n');
+  const csvHeaderLine = header.map(quoteCsvValue).join(',');
+  const csvLines = [csvHeaderLine].concat(rows.map((row) => row.join(',')));
+  return csvLines.join(CSV_EOL);
 }
 
 function downloadCsv(csvContents: string): void {
-  const blob = new Blob(['\ufeff', csvContents], { type: 'text/csv' });
+  const blob = new Blob(['\ufeff', csvContents], { type: 'text/csv;charset=utf-8' });
   const anchor = document.createElement('a');
-  anchor.href = window.URL.createObjectURL(blob);
+  const objectUrl = window.URL.createObjectURL(blob);
+  anchor.href = objectUrl;
   anchor.download = EXPORT_FILENAME;
 
   const body = document.body;
@@ -124,6 +128,11 @@ function downloadCsv(csvContents: string): void {
   body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+
+  // Revoke shortly after to avoid interrupting the download.
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(objectUrl);
+  }, 100);
 }
 
 function handleExportClick(): void {
@@ -137,14 +146,27 @@ function handleExportClick(): void {
     const csvContents = generateCsv(table);
     downloadCsv(csvContents);
   } catch (error) {
-    console.error('Failed to export wallet history.', error);
+    console.error('Failed to export wallet history.', { error });
   }
 }
 
 function insertExportButton(): void {
+  if (document.getElementById(EXPORT_BUTTON_ID)) {
+    return;
+  }
+
   const exportBtn = document.createElement('span');
+  exportBtn.id = EXPORT_BUTTON_ID;
   exportBtn.className = EXPORT_BUTTON_CLASS;
+  exportBtn.setAttribute('role', 'button');
+  exportBtn.tabIndex = 0;
   exportBtn.addEventListener('click', handleExportClick);
+  exportBtn.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleExportClick();
+    }
+  });
 
   const exportLabel = document.createElement('span');
   exportLabel.textContent = 'Export CSV';
