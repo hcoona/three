@@ -6,9 +6,6 @@
   "nugetPackageVersion": {
     "semVer": 2
   },
-  "publicReleaseRefSpec": [
-    "^refs/heads/main$",
-    "^refs/heads/release/.*$"
-  ],
+  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/heads/release/.*$", "^refs/tags/release/.+/v.+$"],
   "inherit": false
 }
