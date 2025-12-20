@@ -1,12 +1,15 @@
 // biome-ignore-all lint/suspicious/noConsole: this unofficial cli tool uses console output intentionally
 import { spawn } from 'node:child_process';
 import { access, readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import * as nbgv from 'nerdbank-gitversioning';
 import { getBrowserExtensionVersion, getVersionInfo, projectRoot } from './version-utils.mjs';
 
 const packageJsonPath = path.join(projectRoot, 'package.json');
 const PLACEHOLDER_VERSION = '0.0.0-placeholder';
+
+const require = createRequire(import.meta.url);
 
 const BIN_DIR = path.join(projectRoot, 'node_modules', '.bin');
 const WXT_EXECUTABLE = process.platform === 'win32' ? path.join(BIN_DIR, 'wxt.cmd') : path.join(BIN_DIR, 'wxt');
@@ -49,7 +52,15 @@ async function stampVersion() {
 
 function spawnAsync(executablePath, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(executablePath, args, { stdio: 'inherit', shell: false, cwd: projectRoot });
+    // On Windows, pnpm/npm place command shims in node_modules/.bin as .cmd/.bat.
+    // Node cannot execute these directly unless a shell is used (otherwise spawn may throw EINVAL).
+    const shouldUseShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(executablePath);
+
+    const child = spawn(executablePath, args, {
+      stdio: 'inherit',
+      shell: shouldUseShell,
+      cwd: projectRoot,
+    });
     child.on('error', reject);
     child.on('exit', (code, signal) => {
       if (code === 0) {
@@ -66,16 +77,59 @@ function spawnAsync(executablePath, args) {
   });
 }
 
-async function resolveRunExecutable(toolName) {
+async function resolveWxtCliEntry() {
+  // Prefer running the actual JS entrypoint for WXT via Node, instead of the platform-specific
+  // node_modules/.bin shim. This avoids shell usage on Windows.
+  // Note: in Node 24+ many packages block `require.resolve('pkg/package.json')` via `exports`.
+  // We resolve the package entrypoint and then walk up the filesystem to find the real package.json.
+  const wxtEntry = require.resolve('wxt', { paths: [projectRoot] });
+
+  let current = path.dirname(wxtEntry);
+  const { root } = path.parse(current);
+  while (true) {
+    const candidate = path.join(current, 'package.json');
+    try {
+      const pkgRaw = await readFile(candidate, 'utf8');
+      const pkg = JSON.parse(pkgRaw);
+
+      const bin = pkg?.bin;
+      const binRel = typeof bin === 'string' ? bin : bin?.wxt;
+      if (typeof binRel !== 'string' || binRel.length === 0) {
+        throw new Error('Unable to resolve WXT CLI entry from wxt package.json (missing "bin").');
+      }
+
+      return path.resolve(path.dirname(candidate), binRel);
+    } catch {
+      // keep walking
+    }
+
+    if (current === root) {
+      break;
+    }
+    current = path.dirname(current);
+  }
+
+  throw new Error('Unable to locate wxt package.json on disk in node_modules.');
+}
+
+async function resolveRunExecutable(toolName, toolArgs) {
   // CodeQL: Avoid executing an attacker-chosen program name from argv.
   // We only support running known tools from this repo's local toolchain.
   if (toolName === 'wxt') {
+    // First try to execute WXT as a Node script (most robust across platforms).
+    try {
+      const wxtCli = await resolveWxtCliEntry();
+      return { executablePath: process.execPath, args: [wxtCli, ...toolArgs] };
+    } catch {
+      // Fall back to the local .bin executable if something about the package layout changed.
+    }
+
     try {
       await access(WXT_EXECUTABLE);
     } catch {
       throw new Error(`Cannot find wxt executable at ${WXT_EXECUTABLE}. Did you run pnpm install in this package?`);
     }
-    return WXT_EXECUTABLE;
+    return { executablePath: WXT_EXECUTABLE, args: toolArgs };
   }
 
   throw new Error(`Unsupported tool "${toolName}". Only "wxt" is allowed for the run subcommand.`);
@@ -130,9 +184,9 @@ async function main() {
       return;
     }
 
-    let executable;
+    let resolved;
     try {
-      executable = await resolveRunExecutable(rest[0]);
+      resolved = await resolveRunExecutable(rest[0], rest.slice(1));
     } catch (error) {
       process.exitCode = 1;
       if (error?.message) {
@@ -142,7 +196,7 @@ async function main() {
     }
 
     try {
-      await runWithStampedVersion(executable, rest.slice(1));
+      await runWithStampedVersion(resolved.executablePath, resolved.args);
     } catch (error) {
       if (typeof error.exitCode === 'number') {
         process.exitCode = error.exitCode;
