@@ -146,12 +146,25 @@ jobs:
           # Priority: Python (existing behavior) -> Node.
           project_kind=""
           pkg_dir=""
-          if pkg_dir=$(uv run --script eng/scripts/find_python_project_path.py "${project}" 2>/dev/null); then
+          python_detect_err_file="$(mktemp)"
+          node_detect_err_file="$(mktemp)"
+          if pkg_dir=$(uv run --script eng/scripts/find_python_project_path.py "${project}" 2>"${python_detect_err_file}"); then
             project_kind="python"
-          elif pkg_dir=$(uv run --script eng/scripts/find_node_project_path.py "${project}" 2>/dev/null); then
+            rm -f "${python_detect_err_file}" "${node_detect_err_file}"
+          elif pkg_dir=$(uv run --script eng/scripts/find_node_project_path.py "${project}" 2>"${node_detect_err_file}"); then
             project_kind="node"
+            rm -f "${python_detect_err_file}" "${node_detect_err_file}"
           else
             echo "Unknown project: ${project}. No matching pyproject.toml (project.name) or package.json (name) found." >&2
+            if [[ -s "${python_detect_err_file}" ]]; then
+              echo "Details from Python project detection:" >&2
+              cat "${python_detect_err_file}" >&2
+            fi
+            if [[ -s "${node_detect_err_file}" ]]; then
+              echo "Details from Node project detection:" >&2
+              cat "${node_detect_err_file}" >&2
+            fi
+            rm -f "${python_detect_err_file}" "${node_detect_err_file}"
             exit 1
           fi
 
@@ -409,31 +422,31 @@ jobs:
           #   zip            -> default browser (typically chrome)
           #   zip:firefox    -> firefox
           #   zip:edge       -> edge
-          pnpm --filter "${PROJECT}" zip
-
           # Prefer explicit scripts when they exist; fall back to direct WXT invocation.
-          # (Some packages may not define zip:<browser> scripts.)
+          # (Some packages may not define zip / zip:<browser> scripts.)
           pushd "${PACKAGE_DIR}" >/dev/null
 
-          if jq -e '.scripts | has("zip:firefox")' package.json >/dev/null 2>&1; then
-            pnpm --filter "${PROJECT}" zip:firefox
+          if jq -e '.scripts | has("zip")' package.json >/dev/null 2>&1; then
+            pnpm --filter "${PROJECT}" zip
           else
             if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
-              echo "No zip:firefox script and missing ./scripts/nbgv-version.mjs in ${PACKAGE_DIR}. Define zip:firefox or add the helper script." >&2
+              echo "No zip script and missing ${PACKAGE_DIR}/scripts/nbgv-version.mjs. Define zip or add the helper script." >&2
               exit 1
             fi
-            node ./scripts/nbgv-version.mjs run wxt zip -b firefox
+            node ./scripts/nbgv-version.mjs run wxt zip
           fi
 
-          if jq -e '.scripts | has("zip:edge")' package.json >/dev/null 2>&1; then
-            pnpm --filter "${PROJECT}" zip:edge
-          else
-            if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
-              echo "No zip:edge script and missing ./scripts/nbgv-version.mjs in ${PACKAGE_DIR}. Define zip:edge or add the helper script." >&2
-              exit 1
+          for browser in firefox edge; do
+            if jq -e ".scripts | has(\"zip:${browser}\")" package.json >/dev/null 2>&1; then
+              pnpm --filter "${PROJECT}" "zip:${browser}"
+            else
+              if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
+                echo "No zip:${browser} script and missing ${PACKAGE_DIR}/scripts/nbgv-version.mjs. Define zip:${browser} or add the helper script." >&2
+                exit 1
+              fi
+              node ./scripts/nbgv-version.mjs run wxt zip -b "${browser}"
             fi
-            node ./scripts/nbgv-version.mjs run wxt zip -b edge
-          fi
+          done
 
           popd >/dev/null
 
@@ -478,7 +491,15 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}")
+          if ! computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}"); then
+            echo "Failed to compute WXT package version using 'dotnet tool run nbgv'." >&2
+            exit 1
+          fi
+
+          if [[ -z "${computed}" ]]; then
+            echo "nbgv returned an empty NpmPackageVersion for package directory '${PACKAGE_DIR}'." >&2
+            exit 1
+          fi
 
           if [[ "${computed}" != "${EXPECTED}" ]]; then
             echo "Built WXT package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
