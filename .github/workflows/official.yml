@@ -1,4 +1,4 @@
-name: Official Release (Python)
+name: Official Release
 
 on:
   push:
@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       project:
-        description: "UV workspace package name (must match <project> in release/<project>/v* tag)"
+        description: "Workspace package name (Python: pyproject.toml project.name; Node: package.json name; must match <project> in release/<project>/v* tag)"
         required: true
         type: string
       version:
-        description: "PEP440 version (leading v allowed; will be stripped)"
+        description: "Python: PEP440 (leading v allowed; will be stripped). Others: SemVer 2.0.0 (no leading v)."
         required: true
         type: string
       target:
@@ -31,17 +31,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish-python:
-    name: Publish Python package
+  resolve:
+    name: Resolve release inputs
     runs-on: ubuntu-latest
-    environment: pypi
     env:
       PYTHON_VERSION: '3.14'
+      NODE_VERSION: '24'
+    outputs:
+      project: ${{ steps.meta.outputs.project }}
+      version: ${{ steps.meta.outputs.version }}
+      project_kind: ${{ steps.meta.outputs.project_kind }}
+      is_wxt: ${{ steps.meta.outputs.is_wxt }}
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      target: ${{ steps.meta.outputs.target }}
+      package_dir: ${{ steps.meta.outputs.package_dir }}
+      has_changelog: ${{ steps.meta.outputs.has_changelog }}
+      changelog: ${{ steps.meta.outputs.changelog }}
+      dist_dir: ${{ steps.meta.outputs.dist_dir }}
+      dist_glob: ${{ steps.meta.outputs.dist_glob }}
+      release_title: ${{ steps.meta.outputs.release_title }}
+      run_url: ${{ steps.meta.outputs.run_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -84,10 +103,7 @@ jobs:
           else
             project="${{ inputs.project }}"
             version="${{ inputs.version }}"
-            if [[ "${version}" =~ ^[vV] ]]; then
-              version="${version#?}"
-            fi
-            tag_name="release/${project}/v${version}"
+            tag_name=""
             target="${{ inputs.target }}"
           fi
 
@@ -106,17 +122,6 @@ jobs:
             exit 1
           fi
 
-          if [[ "${version}" =~ ^[vV] ]]; then
-            version="${version#?}"
-          fi
-
-          if [[ -z "${version}" ]]; then
-            echo "version is empty after stripping leading v" >&2
-            exit 1
-          fi
-
-          uv run --script eng/scripts/validate_pep440_version.py "${version}"
-
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             resolved_target=$(git rev-list -n1 "${GITHUB_REF}")
           else
@@ -134,11 +139,63 @@ jobs:
 
           target="${resolved_target}"
 
-          pkg_dir=$(uv run --script eng/scripts/find_python_project_path.py "${project}")
+          # Ensure all subsequent detection/validation runs against the intended target commit.
+          git checkout --detach "${target}"
+
+          # Determine project kind and package directory.
+          # Priority: Python (existing behavior) -> Node.
+          project_kind=""
+          pkg_dir=""
+          if pkg_dir=$(uv run --script eng/scripts/find_python_project_path.py "${project}" 2>/dev/null); then
+            project_kind="python"
+          elif pkg_dir=$(uv run --script eng/scripts/find_node_project_path.py "${project}" 2>/dev/null); then
+            project_kind="node"
+          else
+            echo "Unknown project: ${project}. No matching pyproject.toml (project.name) or package.json (name) found." >&2
+            exit 1
+          fi
+
+          # Validate version by project kind.
+          if [[ "${project_kind}" == "python" ]]; then
+            # Python releases allow a leading v/V.
+            if [[ "${version}" =~ ^[vV] ]]; then
+              version="${version#?}"
+            fi
+
+            if [[ -z "${version}" ]]; then
+              echo "version is empty after stripping leading v" >&2
+              exit 1
+            fi
+
+            uv run --script eng/scripts/validate_pep440_version.py "${version}"
+          else
+            # Non-Python releases require strict SemVer2.0 (no leading v).
+            uv run --script eng/scripts/validate_semver2_version.py "${version}"
+          fi
+
+          # For manually triggered runs, tag_name depends on the validated/normalized version.
+          if [[ "${GITHUB_EVENT_NAME}" != "push" ]]; then
+            tag_name="release/${project}/v${version}"
+          fi
 
           if [[ ! -d "${pkg_dir}" ]]; then
             echo "Package directory does not exist: ${pkg_dir}" >&2
             exit 1
+          fi
+
+          is_wxt="false"
+          if [[ "${project_kind}" == "node" ]]; then
+            # Currently we only support Node projects packaged with WXT.
+            if [[ -f "${pkg_dir}/wxt.config.ts" || -f "${pkg_dir}/wxt.config.js" || -f "${pkg_dir}/wxt.config.mjs" || -f "${pkg_dir}/wxt.config.cjs" ]]; then
+              is_wxt="true"
+            elif jq -e '(.dependencies // {} | has("wxt")) or (.devDependencies // {} | has("wxt")) or (.peerDependencies // {} | has("wxt")) or (.optionalDependencies // {} | has("wxt"))' "${pkg_dir}/package.json" >/dev/null 2>&1; then
+              is_wxt="true"
+            fi
+
+            if [[ "${is_wxt}" != "true" ]]; then
+              echo "Unimplemented: Node project '${project}' is not detected as a WXT package (missing wxt.config.* / wxt dependency)." >&2
+              exit 1
+            fi
           fi
 
           changelog="${pkg_dir}/CHANGELOG.md"
@@ -150,6 +207,8 @@ jobs:
           # shellcheck disable=SC2129
           echo "project=${project}" >> "${GITHUB_OUTPUT}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "project_kind=${project_kind}" >> "${GITHUB_OUTPUT}"
+          echo "is_wxt=${is_wxt}" >> "${GITHUB_OUTPUT}"
           echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
           echo "target=${target}" >> "${GITHUB_OUTPUT}"
           echo "package_dir=${pkg_dir}" >> "${GITHUB_OUTPUT}"
@@ -160,11 +219,47 @@ jobs:
           echo "release_title=${project} v${version}" >> "${GITHUB_OUTPUT}"
           echo "run_url=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
 
+  publish-python:
+    name: Publish Python package
+    runs-on: ubuntu-latest
+    needs: resolve
+    if: needs.resolve.outputs.project_kind == 'python'
+    environment: pypi
+    env:
+      PYTHON_VERSION: '3.14'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Setup Python 3
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache-dependency-glob: 'uv.lock'
+
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
+
       - name: Build package
         shell: bash
         run: |
           set -Eeuo pipefail
-          cd "${{ steps.meta.outputs.package_dir }}"
+          cd "${{ needs.resolve.outputs.package_dir }}"
           uv build --out-dir "${{ github.workspace }}/out"
 
       - name: Verify built version matches tag
@@ -173,21 +268,21 @@ jobs:
           set -Eeuo pipefail
           uv run --script eng/scripts/verify_python_artifact_version.py "${EXPECTED}" "${{ github.workspace }}/out"
         env:
-          EXPECTED: ${{ steps.meta.outputs.version }}
+          EXPECTED: ${{ needs.resolve.outputs.version }}
 
       - name: Prepare release notes
         id: notes
         shell: bash
         env:
-          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
-          PROJECT: ${{ steps.meta.outputs.project }}
-          VERSION: ${{ steps.meta.outputs.version }}
-          RUN_URL: ${{ steps.meta.outputs.run_url }}
+          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          RUN_URL: ${{ needs.resolve.outputs.run_url }}
         run: |
           set -Eeuo pipefail
           notes_file="${{ runner.temp }}/release-notes.md"
-          if [[ "${{ steps.meta.outputs.has_changelog }}" == "true" ]]; then
-            cp "${{ steps.meta.outputs.changelog }}" "${notes_file}"
+          if [[ "${{ needs.resolve.outputs.has_changelog }}" == "true" ]]; then
+            cp "${{ needs.resolve.outputs.changelog }}" "${notes_file}"
           else
           cat <<EOF > "${notes_file}"
           ## Release notes
@@ -205,7 +300,7 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: ${{ steps.meta.outputs.dist_glob }}
+          subject-path: ${{ needs.resolve.outputs.dist_glob }}
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1
@@ -215,11 +310,223 @@ jobs:
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
-          RELEASE_TITLE: ${{ steps.meta.outputs.release_title }}
-          TARGET: ${{ steps.meta.outputs.target }}
+          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
+          RELEASE_TITLE: ${{ needs.resolve.outputs.release_title }}
+          TARGET: ${{ needs.resolve.outputs.target }}
           NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
-          DIST_GLOB: ${{ steps.meta.outputs.dist_glob }}
+          DIST_GLOB: ${{ needs.resolve.outputs.dist_glob }}
+        run: |
+          set -Eeuo pipefail
+
+          # If manually triggered, force update the tag to the target commit
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "Force updating tag ${TAG_NAME} to ${TARGET}..."
+            git tag -f "${TAG_NAME}" "${TARGET}"
+            git push -f origin "${TAG_NAME}"
+          fi
+
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release edit "${TAG_NAME}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}" --target "${TARGET}"
+          else
+            gh release create "${TAG_NAME}" --target "${TARGET}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
+          fi
+
+          # Filter out .gitignore files from the upload list
+          FILES=()
+          DIR="${DIST_GLOB%/*}"
+          shopt -s nullglob
+          for f in "$DIR"/*; do
+            if [[ "$f" != *.gitignore ]]; then
+              FILES+=("$f")
+            fi
+          done
+
+          if [[ ${#FILES[@]} -gt 0 ]]; then
+            gh release upload "${TAG_NAME}" "${FILES[@]}" --clobber
+          fi
+
+  release-wxt:
+    name: Create GitHub release (Node/WXT)
+    runs-on: ubuntu-latest
+    needs: resolve
+    if: needs.resolve.outputs.project_kind == 'node'
+    env:
+      NODE_VERSION: '24'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Node dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pnpm install --frozen-lockfile
+
+      - name: Build package (Node/WXT)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf "${GITHUB_WORKSPACE}/out"
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+
+          # Build zip artifacts via the package's own scripts.
+          # WXT outputs are browser-specific, so produce all supported browsers.
+          # Convention in this repo:
+          #   zip            -> default browser (typically chrome)
+          #   zip:firefox    -> firefox
+          #   zip:edge       -> edge
+          pnpm --filter "${PROJECT}" zip
+
+          # Prefer explicit scripts when they exist; fall back to direct WXT invocation.
+          # (Some packages may not define zip:<browser> scripts.)
+          pushd "${PACKAGE_DIR}" >/dev/null
+
+          if jq -e '.scripts | has("zip:firefox")' package.json >/dev/null 2>&1; then
+            pnpm --filter "${PROJECT}" zip:firefox
+          else
+            if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
+              echo "No zip:firefox script and missing ./scripts/nbgv-version.mjs in ${PACKAGE_DIR}. Define zip:firefox or add the helper script." >&2
+              exit 1
+            fi
+            node ./scripts/nbgv-version.mjs run wxt zip -b firefox
+          fi
+
+          if jq -e '.scripts | has("zip:edge")' package.json >/dev/null 2>&1; then
+            pnpm --filter "${PROJECT}" zip:edge
+          else
+            if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
+              echo "No zip:edge script and missing ./scripts/nbgv-version.mjs in ${PACKAGE_DIR}. Define zip:edge or add the helper script." >&2
+              exit 1
+            fi
+            node ./scripts/nbgv-version.mjs run wxt zip -b edge
+          fi
+
+          popd >/dev/null
+
+          # Collect produced zips into a stable upload directory.
+          shopt -s nullglob
+          zips=(
+            "${PACKAGE_DIR}/.output"/*.zip
+            "${PACKAGE_DIR}/.output"/*/*.zip
+            "${PACKAGE_DIR}/.output"/*/*/*.zip
+          )
+
+          if [[ ${#zips[@]} -eq 0 ]]; then
+            echo "No .zip artifacts found under ${PACKAGE_DIR}/.output after running WXT zip." >&2
+            exit 1
+          fi
+
+          # Filter to only zip files that look like artifacts for this PROJECT.
+          # Expected conventions:
+          #   - "${PROJECT}.zip" (single default/browser build)
+          #   - "${PROJECT}-<suffix>.zip" (e.g., per-browser variants)
+          filtered_zips=()
+          for z in "${zips[@]}"; do
+            base="$(basename "${z}")"
+            if [[ "${base}" == "${PROJECT}.zip" || "${base}" == "${PROJECT}-"*.zip ]]; then
+              filtered_zips+=("${z}")
+            fi
+          done
+
+          if [[ ${#filtered_zips[@]} -eq 0 ]]; then
+            echo "No ${PROJECT} .zip artifacts matching expected naming found under ${PACKAGE_DIR}/.output after running WXT zip." >&2
+            echo "Looked for: ${PROJECT}.zip or ${PROJECT}-*.zip" >&2
+            exit 1
+          fi
+
+          cp -v "${filtered_zips[@]}" "${GITHUB_WORKSPACE}/out/"
+
+      - name: Verify Node version matches tag
+        shell: bash
+        env:
+          EXPECTED: ${{ needs.resolve.outputs.version }}
+          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}")
+
+          if [[ "${computed}" != "${EXPECTED}" ]]; then
+            echo "Built WXT package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
+            exit 1
+          fi
+
+          echo "Verified WXT package version matches ${EXPECTED}"
+
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        env:
+          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          RUN_URL: ${{ needs.resolve.outputs.run_url }}
+        run: |
+          set -Eeuo pipefail
+          notes_file="${{ runner.temp }}/release-notes.md"
+          if [[ "${{ needs.resolve.outputs.has_changelog }}" == "true" ]]; then
+            cp "${{ needs.resolve.outputs.changelog }}" "${notes_file}"
+          else
+          cat <<EOF > "${notes_file}"
+          ## Release notes
+
+          This project does not provide CHANGELOG.md. Using default placeholder notes.
+
+          - Tag: ${TAG_NAME}
+          - Package: ${PROJECT}
+          - Version: ${VERSION}
+          - Build: ${RUN_URL}
+          EOF
+          fi
+          echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ needs.resolve.outputs.dist_glob }}
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
+          RELEASE_TITLE: ${{ needs.resolve.outputs.release_title }}
+          TARGET: ${{ needs.resolve.outputs.target }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+          DIST_GLOB: ${{ needs.resolve.outputs.dist_glob }}
         run: |
           set -Eeuo pipefail
 
