@@ -35,7 +35,7 @@ jobs:
             ghostscript
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@ac793fdd38cc468a4dd57246fa9d0e868aba9085 # v1
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
