@@ -167,16 +167,11 @@ jobs:
 
           is_wxt="false"
           if [[ "${project_kind}" == "node" ]]; then
-            # Currently we only support Node projects packaged with WXT.
+            # Detect WXT packaging; non-WXT Node projects publish to GitHub Packages.
             if [[ -f "${pkg_dir}/wxt.config.ts" || -f "${pkg_dir}/wxt.config.js" || -f "${pkg_dir}/wxt.config.mjs" || -f "${pkg_dir}/wxt.config.cjs" ]]; then
               is_wxt="true"
             elif jq -e '(.dependencies // {} | has("wxt")) or (.devDependencies // {} | has("wxt")) or (.peerDependencies // {} | has("wxt")) or (.optionalDependencies // {} | has("wxt"))' "${pkg_dir}/package.json" >/dev/null 2>&1; then
               is_wxt="true"
-            fi
-
-            if [[ "${is_wxt}" != "true" ]]; then
-              echo "Unimplemented: Node project '${project}' is not detected as a WXT package (missing wxt.config.* / wxt dependency)." >&2
-              exit 1
             fi
           fi
 
@@ -207,13 +202,36 @@ jobs:
         with:
           version: 10
 
-      - name: Setup Node.js
-        if: steps.meta.outputs.project_kind == 'node'
+      - name: Resolve npm scope
+        id: npm_scope
+        if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'false'
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+          scope="@${OWNER,,}"
+          echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
+
+      - name: Setup Node.js (WXT)
+        if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Node.js (npm publish)
+        if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'false'
+        uses: actions/setup-node@v6
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+          registry-url: https://npm.pkg.github.com
+          scope: ${{ steps.npm_scope.outputs.scope }}
 
       - name: Install Node dependencies
         if: steps.meta.outputs.project_kind == 'node'
@@ -231,7 +249,7 @@ jobs:
           uv build --out-dir "${GITHUB_WORKSPACE}/out"
 
       - name: Build package (Node/WXT)
-        if: steps.meta.outputs.project_kind == 'node'
+        if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'true'
         shell: bash
         env:
           PROJECT: ${{ steps.meta.outputs.project }}
@@ -330,11 +348,71 @@ jobs:
           computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}")
 
           if [[ "${computed}" != "${EXPECTED}" ]]; then
-            echo "Built WXT package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
+            echo "Node package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
             exit 1
           fi
 
-          echo "Verified WXT package version matches ${EXPECTED}"
+          echo "Verified Node package version matches ${EXPECTED}"
+
+      - name: Prepare npm publish name (GitHub Packages)
+        id: npm_name
+        if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'false'
+        shell: bash
+        env:
+          PACKAGE_DIR: ${{ steps.meta.outputs.package_dir }}
+          NPM_SCOPE: ${{ github.repository_owner }}
+          STATE_FILE: ${{ runner.temp }}/npm-publish.json
+        run: |
+          set -Eeuo pipefail
+          uv run --script eng/scripts/prepare_npm_publish.py \
+            --package-dir "${PACKAGE_DIR}" \
+            --scope "${NPM_SCOPE}" \
+            --state-file "${STATE_FILE}" \
+            --output "${GITHUB_OUTPUT}"
+
+      - name: Determine npm dist-tag
+        id: npm_tag
+        if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'false'
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          tag="latest"
+          if [[ "${VERSION}" == *-* ]]; then
+            prerelease="${VERSION#*-}"
+            tag="${prerelease%%.*}"
+            if [[ -z "${tag}" ]]; then
+              tag="prerelease"
+            fi
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish npm package (GitHub Packages)
+        if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'false'
+        shell: bash
+        env:
+          PACKAGE_DIR: ${{ steps.meta.outputs.package_dir }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          NPM_CONFIG_ALWAYS_AUTH: 'true'
+        run: |
+          set -Eeuo pipefail
+          pushd "${PACKAGE_DIR}" >/dev/null
+          pnpm publish --no-git-checks --tag "${{ steps.npm_tag.outputs.tag }}"
+          popd >/dev/null
+
+      - name: Restore npm package name
+        if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'false'
+        shell: bash
+        env:
+          PACKAGE_DIR: ${{ steps.meta.outputs.package_dir }}
+          STATE_FILE: ${{ runner.temp }}/npm-publish.json
+        run: |
+          set -Eeuo pipefail
+          uv run --script eng/scripts/prepare_npm_publish.py \
+            --package-dir "${PACKAGE_DIR}" \
+            --state-file "${STATE_FILE}" \
+            --restore
 
       - name: Prepare release notes
         id: notes
