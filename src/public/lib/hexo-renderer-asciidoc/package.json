@@ -37,7 +37,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hcoona/hexo-renderer-asciidoc.git"
+    "url": "git+https://github.com/hcoona/three.git"
   },
   "keywords": [
     "hexo",
@@ -50,9 +50,9 @@
   "author": "Zhang Shuai",
   "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
   "bugs": {
-    "url": "https://github.com/hcoona/hexo-renderer-asciidoc/issues"
+    "url": "https://github.com/hcoona/three/issues"
   },
-  "homepage": "https://github.com/hcoona/hexo-renderer-asciidoc",
+  "homepage": "https://github.com/hcoona/three",
   "engines": {
     "node": ">=20.19.0"
   },
