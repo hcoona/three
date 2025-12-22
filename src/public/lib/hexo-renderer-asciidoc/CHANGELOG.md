@@ -7,10 +7,28 @@
 
 All notable changes to `hexo-renderer-asciidoc` are documented in this file.
 
-The version scheme follows [Semantic Versioning 2.0.0](https://semver.org/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 > [!NOTE]
 > Dates use the `YYYY-MM-DD` format and releases are listed from newest to oldest.
+
+## [Unreleased]
+
+### Added
+
+### Changed
+
+- Migrate the project repository to the `hcoona/three` monorepo and update
+  documentation links accordingly.
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
 
 ## [3.0.0] - 2025-11-17
 
