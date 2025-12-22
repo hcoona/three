@@ -5,7 +5,7 @@
 
 # hexo-renderer-asciidoc
 
-[![CI](https://github.com/hcoona/hexo-renderer-asciidoc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hcoona/hexo-renderer-asciidoc/actions/workflows/ci.yml)
+[![CI](https://github.com/hcoona/three/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hcoona/three/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/hexo-renderer-asciidoc.svg?logo=npm)](https://www.npmjs.com/package/hexo-renderer-asciidoc)
 [![Node support](https://img.shields.io/node/v/hexo-renderer-asciidoc.svg?logo=node.js)](package.json)
 [![License: LGPL-3.0-or-later](https://img.shields.io/badge/license-LGPL--3.0--or--later-0a76d5.svg)](LICENSE)
@@ -51,6 +51,8 @@ Keep `highlight.enable` turned on even if you never write Markdown; the renderer
 ## Example Hexo site
 
 A self-contained demo lives at `examples/hexo-site`. It links to the local workspace via `link:../..`, so every change you make to the renderer is reflected instantly.
+
+If you cloned the monorepo, the demo lives under `src/public/lib/hexo-renderer-asciidoc/examples/hexo-site` from the repository root.
 
 ```bash
 cd examples/hexo-site
@@ -134,8 +136,8 @@ pnpm test --filter Doctest
 
 ## Continuous integration
 
-- `.github/workflows/ci.yml` runs linting, type checks, Vitest, and the production build on Node 20.19 / 20.x / 22.x / 24.x.
-- `.github/workflows/codeql.yml` keeps CodeQL scanning the TypeScript sources on every push and a weekly schedule.
+- The monorepo CI workflow runs linting, type checks, Vitest, and the production build on Node 20.19 / 20.x / 22.x / 24.x: https://github.com/hcoona/three/actions/workflows/ci.yml
+- CodeQL scanning lives in the monorepo as well: https://github.com/hcoona/three/actions/workflows/codeql.yml
 
 ## License
 

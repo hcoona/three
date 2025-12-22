@@ -41,8 +41,8 @@ The renderer does not add extra `_config.yml` sections. Feature toggles such as 
 Need a ready-made playground? Clone the GitHub repository and open `examples/hexo-site`:
 
 ```bash
-git clone https://github.com/hcoona/hexo-renderer-asciidoc.git
-cd examples/hexo-site
+git clone https://github.com/hcoona/three.git
+cd three/src/public/lib/hexo-renderer-asciidoc/examples/hexo-site
 pnpm install
 pnpm dev
 ```
