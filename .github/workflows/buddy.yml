@@ -221,7 +221,7 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Setup Node.js (npm publish)
+      - name: Setup Node.js (npm auth)
         if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'false'
         uses: actions/setup-node@v6
         env:
@@ -236,6 +236,8 @@ jobs:
       - name: Install Node dependencies
         if: steps.meta.outputs.project_kind == 'node'
         shell: bash
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
         run: |
           set -Eeuo pipefail
           pnpm install --frozen-lockfile
@@ -402,17 +404,21 @@ jobs:
           popd >/dev/null
 
       - name: Restore npm package name
-        if: steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'false'
+        if: always() && (steps.meta.outputs.project_kind == 'node' && steps.meta.outputs.is_wxt == 'false')
         shell: bash
         env:
           PACKAGE_DIR: ${{ steps.meta.outputs.package_dir }}
           STATE_FILE: ${{ runner.temp }}/npm-publish.json
         run: |
           set -Eeuo pipefail
-          uv run --script eng/scripts/prepare_npm_publish.py \
-            --package-dir "${PACKAGE_DIR}" \
-            --state-file "${STATE_FILE}" \
-            --restore
+          if [[ -f "${STATE_FILE}" ]]; then
+            uv run --script eng/scripts/prepare_npm_publish.py \
+              --package-dir "${PACKAGE_DIR}" \
+              --state-file "${STATE_FILE}" \
+              --restore
+          else
+            echo "No npm publish state file to restore."
+          fi
 
       - name: Prepare release notes
         id: notes
