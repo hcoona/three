@@ -21,10 +21,7 @@ on:
         default: ""
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
+  contents: read
 
 concurrency:
   group: official-${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -34,6 +31,8 @@ jobs:
   resolve:
     name: Resolve release inputs
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       PYTHON_VERSION: '3.14'
       NODE_VERSION: '24'
@@ -198,16 +197,10 @@ jobs:
 
           is_wxt="false"
           if [[ "${project_kind}" == "node" ]]; then
-            # Currently we only support Node projects packaged with WXT.
             if [[ -f "${pkg_dir}/wxt.config.ts" || -f "${pkg_dir}/wxt.config.js" || -f "${pkg_dir}/wxt.config.mjs" || -f "${pkg_dir}/wxt.config.cjs" ]]; then
               is_wxt="true"
             elif jq -e '(.dependencies // {} | has("wxt")) or (.devDependencies // {} | has("wxt")) or (.peerDependencies // {} | has("wxt")) or (.optionalDependencies // {} | has("wxt"))' "${pkg_dir}/package.json" >/dev/null 2>&1; then
               is_wxt="true"
-            fi
-
-            if [[ "${is_wxt}" != "true" ]]; then
-              echo "Unimplemented: Node project '${project}' is not detected as a WXT package (missing wxt.config.* / wxt dependency)." >&2
-              exit 1
             fi
           fi
 
@@ -238,6 +231,10 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.project_kind == 'python'
     environment: pypi
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     env:
       PYTHON_VERSION: '3.14'
     steps:
@@ -310,7 +307,7 @@ jobs:
           fi
           echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
 
-      - name: Attest build provenance
+      - name: Attest build provenance (GitHub)
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: ${{ needs.resolve.outputs.dist_glob }}
@@ -358,11 +355,321 @@ jobs:
             gh release upload "${TAG_NAME}" "${FILES[@]}" --clobber
           fi
 
+  publish-node:
+    name: Publish Node package (npm & GPR)
+    runs-on: ubuntu-latest
+    needs: resolve
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
+    environment: npmjs
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      NODE_VERSION: '24'
+      PNPM_VERSION: '10'
+      PYTHON_VERSION: '3.14'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Setup Python 3
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache-dependency-glob: 'uv.lock'
+
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node.js (npmjs)
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve npm scope (GPR)
+        id: npm_scope
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+          scope="@${OWNER,,}"
+          echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create .npmrc for GitHub Packages (GPR)
+        id: gpr_npmrc
+        shell: bash
+        env:
+          SCOPE: ${{ steps.npm_scope.outputs.scope }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          # Keep npmjs.org as the default registry, and only route the repository-owner scope to GitHub Packages.
+          # Use a step-scoped userconfig file to avoid accidentally affecting the later npmjs.org publish.
+          npmrc="${RUNNER_TEMP}/npmrc-gpr"
+          {
+            echo "registry=https://registry.npmjs.org"
+            echo "${SCOPE}:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            echo "always-auth=true"
+          } > "${npmrc}"
+
+          echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install Node dependencies
+        shell: bash
+        env:
+          # Allow installing scoped dependencies from GitHub Packages if needed without changing the default registry.
+          NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+        run: |
+          set -Eeuo pipefail
+          pnpm install --frozen-lockfile
+
+      - name: Verify Node version matches tag
+        shell: bash
+        env:
+          EXPECTED: ${{ needs.resolve.outputs.version }}
+          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}")
+          if [[ -z "${computed}" ]]; then
+            echo "nbgv returned an empty NpmPackageVersion for package directory '${PACKAGE_DIR}'." >&2
+            exit 1
+          fi
+
+          if [[ "${computed}" != "${EXPECTED}" ]]; then
+            echo "Built Node package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
+            exit 1
+          fi
+
+          echo "Verified Node package version matches ${EXPECTED}"
+
+      - name: Run quality checks
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+        run: |
+          set -Eeuo pipefail
+          pnpm --filter "${PROJECT}" --if-present lint
+          pnpm --filter "${PROJECT}" --if-present typecheck
+          pnpm --filter "${PROJECT}" --if-present test
+          pnpm --filter "${PROJECT}" --if-present build
+
+      - name: Determine npm dist-tag
+        id: dist_tag
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          version_no_build="${VERSION%%+*}"
+          channel="latest"
+
+          if [[ "${version_no_build}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            if [[ "${version_no_build}" == *-* ]]; then
+              prerelease_part="${version_no_build#*-}"
+              channel="${prerelease_part%%.*}"
+              channel="${channel:-next}"
+            fi
+          else
+            echo "Warning: VERSION '${VERSION}' does not match expected SemVer 2.0.0 pattern; using 'latest' dist-tag." >&2
+          fi
+
+          echo "Using dist-tag: ${channel} (derived from ${VERSION})"
+          echo "tag=${channel}" >> "${GITHUB_OUTPUT}"
+
+      - name: Prepare package metadata
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+        run: |
+          set -Eeuo pipefail
+          pnpm --filter "${PROJECT}" run --if-present prepack
+
+      - name: Pack and publish to GitHub Packages
+        id: gpr
+        shell: bash
+        env:
+          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
+          DIST_DIR: ${{ needs.resolve.outputs.dist_dir }}
+          PACKAGE_SCOPE: ${{ github.repository_owner }}
+          DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "${DIST_DIR}"
+
+          state_file="${RUNNER_TEMP}/npm-gpr-state.json"
+          uv run --script eng/scripts/prepare_npm_publish.py --package-dir "${PACKAGE_DIR}" --scope "${PACKAGE_SCOPE}" --state-file "${state_file}" --output "${GITHUB_OUTPUT}"
+
+          pushd "${PACKAGE_DIR}" >/dev/null
+          tgz_name=$(npm pack --ignore-scripts --pack-destination "${DIST_DIR}")
+          gpr_tgz="${DIST_DIR}/${tgz_name##*/}"
+          npm publish "${gpr_tgz}" --registry https://npm.pkg.github.com --tag "${DIST_TAG}"
+          popd >/dev/null
+
+          uv run --script eng/scripts/prepare_npm_publish.py --package-dir "${PACKAGE_DIR}" --state-file "${state_file}" --restore
+          echo "gpr_tgz=${gpr_tgz}" >> "${GITHUB_OUTPUT}"
+
+      - name: Note about npm Trusted Publishers (OIDC)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+        run: |
+          set -Eeuo pipefail
+          echo "This workflow publishes '${PROJECT}' to npmjs.org using npm Trusted Publishers (OIDC)."
+          echo "Ensure the package has a Trusted Publisher configured on npmjs.com for:"
+          echo "  - Repository: ${GITHUB_REPOSITORY}"
+          echo "  - Workflow filename: official.yml"
+          echo "  - Environment (if configured on npm): npmjs"
+          echo "See: https://docs.npmjs.com/trusted-publishers"
+
+      - name: Pack and publish to npm registry
+        id: npm_publish
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
+          DIST_DIR: ${{ needs.resolve.outputs.dist_dir }}
+          DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
+        run: |
+          set -Eeuo pipefail
+
+          pushd "${PACKAGE_DIR}" >/dev/null
+
+          # Prevent accidental publication of private packages with --access public.
+          node - <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (pkg.private) {
+            console.error(
+              'Error: package.json has "private": true; refusing to publish to the public npm registry.'
+            );
+            process.exit(1);
+          }
+          NODE
+
+          tgz_name=$(npm pack --ignore-scripts --pack-destination "${DIST_DIR}")
+          npm_tgz="${DIST_DIR}/${tgz_name##*/}"
+          npm publish "${npm_tgz}" --registry https://registry.npmjs.org --tag "${DIST_TAG}" --access public
+          popd >/dev/null
+
+          echo "npm_tgz=${npm_tgz}" >> "${GITHUB_OUTPUT}"
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ needs.resolve.outputs.dist_glob }}
+
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        env:
+          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          RUN_URL: ${{ needs.resolve.outputs.run_url }}
+        run: |
+          set -Eeuo pipefail
+          notes_file="${{ runner.temp }}/release-notes.md"
+          if [[ "${{ needs.resolve.outputs.has_changelog }}" == "true" ]]; then
+            cp "${{ needs.resolve.outputs.changelog }}" "${notes_file}"
+          else
+          cat <<EOF > "${notes_file}"
+          ## Release notes
+
+          This project does not provide CHANGELOG.md. Using default placeholder notes.
+
+          - Tag: ${TAG_NAME}
+          - Package: ${PROJECT}
+          - Version: ${VERSION}
+          - Build: ${RUN_URL}
+          EOF
+          fi
+          echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
+          RELEASE_TITLE: ${{ needs.resolve.outputs.release_title }}
+          TARGET: ${{ needs.resolve.outputs.target }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+          DIST_GLOB: ${{ needs.resolve.outputs.dist_glob }}
+        run: |
+          set -Eeuo pipefail
+
+          # If manually triggered, force update the tag to the target commit
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "Force updating tag ${TAG_NAME} to ${TARGET}..."
+            git tag -f "${TAG_NAME}" "${TARGET}"
+            git push -f origin "${TAG_NAME}"
+          fi
+
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release edit "${TAG_NAME}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}" --target "${TARGET}"
+          else
+            gh release create "${TAG_NAME}" --target "${TARGET}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
+          fi
+
+          FILES=()
+          DIR="${DIST_GLOB%/*}"
+          shopt -s nullglob
+          for f in "$DIR"/*; do
+            if [[ "$f" != *.gitignore ]]; then
+              FILES+=("$f")
+            fi
+          done
+
+          if [[ ${#FILES[@]} -gt 0 ]]; then
+            gh release upload "${TAG_NAME}" "${FILES[@]}" --clobber
+          fi
+
   release-wxt:
     name: Create GitHub release (Node/WXT)
     runs-on: ubuntu-latest
     needs: resolve
-    if: needs.resolve.outputs.project_kind == 'node'
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     env:
       NODE_VERSION: '24'
     steps:
@@ -391,6 +698,7 @@ jobs:
         uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
         with:
           version: 10
+          run_install: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -535,7 +843,7 @@ jobs:
           fi
           echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
 
-      - name: Attest build provenance
+      - name: Attest build provenance (GitHub)
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: ${{ needs.resolve.outputs.dist_glob }}
