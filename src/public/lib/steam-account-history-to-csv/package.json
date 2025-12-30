@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@typescript/native-preview": "^7.0.0-dev.20251221.1",
+    "@typescript/native-preview": "^7.0.0-dev.20251229.1",
     "@wxt-dev/auto-icons": "^1.1.0",
     "nerdbank-gitversioning": "^3.7.91",
     "typescript": "^5.9.3",
