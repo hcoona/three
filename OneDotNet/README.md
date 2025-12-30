@@ -40,9 +40,10 @@ OneDotNet/
 ├── tests/                       # Unit and integration tests
 ├── codelab/                     # Experimental projects and prototypes
 ├── Directory.Build.props        # Global MSBuild properties
-├── Directory.Packages.props     # Centralized package management
 └── OneDotNet.sln               # Solution file
 ```
+
+Central package versions are defined at the repository root in `../Directory.Packages.props`.
 
 ## Getting Started
 
@@ -58,22 +59,22 @@ Before you begin, ensure you have the following installed:
 
 1. **Clone the repository:**
 
-   ```powershell
-   git clone https://zhangshuai89@dev.azure.com/zhangshuai89/Public/_git/OneDotNet
-   cd OneDotNet
-   ```
+    ```powershell
+    git clone https://zhangshuai89@dev.azure.com/zhangshuai89/Public/_git/OneDotNet
+    cd OneDotNet
+    ```
 
 2. **Build all projects:**
 
-   ```powershell
-   dotnet build dirs.proj
-   ```
+    ```powershell
+    dotnet build dirs.proj
+    ```
 
 3. **Run tests:**
 
-   ```powershell
-   dotnet test
-   ```
+    ```powershell
+    dotnet test
+    ```
 
 ### Development Workflow
 
@@ -104,7 +105,10 @@ dotnet test tests/CircularList.UnitTest/
 Generate a Visual Studio solution file using [SlnGen](https://microsoft.github.io/slngen/) and [vswhere](https://github.com/microsoft/vswhere):
 
 ```powershell
-slngen --nologo --ignoreMainProject --launch false --loadprojects false -vs (vswhere -nocolor -format value -property productPath) --folders true --collapsefolders true -o OneDotNet.sln
+slngen --nologo --ignoreMainProject --launch false --loadprojects false `
+   -vs (vswhere -nocolor -format value -property productPath) `
+   --folders true --collapsefolders true `
+   -o OneDotNet.sln
 ```
 
 This command creates a comprehensive solution file that includes all projects organized in folders.
@@ -156,18 +160,18 @@ This project is licensed under the terms specified in the [LICENSE](LICENSE) fil
 
 The following packages have been deprecated and their source code removed. Links redirect to the last commit before removal:
 
-| Package | Reason | Alternative |
-|---------|--------|-------------|
-| [RateLimiter](https://github.com/hcoona/OneDotNet/tree/7b14411/RateLimiter) | Superseded by better alternatives | Use [Polly](https://github.com/App-vNext/Polly) |
-| [Clocks.Net](https://github.com/hcoona/OneDotNet/tree/7cc2064/srcs/public/Clocks.Net) | Native .NET 8.0 support available | Use [TimeProvider](https://learn.microsoft.com/en-us/dotnet/api/system.timeprovider?view=net-8.0) or [Microsoft.Bcl.TimeProvider](https://www.nuget.org/packages/Microsoft.Bcl.TimeProvider/) |
-| [TimeLimiter](https://github.com/hcoona/OneDotNet/tree/5ab8904/TimeLimiter) | Performance issues and poor design | Use [Polly](https://github.com/App-vNext/Polly) |
-| [HCOONa.Grpc.MicrosoftExtension.Logging](https://github.com/hcoona/OneDotNet/tree/7b14411/GrpcAdapter) | Grpc.Core deprecated | Use modern gRPC implementations |
+| Package                                                                                                | Reason                             | Alternative                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [RateLimiter](https://github.com/hcoona/OneDotNet/tree/7b14411/RateLimiter)                            | Superseded by better alternatives  | Use [Polly](https://github.com/App-vNext/Polly)                                                                                                                                               |
+| [Clocks.Net](https://github.com/hcoona/OneDotNet/tree/7cc2064/srcs/public/Clocks.Net)                  | Native .NET 8.0 support available  | Use [TimeProvider](https://learn.microsoft.com/en-us/dotnet/api/system.timeprovider?view=net-8.0) or [Microsoft.Bcl.TimeProvider](https://www.nuget.org/packages/Microsoft.Bcl.TimeProvider/) |
+| [TimeLimiter](https://github.com/hcoona/OneDotNet/tree/5ab8904/TimeLimiter)                            | Performance issues and poor design | Use [Polly](https://github.com/App-vNext/Polly)                                                                                                                                               |
+| [HCOONa.Grpc.MicrosoftExtension.Logging](https://github.com/hcoona/OneDotNet/tree/7b14411/GrpcAdapter) | Grpc.Core deprecated               | Use modern gRPC implementations                                                                                                                                                               |
 
 ### Deprecated Private Tools
 
-| Package | Reason | Alternative |
-|---------|--------|-------------|
-| [QiDianBookDownloader](https://github.com/hcoona/OneDotNet/tree/main/srcs/private/QiDianBookDownloader) | Login authentication challenges with Playwright | Use [mcp-chrome](https://github.com/hangwin/mcp-chrome) approaches, continued in [OnePython](https://dev.azure.com/zhangshuai89/Public/_git/OnePython) |
-| [HtmlEmbeddedImageConverter](https://github.com/hcoona/OneDotNet/tree/main/srcs/private/HtmlEmbeddedImageConverter) | Superseded by better alternatives | Use [HTMLArk](https://github.com/BitPhinix/HTMLArk) |
-| [SwigDoc2Latex](https://github.com/hcoona/OneDotNet/tree/b687bee/SwigDoc2Latex) | Unmaintained, website changes broke functionality | N/A |
-| [GeothermalResearchInstitute](https://github.com/hcoona/OneDotNet/tree/73a338a/GeothermalResearchInstitute) | Project discontinued | N/A |
+| Package                                                                                                             | Reason                                            | Alternative                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [QiDianBookDownloader](https://github.com/hcoona/OneDotNet/tree/main/srcs/private/QiDianBookDownloader)             | Login authentication challenges with Playwright   | Use [mcp-chrome](https://github.com/hangwin/mcp-chrome) approaches, continued in [OnePython](https://dev.azure.com/zhangshuai89/Public/_git/OnePython) |
+| [HtmlEmbeddedImageConverter](https://github.com/hcoona/OneDotNet/tree/main/srcs/private/HtmlEmbeddedImageConverter) | Superseded by better alternatives                 | Use [HTMLArk](https://github.com/BitPhinix/HTMLArk)                                                                                                    |
+| [SwigDoc2Latex](https://github.com/hcoona/OneDotNet/tree/b687bee/SwigDoc2Latex)                                     | Unmaintained, website changes broke functionality | N/A                                                                                                                                                    |
+| [GeothermalResearchInstitute](https://github.com/hcoona/OneDotNet/tree/73a338a/GeothermalResearchInstitute)         | Project discontinued                              | N/A                                                                                                                                                    |
