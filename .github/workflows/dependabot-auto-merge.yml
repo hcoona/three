@@ -1,0 +1,145 @@
+# Copyright 2015 Shuai Zhang
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
+name: Dependabot Auto-Approve and Auto-Merge
+
+on:
+
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dependabot:
+    name: Auto-approve and enable auto-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    if: >-
+      github.repository == 'hcoona/three' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.draft == false
+
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@08eff52bf64351f401fb50d4972fa95b9f2c2d1b # v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Log Dependabot metadata
+        shell: bash
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          PACKAGE_ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          DIRECTORY: ${{ steps.metadata.outputs.directory }}
+          DEPENDENCY_NAMES: ${{ steps.metadata.outputs.dependency-names }}
+          DEPENDENCY_TYPE: ${{ steps.metadata.outputs.dependency-type }}
+        run: |
+          set -Eeuo pipefail
+
+          echo "Dependabot metadata:"
+          echo "  update-type: ${UPDATE_TYPE}"
+          echo "  package-ecosystem: ${PACKAGE_ECOSYSTEM}"
+          echo "  directory: ${DIRECTORY}"
+          echo "  dependency-names: ${DEPENDENCY_NAMES}"
+          echo "  dependency-type: ${DEPENDENCY_TYPE}"
+
+      - name: Evaluate update eligibility
+        id: eligibility
+        shell: bash
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        run: |
+          set -Eeuo pipefail
+
+          eligible=false
+          case "${UPDATE_TYPE}" in
+            security-update|version-update:semver-patch|version-update:semver-minor)
+              eligible=true
+              ;;
+          esac
+
+          echo "update_type=${UPDATE_TYPE}" >> "$GITHUB_OUTPUT"
+          echo "eligible=${eligible}" >> "$GITHUB_OUTPUT"
+
+      - name: Log update eligibility
+        shell: bash
+        env:
+          UPDATE_TYPE: ${{ steps.eligibility.outputs.update_type }}
+          ELIGIBLE: ${{ steps.eligibility.outputs.eligible }}
+        run: |
+          set -Eeuo pipefail
+
+          echo "Dependabot update-type: ${UPDATE_TYPE}"
+          echo "Eligible for auto-approve/auto-merge: ${ELIGIBLE}"
+
+      # This workflow intentionally skips semver-major updates.
+      # If you want to auto-merge majors too, remove the `if:` guards below.
+      - name: Approve PR (if not already approved)
+        if: steps.eligibility.outputs.eligible == 'true'
+        shell: bash
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          # Avoid repeated approvals when the overall PR review decision is still REVIEW_REQUIRED
+          # (e.g., multiple approvals required by branch protection).
+          approved_by_actions=0
+          if approved_by_actions=$(gh pr view "$PR_URL" --json latestReviews --jq '[.latestReviews[] | select(.author.login=="github-actions[bot]" and .state=="APPROVED")] | length'); then
+            :
+          else
+            echo "Could not query latestReviews; falling back to overall reviewDecision only."
+            approved_by_actions=0
+          fi
+          if [[ "${approved_by_actions}" -gt 0 ]]; then
+            echo "github-actions[bot] already approved; skipping."
+            exit 0
+          fi
+
+          decision=UNKNOWN
+          if decision=$(gh pr view "$PR_URL" --json reviewDecision -q '.reviewDecision'); then
+            :
+          else
+            echo "Could not query reviewDecision; continuing to attempt approval."
+            decision=UNKNOWN
+          fi
+          if [[ "${decision}" == "APPROVED" ]]; then
+            echo "PR already approved; skipping."
+            exit 0
+          fi
+
+          if ! gh pr review --approve "$PR_URL"; then
+            echo "::error title=Failed to approve PR::Could not approve the pull request using GITHUB_TOKEN."
+            echo "Hint: enable repository setting 'Allow GitHub Actions to create and approve pull requests'."
+            exit 1
+          fi
+
+      - name: Enable auto-merge (rebase)
+        if: steps.eligibility.outputs.eligible == 'true'
+        shell: bash
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          # Requires repository settings:
+          # - Allow auto-merge
+          # - Allow rebase merging
+          if ! gh pr merge --auto --rebase "$PR_URL"; then
+            echo "::error title=Failed to enable auto-merge::Could not enable auto-merge (rebase) for this PR."
+            echo "Hint: ensure repository settings allow auto-merge and rebase merging, and that branch protection requirements can be satisfied."
+            exit 1
+          fi
