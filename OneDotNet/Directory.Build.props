@@ -64,7 +64,7 @@
     <SlnGenSolutionItem Include="$(EnlistmentRoot)\OneDotNet.ruleset" />
     <SlnGenSolutionItem Include="$(EnlistmentRoot)\Directory.Build.props" />
     <SlnGenSolutionItem Include="$(EnlistmentRoot)\Directory.Build.rsp" />
-    <SlnGenSolutionItem Include="$(EnlistmentRoot)\Directory.Packages.props" />
+    <SlnGenSolutionItem Include="$(EnlistmentRoot)\..\Directory.Packages.props" />
     <SlnGenSolutionItem Include="$(EnlistmentRoot)\README.md" />
     <SlnGenSolutionItem Include="$(EnlistmentRoot)\stylecop.json" />
     <SlnGenSolutionItem Include="$(EnlistmentRoot)\version.json" />
