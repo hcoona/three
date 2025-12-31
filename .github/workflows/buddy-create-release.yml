@@ -1,0 +1,147 @@
+name: Buddy Create GitHub Release
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: "Release tag name to create/update (e.g. release/<project>/v<version>)"
+        required: true
+        type: string
+      target:
+        description: "Target commit SHA that the tag/release should point to"
+        required: true
+        type: string
+      release_title:
+        description: "GitHub Release title"
+        required: true
+        type: string
+      notes_artifact_name:
+        description: "Workflow artifact name that contains release-notes.md"
+        required: true
+        type: string
+      dist_artifact_name:
+        description: "Workflow artifact name that contains release assets (typically files under out/)"
+        required: true
+        type: string
+      force_update_tag:
+        description: "Allow force-updating the tag when it already exists and points to a different commit"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  create-release:
+    name: Create or update GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.target }}
+
+      - name: Download release notes artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.notes_artifact_name }}
+          path: ${{ runner.temp }}/buddy-release-notes
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.dist_artifact_name }}
+          path: ${{ runner.temp }}/buddy-release-dist
+
+      - name: Normalize release payload
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+
+          # Notes
+          notes_dir="${{ runner.temp }}/buddy-release-notes"
+          notes_file=""
+          if [[ -f "${notes_dir}/release-notes.md" ]]; then
+            notes_file="${notes_dir}/release-notes.md"
+          else
+            notes_file=$(find "${notes_dir}" -maxdepth 3 -name 'release-notes.md' -print -quit || true)
+          fi
+
+          if [[ -z "${notes_file}" || ! -f "${notes_file}" ]]; then
+            echo "release-notes.md not found in notes artifact '${{ inputs.notes_artifact_name }}'." >&2
+            exit 1
+          fi
+
+          echo "NOTES_FILE=${notes_file}" >> "${GITHUB_ENV}"
+
+          # Dist
+          dist_root="${{ runner.temp }}/buddy-release-dist"
+          src="${dist_root}"
+          if [[ -d "${dist_root}/out" ]]; then
+            src="${dist_root}/out"
+          fi
+
+          # Copy everything into $GITHUB_WORKSPACE/out (release step will ignore .gitignore).
+          shopt -s dotglob nullglob
+          if compgen -G "${src}/*" >/dev/null; then
+            cp -a "${src}/." "${GITHUB_WORKSPACE}/out/"
+          fi
+
+      - name: Create or update tag + release + assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ inputs.tag_name }}
+          RELEASE_TITLE: ${{ inputs.release_title }}
+          TARGET: ${{ inputs.target }}
+          FORCE_UPDATE_TAG: ${{ inputs.force_update_tag }}
+        run: |
+          set -Eeuo pipefail
+
+          git fetch --tags --force
+
+          if ! target_sha=$(git rev-parse --verify "${TARGET}^{commit}"); then
+            echo "Invalid target commit SHA: '${TARGET}'." >&2
+            exit 1
+          fi
+
+          if git show-ref --tags --verify --quiet "refs/tags/${TAG_NAME}"; then
+            current_sha=$(git rev-list -n1 "${TAG_NAME}")
+            if [[ "${current_sha}" == "${target_sha}" ]]; then
+              echo "Tag ${TAG_NAME} already points to ${target_sha}."
+            elif [[ "${FORCE_UPDATE_TAG}" == "true" ]]; then
+              echo "Force updating tag ${TAG_NAME} to ${target_sha}..."
+              git tag -f "${TAG_NAME}" "${target_sha}"
+              git push -f origin "${TAG_NAME}"
+            else
+              echo "Tag ${TAG_NAME} already exists and points to ${current_sha}, not ${target_sha}." >&2
+              echo "Re-run with force_update_tag=true to move the tag." >&2
+              exit 1
+            fi
+          else
+            echo "Creating tag ${TAG_NAME} at ${target_sha}..."
+            git tag "${TAG_NAME}" "${target_sha}"
+            git push origin "${TAG_NAME}"
+          fi
+
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release edit "${TAG_NAME}" --prerelease --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}" --target "${target_sha}"
+          else
+            gh release create "${TAG_NAME}" --prerelease --target "${target_sha}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
+          fi
+
+          FILES=()
+          shopt -s nullglob
+          for f in "${GITHUB_WORKSPACE}/out"/*; do
+            if [[ "${f}" != *.gitignore ]]; then
+              FILES+=("${f}")
+            fi
+          done
+
+          if [[ ${#FILES[@]} -gt 0 ]]; then
+            gh release upload "${TAG_NAME}" "${FILES[@]}" --clobber
+          fi
