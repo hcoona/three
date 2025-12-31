@@ -213,7 +213,7 @@ jobs:
     needs: resolve
     permissions:
       contents: read
-    uses: ./.github/workflows/buddy-prepare-release-notes.yml
+    uses: ./.github/workflows/release-prepare-release-notes.yml
     with:
       target: ${{ needs.resolve.outputs.target }}
       has_changelog: ${{ needs.resolve.outputs.has_changelog == 'true' }}
@@ -289,11 +289,12 @@ jobs:
     permissions:
       contents: write
       actions: read
-    uses: ./.github/workflows/buddy-create-release.yml
+    uses: ./.github/workflows/release-create-github-release.yml
     with:
       tag_name: ${{ needs.resolve.outputs.tag_name }}
       target: ${{ needs.resolve.outputs.target }}
       release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: true
       force_update_tag: ${{ inputs.force_update_tag }}
       notes_artifact_name: buddy-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: buddy-${{ needs.resolve.outputs.project }}-dist
@@ -500,11 +501,12 @@ jobs:
     permissions:
       contents: write
       actions: read
-    uses: ./.github/workflows/buddy-create-release.yml
+    uses: ./.github/workflows/release-create-github-release.yml
     with:
       tag_name: ${{ needs.resolve.outputs.tag_name }}
       target: ${{ needs.resolve.outputs.target }}
       release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: true
       force_update_tag: ${{ inputs.force_update_tag }}
       notes_artifact_name: buddy-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: buddy-${{ needs.resolve.outputs.project }}-dist
@@ -670,11 +672,12 @@ jobs:
     permissions:
       contents: write
       actions: read
-    uses: ./.github/workflows/buddy-create-release.yml
+    uses: ./.github/workflows/release-create-github-release.yml
     with:
       tag_name: ${{ needs.resolve.outputs.tag_name }}
       target: ${{ needs.resolve.outputs.target }}
       release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: true
       force_update_tag: ${{ inputs.force_update_tag }}
       notes_artifact_name: buddy-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: buddy-${{ needs.resolve.outputs.project }}-dist

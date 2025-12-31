@@ -1,4 +1,4 @@
-name: Buddy Create GitHub Release
+name: Create GitHub Release (Reusable)
 
 on:
   workflow_call:
@@ -23,6 +23,10 @@ on:
         description: "Workflow artifact name that contains release assets (typically files under out/)"
         required: true
         type: string
+      prerelease:
+        description: "Whether to mark the GitHub Release as a prerelease"
+        required: true
+        type: boolean
       force_update_tag:
         description: "Allow force-updating the tag when it already exists and points to a different commit"
         required: false
@@ -47,13 +51,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.notes_artifact_name }}
-          path: ${{ runner.temp }}/buddy-release-notes
+          path: ${{ runner.temp }}/release-notes
 
       - name: Download dist artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.dist_artifact_name }}
-          path: ${{ runner.temp }}/buddy-release-dist
+          path: ${{ runner.temp }}/release-dist
 
       - name: Normalize release payload
         shell: bash
@@ -63,7 +67,7 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/out"
 
           # Notes
-          notes_dir="${{ runner.temp }}/buddy-release-notes"
+          notes_dir="${{ runner.temp }}/release-notes"
           notes_file=""
           if [[ -f "${notes_dir}/release-notes.md" ]]; then
             notes_file="${notes_dir}/release-notes.md"
@@ -79,7 +83,7 @@ jobs:
           echo "NOTES_FILE=${notes_file}" >> "${GITHUB_ENV}"
 
           # Dist
-          dist_root="${{ runner.temp }}/buddy-release-dist"
+          dist_root="${{ runner.temp }}/release-dist"
           src="${dist_root}"
           if [[ -d "${dist_root}/out" ]]; then
             src="${dist_root}/out"
@@ -98,6 +102,7 @@ jobs:
           TAG_NAME: ${{ inputs.tag_name }}
           RELEASE_TITLE: ${{ inputs.release_title }}
           TARGET: ${{ inputs.target }}
+          PRERELEASE: ${{ inputs.prerelease }}
           FORCE_UPDATE_TAG: ${{ inputs.force_update_tag }}
         run: |
           set -Eeuo pipefail
@@ -129,15 +134,38 @@ jobs:
           fi
 
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
-            gh release edit "${TAG_NAME}" --prerelease --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}" --target "${target_sha}"
+            gh release edit "${TAG_NAME}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}" --target "${target_sha}"
           else
-            gh release create "${TAG_NAME}" --prerelease --target "${target_sha}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
+            prerelease_args=()
+            if [[ "${PRERELEASE}" == "true" ]]; then
+              prerelease_args+=(--prerelease)
+            fi
+
+            gh release create "${TAG_NAME}" "${prerelease_args[@]}" --target "${target_sha}" --title "${RELEASE_TITLE}" --notes-file "${NOTES_FILE}"
           fi
+
+          # Ensure prerelease state matches the caller's policy (both for create and edit paths).
+          release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}" --jq '.id')
+          if [[ -z "${release_id}" ]]; then
+            echo "Failed to resolve release id for tag '${TAG_NAME}'." >&2
+            exit 1
+          fi
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" -f prerelease="${PRERELEASE}" >/dev/null
 
           FILES=()
           shopt -s nullglob
           for f in "${GITHUB_WORKSPACE}/out"/*; do
-            if [[ "${f}" != *.gitignore ]]; then
+            if [[ "${f}" == *.gitignore ]]; then
+              continue
+            fi
+
+            if [[ -d "${f}" ]]; then
+              echo "Error: release assets must be files only (flat layout). Found directory: ${f}" >&2
+              echo "Please pack directories into a single archive (zip/tar) before uploading." >&2
+              exit 1
+            fi
+
+            if [[ -f "${f}" ]]; then
               FILES+=("${f}")
             fi
           done
