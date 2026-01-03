@@ -1,0 +1,195 @@
+name: Build Node Package (WXT) (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: "Target commit SHA to build from"
+        required: true
+        type: string
+      project:
+        description: "Workspace package name"
+        required: true
+        type: string
+      package_dir:
+        description: "Directory containing the Node/WXT package"
+        required: true
+        type: string
+      version:
+        description: "Expected package version (NpmPackageVersion from NBGV)"
+        required: true
+        type: string
+      node_version:
+        description: "Node.js version"
+        required: true
+        type: string
+      pnpm_version:
+        description: "pnpm version"
+        required: true
+        type: string
+      artifact_name:
+        description: "Artifact name to upload out/* as"
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build WXT package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.target }}
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Node dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pnpm install --frozen-lockfile
+
+      - name: Build package (Node/WXT)
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf "${GITHUB_WORKSPACE}/out"
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+
+          # Build zip artifacts via the package's own scripts.
+          # Prefer explicit scripts when they exist; fall back to direct WXT invocation.
+          pushd "${PACKAGE_DIR}" >/dev/null
+
+          if jq -e '.scripts | has("zip")' package.json >/dev/null 2>&1; then
+            pnpm --filter "${PROJECT}" zip
+          else
+            if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
+              echo "No zip script and missing ${PACKAGE_DIR}/scripts/nbgv-version.mjs. Define zip or add the helper script." >&2
+              exit 1
+            fi
+            node ./scripts/nbgv-version.mjs run wxt zip
+          fi
+
+          for browser in firefox edge; do
+            if jq -e ".scripts | has(\"zip:${browser}\")" package.json >/dev/null 2>&1; then
+              pnpm --filter "${PROJECT}" "zip:${browser}"
+            else
+              if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
+                echo "No zip:${browser} script and missing ${PACKAGE_DIR}/scripts/nbgv-version.mjs. Define zip:${browser} or add the helper script." >&2
+                exit 1
+              fi
+              node ./scripts/nbgv-version.mjs run wxt zip -b "${browser}"
+            fi
+          done
+
+          popd >/dev/null
+
+          # Collect produced zips into a stable upload directory.
+          # Contract: only collect .output/*.zip (shallow), and do not assume any filename convention.
+          shopt -s nullglob
+          zips=("${PACKAGE_DIR}/.output"/*.zip)
+
+          if [[ ${#zips[@]} -eq 0 ]]; then
+            echo "No .zip artifacts found under ${PACKAGE_DIR}/.output after running WXT zip." >&2
+            echo "Note: only shallow collection of .output/*.zip is supported (no recursion)." >&2
+            exit 1
+          fi
+
+          declare -A by_base=()
+          collisions=()
+          for z in "${zips[@]}"; do
+            base="$(basename "${z}")"
+            if [[ -n "${by_base["${base}"]+x}" ]]; then
+              collisions+=("${base}")
+              by_base["${base}"]+="\n${z}"
+            else
+              by_base["${base}"]="${z}"
+            fi
+          done
+
+          if [[ ${#collisions[@]} -gt 0 ]]; then
+            echo "Basename collision detected while collecting WXT zips (out/ must be flat):" >&2
+            for base in "${collisions[@]}"; do
+              echo "- ${base}" >&2
+              # shellcheck disable=SC2001
+              echo -e "${by_base["${base}"]}" | sed 's/^/  - /' >&2
+            done
+            echo "Fix: ensure WXT produces unique zip basenames under .output/*.zip." >&2
+            exit 1
+          fi
+
+          for z in "${zips[@]}"; do
+            base="$(basename "${z}")"
+            if [[ -e "${GITHUB_WORKSPACE}/out/${base}" ]]; then
+              echo "Refusing to overwrite existing file in out/: ${base}" >&2
+              echo "Source: ${z}" >&2
+              exit 1
+            fi
+            cp -v "${z}" "${GITHUB_WORKSPACE}/out/${base}"
+          done
+
+      - name: Verify Node version matches tag
+        shell: bash
+        env:
+          EXPECTED: ${{ inputs.version }}
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          if ! computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}"); then
+            echo "Failed to compute WXT package version using 'dotnet tool run nbgv'." >&2
+            exit 1
+          fi
+
+          if [[ -z "${computed}" ]]; then
+            echo "nbgv returned an empty NpmPackageVersion for package directory '${PACKAGE_DIR}'." >&2
+            exit 1
+          fi
+
+          if [[ "${computed}" != "${EXPECTED}" ]]; then
+            echo "Built WXT package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
+            exit 1
+          fi
+
+          echo "Verified WXT package version matches ${EXPECTED}"
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ github.workspace }}/out/*
+          if-no-files-found: error

@@ -38,214 +38,47 @@ env:
   PNPM_VERSION: '10'
 
 jobs:
-  resolve:
-    name: Resolve release inputs
+  versions:
+    name: Export tool versions
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
-      project: ${{ steps.meta.outputs.project }}
-      version: ${{ steps.meta.outputs.version }}
-      project_kind: ${{ steps.meta.outputs.project_kind }}
-      is_wxt: ${{ steps.meta.outputs.is_wxt }}
-      tag_name: ${{ steps.meta.outputs.tag_name }}
-      target: ${{ steps.meta.outputs.target }}
-      force_update_tag: ${{ steps.meta.outputs.force_update_tag }}
-      package_dir: ${{ steps.meta.outputs.package_dir }}
-      has_changelog: ${{ steps.meta.outputs.has_changelog }}
-      changelog: ${{ steps.meta.outputs.changelog }}
-      dist_dir: ${{ steps.meta.outputs.dist_dir }}
-      dist_glob: ${{ steps.meta.outputs.dist_glob }}
-      release_title: ${{ steps.meta.outputs.release_title }}
-      run_url: ${{ steps.meta.outputs.run_url }}
+      python_version: ${{ steps.versions.outputs.python_version }}
+      node_version: ${{ steps.versions.outputs.node_version }}
+      pnpm_version: ${{ steps.versions.outputs.pnpm_version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
-        with:
-          version: '1.7.1'
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-
-      - name: Setup Python 3
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache-dependency-glob: 'uv.lock'
-
-      - name: Install dependencies
-        run: |
-          set -Eeuo pipefail
-          dotnet tool restore
-
-      - name: Resolve release inputs
-        id: meta
+      - name: Export versions
+        id: versions
         shell: bash
         run: |
           set -Eeuo pipefail
+          {
+            echo "python_version=${PYTHON_VERSION}"
+            echo "node_version=${NODE_VERSION}"
+            echo "pnpm_version=${PNPM_VERSION}"
+          } >> "${GITHUB_OUTPUT}"
 
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            ref_name="${GITHUB_REF_NAME}"
-            if [[ ! "${ref_name}" =~ ^release/.+/v.+$ ]]; then
-              echo "Tag ${ref_name} must follow release/<project>/v<version>" >&2
-              exit 1
-            fi
-            project="${ref_name#release/}"
-            project="${project%%/v*}"
-            version="${ref_name##*/v}"
-            tag_name="${ref_name}"
-            target="${GITHUB_REF}"
-          else
-            project="${{ github.event.inputs.project }}"
-            version="${{ github.event.inputs.version }}"
-            tag_name=""
-            target="${{ github.event.inputs.target }}"
-          fi
+  resolve:
+    name: Resolve release inputs
+    uses: ./.github/workflows/release-resolve.yml
+    needs: versions
+    permissions:
+      contents: read
+    with:
+      source: ${{ github.event_name == 'push' && 'tag' || 'manual' }}
+      run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      python_version: ${{ needs.versions.outputs.python_version }}
 
-          force_update_tag="false"
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            # github.event.inputs is stringly-typed; normalize to strict true/false.
-            if [[ "${{ github.event.inputs.force_update_tag }}" == "true" ]]; then
-              force_update_tag="true"
-            fi
-          fi
+      # source=tag
+      ref_name: ${{ github.ref_name }}
+      ref: ${{ github.ref }}
 
-          if [[ -z "${project}" || -z "${version}" ]]; then
-            echo "project or version is empty" >&2
-            exit 1
-          fi
-
-          if [[ ! "${project}" =~ ^[A-Za-z0-9._-]+$ ]]; then
-            echo "Invalid project name: ${project}. Allowed characters: A-Z a-z 0-9 . _ -" >&2
-            exit 1
-          fi
-
-          if [[ ! "${version}" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
-            echo "Invalid version format for shell safety: ${version}. Allowed characters: A-Z a-z 0-9 . _ + -" >&2
-            exit 1
-          fi
-
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            resolved_target=$(git rev-list -n1 "${GITHUB_REF}")
-          else
-            if [[ -z "${target}" ]]; then
-              resolved_target=$(git rev-parse HEAD)
-            else
-              if ! resolved_target=$(git rev-list -n1 "${target}"); then
-                echo "Failed to resolve target '${target}' to a commit." >&2
-                exit 1
-              fi
-            fi
-          fi
-
-          if [[ -z "${resolved_target}" ]]; then
-            echo "Resolved target commit is empty" >&2
-            exit 1
-          fi
-
-          target="${resolved_target}"
-
-          # Ensure all subsequent detection/validation runs against the intended target commit.
-          # This workflow runs helper scripts that read repository files; detaching here makes those reads
-          # reflect the exact target SHA (especially important for workflow_dispatch with an explicit target).
-          git checkout --detach "${target}"
-
-          # Determine project kind and package directory.
-          # Priority: Python (existing behavior) -> Node.
-          project_kind=""
-          pkg_dir=""
-          python_detect_err_file="$(mktemp)"
-          node_detect_err_file="$(mktemp)"
-          if pkg_dir=$(uv run --script eng/scripts/find_python_project_path.py "${project}" 2>"${python_detect_err_file}"); then
-            project_kind="python"
-            rm -f "${python_detect_err_file}" "${node_detect_err_file}"
-          elif pkg_dir=$(uv run --script eng/scripts/find_node_project_path.py "${project}" 2>"${node_detect_err_file}"); then
-            project_kind="node"
-            rm -f "${python_detect_err_file}" "${node_detect_err_file}"
-          else
-            echo "Unknown project: ${project}. No matching pyproject.toml (project.name) or package.json (name) found." >&2
-            if [[ -s "${python_detect_err_file}" ]]; then
-              echo "Details from Python project detection:" >&2
-              cat "${python_detect_err_file}" >&2
-            fi
-            if [[ -s "${node_detect_err_file}" ]]; then
-              echo "Details from Node project detection:" >&2
-              cat "${node_detect_err_file}" >&2
-            fi
-            rm -f "${python_detect_err_file}" "${node_detect_err_file}"
-            exit 1
-          fi
-
-          # Validate version by project kind.
-          if [[ "${project_kind}" == "python" ]]; then
-            # Python releases allow a leading v/V.
-            if [[ "${version}" =~ ^[vV] ]]; then
-              version="${version#?}"
-            fi
-
-            if [[ -z "${version}" ]]; then
-              echo "version is empty after stripping leading v" >&2
-              exit 1
-            fi
-
-            uv run --script eng/scripts/validate_pep440_version.py "${version}"
-          else
-            # Non-Python releases require strict SemVer2.0 (no leading v).
-            uv run --script eng/scripts/validate_semver2_version.py "${version}"
-          fi
-
-          # For manually triggered runs, tag_name depends on the validated/normalized version.
-          if [[ "${GITHUB_EVENT_NAME}" != "push" ]]; then
-            tag_name="release/${project}/v${version}"
-          fi
-
-          if [[ ! -d "${pkg_dir}" ]]; then
-            echo "Package directory does not exist: ${pkg_dir}" >&2
-            exit 1
-          fi
-
-          is_wxt="false"
-          if [[ "${project_kind}" == "node" ]]; then
-            if [[ -f "${pkg_dir}/wxt.config.ts" || -f "${pkg_dir}/wxt.config.js" || -f "${pkg_dir}/wxt.config.mjs" || -f "${pkg_dir}/wxt.config.cjs" ]]; then
-              is_wxt="true"
-            elif jq -e '(.dependencies // {} | has("wxt")) or (.devDependencies // {} | has("wxt")) or (.peerDependencies // {} | has("wxt")) or (.optionalDependencies // {} | has("wxt"))' "${pkg_dir}/package.json" >/dev/null 2>&1; then
-              is_wxt="true"
-            fi
-          fi
-
-          changelog="${pkg_dir}/CHANGELOG.md"
-          has_changelog="false"
-          if [[ -f "${changelog}" ]]; then
-            has_changelog="true"
-          fi
-
-          # shellcheck disable=SC2129
-          echo "project=${project}" >> "${GITHUB_OUTPUT}"
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          echo "project_kind=${project_kind}" >> "${GITHUB_OUTPUT}"
-          echo "is_wxt=${is_wxt}" >> "${GITHUB_OUTPUT}"
-          echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
-          echo "target=${target}" >> "${GITHUB_OUTPUT}"
-          echo "force_update_tag=${force_update_tag}" >> "${GITHUB_OUTPUT}"
-          echo "package_dir=${pkg_dir}" >> "${GITHUB_OUTPUT}"
-          echo "has_changelog=${has_changelog}" >> "${GITHUB_OUTPUT}"
-          echo "changelog=${changelog}" >> "${GITHUB_OUTPUT}"
-          echo "dist_dir=${{ github.workspace }}/out" >> "${GITHUB_OUTPUT}"
-          echo "dist_glob=${{ github.workspace }}/out/*" >> "${GITHUB_OUTPUT}"
-          echo "release_title=${project} v${version}" >> "${GITHUB_OUTPUT}"
-          echo "run_url=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
+      # source=manual
+      project: ${{ github.event.inputs.project }}
+      version: ${{ github.event.inputs.version }}
+      target: ${{ github.event.inputs.target }}
+      force_update_tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_update_tag == 'true' }}
 
   prepare-release-notes:
     name: Prepare release notes
@@ -263,81 +96,76 @@ jobs:
       run_url: ${{ needs.resolve.outputs.run_url }}
       artifact_name: official-${{ needs.resolve.outputs.project }}-release-notes
 
+  build-python:
+    name: Build Python package
+    needs:
+      - versions
+      - resolve
+    if: needs.resolve.outputs.project_kind == 'python'
+    uses: ./.github/workflows/release-build-python.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      python_version: ${{ needs.versions.outputs.python_version }}
+      artifact_name: official-${{ needs.resolve.outputs.project }}-dist
+
   publish-python:
     name: Publish Python package
     runs-on: ubuntu-latest
-    needs: resolve
+    needs:
+      - resolve
+      - build-python
     if: needs.resolve.outputs.project_kind == 'python'
     environment: pypi
     permissions:
       contents: read
+      actions: read
       id-token: write
-      attestations: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-          ref: ${{ needs.resolve.outputs.target }}
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-
-      - name: Setup Python 3
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache-dependency-glob: 'uv.lock'
-
-      - name: Install dependencies
-        run: |
-          set -Eeuo pipefail
-          dotnet tool restore
-
-      - name: Build package
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          cd "${{ needs.resolve.outputs.package_dir }}"
-          uv build --out-dir "${{ github.workspace }}/out"
-
-      - name: Verify built version matches tag
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          uv run --script eng/scripts/verify_python_artifact_version.py "${EXPECTED}" "${{ github.workspace }}/out"
-        env:
-          EXPECTED: ${{ needs.resolve.outputs.version }}
-
-      - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: ${{ needs.resolve.outputs.dist_glob }}
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1
         with:
           packages-dir: ${{ github.workspace }}/out/
 
-      - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+  attest-python:
+    name: Attest release assets (Python)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-python
+    if: needs.resolve.outputs.project_kind == 'python'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
         with:
           name: official-${{ needs.resolve.outputs.project }}-dist
-          path: ${{ github.workspace }}/out/*
-          if-no-files-found: error
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
 
   release-python:
     name: Create GitHub release (Python)
     needs:
       - resolve
       - prepare-release-notes
+      - build-python
       - publish-python
     if: needs.resolve.outputs.project_kind == 'python'
     permissions:
@@ -353,17 +181,39 @@ jobs:
       notes_artifact_name: official-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: official-${{ needs.resolve.outputs.project }}-dist
 
+  pack-node:
+    name: Pack Node tarball(s)
+    needs:
+      - versions
+      - resolve
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
+    uses: ./.github/workflows/release-build-node-pack.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      python_version: ${{ needs.versions.outputs.python_version }}
+      node_version: ${{ needs.versions.outputs.node_version }}
+      pnpm_version: ${{ needs.versions.outputs.pnpm_version }}
+      artifact_name: official-${{ needs.resolve.outputs.project }}-dist
+      pack_mode: both
+
   publish-node:
     name: Publish Node package (npm & GPR)
     runs-on: ubuntu-latest
-    needs: resolve
+    needs:
+      - resolve
+      - pack-node
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
     environment: npmjs
     permissions:
       contents: read
+      actions: read
       packages: write
       id-token: write
-      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -371,40 +221,17 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.resolve.outputs.target }}
 
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-
-      - name: Setup Python 3
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache-dependency-glob: 'uv.lock'
-
-      - name: Install dependencies
-        run: |
-          set -Eeuo pipefail
-          dotnet tool restore
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
       - name: Setup Node.js (npmjs)
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
           registry-url: https://registry.npmjs.org
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
 
       - name: Resolve npm scope (GPR)
         id: npm_scope
@@ -425,8 +252,6 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          # Keep npmjs.org as the default registry, and only route the repository-owner scope to GitHub Packages.
-          # Use a step-scoped userconfig file to avoid accidentally affecting the later npmjs.org publish.
           npmrc="${RUNNER_TEMP}/npmrc-gpr"
           {
             echo "registry=https://registry.npmjs.org"
@@ -437,104 +262,14 @@ jobs:
 
           echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
 
-      - name: Install Node dependencies
+      - name: Publish to GitHub Packages
         shell: bash
         env:
-          # Allow installing scoped dependencies from GitHub Packages if needed without changing the default registry.
+          DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
           NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
         run: |
           set -Eeuo pipefail
-          pnpm install --frozen-lockfile
-
-      - name: Verify Node version matches tag
-        shell: bash
-        env:
-          EXPECTED: ${{ needs.resolve.outputs.version }}
-          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
-        run: |
-          set -Eeuo pipefail
-
-          computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}")
-          if [[ -z "${computed}" ]]; then
-            echo "nbgv returned an empty NpmPackageVersion for package directory '${PACKAGE_DIR}'." >&2
-            exit 1
-          fi
-
-          if [[ "${computed}" != "${EXPECTED}" ]]; then
-            echo "Built Node package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
-            exit 1
-          fi
-
-          echo "Verified Node package version matches ${EXPECTED}"
-
-      - name: Run quality checks
-        shell: bash
-        env:
-          PROJECT: ${{ needs.resolve.outputs.project }}
-        run: |
-          set -Eeuo pipefail
-          pnpm --filter "${PROJECT}" --if-present lint
-          pnpm --filter "${PROJECT}" --if-present typecheck
-          pnpm --filter "${PROJECT}" --if-present test
-          pnpm --filter "${PROJECT}" --if-present build
-
-      - name: Determine npm dist-tag
-        id: dist_tag
-        shell: bash
-        env:
-          VERSION: ${{ needs.resolve.outputs.version }}
-        run: |
-          set -Eeuo pipefail
-
-          version_no_build="${VERSION%%+*}"
-          channel="latest"
-
-          if [[ "${version_no_build}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            if [[ "${version_no_build}" == *-* ]]; then
-              prerelease_part="${version_no_build#*-}"
-              channel="${prerelease_part%%.*}"
-              channel="${channel:-next}"
-            fi
-          else
-            echo "Warning: VERSION '${VERSION}' does not match expected SemVer 2.0.0 pattern; using 'latest' dist-tag." >&2
-          fi
-
-          echo "Using dist-tag: ${channel} (derived from ${VERSION})"
-          echo "tag=${channel}" >> "${GITHUB_OUTPUT}"
-
-      - name: Prepare package metadata
-        shell: bash
-        env:
-          PROJECT: ${{ needs.resolve.outputs.project }}
-        run: |
-          set -Eeuo pipefail
-          pnpm --filter "${PROJECT}" run --if-present prepack
-
-      - name: Pack and publish to GitHub Packages
-        id: gpr
-        shell: bash
-        env:
-          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
-          DIST_DIR: ${{ needs.resolve.outputs.dist_dir }}
-          PACKAGE_SCOPE: ${{ github.repository_owner }}
-          DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
-          NODE_AUTH_TOKEN: ${{ github.token }}
-          NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
-        run: |
-          set -Eeuo pipefail
-          mkdir -p "${DIST_DIR}"
-
-          state_file="${RUNNER_TEMP}/npm-gpr-state.json"
-          uv run --script eng/scripts/prepare_npm_publish.py --package-dir "${PACKAGE_DIR}" --scope "${PACKAGE_SCOPE}" --state-file "${state_file}" --output "${GITHUB_OUTPUT}"
-
-          pushd "${PACKAGE_DIR}" >/dev/null
-          tgz_name=$(npm pack --ignore-scripts --pack-destination "${DIST_DIR}")
-          gpr_tgz="${DIST_DIR}/${tgz_name##*/}"
-          npm publish "${gpr_tgz}" --registry https://npm.pkg.github.com --tag "${DIST_TAG}"
-          popd >/dev/null
-
-          uv run --script eng/scripts/prepare_npm_publish.py --package-dir "${PACKAGE_DIR}" --state-file "${state_file}" --restore
-          echo "gpr_tgz=${gpr_tgz}" >> "${GITHUB_OUTPUT}"
+          npm publish "${GITHUB_WORKSPACE}/out/gpr.tgz" --registry https://npm.pkg.github.com --tag "${DIST_TAG}"
 
       - name: Note about npm Trusted Publishers (OIDC)
         shell: bash
@@ -549,55 +284,61 @@ jobs:
           echo "  - Environment (if configured on npm): npmjs"
           echo "See: https://docs.npmjs.com/trusted-publishers"
 
-      - name: Pack and publish to npm registry
-        id: npm_publish
+      - name: Verify package is not private
         shell: bash
         env:
-          PROJECT: ${{ needs.resolve.outputs.project }}
           PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
-          DIST_DIR: ${{ needs.resolve.outputs.dist_dir }}
-          DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
         run: |
           set -Eeuo pipefail
-
           pushd "${PACKAGE_DIR}" >/dev/null
-
-          # Prevent accidental publication of private packages with --access public.
           node - <<'NODE'
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           if (pkg.private) {
-            console.error(
-              'Error: package.json has "private": true; refusing to publish to the public npm registry.'
-            );
+            console.error('Error: package.json has "private": true; refusing to publish to the public npm registry.');
             process.exit(1);
           }
           NODE
-
-          tgz_name=$(npm pack --ignore-scripts --pack-destination "${DIST_DIR}")
-          npm_tgz="${DIST_DIR}/${tgz_name##*/}"
-          npm publish "${npm_tgz}" --registry https://registry.npmjs.org --tag "${DIST_TAG}" --access public
           popd >/dev/null
 
-          echo "npm_tgz=${npm_tgz}" >> "${GITHUB_OUTPUT}"
+      - name: Publish to npm registry
+        shell: bash
+        env:
+          DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
+        run: |
+          set -Eeuo pipefail
+          npm publish "${GITHUB_WORKSPACE}/out/npmjs.tgz" --registry https://registry.npmjs.org --tag "${DIST_TAG}" --access public
+
+  attest-node:
+    name: Attest release assets (Node)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - pack-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: ${{ needs.resolve.outputs.dist_glob }}
-
-      - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: official-${{ needs.resolve.outputs.project }}-dist
-          path: ${{ github.workspace }}/out/*
-          if-no-files-found: error
+          subject-path: ${{ github.workspace }}/out/*
 
   release-node:
     name: Create GitHub release (Node)
     needs:
       - resolve
       - prepare-release-notes
+      - pack-node
       - publish-node
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
     permissions:
@@ -615,168 +356,45 @@ jobs:
 
   build-wxt:
     name: Build package (Node/WXT)
+    needs:
+      - versions
+      - resolve
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    uses: ./.github/workflows/release-build-wxt.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      node_version: ${{ needs.versions.outputs.node_version }}
+      pnpm_version: ${{ needs.versions.outputs.pnpm_version }}
+      artifact_name: official-${{ needs.resolve.outputs.project }}-dist
+
+  attest-wxt:
+    name: Attest release assets (WXT)
     runs-on: ubuntu-latest
-    needs: resolve
+    needs:
+      - resolve
+      - build-wxt
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
     permissions:
       contents: read
+      actions: read
       id-token: write
       attestations: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-          ref: ${{ needs.resolve.outputs.target }}
-
-      - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
-        with:
-          version: '1.7.1'
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-
-      - name: Install dependencies
-        run: |
-          set -Eeuo pipefail
-          dotnet tool restore
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install Node dependencies
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          pnpm install --frozen-lockfile
-
-      - name: Build package (Node/WXT)
-        shell: bash
-        env:
-          PROJECT: ${{ needs.resolve.outputs.project }}
-          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
-        run: |
-          set -Eeuo pipefail
-
-          rm -rf "${GITHUB_WORKSPACE}/out"
-          mkdir -p "${GITHUB_WORKSPACE}/out"
-
-          # Build zip artifacts via the package's own scripts.
-          # WXT outputs are browser-specific, so produce all supported browsers.
-          # Convention in this repo:
-          #   zip            -> default browser (typically chrome)
-          #   zip:firefox    -> firefox
-          #   zip:edge       -> edge
-          # Prefer explicit scripts when they exist; fall back to direct WXT invocation.
-          # (Some packages may not define zip / zip:<browser> scripts.)
-          pushd "${PACKAGE_DIR}" >/dev/null
-
-          if jq -e '.scripts | has("zip")' package.json >/dev/null 2>&1; then
-            pnpm --filter "${PROJECT}" zip
-          else
-            if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
-              echo "No zip script and missing ${PACKAGE_DIR}/scripts/nbgv-version.mjs. Define zip or add the helper script." >&2
-              exit 1
-            fi
-            node ./scripts/nbgv-version.mjs run wxt zip
-          fi
-
-          for browser in firefox edge; do
-            if jq -e ".scripts | has(\"zip:${browser}\")" package.json >/dev/null 2>&1; then
-              pnpm --filter "${PROJECT}" "zip:${browser}"
-            else
-              if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
-                echo "No zip:${browser} script and missing ${PACKAGE_DIR}/scripts/nbgv-version.mjs. Define zip:${browser} or add the helper script." >&2
-                exit 1
-              fi
-              node ./scripts/nbgv-version.mjs run wxt zip -b "${browser}"
-            fi
-          done
-
-          popd >/dev/null
-
-          # Collect produced zips into a stable upload directory.
-          shopt -s nullglob
-          zips=(
-            "${PACKAGE_DIR}/.output"/*.zip
-            "${PACKAGE_DIR}/.output"/*/*.zip
-            "${PACKAGE_DIR}/.output"/*/*/*.zip
-          )
-
-          if [[ ${#zips[@]} -eq 0 ]]; then
-            echo "No .zip artifacts found under ${PACKAGE_DIR}/.output after running WXT zip." >&2
-            exit 1
-          fi
-
-          # Filter to only zip files that look like artifacts for this PROJECT.
-          # Expected conventions:
-          #   - "${PROJECT}.zip" (single default/browser build)
-          #   - "${PROJECT}-<suffix>.zip" (e.g., per-browser variants)
-          filtered_zips=()
-          for z in "${zips[@]}"; do
-            base="$(basename "${z}")"
-            if [[ "${base}" == "${PROJECT}.zip" || "${base}" == "${PROJECT}-"*.zip ]]; then
-              filtered_zips+=("${z}")
-            fi
-          done
-
-          if [[ ${#filtered_zips[@]} -eq 0 ]]; then
-            echo "No ${PROJECT} .zip artifacts matching expected naming found under ${PACKAGE_DIR}/.output after running WXT zip." >&2
-            echo "Looked for: ${PROJECT}.zip or ${PROJECT}-*.zip" >&2
-            exit 1
-          fi
-
-          cp -v "${filtered_zips[@]}" "${GITHUB_WORKSPACE}/out/"
-
-      - name: Verify Node version matches tag
-        shell: bash
-        env:
-          EXPECTED: ${{ needs.resolve.outputs.version }}
-          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
-        run: |
-          set -Eeuo pipefail
-
-          if ! computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}"); then
-            echo "Failed to compute WXT package version using 'dotnet tool run nbgv'." >&2
-            exit 1
-          fi
-
-          if [[ -z "${computed}" ]]; then
-            echo "nbgv returned an empty NpmPackageVersion for package directory '${PACKAGE_DIR}'." >&2
-            exit 1
-          fi
-
-          if [[ "${computed}" != "${EXPECTED}" ]]; then
-            echo "Built WXT package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
-            exit 1
-          fi
-
-          echo "Verified WXT package version matches ${EXPECTED}"
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: ${{ needs.resolve.outputs.dist_glob }}
-
-      - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: official-${{ needs.resolve.outputs.project }}-dist
-          path: ${{ github.workspace }}/out/*
-          if-no-files-found: error
+          subject-path: ${{ github.workspace }}/out/*
 
   release-wxt:
     name: Create GitHub release (Node/WXT)
