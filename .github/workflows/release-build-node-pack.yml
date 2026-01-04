@@ -106,39 +106,8 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Resolve npm scope (GitHub Packages)
-        id: npm_scope
-        shell: bash
-        env:
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          set -Eeuo pipefail
-          scope="@${OWNER,,}"
-          echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
-
-      - name: Create .npmrc for GitHub Packages (dependency install)
-        id: gpr_npmrc
-        shell: bash
-        env:
-          SCOPE: ${{ steps.npm_scope.outputs.scope }}
-          NODE_AUTH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-
-          npmrc="${RUNNER_TEMP}/npmrc-gpr"
-          {
-            echo "registry=https://registry.npmjs.org"
-            echo "${SCOPE}:registry=https://npm.pkg.github.com"
-            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
-            echo "always-auth=true"
-          } > "${npmrc}"
-
-          echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
-
       - name: Install Node dependencies
         shell: bash
-        env:
-          NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
         run: |
           set -Eeuo pipefail
           pnpm install --frozen-lockfile
@@ -221,13 +190,14 @@ jobs:
         shell: bash
         env:
           PACKAGE_DIR: ${{ inputs.package_dir }}
-          PACKAGE_SCOPE: ${{ github.repository_owner }}
+          OWNER: ${{ github.repository_owner }}
           STATE_FILE: ${{ runner.temp }}/npm-publish.json
         run: |
           set -Eeuo pipefail
+          package_scope="${OWNER,,}"
           uv run --script eng/scripts/prepare_npm_publish.py \
             --package-dir "${PACKAGE_DIR}" \
-            --scope "${PACKAGE_SCOPE}" \
+            --scope "${package_scope}" \
             --state-file "${STATE_FILE}"
 
       - name: Pack tarball for GitHub Packages

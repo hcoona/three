@@ -45,6 +45,10 @@ Recommendation:
 
 (Alternatively, merge attestation into a single job that runs after artifacts are downloaded, but the key is: release creation must not bypass it.)
 
+**Assessment:** True positive.
+
+**Fix applied:** `official.yml` now includes `attest-python`, `attest-node`, and `attest-wxt` in the corresponding `release-*` job `needs`.
+
 ### 2) Potential missing `packages: read` in the Node pack workflow (dependency install)
 
 `release-build-node-pack.yml` creates an `.npmrc` wired to GitHub Packages and runs `pnpm install`.
@@ -59,6 +63,10 @@ Recommendation:
 
 - Consider adding `packages: read` to `jobs.pack.permissions` (least privilege remains acceptable).
 - If the intent is “no GH Packages dependencies during build”, remove the GPR `.npmrc` install configuration to avoid confusing failures.
+
+**Assessment:** True positive given the previous workflow wiring.
+
+**Fix applied:** `release-build-node-pack.yml` no longer wires GitHub Packages during dependency install, so `packages: read` is no longer needed.
 
 ## High-risk / correctness concerns
 
@@ -78,6 +86,10 @@ Recommendation:
 - Confirm these versions are valid.
 - If not, downgrade to currently-available majors or pin to SHAs.
 
+**Assessment:** False positive.
+
+**Reason:** Confirmed by `.AGENTS/CLARIFY_CR_0.md` (Decision #1): the `@v6/@v5` major versions are valid and intentionally used.
+
 ### 4) `official.yml` uses `github.event.inputs.*` in several places
 
 It works in many cases, but the more idiomatic and type-safe approach for `workflow_dispatch` is to use the `inputs.*` context.
@@ -85,6 +97,8 @@ It works in many cases, but the more idiomatic and type-safe approach for `workf
 Recommendation (non-blocking):
 
 - Prefer `inputs.project`, `inputs.version`, etc. for dispatch paths.
+
+**Assessment:** False positive (style/idiom suggestion only). Current usage is functional.
 
 ## File-by-file notes
 
@@ -112,6 +126,11 @@ Concerns:
 
 - See must-fix #2 on `packages: read`.
 - Consider lowercasing the `--scope` passed into `prepare_npm_publish.py` to match the lowercased scope used in `.npmrc`.
+
+Update:
+
+- The GitHub Packages `.npmrc` wiring during install has been removed.
+- The scope passed to `prepare_npm_publish.py` is now explicitly lowercased (the script also normalizes defensively).
 
 ### `.github/workflows/release-build-python.yml` (added)
 

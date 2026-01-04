@@ -206,12 +206,29 @@ jobs:
 
       - name: Setup Node.js (npm auth)
         uses: actions/setup-node@v6
-        env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://npm.pkg.github.com
           scope: ${{ steps.npm_scope.outputs.scope }}
+
+      - name: Create .npmrc for GitHub Packages (GPR)
+        id: gpr_npmrc
+        shell: bash
+        env:
+          SCOPE: ${{ steps.npm_scope.outputs.scope }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          npmrc="${RUNNER_TEMP}/npmrc-gpr"
+          {
+            echo "registry=https://registry.npmjs.org"
+            echo "${SCOPE}:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            echo "always-auth=true"
+          } > "${npmrc}"
+
+          echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
 
       - name: Download dist artifact
         uses: actions/download-artifact@v4
@@ -224,6 +241,8 @@ jobs:
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
           NPM_CONFIG_ALWAYS_AUTH: 'true'
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
         run: |
           set -Eeuo pipefail
           npm publish "${GITHUB_WORKSPACE}/out/gpr.tgz" --registry https://npm.pkg.github.com --tag "${DIST_TAG}"

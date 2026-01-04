@@ -167,6 +167,7 @@ jobs:
       - prepare-release-notes
       - build-python
       - publish-python
+      - attest-python
     if: needs.resolve.outputs.project_kind == 'python'
     permissions:
       contents: write
@@ -340,6 +341,7 @@ jobs:
       - prepare-release-notes
       - pack-node
       - publish-node
+      - attest-node
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
     permissions:
       contents: write
@@ -402,6 +404,7 @@ jobs:
       - resolve
       - prepare-release-notes
       - build-wxt
+      - attest-wxt
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
     permissions:
       contents: write

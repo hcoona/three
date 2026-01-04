@@ -63,6 +63,10 @@ However, there are several correctness/behavioral issues that should be addresse
 
 Optionally also consider whether `publish-*` should depend on `attest-*` (policy did not require it, but be explicit if desired).
 
+**Assessment:** True positive.
+
+**Fix applied:** `official.yml` now gates `release-python`, `release-node`, and `release-wxt` on their corresponding `attest-*` jobs.
+
 ---
 
 ### 2) Buddy GPR publish auth is likely broken (NODE_AUTH_TOKEN scope)
@@ -84,6 +88,10 @@ Optionally also consider whether `publish-*` should depend on `attest-*` (policy
     1. Setting `NODE_AUTH_TOKEN: ${{ github.token }}` on the publish step, or
     2. Writing an explicit `.npmrc` file (similar to `official.yml`) and using `NPM_CONFIG_USERCONFIG` in the publish step.
 
+**Assessment:** True positive.
+
+**Fix applied:** `buddy.yml` now writes an explicit `.npmrc` for GitHub Packages and sets both `NODE_AUTH_TOKEN` and `NPM_CONFIG_USERCONFIG` on the `npm publish` step.
+
 ---
 
 ### 3) Node pack workflow still wires GitHub Packages registry for dependency install (contradicts confirmed CR decision)
@@ -103,6 +111,10 @@ Optionally also consider whether `publish-*` should depend on `attest-*` (policy
 
 - Remove the “Create .npmrc for GitHub Packages (dependency install)” step and do a normal `pnpm install --frozen-lockfile` against npmjs.
 - Keep GitHub Packages auth only in publish jobs (where `packages: write` is granted).
+
+**Assessment:** True positive.
+
+**Fix applied:** `release-build-node-pack.yml` no longer creates a GitHub Packages `.npmrc` for dependency installation; it now runs a normal `pnpm install --frozen-lockfile`.
 
 ---
 
@@ -126,6 +138,10 @@ Optionally also consider whether `publish-*` should depend on `attest-*` (policy
     - Either compute a lowercase value in-shell and pass that,
     - Or guarantee the script normalizes to lowercase and document that contract.
 
+**Assessment:** False positive as a functional bug (the script normalizes scope to lowercase already), but true as a robustness/consistency nit.
+
+**Hardening applied:** `release-build-node-pack.yml` now explicitly lowercases the owner before passing it to `prepare_npm_publish.py`.
+
 ---
 
 ## Important issues (should fix)
@@ -145,6 +161,8 @@ Optionally also consider whether `publish-*` should depend on `attest-*` (policy
 
 This is not necessarily a bug, but it is a potential footgun.
 
+**Assessment:** False positive as a correctness issue (the workflow contract does not currently require explicitly enumerating Chrome). Keep as an optional improvement if requirements change.
+
 ---
 
 ### 6) `release-resolve.yml` fetch strategy may be heavier than needed
@@ -162,6 +180,8 @@ This is not necessarily a bug, but it is a potential footgun.
 **Suggestion:**
 
 - Consider a narrower fetch if runtime becomes an issue, while preserving correctness for tag and manual targets.
+
+**Assessment:** False positive as a correctness issue (this is an optimization suggestion, not a behavioral bug).
 
 ---
 
