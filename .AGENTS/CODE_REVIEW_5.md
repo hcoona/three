@@ -61,6 +61,10 @@ None found.
 
 The guard uses `jq` to parse `.prerelease`, but does not install it. This is likely fine on `ubuntu-latest` (jq is typically present), but it is still an implicit runtime dependency.
 
+**Disposition:** ✅ True positive
+
+**Fix applied:** Added an explicit `Install jq` step to the `guard-non-clobber` job in `.github/workflows/buddy.yml` (using the same pinned `dcarbone/install-jq-action` already used elsewhere).
+
 Suggested hardening options (pick one, no policy change required):
 
 - Use `gh api ... --jq '.prerelease'` and avoid `jq` entirely.
@@ -76,6 +80,10 @@ After `actions/checkout@v6` with `fetch-depth: 0`, the workflow does:
 - `git fetch --force --prune --all`
 
 This is correct and deterministic, but may be more network IO than needed. If this workflow becomes a bottleneck, consider fetching only what you need (e.g., tags + the referenced commit/ref).
+
+**Disposition:** ❌ False positive (non-issue; optional optimization)
+
+Rationale: This is an optimization opportunity rather than a correctness problem. The current approach is intentionally conservative to ensure tags/refs resolve deterministically across both `source=tag` and `source=manual` cases.
 
 ### 3) npm Trusted Publishing (OIDC): ensure runner/npm constraints are understood
 
@@ -94,6 +102,10 @@ This matches npm Trusted Publishing (OIDC). Per npm docs, Trusted Publishing:
 - automatically generates provenance when using OIDC (no need for `--provenance` in this mode).
 
 Given `NODE_VERSION: '24'` and `runs-on: ubuntu-latest`, this should be satisfied.
+
+**Disposition:** ❌ False positive (informational note)
+
+Rationale: The workflow already runs on GitHub-hosted runners and uses modern Node/npm tooling. This note is useful as operational context but does not require a code change.
 
 ---
 
