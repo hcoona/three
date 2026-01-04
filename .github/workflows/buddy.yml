@@ -87,10 +87,30 @@ jobs:
           set -Eeuo pipefail
 
           api="repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}"
-          err_file="${RUNNER_TEMP}/gh-api.err"
-          rm -f "${err_file}"
+          resp_file="${RUNNER_TEMP}/gh-api.response"
+          rm -f "${resp_file}"
 
-          if prerelease=$(gh api "${api}" --jq '.prerelease' 2>"${err_file}"); then
+          set +e
+          gh api "${api}" --include >"${resp_file}" 2>&1
+          rc=$?
+          set -e
+
+          status=$(grep -m1 -E '^HTTP/' "${resp_file}" | awk '{print $2}' || true)
+
+          if [[ "${rc}" -eq 0 ]]; then
+            body=$(sed -n '/^{/,$p' "${resp_file}")
+            if [[ -z "${body}" ]]; then
+              echo "Error: gh api output did not contain a JSON body." >&2
+              cat "${resp_file}" >&2 || true
+              exit 1
+            fi
+
+            prerelease=$(printf '%s' "${body}" | jq -r '.prerelease')
+            if [[ "${prerelease}" != "true" && "${prerelease}" != "false" ]]; then
+              echo "Error: release JSON body missing 'prerelease'." >&2
+              exit 1
+            fi
+
             if [[ "${prerelease}" == "false" ]]; then
               echo "A non-prerelease GitHub Release already exists for tag '${TAG_NAME}'." >&2
               echo "Buddy releases must not modify official (prerelease=false) releases. Aborting." >&2
@@ -98,16 +118,17 @@ jobs:
             fi
 
             echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
-          else
-            if grep -q "HTTP 404" "${err_file}"; then
-              echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
-              exit 0
-            fi
-
-            echo "Failed to query release metadata for tag '${TAG_NAME}'." >&2
-            cat "${err_file}" >&2 || true
-            exit 1
+            exit 0
           fi
+
+          if [[ "${status}" == "404" ]]; then
+            echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
+            exit 0
+          fi
+
+          echo "Failed to query release metadata for tag '${TAG_NAME}' (HTTP ${status:-unknown})." >&2
+          cat "${resp_file}" >&2 || true
+          exit 1
 
   prepare-release-notes:
     name: Prepare release notes
@@ -188,6 +209,7 @@ jobs:
     name: Publish Node package (GitHub Packages)
     runs-on: ubuntu-latest
     needs:
+      - versions
       - resolve
       - pack-node
       - guard-non-clobber
@@ -210,7 +232,7 @@ jobs:
       - name: Setup Node.js (npm auth)
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.versions.outputs.node_version }}
           registry-url: https://npm.pkg.github.com
           scope: ${{ steps.npm_scope.outputs.scope }}
 

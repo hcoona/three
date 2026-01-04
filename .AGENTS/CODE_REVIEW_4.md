@@ -71,6 +71,10 @@ Not a functional bug today (same values), but it weakens the “single source of
 
 Prefer `needs.versions.outputs.*` everywhere in jobs that already depend on `versions`.
 
+**Triage:** True positive.
+
+**Resolution:** Fixed in this branch by updating the Node publish jobs to read `node-version` from `needs.versions.outputs.node_version` (and explicitly adding `versions` to the `needs` list where required).
+
 ---
 
 ### 2) `buddy.yml`: non-clobber guard uses brittle 404 detection
@@ -89,6 +93,10 @@ Likely stable in practice, but string-based and could break if `gh` output chang
 
 If you want to harden it, prefer parsing status codes (e.g., `gh api --include` and parse the HTTP status line).
 
+**Triage:** True positive.
+
+**Resolution:** Fixed in this branch by replacing string-grep based `"HTTP 404"` detection with an HTTP status line parse via `gh api --include`, and extracting `.prerelease` from the JSON body in the success case.
+
 ---
 
 ### 3) `release-build-node-pack.yml`: implicit npm feature assumption (`--pack-destination`)
@@ -106,6 +114,12 @@ This is fine with the repo’s current Node/npm versions, but it can fail on old
 **Suggestion:**
 
 Optional: include a compatibility fallback (as older code did) or document the minimum Node/npm version expectation.
+
+**Triage:** False positive (risk accepted).
+
+**Rationale:** The root workflows pin Node to `24` via the entry workflow tool-version contract, and `actions/setup-node@v6` provides an npm version that supports `npm pack --pack-destination` on `ubuntu-latest`.
+
+**Resolution:** No change.
 
 ---
 
