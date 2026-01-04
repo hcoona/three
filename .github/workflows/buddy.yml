@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       version:
-        description: "Python: PEP440 (leading v allowed; will be stripped). Others: SemVer 2.0.0 (no leading v)."
+        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Others: SemVer 2.0.0 (no leading v)."
         required: true
         type: string
       target:

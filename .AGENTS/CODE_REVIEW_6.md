@@ -41,7 +41,7 @@ This change set is well-structured and closely follows the confirmed policy deci
 - ✅ Keeps PyPI + npmjs Trusted Publishing identities explicit in `official.yml` with `environment: pypi` / `environment: npmjs`.
 - ✅ Makes official GitHub Release creation depend on publish + attestation (mandatory gating as confirmed).
 
-Verdict: ✅ Approved, with one policy/compatibility clarification requested (see `.AGENTS/CLARIFY_CR_6.md`).
+Verdict: ✅ Approved.
 
 ---
 
@@ -67,6 +67,18 @@ This rejects some valid PEP 440 versions, notably epochs (e.g. `1!1.0`). The val
 
 Requested confirmation is recorded in `.AGENTS/CLARIFY_CR_6.md`.
 
+**Disposition:** ✅ True positive.
+
+**Resolution (per `.AGENTS/CLARIFY_CR_6.md`, Decision B):** epochs (e.g. `1!1.0`) are intentionally not supported. The fix is to align user-facing descriptions with the restricted subset.
+
+**Fix applied:** updated the workflow input descriptions (and added an explicit note in the version pre-validation error) to avoid claiming full PEP 440 support.
+
+**Files updated:**
+
+- `.github/workflows/release-resolve.yml`
+- `.github/workflows/official.yml`
+- `.github/workflows/buddy.yml`
+
 ---
 
 ## Non-blocking notes / polish
@@ -77,11 +89,23 @@ The tag-mode regex `^release/.+/v.+$` allows project segments containing `/`, bu
 
 Not a correctness issue (it fails safely), but tightening the tag regex to match the project constraint would make failures more actionable.
 
+**Disposition:** ✅ True positive.
+
+**Fix applied:** tightened the tag regex to require `<project>` matches `^[A-Za-z0-9._-]+$`, consistent with the later project validation.
+
+**Files updated:**
+
+- `.github/workflows/release-resolve.yml`
+
 ### 2) `buddy.yml`: guard implementation is deterministic but depends on `gh`
 
 The non-clobber guard relies on `gh api ... --include` and parses the HTTP status line from the captured output.
 
 This is acceptable on GitHub-hosted runners (gh is present), but if a future change runs these workflows on a different runner image, it would be worth explicitly ensuring `gh` availability or switching to a pure-HTTP approach.
+
+**Disposition:** ❌ False positive (accepted risk).
+
+**Rationale:** scope is GitHub-hosted runners (`ubuntu-latest`) where `gh` is available; no confirmed requirement exists to support self-hosted runners or alternate images for these release workflows.
 
 ---
 
