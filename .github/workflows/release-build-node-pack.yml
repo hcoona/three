@@ -1,0 +1,279 @@
+name: Build Node Package (Pack) (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: "Target commit SHA to build from"
+        required: true
+        type: string
+      project:
+        description: "Workspace package name"
+        required: true
+        type: string
+      package_dir:
+        description: "Directory containing the Node package"
+        required: true
+        type: string
+      version:
+        description: "Expected package version (NpmPackageVersion from NBGV)"
+        required: true
+        type: string
+      python_version:
+        description: "Python version for uv helper scripts"
+        required: true
+        type: string
+      node_version:
+        description: "Node.js version"
+        required: true
+        type: string
+      pnpm_version:
+        description: "pnpm version"
+        required: true
+        type: string
+      artifact_name:
+        description: "Artifact name to upload out/* as"
+        required: true
+        type: string
+      pack_mode:
+        description: "Packing mode: gpr-only produces out/gpr.tgz; both produces out/gpr.tgz and out/npmjs.tgz"
+        required: true
+        type: string
+
+    outputs:
+      dist_tag:
+        description: "Computed npm dist-tag derived from NBGV prerelease metadata"
+        value: ${{ jobs.pack.outputs.dist_tag }}
+
+jobs:
+  pack:
+    name: Pack Node tarball(s)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      dist_tag: ${{ steps.dist_tag.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.target }}
+
+      - name: Validate pack mode
+        shell: bash
+        env:
+          PACK_MODE: ${{ inputs.pack_mode }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${PACK_MODE}" != "gpr-only" && "${PACK_MODE}" != "both" ]]; then
+            echo "Invalid pack_mode: ${PACK_MODE}. Expected 'gpr-only' or 'both'." >&2
+            exit 1
+          fi
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7
+        with:
+          python-version: ${{ inputs.python_version }}
+          cache-dependency-glob: 'uv.lock'
+
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Node dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pnpm install --frozen-lockfile
+
+      - name: Verify Node version matches tag
+        shell: bash
+        env:
+          EXPECTED: ${{ inputs.version }}
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}")
+          if [[ -z "${computed}" ]]; then
+            echo "nbgv returned an empty NpmPackageVersion for package directory '${PACKAGE_DIR}'." >&2
+            exit 1
+          fi
+
+          if [[ "${computed}" != "${EXPECTED}" ]]; then
+            echo "Built Node package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
+            exit 1
+          fi
+
+          echo "Verified Node package version matches ${EXPECTED}"
+
+      - name: Determine npm dist-tag (via NBGV metadata)
+        id: dist_tag
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          prerelease=$(dotnet tool run nbgv get-version -v PrereleaseVersionNoLeadingHyphen -p "${PACKAGE_DIR}")
+
+          if [[ -z "${prerelease}" ]]; then
+            if [[ "${VERSION}" == *-* ]]; then
+              echo "Resolved version '${VERSION}' looks like a prerelease (contains '-'), but NBGV prerelease metadata is empty." >&2
+              echo "Fix: update version configuration (usually version.json) so prereleases use a stable channel prefix (e.g. -beta.{height}, -rc.{height})." >&2
+              exit 1
+            fi
+            tag="latest"
+          else
+            channel="${prerelease%%.*}"
+            channel="${channel,,}"
+            if [[ -z "${channel}" || ! "${channel}" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+              echo "Invalid npm dist-tag derived from NBGV prerelease metadata: '${channel}' (raw: '${prerelease}')." >&2
+              echo "Expected pattern: ^[a-z0-9][a-z0-9-]*$" >&2
+              echo "Fix: update version configuration (usually version.json) so prereleases use a stable channel prefix (e.g. -beta.{height}, -rc.{height})." >&2
+              exit 1
+            fi
+            tag="${channel}"
+          fi
+
+          echo "Using dist-tag: ${tag}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run quality checks
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+        run: |
+          set -Eeuo pipefail
+          pnpm --filter "${PROJECT}" --if-present lint
+          pnpm --filter "${PROJECT}" --if-present typecheck
+          pnpm --filter "${PROJECT}" --if-present test
+          pnpm --filter "${PROJECT}" --if-present build
+
+      - name: Prepare package metadata
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+        run: |
+          set -Eeuo pipefail
+          pnpm --filter "${PROJECT}" run --if-present prepack
+
+      - name: Prepare package name for GitHub Packages pack
+        id: prepare_gpr
+        shell: bash
+        env:
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+          OWNER: ${{ github.repository_owner }}
+          STATE_FILE: ${{ runner.temp }}/npm-publish.json
+        run: |
+          set -Eeuo pipefail
+          package_scope="${OWNER,,}"
+          uv run --script eng/scripts/prepare_npm_publish.py \
+            --package-dir "${PACKAGE_DIR}" \
+            --scope "${package_scope}" \
+            --state-file "${STATE_FILE}"
+
+      - name: Pack tarball for GitHub Packages
+        id: pack_gpr
+        shell: bash
+        env:
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf "${GITHUB_WORKSPACE}/out"
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+
+          pushd "${PACKAGE_DIR}" >/dev/null
+          tgz_name=$(npm pack --ignore-scripts --pack-destination "${GITHUB_WORKSPACE}/out")
+          popd >/dev/null
+
+          src="${GITHUB_WORKSPACE}/out/${tgz_name##*/}"
+          if [[ ! -f "${src}" ]]; then
+            echo "npm pack did not produce expected tarball: ${src}" >&2
+            exit 1
+          fi
+
+          if [[ -e "${GITHUB_WORKSPACE}/out/gpr.tgz" ]]; then
+            echo "Refusing to overwrite out/gpr.tgz" >&2
+            exit 1
+          fi
+
+          mv "${src}" "${GITHUB_WORKSPACE}/out/gpr.tgz"
+
+      - name: Restore package name
+        if: always()
+        shell: bash
+        env:
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+          STATE_FILE: ${{ runner.temp }}/npm-publish.json
+        run: |
+          set -Eeuo pipefail
+          if [[ -f "${STATE_FILE}" ]]; then
+            uv run --script eng/scripts/prepare_npm_publish.py \
+              --package-dir "${PACKAGE_DIR}" \
+              --state-file "${STATE_FILE}" \
+              --restore
+          else
+            echo "No npm publish state file to restore."
+          fi
+
+      - name: Pack tarball for npmjs
+        if: ${{ inputs.pack_mode == 'both' }}
+        id: pack_npmjs
+        shell: bash
+        env:
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          pushd "${PACKAGE_DIR}" >/dev/null
+          tgz_name=$(npm pack --ignore-scripts --pack-destination "${GITHUB_WORKSPACE}/out")
+          popd >/dev/null
+
+          src="${GITHUB_WORKSPACE}/out/${tgz_name##*/}"
+          if [[ ! -f "${src}" ]]; then
+            echo "npm pack did not produce expected tarball: ${src}" >&2
+            exit 1
+          fi
+
+          if [[ -e "${GITHUB_WORKSPACE}/out/npmjs.tgz" ]]; then
+            echo "Refusing to overwrite out/npmjs.tgz" >&2
+            exit 1
+          fi
+
+          mv "${src}" "${GITHUB_WORKSPACE}/out/npmjs.tgz"
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ github.workspace }}/out/*
+          if-no-files-found: error
