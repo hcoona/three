@@ -147,11 +147,15 @@ jobs:
           fi
 
           declare -A by_base=()
+          declare -A collision_seen=()
           collisions=()
           for z in "${zips[@]}"; do
             base="$(basename "${z}")"
             if [[ -n "${by_base["${base}"]+x}" ]]; then
-              collisions+=("${base}")
+              if [[ -z "${collision_seen["${base}"]+x}" ]]; then
+                collisions+=("${base}")
+                collision_seen["${base}"]=1
+              fi
               by_base["${base}"]+="\n${z}"
             else
               by_base["${base}"]="${z}"

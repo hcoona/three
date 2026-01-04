@@ -205,7 +205,6 @@ jobs:
 
           if [[ ! "${version}" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
             echo "Invalid version format for shell safety: ${version}. Allowed characters: A-Z a-z 0-9 . _ + -" >&2
-            echo "Note: for Python releases, epochs like '1!1.0' are intentionally not supported." >&2
             exit 1
           fi
 
