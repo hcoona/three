@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: official-${{ github.workflow }}-${{ github.ref_name || github.run_id }}-${{ github.event.inputs.project || 'push' }}
+  group: official-${{ github.workflow }}-${{ github.ref_name || github.run_id }}-${{ inputs.project || 'push' }}
   cancel-in-progress: false
 
 env:
@@ -75,10 +75,10 @@ jobs:
       ref: ${{ github.ref }}
 
       # source=manual
-      project: ${{ github.event.inputs.project }}
-      version: ${{ github.event.inputs.version }}
-      target: ${{ github.event.inputs.target }}
-      force_update_tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_update_tag == 'true' }}
+      project: ${{ inputs.project }}
+      version: ${{ inputs.version }}
+      target: ${{ inputs.target }}
+      force_update_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.force_update_tag }}
 
   prepare-release-notes:
     name: Prepare release notes

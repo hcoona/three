@@ -130,6 +130,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'python'
     uses: ./.github/workflows/release-build-python.yml
     permissions:
@@ -167,6 +168,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
     uses: ./.github/workflows/release-build-node-pack.yml
     permissions:
@@ -188,6 +190,7 @@ jobs:
     needs:
       - resolve
       - pack-node
+      - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
     permissions:
       contents: read
@@ -273,6 +276,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
     uses: ./.github/workflows/release-build-wxt.yml
     permissions:

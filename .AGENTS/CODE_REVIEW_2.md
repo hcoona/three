@@ -57,6 +57,13 @@ There are, however, a couple of policy mismatches that should be treated as **bl
 
 - Replace the implicit run with an explicit browser list, e.g. iterate `chrome firefox edge` and run `wxt zip -b <browser>` (and/or call `zip:<browser>` scripts if present).
 
+**Status:** ✅ True positive — **fixed**
+
+**Applied fix:**
+
+- Updated `.github/workflows/release-build-wxt.yml` to use an explicit browser list `chrome firefox edge`.
+- Removed reliance on implicit `wxt zip` defaults by invoking `wxt zip -b <browser>` when a per-browser script is not present.
+
 ---
 
 ### 2) WXT builds must run standard Node quality checks by default
@@ -80,6 +87,12 @@ There are, however, a couple of policy mismatches that should be treated as **bl
     - `pnpm --filter "${PROJECT}" --if-present typecheck`
     - `pnpm --filter "${PROJECT}" --if-present test`
     - `pnpm --filter "${PROJECT}" --if-present build`
+
+**Status:** ✅ True positive — **fixed**
+
+**Applied fix:**
+
+- Added a dedicated "Run quality checks" step to `.github/workflows/release-build-wxt.yml` using the standard `pnpm --filter ... --if-present` pattern.
 
 ---
 
@@ -105,6 +118,13 @@ There are, however, a couple of policy mismatches that should be treated as **bl
 
 - Consider adding `guard-non-clobber` to the `needs` of build/pack/publish jobs so the workflow fails early and avoids unnecessary side effects.
 
+**Status:** ❌ False positive — already fixed in the current branch
+
+**Notes:**
+
+- In `.github/workflows/buddy.yml`, the relevant jobs already include `guard-non-clobber` in `needs` (e.g. `build-python`, `pack-node`, `publish-node-gpr`, `build-wxt`).
+- `prepare-release-notes` does not depend on the guard, but it is read-only and does not publish or mutate releases.
+
 ---
 
 ### 4) Official workflow uses `github.event.inputs.*` instead of `inputs.*` (non-blocking but cleaner)
@@ -120,6 +140,12 @@ There are, however, a couple of policy mismatches that should be treated as **bl
 - Prefer `inputs.project`, `inputs.version`, etc. This is more idiomatic and avoids surprising type/string comparisons.
 
 (If the current style is intentional, it is still functional; treat as cleanup.)
+
+**Status:** ✅ True positive (cleanup) — **fixed**
+
+**Applied fix:**
+
+- Updated `.github/workflows/official.yml` to use `inputs.project|version|target|force_update_tag` for `workflow_dispatch` input access.
 
 ---
 
@@ -187,4 +213,10 @@ Caution:
 
 ## Recommendation
 
-**Do not merge as-is.** Address the two WXT policy mismatches first (explicit browser list including Chrome, and mandatory quality checks). After that, consider tightening buddy job dependencies on the non-clobber guard to reduce wasted CI and avoid partial side effects.
+**Previously blocking items are now addressed.**
+
+- WXT now uses an explicit browser list including Chrome.
+- WXT now runs the standard Node quality checks by default.
+- Buddy jobs are already gated on the non-clobber guard.
+
+Remaining recommendation: optionally keep the `inputs.*` cleanup (now applied) and run a workflow lint / dry-run validation for confidence.

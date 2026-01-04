@@ -79,6 +79,17 @@ jobs:
           set -Eeuo pipefail
           pnpm install --frozen-lockfile
 
+      - name: Run quality checks
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+        run: |
+          set -Eeuo pipefail
+          pnpm --filter "${PROJECT}" --if-present lint
+          pnpm --filter "${PROJECT}" --if-present typecheck
+          pnpm --filter "${PROJECT}" --if-present test
+          pnpm --filter "${PROJECT}" --if-present build
+
       - name: Build package (Node/WXT)
         shell: bash
         env:
@@ -94,26 +105,32 @@ jobs:
           # Prefer explicit scripts when they exist; fall back to direct WXT invocation.
           pushd "${PACKAGE_DIR}" >/dev/null
 
-          if jq -e '.scripts | has("zip")' package.json >/dev/null 2>&1; then
-            pnpm --filter "${PROJECT}" zip
-          else
-            if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
-              echo "No zip script and missing ${PACKAGE_DIR}/scripts/nbgv-version.mjs. Define zip or add the helper script." >&2
-              exit 1
-            fi
-            node ./scripts/nbgv-version.mjs run wxt zip
-          fi
+          # Explicit browser list (policy): do not rely on WXT defaults.
+          browsers=(chrome firefox edge)
 
-          for browser in firefox edge; do
+          for browser in "${browsers[@]}"; do
             if jq -e ".scripts | has(\"zip:${browser}\")" package.json >/dev/null 2>&1; then
               pnpm --filter "${PROJECT}" "zip:${browser}"
-            else
-              if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
-                echo "No zip:${browser} script and missing ${PACKAGE_DIR}/scripts/nbgv-version.mjs. Define zip:${browser} or add the helper script." >&2
-                exit 1
-              fi
-              node ./scripts/nbgv-version.mjs run wxt zip -b "${browser}"
+              continue
             fi
+
+            # For Chrome, allow a plain `zip` script only if it is explicitly a Chrome build.
+            # Otherwise require the helper script and call WXT with an explicit browser flag.
+            if [[ "${browser}" == "chrome" ]] && jq -e '.scripts | has("zip")' package.json >/dev/null 2>&1; then
+              zip_cmd=$(jq -r '.scripts.zip' package.json)
+              if [[ "${zip_cmd}" == *"wxt zip"* && "${zip_cmd}" == *"-b chrome"* ]]; then
+                pnpm --filter "${PROJECT}" zip
+                continue
+              fi
+            fi
+
+            if [[ ! -f "./scripts/nbgv-version.mjs" ]]; then
+              echo "Missing ${PACKAGE_DIR}/scripts/nbgv-version.mjs for explicit WXT builds." >&2
+              echo "Fix: add scripts/nbgv-version.mjs, or define a package.json script zip:${browser}." >&2
+              exit 1
+            fi
+
+            node ./scripts/nbgv-version.mjs run wxt zip -b "${browser}"
           done
 
           popd >/dev/null
