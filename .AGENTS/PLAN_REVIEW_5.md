@@ -116,6 +116,15 @@ Recommendation:
 
 - In the resolve workflow, explicitly `git fetch --force --tags` (and, if needed, `git fetch --force --prune --all`) before resolving `target`.
 
+Assessment: **true positive**.
+
+Fix applied:
+
+- Updated `.github/workflows/release-resolve.yml` to run:
+    - `git fetch --force --tags`
+    - `git fetch --force --prune --all`
+      before resolving/checkout of the target commit.
+
 Rationale:
 
 - `actions/checkout` with `fetch-depth: 0` is usually sufficient, but resolution can still fail for targets not reachable from the initially fetched ref. Being explicit avoids hard-to-debug edge cases.
@@ -131,6 +140,13 @@ Recommendation:
 
 - In `release-build-node-pack.yml`, keep the same convention to avoid behavior drift (and avoid executing arbitrary lifecycle scripts during packing).
 
+Assessment: **false positive**.
+
+Rationale:
+
+- `.github/workflows/release-build-node-pack.yml` already runs `pnpm --filter <project> run --if-present prepack` prior to packing.
+- It packs with `npm pack --ignore-scripts` (and uses `--pack-destination` to place tarballs into `${GITHUB_WORKSPACE}/out`).
+
 If the plan intends a different behavior, call it out explicitly as a conscious change (but that would be out of scope per `PLAN_5.md`).
 
 ### C) Keep `run_url` strictly computed in entry workflows
@@ -140,6 +156,13 @@ The plan already states this correctly.
 Implementation reminder:
 
 - Do not let `release-resolve.yml` compute `run_url` internally; it should be passed through unchanged.
+
+Assessment: **false positive**.
+
+Rationale:
+
+- Both entry workflows compute `run_url` as the entry workflow run URL and pass it as an input.
+- `.github/workflows/release-resolve.yml` treats `run_url` as a strict pass-through (it writes `run_url=${RUN_URL}` to outputs) and does not derive it internally.
 
 This avoids “called workflow run URL” regressions under `workflow_call`.
 
