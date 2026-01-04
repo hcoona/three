@@ -18,6 +18,8 @@ Please confirm one of:
 
 Rationale: if the major tags do not exist, the workflows fail immediately.
 
+Decision: A (confirmed). These major versions are valid and intentionally used.
+
 ## 2) Node pack workflow permissions for dependency install
 
 `release-build-node-pack.yml` configures `.npmrc` for GitHub Packages and runs `pnpm install`.
@@ -28,6 +30,8 @@ Question:
 
 If yes, please confirm that we should add `packages: read` to the pack job permissions.
 If no, please confirm we should remove the GitHub Packages `.npmrc` wiring during install to avoid confusing runtime failures.
+
+Decision: No (confirmed). We do not expect dependencies to be pulled from GitHub Packages during install. The GitHub Packages `.npmrc` wiring should be removed during install to avoid confusing failures.
 
 ## 3) Official attestation policy: must it gate GitHub Release creation?
 
@@ -40,6 +44,8 @@ Please confirm the intended policy:
 
 (Clarify_1 suggests A, but this should be explicitly confirmed.)
 
+Decision: A (confirmed). Attestation is mandatory for official releases and must block `release-*` when it fails.
+
 ## 4) Project naming: do we support scoped Node package names?
 
 `release-resolve.yml` validates `project` using `^[A-Za-z0-9._-]+$`, which _rejects_ `@scope/name`.
@@ -48,6 +54,8 @@ Please confirm one of:
 
 - A) Release `project` inputs are always unscoped workspace names (current intent). Scoped names are intentionally unsupported.
 - B) We must support scoped package names for Node projects (would require changing validation and tag parsing conventions).
+
+Decision: A (confirmed). Release `project` inputs are always unscoped workspace names. Scoped names are intentionally unsupported.
 
 ## 5) Buddy non-clobber guard: how to treat draft releases?
 
@@ -60,6 +68,8 @@ Please confirm:
 
 Default recommendation remains A (safer), but confirm explicitly.
 
+Decision: prerelease can update prerelease, nothing can update a non-prerelease (confirmed). Draft releases with `prerelease=false` are treated as protected; buddy must fail if such a release exists.
+
 ## 6) Npm dist-tag validation rules
 
 `release-build-node-pack.yml` derives the dist-tag from `PrereleaseVersionNoLeadingHyphen` (first segment, lowercased) and validates using:
@@ -68,8 +78,12 @@ Default recommendation remains A (safer), but confirm explicitly.
 
 Please confirm whether this is the desired rule (and whether we should allow additional characters such as `_` or upper-case).
 
+Decision: current rule is desired (confirmed). The dist-tag validation using `^[a-z0-9][a-z0-9-]*$` is acceptable.
+
 ## 7) GitHub Packages scope casing
 
 The pack workflow uses a lowercased scope for `.npmrc` (`@${OWNER,,}`) but passes the raw owner (`github.repository_owner`) into `prepare_npm_publish.py`.
 
 Please confirm whether the scope/name rewrite should always be lowercase to match `.npmrc` and typical npm scope conventions.
+
+Decision: lowercase scope is desired (confirmed). The GitHub Packages scope should always be lowercase to match `.npmrc` and typical npm conventions.
