@@ -272,7 +272,7 @@ jobs:
           mv "${src}" "${GITHUB_WORKSPACE}/out/npmjs.tgz"
 
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ github.workspace }}/out/*
