@@ -14,9 +14,9 @@
     "format": "pnpm -r --if-present format"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.10",
-    "@commitlint/cli": "^20.2.0",
-    "@commitlint/config-conventional": "^20.2.0",
+    "@biomejs/biome": "2.3.11",
+    "@commitlint/cli": "^20.3.0",
+    "@commitlint/config-conventional": "^20.3.0",
     "@commitlint/format": "^20.2.0",
     "@commitlint/types": "^20.2.0",
     "ap-style-title-case": "^2.0.0",
