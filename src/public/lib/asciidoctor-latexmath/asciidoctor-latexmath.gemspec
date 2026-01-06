@@ -18,16 +18,17 @@ gemspec = Gem::Specification.new do |spec|
 
   spec.summary = "Offline latexmath rendering for Asciidoctor."
   spec.description = "Render latexmath blocks and inline macros to PDF/SVG/PNG assets using your local LaTeX toolchain."
-  spec.homepage = "https://github.com/hcoona/asciidoctor-latexmath#readme"
+  spec.homepage = "https://github.com/hcoona/three/blob/main/src/public/lib/asciidoctor-latexmath/README.md"
   spec.license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 
   spec.required_ruby_version = Gem::Requirement.new(">= 3.2")
 
   spec.metadata = {
     "homepage_uri" => spec.homepage,
-    "source_code_uri" => "https://github.com/hcoona/asciidoctor-latexmath",
-    "bug_tracker_uri" => "https://github.com/hcoona/asciidoctor-latexmath/issues",
-    "documentation_uri" => "https://github.com/hcoona/asciidoctor-latexmath/blob/main/README.md"
+    "source_code_uri" => "https://github.com/hcoona/three",
+    "github_repo" => "https://github.com/hcoona/three",
+    "bug_tracker_uri" => "https://github.com/hcoona/three/issues",
+    "documentation_uri" => "https://github.com/hcoona/three/blob/main/src/public/lib/asciidoctor-latexmath/README.md"
   }
 
   spec.files = Dir["lib/**/*", "README.md", "LICENSE"]
