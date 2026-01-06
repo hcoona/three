@@ -77,6 +77,11 @@ Required correction:
 
 This is necessary to make the idempotency check _registry-correct_.
 
+Update (after PLAN_5 edits on 2026-01-06):
+
+- PLAN_5 now specifies `gem fetch ... --norc --clear-sources --source <GPR_AUTH_SOURCE>` for the GitHub Packages preflight and for the retry fetch after a potential propagation-delay “already exists” push failure.
+- Status: RESOLVED in PLAN_5.
+
 ### 2) Ruby version policy + `is_prerelease` derivation is underspecified and risks misclassification
 
 PLAN_5 defines Ruby versions as:
@@ -101,6 +106,15 @@ Required correction:
 
 If you want to keep PLAN_5’s “dot segments” model, it still needs an explicit grammar (what tokens are allowed in prerelease segments).
 
+Update (after PLAN_5 edits on 2026-01-06):
+
+- Maintainers resolved the ambiguity in `.AGENTS/CLARIFY_PLAN_5_2.md`:
+    - Reject numeric-only extra dot segments (e.g. `1.2.3.1` is invalid).
+    - Keep `is_prerelease=true` iff there are extra dot segments.
+- PLAN_5 now includes an explicit grammar that enforces “at least one letter in the suffix” and rejects numeric-only suffixes.
+- With that validator restriction, the “extra dot segments => prerelease” rule is acceptable in practice for valid inputs (it aligns with RubyGems-style prerelease markers because the suffix must contain letters).
+- Status: RESOLVED in PLAN_5 (with maintainer-confirmed policy).
+
 ### 3) Credentials file path for `gem push --key github` should not be hard-coded to `~/.gem/credentials`
 
 PLAN_5 says:
@@ -118,6 +132,11 @@ Required correction:
 
 This is a reliability fix and does not weaken the “no fallback secret” requirement.
 
+Update (after PLAN_5 edits on 2026-01-06):
+
+- PLAN_5 now specifies writing the credentials file to `$(gem env credentials)` rather than hard-coding `~/.gem/credentials`.
+- Status: RESOLVED in PLAN_5.
+
 ### 4) Publish jobs need explicit Ruby toolchain setup even when avoiding repository checkout
 
 PLAN_5 recommends avoiding checkout in publish jobs (good), but the Ruby publish jobs still need:
@@ -128,6 +147,11 @@ PLAN_5 recommends avoiding checkout in publish jobs (good), but the Ruby publish
 Required correction:
 
 - Ensure the plan explicitly calls out `ruby/setup-ruby@v1` (pinned) in Ruby publish jobs (both GitHub Packages and RubyGems.org publishing).
+
+Update (after PLAN_5 edits on 2026-01-06):
+
+- PLAN_5 now explicitly calls out `ruby/setup-ruby@v1` (pinned) in both Ruby publish sections (GitHub Packages + RubyGems.org), with the rationale that publish jobs may skip checkout but still require a Ruby toolchain.
+- Status: RESOLVED in PLAN_5.
 
 ## ⚠️ High-risk assumptions / areas to validate early
 
@@ -152,3 +176,5 @@ Recommendation:
 2. Tighten Ruby version grammar and change `is_prerelease` derivation to align with RubyGems prerelease semantics.
 3. Replace hard-coded `~/.gem/credentials` with `$(gem env credentials)`.
 4. Explicitly include Ruby setup steps in publish jobs.
+
+Status (after PLAN_5 edits on 2026-01-06): all four items are addressed in PLAN_5.

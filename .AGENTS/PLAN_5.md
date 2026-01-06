@@ -99,6 +99,16 @@ Ruby releases accept only a Ruby-style SemVer2-variant:
 - Allowed: `MAJOR.MINOR.PATCH` and optional prerelease dot segments, e.g. `1.2.3`, `1.2.3.beta.1`, `1.2.3.rc.0`.
 - Rejected: SemVer hyphen prerelease (`1.2.3-beta.1`), build metadata (`+...`), PEP 440 versions, and non-core RubyGems versions (`1.0`, dates, etc.).
 
+Additional constraints (to avoid RubyGems ambiguity and keep buddy gating sound):
+
+- Numeric-only extra dot segments are rejected (e.g. `1.2.3.1` is invalid).
+- If there are any extra dot segments, at least one of the suffix segments must contain a letter (e.g. `1.2.3.rc.0` is valid; `1.2.3.0` is invalid).
+- Suffix segments must be dot-separated and contain only ASCII alphanumerics (`[0-9A-Za-z]+`).
+
+For resolver output / buddy gating:
+
+- `is_prerelease=true` iff the version has any dot segments beyond `MAJOR.MINOR.PATCH`.
+
 ### GitHub Packages RubyGems registry auth
 
 - Use `${{ github.token }}` with `permissions: packages: write`.
@@ -172,7 +182,11 @@ Add:
 
 Rules:
 
-- Ruby version grammar: `MAJOR.MINOR.PATCH` plus optional prerelease dot segments (no `-`, no `+`).
+- Ruby version grammar: `MAJOR.MINOR.PATCH` plus optional suffix dot segments.
+    - Must not contain `-` or `+`.
+    - If suffix segments exist, they must be dot-separated, ASCII alphanumerics only (`[0-9A-Za-z]+`).
+    - Reject versions where the suffix is numeric-only (all suffix segments are numeric), e.g. `1.2.3.1`, `1.2.3.0.1`.
+    - Require at least one letter in the suffix (e.g. `1.2.3.rc.0` is valid).
 - `is_prerelease=true` iff version has any segment beyond `MAJOR.MINOR.PATCH`.
 
 For Python:
@@ -252,6 +266,7 @@ References:
 
 Implement Ruby publish to GitHub Packages RubyGems registry:
 
+- Setup Ruby (`ruby/setup-ruby@v1`, pinned). (Publish jobs may avoid checkout, but still need a Ruby toolchain.)
 - Download `out/<project>-<version>.gem`.
 - Publish to GitHub Packages RubyGems registry using an explicit host + key:
     - `gem push --key github --host https://rubygems.pkg.github.com/<owner> out/<project>-<version>.gem`
@@ -260,7 +275,7 @@ Rationale: without `--host`, `gem push` targets RubyGems.org by default; without
 
 Credentials:
 
-- Publish auth (push): `~/.gem/credentials` with `:github: Bearer ${{ github.token }}` (chmod `0600`).
+- Publish auth (push): write the credentials file to the RubyGems-reported path (`$(gem env credentials)`) with `:github: Bearer ${{ github.token }}` (chmod `0600`).
 - Fetch auth (for idempotency verification): use `gem fetch` with an authenticated source URL (CLARIFY_PLAN_4).
 
 Permissions:
@@ -272,7 +287,7 @@ Idempotent rerun behavior:
 
 - Deterministic preflight (preferred):
     1. Attempt to fetch the remote gem first:
-    - `gem fetch <project> -v <version> --source https://<user>:<token>@rubygems.pkg.github.com/<owner>/`
+    - `gem fetch <project> -v <version> --norc --clear-sources --source https://<user>:<token>@rubygems.pkg.github.com/<owner>/`
     2. If fetch succeeds:
     - Compare SHA-256 of the fetched `.gem` to local `out/<project>-<version>.gem`.
     - If equal: treat as success (already published).
@@ -280,7 +295,7 @@ Idempotent rerun behavior:
     3. If fetch indicates “not found”, then perform the publish:
     - `gem push --key github --host https://rubygems.pkg.github.com/<owner> out/<project>-<version>.gem`
     4. If the publish fails with a clear “already exists / repush not allowed” error (possible due to index propagation delay), then:
-    - retry `gem fetch` with bounded backoff (e.g. a few attempts with short sleeps),
+    - retry `gem fetch` (same `--norc --clear-sources --source ...`) with bounded backoff (e.g. a few attempts with short sleeps),
     - compare SHA-256 of the fetched `.gem` to local `out/<project>-<version>.gem`,
     - treat as success only if equal; otherwise fail.
     5. Any other fetch/push failures (401/403/network/etc.) must fail with clear diagnostics.
@@ -295,6 +310,7 @@ Implement RubyGems.org publish in official releases only:
 
 - Use job `environment: rubygems`.
 - Request OIDC: `permissions: id-token: write`.
+- Setup Ruby (`ruby/setup-ruby@v1`, pinned). (Publish jobs may avoid checkout, but still need a Ruby toolchain.)
 - Configure credentials with `rubygems/configure-rubygems-credentials` (pinned) and **explicitly set** `trusted-publisher: true`.
     - Do not set `api-token`.
     - Do not set `role-to-assume`.
@@ -310,7 +326,6 @@ Idempotent rerun behavior (RubyGems.org API):
 
 - Query versions:
     - `GET https://rubygems.org/api/v1/versions/<project>.json`
-- If `<version>` exists:
 - If `<version>` exists:
     - select the matching version object (exact `number == <version>` and `platform == "ruby"` unless the package is explicitly known to publish platform gems)
     - compare its `sha` field to local SHA-256

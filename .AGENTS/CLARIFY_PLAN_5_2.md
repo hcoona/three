@@ -26,6 +26,12 @@ Please confirm the intended policy:
 - Option B: **Allow** numeric-only extra segments and treat them as prerelease for buddy gating.
 - Option C: **Allow** numeric-only extra segments but treat them as _not prerelease_ for buddy gating.
 
+Status: RESOLVED (2026-01-06)
+
+Decision: Option A.
+
+Rationale: numeric-only extra segments (e.g. `1.2.3.1`) are too close to “stable-ish” versions in RubyGems and create avoidable ambiguity with buddy’s prerelease-only enforcement.
+
 ## 2) Ruby prerelease detection rule for `is_prerelease`
 
 PLAN_5 currently defines Ruby `is_prerelease=true` iff the version has any segment beyond `MAJOR.MINOR.PATCH`.
@@ -39,3 +45,12 @@ This affects:
 
 - buddy prerelease-only enforcement
 - consistency with RubyGems’ `prerelease` concept
+
+Status: RESOLVED (2026-01-06)
+
+Decision: Option B.
+
+Notes:
+
+- Under Decision (1) Option A (reject numeric-only extra dot segments), any accepted version that has “extra dot segments” is expected to include prerelease markers (letters) somewhere in the suffix. In that policy regime, Option A and Option B become equivalent in practice for valid inputs.
+- Option B is simpler and less error-prone to implement as long as the validator enforces Decision (1).
