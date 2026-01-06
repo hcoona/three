@@ -34,6 +34,29 @@ It is regenerated from:
 - No RubyGems API key secrets.
 - No alternative authentication fallback.
 - If OIDC trusted publishing cannot be established at runtime, the workflow must fail.
+  If OIDC trusted publishing cannot be established at runtime, the workflow must fail.
+
+### GitHub Action pinning standard for this plan (commit SHA)
+
+All third-party GitHub Actions introduced or modified by this plan must be pinned by **full commit SHA** (not by tags like `@v1`).
+
+At minimum, this applies to:
+
+- `ruby/setup-ruby`
+- `rubygems/configure-rubygems-credentials`
+- any other third-party actions added for Ruby publishing
+
+Rationale: major/minor tag pins are not sufficient for the repo’s supply-chain posture.
+
+### “No fallback” must be mechanically enforced
+
+The implementation must include a **fail-fast guard** that prevents accidental introduction of RubyGems.org API-key fallback.
+
+Minimum guardrails:
+
+- The RubyGems.org publish job must **not** reference any RubyGems API token secret (e.g. `secrets.RUBYGEMS_*`, `secrets.RUBYGEMS_API_KEY`, etc.).
+- The `rubygems/configure-rubygems-credentials` step must set `trusted-publisher: true` and must **not** set either `api-token` or `role-to-assume`.
+- If an API-token fallback is wired in later (by secret reference or action input), the workflow must **fail** rather than silently using it.
 
 References:
 
@@ -174,6 +197,11 @@ Update resolver outputs to include:
 - `project_kind`: `python|node|ruby`
 - `is_prerelease`: `true|false`
 
+Compatibility note:
+
+- This is a **breaking change** to the reusable resolver output contract.
+- All callers (at least `official.yml` and `buddy.yml`) must be updated in the same PR, and any `if:` conditions based on `project_kind` must be audited.
+
 #### 1.3 Version validation per kind
 
 Add:
@@ -241,6 +269,7 @@ Steps:
     - `poppler-utils`
     - `imagemagick`
     - `ghostscript`
+    - Note: this list is intentionally heavy and may be a source of apt flakiness; failures should fail fast with actionable logs.
 3. Setup Ruby (`ruby/setup-ruby@v1`, pinned).
 4. Run all Ruby commands in `working-directory: ${{ inputs.package_dir }}`.
 5. If `Gemfile` exists:
@@ -316,6 +345,10 @@ Implement RubyGems.org publish in official releases only:
     - Do not set `role-to-assume`.
 - Publish from the downloaded artifact only: `gem push out/<project>-<version>.gem`.
 
+Guardrails (required):
+
+- Add an explicit fail-fast guard (see hard requirements) so that introducing an API token fallback (secret reference or action inputs) causes an immediate failure.
+
 Permissions:
 
 - `id-token: write`
@@ -334,7 +367,10 @@ Idempotent rerun behavior (RubyGems.org API):
 
 Eventual consistency:
 
-- Use `rubygems-await` (pinned) when post-publish verification requires waiting for propagation.
+- Use `rubygems-await` when post-publish verification requires waiting for propagation.
+- Installation + pinning must be explicit in the publish job (no Bundler dependency in publish jobs):
+    - `gem install rubygems-await -v <PINNED_VERSION> --no-document`
+    - run `rubygems-await` with bounded retries/timeouts appropriate for CI
 
 ### 7) Align Node publishing semantics (npmjs + GitHub Packages)
 
@@ -405,6 +441,11 @@ For each gem published to RubyGems.org, configure a trusted publisher:
 - Repository: `three`
 - Workflow filename: `official.yml`
 - Environment: `rubygems`
+
+The GitHub Actions environment named `rubygems` must be configured for fully automated publishing:
+
+- No required reviewers / no manual approvals.
+- Avoid wait timers that would block unattended official releases.
 
 Note: RubyGems documentation suggests an environment name like `release`, but this repository’s policy uses `rubygems`. The RubyGems trusted publisher configuration must match exactly.
 
