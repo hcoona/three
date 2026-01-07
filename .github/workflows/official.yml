@@ -283,6 +283,9 @@ jobs:
       actions: read
       packages: write
     steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+
       - name: Download dist artifact
         uses: actions/download-artifact@v4
         with:
@@ -300,117 +303,11 @@ jobs:
           PROJECT: ${{ needs.resolve.outputs.project }}
           VERSION: ${{ needs.resolve.outputs.version }}
           OWNER: ${{ github.repository_owner }}
-          ACTOR: ${{ github.actor }}
           TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
 
-          gem_path="${GITHUB_WORKSPACE}/out/${PROJECT}-${VERSION}.gem"
-          if [[ ! -f "${gem_path}" ]]; then
-            echo "Missing gem artifact: ${gem_path}" >&2
-            ls -la "${GITHUB_WORKSPACE}/out" >&2 || true
-            exit 1
-          fi
-
-          cred_path=$(gem env credentials)
-          mkdir -p "$(dirname "${cred_path}")"
-          {
-            echo ":github: Bearer ${TOKEN}"
-          } > "${cred_path}"
-          chmod 600 "${cred_path}"
-
-          tmpdir="$(mktemp -d)"
-          trap 'rm -rf "${tmpdir}"' EXIT
-
-          expected_remote_file="${PROJECT}-${VERSION}.gem"
-          remote_file="${tmpdir}/${expected_remote_file}"
-          fetch_err="${tmpdir}/fetch.err"
-
-          set +e
-          (cd "${tmpdir}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
-          fetch_rc=$?
-          set -e
-
-          if [[ "${fetch_rc}" -eq 0 && -f "${remote_file}" ]]; then
-            local_sha=$(sha256sum "${gem_path}" | awk '{print $1}')
-            remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
-            if [[ "${local_sha}" == "${remote_sha}" ]]; then
-              echo "Gem ${PROJECT} ${VERSION} is already published on GitHub Packages (digest match)."
-              exit 0
-            fi
-            echo "Gem ${PROJECT} ${VERSION} already exists on GitHub Packages but digest differs." >&2
-            exit 1
-          fi
-
-          if [[ "${fetch_rc}" -eq 0 && ! -f "${remote_file}" ]]; then
-            echo "gem fetch succeeded but did not produce expected file '${expected_remote_file}' in the temp directory." >&2
-            echo "Refusing to fall through to 'gem push' on an ambiguous fetch outcome." >&2
-            ls -la "${tmpdir}" >&2 || true
-            exit 1
-          fi
-
-          if [[ "${fetch_rc}" -ne 0 ]]; then
-            if grep -Eqi '(401|403|unauthorized|forbidden)' "${fetch_err}"; then
-              echo "Authentication/permission error while checking GitHub Packages RubyGems registry." >&2
-              cat "${fetch_err}" >&2 || true
-              echo "Common fix: ensure the gem is linked to this repository and Actions has access to publish packages." >&2
-              exit 1
-            fi
-            if grep -Eqi '(could not find|404|not found)' "${fetch_err}"; then
-              echo "Gem ${PROJECT} ${VERSION} not found on GitHub Packages yet; will attempt to push."
-            else
-              echo "Failed to check existing gem on GitHub Packages (gem fetch exit ${fetch_rc})." >&2
-              cat "${fetch_err}" >&2 || true
-              exit 1
-            fi
-          fi
-
-          push_err="${tmpdir}/push.err"
-          set +e
-          gem push --key github --host "https://rubygems.pkg.github.com/${OWNER}" "${gem_path}" 2>"${push_err}"
-          push_rc=$?
-          set -e
-
-          if [[ "${push_rc}" -eq 0 ]]; then
-            echo "Published gem ${PROJECT} ${VERSION} to GitHub Packages."
-            exit 0
-          fi
-
-          if grep -Eqi '(already (exists|been pushed)|repushing|already pushed)' "${push_err}"; then
-            echo "Push reported existing version; retrying fetch to verify digest (eventual consistency)."
-            for i in 1 2 3 4 5; do
-              sleep $((i * 3))
-              : >"${fetch_err}"
-              set +e
-              (cd "${tmpdir}" && rm -f "${expected_remote_file}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
-              fetch_rc=$?
-              set -e
-              if [[ "${fetch_rc}" -eq 0 && -f "${remote_file}" ]]; then
-                local_sha=$(sha256sum "${gem_path}" | awk '{print $1}')
-                remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
-                if [[ "${local_sha}" == "${remote_sha}" ]]; then
-                  echo "Gem ${PROJECT} ${VERSION} is already published on GitHub Packages (digest match)."
-                  exit 0
-                fi
-                echo "Gem ${PROJECT} ${VERSION} exists on GitHub Packages but digest differs." >&2
-                exit 1
-              fi
-
-              if [[ "${fetch_rc}" -eq 0 && ! -f "${remote_file}" ]]; then
-                echo "gem fetch succeeded but did not produce expected file '${expected_remote_file}' during verification retry." >&2
-                echo "Refusing to continue on an ambiguous fetch outcome." >&2
-                ls -la "${tmpdir}" >&2 || true
-                exit 1
-              fi
-            done
-            echo "Unable to verify already-published gem after push conflict." >&2
-            cat "${push_err}" >&2 || true
-            exit 1
-          fi
-
-          echo "Failed to publish gem to GitHub Packages." >&2
-          cat "${push_err}" >&2 || true
-          exit 1
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_ruby_gpr_idempotent.sh"
 
   publish-ruby-rubygems:
     name: Publish Ruby gem (RubyGems.org)
@@ -620,6 +517,9 @@ jobs:
       packages: write
       id-token: write
     steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+
       - name: Setup Node.js (npmjs)
         uses: actions/setup-node@v6
         with:
@@ -666,95 +566,13 @@ jobs:
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
           NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+          OWNER: ${{ github.repository_owner }}
           PROJECT: ${{ needs.resolve.outputs.project }}
           VERSION: ${{ needs.resolve.outputs.version }}
-          OWNER: ${{ github.repository_owner }}
         run: |
           set -Eeuo pipefail
 
-          gpr_name="@${OWNER,,}/${PROJECT}"
-          tarball="${GITHUB_WORKSPACE}/out/gpr.tgz"
-          registry="https://npm.pkg.github.com"
-
-          if [[ ! -f "${tarball}" ]]; then
-            echo "Missing tarball: ${tarball}" >&2
-            exit 1
-          fi
-
-          local_sri=$(node - <<'NODE'
-          const fs = require('fs');
-          const crypto = require('crypto');
-          const p = process.argv[1];
-          const buf = fs.readFileSync(p);
-          const hash = crypto.createHash('sha512').update(buf).digest('base64');
-          console.log(`sha512-${hash}`);
-          NODE
-          "${tarball}")
-
-          err_file="${RUNNER_TEMP}/npm-view-gpr.err"
-          : >"${err_file}"
-
-          set +e
-          remote_integrity=$(npm view "${gpr_name}@${VERSION}" dist.integrity --registry "${registry}" 2>"${err_file}")
-          view_rc=$?
-          set -e
-
-          if [[ "${view_rc}" -eq 0 ]]; then
-            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
-            if [[ -z "${remote_integrity}" ]]; then
-              echo "npm view returned empty dist.integrity for ${gpr_name}@${VERSION} on ${registry}." >&2
-              exit 1
-            fi
-            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
-              echo "${gpr_name}@${VERSION} already exists on GitHub Packages (integrity match)."
-              exit 0
-            fi
-            echo "${gpr_name}@${VERSION} already exists on GitHub Packages but integrity differs." >&2
-            echo "  remote: ${remote_integrity}" >&2
-            echo "  local:  ${local_sri}" >&2
-            exit 1
-          fi
-
-          if grep -Eqi '(E404|404)' "${err_file}"; then
-            echo "${gpr_name}@${VERSION} not found on GitHub Packages; will publish."
-          elif grep -Eqi '(E401|E403|401|403)' "${err_file}"; then
-            echo "Auth/permission error while querying GitHub Packages registry." >&2
-            cat "${err_file}" >&2 || true
-            exit 1
-          else
-            echo "Failed to query GitHub Packages registry (npm view exit ${view_rc})." >&2
-            cat "${err_file}" >&2 || true
-            exit 1
-          fi
-
-          publish_err="${RUNNER_TEMP}/npm-publish-gpr.err"
-          : >"${publish_err}"
-
-          set +e
-          npm publish "${tarball}" --registry "${registry}" --tag "${DIST_TAG}" 2>"${publish_err}"
-          publish_rc=$?
-          set -e
-
-          if [[ "${publish_rc}" -eq 0 ]]; then
-            echo "Published ${gpr_name}@${VERSION} to GitHub Packages."
-            exit 0
-          fi
-
-          if grep -Eqi '(previously published|cannot publish over|forbidden|already exists|you cannot publish over)' "${publish_err}"; then
-            echo "Publish reported existing version; re-checking integrity."
-            remote_integrity=$(npm view "${gpr_name}@${VERSION}" dist.integrity --registry "${registry}")
-            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
-            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
-              echo "${gpr_name}@${VERSION} already exists on GitHub Packages (integrity match)."
-              exit 0
-            fi
-            echo "${gpr_name}@${VERSION} exists on GitHub Packages but integrity differs." >&2
-            exit 1
-          fi
-
-          echo "Failed to publish to GitHub Packages." >&2
-          cat "${publish_err}" >&2 || true
-          exit 1
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
 
       - name: Note about npm Trusted Publishers (OIDC)
         shell: bash
