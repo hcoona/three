@@ -133,6 +133,12 @@ jobs:
         with:
           version: '1.7.1'
 
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
       - name: Download dist artifact
         uses: actions/download-artifact@v4
         with:
@@ -147,59 +153,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          api_url="https://pypi.org/pypi/${PROJECT}/json"
-          resp_json="${RUNNER_TEMP}/pypi.project.json"
-
-          set +e
-          status=$(curl -sS -L -o "${resp_json}" -w '%{http_code}' "${api_url}")
-          curl_rc=$?
-          set -e
-
-          if [[ "${curl_rc}" -ne 0 ]]; then
-            echo "Failed to query PyPI project JSON (curl exit ${curl_rc})." >&2
-            exit 1
-          fi
-
-          if [[ "${status}" == "404" ]]; then
-            echo "PyPI project '${PROJECT}' not found (404). Treating as not yet published."
-            exit 0
-          fi
-
-          if [[ "${status}" != "200" ]]; then
-            echo "Unexpected PyPI response status: HTTP ${status}." >&2
-            cat "${resp_json}" >&2 || true
-            exit 1
-          fi
-
-          declare -A remote
-          while IFS=$'\t' read -r filename sha; do
-            if [[ -n "${filename}" && -n "${sha}" ]]; then
-              remote["${filename}"]="${sha}"
-            fi
-          done < <(jq -r --arg v "${VERSION}" '.releases[$v][]? | "\(.filename)\t\(.digests.sha256)"' "${resp_json}")
-
-          shopt -s nullglob
-          files=("${GITHUB_WORKSPACE}/out"/*)
-          if [[ "${#files[@]}" -eq 0 ]]; then
-            echo "No local artifacts found under out/." >&2
-            exit 1
-          fi
-
-          for f in "${files[@]}"; do
-            base=$(basename "${f}")
-            local_sha=$(sha256sum "${f}" | awk '{print $1}')
-            if [[ -n "${remote[${base}]:-}" ]]; then
-              if [[ "${remote[${base}]}" != "${local_sha}" ]]; then
-                echo "PyPI already has file '${base}' for ${PROJECT} ${VERSION}, but sha256 differs." >&2
-                echo "  remote: ${remote[${base}]}" >&2
-                echo "  local:  ${local_sha}" >&2
-                exit 1
-              fi
-              echo "PyPI already has '${base}' (sha256 match)."
-            else
-              echo "PyPI is missing '${base}' for ${PROJECT} ${VERSION}; it will be uploaded."
-            fi
-          done
+          bash "${GITHUB_WORKSPACE}/eng/scripts/validate_pypi_remote_digests.sh"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1
@@ -285,6 +239,9 @@ jobs:
     steps:
       - name: Checkout (workflow scripts)
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
 
       - name: Download dist artifact
         uses: actions/download-artifact@v4
@@ -328,6 +285,12 @@ jobs:
         with:
           version: '1.7.1'
 
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
       - name: Download dist artifact
         uses: actions/download-artifact@v4
         with:
@@ -352,88 +315,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          gem_path="${GITHUB_WORKSPACE}/out/${PROJECT}-${VERSION}.gem"
-          if [[ ! -f "${gem_path}" ]]; then
-            echo "Missing gem artifact: ${gem_path}" >&2
-            ls -la "${GITHUB_WORKSPACE}/out" >&2 || true
-            exit 1
-          fi
-
-          local_sha=$(sha256sum "${gem_path}" | awk '{print $1}')
-
-          api_url="https://rubygems.org/api/v2/rubygems/${PROJECT}/versions/${VERSION}.json?platform=ruby"
-          resp_json="${RUNNER_TEMP}/rubygems.version.json"
-
-          set +e
-          status=$(curl -sS -L -o "${resp_json}" -w '%{http_code}' "${api_url}")
-          curl_rc=$?
-          set -e
-
-          if [[ "${curl_rc}" -ne 0 ]]; then
-            echo "Failed to query RubyGems.org API (curl exit ${curl_rc})." >&2
-            exit 1
-          fi
-
-          if [[ "${status}" == "200" ]]; then
-            remote_sha=$(jq -r '.sha // empty' "${resp_json}")
-            if [[ -z "${remote_sha}" ]]; then
-              echo "RubyGems.org API response missing 'sha'." >&2
-              cat "${resp_json}" >&2 || true
-              exit 1
-            fi
-            if [[ "${remote_sha}" == "${local_sha}" ]]; then
-              echo "Gem ${PROJECT} ${VERSION} is already published on RubyGems.org (digest match)."
-              exit 0
-            fi
-            echo "Gem ${PROJECT} ${VERSION} already exists on RubyGems.org but digest differs." >&2
-            exit 1
-          fi
-
-          if [[ "${status}" == "404" ]]; then
-            echo "Gem ${PROJECT} ${VERSION} not found on RubyGems.org yet; will attempt to push."
-          elif [[ "${status}" == "429" || "${status}" =~ ^5[0-9][0-9]$ ]]; then
-            echo "RubyGems.org API is rate-limited or unavailable (HTTP ${status})." >&2
-            exit 1
-          else
-            echo "Unexpected RubyGems.org API response status: HTTP ${status}." >&2
-            cat "${resp_json}" >&2 || true
-            exit 1
-          fi
-
-          gem install rubygems-await -v 0.5.4 --no-document
-
-          push_err="${RUNNER_TEMP}/rubygems.push.err"
-          set +e
-          gem push "${gem_path}" 2>"${push_err}"
-          push_rc=$?
-          set -e
-
-          if [[ "${push_rc}" -ne 0 ]]; then
-            if grep -Eqi '(already (exists|been pushed)|repushing|already pushed)' "${push_err}"; then
-              echo "Push reported existing version; waiting and re-checking digest."
-              gem await "${PROJECT}:${VERSION}:ruby"
-              status=$(curl -sS -L -o "${resp_json}" -w '%{http_code}' "${api_url}")
-              if [[ "${status}" != "200" ]]; then
-                echo "After push conflict, RubyGems.org API still not returning 200 (HTTP ${status})." >&2
-                cat "${push_err}" >&2 || true
-                exit 1
-              fi
-              remote_sha=$(jq -r '.sha // empty' "${resp_json}")
-              if [[ "${remote_sha}" == "${local_sha}" ]]; then
-                echo "Gem ${PROJECT} ${VERSION} is already published on RubyGems.org (digest match)."
-                exit 0
-              fi
-              echo "Gem ${PROJECT} ${VERSION} exists on RubyGems.org but digest differs." >&2
-              exit 1
-            fi
-
-            echo "Failed to publish gem to RubyGems.org." >&2
-            cat "${push_err}" >&2 || true
-            exit 1
-          fi
-
-          gem await "${PROJECT}:${VERSION}:ruby"
-          echo "Published gem ${PROJECT} ${VERSION} to RubyGems.org."
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_rubygems_org_idempotent.sh"
 
   attest-ruby:
     name: Attest release assets (Ruby)
@@ -519,6 +401,9 @@ jobs:
     steps:
       - name: Checkout (workflow scripts)
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
 
       - name: Setup Node.js (npmjs)
         uses: actions/setup-node@v6
@@ -587,7 +472,7 @@ jobs:
           echo "  - Environment (if configured on npm): npmjs"
           echo "See: https://docs.npmjs.com/trusted-publishers"
 
-      - name: Publish to npm registry
+      - name: Publish to npm registry (idempotent)
         shell: bash
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
@@ -596,89 +481,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          npm_name="${PROJECT}"
-          tarball="${GITHUB_WORKSPACE}/out/npmjs.tgz"
-          registry="https://registry.npmjs.org"
-
-          if [[ ! -f "${tarball}" ]]; then
-            echo "Missing tarball: ${tarball}" >&2
-            exit 1
-          fi
-
-          local_sri=$(node - <<'NODE'
-          const fs = require('fs');
-          const crypto = require('crypto');
-          const p = process.argv[1];
-          const buf = fs.readFileSync(p);
-          const hash = crypto.createHash('sha512').update(buf).digest('base64');
-          console.log(`sha512-${hash}`);
-          NODE
-          "${tarball}")
-
-          err_file="${RUNNER_TEMP}/npm-view-npmjs.err"
-          : >"${err_file}"
-
-          set +e
-          remote_integrity=$(npm view "${npm_name}@${VERSION}" dist.integrity --registry "${registry}" 2>"${err_file}")
-          view_rc=$?
-          set -e
-
-          if [[ "${view_rc}" -eq 0 ]]; then
-            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
-            if [[ -z "${remote_integrity}" ]]; then
-              echo "npm view returned empty dist.integrity for ${npm_name}@${VERSION} on ${registry}." >&2
-              exit 1
-            fi
-            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
-              echo "${npm_name}@${VERSION} already exists on npmjs.org (integrity match)."
-              exit 0
-            fi
-            echo "${npm_name}@${VERSION} already exists on npmjs.org but integrity differs." >&2
-            echo "  remote: ${remote_integrity}" >&2
-            echo "  local:  ${local_sri}" >&2
-            exit 1
-          fi
-
-          if grep -Eqi '(E404|404)' "${err_file}"; then
-            echo "${npm_name}@${VERSION} not found on npmjs.org; will publish."
-          elif grep -Eqi '(E401|E403|401|403)' "${err_file}"; then
-            echo "Auth/permission error while querying npmjs.org registry." >&2
-            cat "${err_file}" >&2 || true
-            exit 1
-          else
-            echo "Failed to query npmjs.org registry (npm view exit ${view_rc})." >&2
-            cat "${err_file}" >&2 || true
-            exit 1
-          fi
-
-          publish_err="${RUNNER_TEMP}/npm-publish-npmjs.err"
-          : >"${publish_err}"
-
-          set +e
-          npm publish "${tarball}" --registry "${registry}" --tag "${DIST_TAG}" --access public 2>"${publish_err}"
-          publish_rc=$?
-          set -e
-
-          if [[ "${publish_rc}" -eq 0 ]]; then
-            echo "Published ${npm_name}@${VERSION} to npmjs.org."
-            exit 0
-          fi
-
-          if grep -Eqi '(previously published|cannot publish over|already exists|you cannot publish over)' "${publish_err}"; then
-            echo "Publish reported existing version; re-checking integrity."
-            remote_integrity=$(npm view "${npm_name}@${VERSION}" dist.integrity --registry "${registry}")
-            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
-            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
-              echo "${npm_name}@${VERSION} already exists on npmjs.org (integrity match)."
-              exit 0
-            fi
-            echo "${npm_name}@${VERSION} exists on npmjs.org but integrity differs." >&2
-            exit 1
-          fi
-
-          echo "Failed to publish to npmjs.org." >&2
-          cat "${publish_err}" >&2 || true
-          exit 1
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_npmjs_idempotent.sh"
 
   attest-node:
     name: Attest release assets (Node)
