@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       version:
-        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Others: SemVer 2.0.0 (no leading v)."
+        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Node: SemVer 2.0.0 (no leading v). Ruby: MAJOR.MINOR.PATCH[.suffix...] (no '-' or '+'; suffix segments are dot-separated [0-9A-Za-z]+ and must include at least one letter)."
         required: true
         type: string
       target:
@@ -33,6 +33,7 @@ env:
   PYTHON_VERSION: '3.14'
   NODE_VERSION: '24'
   PNPM_VERSION: '10'
+  RUBY_VERSION: '3.3'
 
 jobs:
   versions:
@@ -44,6 +45,7 @@ jobs:
       python_version: ${{ steps.versions.outputs.python_version }}
       node_version: ${{ steps.versions.outputs.node_version }}
       pnpm_version: ${{ steps.versions.outputs.pnpm_version }}
+      ruby_version: ${{ steps.versions.outputs.ruby_version }}
     steps:
       - name: Export versions
         id: versions
@@ -54,6 +56,7 @@ jobs:
             echo "python_version=${PYTHON_VERSION}"
             echo "node_version=${NODE_VERSION}"
             echo "pnpm_version=${PNPM_VERSION}"
+            echo "ruby_version=${RUBY_VERSION}"
           } >> "${GITHUB_OUTPUT}"
 
   resolve:
@@ -70,6 +73,27 @@ jobs:
       version: ${{ inputs.version }}
       target: ${{ inputs.target }}
       force_update_tag: ${{ inputs.force_update_tag }}
+
+  guard-prerelease-only:
+    name: "Guard: buddy must be prerelease-only"
+    runs-on: ubuntu-latest
+    needs: resolve
+    permissions:
+      contents: read
+    steps:
+      - name: Enforce prerelease-only
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          IS_PRERELEASE: ${{ needs.resolve.outputs.is_prerelease }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${IS_PRERELEASE}" != "true" ]]; then
+            echo "Buddy releases must be prerelease-only. Refusing to release '${PROJECT}' version '${VERSION}'." >&2
+            exit 1
+          fi
+          echo "Prerelease-only guard passed for ${PROJECT} ${VERSION}."
 
   guard-non-clobber:
     name: "Guard: buddy must not clobber official release"
@@ -156,6 +180,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'python'
     uses: ./.github/workflows/release-build-python.yml
@@ -172,6 +197,7 @@ jobs:
     name: Create GitHub release (Python)
     needs:
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
       - prepare-release-notes
       - build-python
@@ -194,6 +220,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
     uses: ./.github/workflows/release-build-node-pack.yml
@@ -216,6 +243,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-prerelease-only
       - pack-node
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
@@ -273,18 +301,276 @@ jobs:
           NPM_CONFIG_ALWAYS_AUTH: 'true'
           NODE_AUTH_TOKEN: ${{ github.token }}
           NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -Eeuo pipefail
-          npm publish "${GITHUB_WORKSPACE}/out/gpr.tgz" --registry https://npm.pkg.github.com --tag "${DIST_TAG}"
+
+          gpr_name="@${OWNER,,}/${PROJECT}"
+          tarball="${GITHUB_WORKSPACE}/out/gpr.tgz"
+          registry="https://npm.pkg.github.com"
+
+          if [[ ! -f "${tarball}" ]]; then
+            echo "Missing tarball: ${tarball}" >&2
+            exit 1
+          fi
+
+          local_sri=$(node - <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const p = process.argv[1];
+          const buf = fs.readFileSync(p);
+          const hash = crypto.createHash('sha512').update(buf).digest('base64');
+          console.log(`sha512-${hash}`);
+          NODE
+          "${tarball}")
+
+          err_file="${RUNNER_TEMP}/npm-view-gpr.err"
+          : >"${err_file}"
+
+          set +e
+          remote_integrity=$(npm view "${gpr_name}@${VERSION}" dist.integrity --registry "${registry}" 2>"${err_file}")
+          view_rc=$?
+          set -e
+
+          if [[ "${view_rc}" -eq 0 ]]; then
+            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
+            if [[ -z "${remote_integrity}" ]]; then
+              echo "npm view returned empty dist.integrity for ${gpr_name}@${VERSION} on ${registry}." >&2
+              exit 1
+            fi
+            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
+              echo "${gpr_name}@${VERSION} already exists on GitHub Packages (integrity match)."
+              exit 0
+            fi
+            echo "${gpr_name}@${VERSION} already exists on GitHub Packages but integrity differs." >&2
+            echo "  remote: ${remote_integrity}" >&2
+            echo "  local:  ${local_sri}" >&2
+            exit 1
+          fi
+
+          if grep -Eqi '(E404|404)' "${err_file}"; then
+            echo "${gpr_name}@${VERSION} not found on GitHub Packages; will publish."
+          elif grep -Eqi '(E401|E403|401|403)' "${err_file}"; then
+            echo "Auth/permission error while querying GitHub Packages registry." >&2
+            cat "${err_file}" >&2 || true
+            exit 1
+          else
+            echo "Failed to query GitHub Packages registry (npm view exit ${view_rc})." >&2
+            cat "${err_file}" >&2 || true
+            exit 1
+          fi
+
+          publish_err="${RUNNER_TEMP}/npm-publish-gpr.err"
+          : >"${publish_err}"
+
+          set +e
+          npm publish "${tarball}" --registry "${registry}" --tag "${DIST_TAG}" 2>"${publish_err}"
+          publish_rc=$?
+          set -e
+
+          if [[ "${publish_rc}" -eq 0 ]]; then
+            echo "Published ${gpr_name}@${VERSION} to GitHub Packages."
+            exit 0
+          fi
+
+          if grep -Eqi '(previously published|cannot publish over|already exists|you cannot publish over)' "${publish_err}"; then
+            echo "Publish reported existing version; re-checking integrity."
+            remote_integrity=$(npm view "${gpr_name}@${VERSION}" dist.integrity --registry "${registry}")
+            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
+            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
+              echo "${gpr_name}@${VERSION} already exists on GitHub Packages (integrity match)."
+              exit 0
+            fi
+            echo "${gpr_name}@${VERSION} exists on GitHub Packages but integrity differs." >&2
+            exit 1
+          fi
+
+          echo "Failed to publish to GitHub Packages." >&2
+          cat "${publish_err}" >&2 || true
+          exit 1
 
   release-node-gpr:
     name: Create GitHub release (Node/GPR)
     needs:
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
       - prepare-release-notes
       - publish-node-gpr
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: true
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: buddy-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: buddy-${{ needs.resolve.outputs.project }}-dist
+
+  build-ruby:
+    name: Build Ruby gem (Buddy)
+    needs:
+      - versions
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    uses: ./.github/workflows/release-build-ruby-gem.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      ruby_version: ${{ needs.versions.outputs.ruby_version }}
+      artifact_name: buddy-${{ needs.resolve.outputs.project }}-dist
+
+  publish-ruby-gpr:
+    name: Publish Ruby gem (GitHub Packages)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: buddy-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@4c24fa5ec04b2e79eb40571b1cee2a0d2b705771 # v1
+        with:
+          ruby-version: ${{ needs.versions.outputs.ruby_version }}
+
+      - name: Publish to GitHub Packages (idempotent)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          gem_path="${GITHUB_WORKSPACE}/out/${PROJECT}-${VERSION}.gem"
+          if [[ ! -f "${gem_path}" ]]; then
+            echo "Missing gem artifact: ${gem_path}" >&2
+            ls -la "${GITHUB_WORKSPACE}/out" >&2 || true
+            exit 1
+          fi
+
+          cred_path=$(gem env credentials)
+          mkdir -p "$(dirname "${cred_path}")"
+          {
+            echo ":github: Bearer ${TOKEN}"
+          } > "${cred_path}"
+          chmod 600 "${cred_path}"
+
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "${tmpdir}"' EXIT
+
+          expected_remote_file="${PROJECT}-${VERSION}.gem"
+          remote_file="${tmpdir}/${expected_remote_file}"
+          fetch_err="${tmpdir}/fetch.err"
+
+          set +e
+          (cd "${tmpdir}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://${ACTOR}:${TOKEN}@rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
+          fetch_rc=$?
+          set -e
+
+          if [[ "${fetch_rc}" -eq 0 && -f "${remote_file}" ]]; then
+            local_sha=$(sha256sum "${gem_path}" | awk '{print $1}')
+            remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
+            if [[ "${local_sha}" == "${remote_sha}" ]]; then
+              echo "Gem ${PROJECT} ${VERSION} is already published on GitHub Packages (digest match)."
+              exit 0
+            fi
+            echo "Gem ${PROJECT} ${VERSION} already exists on GitHub Packages but digest differs." >&2
+            exit 1
+          fi
+
+          if [[ "${fetch_rc}" -ne 0 ]]; then
+            if grep -Eqi '(401|403|unauthorized|forbidden)' "${fetch_err}"; then
+              echo "Authentication/permission error while checking GitHub Packages RubyGems registry." >&2
+              cat "${fetch_err}" >&2 || true
+              echo "Common fix: ensure the gem is linked to this repository and Actions has access to publish packages." >&2
+              exit 1
+            fi
+            if grep -Eqi '(could not find|404|not found)' "${fetch_err}"; then
+              echo "Gem ${PROJECT} ${VERSION} not found on GitHub Packages yet; will attempt to push."
+            else
+              echo "Failed to check existing gem on GitHub Packages (gem fetch exit ${fetch_rc})." >&2
+              cat "${fetch_err}" >&2 || true
+              exit 1
+            fi
+          fi
+
+          push_err="${tmpdir}/push.err"
+          set +e
+          gem push --key github --host "https://rubygems.pkg.github.com/${OWNER}" "${gem_path}" 2>"${push_err}"
+          push_rc=$?
+          set -e
+
+          if [[ "${push_rc}" -eq 0 ]]; then
+            echo "Published gem ${PROJECT} ${VERSION} to GitHub Packages."
+            exit 0
+          fi
+
+          if grep -Eqi '(already (exists|been pushed)|repushing|already pushed)' "${push_err}"; then
+            echo "Push reported existing version; retrying fetch to verify digest (eventual consistency)."
+            for i in 1 2 3 4 5; do
+              sleep $((i * 3))
+              : >"${fetch_err}"
+              set +e
+              (cd "${tmpdir}" && rm -f "${expected_remote_file}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://${ACTOR}:${TOKEN}@rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
+              fetch_rc=$?
+              set -e
+              if [[ "${fetch_rc}" -eq 0 && -f "${remote_file}" ]]; then
+                local_sha=$(sha256sum "${gem_path}" | awk '{print $1}')
+                remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
+                if [[ "${local_sha}" == "${remote_sha}" ]]; then
+                  echo "Gem ${PROJECT} ${VERSION} is already published on GitHub Packages (digest match)."
+                  exit 0
+                fi
+                echo "Gem ${PROJECT} ${VERSION} exists on GitHub Packages but digest differs." >&2
+                exit 1
+              fi
+            done
+            echo "Unable to verify already-published gem after push conflict." >&2
+            cat "${push_err}" >&2 || true
+            exit 1
+          fi
+
+          echo "Failed to publish gem to GitHub Packages." >&2
+          cat "${push_err}" >&2 || true
+          exit 1
+
+  release-ruby:
+    name: Create GitHub release (Ruby)
+    needs:
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+      - prepare-release-notes
+      - publish-ruby-gpr
+    if: needs.resolve.outputs.project_kind == 'ruby'
     permissions:
       contents: write
       actions: read
@@ -303,6 +589,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
     uses: ./.github/workflows/release-build-wxt.yml
@@ -321,6 +608,7 @@ jobs:
     name: Create GitHub release (Node/WXT)
     needs:
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
       - prepare-release-notes
       - build-wxt

@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       version:
-        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Others: SemVer 2.0.0 (no leading v)."
+        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Node: SemVer 2.0.0 (no leading v). Ruby: MAJOR.MINOR.PATCH[.suffix...] (no '-' or '+'; suffix segments are dot-separated [0-9A-Za-z]+ and must include at least one letter)."
         required: true
         type: string
       target:
@@ -36,6 +36,7 @@ env:
   PYTHON_VERSION: '3.14'
   NODE_VERSION: '24'
   PNPM_VERSION: '10'
+  RUBY_VERSION: '3.3'
 
 jobs:
   versions:
@@ -47,6 +48,7 @@ jobs:
       python_version: ${{ steps.versions.outputs.python_version }}
       node_version: ${{ steps.versions.outputs.node_version }}
       pnpm_version: ${{ steps.versions.outputs.pnpm_version }}
+      ruby_version: ${{ steps.versions.outputs.ruby_version }}
     steps:
       - name: Export versions
         id: versions
@@ -57,6 +59,7 @@ jobs:
             echo "python_version=${PYTHON_VERSION}"
             echo "node_version=${NODE_VERSION}"
             echo "pnpm_version=${PNPM_VERSION}"
+            echo "ruby_version=${RUBY_VERSION}"
           } >> "${GITHUB_OUTPUT}"
 
   resolve:
@@ -125,16 +128,84 @@ jobs:
       actions: read
       id-token: write
     steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
       - name: Download dist artifact
         uses: actions/download-artifact@v4
         with:
           name: official-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
 
+      - name: Validate PyPI remote digests (idempotency)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          api_url="https://pypi.org/pypi/${PROJECT}/json"
+          resp_json="${RUNNER_TEMP}/pypi.project.json"
+
+          set +e
+          status=$(curl -sS -L -o "${resp_json}" -w '%{http_code}' "${api_url}")
+          curl_rc=$?
+          set -e
+
+          if [[ "${curl_rc}" -ne 0 ]]; then
+            echo "Failed to query PyPI project JSON (curl exit ${curl_rc})." >&2
+            exit 1
+          fi
+
+          if [[ "${status}" == "404" ]]; then
+            echo "PyPI project '${PROJECT}' not found (404). Treating as not yet published."
+            exit 0
+          fi
+
+          if [[ "${status}" != "200" ]]; then
+            echo "Unexpected PyPI response status: HTTP ${status}." >&2
+            cat "${resp_json}" >&2 || true
+            exit 1
+          fi
+
+          declare -A remote
+          while IFS=$'\t' read -r filename sha; do
+            if [[ -n "${filename}" && -n "${sha}" ]]; then
+              remote["${filename}"]="${sha}"
+            fi
+          done < <(jq -r --arg v "${VERSION}" '.releases[$v][]? | "\(.filename)\t\(.digests.sha256)"' "${resp_json}")
+
+          shopt -s nullglob
+          files=("${GITHUB_WORKSPACE}/out"/*)
+          if [[ "${#files[@]}" -eq 0 ]]; then
+            echo "No local artifacts found under out/." >&2
+            exit 1
+          fi
+
+          for f in "${files[@]}"; do
+            base=$(basename "${f}")
+            local_sha=$(sha256sum "${f}" | awk '{print $1}')
+            if [[ -n "${remote[${base}]:-}" ]]; then
+              if [[ "${remote[${base}]}" != "${local_sha}" ]]; then
+                echo "PyPI already has file '${base}' for ${PROJECT} ${VERSION}, but sha256 differs." >&2
+                echo "  remote: ${remote[${base}]}" >&2
+                echo "  local:  ${local_sha}" >&2
+                exit 1
+              fi
+              echo "PyPI already has '${base}' (sha256 match)."
+            else
+              echo "PyPI is missing '${base}' for ${PROJECT} ${VERSION}; it will be uploaded."
+            fi
+          done
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1
         with:
           packages-dir: ${{ github.workspace }}/out/
+          skip-existing: true
 
   attest-python:
     name: Attest release assets (Python)
@@ -169,6 +240,324 @@ jobs:
       - publish-python
       - attest-python
     if: needs.resolve.outputs.project_kind == 'python'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: false
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: official-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: official-${{ needs.resolve.outputs.project }}-dist
+
+  build-ruby:
+    name: Build Ruby gem
+    needs:
+      - versions
+      - resolve
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    uses: ./.github/workflows/release-build-ruby-gem.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      ruby_version: ${{ needs.versions.outputs.ruby_version }}
+      artifact_name: official-${{ needs.resolve.outputs.project }}-dist
+
+  publish-ruby-gpr:
+    name: Publish Ruby gem (GitHub Packages)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@4c24fa5ec04b2e79eb40571b1cee2a0d2b705771 # v1
+        with:
+          ruby-version: ${{ needs.versions.outputs.ruby_version }}
+
+      - name: Publish to GitHub Packages (idempotent)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          gem_path="${GITHUB_WORKSPACE}/out/${PROJECT}-${VERSION}.gem"
+          if [[ ! -f "${gem_path}" ]]; then
+            echo "Missing gem artifact: ${gem_path}" >&2
+            ls -la "${GITHUB_WORKSPACE}/out" >&2 || true
+            exit 1
+          fi
+
+          cred_path=$(gem env credentials)
+          mkdir -p "$(dirname "${cred_path}")"
+          {
+            echo ":github: Bearer ${TOKEN}"
+          } > "${cred_path}"
+          chmod 600 "${cred_path}"
+
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "${tmpdir}"' EXIT
+
+          expected_remote_file="${PROJECT}-${VERSION}.gem"
+          remote_file="${tmpdir}/${expected_remote_file}"
+          fetch_err="${tmpdir}/fetch.err"
+
+          set +e
+          (cd "${tmpdir}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://${ACTOR}:${TOKEN}@rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
+          fetch_rc=$?
+          set -e
+
+          if [[ "${fetch_rc}" -eq 0 && -f "${remote_file}" ]]; then
+            local_sha=$(sha256sum "${gem_path}" | awk '{print $1}')
+            remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
+            if [[ "${local_sha}" == "${remote_sha}" ]]; then
+              echo "Gem ${PROJECT} ${VERSION} is already published on GitHub Packages (digest match)."
+              exit 0
+            fi
+            echo "Gem ${PROJECT} ${VERSION} already exists on GitHub Packages but digest differs." >&2
+            exit 1
+          fi
+
+          if [[ "${fetch_rc}" -ne 0 ]]; then
+            if grep -Eqi '(401|403|unauthorized|forbidden)' "${fetch_err}"; then
+              echo "Authentication/permission error while checking GitHub Packages RubyGems registry." >&2
+              cat "${fetch_err}" >&2 || true
+              echo "Common fix: ensure the gem is linked to this repository and Actions has access to publish packages." >&2
+              exit 1
+            fi
+            if grep -Eqi '(could not find|404|not found)' "${fetch_err}"; then
+              echo "Gem ${PROJECT} ${VERSION} not found on GitHub Packages yet; will attempt to push."
+            else
+              echo "Failed to check existing gem on GitHub Packages (gem fetch exit ${fetch_rc})." >&2
+              cat "${fetch_err}" >&2 || true
+              exit 1
+            fi
+          fi
+
+          push_err="${tmpdir}/push.err"
+          set +e
+          gem push --key github --host "https://rubygems.pkg.github.com/${OWNER}" "${gem_path}" 2>"${push_err}"
+          push_rc=$?
+          set -e
+
+          if [[ "${push_rc}" -eq 0 ]]; then
+            echo "Published gem ${PROJECT} ${VERSION} to GitHub Packages."
+            exit 0
+          fi
+
+          if grep -Eqi '(already (exists|been pushed)|repushing|already pushed)' "${push_err}"; then
+            echo "Push reported existing version; retrying fetch to verify digest (eventual consistency)."
+            for i in 1 2 3 4 5; do
+              sleep $((i * 3))
+              : >"${fetch_err}"
+              set +e
+              (cd "${tmpdir}" && rm -f "${expected_remote_file}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://${ACTOR}:${TOKEN}@rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
+              fetch_rc=$?
+              set -e
+              if [[ "${fetch_rc}" -eq 0 && -f "${remote_file}" ]]; then
+                local_sha=$(sha256sum "${gem_path}" | awk '{print $1}')
+                remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
+                if [[ "${local_sha}" == "${remote_sha}" ]]; then
+                  echo "Gem ${PROJECT} ${VERSION} is already published on GitHub Packages (digest match)."
+                  exit 0
+                fi
+                echo "Gem ${PROJECT} ${VERSION} exists on GitHub Packages but digest differs." >&2
+                exit 1
+              fi
+            done
+            echo "Unable to verify already-published gem after push conflict." >&2
+            cat "${push_err}" >&2 || true
+            exit 1
+          fi
+
+          echo "Failed to publish gem to GitHub Packages." >&2
+          cat "${push_err}" >&2 || true
+          exit 1
+
+  publish-ruby-rubygems:
+    name: Publish Ruby gem (RubyGems.org)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    environment: rubygems
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@4c24fa5ec04b2e79eb40571b1cee2a0d2b705771 # v1
+        with:
+          ruby-version: ${{ needs.versions.outputs.ruby_version }}
+
+      - name: Configure RubyGems Trusted Publishing credentials
+        uses: rubygems/configure-rubygems-credentials@bc6dd217f8a4f919d6835fcfefd470ef821f5c44 # v1.0.0
+        with:
+          trusted-publisher: true
+
+      - name: Publish to RubyGems.org (idempotent)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          gem_path="${GITHUB_WORKSPACE}/out/${PROJECT}-${VERSION}.gem"
+          if [[ ! -f "${gem_path}" ]]; then
+            echo "Missing gem artifact: ${gem_path}" >&2
+            ls -la "${GITHUB_WORKSPACE}/out" >&2 || true
+            exit 1
+          fi
+
+          local_sha=$(sha256sum "${gem_path}" | awk '{print $1}')
+
+          api_url="https://rubygems.org/api/v2/rubygems/${PROJECT}/versions/${VERSION}.json?platform=ruby"
+          resp_json="${RUNNER_TEMP}/rubygems.version.json"
+
+          set +e
+          status=$(curl -sS -L -o "${resp_json}" -w '%{http_code}' "${api_url}")
+          curl_rc=$?
+          set -e
+
+          if [[ "${curl_rc}" -ne 0 ]]; then
+            echo "Failed to query RubyGems.org API (curl exit ${curl_rc})." >&2
+            exit 1
+          fi
+
+          if [[ "${status}" == "200" ]]; then
+            remote_sha=$(jq -r '.sha // empty' "${resp_json}")
+            if [[ -z "${remote_sha}" ]]; then
+              echo "RubyGems.org API response missing 'sha'." >&2
+              cat "${resp_json}" >&2 || true
+              exit 1
+            fi
+            if [[ "${remote_sha}" == "${local_sha}" ]]; then
+              echo "Gem ${PROJECT} ${VERSION} is already published on RubyGems.org (digest match)."
+              exit 0
+            fi
+            echo "Gem ${PROJECT} ${VERSION} already exists on RubyGems.org but digest differs." >&2
+            exit 1
+          fi
+
+          if [[ "${status}" == "404" ]]; then
+            echo "Gem ${PROJECT} ${VERSION} not found on RubyGems.org yet; will attempt to push."
+          elif [[ "${status}" == "429" || "${status}" =~ ^5[0-9][0-9]$ ]]; then
+            echo "RubyGems.org API is rate-limited or unavailable (HTTP ${status})." >&2
+            exit 1
+          else
+            echo "Unexpected RubyGems.org API response status: HTTP ${status}." >&2
+            cat "${resp_json}" >&2 || true
+            exit 1
+          fi
+
+          gem install rubygems-await -v 0.5.4
+
+          push_err="${RUNNER_TEMP}/rubygems.push.err"
+          set +e
+          gem push "${gem_path}" 2>"${push_err}"
+          push_rc=$?
+          set -e
+
+          if [[ "${push_rc}" -ne 0 ]]; then
+            if grep -Eqi '(already (exists|been pushed)|repushing|already pushed)' "${push_err}"; then
+              echo "Push reported existing version; waiting and re-checking digest."
+              gem await "${PROJECT}:${VERSION}:ruby"
+              status=$(curl -sS -L -o "${resp_json}" -w '%{http_code}' "${api_url}")
+              if [[ "${status}" != "200" ]]; then
+                echo "After push conflict, RubyGems.org API still not returning 200 (HTTP ${status})." >&2
+                cat "${push_err}" >&2 || true
+                exit 1
+              fi
+              remote_sha=$(jq -r '.sha // empty' "${resp_json}")
+              if [[ "${remote_sha}" == "${local_sha}" ]]; then
+                echo "Gem ${PROJECT} ${VERSION} is already published on RubyGems.org (digest match)."
+                exit 0
+              fi
+              echo "Gem ${PROJECT} ${VERSION} exists on RubyGems.org but digest differs." >&2
+              exit 1
+            fi
+
+            echo "Failed to publish gem to RubyGems.org." >&2
+            cat "${push_err}" >&2 || true
+            exit 1
+          fi
+
+          gem await "${PROJECT}:${VERSION}:ruby"
+          echo "Published gem ${PROJECT} ${VERSION} to RubyGems.org."
+
+  attest-ruby:
+    name: Attest release assets (Ruby)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+  release-ruby:
+    name: Create GitHub release (Ruby)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-ruby
+      - publish-ruby-gpr
+      - publish-ruby-rubygems
+      - attest-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
     permissions:
       contents: write
       actions: read
@@ -217,12 +606,6 @@ jobs:
       packages: write
       id-token: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ needs.resolve.outputs.target }}
-
       - name: Setup Node.js (npmjs)
         uses: actions/setup-node@v6
         with:
@@ -269,9 +652,95 @@ jobs:
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
           NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -Eeuo pipefail
-          npm publish "${GITHUB_WORKSPACE}/out/gpr.tgz" --registry https://npm.pkg.github.com --tag "${DIST_TAG}"
+
+          gpr_name="@${OWNER,,}/${PROJECT}"
+          tarball="${GITHUB_WORKSPACE}/out/gpr.tgz"
+          registry="https://npm.pkg.github.com"
+
+          if [[ ! -f "${tarball}" ]]; then
+            echo "Missing tarball: ${tarball}" >&2
+            exit 1
+          fi
+
+          local_sri=$(node - <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const p = process.argv[1];
+          const buf = fs.readFileSync(p);
+          const hash = crypto.createHash('sha512').update(buf).digest('base64');
+          console.log(`sha512-${hash}`);
+          NODE
+          "${tarball}")
+
+          err_file="${RUNNER_TEMP}/npm-view-gpr.err"
+          : >"${err_file}"
+
+          set +e
+          remote_integrity=$(npm view "${gpr_name}@${VERSION}" dist.integrity --registry "${registry}" 2>"${err_file}")
+          view_rc=$?
+          set -e
+
+          if [[ "${view_rc}" -eq 0 ]]; then
+            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
+            if [[ -z "${remote_integrity}" ]]; then
+              echo "npm view returned empty dist.integrity for ${gpr_name}@${VERSION} on ${registry}." >&2
+              exit 1
+            fi
+            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
+              echo "${gpr_name}@${VERSION} already exists on GitHub Packages (integrity match)."
+              exit 0
+            fi
+            echo "${gpr_name}@${VERSION} already exists on GitHub Packages but integrity differs." >&2
+            echo "  remote: ${remote_integrity}" >&2
+            echo "  local:  ${local_sri}" >&2
+            exit 1
+          fi
+
+          if grep -Eqi '(E404|404)' "${err_file}"; then
+            echo "${gpr_name}@${VERSION} not found on GitHub Packages; will publish."
+          elif grep -Eqi '(E401|E403|401|403)' "${err_file}"; then
+            echo "Auth/permission error while querying GitHub Packages registry." >&2
+            cat "${err_file}" >&2 || true
+            exit 1
+          else
+            echo "Failed to query GitHub Packages registry (npm view exit ${view_rc})." >&2
+            cat "${err_file}" >&2 || true
+            exit 1
+          fi
+
+          publish_err="${RUNNER_TEMP}/npm-publish-gpr.err"
+          : >"${publish_err}"
+
+          set +e
+          npm publish "${tarball}" --registry "${registry}" --tag "${DIST_TAG}" 2>"${publish_err}"
+          publish_rc=$?
+          set -e
+
+          if [[ "${publish_rc}" -eq 0 ]]; then
+            echo "Published ${gpr_name}@${VERSION} to GitHub Packages."
+            exit 0
+          fi
+
+          if grep -Eqi '(previously published|cannot publish over|forbidden|already exists|you cannot publish over)' "${publish_err}"; then
+            echo "Publish reported existing version; re-checking integrity."
+            remote_integrity=$(npm view "${gpr_name}@${VERSION}" dist.integrity --registry "${registry}")
+            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
+            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
+              echo "${gpr_name}@${VERSION} already exists on GitHub Packages (integrity match)."
+              exit 0
+            fi
+            echo "${gpr_name}@${VERSION} exists on GitHub Packages but integrity differs." >&2
+            exit 1
+          fi
+
+          echo "Failed to publish to GitHub Packages." >&2
+          cat "${publish_err}" >&2 || true
+          exit 1
 
       - name: Note about npm Trusted Publishers (OIDC)
         shell: bash
@@ -286,30 +755,98 @@ jobs:
           echo "  - Environment (if configured on npm): npmjs"
           echo "See: https://docs.npmjs.com/trusted-publishers"
 
-      - name: Verify package is not private
-        shell: bash
-        env:
-          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
-        run: |
-          set -Eeuo pipefail
-          pushd "${PACKAGE_DIR}" >/dev/null
-          node - <<'NODE'
-          const fs = require('fs');
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          if (pkg.private) {
-            console.error('Error: package.json has "private": true; refusing to publish to the public npm registry.');
-            process.exit(1);
-          }
-          NODE
-          popd >/dev/null
-
       - name: Publish to npm registry
         shell: bash
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -Eeuo pipefail
-          npm publish "${GITHUB_WORKSPACE}/out/npmjs.tgz" --registry https://registry.npmjs.org --tag "${DIST_TAG}" --access public
+
+          npm_name="${PROJECT}"
+          tarball="${GITHUB_WORKSPACE}/out/npmjs.tgz"
+          registry="https://registry.npmjs.org"
+
+          if [[ ! -f "${tarball}" ]]; then
+            echo "Missing tarball: ${tarball}" >&2
+            exit 1
+          fi
+
+          local_sri=$(node - <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const p = process.argv[1];
+          const buf = fs.readFileSync(p);
+          const hash = crypto.createHash('sha512').update(buf).digest('base64');
+          console.log(`sha512-${hash}`);
+          NODE
+          "${tarball}")
+
+          err_file="${RUNNER_TEMP}/npm-view-npmjs.err"
+          : >"${err_file}"
+
+          set +e
+          remote_integrity=$(npm view "${npm_name}@${VERSION}" dist.integrity --registry "${registry}" 2>"${err_file}")
+          view_rc=$?
+          set -e
+
+          if [[ "${view_rc}" -eq 0 ]]; then
+            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
+            if [[ -z "${remote_integrity}" ]]; then
+              echo "npm view returned empty dist.integrity for ${npm_name}@${VERSION} on ${registry}." >&2
+              exit 1
+            fi
+            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
+              echo "${npm_name}@${VERSION} already exists on npmjs.org (integrity match)."
+              exit 0
+            fi
+            echo "${npm_name}@${VERSION} already exists on npmjs.org but integrity differs." >&2
+            echo "  remote: ${remote_integrity}" >&2
+            echo "  local:  ${local_sri}" >&2
+            exit 1
+          fi
+
+          if grep -Eqi '(E404|404)' "${err_file}"; then
+            echo "${npm_name}@${VERSION} not found on npmjs.org; will publish."
+          elif grep -Eqi '(E401|E403|401|403)' "${err_file}"; then
+            echo "Auth/permission error while querying npmjs.org registry." >&2
+            cat "${err_file}" >&2 || true
+            exit 1
+          else
+            echo "Failed to query npmjs.org registry (npm view exit ${view_rc})." >&2
+            cat "${err_file}" >&2 || true
+            exit 1
+          fi
+
+          publish_err="${RUNNER_TEMP}/npm-publish-npmjs.err"
+          : >"${publish_err}"
+
+          set +e
+          npm publish "${tarball}" --registry "${registry}" --tag "${DIST_TAG}" --access public 2>"${publish_err}"
+          publish_rc=$?
+          set -e
+
+          if [[ "${publish_rc}" -eq 0 ]]; then
+            echo "Published ${npm_name}@${VERSION} to npmjs.org."
+            exit 0
+          fi
+
+          if grep -Eqi '(previously published|cannot publish over|already exists|you cannot publish over)' "${publish_err}"; then
+            echo "Publish reported existing version; re-checking integrity."
+            remote_integrity=$(npm view "${npm_name}@${VERSION}" dist.integrity --registry "${registry}")
+            remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
+            if [[ "${remote_integrity}" == "${local_sri}" ]]; then
+              echo "${npm_name}@${VERSION} already exists on npmjs.org (integrity match)."
+              exit 0
+            fi
+            echo "${npm_name}@${VERSION} exists on npmjs.org but integrity differs." >&2
+            exit 1
+          fi
+
+          echo "Failed to publish to npmjs.org." >&2
+          cat "${publish_err}" >&2 || true
+          exit 1
 
   attest-node:
     name: Attest release assets (Node)
