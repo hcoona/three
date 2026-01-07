@@ -304,7 +304,7 @@ jobs:
           for gemspec in "${gemspecs[@]}"; do
             dir="$(dirname "${gemspec}")"
             echo ""
-            echo "==> Testing Ruby gem in ${dir}" 
+            echo "==> Testing Ruby gem in ${dir}"
 
             if [[ ! -f "${dir}/Gemfile" ]]; then
               echo "No Gemfile in ${dir}; skipping Bundler/RSpec."
