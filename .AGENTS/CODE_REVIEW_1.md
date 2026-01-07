@@ -89,6 +89,10 @@ Concerns / suggestions:
 
 - The dependency install step uses `apt-get install -y` without `--no-install-recommends`. Not incorrect, but it can increase variability and runtime.
 
+Status: **Addressed**
+
+- Updated `.github/workflows/release-build-ruby-gem.yml` to use `apt-get install -y --no-install-recommends`.
+
 ### 2) `.github/workflows/release-resolve.yml`
 
 Strengths:
@@ -105,10 +109,6 @@ Potential edge case to consider:
 
 Good:
 
-- Digest-gated idempotency via `gem fetch` + SHA-256 comparison before pushing.
-- “push says already exists” path retries fetch with bounded backoff, then compares digests.
-- Uses `${{ github.token }}` only.
-
 Issues (should fix):
 
 1. **Potential ambiguous fall-through to push**
@@ -120,12 +120,20 @@ Issues (should fix):
     Recommendation:
     - Treat `(fetch_rc == 0 && expected file missing)` as a hard failure with diagnostics (e.g., `ls -la` in the temp dir), not as “not found”.
 
+    Status: **Addressed**
+    - Updated both `.github/workflows/buddy.yml` and `.github/workflows/official.yml` to fail fast when `gem fetch` exits 0 but the expected file is missing, instead of falling through to `gem push`.
+
 2. **Token exposure risk via authenticated source URL**
     - The `gem fetch` source URL embeds `${ACTOR}:${TOKEN}@...`.
     - While `${{ github.token }}` is typically masked in logs, error output printed from `fetch_err` could still include the full URL.
 
-    Recommendation:
-    - Prefer a non-credentialed `--source https://rubygems.pkg.github.com/<owner>/` and rely on the already-written credentials file (`gem env credentials`) for authentication, avoiding embedding tokens in URLs entirely.
+    Recommendation: - Prefer a non-credentialed `--source https://rubygems.pkg.github.com/<owner>/` and rely on the already-written credentials file (`gem env credentials`)
+    for authentication, avoiding embedding tokens in URLs entirely.
+
+    Status: **Addressed (Scheme B)**
+    - Updated both `.github/workflows/buddy.yml` and `.github/workflows/official.yml` to use:
+        - `--source "https://rubygems.pkg.github.com/${OWNER}/"`
+        - and rely on the credentials file written via `gem env credentials`.
 
 ### 4) Ruby publishing to RubyGems.org (Official)
 
@@ -139,6 +147,10 @@ Good:
 Minor suggestion:
 
 - Consider adding `--no-document` to `gem install rubygems-await` to reduce install time/noise.
+
+Status: **Addressed**
+
+- Updated `.github/workflows/official.yml` to install `rubygems-await` with `--no-document`.
 
 ### 5) Node and Python publish idempotency
 
@@ -156,14 +168,16 @@ One thing to double-check operationally (not strictly Ruby-related):
 
 - The npmjs publish path intends to use npm Trusted Publishing (OIDC) and provides `id-token: write`, but it does not explicitly pass any npm auth token. Ensure the chosen mechanism is sufficient for npm’s Trusted Publishing flow as implemented by the npm CLI used on `ubuntu-latest`.
 
+Status: **Out of scope** (per maintainer decision)
+
 ## Summary of requested follow-ups
 
 ### Should fix (recommended before merging)
 
-- Prevent ambiguous `gem fetch` outcomes from falling through to `gem push` in the GitHub Packages RubyGems idempotency steps.
-- Avoid embedding `${{ github.token }}` in the `--source` URL; rely on RubyGems credentials instead.
+- Prevent ambiguous `gem fetch` outcomes from falling through to `gem push` in the GitHub Packages RubyGems idempotency steps. (**Done**)
+- Avoid embedding `${{ github.token }}` in the `--source` URL; rely on RubyGems credentials instead. (**Done; Scheme B**)
 
 ### Nice to have
 
-- Consider `--no-install-recommends` for apt dependencies (build reproducibility and runtime).
-- Add `--no-document` when installing helper gems (minor).
+- Consider `--no-install-recommends` for apt dependencies (build reproducibility and runtime). (**Done**)
+- Add `--no-document` when installing helper gems (minor). (**Done**)

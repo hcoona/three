@@ -491,7 +491,7 @@ jobs:
           fetch_err="${tmpdir}/fetch.err"
 
           set +e
-          (cd "${tmpdir}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://${ACTOR}:${TOKEN}@rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
+          (cd "${tmpdir}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
           fetch_rc=$?
           set -e
 
@@ -503,6 +503,13 @@ jobs:
               exit 0
             fi
             echo "Gem ${PROJECT} ${VERSION} already exists on GitHub Packages but digest differs." >&2
+            exit 1
+          fi
+
+          if [[ "${fetch_rc}" -eq 0 && ! -f "${remote_file}" ]]; then
+            echo "gem fetch succeeded but did not produce expected file '${expected_remote_file}' in the temp directory." >&2
+            echo "Refusing to fall through to 'gem push' on an ambiguous fetch outcome." >&2
+            ls -la "${tmpdir}" >&2 || true
             exit 1
           fi
 
@@ -539,7 +546,7 @@ jobs:
               sleep $((i * 3))
               : >"${fetch_err}"
               set +e
-              (cd "${tmpdir}" && rm -f "${expected_remote_file}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://${ACTOR}:${TOKEN}@rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
+              (cd "${tmpdir}" && rm -f "${expected_remote_file}" && gem fetch "${PROJECT}" -v "${VERSION}" --norc --silent --clear-sources --source "https://rubygems.pkg.github.com/${OWNER}/") 2>"${fetch_err}"
               fetch_rc=$?
               set -e
               if [[ "${fetch_rc}" -eq 0 && -f "${remote_file}" ]]; then
@@ -550,6 +557,13 @@ jobs:
                   exit 0
                 fi
                 echo "Gem ${PROJECT} ${VERSION} exists on GitHub Packages but digest differs." >&2
+                exit 1
+              fi
+
+              if [[ "${fetch_rc}" -eq 0 && ! -f "${remote_file}" ]]; then
+                echo "gem fetch succeeded but did not produce expected file '${expected_remote_file}' during verification retry." >&2
+                echo "Refusing to continue on an ambiguous fetch outcome." >&2
+                ls -la "${tmpdir}" >&2 || true
                 exit 1
               fi
             done
