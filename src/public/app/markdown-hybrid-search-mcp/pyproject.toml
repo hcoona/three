@@ -1,0 +1,14 @@
+[project]
+name = "markdown-hybrid-search-mcp"
+version = "0.0.0-dev"
+description = "An MCP server that builds local vector + full-text indexes for Markdown folders and provides hybrid retrieval."
+readme = "README.md"
+authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
+requires-python = ">=3.12"
+license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = ["fastmcp>=2.9.2"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
