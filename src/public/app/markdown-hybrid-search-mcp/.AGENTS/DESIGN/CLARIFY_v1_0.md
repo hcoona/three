@@ -91,6 +91,41 @@ This document records clarifications and decisions provided by the user.
     - Delete the temporary storage automatically when the process exits.
     - The index is one-time and does not need cross-process reuse.
 
+12. **LLM usage in v1 (minimal, but required)**
+    - Azure OpenAI chat/completions is **required** for v1.
+    - To keep the first system minimal, the required LLM feature is **query rewrite/expansion**.
+    - Answer synthesis is out of scope for v1 unless explicitly added later.
+
+13. **Storage backend decision (no fallback)**
+    - Use **DuckDB** as the only supported storage backend for v1.
+    - It is acceptable to download/enable DuckDB extensions at runtime if required.
+    - If DuckDB FTS/vector capabilities cannot be enabled/used, the server should **exit with an error**.
+
+14. **Discovery ignore rules and symlink policy**
+    - Follow symlinks/junctions during traversal.
+    - Always ignore the `.git/` directory.
+    - If a `.git/` directory exists (i.e., the root is in a Git repo), respect ignore rules per Git behavior. If no `.git/` directory exists, do not apply ignore rules.
+    - Deduplicate documents by **normalized real path**.
+
+15. **Embedding model**
+    - The embedding deployment must be backed by **text-embedding-3-large**.
+
+16. **Index build failure policy**
+    - Retry Azure OpenAI calls several times.
+    - If indexing (e.g., embeddings) still fails after retries, **exit with error**.
+    - Do not produce a partial index for v1.
+
+17. **Embedding context limit and over-limit handling (v1)**
+    - The embedding model context length is **8191 tokens**.
+    - If the embedding input exceeds the limit, split the text at **newline boundaries** into multiple segments within the limit.
+    - Compute embeddings per segment and aggregate into a single document embedding (e.g., token-weighted mean).
+
+18. **Retry policy detail (jitter)**
+    - Add jitter to exponential backoff during retries.
+
+19. **`.gitignore` applicability (minimal)**
+    - Apply ignore rules only when a `.git/` directory exists (i.e., the root is in a Git repo). If no `.git/` directory exists, ignore rules are not applied.
+
 ## Still-open items (need confirmation)
 
 None.
