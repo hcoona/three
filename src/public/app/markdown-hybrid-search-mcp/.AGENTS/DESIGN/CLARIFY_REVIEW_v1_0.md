@@ -23,7 +23,9 @@ Practical implication: DuckDB is the **only** supported backend for v1. If DuckD
 Answer:
 
 - Follow symlinks/junctions: **Yes**.
-- During traversal, respect **`.gitignore`**, and always ignore the **`.git/`** directory.
+- Always ignore the **`.git/`** directory.
+- Ignore behavior is delegated to the installed `fd` implementation.
+- Enforce `--root` folders as hard boundaries on real paths: only index a file if its `realpath` is within at least one provided `--root`.
 - Deduplication key: **normalized real path**.
 
 ## 4) Embedding model

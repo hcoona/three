@@ -7,8 +7,8 @@ These items need a yes/no (or short) confirmation to make the v1 design implemen
 ## Confirmed answers (2026-01-13)
 
 - (1) `answer` tool in v1: **B** (retrieval-only; remove `answer` and answer synthesis from v1).
-- (2) `.gitignore` applicability: **always**.
-- (3) Symlink/junction boundary policy: **Indexed**.
+- (2) Ignore semantics: **delegate to `fd`** (behavior depends on the installed `fd` implementation).
+- (3) Symlink/junction boundary policy: **Skipped** (enforce `--root` folders as hard boundaries on real paths).
 - (4) DuckDB: **v1.4.3**, extensions: **`fts`** and **`vss`**.
 - (5) Tokenizer encoding for token counting: **`cl100k_base`**.
 - (6) Embedding input algorithm and limits: **agree** (use the suggested defaults).

@@ -73,11 +73,7 @@ The design states “always respect `.gitignore` using Git ignore semantics” a
 
 **Recommended change:**
 
-- Explicitly define which ignore sources are honored:
-    - local `.gitignore` files under the roots (yes/no)
-    - `.ignore` and `.fdignore` (yes/no)
-    - global gitignore (yes/no)
-- Add an acceptance test description (not code): e.g., a small fixture tree where an ignored `*.md` is not discovered.
+**Status update:** addressed in `v1.md` by delegating ignore behavior to the installed `fd` implementation and requiring recording of `fd --version` and the exact discovery invocation.
 
 ### 4) Symlink boundary rule has security and UX implications
 
@@ -90,11 +86,7 @@ Design rule: “If a symlink/junction points outside all provided `--root` folde
 
 **Recommended change:**
 
-- Keep the behavior only if it is a deliberate product choice. Otherwise, prefer a safer default:
-    - follow symlinks but **only index targets whose realpath is within at least one root**.
-- If the current rule is kept, document:
-    - how results report paths (original vs real)
-    - how filters behave (filter on original path, real path, or both)
+**Status update:** addressed in `v1.md` by enforcing roots as hard boundaries on real paths (skip outside-root symlink targets) and defining `path`/filters in terms of normalized real paths.
 
 ### 5) Failure policy is clear for indexing, unclear for query-time LLM rewrite
 
@@ -106,16 +98,13 @@ But query-time behavior is not specified:
 
 **Recommended change:**
 
-- For v1 robustness, query rewrite should be **best-effort**:
-    - if rewrite fails, proceed with raw user query for both FTS and embeddings
-    - record in logs that rewrite failed and was bypassed
-- Only fail the query if embeddings cannot be computed (since vector retrieval depends on it).
+**Status update:** addressed in `v1.md` by specifying that `search` must return a tool error if query rewrite/expansion fails (no fallback).
 
 ## Non-blocking improvements (should fix)
 
 ### Duplicate line in “Unified storage”
 
-The storage section repeats the same bullet twice. Remove duplication to avoid ambiguity during implementation.
+The storage section repeats the same bullet twice. **Status update:** addressed in `v1.md` (duplicate removed).
 
 ### Snippet algorithm is too brittle for punctuation/CJK and code-like queries
 
@@ -190,11 +179,16 @@ To keep v1 minimal but reliable, the design should require the following checks:
 
 ## Suggested edits to `v1.md` (high impact, low scope)
 
-- Replace the current “DuckDB schema and query shape” with a **verified** minimal SQL set (or explicitly label it as “pseudocode; subject to validation”).
-- Add a short “Query-time failure handling” section (especially LLM rewrite failure).
-- Clarify ignore semantics and symlink policy as described above.
-- Remove the duplicated “Unified storage” bullet.
+Status update (v1.2): the following changes have been applied to `v1.md`:
+
+- The DuckDB SQL/schema section is explicitly treated as illustrative unless validated by a startup self-test, and a DuckDB compatibility contract/self-test requirement is added.
+- Query-time failure handling is specified: LLM rewrite failure causes `search` to return a tool error.
+- Discovery semantics are updated:
+    - ignore behavior is delegated to `fd` and `fd --version` + exact invocation are recorded.
+    - symlink traversal is allowed, but only index files whose `realpath` is within at least one `--root`.
+    - result `path` and path-based filters use normalized real path.
+- The duplicated “Unified storage” bullet is removed.
 
 ## Recommendation
 
-Proceed with implementation only after the DuckDB FTS/VSS contract is validated and the ignore/symlink/query-failure behaviors are explicitly specified. These changes do not expand scope but significantly reduce the risk of rework.
+Proceed with implementation only after the DuckDB FTS/VSS contract is validated (ideally via the required startup self-test). The other operational behaviors (ignore/symlink/query-failure) are now explicitly specified.

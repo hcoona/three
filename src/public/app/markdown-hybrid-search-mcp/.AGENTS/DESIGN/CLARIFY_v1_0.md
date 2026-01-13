@@ -104,7 +104,9 @@ This document records clarifications and decisions provided by the user.
 14. **Discovery ignore rules and symlink policy**
     - Follow symlinks/junctions during traversal.
     - Always ignore the `.git/` directory.
-    - Always respect ignore rules using Git ignore semantics (even if there is no `.git/` directory).
+    - Ignore behavior is delegated to the installed `fd` implementation.
+    - Enforce `--root` folders as hard boundaries on real paths: only index a file if its `realpath` is within at least one provided `--root`.
+    - Store/return `path` as the normalized real path.
     - Deduplicate documents by **normalized real path**.
 
 15. **Embedding model**
@@ -124,7 +126,7 @@ This document records clarifications and decisions provided by the user.
     - Add jitter to exponential backoff during retries.
 
 19. **`.gitignore` applicability (minimal)**
-    - Apply ignore rules always.
+    - Delegate ignore applicability/semantics to the installed `fd` implementation.
 
 ## Still-open items (need confirmation)
 
