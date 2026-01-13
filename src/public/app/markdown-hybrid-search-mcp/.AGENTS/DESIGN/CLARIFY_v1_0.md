@@ -104,7 +104,7 @@ This document records clarifications and decisions provided by the user.
 14. **Discovery ignore rules and symlink policy**
     - Follow symlinks/junctions during traversal.
     - Always ignore the `.git/` directory.
-    - If a `.git/` directory exists (i.e., the root is in a Git repo), respect ignore rules per Git behavior. If no `.git/` directory exists, do not apply ignore rules.
+    - Always respect ignore rules using Git ignore semantics (even if there is no `.git/` directory).
     - Deduplicate documents by **normalized real path**.
 
 15. **Embedding model**
@@ -117,14 +117,14 @@ This document records clarifications and decisions provided by the user.
 
 17. **Embedding context limit and over-limit handling (v1)**
     - The embedding model context length is **8191 tokens**.
-    - If the embedding input exceeds the limit, split the text at **newline boundaries** into multiple segments within the limit.
-    - Compute embeddings per segment and aggregate into a single document embedding (e.g., token-weighted mean).
+        - V1 avoids over-limit inputs by capping the embedding input to a fixed token budget below the model limit.
+          Therefore, v1 does not require newline-boundary splitting and multi-segment aggregation.
 
 18. **Retry policy detail (jitter)**
     - Add jitter to exponential backoff during retries.
 
 19. **`.gitignore` applicability (minimal)**
-    - Apply ignore rules only when a `.git/` directory exists (i.e., the root is in a Git repo). If no `.git/` directory exists, ignore rules are not applied.
+    - Apply ignore rules always.
 
 ## Still-open items (need confirmation)
 

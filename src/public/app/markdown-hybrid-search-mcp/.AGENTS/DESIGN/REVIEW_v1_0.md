@@ -20,16 +20,16 @@ Note: The earlier open questions have now been clarified (LLM required, DuckDB-o
 
 ### Resolved decisions coverage
 
-| Clarified decision                      |         Status in `v1.md` | Notes                                                                                                          |
-| --------------------------------------- | ------------------------: | -------------------------------------------------------------------------------------------------------------- |
-| Azure OpenAI embeddings + LLM           |               **Aligned** | LLM is required (minimal query rewrite/expansion); embeddings use `text-embedding-3-large`.                    |
-| Entra ID auth (no API keys)             |             **Mentioned** | Good, but credential chain details and error UX need spec.                                                     |
-| Local-only except AOAI                  |               **Aligned** | Ensure no telemetry/remote DB, and avoid auto-downloading extensions at runtime if it pulls from the internet. |
-| Single embedding model per run          |               **Aligned** | Needs explicit meta + enforcement on query.                                                                    |
-| Build index once at startup; no updates |               **Aligned** | `--reindex` flag still acceptable, but semantics need to be precise.                                           |
-| Whole-document retrieval only           |               **Aligned** | Good.                                                                                                          |
-| Code blocks approach                    |               **Aligned** | Needs a concrete extraction spec for `code_signals` and embedding text budgets.                                |
-| Ephemeral index in temp; delete on exit |               **Aligned** | `v1.md` includes an explicit lifecycle requirement; implementation still needs concrete cleanup mechanics.      |
+| Clarified decision                      | Status in `v1.md` | Notes                                                                                                          |
+| --------------------------------------- | ----------------: | -------------------------------------------------------------------------------------------------------------- |
+| Azure OpenAI embeddings + LLM           |       **Aligned** | LLM is required (minimal query rewrite/expansion); embeddings use `text-embedding-3-large`.                    |
+| Entra ID auth (no API keys)             |     **Mentioned** | Good, but credential chain details and error UX need spec.                                                     |
+| Local-only except AOAI                  |       **Aligned** | Ensure no telemetry/remote DB, and avoid auto-downloading extensions at runtime if it pulls from the internet. |
+| Single embedding model per run          |       **Aligned** | Needs explicit meta + enforcement on query.                                                                    |
+| Build index once at startup; no updates |       **Aligned** | `--reindex` flag still acceptable, but semantics need to be precise.                                           |
+| Whole-document retrieval only           |       **Aligned** | Good.                                                                                                          |
+| Code blocks approach                    |       **Aligned** | Needs a concrete extraction spec for `code_signals` and embedding text budgets.                                |
+| Ephemeral index in temp; delete on exit |       **Aligned** | `v1.md` includes an explicit lifecycle requirement; implementation still needs concrete cleanup mechanics.     |
 
 ## Must-fix issues (blocking)
 
@@ -140,7 +140,7 @@ Good start, but define:
 
 - MMR diversification: keep optional; consider implementing after baseline quality is stable.
 - `mode: {docs, mixed, code}`: marked future; OK.
-- RAG answer synthesis: if LLM is required, define minimal outputs + citation formatting.
+- RAG answer synthesis: out of scope for v1.
 
 ## Recommended spec additions to `v1.md` (concrete)
 

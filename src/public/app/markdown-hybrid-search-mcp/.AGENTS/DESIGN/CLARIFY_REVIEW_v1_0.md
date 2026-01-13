@@ -49,8 +49,10 @@ Practical implication: do not build a partial index for v1.
 
 ---
 
-## Addendum (2026-01-13)
+## Correction (2026-01-13)
 
-Update: **Answer synthesis is required in v1**.
+The previous addendum about answer synthesis being required in v1 was incorrect.
 
-Practical implication: the chat deployment is used for both (1) query rewrite/expansion and (2) answer synthesis with citations.
+Update: **Answer synthesis is out of scope for v1**.
+
+Practical implication: the chat deployment (if configured/required) is used for query rewrite/expansion only.
