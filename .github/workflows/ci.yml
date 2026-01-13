@@ -240,3 +240,98 @@ jobs:
         run: |
           set -Eeuo pipefail
           uv run --frozen pytest
+
+  ruby-tests:
+    name: Test (Ruby 3.3)
+    runs-on: ubuntu-latest
+    needs: validation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@675dd7ba1b06c8786a1480d89c384f5620a42647 # v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base \
+            texlive-latex-recommended \
+            texlive-fonts-recommended \
+            dvisvgm \
+            pdf2svg \
+            poppler-utils \
+            imagemagick \
+            ghostscript \
+            fd-find
+
+      - name: Ensure fd is available
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if command -v fd >/dev/null 2>&1; then
+            fd --version
+            exit 0
+          fi
+
+          if command -v fdfind >/dev/null 2>&1; then
+            fdfind --version
+            mkdir -p "${HOME}/.local/bin"
+            ln -sf "$(command -v fdfind)" "${HOME}/.local/bin/fd" || true
+            export PATH="${HOME}/.local/bin:${PATH}"
+            fd --version
+            exit 0
+          fi
+
+          echo "fd is not available" >&2
+          exit 1
+
+      - name: Run Ruby gem tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          mapfile -t gemspecs < <(fd -e gemspec)
+          if [[ "${#gemspecs[@]}" -eq 0 ]]; then
+            echo "No *.gemspec found; skipping Ruby tests."
+            exit 0
+          fi
+
+          printf 'Discovered gemspecs:\n'
+          printf ' - %s\n' "${gemspecs[@]}"
+
+          failures=0
+          for gemspec in "${gemspecs[@]}"; do
+            dir="$(dirname "${gemspec}")"
+            echo ""
+            echo "==> Testing Ruby gem in ${dir}"
+
+            if [[ ! -f "${dir}/Gemfile" ]]; then
+              echo "No Gemfile in ${dir}; skipping Bundler/RSpec."
+              continue
+            fi
+
+            if [[ ! -d "${dir}/spec" ]]; then
+              echo "No spec/ directory in ${dir}; skipping RSpec."
+              continue
+            fi
+
+            pushd "${dir}" >/dev/null
+            bundle install
+            bundle exec rspec || failures=$((failures + 1))
+            popd >/dev/null
+          done
+
+          if [[ "${failures}" -ne 0 ]]; then
+            echo "Ruby test failures: ${failures}" >&2
+            exit 1
+          fi
