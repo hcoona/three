@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       version:
-        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Others: SemVer 2.0.0 (no leading v)."
+        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Node: SemVer 2.0.0 (no leading v). Ruby: MAJOR.MINOR.PATCH[.suffix...] (no '-' or '+'; suffix segments are dot-separated [0-9A-Za-z]+ and must include at least one letter)."
         required: true
         type: string
       target:
@@ -33,6 +33,7 @@ env:
   PYTHON_VERSION: '3.14'
   NODE_VERSION: '24'
   PNPM_VERSION: '10'
+  RUBY_VERSION: '3.3'
 
 jobs:
   versions:
@@ -44,6 +45,7 @@ jobs:
       python_version: ${{ steps.versions.outputs.python_version }}
       node_version: ${{ steps.versions.outputs.node_version }}
       pnpm_version: ${{ steps.versions.outputs.pnpm_version }}
+      ruby_version: ${{ steps.versions.outputs.ruby_version }}
     steps:
       - name: Export versions
         id: versions
@@ -54,6 +56,7 @@ jobs:
             echo "python_version=${PYTHON_VERSION}"
             echo "node_version=${NODE_VERSION}"
             echo "pnpm_version=${PNPM_VERSION}"
+            echo "ruby_version=${RUBY_VERSION}"
           } >> "${GITHUB_OUTPUT}"
 
   resolve:
@@ -70,6 +73,27 @@ jobs:
       version: ${{ inputs.version }}
       target: ${{ inputs.target }}
       force_update_tag: ${{ inputs.force_update_tag }}
+
+  guard-prerelease-only:
+    name: "Guard: buddy must be prerelease-only"
+    runs-on: ubuntu-latest
+    needs: resolve
+    permissions:
+      contents: read
+    steps:
+      - name: Enforce prerelease-only
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          IS_PRERELEASE: ${{ needs.resolve.outputs.is_prerelease }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${IS_PRERELEASE}" != "true" ]]; then
+            echo "Buddy releases must be prerelease-only. Refusing to release '${PROJECT}' version '${VERSION}'." >&2
+            exit 1
+          fi
+          echo "Prerelease-only guard passed for ${PROJECT} ${VERSION}."
 
   guard-non-clobber:
     name: "Guard: buddy must not clobber official release"
@@ -156,6 +180,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'python'
     uses: ./.github/workflows/release-build-python.yml
@@ -172,6 +197,7 @@ jobs:
     name: Create GitHub release (Python)
     needs:
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
       - prepare-release-notes
       - build-python
@@ -194,6 +220,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
     uses: ./.github/workflows/release-build-node-pack.yml
@@ -216,6 +243,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-prerelease-only
       - pack-node
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
@@ -224,6 +252,12 @@ jobs:
       actions: read
       packages: write
     steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
       - name: Resolve npm scope
         id: npm_scope
         shell: bash
@@ -273,18 +307,108 @@ jobs:
           NPM_CONFIG_ALWAYS_AUTH: 'true'
           NODE_AUTH_TOKEN: ${{ github.token }}
           NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -Eeuo pipefail
-          npm publish "${GITHUB_WORKSPACE}/out/gpr.tgz" --registry https://npm.pkg.github.com --tag "${DIST_TAG}"
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
 
   release-node-gpr:
     name: Create GitHub release (Node/GPR)
     needs:
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
       - prepare-release-notes
       - publish-node-gpr
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: true
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: buddy-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: buddy-${{ needs.resolve.outputs.project }}-dist
+
+  build-ruby:
+    name: Build Ruby gem (Buddy)
+    needs:
+      - versions
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    uses: ./.github/workflows/release-build-ruby-gem.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      ruby_version: ${{ needs.versions.outputs.ruby_version }}
+      artifact_name: buddy-${{ needs.resolve.outputs.project }}-dist
+
+  publish-ruby-gpr:
+    name: Publish Ruby gem (GitHub Packages)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: buddy-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@675dd7ba1b06c8786a1480d89c384f5620a42647 # v1
+        with:
+          ruby-version: ${{ needs.versions.outputs.ruby_version }}
+
+      - name: Publish to GitHub Packages (idempotent)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_ruby_gpr_idempotent.sh"
+
+  release-ruby:
+    name: Create GitHub release (Ruby)
+    needs:
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+      - prepare-release-notes
+      - publish-ruby-gpr
+    if: needs.resolve.outputs.project_kind == 'ruby'
     permissions:
       contents: write
       actions: read
@@ -303,6 +427,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
     uses: ./.github/workflows/release-build-wxt.yml
@@ -321,6 +446,7 @@ jobs:
     name: Create GitHub release (Node/WXT)
     needs:
       - resolve
+      - guard-prerelease-only
       - guard-non-clobber
       - prepare-release-notes
       - build-wxt

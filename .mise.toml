@@ -41,6 +41,12 @@ hadolint = "latest"
 dotenv-linter = "latest"
 
 #
+# Utilities
+#
+fd = "latest"
+ripgrep = "latest"
+
+#
 # Environment Variables
 #
 

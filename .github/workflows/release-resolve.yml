@@ -32,7 +32,7 @@ on:
         required: false
         type: string
       version:
-        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Others: SemVer 2.0.0 (no leading v). Required when source=manual."
+        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Node: SemVer 2.0.0 (no leading v). Ruby: MAJOR.MINOR.PATCH[.suffix...] (no '-' or '+'; suffix segments are dot-separated [0-9A-Za-z]+ and must include at least one letter). Required when source=manual."
         required: false
         type: string
       target:
@@ -53,6 +53,8 @@ on:
         value: ${{ jobs.resolve.outputs.version }}
       project_kind:
         value: ${{ jobs.resolve.outputs.project_kind }}
+      is_prerelease:
+        value: ${{ jobs.resolve.outputs.is_prerelease }}
       is_wxt:
         value: ${{ jobs.resolve.outputs.is_wxt }}
       tag_name:
@@ -82,6 +84,7 @@ jobs:
       project: ${{ steps.meta.outputs.project }}
       version: ${{ steps.meta.outputs.version }}
       project_kind: ${{ steps.meta.outputs.project_kind }}
+      is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
       is_wxt: ${{ steps.meta.outputs.is_wxt }}
       tag_name: ${{ steps.meta.outputs.tag_name }}
       target: ${{ steps.meta.outputs.target }}
@@ -109,6 +112,22 @@ jobs:
         uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
         with:
           version: '1.7.1'
+
+      - name: Setup mise
+        uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5 # v3
+        with:
+          experimental: true
+          install: false
+
+      - name: Install fd (mise)
+        shell: bash
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          mise install fd
+          command -v fd
+          fd --version
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -235,31 +254,49 @@ jobs:
           git checkout --detach "${target}"
 
           # Determine project kind and package directory.
+          # This uses a unified detector with an explicit exit-code contract:
+          #   0: unique match (prints a single JSON object)
+          #   2: ambiguous
+          #   3: not found
+          #   1: unexpected error
           project_kind=""
           pkg_dir=""
-          python_detect_err_file="$(mktemp)"
-          node_detect_err_file="$(mktemp)"
-          if pkg_dir=$(uv run --script eng/scripts/find_python_project_path.py "${project}" 2>"${python_detect_err_file}"); then
-            project_kind="python"
-            rm -f "${python_detect_err_file}" "${node_detect_err_file}"
-          elif pkg_dir=$(uv run --script eng/scripts/find_node_project_path.py "${project}" 2>"${node_detect_err_file}"); then
-            project_kind="node"
-            rm -f "${python_detect_err_file}" "${node_detect_err_file}"
+          detect_err_file="$(mktemp)"
+
+          set +e
+          detect_out=$(uv run --script eng/scripts/find_project_path.py "${project}" 2>"${detect_err_file}")
+          detect_rc=$?
+          set -e
+
+          if [[ "${detect_rc}" -eq 0 ]]; then
+            project_kind=$(printf '%s' "${detect_out}" | jq -r '.project_kind')
+            pkg_dir=$(printf '%s' "${detect_out}" | jq -r '.package_dir')
+            rm -f "${detect_err_file}"
+          elif [[ "${detect_rc}" -eq 2 ]]; then
+            echo "Ambiguous project resolution for '${project}'." >&2
+            if [[ -s "${detect_err_file}" ]]; then
+              cat "${detect_err_file}" >&2
+            fi
+            rm -f "${detect_err_file}"
+            exit 2
+          elif [[ "${detect_rc}" -eq 3 ]]; then
+            echo "Unknown project: ${project}." >&2
+            if [[ -s "${detect_err_file}" ]]; then
+              cat "${detect_err_file}" >&2
+            fi
+            rm -f "${detect_err_file}"
+            exit 3
           else
-            echo "Unknown project: ${project}. No matching pyproject.toml (project.name) or package.json (name) found." >&2
-            if [[ -s "${python_detect_err_file}" ]]; then
-              echo "Details from Python project detection:" >&2
-              cat "${python_detect_err_file}" >&2
+            echo "Project discovery failed unexpectedly (exit ${detect_rc})." >&2
+            if [[ -s "${detect_err_file}" ]]; then
+              cat "${detect_err_file}" >&2
             fi
-            if [[ -s "${node_detect_err_file}" ]]; then
-              echo "Details from Node project detection:" >&2
-              cat "${node_detect_err_file}" >&2
-            fi
-            rm -f "${python_detect_err_file}" "${node_detect_err_file}"
+            rm -f "${detect_err_file}"
             exit 1
           fi
 
-          # Validate version by project kind.
+          # Validate version by project kind and derive is_prerelease.
+          is_prerelease="false"
           if [[ "${project_kind}" == "python" ]]; then
             # Python releases allow a leading v/V.
             if [[ "${version}" =~ ^[vV] ]]; then
@@ -272,9 +309,22 @@ jobs:
             fi
 
             uv run --script eng/scripts/validate_pep440_version.py "${version}"
-          else
-            # Non-Python releases require strict SemVer2.0 (no leading v).
+
+            is_prerelease=$(uv run --with 'packaging>=24.0' python -c "from packaging.version import Version; import sys; v=Version(sys.argv[1]); print('true' if (v.is_prerelease or v.is_devrelease) else 'false')" "${version}")
+          elif [[ "${project_kind}" == "node" ]]; then
+            # Node releases require strict SemVer2.0 (no leading v).
             uv run --script eng/scripts/validate_semver2_version.py "${version}"
+            if [[ "${version}" == *-* ]]; then
+              is_prerelease="true"
+            fi
+          elif [[ "${project_kind}" == "ruby" ]]; then
+            uv run --script eng/scripts/validate_rubygems_version.py "${version}"
+            if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\..+$ ]]; then
+              is_prerelease="true"
+            fi
+          else
+            echo "Unexpected project kind from discovery: ${project_kind}" >&2
+            exit 1
           fi
 
           # For manually triggered runs, tag_name depends on the validated/normalized version.
@@ -306,6 +356,7 @@ jobs:
           echo "project=${project}" >> "${GITHUB_OUTPUT}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "project_kind=${project_kind}" >> "${GITHUB_OUTPUT}"
+          echo "is_prerelease=${is_prerelease}" >> "${GITHUB_OUTPUT}"
           echo "is_wxt=${is_wxt}" >> "${GITHUB_OUTPUT}"
           echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
           echo "target=${target}" >> "${GITHUB_OUTPUT}"

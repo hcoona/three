@@ -272,7 +272,6 @@ jobs:
             imagemagick \
             ghostscript \
             fd-find
-
       - name: Ensure fd is available
         shell: bash
         run: |

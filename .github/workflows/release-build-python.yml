@@ -68,6 +68,10 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/out"
 
           cd "${PACKAGE_DIR}"
+          export TZ=UTC
+          export LC_ALL=C.UTF-8
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
           uv build --out-dir "${GITHUB_WORKSPACE}/out"
 
       - name: Verify built version matches tag
