@@ -209,7 +209,7 @@ jobs:
           echo "Verified WXT package version matches ${EXPECTED}"
 
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ github.workspace }}/out/*
