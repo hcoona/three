@@ -36,8 +36,8 @@ Embedding context limit and scan result:
 
 - `text-embedding-3-large` context length is **8191 tokens**.
 - A heuristic scan over the previously sampled sets indicates there are Markdown files that are likely to exceed the limit (based on file size):
-	- `C:\s\OneBranch-Customer-Wiki.v2`: 14 / 449 (first 5000) over the heuristic threshold
-	- `C:\s\Azure-Express-Docs\src\documentation`: 9 / 532 (first 5000) over the heuristic threshold
+    - `C:\s\OneBranch-Customer-Wiki.v2`: 14 / 449 (first 5000) over the heuristic threshold
+    - `C:\s\Azure-Express-Docs\src\documentation`: 9 / 532 (first 5000) over the heuristic threshold
 
 Therefore v1 must handle over-limit inputs by splitting at newline boundaries and aggregating embeddings (rather than failing fast).
 
@@ -46,3 +46,11 @@ Therefore v1 must handle over-limit inputs by splitting at newline boundaries an
 Answer: Retry several times; if it still fails, **exit with error**.
 
 Practical implication: do not build a partial index for v1.
+
+---
+
+## Addendum (2026-01-13)
+
+Update: **Answer synthesis is required in v1**.
+
+Practical implication: the chat deployment is used for both (1) query rewrite/expansion and (2) answer synthesis with citations.
