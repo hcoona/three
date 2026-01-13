@@ -4,6 +4,8 @@ Date: 2026-01-12
 
 This document records the user's answers to the review follow-up questions. All items below are now **resolved**.
 
+> NOTE (2026-01-13): This file has been normalized to match the newest resolved decisions across the review series (see `CLARIFY_REVIEW_v1_3.md`). Statements that were later revised have been updated in-place to avoid contradictions across versions.
+
 ## 1) Azure OpenAI LLM call in v1
 
 Answer: **A (Required)**.
@@ -37,11 +39,14 @@ Practical implication: the configured Azure OpenAI embedding deployment must be 
 Embedding context limit and scan result:
 
 - `text-embedding-3-large` context length is **8191 tokens**.
-- A heuristic scan over the previously sampled sets indicates there are Markdown files that are likely to exceed the limit (based on file size):
+- A heuristic scan over the previously sampled sets indicates there are Markdown files that are likely to exceed a safe embedding input budget (based on file size):
     - `C:\s\OneBranch-Customer-Wiki.v2`: 14 / 449 (first 5000) over the heuristic threshold
     - `C:\s\Azure-Express-Docs\src\documentation`: 9 / 532 (first 5000) over the heuristic threshold
 
-Therefore v1 must handle over-limit inputs by splitting at newline boundaries and aggregating embeddings (rather than failing fast).
+Updated v1 decision (supersedes the earlier splitting requirement):
+
+- V1 avoids over-limit inputs by capping the embedding input to a fixed budget below the model limit (see later review clarifications; e.g., head+tail strategy).
+- Therefore, v1 does **not** implement newline-boundary splitting and multi-segment embedding aggregation.
 
 ## 5) Failure policy during indexing
 

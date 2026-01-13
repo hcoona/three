@@ -2,7 +2,9 @@
 
 Date: 2026-01-13
 
-These items need a yes/no (or short) confirmation to make the v1 design implementation-ready.
+These items originally needed a yes/no (or short) confirmation to make the v1 design implementation-ready.
+
+> NOTE: The decisions under “Confirmed answers” are resolved for v1.1. If a later review clarification (e.g., v1.2/v1.3) disagrees, the newer review version takes precedence.
 
 ## Confirmed answers (2026-01-13)
 

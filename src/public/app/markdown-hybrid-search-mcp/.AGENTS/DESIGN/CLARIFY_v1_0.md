@@ -4,6 +4,8 @@
 
 This document records clarifications and decisions provided by the user.
 
+> NOTE (2026-01-13): This document is periodically updated to stay consistent with the latest design review clarifications. When in doubt, treat the highest `CLARIFY_REVIEW_v*` document as the source of truth.
+
 ## Decisions (resolved)
 
 1. **Azure OpenAI (embeddings + LLM) and auth**
@@ -35,7 +37,9 @@ This document records clarifications and decisions provided by the user.
         - `C:/s/OneBranch-Customer-Wiki.v2/`
         - `C:/s/Azure-Express-Docs/src/documentation/`
     - Sampling method:
-        - Enumerate up to the first 5,000 Markdown files (`*.md`, `*.markdown`) under each root.
+        - Enumerate up to the first 5,000 Markdown files under each root.
+            - The sampling exercise included both `*.md` and `*.markdown`.
+            - V1 discovery/indexing uses `fd -e md` (i.e., `.md` files only).
         - Compute size stats over the enumerated files.
         - Randomly sample 200 files (from the enumerated set) and count occurrences of the Markdown fence marker ```.
         - This is a sample, not a full scan.
@@ -59,6 +63,7 @@ This document records clarifications and decisions provided by the user.
 5. **Index build & updates**
     - Build the index once at server startup.
     - Do not update/rebuild during subsequent queries.
+    - Treat the index as a **snapshot**: tool responses (including `get_document`) return content from the indexed snapshot (not live file reads).
 
 6. **Concurrency**
     - No specific concurrency/QPS requirement.
@@ -87,13 +92,15 @@ This document records clarifications and decisions provided by the user.
     - Do not replace code blocks with a generic placeholder only, because that tends to destroy useful semantic signals and can increase false similarity.
 
 11. **Security / boundaries / lifecycle**
-    - The index is **ephemeral**: store it under a temporary directory.
-    - Delete the temporary storage automatically when the process exits.
+    - The index is **ephemeral**: store it under a process-owned subdirectory under `--work-dir` (or the system temp dir if `--work-dir` is not provided).
+    - The server MUST attempt best-effort deletion of the process-owned subdirectory on exit.
+    - The server MUST NOT delete user-owned directories.
     - The index is one-time and does not need cross-process reuse.
 
 12. **LLM usage in v1 (minimal, but required)**
     - Azure OpenAI chat/completions is **required** for v1.
     - To keep the first system minimal, the required LLM feature is **query rewrite/expansion**.
+    - The rewrite stage MUST translate the query to **English** (v1 may assume ASCII/English).
     - Answer synthesis is out of scope for v1 unless explicitly added later.
 
 13. **Storage backend decision (no fallback)**
@@ -105,6 +112,7 @@ This document records clarifications and decisions provided by the user.
     - Follow symlinks/junctions during traversal.
     - Always ignore the `.git/` directory.
     - Ignore behavior is delegated to the installed `fd` implementation.
+    - V1 discovery enumerates Markdown via `fd -e md` (no user-facing include/exclude glob parameters).
     - Enforce `--root` folders as hard boundaries on real paths: only index a file if its `realpath` is within at least one provided `--root`.
     - Store/return `path` as the normalized real path.
     - Deduplicate documents by **normalized real path**.
