@@ -1,0 +1,104 @@
+# Copyright 2015 Shuai Zhang
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
+name: Refresh NuGet lockfiles (Dependabot)
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: dependabot-lockfiles-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    name: Update packages.lock.json
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    if: >-
+      github.repository == 'hcoona/three' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false
+
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate PR head commit is authored by Dependabot
+        if: steps.metadata.outputs.package-ecosystem == 'nuget'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $commit = gh api "/repos/${{ github.repository }}/commits/$env:HEAD_SHA" | ConvertFrom-Json
+          $author = $commit.author.login
+
+          if ($author -ne 'dependabot[bot]') {
+            Write-Error "Refusing to run: PR head commit author is '$author' (expected 'dependabot[bot]')."
+          }
+
+      - name: Checkout PR branch
+        if: steps.metadata.outputs.package-ecosystem == 'nuget'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup .NET SDK
+        if: steps.metadata.outputs.package-ecosystem == 'nuget'
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore (update lockfiles)
+        if: steps.metadata.outputs.package-ecosystem == 'nuget'
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          dotnet restore dirs.proj --force-evaluate -p:RestoreLockedMode=false
+
+      - name: Commit and push lockfile changes
+        if: steps.metadata.outputs.package-ecosystem == 'nuget'
+        shell: pwsh
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Stage only NuGet lockfiles.
+          git add -A -- ":(glob)**/packages.lock.json"
+
+          if (git diff --cached --quiet) {
+            "No packages.lock.json changes to commit."
+            exit 0
+          }
+
+          git commit -m "Update NuGet lockfiles"
+          git push origin "HEAD:$env:PR_BRANCH"
