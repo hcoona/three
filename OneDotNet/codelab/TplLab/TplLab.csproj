@@ -5,9 +5,4 @@
     <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="System.Text.Json" />
-    <PackageReference Include="System.Threading.Tasks.Dataflow" />
-  </ItemGroup>
-
 </Project>
