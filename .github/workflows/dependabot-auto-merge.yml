@@ -126,8 +126,26 @@ jobs:
             exit 1
           fi
 
+      - name: Enable auto-merge (squash for NuGet)
+        if: steps.eligibility.outputs.eligible == 'true' && steps.metadata.outputs.package-ecosystem == 'nuget'
+        shell: bash
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          # Requires repository settings:
+          # - Allow auto-merge
+          # - Allow squash merging
+          if ! gh pr merge --auto --squash "$PR_URL"; then
+            echo "::error title=Failed to enable auto-merge::Could not enable auto-merge (squash) for this PR."
+            echo "Hint: ensure repository settings allow auto-merge and squash merging, and that branch protection requirements can be satisfied."
+            exit 1
+          fi
+
       - name: Enable auto-merge (rebase)
-        if: steps.eligibility.outputs.eligible == 'true'
+        if: steps.eligibility.outputs.eligible == 'true' && steps.metadata.outputs.package-ecosystem != 'nuget'
         shell: bash
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
