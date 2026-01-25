@@ -75,7 +75,7 @@
     "prettier": "3.8.0",
     "tsdown": "^0.18.4",
     "typescript": "^5.9.3",
-    "@typescript/native-preview": "^7.0.0-dev.20260117.1",
+    "@typescript/native-preview": "^7.0.0-dev.20260124.1",
     "vitest": "^4.0.17"
   },
   "exports": {
