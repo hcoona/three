@@ -14,13 +14,13 @@
     "format": "pnpm -r --if-present format"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.11",
+    "@biomejs/biome": "2.3.12",
     "@commitlint/cli": "^20.3.1",
     "@commitlint/config-conventional": "^20.3.1",
     "@commitlint/format": "^20.3.1",
     "@commitlint/types": "^20.3.1",
     "ap-style-title-case": "^2.0.0",
     "markdownlint-cli2": "0.20.0",
-    "prettier": "3.8.0"
+    "prettier": "3.8.1"
   }
 }
