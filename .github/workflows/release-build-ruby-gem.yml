@@ -59,7 +59,7 @@ jobs:
 
       - name: Setup Ruby (Bundler)
         if: ${{ hashFiles(format('{0}/Gemfile', inputs.package_dir)) != '' }}
-        uses: ruby/setup-ruby@708024e6c902387ab41de36e1669e43b5ee7085e # v1
+        uses: ruby/setup-ruby@8d27f39a5e7ad39aebbcbd1324f7af020229645c # v1
         with:
           ruby-version: ${{ inputs.ruby_version }}
           bundler-cache: true
@@ -67,7 +67,7 @@ jobs:
 
       - name: Setup Ruby
         if: ${{ hashFiles(format('{0}/Gemfile', inputs.package_dir)) == '' }}
-        uses: ruby/setup-ruby@708024e6c902387ab41de36e1669e43b5ee7085e # v1
+        uses: ruby/setup-ruby@8d27f39a5e7ad39aebbcbd1324f7af020229645c # v1
         with:
           ruby-version: ${{ inputs.ruby_version }}
 
