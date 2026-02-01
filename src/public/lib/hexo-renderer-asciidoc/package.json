@@ -62,7 +62,7 @@
   "dependencies": {
     "asciidoctor": "3.0.4",
     "cheerio": "^1.2.0",
-    "entities": "^7.0.0",
+    "entities": "^7.0.1",
     "hexo-util": "^4.0.0"
   },
   "devDependencies": {
