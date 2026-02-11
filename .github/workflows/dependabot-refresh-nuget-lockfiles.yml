@@ -44,6 +44,16 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Create GitHub App token
+        id: app-token
+        if: steps.metadata.outputs.package-ecosystem == 'nuget'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.SHUAIZHANG_LOCKFILE_APP_ID }}
+          private-key: ${{ secrets.SHUAIZHANG_LOCKFILE_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
       - name: Validate PR head commit is authored by Dependabot
         if: steps.metadata.outputs.package-ecosystem == 'nuget'
         shell: pwsh
@@ -66,7 +76,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup .NET SDK
         if: steps.metadata.outputs.package-ecosystem == 'nuget'
