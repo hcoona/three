@@ -94,6 +94,13 @@ local function normalizeList(value: Any?): List =
   else
     List(value)
 
+// Convert hk step types to glob patterns
+local function typeToGlobs(typeName: String): List =
+  if (typeName == "pkl")
+    List("*.pkl")
+  else
+    List()
+
 // Convert a single step to pre-commit hook
 //
 // Key semantic mapping:
@@ -154,6 +161,8 @@ local function stepToHook(hookName: String, id: String, step: Any): Dynamic? =
       )
       let (rawStagePatterns = normalizeList(stepDyn.stage))
       let (globPatterns = normalizeList(stepDyn.glob))
+      let (typeNames = normalizeList(stepDyn.types))
+      let (typeGlobs = typeNames.flatMap((t) -> typeToGlobs(t.toString())))
       let (
         stagePatterns =
           rawStagePatterns.flatMap((patternAny) ->
@@ -165,11 +174,20 @@ local function stepToHook(hookName: String, id: String, step: Any): Dynamic? =
           )
       )
       let (
+        typePattern =
+          if (!typeGlobs.isEmpty)
+            typeGlobs.map((g) -> globToRegex(g.toString())).join("|")
+          else
+            null
+      )
+      let (
         filePattern =
           if (!stagePatterns.isEmpty)
             stagePatterns.map((g) -> globToRegex(g.toString())).join("|")
           else if (!globPatterns.isEmpty)
             globPatterns.map((g) -> globToRegex(g.toString())).join("|")
+          else if (typePattern != null)
+            typePattern
           else
             null
       )

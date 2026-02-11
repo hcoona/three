@@ -42,6 +42,7 @@ repos:
     entry: pkl eval
     language: system
     pass_filenames: true
+    files: '[^/]*\.pkl$'
   - id: pkl-format
     name: Pkl Format
     entry: pkl format --silent
