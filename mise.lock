@@ -63,8 +63,9 @@ backend = "aqua:jdx/hk"
 "platforms.windows-x64" = { checksum = "sha256:1f12218ccad806a3f49bcf521f86b6825fbd89486e830c1c04f72e3796f84589", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-pc-windows-msvc.zip"}
 
 [[tools.java]]
-version = "25.0.1"
+version = "25.0.2"
 backend = "core:java"
+"platforms.linux-x64" = { checksum = "sha256:555ce0821e4fe175ea50d54518cd6fbece9663c1998de529bc6ce429534457df", url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_linux-x64_bin.tar.gz"}
 
 [[tools.node]]
 version = "24.13.0"
