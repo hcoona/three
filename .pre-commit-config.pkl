@@ -94,6 +94,13 @@ local function normalizeList(value: Any?): List =
   else
     List(value)
 
+// Convert hk step types to glob patterns
+local function typeToGlobs(typeName: String): List =
+  if (typeName == "pkl")
+    List("*.pkl")
+  else
+    List()
+
 // Convert a single step to pre-commit hook
 //
 // Key semantic mapping:
@@ -106,8 +113,9 @@ local function normalizeList(value: Any?): List =
 local function stepToHook(hookName: String, id: String, step: Any): Dynamic? =
   let (stepDyn = (step as Typed).toDynamic())
   let (profiles = normalizeList(stepDyn.profiles))
+  let (isGroup = stepDyn.getPropertyOrNull("steps") != null)
     if (
-      stepDyn._type == "step"
+      !isGroup
         && (
           profiles.isEmpty
             || profiles.contains("small")
@@ -153,6 +161,8 @@ local function stepToHook(hookName: String, id: String, step: Any): Dynamic? =
       )
       let (rawStagePatterns = normalizeList(stepDyn.stage))
       let (globPatterns = normalizeList(stepDyn.glob))
+      let (typeNames = normalizeList(stepDyn.types))
+      let (typeGlobs = typeNames.flatMap((t) -> typeToGlobs(t.toString())))
       let (
         stagePatterns =
           rawStagePatterns.flatMap((patternAny) ->
@@ -164,11 +174,20 @@ local function stepToHook(hookName: String, id: String, step: Any): Dynamic? =
           )
       )
       let (
+        typePattern =
+          if (!typeGlobs.isEmpty)
+            typeGlobs.map((g) -> globToRegex(g.toString())).join("|")
+          else
+            null
+      )
+      let (
         filePattern =
           if (!stagePatterns.isEmpty)
             stagePatterns.map((g) -> globToRegex(g.toString())).join("|")
           else if (!globPatterns.isEmpty)
             globPatterns.map((g) -> globToRegex(g.toString())).join("|")
+          else if (typePattern != null)
+            typePattern
           else
             null
       )
@@ -195,19 +214,18 @@ local function stepToHook(hookName: String, id: String, step: Any): Dynamic? =
 // Process steps from a group or single step
 local function processItem(hookName: String, name: String, item: Any): List =
   let (itemDyn = (item as Typed).toDynamic())
-    if (itemDyn._type == "step")
-      let (hook = stepToHook(hookName, name, item))
-        if (hook != null) List(hook) else List()
-    else if (itemDyn._type == "group")
-      itemDyn.steps.keys
+  let (itemSteps = itemDyn.getPropertyOrNull("steps"))
+    if (itemSteps != null)
+      (itemSteps as Mapping).keys
         .toList()
         .flatMap((stepName) ->
-          let (step = itemDyn.steps[stepName])
+          let (step = (itemSteps as Mapping)[stepName])
           let (hook = stepToHook(hookName, stepName, step))
             if (hook != null) List(hook) else List()
         )
     else
-      List()
+      let (hook = stepToHook(hookName, name, item))
+        if (hook != null) List(hook) else List()
 
 // Process all supported hooks
 local hookNames = List("pre-commit", "commit-msg")
