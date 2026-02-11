@@ -15,7 +15,6 @@ uv = "latest"
 
 # Git Commit Hook Manager
 hk = "latest"
-"pipx:prek" = "latest"
 
 #
 # Linters and Formatters
