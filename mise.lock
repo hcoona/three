@@ -9,10 +9,10 @@ backend = "aqua:dotenv-linter/dotenv-linter"
 [[tools.dotnet]]
 version = "10.0.2"
 backend = "asdf:dotnet"
-"platforms.linux-arm64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.102/dotnet-sdk-10.0.102-win-x64.zip"}
-"platforms.linux-x64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.102/dotnet-sdk-10.0.102-win-x64.zip"}
-"platforms.macos-arm64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.102/dotnet-sdk-10.0.102-win-x64.zip"}
-"platforms.macos-x64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.102/dotnet-sdk-10.0.102-win-x64.zip"}
+"platforms.linux-arm64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.102/dotnet-sdk-10.0.102-linux-arm64.tar.gz"}
+"platforms.linux-x64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.102/dotnet-sdk-10.0.102-linux-x64.tar.gz"}
+"platforms.macos-arm64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.102/dotnet-sdk-10.0.102-osx-arm64.tar.gz"}
+"platforms.macos-x64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.102/dotnet-sdk-10.0.102-osx-x64.tar.gz"}
 "platforms.windows-x64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.102/dotnet-sdk-10.0.102-win-x64.zip"}
 
 [[tools.fd]]
@@ -55,17 +55,16 @@ backend = "ubi:hadolint/hadolint"
 "platforms.windows-x64-hadolint.exe" = { checksum = "blake3:2030d7af1646eeb906bf706fced35dbceb23aa365803244f0cb4b06af1ee0010"}
 
 [[tools.hk]]
-version = "1.34.0"
+version = "1.36.0"
 backend = "aqua:jdx/hk"
-"platforms.linux-arm64" = { checksum = "sha256:a60fb915665b802d004b527867754c99b0b8564eb29603aa60c2fda40ea9dafc", url = "https://github.com/jdx/hk/releases/download/v1.34.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:9d769118f49407c9dd1de7d7bca3b9d2db1af95a882cd34c34217548b0c014f8", url = "https://github.com/jdx/hk/releases/download/v1.34.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:68ebb33e8d88848384c488aaf6f7a4eb8baf8426a2bc1b0837353ccece5c4e0e", url = "https://github.com/jdx/hk/releases/download/v1.34.0/hk-aarch64-apple-darwin.tar.gz"}
-"platforms.windows-x64" = { checksum = "sha256:8d8690a58dc3fc1d0aa04688f4bbb9e93c11ec7070de44c02f619b185dc0a0fd", url = "https://github.com/jdx/hk/releases/download/v1.34.0/hk-x86_64-pc-windows-msvc.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:51cf51e2035038ee64d772e71f8daf4978380ef82faffee2b12c413f009341ab", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:d20fa0be3f1135abc74471670306ae0353ad2336804595362293f0c8460952e7", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:553ff3c7c18d91f1c1dcdbae44315db0324b52336b5a02ed5b9c382f08499b3b", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-aarch64-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:1f12218ccad806a3f49bcf521f86b6825fbd89486e830c1c04f72e3796f84589", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-pc-windows-msvc.zip"}
 
 [[tools.java]]
-version = "25.0.2"
+version = "25.0.1"
 backend = "core:java"
-"platforms.windows-x64" = { checksum = "sha256:74784a0c07258f32d36e9224dd79187c566d831c30d47dc06888d4212087331d", url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_windows-x64_bin.zip"}
 
 [[tools.node]]
 version = "24.13.0"
@@ -123,9 +122,9 @@ backend = "aqua:BurntSushi/ripgrep"
 [[tools.ruby]]
 version = "3.3.10"
 backend = "core:ruby"
-"platforms.linux-arm64" = { checksum = "sha256:d11d1d08c40bd0debacf3b012a5d4403850a7e9bf215a0421a4430840f08bf79", url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.arm64_linux.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:c7fbdb591166b68e8b31b72eb8d2e3afa65859383efda8258fbfb83dcfaa8197", url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.x86_64_linux.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:1ec5e024ac9a10dc0673ad82b9fdc2bc473796b1b3adfee513319a8a1e6b072f", url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.macos.tar.gz"}
+"platforms.linux-arm64" = { checksum = "sha256:0265cb5f0626dd6ef20ef7043ed8dfb9daa38984793b26cadc8170653cc082e8", url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.arm64_linux.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:864b2f58f33d88f2d3c8130b2d50f3289796c1a2a0e0cc945253abd2d329796e", url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.x86_64_linux.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:bdbfeceee5981e29a64c0d515a29755fad723ef17c259317af7976aedca22098", url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.macos.tar.gz"}
 "platforms.macos-x64" = { checksum = "sha256:b555baa467a306cfc8e6c6ed24d0d27b27e9a1bed1d91d95509859eac6b0e928", url = "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.10.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:b555baa467a306cfc8e6c6ed24d0d27b27e9a1bed1d91d95509859eac6b0e928", url = "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.10.tar.gz"}
 

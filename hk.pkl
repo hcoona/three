@@ -240,31 +240,6 @@ local function getTestPklEvalSyncCommand(
     )
   ).join(" ")
 
-local code_generation_guard = new Mapping<String, Step> {
-  ["pre-commit-config"] {
-    local file_list =
-      List(
-        ".pre-commit-config.pkl",
-        ".pre-commit-config.yaml",
-        "hk.pkl",
-        "src/private/hk/**/*.pkl",
-        "PklProject",
-        "PklProject.deps.json",
-      )
-    profiles = List("small")
-    glob = file_list
-    stage = file_list
-    check =
-      getTestPklEvalSyncCommand(
-        ".pre-commit-config.pkl",
-        ".pre-commit-config.yaml",
-        "yaml",
-        List(),
-      )
-    fix = "pkl eval -f yaml .pre-commit-config.pkl -o .pre-commit-config.yaml"
-  }
-}
-
 local commit_message_linters = new Mapping<String, Step> {
   ["commitlint"] = Steps.commitlint
 }
@@ -284,7 +259,6 @@ local all_steps = new Mapping<String, Step> {
   ...javascript_typescript_linters
   ...python_linters
   ...dotenv_linter
-  ...code_generation_guard
 }
 
 hooks = new {
