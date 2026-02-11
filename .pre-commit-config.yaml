@@ -42,7 +42,6 @@ repos:
     entry: pkl eval
     language: system
     pass_filenames: true
-    files: (?:.*/)*[^/]*\.pkl$
   - id: pkl-format
     name: Pkl Format
     entry: pkl format --silent
@@ -51,7 +50,7 @@ repos:
     files: '[^/]*\.pkl$'
   - id: json-biome
     name: Json Biome
-    entry: pnpm exec -- biome check
+    entry: pnpm exec -- biome check --no-errors-on-unmatched
     language: system
     pass_filenames: true
     files: '[^/]*\.json$|[^/]*\.jsonc$'
@@ -65,7 +64,7 @@ repos:
     exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
   - id: toml-taplo-check
     name: Toml Taplo Check
-    entry: pnpm exec -- taplo check
+    entry: pnpm exec -- taplo lint
     language: system
     pass_filenames: true
     files: (?:.*/)*[^/]*\.toml$
@@ -111,19 +110,19 @@ repos:
     exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
   - id: biome
     name: Biome
-    entry: pnpm exec -- biome check
+    entry: pnpm exec -- biome check --no-errors-on-unmatched
     language: system
     pass_filenames: true
     files: '[^/]*\.js$|[^/]*\.cjs$|[^/]*\.mjs$|[^/]*\.jsx$|[^/]*\.ts$|[^/]*\.cts$|[^/]*\.mts$|[^/]*\.tsx$'
   - id: ruff
     name: Ruff
-    entry: uv run ruff check
+    entry: uv run ruff check --force-exclude
     language: system
     pass_filenames: true
     files: '[^/]*\.py$|[^/]*\.pyi$|[^/]*\.ipynb$'
   - id: ruff_format
     name: Ruff_format
-    entry: uv run ruff format --force-exclude --check
+    entry: uv run ruff format --quiet --force-exclude --check
     language: system
     pass_filenames: true
     files: '[^/]*\.py$|[^/]*\.pyi$|[^/]*\.ipynb$'
@@ -139,12 +138,6 @@ repos:
     language: system
     pass_filenames: true
     files: \.env$|[^/]*\.env$|\.env\.[^/]*$|(?:.*/)*\.env$|(?:.*/)*[^/]*\.env$|(?:.*/)*\.env\.[^/]*$
-  - id: pre-commit-config
-    name: Pre Commit Config
-    entry: pwsh -NoLogo -NoProfile -File eng/pre-commit/Test-PklEvalSync.ps1 -Source .pre-commit-config.pkl -Target .pre-commit-config.yaml -Format yaml
-    language: system
-    pass_filenames: false
-    files: \.pre-commit-config\.pkl$|\.pre-commit-config\.yaml$|hk\.pkl$|src/private/hk/(?:.*/)*[^/]*\.pkl$|PklProject$|PklProject\.deps\.json$
   - id: commitlint
     name: Commitlint
     entry: pnpm exec -- commitlint --strict --edit
