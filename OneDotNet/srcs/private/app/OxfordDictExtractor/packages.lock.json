@@ -10,9 +10,9 @@
       },
       "HtmlAgilityPack": {
         "type": "Direct",
-        "requested": "[1.12.0, )",
-        "resolved": "1.12.0",
-        "contentHash": "VHtVZmfoYhQyA/POvZRLuTpCz1zhzIDrdYRJIRV73e9wKAzjW71biYNOHOWx8MxEX3TE4TWVfx1QDRoZcj2AWw=="
+        "requested": "[1.12.4, )",
+        "resolved": "1.12.4",
+        "contentHash": "ljqvBabvFwKoLniuoQKO8b5bJfJweKLs4fUNS/V5dsvpo0A8MlJqxxn9XVmP2DaskbUXty6IYaWAi1SArGIMeQ=="
       },
       "Microsoft.SourceLink.GitHub": {
         "type": "Direct",
@@ -47,9 +47,9 @@
       },
       "WebMarkupMin.Core": {
         "type": "Direct",
-        "requested": "[2.17.0, )",
-        "resolved": "2.17.0",
-        "contentHash": "TKCwf7usSSqKkXzc+rfc11K1GGA5KUnj241ImDRRPvpfgekUsg9FbqZuhqbOCjkEw4WDEKWN6EODPBBtP5g5hA==",
+        "requested": "[2.20.1, )",
+        "resolved": "2.20.1",
+        "contentHash": "8gQEqcgQn/VOpTUvsZQKI3/diwvJoQSh5Vj+jf6fRTUCsFIoxOKotFqQCMBqPvB96VTwCJgSDY6MvwK0quxksw==",
         "dependencies": {
           "AdvancedStringBuilder": "0.1.1"
         }
