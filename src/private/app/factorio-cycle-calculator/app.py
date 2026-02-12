@@ -6,11 +6,9 @@ import io
 import json
 import os
 import re
-import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, Self
 
 import streamlit as st
 from ortools.linear_solver import pywraplp
@@ -18,6 +16,7 @@ from PIL import Image
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from types import TracebackType
 
 DEFAULT_DATA_DIR = (
     "/mnt/c/Program Files (x86)/Steam/steamapps/common/Factorio/data"
@@ -33,6 +32,7 @@ FORMAT_MILLION = 1_000_000.0
 FORMAT_THOUSAND = 1_000.0
 FORMAT_TEN = 10.0
 FLOW_EPSILON = 1e-6
+MIN_LIST_ENTRY_LEN = 2
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,7 @@ class Machine:
     label: str
     crafting_speed: float
     allow_productivity: bool
+    crafting_categories: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -51,9 +52,10 @@ class Recipe:
 
     key: str
     label: str
+    category: str
     energy_required: float
-    ingredients: Mapping[str, float]
-    results: Mapping[str, float]
+    ingredients: Mapping[tuple[str, str], float]
+    results: Mapping[tuple[str, str], float]
     allow_productivity: bool
 
 
@@ -78,8 +80,8 @@ class RecipeConfig:
 class FlowRates:
     """Store per-second production and consumption rates."""
 
-    production: dict[str, float]
-    consumption: dict[str, float]
+    production: dict[tuple[str, str], float]
+    consumption: dict[tuple[str, str], float]
 
 
 @dataclass(frozen=True)
@@ -88,17 +90,8 @@ class SolveResult:
 
     status: str
     machine_counts: dict[str, float]
-    net_flows_per_s: dict[str, float]
+    net_flows_per_s: dict[tuple[str, str], float]
     objective_value: float | None
-
-
-@dataclass(frozen=True)
-class IconTarget:
-    """Describe an icon to load for the UI."""
-
-    proto_type: str
-    name: str
-    fallback: str | None
 
 
 @dataclass(frozen=True)
@@ -109,107 +102,59 @@ class IconSpec:
     size: int | None
 
 
+class ContainerSlot(Protocol):
+    """Define the container slot API used by the UI."""
+
+    def container(self) -> ContainerSlot:
+        """Return a context manager for nested rendering."""
+        ...
+
+    def __enter__(self) -> Self:
+        """Enter the container context."""
+        ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        """Exit the container context."""
+        ...
+
+
+class CaptionSlot(Protocol):
+    """Define the caption API used by the UI."""
+
+    def caption(self, body: str) -> None:
+        """Render a caption string."""
+        ...
+
+
+class MarkdownSlot(Protocol):
+    """Define the markdown API used by the UI."""
+
+    def markdown(self, body: str) -> None:
+        """Render a markdown string."""
+        ...
+
+
 @dataclass(frozen=True)
 class RenderState:
     """Bundle UI state for rendering outputs."""
 
     recipes: Mapping[str, Recipe]
     config_map: Mapping[str, RecipeConfig]
-    row_slots: Mapping[str, tuple]
-    count_slots: Mapping[str, object]
-    products_slot: object
-    byproducts_slot: object
-    ingredients_slot: object
-    status_slot: object
+    row_slots: Mapping[str, tuple[ContainerSlot, ContainerSlot, ContainerSlot]]
+    count_slots: Mapping[str, CaptionSlot]
+    products_slot: ContainerSlot
+    byproducts_slot: ContainerSlot
+    ingredients_slot: ContainerSlot
+    status_slot: MarkdownSlot
     unit_multiplier: float
     unit_label: str
     icon_catalog: Mapping[tuple[str, str], IconSpec]
-
-
-ICON_TARGETS = [
-    IconTarget(
-        "recipe",
-        "advanced-oil-processing",
-        "__base__/graphics/icons/fluid/advanced-oil-processing.png",
-    ),
-    IconTarget(
-        "recipe",
-        "heavy-oil-cracking",
-        "__base__/graphics/icons/fluid/heavy-oil-cracking.png",
-    ),
-    IconTarget(
-        "recipe",
-        "light-oil-cracking",
-        "__base__/graphics/icons/fluid/light-oil-cracking.png",
-    ),
-    IconTarget(
-        "fluid",
-        "crude-oil",
-        "__base__/graphics/icons/fluid/crude-oil.png",
-    ),
-    IconTarget(
-        "fluid",
-        "heavy-oil",
-        "__base__/graphics/icons/fluid/heavy-oil.png",
-    ),
-    IconTarget(
-        "fluid",
-        "light-oil",
-        "__base__/graphics/icons/fluid/light-oil.png",
-    ),
-    IconTarget(
-        "fluid",
-        "water",
-        "__base__/graphics/icons/fluid/water.png",
-    ),
-    IconTarget(
-        "fluid",
-        "petroleum-gas",
-        "__base__/graphics/icons/fluid/petroleum-gas.png",
-    ),
-    IconTarget(
-        "item",
-        "oil-refinery",
-        "__base__/graphics/icons/oil-refinery.png",
-    ),
-    IconTarget(
-        "item",
-        "chemical-plant",
-        "__base__/graphics/icons/chemical-plant.png",
-    ),
-    IconTarget(
-        "item",
-        "biochamber",
-        "__space-age__/graphics/icons/biochamber.png",
-    ),
-    IconTarget(
-        "assembling-machine",
-        "oil-refinery",
-        "__base__/graphics/icons/oil-refinery.png",
-    ),
-    IconTarget(
-        "assembling-machine",
-        "chemical-plant",
-        "__base__/graphics/icons/chemical-plant.png",
-    ),
-    IconTarget(
-        "assembling-machine",
-        "biochamber",
-        "__space-age__/graphics/icons/biochamber.png",
-    ),
-]
-
-PRIMARY_OUTPUTS = {
-    "advanced-oil-processing": "petroleum-gas",
-    "heavy-oil-cracking": "light-oil",
-    "light-oil-cracking": "petroleum-gas",
-}
-
-RECIPE_ORDER = (
-    "advanced-oil-processing",
-    "heavy-oil-cracking",
-    "light-oil-cracking",
-)
+    recipe_order: tuple[str, str, str]
 
 
 def resolve_icon_path(icon_path: str, data_dir: Path) -> Path:
@@ -245,91 +190,207 @@ def extract_icon_from_payload(payload: dict) -> tuple[str | None, int | None]:
     return None, icon_size
 
 
-def query_icon_from_data_raw(
-    data_raw: Path,
-    *,
-    proto_type: str,
-    name: str,
-) -> tuple[str | None, int | None]:
-    """Query a prototype icon from data-raw-dump.json using jq."""
-    jq = shutil.which("jq")
-    if not jq:
-        return None, None
-
-    jq_filter = ".[ $t ][ $n ] | {icon, icons}"
-    cmd = [
-        jq,
-        "-c",
-        "--arg",
-        "t",
-        proto_type,
-        "--arg",
-        "n",
-        name,
-        jq_filter,
-        str(data_raw),
-    ]
-    result = None
-    try:
-        result = subprocess.run(  # noqa: S603
-            cmd,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError:
-        result = None
-
-    icon_path: str | None = None
-    icon_size: int | None = None
-    if result:
-        output = result.stdout.strip()
-        if output and output != "null":
-            try:
-                payload = json.loads(output)
-            except json.JSONDecodeError:
-                payload = None
-            if isinstance(payload, dict):
-                icon_path, icon_size = extract_icon_from_payload(payload)
-
-    return icon_path, icon_size
-
-
 @st.cache_data(show_spinner=False)
-def load_icon_catalog(
-    data_raw_path: str,
-    data_dir_path: str,
-) -> dict[tuple[str, str], IconSpec]:
-    """Load a catalog of resolved icon paths."""
-    if not data_dir_path:
+def load_data_raw(data_raw_path: str) -> dict:
+    """Load data-raw-dump.json into memory."""
+    try:
+        with Path(data_raw_path).open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except OSError:
         return {}
 
+
+def get_prototype(
+    data_raw: Mapping[str, Mapping[str, dict]],
+    proto_type: str,
+    name: str,
+) -> dict | None:
+    """Fetch a prototype from data-raw by type and name."""
+    return data_raw.get(proto_type, {}).get(name)
+
+
+def parse_amount(entry: dict) -> float:
+    """Parse an amount from a recipe ingredient/result entry."""
+    if "amount" in entry:
+        return float(entry["amount"])
+    amount_min = entry.get("amount_min")
+    amount_max = entry.get("amount_max")
+    if amount_min is not None and amount_max is not None:
+        return (float(amount_min) + float(amount_max)) / 2.0
+    if amount_min is not None:
+        return float(amount_min)
+    if amount_max is not None:
+        return float(amount_max)
+    return 0.0
+
+
+def parse_ingredient_list(
+    entries: list[object],
+) -> dict[tuple[str, str], float]:
+    """Parse a list of ingredient-like entries into a typed map."""
+    parsed: dict[tuple[str, str], float] = {}
+    for entry in entries:
+        if isinstance(entry, list) and len(entry) >= MIN_LIST_ENTRY_LEN:
+            name = entry[0]
+            amount = float(entry[1])
+            proto_type = "item"
+        elif isinstance(entry, dict):
+            name = entry.get("name")
+            amount = parse_amount(entry)
+            proto_type = entry.get("type", "item")
+        else:
+            continue
+        if not isinstance(name, str):
+            continue
+        key = (proto_type, name)
+        parsed[key] = parsed.get(key, 0.0) + amount
+    return parsed
+
+
+def parse_results(proto: dict) -> dict[tuple[str, str], float]:
+    """Parse recipe results into a typed map."""
+    results: dict[tuple[str, str], float] = {}
+    if "results" in proto and isinstance(proto["results"], list):
+        for entry in proto["results"]:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str):
+                continue
+            amount = parse_amount(entry)
+            probability = entry.get("probability", 1.0)
+            amount *= float(probability)
+            proto_type = entry.get("type", "item")
+            key = (proto_type, name)
+            results[key] = results.get(key, 0.0) + amount
+        return results
+
+    result_name = proto.get("result")
+    if isinstance(result_name, str):
+        amount = float(proto.get("result_count", 1.0))
+        results[("item", result_name)] = amount
+    return results
+
+
+def build_recipe_from_proto(name: str, proto: dict) -> Recipe:
+    """Build a Recipe instance from a data-raw recipe prototype."""
+    energy_required = proto.get("energy_required")
+    if energy_required is None:
+        energy_required = 0.5
+    category = proto.get("category", "crafting")
+    ingredients = parse_ingredient_list(proto.get("ingredients", []))
+    results = parse_results(proto)
+    allow_productivity = bool(proto.get("allow_productivity", False))
+    return Recipe(
+        key=name,
+        label=name.replace("-", " ").title(),
+        category=str(category),
+        energy_required=float(energy_required),
+        ingredients=ingredients,
+        results=results,
+        allow_productivity=allow_productivity,
+    )
+
+
+def build_machine_catalog(
+    data_raw: Mapping[str, Mapping[str, dict]],
+) -> dict[str, Machine]:
+    """Build a machine catalog from data-raw assembling machines."""
+    catalog: dict[str, Machine] = {}
+    for name, proto in data_raw.get("assembling-machine", {}).items():
+        crafting_speed = float(proto.get("crafting_speed", 1.0))
+        crafting_categories = tuple(proto.get("crafting_categories", []))
+        allowed_effects = proto.get("allowed_effects", [])
+        allow_productivity = "productivity" in allowed_effects
+        if not allow_productivity:
+            base_effect = (proto.get("effect_receiver") or {}).get(
+                "base_effect", {}
+            )
+            allow_productivity = bool(base_effect.get("productivity", 0))
+        catalog[name] = Machine(
+            key=name,
+            label=name.replace("-", " ").title(),
+            crafting_speed=crafting_speed,
+            allow_productivity=allow_productivity,
+            crafting_categories=crafting_categories,
+        )
+    return catalog
+
+
+def build_recipe_catalog(
+    data_raw: Mapping[str, Mapping[str, dict]],
+    recipe_keys: tuple[str, str, str],
+) -> dict[str, Recipe]:
+    """Build recipe definitions for the selected chain."""
+    catalog: dict[str, Recipe] = {}
+    for recipe_key in recipe_keys:
+        proto = get_prototype(data_raw, "recipe", recipe_key)
+        if not proto:
+            continue
+        catalog[recipe_key] = build_recipe_from_proto(recipe_key, proto)
+    return catalog
+
+
+def list_recipe_names_by_category(
+    data_raw: Mapping[str, Mapping[str, dict]],
+    category: str,
+) -> list[str]:
+    """List recipe names matching a category."""
+    matches = []
+    for name, proto in data_raw.get("recipe", {}).items():
+        if proto.get("category", "crafting") == category:
+            matches.append(name)
+    return sorted(matches)
+
+
+def select_recipe_option(
+    label: str,
+    options: list[str],
+    *,
+    default_name: str,
+) -> str:
+    """Select a recipe name from options with a preferred default."""
+    if not options:
+        st.sidebar.warning(f"No recipes found for {label}.")
+        return ""
+    index = options.index(default_name) if default_name in options else 0
+    return st.sidebar.selectbox(label, options=options, index=index)
+
+
+def build_icon_catalog(
+    data_raw: Mapping[str, Mapping[str, dict]],
+    data_dir_path: str,
+    recipes: Mapping[str, Recipe],
+    machines: Mapping[str, Machine],
+) -> dict[tuple[str, str], IconSpec]:
+    """Build the icon catalog for recipes, machines, and flows."""
     data_dir = Path(data_dir_path)
     if not data_dir.exists():
         return {}
 
-    data_raw = Path(data_raw_path) if data_raw_path else None
+    icon_keys: set[tuple[str, str]] = set()
+    for recipe in recipes.values():
+        icon_keys.add(("recipe", recipe.key))
+        icon_keys.update(recipe.ingredients.keys())
+        icon_keys.update(recipe.results.keys())
+    for machine in machines.values():
+        icon_keys.add(("assembling-machine", machine.key))
+        icon_keys.add(("item", machine.key))
+
     catalog: dict[tuple[str, str], IconSpec] = {}
-
-    for target in ICON_TARGETS:
-        icon_path: str | None = None
-        icon_size: int | None = None
-        if data_raw and data_raw.exists():
-            icon_path, icon_size = query_icon_from_data_raw(
-                data_raw,
-                proto_type=target.proto_type,
-                name=target.name,
-            )
+    for proto_type, name in icon_keys:
+        proto = get_prototype(data_raw, proto_type, name)
+        if not proto:
+            continue
+        icon_path, icon_size = extract_icon_from_payload(proto)
         if not icon_path:
-            icon_path = target.fallback
-        if icon_path:
-            resolved = resolve_icon_path(icon_path, data_dir)
-            if resolved.exists():
-                catalog[(target.proto_type, target.name)] = IconSpec(
-                    path=resolved,
-                    size=icon_size,
-                )
-
+            continue
+        resolved = resolve_icon_path(icon_path, data_dir)
+        if resolved.exists():
+            catalog[(proto_type, name)] = IconSpec(
+                path=resolved,
+                size=icon_size,
+            )
     return catalog
 
 
@@ -439,23 +500,25 @@ def accumulate_flows(
     recipes: Mapping[str, Recipe],
     configs: Mapping[str, RecipeConfig],
     counts: Mapping[str, float],
-) -> tuple[dict[str, float], dict[str, float]]:
+) -> tuple[dict[tuple[str, str], float], dict[tuple[str, str], float]]:
     """Accumulate total per-second production and consumption."""
-    production: dict[str, float] = {}
-    consumption: dict[str, float] = {}
+    production: dict[tuple[str, str], float] = {}
+    consumption: dict[tuple[str, str], float] = {}
     for recipe_key, recipe in recipes.items():
         rates = per_machine_rates(recipe, configs[recipe_key])
         count = counts.get(recipe_key, 0.0)
-        for fluid, rate in rates.production.items():
-            production[fluid] = production.get(fluid, 0.0) + rate * count
-        for fluid, rate in rates.consumption.items():
-            consumption[fluid] = consumption.get(fluid, 0.0) + rate * count
+        for flow_key, rate in rates.production.items():
+            production[flow_key] = production.get(flow_key, 0.0) + rate * count
+        for flow_key, rate in rates.consumption.items():
+            consumption[flow_key] = (
+                consumption.get(flow_key, 0.0) + rate * count
+            )
     return production, consumption
 
 
 def build_summary_items(
-    production: Mapping[str, float],
-    consumption: Mapping[str, float],
+    production: Mapping[tuple[str, str], float],
+    consumption: Mapping[tuple[str, str], float],
     *,
     unit_multiplier: float,
 ) -> tuple[
@@ -464,30 +527,31 @@ def build_summary_items(
     list[tuple[str, str, float]],
 ]:
     """Split net flows into product, byproduct, and ingredient lists."""
-    net: dict[str, float] = {}
+    net: dict[tuple[str, str], float] = {}
     keys = set(production) | set(consumption)
-    for fluid in keys:
-        net[fluid] = production.get(fluid, 0.0) - consumption.get(fluid, 0.0)
+    for flow_key in keys:
+        net[flow_key] = production.get(flow_key, 0.0) - consumption.get(
+            flow_key, 0.0
+        )
 
     products: list[tuple[str, str, float]] = []
     byproducts: list[tuple[str, str, float]] = []
     ingredients: list[tuple[str, str, float]] = []
 
-    for fluid, value in sorted(net.items()):
+    for flow_key, value in sorted(net.items()):
         scaled = value * unit_multiplier
         if scaled > FLOW_EPSILON:
-            if fluid == "petroleum-gas":
-                products.append(("fluid", fluid, scaled))
+            if flow_key == ("fluid", "petroleum-gas"):
+                products.append((flow_key[0], flow_key[1], scaled))
             else:
-                byproducts.append(("fluid", fluid, scaled))
+                byproducts.append((flow_key[0], flow_key[1], scaled))
         elif scaled < -FLOW_EPSILON:
-            ingredients.append(("fluid", fluid, abs(scaled)))
+            ingredients.append((flow_key[0], flow_key[1], abs(scaled)))
 
     return products, byproducts, ingredients
 
 
 def build_recipe_rows(
-    recipe_key: str,
     recipe: Recipe,
     config: RecipeConfig,
     *,
@@ -501,26 +565,31 @@ def build_recipe_rows(
     """Build per-recipe product, byproduct, and ingredient lists."""
     rates = per_machine_rates(recipe, config)
     production = {
-        fluid: rate * count * unit_multiplier
-        for fluid, rate in rates.production.items()
+        flow_key: rate * count * unit_multiplier
+        for flow_key, rate in rates.production.items()
     }
     consumption = {
-        fluid: rate * count * unit_multiplier
-        for fluid, rate in rates.consumption.items()
+        flow_key: rate * count * unit_multiplier
+        for flow_key, rate in rates.consumption.items()
     }
 
-    primary = PRIMARY_OUTPUTS.get(recipe_key)
+    primary: tuple[str, str] | None = None
+    if ("fluid", "petroleum-gas") in recipe.results:
+        primary = ("fluid", "petroleum-gas")
+    elif len(recipe.results) == 1:
+        primary = next(iter(recipe.results.keys()))
     products: list[tuple[str, str, float]] = []
     byproducts: list[tuple[str, str, float]] = []
 
-    for fluid, value in production.items():
-        if primary and fluid != primary:
-            byproducts.append(("fluid", fluid, value))
+    for flow_key, value in production.items():
+        if primary and flow_key != primary:
+            byproducts.append((flow_key[0], flow_key[1], value))
         else:
-            products.append(("fluid", fluid, value))
+            products.append((flow_key[0], flow_key[1], value))
 
     ingredients = [
-        ("fluid", fluid, value) for fluid, value in consumption.items()
+        (flow_key[0], flow_key[1], value)
+        for flow_key, value in consumption.items()
     ]
 
     return products, byproducts, ingredients
@@ -567,7 +636,36 @@ def render_sidebar_controls() -> tuple[str, str, float, bool, float, str]:
     )
 
 
-def render_summary_placeholders() -> tuple[object, object, object]:
+def render_recipe_selection(
+    data_raw: Mapping[str, Mapping[str, dict]],
+) -> tuple[str, str, str] | None:
+    """Render recipe selectors for the oil chain."""
+    st.sidebar.header("Recipes")
+    oil_processing = list_recipe_names_by_category(data_raw, "oil-processing")
+    chemistry = list_recipe_names_by_category(data_raw, "organic-or-chemistry")
+    advanced_key = select_recipe_option(
+        "Oil processing recipe",
+        oil_processing,
+        default_name="advanced-oil-processing",
+    )
+    heavy_key = select_recipe_option(
+        "Heavy oil cracking recipe",
+        chemistry,
+        default_name="heavy-oil-cracking",
+    )
+    light_key = select_recipe_option(
+        "Light oil cracking recipe",
+        chemistry,
+        default_name="light-oil-cracking",
+    )
+    if not advanced_key or not heavy_key or not light_key:
+        return None
+    return advanced_key, heavy_key, light_key
+
+
+def render_summary_placeholders() -> tuple[
+    ContainerSlot, ContainerSlot, ContainerSlot
+]:
     """Render the summary placeholder panels and return their slots."""
     summary_container = st.container()
     summary_cols = summary_container.columns(3)
@@ -598,20 +696,29 @@ def render_production_rows(
     recipes: Mapping[str, Recipe],
     machines: Mapping[str, Machine],
     icon_catalog: Mapping[tuple[str, str], IconSpec],
-) -> tuple[dict[str, RecipeConfig], dict[str, tuple], dict[str, object]]:
+    recipe_order: tuple[str, str, str],
+) -> tuple[
+    dict[str, RecipeConfig],
+    dict[str, tuple[ContainerSlot, ContainerSlot, ContainerSlot]],
+    dict[str, CaptionSlot],
+]:
     """Render production rows and return configs and row placeholders."""
     config_map: dict[str, RecipeConfig] = {}
-    row_slots: dict[str, tuple] = {}
-    count_slots: dict[str, object] = {}
+    row_slots: dict[
+        str,
+        tuple[ContainerSlot, ContainerSlot, ContainerSlot],
+    ] = {}
+    count_slots: dict[str, CaptionSlot] = {}
 
-    machine_choices = {
-        "advanced-oil-processing": ["oil-refinery"],
-        "heavy-oil-cracking": ["chemical-plant", "biochamber"],
-        "light-oil-cracking": ["chemical-plant", "biochamber"],
-    }
-
-    for recipe_key in RECIPE_ORDER:
+    for recipe_key in recipe_order:
         recipe = recipes[recipe_key]
+        eligible = [
+            key
+            for key, machine in machines.items()
+            if recipe.category in machine.crafting_categories
+        ]
+        if not eligible:
+            eligible = list(machines.keys())
         cols = st.columns([1.4, 1.8, 1.6, 0.9, 2.4, 2.4, 2.4])
 
         with cols[0]:
@@ -626,7 +733,7 @@ def render_production_rows(
             machine = render_machine_selector(
                 recipe,
                 machines,
-                machine_choices[recipe_key],
+                eligible,
             )
             machine_icon = find_icon(
                 icon_catalog,
@@ -668,7 +775,9 @@ def render_solution(result: SolveResult, state: RenderState) -> None:
         state.config_map,
         result.machine_counts,
     )
-    crude_input = consumption.get("crude-oil", 0.0) * state.unit_multiplier
+    crude_input = (
+        consumption.get(("fluid", "crude-oil"), 0.0) * state.unit_multiplier
+    )
     status_line = (
         f"Solver status: **{result.status}** • "
         f"Crude input: {format_amount(crude_input)} {state.unit_label}"
@@ -702,12 +811,11 @@ def render_solution(result: SolveResult, state: RenderState) -> None:
             unit_label=state.unit_label,
         )
 
-    for recipe_key in RECIPE_ORDER:
+    for recipe_key in state.recipe_order:
         recipe = state.recipes[recipe_key]
         count = result.machine_counts.get(recipe_key, 0.0)
         state.count_slots[recipe_key].caption(f"Count: {format_amount(count)}")
         products, byproducts, ingredients = build_recipe_rows(
-            recipe_key,
             recipe,
             state.config_map[recipe_key],
             count=count,
@@ -736,64 +844,6 @@ def render_solution(result: SolveResult, state: RenderState) -> None:
                 state.icon_catalog,
                 unit_label=state.unit_label,
             )
-
-
-def build_machines() -> dict[str, Machine]:
-    """Create the machine catalog for the example."""
-    return {
-        "oil-refinery": Machine(
-            key="oil-refinery",
-            label="Oil refinery",
-            crafting_speed=1.0,
-            allow_productivity=True,
-        ),
-        "chemical-plant": Machine(
-            key="chemical-plant",
-            label="Chemical plant",
-            crafting_speed=1.0,
-            allow_productivity=True,
-        ),
-        "biochamber": Machine(
-            key="biochamber",
-            label="Biochamber",
-            crafting_speed=2.0,
-            allow_productivity=True,
-        ),
-    }
-
-
-def build_recipes() -> dict[str, Recipe]:
-    """Create the oil-processing recipes used in the example."""
-    return {
-        "advanced-oil-processing": Recipe(
-            key="advanced-oil-processing",
-            label="Advanced oil processing",
-            energy_required=5.0,
-            ingredients={"crude-oil": 100.0, "water": 50.0},
-            results={
-                "heavy-oil": 25.0,
-                "light-oil": 45.0,
-                "petroleum-gas": 55.0,
-            },
-            allow_productivity=True,
-        ),
-        "heavy-oil-cracking": Recipe(
-            key="heavy-oil-cracking",
-            label="Heavy oil cracking",
-            energy_required=2.0,
-            ingredients={"heavy-oil": 40.0, "water": 30.0},
-            results={"light-oil": 30.0},
-            allow_productivity=True,
-        ),
-        "light-oil-cracking": Recipe(
-            key="light-oil-cracking",
-            label="Light oil cracking",
-            energy_required=2.0,
-            ingredients={"light-oil": 30.0, "water": 30.0},
-            results={"petroleum-gas": 20.0},
-            allow_productivity=True,
-        ),
-    }
 
 
 def machine_label(machine: Machine) -> str:
@@ -839,6 +889,7 @@ def solve_chain(
     configs: Mapping[str, RecipeConfig],
     *,
     force_integer: bool,
+    recipe_order: tuple[str, str, str],
 ) -> SolveResult | None:
     """Solve the oil-processing chain to meet petroleum gas demand."""
     solver = build_solver(force_integer=force_integer)
@@ -877,28 +928,47 @@ def solve_chain(
                 0.0, solver.infinity(), recipe_key
             )
 
-    advanced_key = "advanced-oil-processing"
-    heavy_key = "heavy-oil-cracking"
-    light_key = "light-oil-cracking"
+    advanced_key, heavy_key, light_key = recipe_order
 
-    heavy_prod = rates[advanced_key].production.get("heavy-oil", 0.0)
-    heavy_cons = rates[heavy_key].consumption.get("heavy-oil", 0.0)
+    heavy_prod = rates[advanced_key].production.get(
+        ("fluid", "heavy-oil"),
+        0.0,
+    )
+    heavy_cons = rates[heavy_key].consumption.get(
+        ("fluid", "heavy-oil"),
+        0.0,
+    )
     solver.Add(
         heavy_prod * variables[advanced_key]  # type: ignore[operator]
         == heavy_cons * variables[heavy_key]  # type: ignore[operator]
     )
 
-    light_prod_advanced = rates[advanced_key].production.get("light-oil", 0.0)
-    light_prod_from_heavy = rates[heavy_key].production.get("light-oil", 0.0)
-    light_cons = rates[light_key].consumption.get("light-oil", 0.0)
+    light_prod_advanced = rates[advanced_key].production.get(
+        ("fluid", "light-oil"),
+        0.0,
+    )
+    light_prod_from_heavy = rates[heavy_key].production.get(
+        ("fluid", "light-oil"),
+        0.0,
+    )
+    light_cons = rates[light_key].consumption.get(
+        ("fluid", "light-oil"),
+        0.0,
+    )
     solver.Add(
         light_prod_advanced * variables[advanced_key]  # type: ignore[operator]
         + light_prod_from_heavy * variables[heavy_key]  # type: ignore[operator]
         == light_cons * variables[light_key]  # type: ignore[operator]
     )
 
-    pg_prod_advanced = rates[advanced_key].production.get("petroleum-gas", 0.0)
-    pg_prod_from_light = rates[light_key].production.get("petroleum-gas", 0.0)
+    pg_prod_advanced = rates[advanced_key].production.get(
+        ("fluid", "petroleum-gas"),
+        0.0,
+    )
+    pg_prod_from_light = rates[light_key].production.get(
+        ("fluid", "petroleum-gas"),
+        0.0,
+    )
     solver.Add(
         pg_prod_advanced * variables[advanced_key]  # type: ignore[operator]
         + pg_prod_from_light * variables[light_key]  # type: ignore[operator]
@@ -907,7 +977,10 @@ def solve_chain(
 
     objective_terms = []
     for recipe_key in recipes:
-        crude_rate = rates[recipe_key].consumption.get("crude-oil", 0.0)
+        crude_rate = rates[recipe_key].consumption.get(
+            ("fluid", "crude-oil"),
+            0.0,
+        )
         if crude_rate > 0.0:
             objective_terms.append(
                 crude_rate * variables[recipe_key]  # type: ignore[operator]
@@ -930,12 +1003,14 @@ def solve_chain(
         for recipe_key in recipes
     }
     net_flows = {
-        "heavy-oil": heavy_prod * machine_counts[advanced_key]
+        ("fluid", "heavy-oil"): heavy_prod * machine_counts[advanced_key]
         - heavy_cons * machine_counts[heavy_key],
-        "light-oil": light_prod_advanced * machine_counts[advanced_key]
+        ("fluid", "light-oil"): light_prod_advanced
+        * machine_counts[advanced_key]
         + light_prod_from_heavy * machine_counts[heavy_key]
         - light_cons * machine_counts[light_key],
-        "petroleum-gas": pg_prod_advanced * machine_counts[advanced_key]
+        ("fluid", "petroleum-gas"): pg_prod_advanced
+        * machine_counts[advanced_key]
         + pg_prod_from_light * machine_counts[light_key],
     }
 
@@ -1037,14 +1112,36 @@ def main() -> None:
         unit_label,
     ) = render_sidebar_controls()
 
-    icon_catalog = load_icon_catalog(data_raw_path, data_dir_path)
+    data_raw = load_data_raw(data_raw_path)
+    if not data_raw:
+        st.error("Failed to load data-raw-dump.json.")
+        return
+
+    recipe_order = render_recipe_selection(data_raw)
+    if recipe_order is None:
+        st.error("Recipe selection is incomplete.")
+        return
+
+    machines = build_machine_catalog(data_raw)
+    if not machines:
+        st.error("No assembling machines found in data-raw.")
+        return
+
+    recipes = build_recipe_catalog(data_raw, recipe_order)
+    if len(recipes) != len(recipe_order):
+        st.error("Some selected recipes were not found in data-raw.")
+        return
+
+    icon_catalog = build_icon_catalog(
+        data_raw,
+        data_dir_path,
+        recipes,
+        machines,
+    )
     if not icon_catalog:
         st.sidebar.warning(
             "Icons were not resolved. Check your data directory paths."
         )
-
-    machines = build_machines()
-    recipes = build_recipes()
 
     products_slot, byproducts_slot, ingredients_slot = (
         render_summary_placeholders()
@@ -1057,6 +1154,7 @@ def main() -> None:
         recipes,
         machines,
         icon_catalog,
+        recipe_order,
     )
 
     demand_pg_per_s = demand_pg_per_min / 60.0
@@ -1065,6 +1163,7 @@ def main() -> None:
         recipes,
         config_map,
         force_integer=force_integer,
+        recipe_order=recipe_order,
     )
 
     if result is None:
@@ -1082,6 +1181,7 @@ def main() -> None:
         unit_multiplier=unit_multiplier,
         unit_label=unit_label,
         icon_catalog=icon_catalog,
+        recipe_order=recipe_order,
     )
     render_solution(result, state)
 
