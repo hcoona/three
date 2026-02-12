@@ -21,10 +21,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-DEFAULT_DATA_RAW = (
-    "/mnt/c/Users/zhang/AppData/Roaming/Factorio/"
-    "script-output/data-raw-dump.json"
-)
+DEFAULT_DATA_RAW = None
 
 
 @dataclass(frozen=True)
@@ -130,7 +127,7 @@ def read_png_size(path: Path) -> tuple[int, int] | None:
             signature = handle.read(8)
             if signature != b"\x89PNG\r\n\x1a\n":
                 return None
-            _length = int.from_bytes(handle.read(4), "big")
+            _ = int.from_bytes(handle.read(4), "big")
             chunk_type = handle.read(4)
             if chunk_type != b"IHDR":
                 return None
@@ -218,7 +215,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--data-raw",
-        default=DEFAULT_DATA_RAW,
+        default=os.environ.get("FACTORIO_DATA_RAW", DEFAULT_DATA_RAW),
         help="Path to data-raw-dump.json",
     )
     parser.add_argument(
@@ -232,15 +229,22 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def ensure_data_raw(data_raw: Path) -> Path | None:
+def ensure_data_raw(data_raw: str | Path | None) -> Path | None:
     """Validate the data-raw-dump.json path."""
-    if not data_raw.exists():
+    if not data_raw:
         print(
-            f"ERROR: data-raw-dump.json not found: {data_raw}",
+            "ERROR: --data-raw is required (or set FACTORIO_DATA_RAW).",
             file=sys.stderr,
         )
         return None
-    return data_raw
+    resolved = data_raw if isinstance(data_raw, Path) else Path(data_raw)
+    if not resolved.exists():
+        print(
+            f"ERROR: data-raw-dump.json not found: {resolved}",
+            file=sys.stderr,
+        )
+        return None
+    return resolved
 
 
 def ensure_data_dir(data_dir: str | None) -> Path | None:
@@ -320,7 +324,7 @@ def summarize_failures(icon_failures: int, locale_failures: int) -> int:
 def main() -> int:
     """Run the icon and locale verification workflow."""
     args = parse_args()
-    data_raw = ensure_data_raw(Path(args.data_raw))
+    data_raw = ensure_data_raw(args.data_raw)
     if not data_raw:
         return 2
 
