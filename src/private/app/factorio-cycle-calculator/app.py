@@ -44,6 +44,8 @@ class Machine:
     crafting_speed: float
     allow_productivity: bool
     crafting_categories: tuple[str, ...]
+    module_slots: int
+    allowed_effects: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -65,7 +67,6 @@ class EffectSettings:
 
     speed_bonus: float
     productivity_bonus: float
-    beacon_speed_bonus: float
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,29 @@ class IconSpec:
 
     path: Path
     size: int | None
+
+
+@dataclass(frozen=True)
+class ModuleSpec:
+    """Describe a module item and its effects."""
+
+    key: str
+    label: str
+    speed_bonus: float
+    productivity_bonus: float
+    limitation: frozenset[str]
+    limitation_blacklist: frozenset[str]
+
+
+@dataclass(frozen=True)
+class BeaconSpec:
+    """Describe a beacon entity and its effects."""
+
+    key: str
+    label: str
+    module_slots: int
+    distribution_effectivity: float
+    allowed_effects: frozenset[str]
 
 
 class ContainerSlot(Protocol):
@@ -292,6 +316,32 @@ def build_recipe_from_proto(name: str, proto: dict) -> Recipe:
     )
 
 
+def normalize_allowed_effects(raw: object) -> frozenset[str]:
+    """Normalize allowed effects lists to a usable set."""
+    if isinstance(raw, list):
+        allowed = {str(value) for value in raw if isinstance(value, str)}
+    else:
+        allowed = set()
+    if not allowed:
+        allowed = {"speed", "productivity"}
+    return frozenset(allowed)
+
+
+def parse_effect_bonus(effect: object) -> float:
+    """Parse a module effect bonus payload."""
+    bonus: object
+    if isinstance(effect, dict):
+        bonus = effect.get("bonus", 0.0)
+    elif isinstance(effect, (float, int)):
+        bonus = effect
+    else:
+        bonus = 0.0
+    try:
+        return float(bonus)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def build_machine_catalog(
     data_raw: Mapping[str, Mapping[str, dict]],
 ) -> dict[str, Machine]:
@@ -300,21 +350,83 @@ def build_machine_catalog(
     for name, proto in data_raw.get("assembling-machine", {}).items():
         crafting_speed = float(proto.get("crafting_speed", 1.0))
         crafting_categories = tuple(proto.get("crafting_categories", []))
-        allowed_effects = proto.get("allowed_effects", [])
+        allowed_effects_raw = proto.get("allowed_effects", [])
+        allowed_effects = normalize_allowed_effects(allowed_effects_raw)
         allow_productivity = "productivity" in allowed_effects
         if not allow_productivity:
             base_effect = (proto.get("effect_receiver") or {}).get(
                 "base_effect", {}
             )
             allow_productivity = bool(base_effect.get("productivity", 0))
+        module_slots = int(proto.get("module_slots", 0))
         catalog[name] = Machine(
             key=name,
             label=name.replace("-", " ").title(),
             crafting_speed=crafting_speed,
             allow_productivity=allow_productivity,
             crafting_categories=crafting_categories,
+            module_slots=module_slots,
+            allowed_effects=allowed_effects,
         )
     return catalog
+
+
+def build_module_catalog(
+    data_raw: Mapping[str, Mapping[str, dict]],
+) -> dict[str, ModuleSpec]:
+    """Build a module catalog from data-raw module items."""
+    catalog: dict[str, ModuleSpec] = {}
+    for name, proto in data_raw.get("module", {}).items():
+        effects = proto.get("effect", {})
+        if not isinstance(effects, dict):
+            effects = {}
+        speed_bonus = parse_effect_bonus(effects.get("speed"))
+        productivity_bonus = parse_effect_bonus(effects.get("productivity"))
+        limitation = frozenset(proto.get("limitation", []) or [])
+        limitation_blacklist = frozenset(
+            proto.get("limitation_blacklist", []) or []
+        )
+        catalog[name] = ModuleSpec(
+            key=name,
+            label=name.replace("-", " ").title(),
+            speed_bonus=speed_bonus,
+            productivity_bonus=productivity_bonus,
+            limitation=limitation,
+            limitation_blacklist=limitation_blacklist,
+        )
+    return catalog
+
+
+def build_beacon_catalog(
+    data_raw: Mapping[str, Mapping[str, dict]],
+) -> dict[str, BeaconSpec]:
+    """Build a beacon catalog from data-raw beacon entities."""
+    catalog: dict[str, BeaconSpec] = {}
+    for name, proto in data_raw.get("beacon", {}).items():
+        module_slots = int(proto.get("module_slots", 0))
+        effectivity = float(proto.get("distribution_effectivity", 1.0))
+        allowed_effects = normalize_allowed_effects(
+            proto.get("allowed_effects", [])
+        )
+        catalog[name] = BeaconSpec(
+            key=name,
+            label=name.replace("-", " ").title(),
+            module_slots=module_slots,
+            distribution_effectivity=effectivity,
+            allowed_effects=allowed_effects,
+        )
+    return catalog
+
+
+def select_default_beacon(
+    beacons: Mapping[str, BeaconSpec],
+) -> BeaconSpec | None:
+    """Select the default beacon spec (prefer base beacon)."""
+    if not beacons:
+        return None
+    if "beacon" in beacons:
+        return beacons["beacon"]
+    return beacons[sorted(beacons.keys())[0]]
 
 
 def build_recipe_catalog(
@@ -392,6 +504,92 @@ def build_icon_catalog(
                 size=icon_size,
             )
     return catalog
+
+
+def module_matches_recipe(
+    module: ModuleSpec,
+    recipe: Recipe,
+) -> bool:
+    """Check module limitation lists against a recipe."""
+    if module.limitation and recipe.key not in module.limitation:
+        return False
+    return not (
+        module.limitation_blacklist
+        and recipe.key in module.limitation_blacklist
+    )
+
+
+def filter_modules_for_machine(
+    modules: Mapping[str, ModuleSpec],
+    *,
+    recipe: Recipe,
+    machine: Machine,
+    allowed_effects: frozenset[str],
+) -> list[ModuleSpec]:
+    """Filter modules based on recipe, machine, and allowed effects."""
+    filtered: list[ModuleSpec] = []
+    for module in modules.values():
+        if module.speed_bonus == 0.0 and module.productivity_bonus == 0.0:
+            continue
+        if module.productivity_bonus != 0.0 and (
+            not recipe.allow_productivity or not machine.allow_productivity
+        ):
+            continue
+        if module.speed_bonus != 0.0 and "speed" not in allowed_effects:
+            continue
+        if (
+            module.productivity_bonus != 0.0
+            and "productivity" not in allowed_effects
+        ):
+            continue
+        if not module_matches_recipe(module, recipe):
+            continue
+        filtered.append(module)
+    return sorted(filtered, key=lambda item: item.label)
+
+
+def module_label(module: ModuleSpec | None) -> str:
+    """Format module labels for selection widgets."""
+    if module is None:
+        return "None"
+    return module.label
+
+
+def beacon_label(beacon: BeaconSpec | None) -> str:
+    """Format beacon labels for selection widgets."""
+    if beacon is None:
+        return "None"
+    return beacon.label
+
+
+def compute_module_effects(
+    module: ModuleSpec | None,
+    *,
+    count: int,
+) -> tuple[float, float]:
+    """Compute total module effects for a machine."""
+    if module is None or count <= 0:
+        return 0.0, 0.0
+    return module.speed_bonus * count, module.productivity_bonus * count
+
+
+def compute_beacon_effects(
+    module: ModuleSpec | None,
+    *,
+    module_count: int,
+    beacon_count: int,
+    effectivity: float,
+) -> tuple[float, float]:
+    """Compute total beacon effects applied to a machine."""
+    if (
+        module is None
+        or module_count <= 0
+        or beacon_count <= 0
+        or effectivity <= 0.0
+    ):
+        return 0.0, 0.0
+    factor = module_count * beacon_count * effectivity
+    return module.speed_bonus * factor, module.productivity_bonus * factor
 
 
 def find_icon(
@@ -692,11 +890,20 @@ def render_production_header() -> None:
         col.caption(label)
 
 
+@dataclass(frozen=True)
+class ProductionContext:
+    """Hold the data needed to render production rows."""
+
+    recipes: Mapping[str, Recipe]
+    machines: Mapping[str, Machine]
+    modules: Mapping[str, ModuleSpec]
+    beacon: BeaconSpec | None
+    icon_catalog: Mapping[tuple[str, str], IconSpec]
+    recipe_order: tuple[str, str, str]
+
+
 def render_production_rows(
-    recipes: Mapping[str, Recipe],
-    machines: Mapping[str, Machine],
-    icon_catalog: Mapping[tuple[str, str], IconSpec],
-    recipe_order: tuple[str, str, str],
+    context: ProductionContext,
 ) -> tuple[
     dict[str, RecipeConfig],
     dict[str, tuple[ContainerSlot, ContainerSlot, ContainerSlot]],
@@ -710,20 +917,20 @@ def render_production_rows(
     ] = {}
     count_slots: dict[str, CaptionSlot] = {}
 
-    for recipe_key in recipe_order:
-        recipe = recipes[recipe_key]
+    for recipe_key in context.recipe_order:
+        recipe = context.recipes[recipe_key]
         eligible = [
             key
-            for key, machine in machines.items()
+            for key, machine in context.machines.items()
             if recipe.category in machine.crafting_categories
         ]
         if not eligible:
-            eligible = list(machines.keys())
+            eligible = list(context.machines.keys())
         cols = st.columns([1.4, 1.8, 1.6, 0.9, 2.4, 2.4, 2.4])
 
         with cols[0]:
             recipe_icon = find_icon(
-                icon_catalog,
+                context.icon_catalog,
                 ("recipe",),
                 name=recipe.key,
             )
@@ -732,11 +939,11 @@ def render_production_rows(
         with cols[1]:
             machine = render_machine_selector(
                 recipe,
-                machines,
+                context.machines,
                 eligible,
             )
             machine_icon = find_icon(
-                icon_catalog,
+                context.icon_catalog,
                 ("item", "assembling-machine"),
                 name=machine.key,
             )
@@ -744,7 +951,12 @@ def render_production_rows(
             count_slots[recipe_key] = st.empty()
 
         with cols[2]:
-            effects = render_effect_controls(recipe)
+            effects = render_effect_controls(
+                recipe,
+                machine=machine,
+                modules=context.modules,
+                beacon=context.beacon,
+            )
 
         with cols[3]:
             st.caption("—")
@@ -853,8 +1065,7 @@ def machine_label(machine: Machine) -> str:
 
 def compute_effective_speed(machine: Machine, effects: EffectSettings) -> float:
     """Compute the effective crafting speed after bonuses."""
-    bonus = effects.speed_bonus + effects.beacon_speed_bonus
-    return machine.crafting_speed * (1.0 + bonus)
+    return machine.crafting_speed * (1.0 + effects.speed_bonus)
 
 
 def per_machine_rates(recipe: Recipe, config: RecipeConfig) -> FlowRates:
@@ -1028,51 +1239,104 @@ def solve_chain(
     )
 
 
-def render_effect_controls(recipe: Recipe) -> EffectSettings:
+def render_effect_controls(
+    recipe: Recipe,
+    *,
+    machine: Machine,
+    modules: Mapping[str, ModuleSpec],
+    beacon: BeaconSpec | None,
+) -> EffectSettings:
     """Render module and beacon controls for a recipe."""
-    use_modules = st.checkbox(
-        "Modules",
-        key=f"{recipe.key}-modules",
-        help="Provide total speed/productivity bonuses from modules.",
-    )
-    speed_bonus = 0.0
-    productivity_bonus = 0.0
-    if use_modules:
-        module_cols = st.columns(2)
-        speed_bonus = module_cols[0].number_input(
-            "Speed %",
-            min_value=0.0,
-            value=0.0,
-            step=5.0,
-            key=f"{recipe.key}-module-speed",
-        )
-        productivity_bonus = module_cols[1].number_input(
-            "Productivity %",
-            min_value=0.0,
-            value=0.0,
-            step=1.0,
-            key=f"{recipe.key}-module-prod",
-        )
+    module_column, beacon_column = st.columns(2)
 
-    use_beacons = st.checkbox(
-        "Beacons",
-        key=f"{recipe.key}-beacons",
-        help="Provide a total speed bonus from beacons.",
-    )
-    beacon_speed_bonus = 0.0
-    if use_beacons:
-        beacon_speed_bonus = st.number_input(
-            "Beacon speed %",
-            min_value=0.0,
-            value=0.0,
-            step=5.0,
-            key=f"{recipe.key}-beacon-speed",
-        )
+    module_speed = 0.0
+    module_productivity = 0.0
+
+    with module_column:
+        st.caption("Modules")
+        if machine.module_slots <= 0:
+            st.caption("No module slots")
+        else:
+            allowed_modules = filter_modules_for_machine(
+                modules,
+                recipe=recipe,
+                machine=machine,
+                allowed_effects=machine.allowed_effects,
+            )
+            module_options: list[ModuleSpec | None] = [None]
+            module_options.extend(allowed_modules)
+            selected_module = st.selectbox(
+                "Module",
+                options=module_options,
+                format_func=module_label,
+                key=f"{recipe.key}-module",
+                label_visibility="collapsed",
+            )
+            count_options = list(range(machine.module_slots + 1))
+            module_count = st.selectbox(
+                "Module count",
+                options=count_options,
+                index=machine.module_slots,
+                key=f"{recipe.key}-module-count",
+                label_visibility="collapsed",
+            )
+            module_speed, module_productivity = compute_module_effects(
+                selected_module,
+                count=module_count,
+            )
+
+    beacon_speed = 0.0
+    beacon_productivity = 0.0
+
+    with beacon_column:
+        st.caption("Beacons")
+        if beacon is None:
+            st.caption("No beacon data")
+        else:
+            effectivity = beacon.distribution_effectivity
+            st.caption(f"{beacon.label} (effectivity {effectivity:g})")
+            beacon_allowed_effects = (
+                beacon.allowed_effects & machine.allowed_effects
+            )
+            beacon_modules = filter_modules_for_machine(
+                modules,
+                recipe=recipe,
+                machine=machine,
+                allowed_effects=beacon_allowed_effects,
+            )
+            beacon_module_options: list[ModuleSpec | None] = [None]
+            beacon_module_options.extend(beacon_modules)
+            selected_beacon_module = st.selectbox(
+                "Beacon module",
+                options=beacon_module_options,
+                format_func=module_label,
+                key=f"{recipe.key}-beacon-module",
+                label_visibility="collapsed",
+            )
+            beacon_module_count = st.selectbox(
+                "Beacon module count",
+                options=list(range(beacon.module_slots + 1)),
+                index=beacon.module_slots,
+                key=f"{recipe.key}-beacon-module-count",
+                label_visibility="collapsed",
+            )
+            beacon_count = st.selectbox(
+                "Beacon count",
+                options=list(range(13)),
+                index=0,
+                key=f"{recipe.key}-beacon-count",
+                label_visibility="collapsed",
+            )
+            beacon_speed, beacon_productivity = compute_beacon_effects(
+                selected_beacon_module,
+                module_count=beacon_module_count,
+                beacon_count=beacon_count,
+                effectivity=beacon.distribution_effectivity,
+            )
 
     return EffectSettings(
-        speed_bonus=speed_bonus / 100.0,
-        productivity_bonus=productivity_bonus / 100.0,
-        beacon_speed_bonus=beacon_speed_bonus / 100.0,
+        speed_bonus=module_speed + beacon_speed,
+        productivity_bonus=module_productivity + beacon_productivity,
     )
 
 
@@ -1127,6 +1391,15 @@ def main() -> None:
         st.error("No assembling machines found in data-raw.")
         return
 
+    modules = build_module_catalog(data_raw)
+    if not modules:
+        st.warning("No modules found in data-raw.")
+
+    beacons = build_beacon_catalog(data_raw)
+    beacon_spec = select_default_beacon(beacons)
+    if beacon_spec is None:
+        st.warning("No beacons found in data-raw.")
+
     recipes = build_recipe_catalog(data_raw, recipe_order)
     if len(recipes) != len(recipe_order):
         st.error("Some selected recipes were not found in data-raw.")
@@ -1150,11 +1423,16 @@ def main() -> None:
 
     st.subheader("Production")
     render_production_header()
+    production_context = ProductionContext(
+        recipes=recipes,
+        machines=machines,
+        modules=modules,
+        beacon=beacon_spec,
+        icon_catalog=icon_catalog,
+        recipe_order=recipe_order,
+    )
     config_map, row_slots, count_slots = render_production_rows(
-        recipes,
-        machines,
-        icon_catalog,
-        recipe_order,
+        production_context
     )
 
     demand_pg_per_s = demand_pg_per_min / 60.0
