@@ -4,15 +4,15 @@
     "net10.0": {
       "DotNet.ReproducibleBuilds": {
         "type": "Direct",
-        "requested": "[1.2.25, )",
-        "resolved": "1.2.25",
-        "contentHash": "xCXiw7BCxHJ8pF6wPepRUddlh2dlQlbr81gXA72hdk4FLHkKXas7EH/n+fk5UCA/YfMqG1Z6XaPiUjDbUNBUzg=="
+        "requested": "[1.2.39, )",
+        "resolved": "1.2.39",
+        "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
       },
       "HtmlAgilityPack": {
         "type": "Direct",
-        "requested": "[1.12.0, )",
-        "resolved": "1.12.0",
-        "contentHash": "VHtVZmfoYhQyA/POvZRLuTpCz1zhzIDrdYRJIRV73e9wKAzjW71biYNOHOWx8MxEX3TE4TWVfx1QDRoZcj2AWw=="
+        "requested": "[1.12.4, )",
+        "resolved": "1.12.4",
+        "contentHash": "ljqvBabvFwKoLniuoQKO8b5bJfJweKLs4fUNS/V5dsvpo0A8MlJqxxn9XVmP2DaskbUXty6IYaWAi1SArGIMeQ=="
       },
       "Microsoft.SourceLink.GitHub": {
         "type": "Direct",
@@ -26,9 +26,9 @@
       },
       "Nerdbank.GitVersioning": {
         "type": "Direct",
-        "requested": "[3.7.115, )",
-        "resolved": "3.7.115",
-        "contentHash": "EpXamaAdRfG/BMxGgvZlTM0npRnkmXUjAj8OdNKd17t4oN+2nvjdv/KnFmzOOMDqvlwB49UCwtOHJrAQTfUBtQ=="
+        "requested": "[3.9.50, )",
+        "resolved": "3.9.50",
+        "contentHash": "HtOgGF6jZ+WYbXnCUCYPT8Y2d6mIJo9ozjK/FINTRsXdm4Zgv9GehUMa7EFoGQkqrMcDJNOIDwCmENnvXg4UbA=="
       },
       "StyleCop.Analyzers": {
         "type": "Direct",

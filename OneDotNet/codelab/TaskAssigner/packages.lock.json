@@ -4,22 +4,22 @@
     "net10.0": {
       "DotNet.ReproducibleBuilds": {
         "type": "Direct",
-        "requested": "[1.2.25, )",
-        "resolved": "1.2.25",
-        "contentHash": "xCXiw7BCxHJ8pF6wPepRUddlh2dlQlbr81gXA72hdk4FLHkKXas7EH/n+fk5UCA/YfMqG1Z6XaPiUjDbUNBUzg=="
+        "requested": "[1.2.39, )",
+        "resolved": "1.2.39",
+        "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
       },
       "Google.OrTools": {
         "type": "Direct",
-        "requested": "[9.12.4544, )",
-        "resolved": "9.12.4544",
-        "contentHash": "knKqAkgDYU4WaKMDa9Ws8095oSZ5h34ZZuSRwJxuN3VfXbyLpUHUDIOU9YNzeqJUfPfZAZdagN/ga3D8LcNBEA==",
+        "requested": "[9.15.6755, )",
+        "resolved": "9.15.6755",
+        "contentHash": "sbPJ7CUwJb3ppbjASJVfdHC0+a7LTTMX1v8J5nERYdcLKkFUZSM3MB/Ck13VsmuWeP0LuE3C4U3WLHH49LHRMQ==",
         "dependencies": {
-          "Google.OrTools.runtime.linux-arm64": "9.12.4544",
-          "Google.OrTools.runtime.linux-x64": "9.12.4544",
-          "Google.OrTools.runtime.osx-arm64": "9.12.4544",
-          "Google.OrTools.runtime.osx-x64": "9.12.4544",
-          "Google.OrTools.runtime.win-x64": "9.12.4544",
-          "Google.Protobuf": "3.29.3"
+          "Google.OrTools.runtime.linux-arm64": "9.15.6755",
+          "Google.OrTools.runtime.linux-x64": "9.15.6755",
+          "Google.OrTools.runtime.osx-arm64": "9.15.6755",
+          "Google.OrTools.runtime.osx-x64": "9.15.6755",
+          "Google.OrTools.runtime.win-x64": "9.15.6755",
+          "Google.Protobuf": "3.33.1"
         }
       },
       "Microsoft.SourceLink.GitHub": {
@@ -34,9 +34,9 @@
       },
       "Nerdbank.GitVersioning": {
         "type": "Direct",
-        "requested": "[3.7.115, )",
-        "resolved": "3.7.115",
-        "contentHash": "EpXamaAdRfG/BMxGgvZlTM0npRnkmXUjAj8OdNKd17t4oN+2nvjdv/KnFmzOOMDqvlwB49UCwtOHJrAQTfUBtQ=="
+        "requested": "[3.9.50, )",
+        "resolved": "3.9.50",
+        "contentHash": "HtOgGF6jZ+WYbXnCUCYPT8Y2d6mIJo9ozjK/FINTRsXdm4Zgv9GehUMa7EFoGQkqrMcDJNOIDwCmENnvXg4UbA=="
       },
       "StyleCop.Analyzers": {
         "type": "Direct",
@@ -49,33 +49,33 @@
       },
       "Google.OrTools.runtime.linux-arm64": {
         "type": "Transitive",
-        "resolved": "9.12.4544",
-        "contentHash": "uy+/dHt1/6Ya1BrwEl/w6wnCE53nacSeXZNhL0lxEkAZMEyOVvOz9RrnsEBH292U/fK4dbCzZi/g+PmX9lt5dA=="
+        "resolved": "9.15.6755",
+        "contentHash": "7YaKuI4q1uU9ibelXXawY7zx/5hQ1vMBKLFFK6kQRgO082wMlHx6NmfMaTFZA94b4D4xbFaA7TGAehoEbWciEg=="
       },
       "Google.OrTools.runtime.linux-x64": {
         "type": "Transitive",
-        "resolved": "9.12.4544",
-        "contentHash": "XbP1qGmWEtvylMwsnvZGu+ezvAy+8RFc33TLkFj5eXxe6jEGawpMklsNZawWiReiBDOy0iV71iryaFkiYkrvbA=="
+        "resolved": "9.15.6755",
+        "contentHash": "RupvZKKPXdUCWXdGFo8COXcp4YiQIjS5Bhlh9bVRWZqB1RjtVGQFscEwtN6wTZEjUjb49sE0lNo784W/LjQFHg=="
       },
       "Google.OrTools.runtime.osx-arm64": {
         "type": "Transitive",
-        "resolved": "9.12.4544",
-        "contentHash": "rOeb2cNqVlTR8RsTFonuLL/9Xw6MKHrivPnJeoDHPYpYuyYECoTLfbk962DtGqFNq5EB9euWZ5VAu4+GlZF9aw=="
+        "resolved": "9.15.6755",
+        "contentHash": "WJw1KPoOi3BWmf6sqCMi8kDmjifuA6Bw/UC6He7jnHRFIixtLZ1wCSIiG4droej7HQI1PiNVTRb82udw9ilS7g=="
       },
       "Google.OrTools.runtime.osx-x64": {
         "type": "Transitive",
-        "resolved": "9.12.4544",
-        "contentHash": "ZBpNymftPoBIghMU9DZS8yWSq3MwLaW/ulIPcX4JOKsd0zWk9Bkfk8Ty8tCKA+ptFqKCwoJNOiiIWxVRVwssSw=="
+        "resolved": "9.15.6755",
+        "contentHash": "f0oTHbcoM2hBRyUVWvIR8cH2m5CibAZezK3mrPXNmoXKDjgoJhmheeovgajXu6/ax1RW7529m8yS6eHkmaZCOA=="
       },
       "Google.OrTools.runtime.win-x64": {
         "type": "Transitive",
-        "resolved": "9.12.4544",
-        "contentHash": "WeYUfkWVuMurRf7ZJQjLwovNs9b77nYqBRzonan0JIOFFau5WJLtkzgjCimUJ2i1yXTFvBFr5o1XWkMt7nwEPw=="
+        "resolved": "9.15.6755",
+        "contentHash": "Tox7pDhrVIfG7OdV7ISikiO5coioZ0FgtyK/H8cayzito4r512Oly/yi19TXjuqK8pKHD6BJOR0fY0aEkb3Nuw=="
       },
       "Google.Protobuf": {
         "type": "Transitive",
-        "resolved": "3.29.3",
-        "contentHash": "t7nZFFUFwigCwZ+nIXHDLweXvwIpsOXi+P7J7smPT/QjI3EKxnCzTQOhBqyEh6XEzc/pNH+bCFOOSjatrPt6Tw=="
+        "resolved": "3.33.1",
+        "contentHash": "RztiFmX9aOWDwfhxFzx/nS4fjs4DX7ZC7/XBEBl56k15lPGBftvbSwZkeo1mMCJHrNp1kK5iQYrFXB4MqCmBCA=="
       },
       "Microsoft.Build.Tasks.Git": {
         "type": "Transitive",

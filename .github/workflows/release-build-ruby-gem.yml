@@ -1,0 +1,169 @@
+name: Build Ruby Gem (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: "Target commit SHA to build from"
+        required: true
+        type: string
+      project:
+        description: "Gem name (must match <project>.gemspec filename)"
+        required: true
+        type: string
+      package_dir:
+        description: "Directory containing the Ruby gem project"
+        required: true
+        type: string
+      version:
+        description: "Expected gem version"
+        required: true
+        type: string
+      ruby_version:
+        description: "Ruby version"
+        required: true
+        type: string
+      artifact_name:
+        description: "Artifact name to upload out/* as"
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build Ruby gem
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.target }}
+
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base \
+            texlive-latex-recommended \
+            texlive-fonts-recommended \
+            dvisvgm \
+            pdf2svg \
+            poppler-utils \
+            imagemagick \
+            ghostscript
+
+      - name: Setup Ruby (Bundler)
+        if: ${{ hashFiles(format('{0}/Gemfile', inputs.package_dir)) != '' }}
+        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        with:
+          ruby-version: ${{ inputs.ruby_version }}
+          bundler-cache: true
+          working-directory: ${{ inputs.package_dir }}
+
+      - name: Setup Ruby
+        if: ${{ hashFiles(format('{0}/Gemfile', inputs.package_dir)) == '' }}
+        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        with:
+          ruby-version: ${{ inputs.ruby_version }}
+
+      - name: Run quality checks (Bundler)
+        if: ${{ hashFiles(format('{0}/Gemfile', inputs.package_dir)) != '' }}
+        shell: bash
+        working-directory: ${{ inputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+          bundle exec standardrb
+          bundle exec rspec
+
+      - name: Skip Bundler checks (no Gemfile)
+        if: ${{ hashFiles(format('{0}/Gemfile', inputs.package_dir)) == '' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "No Gemfile found in '${{ inputs.package_dir }}'; skipping Bundler-based quality checks (standardrb/rspec)."
+
+      - name: Build gem
+        shell: bash
+        working-directory: ${{ inputs.package_dir }}
+        env:
+          PROJECT: ${{ inputs.project }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf "${GITHUB_WORKSPACE}/out"
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+
+          export TZ=UTC
+          export LC_ALL=C.UTF-8
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+
+          out_gem="${GITHUB_WORKSPACE}/out/${PROJECT}-${VERSION}.gem"
+
+          if [[ ! -f "${PROJECT}.gemspec" ]]; then
+            echo "Missing gemspec: ${PROJECT}.gemspec" >&2
+            exit 1
+          fi
+
+          gem build "${PROJECT}.gemspec" --output "${out_gem}"
+
+          if [[ ! -f "${out_gem}" ]]; then
+            echo "gem build did not produce expected output: ${out_gem}" >&2
+            exit 1
+          fi
+
+          extra_local=$(find . -maxdepth 1 -type f -name '*.gem' -print | wc -l | tr -d ' ')
+          if [[ "${extra_local}" != "0" ]]; then
+            echo "Unexpected extra *.gem files were produced in the package directory; the build must use --output only." >&2
+            find . -maxdepth 1 -type f -name '*.gem' -print >&2 || true
+            exit 1
+          fi
+
+          out_count=$(find "${GITHUB_WORKSPACE}/out" -maxdepth 1 -type f -name '*.gem' -print | wc -l | tr -d ' ')
+          if [[ "${out_count}" != "1" ]]; then
+            echo "Expected exactly one .gem in out/, found ${out_count}." >&2
+            ls -la "${GITHUB_WORKSPACE}/out" >&2 || true
+            exit 1
+          fi
+
+      - name: Verify gem identity matches inputs
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          gem_path="${GITHUB_WORKSPACE}/out/${PROJECT}-${VERSION}.gem"
+          if [[ ! -f "${gem_path}" ]]; then
+            echo "Missing gem artifact: ${gem_path}" >&2
+            exit 1
+          fi
+
+          spec_name=$(gem specification "${gem_path}" name | head -n1 | tr -d '\r')
+          spec_version=$(gem specification "${gem_path}" version | head -n1 | tr -d '\r')
+
+          if [[ "${spec_name}" != "${PROJECT}" ]]; then
+            echo "Gem name mismatch: expected ${PROJECT}, got ${spec_name}" >&2
+            exit 1
+          fi
+
+          if [[ "${spec_version}" != "${VERSION}" ]]; then
+            echo "Gem version mismatch: expected ${VERSION}, got ${spec_version}" >&2
+            exit 1
+          fi
+
+          echo "Verified gem identity: ${spec_name} ${spec_version}"
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ github.workspace }}/out/*
+          if-no-files-found: error

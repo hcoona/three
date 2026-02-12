@@ -13,6 +13,16 @@ updates:
           - minor
           - patch
 
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      nuget-minor:
+        update-types:
+          - minor
+          - patch
+
   - package-ecosystem: npm
     directory: /
     ignore:
@@ -29,3 +39,29 @@ updates:
         dependency-type: production
         update-types:
           - patch
+
+  - package-ecosystem: bundler
+    directory: /src/public/lib/asciidoctor-latexmath
+    schedule:
+      interval: weekly
+    groups:
+      ruby-asciidoctor-latexmath-minor:
+        update-types:
+          - minor
+          - patch
+      ruby-asciidoctor-latexmath-major:
+        update-types:
+          - major
+
+  - package-ecosystem: bundler
+    directory: /src/public/lib/hexo-renderer-asciidoc
+    schedule:
+      interval: weekly
+    groups:
+      ruby-hexo-renderer-asciidoc-minor:
+        update-types:
+          - minor
+          - patch
+      ruby-hexo-renderer-asciidoc-major:
+        update-types:
+          - major

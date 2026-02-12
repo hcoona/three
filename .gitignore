@@ -894,3 +894,6 @@ _version.py
 
 # Include OnePython packages
 !OnePython/packages/*
+
+# Include Ruby lib directories
+!lib/

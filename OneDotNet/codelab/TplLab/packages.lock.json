@@ -4,9 +4,9 @@
     "net10.0": {
       "DotNet.ReproducibleBuilds": {
         "type": "Direct",
-        "requested": "[1.2.25, )",
-        "resolved": "1.2.25",
-        "contentHash": "xCXiw7BCxHJ8pF6wPepRUddlh2dlQlbr81gXA72hdk4FLHkKXas7EH/n+fk5UCA/YfMqG1Z6XaPiUjDbUNBUzg=="
+        "requested": "[1.2.39, )",
+        "resolved": "1.2.39",
+        "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
       },
       "Microsoft.SourceLink.GitHub": {
         "type": "Direct",
@@ -20,9 +20,9 @@
       },
       "Nerdbank.GitVersioning": {
         "type": "Direct",
-        "requested": "[3.7.115, )",
-        "resolved": "3.7.115",
-        "contentHash": "EpXamaAdRfG/BMxGgvZlTM0npRnkmXUjAj8OdNKd17t4oN+2nvjdv/KnFmzOOMDqvlwB49UCwtOHJrAQTfUBtQ=="
+        "requested": "[3.9.50, )",
+        "resolved": "3.9.50",
+        "contentHash": "HtOgGF6jZ+WYbXnCUCYPT8Y2d6mIJo9ozjK/FINTRsXdm4Zgv9GehUMa7EFoGQkqrMcDJNOIDwCmENnvXg4UbA=="
       },
       "StyleCop.Analyzers": {
         "type": "Direct",
@@ -32,18 +32,6 @@
         "dependencies": {
           "StyleCop.Analyzers.Unstable": "1.2.0.556"
         }
-      },
-      "System.Text.Json": {
-        "type": "Direct",
-        "requested": "[9.0.7, )",
-        "resolved": "9.0.7",
-        "contentHash": "u/lN2FEEXs3ghj2ta8tWA4r2MS9Yni07K7jDmnz8h1UPDf0lIIIEMkWx383Zz4fJjJio7gDl+00RYuQ/7R8ZQw=="
-      },
-      "System.Threading.Tasks.Dataflow": {
-        "type": "Direct",
-        "requested": "[8.0.1, )",
-        "resolved": "8.0.1",
-        "contentHash": "4pjq2vIPNZkKA9asAXzf5IRBb7K+b0+UQZZbpv6g029sAPZgnKdg/NNOC/DbJL8SWqYcFMVjb/T/YEmb0PHUYg=="
       },
       "Microsoft.Build.Tasks.Git": {
         "type": "Transitive",

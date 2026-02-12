@@ -20,6 +20,7 @@ local general_exclude_list =
   List(
     ".pre-commit-config.yaml",
     "**/packages.lock.json",
+    "global.json",
     "project.assets.json",
     "package-lock.json",
     "PklProject.deps.json",

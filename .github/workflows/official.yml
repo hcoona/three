@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       version:
-        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Others: SemVer 2.0.0 (no leading v)."
+        description: "Python: PEP 440 subset (leading v allowed; will be stripped; epochs like '1!1.0' are intentionally not supported). Node: SemVer 2.0.0 (no leading v). Ruby: MAJOR.MINOR.PATCH[.suffix...] (no '-' or '+'; suffix segments are dot-separated [0-9A-Za-z]+ and must include at least one letter)."
         required: true
         type: string
       target:
@@ -36,6 +36,7 @@ env:
   PYTHON_VERSION: '3.14'
   NODE_VERSION: '24'
   PNPM_VERSION: '10'
+  RUBY_VERSION: '3.3'
 
 jobs:
   versions:
@@ -47,6 +48,7 @@ jobs:
       python_version: ${{ steps.versions.outputs.python_version }}
       node_version: ${{ steps.versions.outputs.node_version }}
       pnpm_version: ${{ steps.versions.outputs.pnpm_version }}
+      ruby_version: ${{ steps.versions.outputs.ruby_version }}
     steps:
       - name: Export versions
         id: versions
@@ -57,6 +59,7 @@ jobs:
             echo "python_version=${PYTHON_VERSION}"
             echo "node_version=${NODE_VERSION}"
             echo "pnpm_version=${PNPM_VERSION}"
+            echo "ruby_version=${RUBY_VERSION}"
           } >> "${GITHUB_OUTPUT}"
 
   resolve:
@@ -125,16 +128,38 @@ jobs:
       actions: read
       id-token: write
     steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
       - name: Download dist artifact
         uses: actions/download-artifact@v7
         with:
           name: official-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
 
+      - name: Validate PyPI remote digests (idempotency)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/validate_pypi_remote_digests.sh"
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1
         with:
           packages-dir: ${{ github.workspace }}/out/
+          skip-existing: true
 
   attest-python:
     name: Attest release assets (Python)
@@ -169,6 +194,163 @@ jobs:
       - publish-python
       - attest-python
     if: needs.resolve.outputs.project_kind == 'python'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: false
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: official-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: official-${{ needs.resolve.outputs.project }}-dist
+
+  build-ruby:
+    name: Build Ruby gem
+    needs:
+      - versions
+      - resolve
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    uses: ./.github/workflows/release-build-ruby-gem.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      ruby_version: ${{ needs.versions.outputs.ruby_version }}
+      artifact_name: official-${{ needs.resolve.outputs.project }}-dist
+
+  publish-ruby-gpr:
+    name: Publish Ruby gem (GitHub Packages)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        with:
+          ruby-version: ${{ needs.versions.outputs.ruby_version }}
+
+      - name: Publish to GitHub Packages (idempotent)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_ruby_gpr_idempotent.sh"
+
+  publish-ruby-rubygems:
+    name: Publish Ruby gem (RubyGems.org)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    environment: rubygems
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        with:
+          ruby-version: ${{ needs.versions.outputs.ruby_version }}
+
+      - name: Configure RubyGems Trusted Publishing credentials
+        uses: rubygems/configure-rubygems-credentials@bc6dd217f8a4f919d6835fcfefd470ef821f5c44 # v1.0.0
+        with:
+          trusted-publisher: true
+
+      - name: Publish to RubyGems.org (idempotent)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_rubygems_org_idempotent.sh"
+
+  attest-ruby:
+    name: Attest release assets (Ruby)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: official-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+  release-ruby:
+    name: Create GitHub release (Ruby)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-ruby
+      - publish-ruby-gpr
+      - publish-ruby-rubygems
+      - attest-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
     permissions:
       contents: write
       actions: read
@@ -217,10 +399,10 @@ jobs:
       packages: write
       id-token: write
     steps:
-      - name: Checkout
+      - name: Checkout (workflow scripts)
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
 
       - name: Setup Node.js (npmjs)
@@ -269,9 +451,13 @@ jobs:
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
           NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+          OWNER: ${{ github.repository_owner }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -Eeuo pipefail
-          npm publish "${GITHUB_WORKSPACE}/out/gpr.tgz" --registry https://npm.pkg.github.com --tag "${DIST_TAG}"
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
 
       - name: Note about npm Trusted Publishers (OIDC)
         shell: bash
@@ -286,30 +472,16 @@ jobs:
           echo "  - Environment (if configured on npm): npmjs"
           echo "See: https://docs.npmjs.com/trusted-publishers"
 
-      - name: Verify package is not private
-        shell: bash
-        env:
-          PACKAGE_DIR: ${{ needs.resolve.outputs.package_dir }}
-        run: |
-          set -Eeuo pipefail
-          pushd "${PACKAGE_DIR}" >/dev/null
-          node - <<'NODE'
-          const fs = require('fs');
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          if (pkg.private) {
-            console.error('Error: package.json has "private": true; refusing to publish to the public npm registry.');
-            process.exit(1);
-          }
-          NODE
-          popd >/dev/null
-
-      - name: Publish to npm registry
+      - name: Publish to npm registry (idempotent)
         shell: bash
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -Eeuo pipefail
-          npm publish "${GITHUB_WORKSPACE}/out/npmjs.tgz" --registry https://registry.npmjs.org --tag "${DIST_TAG}" --access public
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_npmjs_idempotent.sh"
 
   attest-node:
     name: Attest release assets (Node)
