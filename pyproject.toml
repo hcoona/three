@@ -15,6 +15,7 @@ dev = ["pyrefly>=0.25.0", "pytest>=8.3.4", "ruff>=0.11.8"]
 [tool.uv.workspace]
 members = [
   "src/lab/azure-document-intelligence-lab",
+  "src/private/app/factorio-cycle-calculator",
   "src/private/app/git-commit-heatmap",
   "src/private/app/html-sm-processor",
   "src/private/app/llm-text-splitter",
@@ -33,6 +34,7 @@ nbgv-python = { workspace = true }
 [tool.pyrefly]
 project-includes = [
   "src/lab/azure-document-intelligence-lab",
+  "src/private/app/factorio-cycle-calculator",
   "src/private/app/git-commit-heatmap",
   "src/private/app/html-sm-processor",
   "src/private/app/llm-text-splitter",
