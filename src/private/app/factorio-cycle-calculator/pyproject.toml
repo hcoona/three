@@ -1,0 +1,10 @@
+[project]
+name = "factorio-cycle-calculator"
+version = "0.0.0-dev"
+description = "Web calculator for Factorio production cycles."
+readme = "README.md"
+authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = ["ortools>=9.11.4210", "streamlit>=1.42.0"]

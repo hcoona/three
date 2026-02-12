@@ -13,3 +13,13 @@ This project models your factory as a flow network and solves the balance equati
 1. recycling loops (lossy reverse crafting via _Recycler_)
 2. scrap recycling chains and downstream recycling decisions on _Fulgora_
 3. multi-output systems like oil processing that can deadlock when outputs fill
+
+## Example app (Streamlit)
+
+An initial Streamlit prototype is available in `app.py`. It focuses on the
+advanced oil processing chain and uses Google OR-Tools to compute machine
+counts given a petroleum gas demand and the chosen machine/effect settings.
+
+Run the app with:
+
+- `uv run --project src/private/app/factorio-cycle-calculator streamlit run app.py`
