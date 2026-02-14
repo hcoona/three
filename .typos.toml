@@ -3,6 +3,7 @@ extend-exclude = [
   'packages.lock.json',
   "OneDotNet/srcs/private/app/OxfordWordlistExtractor/*.html",
   "OneDotNet/tests/OxfordDictExtractor.Tests/**/*.html",
+  "**/generated/**/*",
 ]
 
 [default]

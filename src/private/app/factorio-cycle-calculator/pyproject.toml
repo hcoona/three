@@ -8,3 +8,6 @@ requires-python = ">=3.12"
 license = "GPL-3.0-or-later"
 classifiers = ["Private :: Do Not Upload"]
 dependencies = ["ortools>=9.11.4210", "pillow>=10.3.0", "streamlit>=1.42.0"]
+
+[dependency-groups]
+dev = ["datamodel-code-generator[ruff]>=0.53.0"]
