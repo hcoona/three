@@ -30,6 +30,7 @@ local general_exclude_list =
     "**/.github/**",
     "**/.specify/**",
     "**/specs/**/*.md",
+    "**/generated/**",
   )
 
 local general_linters = new Mapping<String, Step> {

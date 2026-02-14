@@ -2,21 +2,87 @@
 
 from __future__ import annotations
 
+import importlib
 import io
 import json
 import os
 import re
-from dataclasses import dataclass
+import sys
+from collections.abc import Mapping, Sequence
+from dataclasses import MISSING, dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, Self
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import streamlit as st
 from ortools.linear_solver import pywraplp
 from PIL import Image
 
+
+class GeneratedModelsImportError(ImportError):
+    """Raised when generated data model imports fail."""
+
+    def __init__(self, path: Path, *, reason: str) -> None:
+        """Create a formatted import error for generated models."""
+        message = f"{reason} at {path}. Regenerate with datamodel-codegen."
+        super().__init__(message)
+
+
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from types import TracebackType
+
+    class _GeneratedModel:
+        """Type-checking stub for generated dataclasses."""
+
+        def __init__(self, **kwargs: object) -> None: ...
+
+        def __getattr__(self, name: str) -> object: ...
+
+    class AssemblingMachinePrototype(_GeneratedModel):
+        """Type-checking stub for assembling machines."""
+
+    class BeaconPrototype(_GeneratedModel):
+        """Type-checking stub for beacons."""
+
+    class FactorioDataRaw(_GeneratedModel):
+        """Type-checking stub for data-raw container."""
+
+    class FluidPrototype(_GeneratedModel):
+        """Type-checking stub for fluids."""
+
+    class ItemPrototype(_GeneratedModel):
+        """Type-checking stub for items."""
+
+    class ModulePrototype(_GeneratedModel):
+        """Type-checking stub for modules."""
+
+    class RecipePrototype(_GeneratedModel):
+        """Type-checking stub for recipes."""
+else:
+    _generated_path = (
+        Path(__file__).resolve().parent / "generated" / "data_raw_models.py"
+    )
+    if not _generated_path.exists():
+        raise GeneratedModelsImportError(
+            _generated_path,
+            reason="Generated models not found",
+        )
+    _generated_root = _generated_path.parent.parent
+    if str(_generated_root) not in sys.path:
+        sys.path.insert(0, str(_generated_root))
+    try:
+        _module = importlib.import_module("generated.data_raw_models")
+    except Exception as exc:
+        raise GeneratedModelsImportError(
+            _generated_path,
+            reason="Failed to import generated models",
+        ) from exc
+    AssemblingMachinePrototype = _module.AssemblingMachinePrototype
+    BeaconPrototype = _module.BeaconPrototype
+    FactorioDataRaw = _module.FactorioDataRaw
+    FluidPrototype = _module.FluidPrototype
+    ItemPrototype = _module.ItemPrototype
+    ModulePrototype = _module.ModulePrototype
+    RecipePrototype = _module.RecipePrototype
 
 DEFAULT_DATA_DIR = ""
 DEFAULT_DATA_RAW = ""
@@ -28,6 +94,146 @@ FORMAT_THOUSAND = 1_000.0
 FORMAT_TEN = 10.0
 FLOW_EPSILON = 1e-6
 MIN_LIST_ENTRY_LEN = 2
+
+
+def normalize_proto_type(proto_type: str) -> str:
+    """Normalize data-raw prototype type keys for dataclass access."""
+    return proto_type.replace("-", "_")
+
+
+def get_payload_value(payload: object, key: str) -> object:
+    """Retrieve a value from a dict or dataclass payload."""
+    if isinstance(payload, Mapping):
+        return payload.get(key)
+    if is_dataclass(payload):
+        if hasattr(payload, key):
+            return getattr(payload, key)
+        extra = getattr(payload, "extra", None)
+        if isinstance(extra, Mapping):
+            return extra.get(key)
+    return None
+
+
+def coerce_float(value: object, default: float = 0.0) -> float:
+    """Coerce a value into a float, returning a default on failure."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
+
+
+def coerce_int(value: object, default: int = 0) -> int:
+    """Coerce a value into an int, returning a default on failure."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        parsed = parse_int_string(value)
+        if parsed is not None:
+            return parsed
+    return default
+
+
+def parse_int_string(value: str) -> int | None:
+    """Parse an int from a string, handling float-like values."""
+    try:
+        return int(value)
+    except ValueError:
+        try:
+            return int(float(value))
+        except ValueError:
+            return None
+
+
+_DATACLASS_FIELD_CACHE: dict[
+    type[Any],
+    tuple[frozenset[str], frozenset[str]],
+] = {}
+
+
+def get_dataclass_field_info(
+    cls: type[Any],
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Cache dataclass field names and required fields per class."""
+    cached = _DATACLASS_FIELD_CACHE.get(cls)
+    if cached is not None:
+        return cached
+    dataclass_fields = fields(cast("Any", cls))
+    field_names = frozenset(field.name for field in dataclass_fields)
+    required_fields = frozenset(
+        field.name
+        for field in dataclass_fields
+        if field.default is MISSING and field.default_factory is MISSING
+    )
+    _DATACLASS_FIELD_CACHE[cls] = (field_names, required_fields)
+    return field_names, required_fields
+
+
+def coerce_dataclass[T](
+    cls: type[T],
+    payload: Mapping[str, object],
+) -> T | None:
+    """Coerce a payload mapping into a generated dataclass."""
+    field_names, required_fields = get_dataclass_field_info(cls)
+    values = {name: payload[name] for name in field_names if name in payload}
+    if any(name not in payload for name in required_fields):
+        return None
+    try:
+        instance = cls(**values)
+    except TypeError:
+        return None
+    extras = {
+        key: value for key, value in payload.items() if key not in field_names
+    }
+    if extras:
+        cast("Any", instance).extra = extras
+    return instance
+
+
+def parse_prototype_map[T](
+    section: Mapping[str, object] | None,
+    cls: type[T],
+) -> dict[str, T]:
+    """Parse a data-raw section into a mapping of dataclass prototypes."""
+    if not isinstance(section, Mapping):
+        return {}
+    parsed: dict[str, T] = {}
+    for name, payload in section.items():
+        if not isinstance(payload, Mapping):
+            continue
+        proto = coerce_dataclass(cls, payload)
+        if proto is None:
+            continue
+        parsed[name] = proto
+    return parsed
+
+
+def build_data_raw(raw: Mapping[str, Mapping[str, object]]) -> FactorioDataRaw:
+    """Build a typed data-raw container from the raw JSON payload."""
+    assembling_machine = parse_prototype_map(
+        raw.get("assembling-machine"),
+        AssemblingMachinePrototype,
+    )
+    module = parse_prototype_map(raw.get("module"), ModulePrototype)
+    beacon = parse_prototype_map(raw.get("beacon"), BeaconPrototype)
+    recipe = parse_prototype_map(raw.get("recipe"), RecipePrototype)
+    item = parse_prototype_map(raw.get("item"), ItemPrototype)
+    fluid = parse_prototype_map(raw.get("fluid"), FluidPrototype)
+    return FactorioDataRaw(
+        assembling_machine=assembling_machine or None,
+        module=module or None,
+        beacon=beacon or None,
+        recipe=recipe or None,
+        item=item or None,
+        fluid=fluid or None,
+    )
 
 
 @dataclass(frozen=True)
@@ -83,6 +289,28 @@ class FlowRates:
 
 
 @dataclass(frozen=True)
+class ChainRates:
+    """Store key flow rates for the oil-processing chain."""
+
+    heavy_prod: float
+    heavy_cons: float
+    light_prod_advanced: float
+    light_prod_from_heavy: float
+    light_cons: float
+    pg_prod_advanced: float
+    pg_prod_from_light: float
+
+
+@dataclass(frozen=True)
+class ChainConstraintSettings:
+    """Settings needed to add solver constraints."""
+
+    recipe_order: tuple[str, str, str]
+    force_integer: bool
+    demand_pg_per_s: float
+
+
+@dataclass(frozen=True)
 class SolveResult:
     """Capture the solver output for display."""
 
@@ -130,13 +358,13 @@ class ContainerSlot(Protocol):
         """Return a context manager for nested rendering."""
         ...
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> object:
         """Enter the container context."""
         ...
 
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
+        typ: type[BaseException] | None,
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> bool | None:
@@ -147,7 +375,7 @@ class ContainerSlot(Protocol):
 class CaptionSlot(Protocol):
     """Define the caption API used by the UI."""
 
-    def caption(self, body: str) -> None:
+    def caption(self, body: str) -> object:
         """Render a caption string."""
         ...
 
@@ -155,7 +383,7 @@ class CaptionSlot(Protocol):
 class MarkdownSlot(Protocol):
     """Define the markdown API used by the UI."""
 
-    def markdown(self, body: str) -> None:
+    def markdown(self, body: str) -> object:
         """Render a markdown string."""
         ...
 
@@ -188,60 +416,73 @@ def resolve_icon_path(icon_path: str, data_dir: Path) -> Path:
     return data_dir / icon_path.lstrip("/")
 
 
-def extract_icon_from_payload(payload: dict) -> tuple[str | None, int | None]:
+def extract_icon_from_payload(payload: object) -> tuple[str | None, int | None]:
     """Extract a single icon path and size from a prototype payload."""
-    icon_path = payload.get("icon")
-    icon_size = payload.get("icon_size")
+    icon_path = get_payload_value(payload, "icon")
+    icon_size = get_payload_value(payload, "icon_size")
     if isinstance(icon_size, float):
         icon_size = int(icon_size)
     if not isinstance(icon_size, int):
         icon_size = None
     if isinstance(icon_path, str):
         return icon_path, icon_size
-    icons = payload.get("icons")
+    icons = get_payload_value(payload, "icons")
     if isinstance(icons, list):
         for entry in icons:
-            if isinstance(entry, dict) and entry.get("icon"):
-                entry_size = entry.get("icon_size")
-                if isinstance(entry_size, float):
-                    entry_size = int(entry_size)
-                if not isinstance(entry_size, int):
-                    entry_size = icon_size
-                return str(entry["icon"]), entry_size
+            entry_icon = get_payload_value(entry, "icon")
+            if not entry_icon:
+                continue
+            entry_size = get_payload_value(entry, "icon_size")
+            if isinstance(entry_size, float):
+                entry_size = int(entry_size)
+            if not isinstance(entry_size, int):
+                entry_size = icon_size
+            return str(entry_icon), entry_size
     return None, icon_size
 
 
 @st.cache_data(show_spinner=False)
-def load_data_raw(data_raw_path: str) -> dict:
-    """Load data-raw-dump.json into memory."""
+def load_data_raw(data_raw_path: str) -> FactorioDataRaw | None:
+    """Load data-raw-dump.json into a typed container."""
     try:
         with Path(data_raw_path).open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+            raw = json.load(handle)
     except (OSError, json.JSONDecodeError, ValueError):
-        return {}
+        return None
+    if not isinstance(raw, Mapping):
+        return None
+    return build_data_raw(raw)
 
 
 def get_prototype(
-    data_raw: Mapping[str, Mapping[str, dict]],
+    data_raw: FactorioDataRaw | Mapping[str, Mapping[str, object]],
     proto_type: str,
     name: str,
-) -> dict | None:
+) -> object | None:
     """Fetch a prototype from data-raw by type and name."""
-    return data_raw.get(proto_type, {}).get(name)
+    if is_dataclass(data_raw):
+        section = getattr(data_raw, normalize_proto_type(proto_type), None)
+        if isinstance(section, Mapping):
+            return section.get(name)
+        return None
+    if isinstance(data_raw, Mapping):
+        return data_raw.get(proto_type, {}).get(name)
+    return None
 
 
-def parse_amount(entry: dict) -> float:
+def parse_amount(entry: object) -> float:
     """Parse an amount from a recipe ingredient/result entry."""
-    if "amount" in entry:
-        return float(entry["amount"])
-    amount_min = entry.get("amount_min")
-    amount_max = entry.get("amount_max")
+    amount = get_payload_value(entry, "amount")
+    if amount is not None:
+        return coerce_float(amount)
+    amount_min = get_payload_value(entry, "amount_min")
+    amount_max = get_payload_value(entry, "amount_max")
     if amount_min is not None and amount_max is not None:
-        return (float(amount_min) + float(amount_max)) / 2.0
+        return (coerce_float(amount_min) + coerce_float(amount_max)) / 2.0
     if amount_min is not None:
-        return float(amount_min)
+        return coerce_float(amount_min)
     if amount_max is not None:
-        return float(amount_max)
+        return coerce_float(amount_max)
     return 0.0
 
 
@@ -255,10 +496,12 @@ def parse_ingredient_list(
             name = entry[0]
             amount = float(entry[1])
             proto_type = "item"
-        elif isinstance(entry, dict):
-            name = entry.get("name")
+        elif isinstance(entry, Mapping) or is_dataclass(entry):
+            name = get_payload_value(entry, "name")
             amount = parse_amount(entry)
-            proto_type = entry.get("type", "item")
+            proto_type = get_payload_value(entry, "type") or "item"
+            if not isinstance(proto_type, str):
+                proto_type = "item"
         else:
             continue
         if not isinstance(name, str):
@@ -269,49 +512,58 @@ def parse_ingredient_list(
 
 
 def parse_results(
-    proto: dict,
+    proto: object,
 ) -> tuple[dict[tuple[str, str], float], frozenset[tuple[str, str]]]:
     """Parse recipe results into a typed map and ignored-by-productivity set."""
     results: dict[tuple[str, str], float] = {}
     ignored: set[tuple[str, str]] = set()
-    if "results" in proto and isinstance(proto["results"], list):
-        for entry in proto["results"]:
-            if not isinstance(entry, dict):
-                continue
-            name = entry.get("name")
+    results_entries = get_payload_value(proto, "results")
+    if isinstance(results_entries, list):
+        for entry in results_entries:
+            name = get_payload_value(entry, "name")
             if not isinstance(name, str):
                 continue
             amount = parse_amount(entry)
-            probability = entry.get("probability", 1.0)
-            amount *= float(probability)
-            proto_type = entry.get("type", "item")
+            probability = get_payload_value(entry, "probability")
+            if probability is None:
+                probability = 1.0
+            amount *= coerce_float(probability, default=1.0)
+            proto_type = get_payload_value(entry, "type") or "item"
+            if not isinstance(proto_type, str):
+                proto_type = "item"
             key = (proto_type, name)
             results[key] = results.get(key, 0.0) + amount
-            if entry.get("ignored_by_productivity"):
+            if get_payload_value(entry, "ignored_by_productivity"):
                 ignored.add(key)
         return results, frozenset(ignored)
 
-    result_name = proto.get("result")
+    result_name = get_payload_value(proto, "result")
     if isinstance(result_name, str):
-        amount = float(proto.get("result_count", 1.0))
+        amount = coerce_float(
+            get_payload_value(proto, "result_count") or 1.0,
+            default=1.0,
+        )
         results[("item", result_name)] = amount
     return results, frozenset(ignored)
 
 
-def build_recipe_from_proto(name: str, proto: dict) -> Recipe:
+def build_recipe_from_proto(name: str, proto: RecipePrototype) -> Recipe:
     """Build a Recipe instance from a data-raw recipe prototype."""
-    energy_required = proto.get("energy_required")
-    if energy_required is None:
-        energy_required = 0.5
-    category = proto.get("category", "crafting")
-    ingredients = parse_ingredient_list(proto.get("ingredients", []))
+    energy_required = (
+        proto.energy_required if proto.energy_required is not None else 0.5
+    )
+    category = proto.category or "crafting"
+    ingredients_list = (
+        proto.ingredients if isinstance(proto.ingredients, list) else []
+    )
+    ingredients = parse_ingredient_list(ingredients_list)
     results, ignored_by_productivity = parse_results(proto)
-    allow_productivity = bool(proto.get("allow_productivity", False))
+    allow_productivity = bool(proto.allow_productivity or False)
     return Recipe(
         key=name,
         label=name.replace("-", " ").title(),
         category=str(category),
-        energy_required=float(energy_required),
+        energy_required=coerce_float(energy_required),
         ingredients=ingredients,
         results=results,
         allow_productivity=allow_productivity,
@@ -321,7 +573,7 @@ def build_recipe_from_proto(name: str, proto: dict) -> Recipe:
 
 def normalize_allowed_effects(raw: object) -> frozenset[str]:
     """Normalize allowed effects lists to a usable set."""
-    if isinstance(raw, list):
+    if isinstance(raw, (list, tuple, set)):
         allowed = {str(value) for value in raw if isinstance(value, str)}
     else:
         allowed = set()
@@ -333,38 +585,46 @@ def normalize_allowed_effects(raw: object) -> frozenset[str]:
 def parse_effect_bonus(effect: object) -> float:
     """Parse a module effect bonus payload."""
     bonus: object
-    if isinstance(effect, dict):
-        bonus = effect.get("bonus", 0.0)
+    if isinstance(effect, Mapping) or is_dataclass(effect):
+        bonus = get_payload_value(effect, "bonus") or 0.0
     elif isinstance(effect, (float, int)):
         bonus = effect
     else:
         bonus = 0.0
-    try:
-        return float(bonus)
-    except (TypeError, ValueError):
-        return 0.0
+    return coerce_float(bonus)
 
 
 def build_machine_catalog(
-    data_raw: Mapping[str, Mapping[str, dict]],
+    data_raw: FactorioDataRaw,
 ) -> dict[str, Machine]:
     """Build a machine catalog from data-raw assembling machines."""
     catalog: dict[str, Machine] = {}
-    for name, proto in data_raw.get("assembling-machine", {}).items():
-        crafting_speed = float(proto.get("crafting_speed", 1.0))
-        crafting_categories = tuple(proto.get("crafting_categories", []))
-        allowed_effects_raw = proto.get("allowed_effects", [])
+    machine_map = cast(
+        "Mapping[str, object]",
+        data_raw.assembling_machine or {},
+    )
+    for name, proto in machine_map.items():
+        proto = cast("AssemblingMachinePrototype", proto)
+        crafting_speed = coerce_float(proto.crafting_speed, default=1.0)
+        if isinstance(proto.crafting_categories, list):
+            crafting_categories = tuple(
+                str(category)
+                for category in proto.crafting_categories
+                if isinstance(category, str)
+            )
+        else:
+            crafting_categories = ()
+        allowed_effects_raw = proto.allowed_effects
         allowed_effects = normalize_allowed_effects(allowed_effects_raw)
-        base_effect = (proto.get("effect_receiver") or {}).get(
-            "base_effect", {}
-        )
+        effect_receiver = proto.effect_receiver
+        base_effect = get_payload_value(effect_receiver, "base_effect")
         base_productivity = parse_effect_bonus(
-            base_effect.get("productivity", 0.0) or 0.0
+            get_payload_value(base_effect, "productivity") or 0.0
         )
         allow_productivity = (
             "productivity" in allowed_effects or base_productivity > 0.0
         )
-        module_slots = int(proto.get("module_slots", 0))
+        module_slots = coerce_int(proto.module_slots, default=0)
         catalog[name] = Machine(
             key=name,
             label=name.replace("-", " ").title(),
@@ -379,20 +639,31 @@ def build_machine_catalog(
 
 
 def build_module_catalog(
-    data_raw: Mapping[str, Mapping[str, dict]],
+    data_raw: FactorioDataRaw,
 ) -> dict[str, ModuleSpec]:
     """Build a module catalog from data-raw module items."""
     catalog: dict[str, ModuleSpec] = {}
-    for name, proto in data_raw.get("module", {}).items():
-        effects = proto.get("effect", {})
-        if not isinstance(effects, dict):
-            effects = {}
-        speed_bonus = parse_effect_bonus(effects.get("speed"))
-        productivity_bonus = parse_effect_bonus(effects.get("productivity"))
-        limitation = frozenset(proto.get("limitation", []) or [])
-        limitation_blacklist = frozenset(
-            proto.get("limitation_blacklist", []) or []
+    module_map = cast(
+        "Mapping[str, object]",
+        data_raw.module or {},
+    )
+    for name, proto in module_map.items():
+        proto = cast("ModulePrototype", proto)
+        effects = proto.effect
+        speed_bonus = parse_effect_bonus(get_payload_value(effects, "speed"))
+        productivity_bonus = parse_effect_bonus(
+            get_payload_value(effects, "productivity")
         )
+        limitation_raw = get_payload_value(proto, "limitation") or []
+        if not isinstance(limitation_raw, list):
+            limitation_raw = []
+        limitation = frozenset(limitation_raw)
+        limitation_blacklist_raw = (
+            get_payload_value(proto, "limitation_blacklist") or []
+        )
+        if not isinstance(limitation_blacklist_raw, list):
+            limitation_blacklist_raw = []
+        limitation_blacklist = frozenset(limitation_blacklist_raw)
         catalog[name] = ModuleSpec(
             key=name,
             label=name.replace("-", " ").title(),
@@ -405,16 +676,22 @@ def build_module_catalog(
 
 
 def build_beacon_catalog(
-    data_raw: Mapping[str, Mapping[str, dict]],
+    data_raw: FactorioDataRaw,
 ) -> dict[str, BeaconSpec]:
     """Build a beacon catalog from data-raw beacon entities."""
     catalog: dict[str, BeaconSpec] = {}
-    for name, proto in data_raw.get("beacon", {}).items():
-        module_slots = int(proto.get("module_slots", 0))
-        effectivity = float(proto.get("distribution_effectivity", 1.0))
-        allowed_effects = normalize_allowed_effects(
-            proto.get("allowed_effects", [])
+    beacon_map = cast(
+        "Mapping[str, object]",
+        data_raw.beacon or {},
+    )
+    for name, proto in beacon_map.items():
+        proto = cast("BeaconPrototype", proto)
+        module_slots = coerce_int(proto.module_slots, default=0)
+        effectivity = coerce_float(
+            proto.distribution_effectivity,
+            default=1.0,
         )
+        allowed_effects = normalize_allowed_effects(proto.allowed_effects)
         catalog[name] = BeaconSpec(
             key=name,
             label=name.replace("-", " ").title(),
@@ -437,27 +714,32 @@ def select_default_beacon(
 
 
 def build_recipe_catalog(
-    data_raw: Mapping[str, Mapping[str, dict]],
+    data_raw: FactorioDataRaw,
     recipe_keys: tuple[str, str, str],
 ) -> dict[str, Recipe]:
     """Build recipe definitions for the selected chain."""
     catalog: dict[str, Recipe] = {}
     for recipe_key in recipe_keys:
         proto = get_prototype(data_raw, "recipe", recipe_key)
-        if not proto:
+        if not isinstance(proto, RecipePrototype):
             continue
         catalog[recipe_key] = build_recipe_from_proto(recipe_key, proto)
     return catalog
 
 
 def list_recipe_names_by_category(
-    data_raw: Mapping[str, Mapping[str, dict]],
+    data_raw: FactorioDataRaw,
     category: str,
 ) -> list[str]:
     """List recipe names matching a category."""
     matches = []
-    for name, proto in data_raw.get("recipe", {}).items():
-        if proto.get("category", "crafting") == category:
+    recipe_map = cast(
+        "Mapping[str, object]",
+        data_raw.recipe or {},
+    )
+    for name, proto in recipe_map.items():
+        proto_category = get_payload_value(proto, "category") or "crafting"
+        if proto_category == category:
             matches.append(name)
     return sorted(matches)
 
@@ -477,7 +759,7 @@ def select_recipe_option(
 
 
 def build_icon_catalog(
-    data_raw: Mapping[str, Mapping[str, dict]],
+    data_raw: FactorioDataRaw,
     data_dir_path: str,
     recipes: Mapping[str, Recipe],
     machines: Mapping[str, Machine],
@@ -501,7 +783,7 @@ def build_icon_catalog(
     catalog: dict[tuple[str, str], IconSpec] = {}
     for proto_type, name in icon_keys:
         proto = get_prototype(data_raw, proto_type, name)
-        if not proto:
+        if proto is None:
             continue
         icon_path, icon_size = extract_icon_from_payload(proto)
         if not icon_path:
@@ -619,8 +901,8 @@ def find_icon(
 def load_icon_image(path: str, size: int | None) -> bytes | None:
     """Load and crop an icon image to a single square."""
     try:
-        with Image.open(path) as image:
-            image = image.convert("RGBA")
+        with Image.open(path) as image_file:
+            image = image_file.convert("RGBA")
             width, height = image.size
             target_size = size
             if target_size is None and width != height:
@@ -842,8 +1124,16 @@ def render_sidebar_controls() -> tuple[str, str, float, bool, float, str]:
     )
 
 
+def warn_missing_data_dir(data_dir_path: str) -> None:
+    """Warn when no data directory is provided."""
+    if not data_dir_path:
+        st.sidebar.warning(
+            "Set FACTORIO_DATA_DIR or enter a data directory to load icons."
+        )
+
+
 def render_recipe_selection(
-    data_raw: Mapping[str, Mapping[str, dict]],
+    data_raw: FactorioDataRaw,
 ) -> tuple[str, str, str] | None:
     """Render recipe selectors for the oil chain."""
     st.sidebar.header("Recipes")
@@ -1106,6 +1396,172 @@ def build_solver(*, force_integer: bool) -> pywraplp.Solver | None:
     return pywraplp.Solver.CreateSolver(solver_name)
 
 
+def validate_recipe_configs(
+    recipes: Mapping[str, Recipe],
+    configs: Mapping[str, RecipeConfig],
+) -> str | None:
+    """Validate recipe configs before building the solver."""
+    for recipe_key, recipe in recipes.items():
+        config = configs[recipe_key]
+        effective_speed = compute_effective_speed(
+            config.machine,
+            config.effects,
+        )
+        if effective_speed <= 0.0:
+            return (
+                "Effective crafting speed must be positive. "
+                "Check module and beacon bonuses."
+            )
+        if recipe.energy_required <= 0.0:
+            return "Recipe energy_required must be positive."
+    return None
+
+
+def build_solver_variables(
+    solver: pywraplp.Solver,
+    recipes: Mapping[str, Recipe],
+    *,
+    force_integer: bool,
+) -> dict[str, pywraplp.Variable]:
+    """Create solver variables for each recipe."""
+    variables: dict[str, pywraplp.Variable] = {}
+    for recipe_key in recipes:
+        if force_integer:
+            variables[recipe_key] = solver.IntVar(
+                0.0,
+                solver.infinity(),
+                recipe_key,
+            )
+        else:
+            variables[recipe_key] = solver.NumVar(
+                0.0,
+                solver.infinity(),
+                recipe_key,
+            )
+    return variables
+
+
+def extract_chain_rates(
+    rates: Mapping[str, FlowRates],
+    recipe_order: tuple[str, str, str],
+) -> ChainRates:
+    """Extract oil-chain flow rates from per-machine rates."""
+    advanced_key, heavy_key, light_key = recipe_order
+    heavy_prod = rates[advanced_key].production.get(
+        ("fluid", "heavy-oil"),
+        0.0,
+    )
+    heavy_cons = rates[heavy_key].consumption.get(
+        ("fluid", "heavy-oil"),
+        0.0,
+    )
+    light_prod_advanced = rates[advanced_key].production.get(
+        ("fluid", "light-oil"),
+        0.0,
+    )
+    light_prod_from_heavy = rates[heavy_key].production.get(
+        ("fluid", "light-oil"),
+        0.0,
+    )
+    light_cons = rates[light_key].consumption.get(
+        ("fluid", "light-oil"),
+        0.0,
+    )
+    pg_prod_advanced = rates[advanced_key].production.get(
+        ("fluid", "petroleum-gas"),
+        0.0,
+    )
+    pg_prod_from_light = rates[light_key].production.get(
+        ("fluid", "petroleum-gas"),
+        0.0,
+    )
+    return ChainRates(
+        heavy_prod=heavy_prod,
+        heavy_cons=heavy_cons,
+        light_prod_advanced=light_prod_advanced,
+        light_prod_from_heavy=light_prod_from_heavy,
+        light_cons=light_cons,
+        pg_prod_advanced=pg_prod_advanced,
+        pg_prod_from_light=pg_prod_from_light,
+    )
+
+
+def validate_chain_rates(rates: ChainRates) -> str | None:
+    """Validate that chain rates include required flows."""
+    if rates.heavy_prod <= 0.0 or rates.heavy_cons <= 0.0:
+        return (
+            "Selected recipes must produce/consume heavy-oil. "
+            "Please choose an oil-processing recipe that outputs heavy-oil "
+            "and a cracking recipe that consumes heavy-oil."
+        )
+    total_light_prod = rates.light_prod_advanced + rates.light_prod_from_heavy
+    if total_light_prod <= 0.0 or rates.light_cons <= 0.0:
+        return (
+            "Selected recipes must produce/consume light-oil. "
+            "Please choose recipes that produce light-oil and a cracking "
+            "recipe that consumes light-oil."
+        )
+    if rates.pg_prod_advanced + rates.pg_prod_from_light <= 0.0:
+        return (
+            "Selected recipes must produce petroleum gas. "
+            "Please choose an oil-processing/cracking chain that outputs it."
+        )
+    return None
+
+
+def add_balance_constraint(
+    solver: pywraplp.Solver,
+    *,
+    left_terms: Sequence[tuple[float, pywraplp.Variable]],
+    right_terms: Sequence[tuple[float, pywraplp.Variable]],
+    force_integer: bool,
+) -> None:
+    """Add a balance constraint using >= for integers or == for floats."""
+    left_expr = solver.Sum(
+        coeff * variable  # type: ignore[operator]
+        for coeff, variable in left_terms
+    )
+    right_expr = solver.Sum(
+        coeff * variable  # type: ignore[operator]
+        for coeff, variable in right_terms
+    )
+    if force_integer:
+        solver.Add(left_expr >= right_expr)
+    else:
+        solver.Add(left_expr == right_expr)
+
+
+def add_chain_constraints(
+    solver: pywraplp.Solver,
+    variables: Mapping[str, pywraplp.Variable],
+    rates: ChainRates,
+    *,
+    settings: ChainConstraintSettings,
+) -> None:
+    """Add oil-chain balance constraints to the solver."""
+    advanced_key, heavy_key, light_key = settings.recipe_order
+    add_balance_constraint(
+        solver,
+        left_terms=[(rates.heavy_prod, variables[advanced_key])],
+        right_terms=[(rates.heavy_cons, variables[heavy_key])],
+        force_integer=settings.force_integer,
+    )
+    add_balance_constraint(
+        solver,
+        left_terms=[
+            (rates.light_prod_advanced, variables[advanced_key]),
+            (rates.light_prod_from_heavy, variables[heavy_key]),
+        ],
+        right_terms=[(rates.light_cons, variables[light_key])],
+        force_integer=settings.force_integer,
+    )
+    solver.Add(
+        rates.pg_prod_advanced * variables[advanced_key]  # type: ignore[operator]
+        + rates.pg_prod_from_light * variables[light_key]  # type: ignore[operator]
+        >= settings.demand_pg_per_s
+    )
+
+
 def solve_chain(
     demand_pg_per_s: float,
     recipes: Mapping[str, Recipe],
@@ -1120,116 +1576,39 @@ def solve_chain(
         st.error("OR-Tools solver is not available in this environment.")
         return None
 
-    for recipe_key, recipe in recipes.items():
-        config = configs[recipe_key]
-        effective_speed = compute_effective_speed(
-            config.machine, config.effects
-        )
-        if effective_speed <= 0.0:
-            st.error(
-                "Effective crafting speed must be positive. "
-                "Check module and beacon bonuses."
-            )
-            return None
-        if recipe.energy_required <= 0.0:
-            st.error("Recipe energy_required must be positive.")
-            return None
+    validation_error = validate_recipe_configs(recipes, configs)
+    if validation_error:
+        st.error(validation_error)
+        return None
 
     rates = {
         recipe_key: per_machine_rates(recipe, configs[recipe_key])
         for recipe_key, recipe in recipes.items()
     }
 
-    variables: dict[str, pywraplp.Variable] = {}
-    for recipe_key in recipes:
-        if force_integer:
-            variables[recipe_key] = solver.IntVar(
-                0.0, solver.infinity(), recipe_key
-            )
-        else:
-            variables[recipe_key] = solver.NumVar(
-                0.0, solver.infinity(), recipe_key
-            )
+    variables = build_solver_variables(
+        solver,
+        recipes,
+        force_integer=force_integer,
+    )
 
     advanced_key, heavy_key, light_key = recipe_order
 
-    heavy_prod = rates[advanced_key].production.get(
-        ("fluid", "heavy-oil"),
-        0.0,
-    )
-    heavy_cons = rates[heavy_key].consumption.get(
-        ("fluid", "heavy-oil"),
-        0.0,
-    )
-    if heavy_prod <= 0.0 or heavy_cons <= 0.0:
-        st.error(
-            "Selected recipes must produce/consume heavy-oil. "
-            "Please choose an oil-processing recipe that outputs heavy-oil "
-            "and a cracking recipe that consumes heavy-oil."
-        )
+    chain_rates = extract_chain_rates(rates, recipe_order)
+    chain_error = validate_chain_rates(chain_rates)
+    if chain_error:
+        st.error(chain_error)
         return None
-    if force_integer:
-        solver.Add(
-            heavy_prod * variables[advanced_key]  # type: ignore[operator]
-            >= heavy_cons * variables[heavy_key]  # type: ignore[operator]
-        )
-    else:
-        solver.Add(
-            heavy_prod * variables[advanced_key]  # type: ignore[operator]
-            == heavy_cons * variables[heavy_key]  # type: ignore[operator]
-        )
 
-    light_prod_advanced = rates[advanced_key].production.get(
-        ("fluid", "light-oil"),
-        0.0,
-    )
-    light_prod_from_heavy = rates[heavy_key].production.get(
-        ("fluid", "light-oil"),
-        0.0,
-    )
-    light_cons = rates[light_key].consumption.get(
-        ("fluid", "light-oil"),
-        0.0,
-    )
-    total_light_prod = light_prod_advanced + light_prod_from_heavy
-    if total_light_prod <= 0.0 or light_cons <= 0.0:
-        st.error(
-            "Selected recipes must produce/consume light-oil. "
-            "Please choose recipes that produce light-oil and a cracking "
-            "recipe that consumes light-oil."
-        )
-        return None
-    if force_integer:
-        solver.Add(
-            light_prod_advanced * variables[advanced_key]  # type: ignore[operator]
-            + light_prod_from_heavy * variables[heavy_key]  # type: ignore[operator]
-            >= light_cons * variables[light_key]  # type: ignore[operator]
-        )
-    else:
-        solver.Add(
-            light_prod_advanced * variables[advanced_key]  # type: ignore[operator]
-            + light_prod_from_heavy * variables[heavy_key]  # type: ignore[operator]
-            == light_cons * variables[light_key]  # type: ignore[operator]
-        )
-
-    pg_prod_advanced = rates[advanced_key].production.get(
-        ("fluid", "petroleum-gas"),
-        0.0,
-    )
-    pg_prod_from_light = rates[light_key].production.get(
-        ("fluid", "petroleum-gas"),
-        0.0,
-    )
-    if pg_prod_advanced + pg_prod_from_light <= 0.0:
-        st.error(
-            "Selected recipes must produce petroleum gas. "
-            "Please choose an oil-processing/cracking chain that outputs it."
-        )
-        return None
-    solver.Add(
-        pg_prod_advanced * variables[advanced_key]  # type: ignore[operator]
-        + pg_prod_from_light * variables[light_key]  # type: ignore[operator]
-        >= demand_pg_per_s
+    add_chain_constraints(
+        solver,
+        variables,
+        chain_rates,
+        settings=ChainConstraintSettings(
+            recipe_order=recipe_order,
+            force_integer=force_integer,
+            demand_pg_per_s=demand_pg_per_s,
+        ),
     )
 
     objective_terms = []
@@ -1260,15 +1639,16 @@ def solve_chain(
         for recipe_key in recipes
     }
     net_flows = {
-        ("fluid", "heavy-oil"): heavy_prod * machine_counts[advanced_key]
-        - heavy_cons * machine_counts[heavy_key],
-        ("fluid", "light-oil"): light_prod_advanced
+        ("fluid", "heavy-oil"): chain_rates.heavy_prod
         * machine_counts[advanced_key]
-        + light_prod_from_heavy * machine_counts[heavy_key]
-        - light_cons * machine_counts[light_key],
-        ("fluid", "petroleum-gas"): pg_prod_advanced
+        - chain_rates.heavy_cons * machine_counts[heavy_key],
+        ("fluid", "light-oil"): chain_rates.light_prod_advanced
         * machine_counts[advanced_key]
-        + pg_prod_from_light * machine_counts[light_key],
+        + chain_rates.light_prod_from_heavy * machine_counts[heavy_key]
+        - chain_rates.light_cons * machine_counts[light_key],
+        ("fluid", "petroleum-gas"): chain_rates.pg_prod_advanced
+        * machine_counts[advanced_key]
+        + chain_rates.pg_prod_from_light * machine_counts[light_key],
     }
 
     objective_value: float | None
@@ -1428,13 +1808,10 @@ def main() -> None:
         )
         return
 
-    if not data_dir_path:
-        st.sidebar.warning(
-            "Set FACTORIO_DATA_DIR or enter a data directory to load icons."
-        )
+    warn_missing_data_dir(data_dir_path)
 
     data_raw = load_data_raw(data_raw_path)
-    if not data_raw:
+    if data_raw is None:
         st.error("Failed to load data-raw-dump.json.")
         return
 

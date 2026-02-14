@@ -10,13 +10,13 @@ repos:
     entry: typos -c .typos.toml
     language: system
     pass_filenames: true
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: editorconfig-check
     name: Editorconfig Check
     entry: editorconfig-checker
     language: system
     pass_filenames: true
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: actionlint
     name: Actionlint
     entry: actionlint
@@ -29,14 +29,14 @@ repos:
     language: system
     pass_filenames: true
     files: '[^/]*\.md$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: markdown-prettier
     name: Markdown Prettier
     entry: pnpm exec -- prettier --check
     language: system
     pass_filenames: true
     files: '[^/]*\.md$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: pkl-eval
     name: Pkl Eval
     entry: pkl eval
@@ -55,14 +55,14 @@ repos:
     language: system
     pass_filenames: true
     files: '[^/]*\.json$|[^/]*\.jsonc$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: yaml-prettier
     name: Yaml Prettier
     entry: pnpm exec -- prettier --check
     language: system
     pass_filenames: true
     files: '[^/]*\.yml$|[^/]*\.yaml$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: toml-taplo-check
     name: Toml Taplo Check
     entry: pnpm exec -- taplo lint
@@ -87,28 +87,28 @@ repos:
     language: system
     pass_filenames: true
     files: (?:.*/)*[^/]*\.sh$|(?:.*/)*[^/]*\.bash$
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: shfmt
     name: Shfmt
     entry: shfmt
     language: system
     pass_filenames: true
     files: (?:.*/)*[^/]*\.sh$|(?:.*/)*[^/]*\.bash$|(?:.*/)*[^/]*\.mksh$|(?:.*/)*[^/]*\.bats$|(?:.*/)*[^/]*\.zsh$
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: pwsh-formatter
     name: Pwsh Formatter
     entry: pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path
     language: system
     pass_filenames: true
     files: '[^/]*\.ps1$|[^/]*\.psm1$|[^/]*\.psd1$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: pwsh-script-analyzer
     name: Pwsh Script Analyzer
     entry: pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path
     language: system
     pass_filenames: true
     files: '[^/]*\.ps1$|[^/]*\.psm1$|[^/]*\.psd1$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: biome
     name: Biome
     entry: pnpm exec -- biome check --no-errors-on-unmatched

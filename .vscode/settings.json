@@ -1,5 +1,7 @@
 {
   "biome.lsp.bin": "${workspaceFolder}/node_modules/@biomejs/biome/bin/biome",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.exclude": ["**/generated/**"],
 
   "[json]": {
     "editor.defaultFormatter": "biomejs.biome"
