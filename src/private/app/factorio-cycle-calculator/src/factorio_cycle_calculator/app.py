@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import importlib
 import io
 import json
 import os
 import re
-import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import MISSING, dataclass, fields, is_dataclass
 from pathlib import Path
@@ -58,20 +56,14 @@ if TYPE_CHECKING:
     class RecipePrototype(_GeneratedModel):
         """Type-checking stub for recipes."""
 else:
-    _generated_path = (
-        Path(__file__).resolve().parent / "generated" / "data_raw_models.py"
-    )
-    if not _generated_path.exists():
-        raise GeneratedModelsImportError(
-            _generated_path,
-            reason="Generated models not found",
-        )
-    _generated_root = _generated_path.parent.parent
-    if str(_generated_root) not in sys.path:
-        sys.path.insert(0, str(_generated_root))
     try:
-        _module = importlib.import_module("generated.data_raw_models")
+        from factorio_cycle_calculator.generated import (
+            data_raw_models as _module,
+        )
     except Exception as exc:
+        _generated_path = (
+            Path(__file__).resolve().parent / "generated" / "data_raw_models.py"
+        )
         raise GeneratedModelsImportError(
             _generated_path,
             reason="Failed to import generated models",

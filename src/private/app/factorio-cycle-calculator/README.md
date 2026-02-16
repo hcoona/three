@@ -20,6 +20,18 @@ An initial Streamlit prototype is available in `app.py`. It focuses on the
 advanced oil processing chain and uses Google OR-Tools to compute machine
 counts given a petroleum gas demand and the chosen machine/effect settings.
 
-Run the app with:
+Run the app after installation with the script entry point:
 
-- `uv run --project src/private/app/factorio-cycle-calculator streamlit run app.py`
+- `uv run --project src/private/app/factorio-cycle-calculator factorio-cycle-calculator`
+
+## Schema and generated models
+
+The generated models live in
+`src/factorio_cycle_calculator/generated/data_raw_models.py`.
+
+Model generation is driven entirely by a mise task that pulls the schema from
+the upstream URL and does not store a local JSON schema file.
+
+Generate models:
+
+- `mise //src/private/app/factorio-cycle-calculator:schema:generate`

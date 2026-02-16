@@ -1,3 +1,11 @@
+experimental_monorepo_root = true
+
+[settings]
+experimental = true
+
+[monorepo]
+config_roots = ["src/private/app/factorio-cycle-calculator"]
+
 [tools]
 # Runtimes
 dotnet = "10"
