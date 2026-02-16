@@ -666,6 +666,12 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+debug = [
+    { name = "pysnooper" },
+]
+http = [
+    { name = "httpx" },
+]
 ruff = [
     { name = "ruff" },
 ]
@@ -762,7 +768,7 @@ wheels = [
 [[package]]
 name = "factorio-cycle-calculator"
 version = "0.0.0.dev0"
-source = { virtual = "src/private/app/factorio-cycle-calculator" }
+source = { editable = "src/private/app/factorio-cycle-calculator" }
 dependencies = [
     { name = "ortools" },
     { name = "pillow" },
@@ -771,7 +777,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "datamodel-code-generator", extra = ["ruff"] },
+    { name = "datamodel-code-generator", extra = ["debug", "http", "ruff"] },
 ]
 
 [package.metadata]
@@ -782,7 +788,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "datamodel-code-generator", extras = ["ruff"], specifier = ">=0.53.0" }]
+dev = [{ name = "datamodel-code-generator", extras = ["debug", "ruff", "http"], specifier = ">=0.53.0" }]
 
 [[package]]
 name = "fastavro"
@@ -2653,6 +2659,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fd/b7/4b7849b24f8cd57ef5cd80adfc292eb43e9e620273f4e96603dc145d95c1/pyrefly-0.25.0-py3-none-win32.whl", hash = "sha256:5528738fb763f720a4ebba0fe420d15e3a377ca69da0e2d5a804c6581a9ca19e", size = 6014097, upload-time = "2025-07-21T21:43:25.418Z" },
     { url = "https://files.pythonhosted.org/packages/c4/f2/ab6255f4d0107231dfad495c6d462fd6c0fc3124f7d9c1db7d5ced98ef35/pyrefly-0.25.0-py3-none-win_amd64.whl", hash = "sha256:36cb043567dac1d940e527fb5dfd2bb155022cbcd80056a76ba485ed32489c74", size = 6411943, upload-time = "2025-07-21T21:43:27.128Z" },
     { url = "https://files.pythonhosted.org/packages/e8/56/44be6a681679d82949b0917a09bc0eefd038bbd787dc198d49d85fff8d8f/pyrefly-0.25.0-py3-none-win_arm64.whl", hash = "sha256:b13ca14f5f582ad57a5f959487f498dd1d82b75d7bf2cb0db162a6f67404c6af", size = 6054101, upload-time = "2025-07-21T21:43:29.278Z" },
+]
+
+[[package]]
+name = "pysnooper"
+version = "1.2.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d2/4a/be3c144f58de6b78911c417cc4a3b3fe5eb6d13cae4c12daf3ca17a8d473/pysnooper-1.2.3.tar.gz", hash = "sha256:1fa1425444a7af45108aaed860b5ca8b62b25bba25b0b037c059ba353d8f1e74", size = 46283, upload-time = "2025-05-31T23:22:46.786Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/87/df62c8a998216e6749b67d548dae0967906036c61457510ef49667927c49/PySnooper-1.2.3-py2.py3-none-any.whl", hash = "sha256:546372f0e72da89f8d1b89e758b7c05a478d65288569a1ca2cc1620e7b1b1944", size = 15086, upload-time = "2025-05-31T23:22:45.745Z" },
 ]
 
 [[package]]

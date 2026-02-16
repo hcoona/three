@@ -3,3 +3,4 @@
 OneDotNet/srcs/private/app/OxfordWordlistExtractor/*.html linguist-vendored
 OneDotNet/tests/OxfordDictExtractor.Tests/examples/*.html linguist-vendored
 src/private/app/supermemo-mcp/references/*.ahk linguist-vendored
+src/private/app/factorio-cycle-calculator/src/factorio_cycle_calculator/generated/* linguist-generated
