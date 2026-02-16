@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import streamlit as st
+from dotenv import load_dotenv
 from ortools.linear_solver import pywraplp
 from PIL import Image
 
@@ -76,8 +77,33 @@ else:
     ModulePrototype = _module.ModulePrototype
     RecipePrototype = _module.RecipePrototype
 
-DEFAULT_DATA_DIR = ""
-DEFAULT_DATA_RAW = ""
+
+def load_app_env() -> None:
+    """Load .env values for local defaults."""
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+
+
+def get_env_default(*keys: str) -> str:
+    """Return the first non-empty environment value for given keys."""
+    for key in keys:
+        value = os.environ.get(key)
+        if value:
+            return value
+    return ""
+
+
+load_app_env()
+
+DEFAULT_DATA_DIR = get_env_default(
+    "FACTORIO_DATA_DIRECTORY",
+    "FACTORIO_DATA_DIR",
+)
+DEFAULT_DATA_RAW = get_env_default(
+    "FACTORIO_DATA_RAW_DUMP_JSON_FILE_PATH",
+    "FACTORIO_DATA_RAW",
+)
 
 ICON_TOKEN_RE = re.compile(r"__([^/]+)__/(.+)")
 
@@ -1080,11 +1106,11 @@ def render_sidebar_controls() -> tuple[str, str, float, bool, float, str]:
     st.sidebar.header("Assets")
     data_dir_path = st.sidebar.text_input(
         "Factorio data directory",
-        value=os.environ.get("FACTORIO_DATA_DIR", DEFAULT_DATA_DIR),
+        value=DEFAULT_DATA_DIR,
     )
     data_raw_path = st.sidebar.text_input(
         "data-raw-dump.json path",
-        value=os.environ.get("FACTORIO_DATA_RAW", DEFAULT_DATA_RAW),
+        value=DEFAULT_DATA_RAW,
     )
 
     st.sidebar.header("Demand")
@@ -1120,7 +1146,8 @@ def warn_missing_data_dir(data_dir_path: str) -> None:
     """Warn when no data directory is provided."""
     if not data_dir_path:
         st.sidebar.warning(
-            "Set FACTORIO_DATA_DIR or enter a data directory to load icons."
+            "Set FACTORIO_DATA_DIRECTORY or enter a data directory "
+            "to load icons."
         )
 
 
@@ -1796,7 +1823,8 @@ def main() -> None:
 
     if not data_raw_path:
         st.error(
-            "Set FACTORIO_DATA_RAW or enter a data-raw-dump.json path to load."
+            "Set FACTORIO_DATA_RAW_DUMP_JSON_FILE_PATH or enter a "
+            "data-raw-dump.json path to load."
         )
         return
 

@@ -11,7 +11,12 @@ authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
 requires-python = ">=3.12"
 license = "GPL-3.0-or-later"
 classifiers = ["Private :: Do Not Upload"]
-dependencies = ["ortools>=9.11.4210", "pillow>=10.3.0", "streamlit>=1.42.0"]
+dependencies = [
+  "ortools>=9.11.4210",
+  "pillow>=10.3.0",
+  "python-dotenv>=1.1.0",
+  "streamlit>=1.42.0",
+]
 
 [project.scripts]
 factorio-cycle-calculator = "factorio_cycle_calculator.__main__:main"

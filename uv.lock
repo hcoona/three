@@ -772,6 +772,7 @@ source = { editable = "src/private/app/factorio-cycle-calculator" }
 dependencies = [
     { name = "ortools" },
     { name = "pillow" },
+    { name = "python-dotenv" },
     { name = "streamlit" },
 ]
 
@@ -784,6 +785,7 @@ dev = [
 requires-dist = [
     { name = "ortools", specifier = ">=9.11.4210" },
     { name = "pillow", specifier = ">=10.3.0" },
+    { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "streamlit", specifier = ">=1.42.0" },
 ]
 

@@ -53,6 +53,7 @@ dotenv-linter = "latest"
 #
 fd = "latest"
 ripgrep = "latest"
+github-cli = "latest"
 
 #
 # Environment Variables
