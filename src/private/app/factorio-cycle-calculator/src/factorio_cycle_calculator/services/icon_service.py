@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import io
 import re
-from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from PIL import Image
 
@@ -20,6 +20,9 @@ from factorio_cycle_calculator.services.data_raw_service import (
     get_payload_value,
     get_prototype,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 ICON_TOKEN_RE = re.compile(r"__([^/]+)__/(.+)")
 
@@ -72,15 +75,7 @@ def build_icon_catalog(
     if not data_dir.exists():
         return {}
 
-    icon_keys: set[tuple[str, str]] = set()
-    for recipe in recipes.values():
-        icon_keys.add(("recipe", recipe.key))
-        icon_keys.update(recipe.ingredients.keys())
-        icon_keys.update(recipe.results.keys())
-
-    for machine in machines.values():
-        icon_keys.add(("assembling-machine", machine.key))
-        icon_keys.add(("item", machine.key))
+    icon_keys = collect_icon_keys(data_raw, recipes, machines)
 
     catalog: dict[tuple[str, str], IconSpec] = {}
     for proto_type, name in icon_keys:
@@ -96,6 +91,36 @@ def build_icon_catalog(
                 path=resolved, size=icon_size
             )
     return catalog
+
+
+def collect_icon_keys(
+    data_raw: FactorioDataRaw,
+    recipes: Mapping[str, Recipe],
+    machines: Mapping[str, Machine],
+) -> set[tuple[str, str]]:
+    """Collect prototype keys that should have icon entries."""
+    icon_keys: set[tuple[str, str]] = set()
+
+    for recipe in recipes.values():
+        icon_keys.add(("recipe", recipe.key))
+        icon_keys.update(recipe.ingredients.keys())
+        icon_keys.update(recipe.results.keys())
+
+    for machine in machines.values():
+        icon_keys.add(("assembling-machine", machine.key))
+        icon_keys.add(("item", machine.key))
+
+    module_map = cast("Mapping[str, object]", data_raw.module or {})
+    for name in module_map:
+        icon_keys.add(("module", name))
+        icon_keys.add(("item", name))
+
+    beacon_map = cast("Mapping[str, object]", data_raw.beacon or {})
+    for name in beacon_map:
+        icon_keys.add(("beacon", name))
+        icon_keys.add(("item", name))
+
+    return icon_keys
 
 
 def find_icon(
