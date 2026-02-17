@@ -24,6 +24,20 @@ Run the app after installation with the script entry point:
 
 - `uv run --project src/private/app/factorio-cycle-calculator factorio-cycle-calculator`
 
+### Environment configuration
+
+The app reads runtime defaults from environment variables:
+
+- `FACTORIO_DATA_DIRECTORY`
+- `FACTORIO_DATA_RAW_DUMP_JSON_FILE_PATH`
+
+For local development, you can also use a dotenv file and point to it with
+`FACTORIO_ENV_FILE`.
+
+From the repository root, this command is verified to work:
+
+- `FACTORIO_ENV_FILE=src/private/app/factorio-cycle-calculator/.env uv run --package factorio-cycle-calculator factorio-cycle-calculator`
+
 ## Schema and generated models
 
 The generated models live in
