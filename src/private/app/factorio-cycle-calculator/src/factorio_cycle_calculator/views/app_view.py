@@ -10,6 +10,7 @@ import streamlit as st
 from factorio_cycle_calculator.models import (
     BeaconSpec,
     EffectSettings,
+    FactorioDataRaw,
     IconSpec,
     Machine,
     ModuleSpec,
@@ -124,15 +125,6 @@ def render_sidebar_controls(vm: OilChainViewModel) -> SidebarSettings:
     )
 
     st.sidebar.header("Demand")
-    demand_pg_per_min = st.sidebar.number_input(
-        "Petroleum gas target (per minute)",
-        min_value=0.0,
-        value=900.0,
-        step=30.0,
-    )
-    force_integer = st.sidebar.checkbox(
-        "Force integer machine counts", value=False
-    )
     rate_unit = st.sidebar.radio(
         "Rate unit",
         options=["per minute", "per second"],
@@ -140,6 +132,16 @@ def render_sidebar_controls(vm: OilChainViewModel) -> SidebarSettings:
     )
     unit_multiplier = 60.0 if rate_unit == "per minute" else 1.0
     unit_label = "per min" if rate_unit == "per minute" else "per s"
+
+    demand_pg_per_min = st.sidebar.number_input(
+        f"Petroleum gas target ({rate_unit})",
+        min_value=0.0,
+        value=900.0,
+        step=30.0,
+    )
+    force_integer = st.sidebar.checkbox(
+        "Force integer machine counts", value=False
+    )
 
     return SidebarSettings(
         data_dir_path=data_dir_path,
@@ -176,7 +178,7 @@ def select_recipe_option(
 
 def render_recipe_selection(
     vm: OilChainViewModel,
-    data_raw: object,
+    data_raw: FactorioDataRaw,
 ) -> tuple[str, str, str] | None:
     """Render recipe selectors for the oil chain."""
     st.sidebar.header("Recipes")

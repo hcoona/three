@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from types import TracebackType
 from typing import Protocol
 
 from factorio_cycle_calculator.models import IconSpec, Recipe, RecipeConfig
@@ -20,7 +21,12 @@ class ContainerSlot(Protocol):
         """Enter the container context."""
         ...
 
-    def __exit__(self, typ, exc, tb) -> bool | None:
+    def __exit__(
+        self,
+        typ: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
         """Exit the container context."""
         ...
 

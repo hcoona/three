@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import sys
-from importlib import import_module
 from pathlib import Path
 
 from streamlit.web.cli import main as streamlit_main
 
+from factorio_cycle_calculator import app as app_module
+
 
 def main(argv: list[str] | None = None) -> None:
     """Launch the Streamlit application."""
-    module = import_module("factorio_cycle_calculator.app")
-    app_path = Path(module.__file__).resolve()
+    module_file = app_module.__file__
+    if module_file is None:
+        raise RuntimeError(
+            "Could not locate factorio_cycle_calculator.app module file."
+        )
+    app_path = Path(module_file).resolve()
     old_argv = sys.argv
     extra_args = old_argv[1:] if argv is None else list(argv)
     new_argv = ["streamlit", "run", str(app_path), *extra_args]
