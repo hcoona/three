@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from factorio_cycle_calculator.models import (
     BeaconSpec,
+    FactorioDataRaw,
     IconSpec,
     Machine,
     ModuleSpec,
@@ -69,12 +70,12 @@ class OilChainViewModel:
             "FACTORIO_DATA_RAW",
         )
 
-    def load_data(self, data_raw_path: str):
+    def load_data(self, data_raw_path: str) -> FactorioDataRaw | None:
         """Load typed data-raw model from JSON file."""
         return load_data_raw(data_raw_path)
 
     def list_recipe_options(
-        self, data_raw: object
+        self, data_raw: FactorioDataRaw
     ) -> tuple[list[str], list[str]]:
         """List selectable recipes for oil processing and chemistry."""
         oil_processing = list_recipe_names_by_category(
@@ -87,7 +88,7 @@ class OilChainViewModel:
 
     def load_chain(
         self,
-        data_raw: object,
+        data_raw: FactorioDataRaw,
         recipe_order: tuple[str, str, str],
         data_dir_path: str,
     ) -> tuple[LoadedChain | None, list[str], str | None]:

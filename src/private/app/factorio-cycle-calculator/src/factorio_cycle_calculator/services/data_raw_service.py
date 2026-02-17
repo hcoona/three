@@ -216,7 +216,7 @@ def parse_ingredient_list(
     for entry in entries:
         if isinstance(entry, list) and len(entry) >= MIN_LIST_ENTRY_LEN:
             name = entry[0]
-            amount = float(entry[1])
+            amount = coerce_float(entry[1])
             proto_type = "item"
         elif isinstance(entry, Mapping) or is_dataclass(entry):
             name = get_payload_value(entry, "name")
