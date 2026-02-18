@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -118,15 +119,32 @@ def build_icon_badge_label(
     """Build markdown label with icon and optional compact count badge."""
     if icon is None:
         return fallback
-    icon_data = load_icon_image(str(icon.path), icon.size)
+    icon_data = load_badge_icon_image(
+        str(icon.path),
+        icon.size,
+        max_size=BADGE_ICON_SIZE_PX,
+    )
     if icon_data is None:
         return fallback
-    icon_data = downscale_icon_bytes(icon_data, max_size=BADGE_ICON_SIZE_PX)
     encoded = base64.b64encode(icon_data).decode("ascii")
     label = f"![{fallback}](data:image/png;base64,{encoded})"
     if count_label:
         label = f"{label} `{count_label}`"
     return label
+
+
+@lru_cache(maxsize=512)
+def load_badge_icon_image(
+    icon_path: str,
+    icon_size: int | None,
+    *,
+    max_size: int,
+) -> bytes | None:
+    """Load icon bytes and downscale once for compact badge rendering."""
+    icon_data = load_icon_image(icon_path, icon_size)
+    if icon_data is None:
+        return None
+    return downscale_icon_bytes(icon_data, max_size=max_size)
 
 
 def downscale_icon_bytes(icon_data: bytes, *, max_size: int) -> bytes:
@@ -322,35 +340,20 @@ def render_machine_selector(
         selected_icon,
         fallback=machine_label(selected_machine),
     )
-    machine_changed = False
+    option_key = f"{machine_key}-option"
+    ensure_selectbox_value(option_key, options, selected_machine)
     with st.popover(popover_label):
         st.caption("Machine options")
-        for machine in options:
-            option_cols = st.columns([0.6, 2.4])
-            with option_cols[0]:
-                machine_icon = find_icon(
-                    icon_catalog,
-                    ("item", "assembling-machine"),
-                    name=machine.key,
-                )
-                if machine_icon:
-                    option_image = load_icon_image(
-                        str(machine_icon.path),
-                        machine_icon.size,
-                    )
-                    if option_image:
-                        st.image(option_image, width=20)
-            with option_cols[1]:
-                if st.button(
-                    machine_label(machine),
-                    key=f"{recipe.key}-machine-option-{machine.key}",
-                    use_container_width=True,
-                ):
-                    st.session_state[machine_key] = machine
-                    machine_changed = True
-
-    if machine_changed:
-        st.rerun()
+        selected_option = st.selectbox(
+            "Machine",
+            options=options,
+            format_func=machine_label,
+            key=option_key,
+            label_visibility="collapsed",
+        )
+        if selected_option != st.session_state[machine_key]:
+            st.session_state[machine_key] = selected_option
+            st.rerun()
 
     return st.session_state[machine_key]
 
@@ -612,7 +615,6 @@ def render_recipe_block(
                 eligible,
                 context.icon_catalog,
             )
-            count_slot = st.empty()
 
         with build_cols[1]:
             st.caption("Modules / Beacons")
@@ -631,6 +633,7 @@ def render_recipe_block(
         flow_cols = st.columns(BLOCK_FLOW_COLUMN_RATIOS)
         with flow_cols[0]:
             st.caption("Count")
+            count_slot = st.empty()
         with flow_cols[1]:
             st.caption("Products")
             products_cell = st.empty()
