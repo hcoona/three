@@ -72,7 +72,7 @@ def build_icon_catalog(
     modules: Mapping[str, ModuleSpec],
     beacon: BeaconSpec | None,
 ) -> dict[tuple[str, str], IconSpec]:
-    """Build icon catalog for recipes, machines and flow items."""
+    """Build icon catalog for recipes/machines/modules/optional beacon and flow items."""
     if not data_dir_path:
         return {}
     data_dir = Path(data_dir_path)
