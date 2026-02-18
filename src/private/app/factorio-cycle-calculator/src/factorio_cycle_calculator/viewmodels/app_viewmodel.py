@@ -38,7 +38,7 @@ class SidebarSettings:
 
     data_dir_path: str
     data_raw_path: str
-    demand_pg_per_min: float
+    demand_value: float
     force_integer: bool
     unit_multiplier: float
     unit_label: str
@@ -149,7 +149,7 @@ class OilChainViewModel:
         settings: SidebarSettings,
     ) -> tuple[SolveResult | None, str | None]:
         """Run optimization based on current selections."""
-        demand_pg_per_s = settings.demand_pg_per_min / settings.unit_multiplier
+        demand_pg_per_s = settings.demand_value / settings.unit_multiplier
         return solve_chain(
             demand_pg_per_s,
             chain.recipes,

@@ -314,13 +314,13 @@ def render_objective_bar(
 def build_sidebar_settings(vm: OilChainViewModel) -> SidebarSettings:
     """Build settings from sidebar assets and top objective controls."""
     data_dir_path, data_raw_path = render_sidebar_asset_controls(vm)
-    demand_pg_per_min, force_integer, unit_multiplier, unit_label = (
+    demand_value, force_integer, unit_multiplier, unit_label = (
         render_objective_bar()
     )
     return SidebarSettings(
         data_dir_path=data_dir_path,
         data_raw_path=data_raw_path,
-        demand_pg_per_min=demand_pg_per_min,
+        demand_value=demand_value,
         force_integer=force_integer,
         unit_multiplier=unit_multiplier,
         unit_label=unit_label,
@@ -415,7 +415,11 @@ def render_module_controls(
 
     count_options = list(range(machine.module_slots + 1))
     module_count_key = f"{recipe.key}-module-count"
-    ensure_selectbox_value(module_count_key, count_options, 0)
+    ensure_selectbox_value(
+        module_count_key,
+        count_options,
+        machine.module_slots,
+    )
 
     selected_module = st.session_state[module_key]
     module_count = st.session_state[module_count_key]
@@ -487,7 +491,7 @@ def render_beacon_controls(
     ensure_selectbox_value(
         beacon_module_count_key,
         beacon_module_count_options,
-        0,
+        beacon.module_slots,
     )
 
     beacon_count_options = list(range(13))
