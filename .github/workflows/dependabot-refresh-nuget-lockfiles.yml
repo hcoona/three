@@ -3,6 +3,16 @@
 
 name: Refresh NuGet lockfiles (Dependabot)
 
+# SECURITY RATIONALE:
+# - This workflow intentionally uses pull_request_target to allow pushing lockfile updates
+#   back to Dependabot pull request branches in this repository.
+# - pull_request_target runs with repository context, so the trust invariants below are
+#   mandatory and must not be weakened:
+#   1) only Dependabot PRs from the same repository,
+#   2) only non-draft PRs targeting main,
+#   3) PR head commit author must be dependabot[bot],
+#   4) privileged token creation must happen only after invariants pass.
+# If these invariants need to change, require explicit security review.
 on:
   pull_request_target:
     types:
@@ -27,6 +37,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
 
+    # SECURITY INVARIANTS (coarse gate):
+    # Keep this aligned with the runtime validation step below.
     if: >-
       github.repository == 'hcoona/three' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
@@ -44,6 +56,74 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Validate trusted PR invariants
+        if: steps.metadata.outputs.package-ecosystem == 'nuget'
+        shell: pwsh
+        env:
+          EXPECTED_REPOSITORY: hcoona/three
+          EXPECTED_BOT_LOGIN: dependabot[bot]
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          REPOSITORY: ${{ github.repository }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_USER_LOGIN: ${{ github.event.pull_request.user.login }}
+          ACTOR: ${{ github.actor }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Fail([string] $Message) {
+            Write-Error "Refusing to run: $Message"
+          }
+
+          if ($env:EVENT_NAME -ne 'pull_request_target') {
+            Fail "event is '$($env:EVENT_NAME)' (expected 'pull_request_target')."
+          }
+
+          $allowedActions = @('opened', 'reopened', 'synchronize', 'ready_for_review')
+          if (-not ($allowedActions -contains $env:EVENT_ACTION)) {
+            Fail "event action is '$($env:EVENT_ACTION)' (expected one of: $($allowedActions -join ', '))."
+          }
+
+          if ($env:REPOSITORY -ne $env:EXPECTED_REPOSITORY) {
+            Fail "repository is '$($env:REPOSITORY)' (expected '$($env:EXPECTED_REPOSITORY)')."
+          }
+
+          if ($env:BASE_REF -ne 'main') {
+            Fail "base ref is '$($env:BASE_REF)' (expected 'main')."
+          }
+
+          if ($env:PR_USER_LOGIN -ne $env:EXPECTED_BOT_LOGIN) {
+            Fail "PR author is '$($env:PR_USER_LOGIN)' (expected '$($env:EXPECTED_BOT_LOGIN)')."
+          }
+
+          if ($env:ACTOR -ne $env:EXPECTED_BOT_LOGIN) {
+            Fail "workflow actor is '$($env:ACTOR)' (expected '$($env:EXPECTED_BOT_LOGIN)')."
+          }
+
+          if ($env:HEAD_REPO -ne $env:REPOSITORY) {
+            Fail "head repository is '$($env:HEAD_REPO)' (expected '$($env:REPOSITORY)')."
+          }
+
+          if ($env:IS_DRAFT -ne 'false') {
+            Fail "pull request is draft='$($env:IS_DRAFT)' (expected false)."
+          }
+
+          $commit = gh api "/repos/${{ github.repository }}/commits/$env:HEAD_SHA" | ConvertFrom-Json
+          $author = $null
+          if ($null -ne $commit.author) {
+            $author = $commit.author.login
+          }
+
+          if ($author -ne $env:EXPECTED_BOT_LOGIN) {
+            Fail "PR head commit author is '$author' (expected '$($env:EXPECTED_BOT_LOGIN)')."
+          }
+
+          "Trusted PR invariant checks passed."
+
       - name: Create GitHub App token
         id: app-token
         if: steps.metadata.outputs.package-ecosystem == 'nuget'
@@ -53,22 +133,6 @@ jobs:
           private-key: ${{ secrets.SHUAIZHANG_LOCKFILE_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
-
-      - name: Validate PR head commit is authored by Dependabot
-        if: steps.metadata.outputs.package-ecosystem == 'nuget'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          $commit = gh api "/repos/${{ github.repository }}/commits/$env:HEAD_SHA" | ConvertFrom-Json
-          $author = $commit.author.login
-
-          if ($author -ne 'dependabot[bot]') {
-            Write-Error "Refusing to run: PR head commit author is '$author' (expected 'dependabot[bot]')."
-          }
 
       - name: Checkout PR branch
         if: steps.metadata.outputs.package-ecosystem == 'nuget'
@@ -99,6 +163,8 @@ jobs:
         env:
           PR_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
+          $ErrorActionPreference = 'Stop'
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -108,6 +174,12 @@ jobs:
           if (git diff --cached --quiet) {
             "No packages.lock.json changes to commit."
             exit 0
+          }
+
+          $stagedFiles = git diff --cached --name-only
+          $nonLockfiles = $stagedFiles | Where-Object { $_ -notmatch '(^|/)packages\.lock\.json$' }
+          if ($nonLockfiles) {
+            Write-Error "Refusing to push: non-lockfile paths are staged: $($nonLockfiles -join ', ')"
           }
 
           git commit -m "Update NuGet lockfiles"

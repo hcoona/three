@@ -3,6 +3,14 @@
 
 name: Dependabot Auto-Approve and Auto-Merge
 
+# SECURITY RATIONALE:
+# - This workflow uses pull_request (not pull_request_target) and does not check out PR code.
+# - It still has write permissions for review/merge operations, so trust invariants must stay strict:
+#   1) only Dependabot-authored PRs in this repository,
+#   2) only non-draft PRs,
+#   3) workflow actor must be dependabot[bot],
+#   4) PR head commit author must be dependabot[bot].
+# If these invariants need to change, require explicit security review.
 on:
 
   pull_request:
@@ -24,9 +32,13 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    # SECURITY INVARIANTS (coarse gate):
+    # Keep this aligned with the runtime validation step below.
     if: >-
       github.repository == 'hcoona/three' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false
 
     steps:
@@ -35,6 +47,39 @@ jobs:
         uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Validate trusted PR invariants
+        shell: bash
+        env:
+          EXPECTED_REPOSITORY: hcoona/three
+          EXPECTED_BOT_LOGIN: dependabot[bot]
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          PR_USER_LOGIN: ${{ github.event.pull_request.user.login }}
+          ACTOR: ${{ github.actor }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            echo "::error title=Refusing to run::$1"
+            exit 1
+          }
+
+          [[ "${EVENT_NAME}" == "pull_request" ]] || fail "event is '${EVENT_NAME}' (expected 'pull_request')."
+          [[ "${REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]] || fail "repository is '${REPOSITORY}' (expected '${EXPECTED_REPOSITORY}')."
+          [[ "${PR_USER_LOGIN}" == "${EXPECTED_BOT_LOGIN}" ]] || fail "PR author is '${PR_USER_LOGIN}' (expected '${EXPECTED_BOT_LOGIN}')."
+          [[ "${ACTOR}" == "${EXPECTED_BOT_LOGIN}" ]] || fail "workflow actor is '${ACTOR}' (expected '${EXPECTED_BOT_LOGIN}')."
+          [[ "${HEAD_REPO}" == "${REPOSITORY}" ]] || fail "head repository is '${HEAD_REPO}' (expected '${REPOSITORY}')."
+          [[ "${IS_DRAFT}" == "false" ]] || fail "pull request is draft='${IS_DRAFT}' (expected false)."
+
+          author=$(gh api "/repos/${REPOSITORY}/commits/${HEAD_SHA}" --jq '.author.login // ""')
+          [[ "${author}" == "${EXPECTED_BOT_LOGIN}" ]] || fail "PR head commit author is '${author}' (expected '${EXPECTED_BOT_LOGIN}')."
+
+          echo "Trusted PR invariant checks passed."
 
       - name: Log Dependabot metadata
         shell: bash
