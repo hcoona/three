@@ -86,8 +86,10 @@ def machine_label(machine: Machine) -> str:
 
 def format_module_summary(module: ModuleSpec | None, count: int) -> str:
     """Format a short summary for module configuration."""
-    if module is None or count <= 0:
+    if module is None:
         return "None"
+    if count <= 0:
+        return f"{module.label} x0 (disabled)"
     return f"{module.label} x {count}"
 
 
@@ -227,21 +229,18 @@ def render_objective_bar(
     default_pg_per_min: float = 900.0,
 ) -> tuple[float, bool, float, str]:
     """Render compact top objective controls."""
+    canonical_key = "objective-demand-per-second"
+    demand_input_key = "objective-demand"
+    rate_key = "objective-rate-unit"
+    last_rate_key = "objective-last-rate-unit"
+
+    if canonical_key not in st.session_state:
+        st.session_state[canonical_key] = default_pg_per_min / 60.0
+
     objective_container = st.container()
     with objective_container:
         st.markdown("### Objective")
         cols = st.columns([2.4, 1.4, 1.6, 3.0])
-
-        with cols[0]:
-            st.caption("Target")
-            demand_pg_per_min = st.number_input(
-                "Petroleum gas target",
-                min_value=0.0,
-                value=default_pg_per_min,
-                step=30.0,
-                key="objective-demand",
-                label_visibility="collapsed",
-            )
 
         with cols[1]:
             st.caption("Rate")
@@ -250,9 +249,41 @@ def render_objective_bar(
                 options=["per minute", "per second"],
                 index=0,
                 horizontal=True,
-                key="objective-rate-unit",
+                key=rate_key,
                 label_visibility="collapsed",
             )
+
+        previous_rate_unit = st.session_state.get(last_rate_key, rate_unit)
+        previous_multiplier = (
+            60.0 if previous_rate_unit == "per minute" else 1.0
+        )
+        current_multiplier = 60.0 if rate_unit == "per minute" else 1.0
+        if demand_input_key not in st.session_state:
+            st.session_state[demand_input_key] = (
+                st.session_state[canonical_key] * current_multiplier
+            )
+        if previous_rate_unit != rate_unit:
+            previous_display_value = float(
+                st.session_state.get(demand_input_key, default_pg_per_min)
+            )
+            st.session_state[canonical_key] = (
+                previous_display_value / previous_multiplier
+            )
+            st.session_state[demand_input_key] = (
+                st.session_state[canonical_key] * current_multiplier
+            )
+        st.session_state[last_rate_key] = rate_unit
+
+        with cols[0]:
+            st.caption("Target")
+            demand_value = st.number_input(
+                "Petroleum gas target",
+                min_value=0.0,
+                step=30.0 if rate_unit == "per minute" else 0.5,
+                key=demand_input_key,
+                label_visibility="collapsed",
+            )
+            st.session_state[canonical_key] = demand_value / current_multiplier
 
         with cols[2]:
             st.caption("Mode")
@@ -271,13 +302,13 @@ def render_objective_bar(
             st.caption("Current")
             st.markdown(
                 "**Petroleum gas** "
-                f"{format_amount(demand_pg_per_min)} {unit_text}"
+                f"{format_amount(demand_value)} {unit_text}"
                 f" • {mode_text}"
             )
 
     unit_multiplier = 60.0 if rate_unit == "per minute" else 1.0
     unit_label = "per min" if rate_unit == "per minute" else "per s"
-    return demand_pg_per_min, force_integer, unit_multiplier, unit_label
+    return demand_value, force_integer, unit_multiplier, unit_label
 
 
 def build_sidebar_settings(vm: OilChainViewModel) -> SidebarSettings:

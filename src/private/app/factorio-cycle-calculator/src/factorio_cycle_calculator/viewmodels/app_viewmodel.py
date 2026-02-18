@@ -121,6 +121,8 @@ class OilChainViewModel:
             data_dir_path,
             recipes,
             machines,
+            modules,
+            beacon_spec,
         )
         if not icon_catalog:
             warnings.append(

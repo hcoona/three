@@ -6,14 +6,16 @@ import io
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from PIL import Image
 
 from factorio_cycle_calculator.models import (
+    BeaconSpec,
     FactorioDataRaw,
     IconSpec,
     Machine,
+    ModuleSpec,
     Recipe,
 )
 from factorio_cycle_calculator.services.data_raw_service import (
@@ -67,6 +69,8 @@ def build_icon_catalog(
     data_dir_path: str,
     recipes: Mapping[str, Recipe],
     machines: Mapping[str, Machine],
+    modules: Mapping[str, ModuleSpec],
+    beacon: BeaconSpec | None,
 ) -> dict[tuple[str, str], IconSpec]:
     """Build icon catalog for recipes, machines and flow items."""
     if not data_dir_path:
@@ -75,7 +79,7 @@ def build_icon_catalog(
     if not data_dir.exists():
         return {}
 
-    icon_keys = collect_icon_keys(data_raw, recipes, machines)
+    icon_keys = collect_icon_keys(recipes, machines, modules, beacon)
 
     catalog: dict[tuple[str, str], IconSpec] = {}
     for proto_type, name in icon_keys:
@@ -94,9 +98,10 @@ def build_icon_catalog(
 
 
 def collect_icon_keys(
-    data_raw: FactorioDataRaw,
     recipes: Mapping[str, Recipe],
     machines: Mapping[str, Machine],
+    modules: Mapping[str, ModuleSpec],
+    beacon: BeaconSpec | None,
 ) -> set[tuple[str, str]]:
     """Collect prototype keys that should have icon entries."""
     icon_keys: set[tuple[str, str]] = set()
@@ -110,15 +115,13 @@ def collect_icon_keys(
         icon_keys.add(("assembling-machine", machine.key))
         icon_keys.add(("item", machine.key))
 
-    module_map = cast("Mapping[str, object]", data_raw.module or {})
-    for name in module_map:
-        icon_keys.add(("module", name))
-        icon_keys.add(("item", name))
+    for module in modules.values():
+        icon_keys.add(("module", module.key))
+        icon_keys.add(("item", module.key))
 
-    beacon_map = cast("Mapping[str, object]", data_raw.beacon or {})
-    for name in beacon_map:
-        icon_keys.add(("beacon", name))
-        icon_keys.add(("item", name))
+    if beacon is not None:
+        icon_keys.add(("beacon", beacon.key))
+        icon_keys.add(("item", beacon.key))
 
     return icon_keys
 
