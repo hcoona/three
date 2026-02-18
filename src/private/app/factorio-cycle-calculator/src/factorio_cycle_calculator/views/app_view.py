@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import base64
+import io
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 import streamlit as st
+from PIL import Image
 
 from factorio_cycle_calculator.models import (
     BeaconSpec,
     EffectSettings,
-    FactorioDataRaw,
     IconSpec,
     Machine,
     ModuleSpec,
@@ -44,6 +50,15 @@ from factorio_cycle_calculator.views.types import (
     RenderState,
 )
 
+DEFAULT_RECIPE_ORDER: tuple[str, str, str] = (
+    "advanced-oil-processing",
+    "heavy-oil-cracking",
+    "light-oil-cracking",
+)
+
+BLOCK_FLOW_COLUMN_RATIOS = [1.2, 2.4, 2.4, 2.4]
+BADGE_ICON_SIZE_PX = 20
+
 
 @dataclass(frozen=True)
 class ProductionContext:
@@ -67,6 +82,88 @@ def module_label(module: ModuleSpec | None) -> str:
 def machine_label(machine: Machine) -> str:
     """Format machine labels for UI controls."""
     return f"{machine.label} (speed {machine.crafting_speed:g})"
+
+
+def format_module_summary(module: ModuleSpec | None, count: int) -> str:
+    """Format a short summary for module configuration."""
+    if module is None:
+        return "None"
+    if count <= 0:
+        return f"{module.label} x0 (disabled)"
+    return f"{module.label} x {count}"
+
+
+def ensure_selectbox_value(
+    key: str,
+    options: Sequence[object],
+    default: object,
+) -> None:
+    """Ensure selectbox state remains valid when option lists change."""
+    if key not in st.session_state:
+        st.session_state[key] = default
+        return
+    current = st.session_state.get(key, default)
+    if current not in options:
+        st.session_state[key] = default
+
+
+def build_icon_label(icon: IconSpec | None, *, fallback: str) -> str:
+    """Build markdown label for a popover trigger icon."""
+    return build_icon_badge_label(icon, fallback=fallback)
+
+
+def build_icon_badge_label(
+    icon: IconSpec | None,
+    *,
+    fallback: str,
+    count_label: str | None = None,
+) -> str:
+    """Build markdown label with icon and optional compact count badge."""
+    if icon is None:
+        return fallback
+    icon_data = load_badge_icon_image(
+        str(icon.path),
+        icon.size,
+        max_size=BADGE_ICON_SIZE_PX,
+    )
+    if icon_data is None:
+        return fallback
+    encoded = base64.b64encode(icon_data).decode("ascii")
+    label = f"![{fallback}](data:image/png;base64,{encoded})"
+    if count_label:
+        label = f"{label} `{count_label}`"
+    return label
+
+
+@lru_cache(maxsize=512)
+def load_badge_icon_image(
+    icon_path: str,
+    icon_size: int | None,
+    *,
+    max_size: int,
+) -> bytes | None:
+    """Load icon bytes and downscale once for compact badge rendering."""
+    icon_data = load_icon_image(icon_path, icon_size)
+    if icon_data is None:
+        return None
+    return downscale_icon_bytes(icon_data, max_size=max_size)
+
+
+def downscale_icon_bytes(icon_data: bytes, *, max_size: int) -> bytes:
+    """Downscale icon bytes to fit a compact square for markdown badges."""
+    if max_size <= 0:
+        return icon_data
+    try:
+        with Image.open(io.BytesIO(icon_data)) as image_file:
+            image = image_file.convert("RGBA")
+            if image.width <= max_size and image.height <= max_size:
+                return icon_data
+            image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            with io.BytesIO() as output:
+                image.save(output, format="PNG")
+                return output.getvalue()
+    except OSError:
+        return icon_data
 
 
 def render_icon_label(icon_spec: IconSpec | None, label: str) -> None:
@@ -112,8 +209,8 @@ def render_summary_panel(
     render_icon_amount_list(items, icon_catalog, unit_label=unit_label)
 
 
-def render_sidebar_controls(vm: OilChainViewModel) -> SidebarSettings:
-    """Render sidebar controls and return selected values."""
+def render_sidebar_asset_controls(vm: OilChainViewModel) -> tuple[str, str]:
+    """Render sidebar controls for data paths."""
     st.sidebar.header("Assets")
     data_dir_path = st.sidebar.text_input(
         "Factorio data directory",
@@ -124,29 +221,106 @@ def render_sidebar_controls(vm: OilChainViewModel) -> SidebarSettings:
         value=vm.default_data_raw,
     )
 
-    st.sidebar.header("Demand")
-    rate_unit = st.sidebar.radio(
-        "Rate unit",
-        options=["per minute", "per second"],
-        index=0,
-    )
+    return data_dir_path, data_raw_path
+
+
+def render_objective_bar(
+    *,
+    default_pg_per_min: float = 900.0,
+) -> tuple[float, bool, float, str]:
+    """Render compact top objective controls."""
+    canonical_key = "objective-demand-per-second"
+    demand_input_key = "objective-demand"
+    rate_key = "objective-rate-unit"
+    last_rate_key = "objective-last-rate-unit"
+
+    if canonical_key not in st.session_state:
+        st.session_state[canonical_key] = default_pg_per_min / 60.0
+
+    objective_container = st.container()
+    with objective_container:
+        st.markdown("### Objective")
+        cols = st.columns([2.4, 1.4, 1.6, 3.0])
+
+        with cols[1]:
+            st.caption("Rate")
+            rate_unit = st.radio(
+                "Rate unit",
+                options=["per minute", "per second"],
+                index=0,
+                horizontal=True,
+                key=rate_key,
+                label_visibility="collapsed",
+            )
+
+        previous_rate_unit = st.session_state.get(last_rate_key, rate_unit)
+        previous_multiplier = (
+            60.0 if previous_rate_unit == "per minute" else 1.0
+        )
+        current_multiplier = 60.0 if rate_unit == "per minute" else 1.0
+        if demand_input_key not in st.session_state:
+            st.session_state[demand_input_key] = (
+                st.session_state[canonical_key] * current_multiplier
+            )
+        if previous_rate_unit != rate_unit:
+            previous_display_value = float(
+                st.session_state.get(demand_input_key, default_pg_per_min)
+            )
+            st.session_state[canonical_key] = (
+                previous_display_value / previous_multiplier
+            )
+            st.session_state[demand_input_key] = (
+                st.session_state[canonical_key] * current_multiplier
+            )
+        st.session_state[last_rate_key] = rate_unit
+
+        with cols[0]:
+            st.caption("Target")
+            demand_value = st.number_input(
+                "Petroleum gas target",
+                min_value=0.0,
+                step=30.0 if rate_unit == "per minute" else 0.5,
+                key=demand_input_key,
+                label_visibility="collapsed",
+            )
+            st.session_state[canonical_key] = demand_value / current_multiplier
+
+        with cols[2]:
+            st.caption("Mode")
+            force_integer = st.checkbox(
+                "Integer machine counts",
+                value=False,
+                key="objective-force-integer",
+                label_visibility="collapsed",
+            )
+
+        with cols[3]:
+            unit_text = (
+                "per minute" if rate_unit == "per minute" else "per second"
+            )
+            mode_text = "integer" if force_integer else "continuous"
+            st.caption("Current")
+            st.markdown(
+                "**Petroleum gas** "
+                f"{format_amount(demand_value)} {unit_text}"
+                f" • {mode_text}"
+            )
+
     unit_multiplier = 60.0 if rate_unit == "per minute" else 1.0
     unit_label = "per min" if rate_unit == "per minute" else "per s"
+    return demand_value, force_integer, unit_multiplier, unit_label
 
-    demand_pg_per_min = st.sidebar.number_input(
-        f"Petroleum gas target ({rate_unit})",
-        min_value=0.0,
-        value=900.0,
-        step=30.0,
-    )
-    force_integer = st.sidebar.checkbox(
-        "Force integer machine counts", value=False
-    )
 
+def build_sidebar_settings(vm: OilChainViewModel) -> SidebarSettings:
+    """Build settings from sidebar assets and top objective controls."""
+    data_dir_path, data_raw_path = render_sidebar_asset_controls(vm)
+    demand_value, force_integer, unit_multiplier, unit_label = (
+        render_objective_bar()
+    )
     return SidebarSettings(
         data_dir_path=data_dir_path,
         data_raw_path=data_raw_path,
-        demand_pg_per_min=demand_pg_per_min,
+        demand_value=demand_value,
         force_integer=force_integer,
         unit_multiplier=unit_multiplier,
         unit_label=unit_label,
@@ -162,47 +336,6 @@ def warn_missing_data_dir(data_dir_path: str) -> None:
         )
 
 
-def select_recipe_option(
-    label: str,
-    options: list[str],
-    *,
-    default_name: str,
-) -> str:
-    """Select a recipe name from options with a preferred default."""
-    if not options:
-        st.sidebar.warning(f"No recipes found for {label}.")
-        return ""
-    index = options.index(default_name) if default_name in options else 0
-    return st.sidebar.selectbox(label, options=options, index=index)
-
-
-def render_recipe_selection(
-    vm: OilChainViewModel,
-    data_raw: FactorioDataRaw,
-) -> tuple[str, str, str] | None:
-    """Render recipe selectors for the oil chain."""
-    st.sidebar.header("Recipes")
-    oil_processing, chemistry = vm.list_recipe_options(data_raw)
-    advanced_key = select_recipe_option(
-        "Oil processing recipe",
-        oil_processing,
-        default_name="advanced-oil-processing",
-    )
-    heavy_key = select_recipe_option(
-        "Heavy oil cracking recipe",
-        chemistry,
-        default_name="heavy-oil-cracking",
-    )
-    light_key = select_recipe_option(
-        "Light oil cracking recipe",
-        chemistry,
-        default_name="light-oil-cracking",
-    )
-    if not advanced_key or not heavy_key or not light_key:
-        return None
-    return advanced_key, heavy_key, light_key
-
-
 def render_summary_placeholders() -> tuple[
     ContainerSlot, ContainerSlot, ContainerSlot
 ]:
@@ -216,35 +349,224 @@ def render_summary_placeholders() -> tuple[
     )
 
 
-def render_production_header() -> None:
-    """Render the production table header row."""
-    header_cols = st.columns([1.4, 1.8, 1.6, 0.9, 2.4, 2.4, 2.4])
-    header_labels = [
-        "Recipe",
-        "Machine",
-        "Modules / Beacons",
-        "Power",
-        "Products",
-        "Byproducts",
-        "Ingredients",
-    ]
-    for col, label in zip(header_cols, header_labels, strict=False):
-        col.caption(label)
-
-
 def render_machine_selector(
     recipe: Recipe,
     machines: Mapping[str, Machine],
     machine_keys: list[str],
+    icon_catalog: Mapping[tuple[str, str], IconSpec],
 ) -> Machine:
-    """Render the machine selector for a recipe."""
+    """Render machine selector with icon-rich option list."""
     options = [machines[key] for key in machine_keys]
-    return st.selectbox(
-        "Machine",
-        options=options,
-        format_func=machine_label,
-        key=f"{recipe.key}-machine",
-        label_visibility="collapsed",
+    machine_key = f"{recipe.key}-machine"
+    ensure_selectbox_value(machine_key, options, options[0])
+
+    selected_machine = st.session_state[machine_key]
+    selected_icon = find_icon(
+        icon_catalog,
+        ("item", "assembling-machine"),
+        name=selected_machine.key,
+    )
+
+    popover_label = build_icon_label(
+        selected_icon,
+        fallback=machine_label(selected_machine),
+    )
+    option_key = f"{machine_key}-option"
+    ensure_selectbox_value(option_key, options, selected_machine)
+    with st.popover(popover_label):
+        st.caption("Machine options")
+        selected_option = st.selectbox(
+            "Machine",
+            options=options,
+            format_func=machine_label,
+            key=option_key,
+            label_visibility="collapsed",
+        )
+        if selected_option != st.session_state[machine_key]:
+            st.session_state[machine_key] = selected_option
+            st.rerun()
+
+    return st.session_state[machine_key]
+
+
+def render_module_controls(
+    recipe: Recipe,
+    *,
+    machine: Machine,
+    modules: Mapping[str, ModuleSpec],
+    icon_catalog: Mapping[tuple[str, str], IconSpec],
+) -> tuple[float, float]:
+    """Render module controls and return speed/productivity bonuses."""
+    if machine.module_slots <= 0:
+        st.caption("No slots")
+        return 0.0, 0.0
+
+    allowed_modules = filter_modules_for_machine(
+        modules,
+        recipe=recipe,
+        machine=machine,
+        allowed_effects=machine.allowed_effects,
+    )
+    module_options: list[ModuleSpec | None] = [None]
+    module_options.extend(allowed_modules)
+
+    module_key = f"{recipe.key}-module"
+    ensure_selectbox_value(module_key, module_options, None)
+
+    count_options = list(range(machine.module_slots + 1))
+    module_count_key = f"{recipe.key}-module-count"
+    ensure_selectbox_value(
+        module_count_key,
+        count_options,
+        machine.module_slots,
+    )
+
+    selected_module = st.session_state[module_key]
+    module_count = st.session_state[module_count_key]
+    module_summary = format_module_summary(selected_module, module_count)
+    module_icon = None
+    if selected_module is not None:
+        module_icon = find_icon(
+            icon_catalog,
+            ("item", "module"),
+            name=selected_module.key,
+        )
+
+    count_label = (
+        f"x{module_count}" if selected_module and module_count > 0 else None
+    )
+    popover_label = build_icon_badge_label(
+        module_icon,
+        fallback=module_summary,
+        count_label=count_label,
+    )
+
+    with st.popover(popover_label):
+        st.selectbox(
+            "Module",
+            options=module_options,
+            format_func=module_label,
+            key=module_key,
+        )
+        st.selectbox(
+            "Module count",
+            options=count_options,
+            key=module_count_key,
+        )
+
+    selected_module = st.session_state[module_key]
+    module_count = st.session_state[module_count_key]
+    return compute_module_effects(selected_module, count=module_count)
+
+
+def render_beacon_controls(
+    recipe: Recipe,
+    *,
+    machine: Machine,
+    modules: Mapping[str, ModuleSpec],
+    beacon: BeaconSpec | None,
+    icon_catalog: Mapping[tuple[str, str], IconSpec],
+) -> tuple[float, float]:
+    """Render beacon controls and return speed/productivity bonuses."""
+    if beacon is None:
+        st.caption("No beacon data")
+        return 0.0, 0.0
+
+    effectivity = beacon.distribution_effectivity
+    beacon_allowed_effects = beacon.allowed_effects & machine.allowed_effects
+    beacon_modules = filter_modules_for_machine(
+        modules,
+        recipe=recipe,
+        machine=machine,
+        allowed_effects=beacon_allowed_effects,
+    )
+    beacon_module_options: list[ModuleSpec | None] = [None]
+    beacon_module_options.extend(beacon_modules)
+
+    beacon_module_key = f"{recipe.key}-beacon-module"
+    ensure_selectbox_value(beacon_module_key, beacon_module_options, None)
+
+    beacon_module_count_options = list(range(beacon.module_slots + 1))
+    beacon_module_count_key = f"{recipe.key}-beacon-module-count"
+    ensure_selectbox_value(
+        beacon_module_count_key,
+        beacon_module_count_options,
+        beacon.module_slots,
+    )
+
+    beacon_count_options = list(range(13))
+    beacon_count_key = f"{recipe.key}-beacon-count"
+    ensure_selectbox_value(beacon_count_key, beacon_count_options, 0)
+
+    selected_beacon_module = st.session_state[beacon_module_key]
+    beacon_module_count = st.session_state[beacon_module_count_key]
+    beacon_count = st.session_state[beacon_count_key]
+
+    module_summary = format_module_summary(
+        selected_beacon_module,
+        beacon_module_count,
+    )
+    beacon_summary = f"{module_summary} • Towers: {beacon_count}"
+
+    beacon_icon = find_icon(
+        icon_catalog,
+        ("item", "beacon"),
+        name=beacon.key,
+    )
+
+    tower_label = build_icon_badge_label(
+        beacon_icon,
+        fallback=beacon.label,
+        count_label=f"x{beacon_count}",
+    )
+    st.markdown(tower_label)
+
+    module_icon = None
+    if selected_beacon_module is not None:
+        module_icon = find_icon(
+            icon_catalog,
+            ("item", "module"),
+            name=selected_beacon_module.key,
+        )
+
+    module_count_label = (
+        f"x{beacon_module_count}"
+        if selected_beacon_module and beacon_module_count > 0
+        else None
+    )
+    popover_label = build_icon_badge_label(
+        module_icon,
+        fallback=beacon_summary,
+        count_label=module_count_label,
+    )
+
+    with st.popover(popover_label):
+        st.caption(f"{beacon.label} • effectivity {effectivity:g}")
+        st.selectbox(
+            "Beacon module",
+            options=beacon_module_options,
+            format_func=module_label,
+            key=beacon_module_key,
+        )
+        st.selectbox(
+            "Beacon module count",
+            options=beacon_module_count_options,
+            key=beacon_module_count_key,
+        )
+        st.selectbox(
+            "Beacon count",
+            options=beacon_count_options,
+            key=beacon_count_key,
+        )
+
+    selected_beacon_module = st.session_state[beacon_module_key]
+    beacon_module_count = st.session_state[beacon_module_count_key]
+    beacon_count = st.session_state[beacon_count_key]
+    return compute_beacon_effects(
+        selected_beacon_module,
+        module_count=beacon_module_count,
+        beacon_count=beacon_count,
+        effectivity=beacon.distribution_effectivity,
     )
 
 
@@ -254,100 +576,113 @@ def render_effect_controls(
     machine: Machine,
     modules: Mapping[str, ModuleSpec],
     beacon: BeaconSpec | None,
+    icon_catalog: Mapping[tuple[str, str], IconSpec],
 ) -> EffectSettings:
     """Render module and beacon controls for a recipe."""
+    label_cols = st.columns(2)
+    label_cols[0].caption("Module")
+    label_cols[1].caption("Beacon")
+
     module_column, beacon_column = st.columns(2)
 
-    module_speed = 0.0
-    module_productivity = 0.0
-
     with module_column:
-        st.caption("Modules")
-        if machine.module_slots <= 0:
-            st.caption("No module slots")
-        else:
-            allowed_modules = filter_modules_for_machine(
-                modules,
-                recipe=recipe,
-                machine=machine,
-                allowed_effects=machine.allowed_effects,
-            )
-            module_options: list[ModuleSpec | None] = [None]
-            module_options.extend(allowed_modules)
-            selected_module = st.selectbox(
-                "Module",
-                options=module_options,
-                format_func=module_label,
-                key=f"{recipe.key}-module",
-                label_visibility="collapsed",
-            )
-            count_options = list(range(machine.module_slots + 1))
-            module_count = st.selectbox(
-                "Module count",
-                options=count_options,
-                index=machine.module_slots,
-                key=f"{recipe.key}-module-count",
-                label_visibility="collapsed",
-            )
-            module_speed, module_productivity = compute_module_effects(
-                selected_module,
-                count=module_count,
-            )
-
-    beacon_speed = 0.0
-    beacon_productivity = 0.0
+        module_speed, module_productivity = render_module_controls(
+            recipe,
+            machine=machine,
+            modules=modules,
+            icon_catalog=icon_catalog,
+        )
 
     with beacon_column:
-        st.caption("Beacons")
-        if beacon is None:
-            st.caption("No beacon data")
-        else:
-            effectivity = beacon.distribution_effectivity
-            st.caption(f"{beacon.label} (effectivity {effectivity:g})")
-            beacon_allowed_effects = (
-                beacon.allowed_effects & machine.allowed_effects
-            )
-            beacon_modules = filter_modules_for_machine(
-                modules,
-                recipe=recipe,
-                machine=machine,
-                allowed_effects=beacon_allowed_effects,
-            )
-            beacon_module_options: list[ModuleSpec | None] = [None]
-            beacon_module_options.extend(beacon_modules)
-            selected_beacon_module = st.selectbox(
-                "Beacon module",
-                options=beacon_module_options,
-                format_func=module_label,
-                key=f"{recipe.key}-beacon-module",
-                label_visibility="collapsed",
-            )
-            beacon_module_count = st.selectbox(
-                "Beacon module count",
-                options=list(range(beacon.module_slots + 1)),
-                index=beacon.module_slots,
-                key=f"{recipe.key}-beacon-module-count",
-                label_visibility="collapsed",
-            )
-            beacon_count = st.selectbox(
-                "Beacon count",
-                options=list(range(13)),
-                index=0,
-                key=f"{recipe.key}-beacon-count",
-                label_visibility="collapsed",
-            )
-            beacon_speed, beacon_productivity = compute_beacon_effects(
-                selected_beacon_module,
-                module_count=beacon_module_count,
-                beacon_count=beacon_count,
-                effectivity=beacon.distribution_effectivity,
-            )
+        beacon_speed, beacon_productivity = render_beacon_controls(
+            recipe,
+            machine=machine,
+            modules=modules,
+            beacon=beacon,
+            icon_catalog=icon_catalog,
+        )
 
     return build_effect_settings(
         module_speed=module_speed,
         module_productivity=module_productivity,
         beacon_speed=beacon_speed,
         beacon_productivity=beacon_productivity,
+    )
+
+
+def render_recipe_block(
+    context: ProductionContext,
+    recipe_key: str,
+) -> tuple[
+    RecipeConfig,
+    tuple[ContainerSlot, ContainerSlot, ContainerSlot],
+    CaptionSlot,
+]:
+    """Render one compact recipe block and return its UI bindings."""
+    recipe = context.recipes[recipe_key]
+    eligible = [
+        key
+        for key, machine in context.machines.items()
+        if recipe.category in machine.crafting_categories
+    ]
+    if not eligible:
+        eligible = list(context.machines.keys())
+
+    with st.container(border=True):
+        header_cols = st.columns([2.8, 1.6])
+        with header_cols[0]:
+            recipe_icon = find_icon(
+                context.icon_catalog,
+                ("recipe",),
+                name=recipe.key,
+            )
+            render_icon_label(recipe_icon, recipe.label)
+        with header_cols[1]:
+            st.caption("Category")
+            st.markdown(f"`{recipe.category}`")
+
+        build_cols = st.columns([2.2, 2.8, 1.0])
+        with build_cols[0]:
+            st.caption("Machine")
+            machine = render_machine_selector(
+                recipe,
+                context.machines,
+                eligible,
+                context.icon_catalog,
+            )
+
+        with build_cols[1]:
+            st.caption("Modules / Beacons")
+            effects = render_effect_controls(
+                recipe,
+                machine=machine,
+                modules=context.modules,
+                beacon=context.beacon,
+                icon_catalog=context.icon_catalog,
+            )
+
+        with build_cols[2]:
+            st.caption("Power")
+            st.caption("—")
+
+        flow_cols = st.columns(BLOCK_FLOW_COLUMN_RATIOS)
+        with flow_cols[0]:
+            st.caption("Count")
+            count_slot = st.empty()
+        with flow_cols[1]:
+            st.caption("Products")
+            products_cell = st.empty()
+        with flow_cols[2]:
+            st.caption("Byproducts")
+            byproducts_cell = st.empty()
+        with flow_cols[3]:
+            st.caption("Ingredients")
+            ingredients_cell = st.empty()
+
+    return (
+        RecipeConfig(machine=machine, effects=effects),
+        (products_cell, byproducts_cell, ingredients_cell),
+        count_slot,
     )
 
 
@@ -366,58 +701,10 @@ def render_production_rows(
     count_slots: dict[str, CaptionSlot] = {}
 
     for recipe_key in context.recipe_order:
-        recipe = context.recipes[recipe_key]
-        eligible = [
-            key
-            for key, machine in context.machines.items()
-            if recipe.category in machine.crafting_categories
-        ]
-        if not eligible:
-            eligible = list(context.machines.keys())
-
-        cols = st.columns([1.4, 1.8, 1.6, 0.9, 2.4, 2.4, 2.4])
-        with cols[0]:
-            recipe_icon = find_icon(
-                context.icon_catalog, ("recipe",), name=recipe.key
-            )
-            render_icon_label(recipe_icon, recipe.label)
-
-        with cols[1]:
-            machine = render_machine_selector(
-                recipe, context.machines, eligible
-            )
-            machine_icon = find_icon(
-                context.icon_catalog,
-                ("item", "assembling-machine"),
-                name=machine.key,
-            )
-            render_icon_label(machine_icon, machine.label)
-            count_slots[recipe_key] = st.empty()
-
-        with cols[2]:
-            effects = render_effect_controls(
-                recipe,
-                machine=machine,
-                modules=context.modules,
-                beacon=context.beacon,
-            )
-
-        with cols[3]:
-            st.caption("—")
-
-        with cols[4]:
-            products_cell = st.empty()
-        with cols[5]:
-            byproducts_cell = st.empty()
-        with cols[6]:
-            ingredients_cell = st.empty()
-
-        config_map[recipe_key] = RecipeConfig(machine=machine, effects=effects)
-        row_slots[recipe_key] = (
-            products_cell,
-            byproducts_cell,
-            ingredients_cell,
-        )
+        config, cells, count_slot = render_recipe_block(context, recipe_key)
+        config_map[recipe_key] = config
+        row_slots[recipe_key] = cells
+        count_slots[recipe_key] = count_slot
 
     return config_map, row_slots, count_slots
 
@@ -513,10 +800,7 @@ def render_chain(vm: OilChainViewModel, settings: SidebarSettings) -> None:
         st.error("Failed to load data-raw-dump.json.")
         return
 
-    recipe_order = render_recipe_selection(vm, data_raw)
-    if recipe_order is None:
-        st.error("Recipe selection is incomplete.")
-        return
+    recipe_order = DEFAULT_RECIPE_ORDER
 
     chain, warnings, chain_error = vm.load_chain(
         data_raw,
@@ -537,8 +821,11 @@ def render_chain(vm: OilChainViewModel, settings: SidebarSettings) -> None:
     )
     status_slot = st.empty()
 
-    st.subheader("Production")
-    render_production_header()
+    st.subheader("Production Blocks")
+    st.caption(
+        "Fixed demo chain: Advanced Oil Processing → Heavy Oil Cracking → "
+        "Light Oil Cracking"
+    )
     production_context = ProductionContext(
         recipes=chain.recipes,
         machines=chain.machines,
@@ -581,11 +868,12 @@ def run_app() -> None:
     st.set_page_config(page_title="Factorio Cycle Calculator", layout="wide")
     st.title("Factorio Cycle Calculator")
     st.markdown(
-        "This example models the advanced oil processing chain using "
-        "Google OR-Tools. Choose machines and bonuses, then solve for the "
-        "machine counts that satisfy a petroleum gas demand while minimizing "
-        "crude oil input (water is treated as a free input)."
+        "This demo models a fixed advanced oil-processing chain using "
+        "Google OR-Tools. Configure machines/modules/beacons, adjust petroleum "
+        "gas demand, and solve for machine counts that satisfy the "
+        "target while "
+        "minimizing crude oil input (water is treated as a free input)."
     )
     vm = OilChainViewModel()
-    settings = render_sidebar_controls(vm)
+    settings = build_sidebar_settings(vm)
     render_chain(vm, settings)
