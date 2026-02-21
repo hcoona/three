@@ -1,0 +1,1076 @@
+name: Release Orchestrator (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      source:
+        description: "Resolution mode: 'tag' derives project/version from release tag; 'manual' uses explicit inputs."
+        required: true
+        type: string
+      run_url:
+        description: "Entry workflow run URL (pass-through for release notes)."
+        required: true
+        type: string
+
+      # source=tag
+      ref_name:
+        description: "Tag name (caller passes github.ref_name). Required when source=tag."
+        required: false
+        type: string
+      ref:
+        description: "Full ref (caller passes github.ref). Required when source=tag."
+        required: false
+        type: string
+
+      # source=manual
+      project:
+        description: "Workspace package name (unscoped). Required when source=manual."
+        required: false
+        type: string
+      version:
+        description: "Release version string. Required when source=manual."
+        required: false
+        type: string
+      target:
+        description: "Target commit for release/tag when manually triggered (defaults to current commit)."
+        required: false
+        default: ""
+        type: string
+      force_update_tag:
+        description: "Allow force-updating the release tag if it already exists and points to a different commit."
+        required: false
+        default: false
+        type: boolean
+
+      channel:
+        description: "Release channel label for logs and policy validation (for example: official, buddy)."
+        required: true
+        type: string
+      artifact_prefix:
+        description: "Prefix for generated workflow artifacts (for example: official, buddy)."
+        required: true
+        type: string
+      github_release_prerelease:
+        description: "Whether GitHub Release is marked as prerelease."
+        required: true
+        type: boolean
+
+      enforce_prerelease_only:
+        description: "If true, enforce resolved version to be prerelease-only."
+        required: false
+        default: false
+        type: boolean
+      enforce_non_clobber:
+        description: "If true, buddy-like non-clobber protection is enabled."
+        required: false
+        default: false
+        type: boolean
+
+      publish_python_pypi:
+        description: "If true, publish Python artifacts to PyPI."
+        required: false
+        default: false
+        type: boolean
+      publish_node_gpr:
+        description: "If true, publish Node artifacts to GitHub Packages."
+        required: false
+        default: true
+        type: boolean
+      publish_node_npmjs:
+        description: "If true, publish Node artifacts to npmjs.org."
+        required: false
+        default: false
+        type: boolean
+      publish_ruby_gpr:
+        description: "If true, publish Ruby gem to GitHub Packages."
+        required: false
+        default: true
+        type: boolean
+      publish_ruby_rubygems:
+        description: "If true, publish Ruby gem to RubyGems.org."
+        required: false
+        default: false
+        type: boolean
+
+      enable_attestation:
+        description: "If true, generate GitHub build provenance attestation for release assets."
+        required: false
+        default: false
+        type: boolean
+
+      node_pack_mode:
+        description: "Pack mode for release-build-node-pack workflow."
+        required: false
+        default: both
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.14'
+  NODE_VERSION: '24'
+  PNPM_VERSION: '10'
+  RUBY_VERSION: '3.3'
+
+jobs:
+  policy:
+    name: Validate orchestration policy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Validate inputs
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          SOURCE: ${{ inputs.source }}
+          ENFORCE_PRERELEASE_ONLY: ${{ inputs.enforce_prerelease_only }}
+          ENFORCE_NON_CLOBBER: ${{ inputs.enforce_non_clobber }}
+          NODE_GPR: ${{ inputs.publish_node_gpr }}
+          NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
+          RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
+          RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
+        run: |
+          set -Eeuo pipefail
+
+          if [[ "${SOURCE}" != "tag" && "${SOURCE}" != "manual" ]]; then
+            echo "Invalid source '${SOURCE}'." >&2
+            exit 1
+          fi
+
+          if [[ "${NODE_GPR}" != "true" && "${NODE_NPMJS}" != "true" ]]; then
+            echo "At least one Node publish target must be enabled." >&2
+            exit 1
+          fi
+
+          if [[ "${RUBY_GPR}" != "true" && "${RUBY_RUBYGEMS}" != "true" ]]; then
+            echo "At least one Ruby publish target must be enabled." >&2
+            exit 1
+          fi
+
+          if [[ "${CHANNEL}" == "buddy" && "${ENFORCE_PRERELEASE_ONLY}" != "true" ]]; then
+            echo "Buddy channel must enforce prerelease-only policy." >&2
+            exit 1
+          fi
+
+          if [[ "${CHANNEL}" == "buddy" && "${ENFORCE_NON_CLOBBER}" != "true" ]]; then
+            echo "Buddy channel must enforce non-clobber policy." >&2
+            exit 1
+          fi
+
+  versions:
+    name: Export tool versions
+    runs-on: ubuntu-latest
+    needs: policy
+    permissions:
+      contents: read
+    outputs:
+      python_version: ${{ steps.versions.outputs.python_version }}
+      node_version: ${{ steps.versions.outputs.node_version }}
+      pnpm_version: ${{ steps.versions.outputs.pnpm_version }}
+      ruby_version: ${{ steps.versions.outputs.ruby_version }}
+    steps:
+      - name: Export versions
+        id: versions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "python_version=${PYTHON_VERSION}"
+            echo "node_version=${NODE_VERSION}"
+            echo "pnpm_version=${PNPM_VERSION}"
+            echo "ruby_version=${RUBY_VERSION}"
+          } >> "${GITHUB_OUTPUT}"
+
+  resolve:
+    name: Resolve release inputs
+    uses: ./.github/workflows/release-resolve.yml
+    needs: versions
+    permissions:
+      contents: read
+    with:
+      source: ${{ inputs.source }}
+      run_url: ${{ inputs.run_url }}
+      python_version: ${{ needs.versions.outputs.python_version }}
+
+      # source=tag
+      ref_name: ${{ inputs.ref_name }}
+      ref: ${{ inputs.ref }}
+
+      # source=manual
+      project: ${{ inputs.project }}
+      version: ${{ inputs.version }}
+      target: ${{ inputs.target }}
+      force_update_tag: ${{ inputs.force_update_tag == true }}
+
+  guard-prerelease-only:
+    name: Guard prerelease-only policy
+    runs-on: ubuntu-latest
+    needs: resolve
+    permissions:
+      contents: read
+    steps:
+      - name: Enforce prerelease-only
+        if: inputs.enforce_prerelease_only
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          IS_PRERELEASE: ${{ needs.resolve.outputs.is_prerelease }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${IS_PRERELEASE}" != "true" ]]; then
+            echo "Prerelease-only policy is enabled. Refusing '${PROJECT}' version '${VERSION}'." >&2
+            exit 1
+          fi
+          echo "Prerelease-only guard passed for ${PROJECT} ${VERSION}."
+
+      - name: Guard disabled
+        if: ${{ !inputs.enforce_prerelease_only }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Prerelease-only guard is disabled for this channel."
+
+  guard-non-clobber:
+    name: Guard non-clobber policy
+    runs-on: ubuntu-latest
+    needs: resolve
+    permissions:
+      contents: read
+    steps:
+      - name: Install jq
+        if: inputs.enforce_non_clobber
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Check existing GitHub Release by tag
+        if: inputs.enforce_non_clobber
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
+        run: |
+          set -Eeuo pipefail
+
+          api="repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}"
+          resp_file="${RUNNER_TEMP}/gh-api.response"
+          rm -f "${resp_file}"
+
+          set +e
+          gh api "${api}" --include >"${resp_file}" 2>&1
+          rc=$?
+          set -e
+
+          status=$(grep -m1 -E '^HTTP/' "${resp_file}" | awk '{print $2}' || true)
+
+          if [[ "${rc}" -eq 0 ]]; then
+            body=$(sed -n '/^{/,$p' "${resp_file}")
+            if [[ -z "${body}" ]]; then
+              echo "Error: gh api output did not contain a JSON body." >&2
+              cat "${resp_file}" >&2 || true
+              exit 1
+            fi
+
+            prerelease=$(printf '%s' "${body}" | jq -r '.prerelease')
+            if [[ "${prerelease}" != "true" && "${prerelease}" != "false" ]]; then
+              echo "Error: release JSON body missing 'prerelease'." >&2
+              exit 1
+            fi
+
+            if [[ "${prerelease}" == "false" ]]; then
+              echo "A non-prerelease GitHub Release already exists for tag '${TAG_NAME}'." >&2
+              echo "Non-clobber policy refuses to modify official (prerelease=false) releases." >&2
+              exit 1
+            fi
+
+            echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
+            exit 0
+          fi
+
+          if [[ "${status}" == "404" ]]; then
+            echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
+            exit 0
+          fi
+
+          echo "Failed to query release metadata for tag '${TAG_NAME}' (HTTP ${status:-unknown})." >&2
+          cat "${resp_file}" >&2 || true
+          exit 1
+
+      - name: Guard disabled
+        if: ${{ !inputs.enforce_non_clobber }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Non-clobber guard is disabled for this channel."
+
+  prepare-release-notes:
+    name: Prepare release notes
+    needs:
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-prepare-release-notes.yml
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      has_changelog: ${{ needs.resolve.outputs.has_changelog == 'true' }}
+      changelog_path: ${{ needs.resolve.outputs.changelog }}
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      project: ${{ needs.resolve.outputs.project }}
+      version: ${{ needs.resolve.outputs.version }}
+      run_url: ${{ needs.resolve.outputs.run_url }}
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+
+  build-python:
+    name: Build Python package
+    needs:
+      - versions
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'python'
+    uses: ./.github/workflows/release-build-python.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      python_version: ${{ needs.versions.outputs.python_version }}
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  publish-python:
+    name: Publish Python package (PyPI)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-python
+    if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
+    environment: pypi
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Validate PyPI remote digests (idempotency)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/validate_pypi_remote_digests.sh"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1
+        with:
+          packages-dir: ${{ github.workspace }}/out/
+          skip-existing: true
+
+  attest-python:
+    name: Attest release assets (Python)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-python
+    if: needs.resolve.outputs.project_kind == 'python'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        if: inputs.enable_attestation
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        if: inputs.enable_attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+      - name: Attestation disabled
+        if: ${{ !inputs.enable_attestation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Attestation is disabled for this channel."
+
+  release-python-with-pypi:
+    name: Create GitHub release (Python)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-python
+      - publish-python
+      - attest-python
+    if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  release-python-no-pypi:
+    name: Create GitHub release (Python)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-python
+      - attest-python
+    if: needs.resolve.outputs.project_kind == 'python' && !inputs.publish_python_pypi
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  pack-node:
+    name: Pack Node tarball(s)
+    needs:
+      - versions
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
+    uses: ./.github/workflows/release-build-node-pack.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      python_version: ${{ needs.versions.outputs.python_version }}
+      node_version: ${{ needs.versions.outputs.node_version }}
+      pnpm_version: ${{ needs.versions.outputs.pnpm_version }}
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+      pack_mode: ${{ inputs.node_pack_mode }}
+
+  publish-node-gpr-with-npmjs-gate:
+    name: Publish Node package (GitHub Packages)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - pack-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
+    environment: npmjs
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Node GPR publishing disabled
+        if: ${{ !inputs.publish_node_gpr }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Node GPR publishing is disabled by policy."
+
+      - name: Checkout (workflow scripts)
+        if: inputs.publish_node_gpr
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Resolve npm scope
+        if: inputs.publish_node_gpr
+        id: npm_scope
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+          scope="@${OWNER,,}"
+          echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
+
+      - name: Setup Node.js (npm auth)
+        if: inputs.publish_node_gpr
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ needs.versions.outputs.node_version }}
+          registry-url: https://npm.pkg.github.com
+          scope: ${{ steps.npm_scope.outputs.scope }}
+
+      - name: Create .npmrc for GitHub Packages (GPR)
+        if: inputs.publish_node_gpr
+        id: gpr_npmrc
+        shell: bash
+        env:
+          SCOPE: ${{ steps.npm_scope.outputs.scope }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          npmrc="${RUNNER_TEMP}/npmrc-gpr"
+          {
+            echo "registry=https://registry.npmjs.org"
+            echo "${SCOPE}:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            echo "always-auth=true"
+          } > "${npmrc}"
+
+          echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download dist artifact
+        if: inputs.publish_node_gpr
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Publish to GitHub Packages from tarball
+        if: inputs.publish_node_gpr
+        shell: bash
+        env:
+          DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
+          NPM_CONFIG_ALWAYS_AUTH: 'true'
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
+
+  publish-node-gpr-no-npmjs-gate:
+    name: Publish Node package (GitHub Packages)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - pack-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && !inputs.publish_node_npmjs
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Node GPR publishing disabled
+        if: ${{ !inputs.publish_node_gpr }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Node GPR publishing is disabled by policy."
+
+      - name: Checkout (workflow scripts)
+        if: inputs.publish_node_gpr
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Resolve npm scope
+        if: inputs.publish_node_gpr
+        id: npm_scope
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+          scope="@${OWNER,,}"
+          echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
+
+      - name: Setup Node.js (npm auth)
+        if: inputs.publish_node_gpr
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ needs.versions.outputs.node_version }}
+          registry-url: https://npm.pkg.github.com
+          scope: ${{ steps.npm_scope.outputs.scope }}
+
+      - name: Create .npmrc for GitHub Packages (GPR)
+        if: inputs.publish_node_gpr
+        id: gpr_npmrc
+        shell: bash
+        env:
+          SCOPE: ${{ steps.npm_scope.outputs.scope }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          npmrc="${RUNNER_TEMP}/npmrc-gpr"
+          {
+            echo "registry=https://registry.npmjs.org"
+            echo "${SCOPE}:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            echo "always-auth=true"
+          } > "${npmrc}"
+
+          echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download dist artifact
+        if: inputs.publish_node_gpr
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Publish to GitHub Packages from tarball
+        if: inputs.publish_node_gpr
+        shell: bash
+        env:
+          DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
+          NPM_CONFIG_ALWAYS_AUTH: 'true'
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
+
+  publish-node-npmjs:
+    name: Publish Node package (npmjs.org)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - pack-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
+    environment: npmjs
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Setup Node.js (npmjs)
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ needs.versions.outputs.node_version }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Note about npm Trusted Publishers (OIDC)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+        run: |
+          set -Eeuo pipefail
+          echo "This workflow is intended to publish '${PROJECT}' to npmjs.org using npm Trusted Publishing (OIDC)."
+          echo "No npm token is provided by this workflow; publishing will fail unless a Trusted Publisher is configured on npmjs.com for:"
+          echo "  - Repository: ${GITHUB_REPOSITORY}"
+          echo "  - Workflow filename: official.yml"
+          echo "  - Environment (if configured on npm): npmjs"
+          echo "See: https://docs.npmjs.com/trusted-publishers"
+
+      - name: Publish to npm registry (idempotent)
+        shell: bash
+        env:
+          DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_npmjs_idempotent.sh"
+
+  attest-node:
+    name: Attest release assets (Node)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - pack-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        if: inputs.enable_attestation
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        if: inputs.enable_attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+      - name: Attestation disabled
+        if: ${{ !inputs.enable_attestation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Attestation is disabled for this channel."
+
+  release-node-with-npmjs:
+    name: Create GitHub release (Node)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - pack-node
+      - publish-node-gpr-with-npmjs-gate
+      - publish-node-npmjs
+      - attest-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  release-node-no-npmjs:
+    name: Create GitHub release (Node)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - pack-node
+      - publish-node-gpr-no-npmjs-gate
+      - attest-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && !inputs.publish_node_npmjs
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  build-ruby:
+    name: Build Ruby gem
+    needs:
+      - versions
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    uses: ./.github/workflows/release-build-ruby-gem.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      ruby_version: ${{ needs.versions.outputs.ruby_version }}
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  publish-ruby-gpr:
+    name: Publish Ruby gem (GitHub Packages)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Ruby GPR publishing disabled
+        if: ${{ !inputs.publish_ruby_gpr }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Ruby GPR publishing is disabled by policy."
+
+      - name: Checkout (workflow scripts)
+        if: inputs.publish_ruby_gpr
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Download dist artifact
+        if: inputs.publish_ruby_gpr
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        if: inputs.publish_ruby_gpr
+        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        with:
+          ruby-version: ${{ needs.versions.outputs.ruby_version }}
+
+      - name: Publish to GitHub Packages (idempotent)
+        if: inputs.publish_ruby_gpr
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_ruby_gpr_idempotent.sh"
+
+  publish-ruby-rubygems:
+    name: Publish Ruby gem (RubyGems.org)
+    runs-on: ubuntu-latest
+    needs:
+      - versions
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems
+    environment: rubygems
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        with:
+          ruby-version: ${{ needs.versions.outputs.ruby_version }}
+
+      - name: Configure RubyGems Trusted Publishing credentials
+        uses: rubygems/configure-rubygems-credentials@bc6dd217f8a4f919d6835fcfefd470ef821f5c44 # v1.0.0
+        with:
+          trusted-publisher: true
+
+      - name: Publish to RubyGems.org (idempotent)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_rubygems_org_idempotent.sh"
+
+  attest-ruby:
+    name: Attest release assets (Ruby)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        if: inputs.enable_attestation
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        if: inputs.enable_attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+      - name: Attestation disabled
+        if: ${{ !inputs.enable_attestation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Attestation is disabled for this channel."
+
+  release-ruby-with-rubygems:
+    name: Create GitHub release (Ruby)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-ruby
+      - publish-ruby-gpr
+      - publish-ruby-rubygems
+      - attest-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  release-ruby-no-rubygems:
+    name: Create GitHub release (Ruby)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-ruby
+      - publish-ruby-gpr
+      - attest-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby' && !inputs.publish_ruby_rubygems
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  build-wxt:
+    name: Build package (Node/WXT)
+    needs:
+      - versions
+      - resolve
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    uses: ./.github/workflows/release-build-wxt.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      node_version: ${{ needs.versions.outputs.node_version }}
+      pnpm_version: ${{ needs.versions.outputs.pnpm_version }}
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  attest-wxt:
+    name: Attest release assets (WXT)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-wxt
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        if: inputs.enable_attestation
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        if: inputs.enable_attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+      - name: Attestation disabled
+        if: ${{ !inputs.enable_attestation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Attestation is disabled for this channel."
+
+  release-wxt:
+    name: Create GitHub release (Node/WXT)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-wxt
+      - attest-wxt
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
