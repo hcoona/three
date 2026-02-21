@@ -389,13 +389,13 @@ jobs:
           packages-dir: ${{ github.workspace }}/out/
           skip-existing: true
 
-  attest-python:
+  attest-python-enabled:
     name: Attest release assets (Python)
     runs-on: ubuntu-latest
     needs:
       - resolve
       - build-python
-    if: needs.resolve.outputs.project_kind == 'python'
+    if: needs.resolve.outputs.project_kind == 'python' && inputs.enable_attestation
     permissions:
       contents: read
       actions: read
@@ -403,17 +403,39 @@ jobs:
       attestations: write
     steps:
       - name: Download dist artifact
-        if: inputs.enable_attestation
         uses: actions/download-artifact@v7
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        if: inputs.enable_attestation
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: ${{ github.workspace }}/out/*
+
+  attest-python:
+    name: Attestation gate (Python)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-python
+      - attest-python-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'python' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify attestation outcome
+        if: inputs.enable_attestation
+        shell: bash
+        env:
+          RESULT: ${{ needs.attest-python-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RESULT}" != "success" ]]; then
+            echo "Attestation job did not succeed (result=${RESULT})." >&2
+            exit 1
+          fi
 
       - name: Attestation disabled
         if: ${{ !inputs.enable_attestation }}
@@ -789,13 +811,13 @@ jobs:
 
           bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_npmjs_idempotent.sh"
 
-  attest-node:
+  attest-node-enabled:
     name: Attest release assets (Node)
     runs-on: ubuntu-latest
     needs:
       - resolve
       - pack-node
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.enable_attestation
     permissions:
       contents: read
       actions: read
@@ -803,17 +825,39 @@ jobs:
       attestations: write
     steps:
       - name: Download dist artifact
-        if: inputs.enable_attestation
         uses: actions/download-artifact@v7
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        if: inputs.enable_attestation
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: ${{ github.workspace }}/out/*
+
+  attest-node:
+    name: Attestation gate (Node)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - pack-node
+      - attest-node-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify attestation outcome
+        if: inputs.enable_attestation
+        shell: bash
+        env:
+          RESULT: ${{ needs.attest-node-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RESULT}" != "success" ]]; then
+            echo "Attestation job did not succeed (result=${RESULT})." >&2
+            exit 1
+          fi
 
       - name: Attestation disabled
         if: ${{ !inputs.enable_attestation }}
@@ -1023,13 +1067,13 @@ jobs:
 
           bash "${GITHUB_WORKSPACE}/eng/scripts/publish_rubygems_org_idempotent.sh"
 
-  attest-ruby:
+  attest-ruby-enabled:
     name: Attest release assets (Ruby)
     runs-on: ubuntu-latest
     needs:
       - resolve
       - build-ruby
-    if: needs.resolve.outputs.project_kind == 'ruby'
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.enable_attestation
     permissions:
       contents: read
       actions: read
@@ -1037,17 +1081,39 @@ jobs:
       attestations: write
     steps:
       - name: Download dist artifact
-        if: inputs.enable_attestation
         uses: actions/download-artifact@v7
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        if: inputs.enable_attestation
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: ${{ github.workspace }}/out/*
+
+  attest-ruby:
+    name: Attestation gate (Ruby)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-ruby
+      - attest-ruby-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'ruby' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify attestation outcome
+        if: inputs.enable_attestation
+        shell: bash
+        env:
+          RESULT: ${{ needs.attest-ruby-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RESULT}" != "success" ]]; then
+            echo "Attestation job did not succeed (result=${RESULT})." >&2
+            exit 1
+          fi
 
       - name: Attestation disabled
         if: ${{ !inputs.enable_attestation }}
@@ -1121,13 +1187,13 @@ jobs:
       pnpm_version: ${{ needs.versions.outputs.pnpm_version }}
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
-  attest-wxt:
+  attest-wxt-enabled:
     name: Attest release assets (WXT)
     runs-on: ubuntu-latest
     needs:
       - resolve
       - build-wxt
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' && inputs.enable_attestation
     permissions:
       contents: read
       actions: read
@@ -1135,17 +1201,39 @@ jobs:
       attestations: write
     steps:
       - name: Download dist artifact
-        if: inputs.enable_attestation
         uses: actions/download-artifact@v7
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        if: inputs.enable_attestation
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: ${{ github.workspace }}/out/*
+
+  attest-wxt:
+    name: Attestation gate (WXT)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - build-wxt
+      - attest-wxt-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify attestation outcome
+        if: inputs.enable_attestation
+        shell: bash
+        env:
+          RESULT: ${{ needs.attest-wxt-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RESULT}" != "success" ]]; then
+            echo "Attestation job did not succeed (result=${RESULT})." >&2
+            exit 1
+          fi
 
       - name: Attestation disabled
         if: ${{ !inputs.enable_attestation }}
