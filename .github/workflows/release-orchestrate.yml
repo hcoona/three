@@ -673,6 +673,7 @@ jobs:
       - versions
       - resolve
       - pack-node
+      - publish-node-gpr-with-npmjs-gate
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
     environment: npmjs
     permissions:
