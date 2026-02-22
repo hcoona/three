@@ -340,10 +340,7 @@ jobs:
 
   prepare-release-notes:
     name: Prepare release notes
-    needs:
-      - resolve
-      - guard-prerelease-only
-      - guard-non-clobber
+    needs: resolve
     permissions:
       contents: read
     uses: ./.github/workflows/release-prepare-release-notes.yml
