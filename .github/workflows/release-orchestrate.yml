@@ -127,25 +127,11 @@ jobs:
           SOURCE: ${{ inputs.source }}
           ENFORCE_PRERELEASE_ONLY: ${{ inputs.enforce_prerelease_only }}
           ENFORCE_NON_CLOBBER: ${{ inputs.enforce_non_clobber }}
-          NODE_GPR: ${{ inputs.publish_node_gpr }}
-          NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
-          RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
-          RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
         run: |
           set -Eeuo pipefail
 
           if [[ "${SOURCE}" != "tag" && "${SOURCE}" != "manual" ]]; then
             echo "Invalid source '${SOURCE}'." >&2
-            exit 1
-          fi
-
-          if [[ "${NODE_GPR}" != "true" && "${NODE_NPMJS}" != "true" ]]; then
-            echo "At least one Node publish target must be enabled." >&2
-            exit 1
-          fi
-
-          if [[ "${RUBY_GPR}" != "true" && "${RUBY_RUBYGEMS}" != "true" ]]; then
-            echo "At least one Ruby publish target must be enabled." >&2
             exit 1
           fi
 
@@ -158,6 +144,52 @@ jobs:
             echo "Buddy channel must enforce non-clobber policy." >&2
             exit 1
           fi
+
+  policy-publish-targets:
+    name: Validate publish-target policy
+    runs-on: ubuntu-latest
+    needs: resolve
+    permissions:
+      contents: read
+    steps:
+      - name: Validate publish targets by project kind
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
+          IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
+          NODE_GPR: ${{ inputs.publish_node_gpr }}
+          NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
+          RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
+          RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
+        run: |
+          set -Eeuo pipefail
+
+          if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" != "true" ]]; then
+            if [[ "${NODE_GPR}" != "true" && "${NODE_NPMJS}" != "true" ]]; then
+              echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs)." >&2
+              exit 1
+            fi
+            echo "Node publish-target policy passed for '${PROJECT}'."
+            exit 0
+          fi
+
+          if [[ "${PROJECT_KIND}" == "ruby" ]]; then
+            if [[ "${RUBY_GPR}" != "true" && "${RUBY_RUBYGEMS}" != "true" ]]; then
+              echo "Ruby project '${PROJECT}' requires at least one Ruby publish target (GPR/RubyGems)." >&2
+              exit 1
+            fi
+            echo "Ruby publish-target policy passed for '${PROJECT}'."
+            exit 0
+          fi
+
+          if [[ "${PROJECT_KIND}" == "python" || ( "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ) ]]; then
+            echo "No Node/Ruby publish-target policy required for project kind '${PROJECT_KIND}'."
+            exit 0
+          fi
+
+          echo "Unexpected project kind '${PROJECT_KIND}' while validating publish-target policy." >&2
+          exit 1
 
   versions:
     name: Export tool versions
@@ -330,6 +362,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - policy-publish-targets
       - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'python'
@@ -492,6 +525,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - policy-publish-targets
       - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
@@ -917,6 +951,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - policy-publish-targets
       - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'ruby'
@@ -1173,6 +1208,7 @@ jobs:
     needs:
       - versions
       - resolve
+      - policy-publish-targets
       - guard-prerelease-only
       - guard-non-clobber
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'

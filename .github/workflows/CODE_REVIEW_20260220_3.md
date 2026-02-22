@@ -28,7 +28,7 @@ Constraint followed during this pass:
 
 | ID  | Claim                                                                                                           | Adjudication (majority) | Notes                                                                                                                      |
 | --- | --------------------------------------------------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| P1  | Orchestrator policy globally enforces Node/Ruby publish targets before `resolve`, not scoped by `project_kind`. | **True Positive**       | Global checks reduce policy flexibility and can block future kind-specific release patterns.                               |
+| P1  | Orchestrator policy globally enforces Node/Ruby publish targets before `resolve`, not scoped by `project_kind`. | **True Positive**       | Global checks reduce policy flexibility and can block future kind-specific release patterns. **Status: Resolved (2026-02-21)** — validation has been moved after `resolve` and scoped by `project_kind`. |
 | P2  | `prepare-release-notes` now depends on guard jobs, reducing failure-path observability.                         | **True Positive**       | Guard failures can suppress notes artifacts that were previously available for diagnostics.                                |
 | P3  | Channel prerelease invariant is not fully encoded in orchestrator policy (`buddy=true`, `official=false`).      | **Partially True**      | Callers currently pass expected values, but reusable policy does not fully hard-enforce channel-to-prerelease mapping.     |
 | P4  | Non-trivial internal duplication remains in orchestrator branch jobs.                                           | **True Positive**       | Top-level duplication improved, but internal paired branches still carry drift risk over time.                             |
@@ -41,9 +41,8 @@ Constraint followed during this pass:
 
 ### Current blockers
 
-1. **P1** — Over-global target policy constraints in orchestrator.
-2. **P2** — Reduced diagnostics visibility on guard-failure paths.
-3. **P5** — Cross-target environment coupling inconsistency for Node publish paths.
+1. **P2** — Reduced diagnostics visibility on guard-failure paths.
+2. **P5** — Cross-target environment coupling inconsistency for Node publish paths.
 
 ### High-priority follow-up
 
@@ -60,7 +59,7 @@ Proceed after addressing blockers and re-running strict review/adjudication.
 
 ## Minimal Practical Fix Set
 
-1. Scope Node/Ruby target validation by resolved `project_kind` (or equivalent source-specific policy gates).
+1. ✅ Completed (2026-02-21): Scope Node/Ruby target validation by resolved `project_kind` (or equivalent source-specific policy gates).
 2. Decouple release-notes artifact generation from guard-fail paths (keep publish/release gating strict).
 3. Remove Node GPR coupling to `environment: npmjs` (or make environment strategy explicit and consistent across branches).
 4. Enforce channel-prerelease invariants in orchestrator policy (`buddy => true`, `official => false`).
