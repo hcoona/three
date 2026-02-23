@@ -9,6 +9,11 @@ backend = "aqua:dotenv-linter/dotenv-linter"
 [[tools.dotnet]]
 version = "10.0.3"
 backend = "asdf:dotnet"
+"platforms.linux-arm64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-linux-arm64.tar.gz"}
+"platforms.linux-x64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-linux-x64.tar.gz"}
+"platforms.macos-arm64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-osx-arm64.tar.gz"}
+"platforms.macos-x64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-osx-x64.tar.gz"}
+"platforms.windows-x64" = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-win-x64.zip"}
 
 [[tools.fd]]
 version = "10.3.0"
@@ -56,6 +61,11 @@ backend = "go:mvdan.cc/sh/v3/cmd/shfmt"
 [[tools.hadolint]]
 version = "2.14.0"
 backend = "ubi:hadolint/hadolint"
+"platforms.linux-arm64" = { checksum = "sha256:331f1d3511b84a4f1e3d18d52fec284723e4019552f4f47b19322a53ce9a40ed", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-arm64"}
+"platforms.linux-x64" = { checksum = "sha256:6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-x86_64"}
+"platforms.macos-arm64" = { checksum = "sha256:3625e2e9f43dcfe7bd38738a5f5520ed50ce39ed28485266e6803dd7bc197b10", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-macos-arm64"}
+"platforms.macos-x64" = { checksum = "sha256:2b69a853433f1eca522ffb921cd490bd1321424d03331fd8390f93b7fb4a02e9", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-macos-x86_64"}
+"platforms.windows-x64" = { checksum = "sha256:8e0ee174f88edb14f207a68430c7a53c2883ed509cdbde9a3a26fffa140fa5e4", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-windows-x86_64.exe"}
 "platforms.windows-x64-hadolint.exe" = { checksum = "blake3:2030d7af1646eeb906bf706fced35dbceb23aa365803244f0cb4b06af1ee0010"}
 
 [[tools.hk]]
@@ -70,6 +80,7 @@ backend = "aqua:jdx/hk"
 version = "25.0.2"
 backend = "core:java"
 "platforms.linux-x64" = { checksum = "sha256:555ce0821e4fe175ea50d54518cd6fbece9663c1998de529bc6ce429534457df", url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_linux-x64_bin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:74784a0c07258f32d36e9224dd79187c566d831c30d47dc06888d4212087331d", url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_windows-x64_bin.zip"}
 
 [[tools.node]]
 version = "24.13.0"
@@ -141,7 +152,12 @@ backend = "core:ruby"
 [[tools.shellcheck]]
 version = "0.11.0"
 backend = "ubi:koalaman/shellcheck"
+"platforms.linux-arm64" = { checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"}
+"platforms.linux-x64" = { checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"}
 "platforms.linux-x64-shellcheck" = { checksum = "blake3:3297f19e635c3225457702704fa328408adbbfdcaa0a7c7fe591d8af1cc588f4"}
+"platforms.macos-arm64" = { checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz"}
+"platforms.macos-x64" = { checksum = "sha256:3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.xz"}
+"platforms.windows-x64" = { checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"}
 
 [[tools.taplo]]
 version = "0.10.0"
