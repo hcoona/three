@@ -540,14 +540,14 @@ jobs:
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
       pack_mode: ${{ inputs.node_pack_mode }}
 
-  publish-node-gpr-with-npmjs-gate-enabled:
+  publish-node-gpr-enabled:
     name: Publish Node package (GitHub Packages)
     runs-on: ubuntu-latest
     needs:
       - versions
       - resolve
       - pack-node
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && inputs.publish_node_gpr
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr
     # Intentionally no npmjs environment gate here: Node GPR publish must remain
     # independent from npmjs target approval to avoid cross-target coupling.
     permissions:
@@ -631,13 +631,13 @@ jobs:
 
           bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
 
-  publish-node-gpr-with-npmjs-gate:
+  publish-node-gpr:
     name: Publish Node package (GitHub Packages)
     runs-on: ubuntu-latest
     needs:
       - resolve
-      - publish-node-gpr-with-npmjs-gate-enabled
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs }}
+      - publish-node-gpr-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' }}
     permissions:
       contents: read
       actions: read
@@ -650,129 +650,7 @@ jobs:
           echo "Node GPR publishing is disabled by policy."
 
       - name: Ensure enabled publish job succeeded
-        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-with-npmjs-gate-enabled.result != 'success' }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "Node GPR publish job did not complete successfully." >&2
-          exit 1
-
-      - name: Node GPR publish completed
-        if: inputs.publish_node_gpr
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "Node GPR publish completed."
-
-  publish-node-gpr-no-npmjs-gate-enabled:
-    name: Publish Node package (GitHub Packages)
-    runs-on: ubuntu-latest
-    needs:
-      - versions
-      - resolve
-      - pack-node
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && !inputs.publish_node_npmjs && inputs.publish_node_gpr
-    permissions:
-      contents: read
-      actions: read
-      packages: write
-    steps:
-      - name: Node GPR publishing disabled
-        if: ${{ !inputs.publish_node_gpr }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "Node GPR publishing is disabled by policy."
-
-      - name: Checkout (workflow scripts)
-        if: inputs.publish_node_gpr
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-          ref: ${{ needs.resolve.outputs.target }}
-
-      - name: Resolve npm scope
-        if: inputs.publish_node_gpr
-        id: npm_scope
-        shell: bash
-        env:
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          set -Eeuo pipefail
-          scope="@${OWNER,,}"
-          echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
-
-      - name: Setup Node.js (npm auth)
-        if: inputs.publish_node_gpr
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ needs.versions.outputs.node_version }}
-          registry-url: https://npm.pkg.github.com
-          scope: ${{ steps.npm_scope.outputs.scope }}
-
-      - name: Create .npmrc for GitHub Packages (GPR)
-        if: inputs.publish_node_gpr
-        id: gpr_npmrc
-        shell: bash
-        env:
-          SCOPE: ${{ steps.npm_scope.outputs.scope }}
-          NODE_AUTH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-
-          npmrc="${RUNNER_TEMP}/npmrc-gpr"
-          {
-            echo "registry=https://registry.npmjs.org"
-            echo "${SCOPE}:registry=https://npm.pkg.github.com"
-            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
-            echo "always-auth=true"
-          } > "${npmrc}"
-
-          echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
-
-      - name: Download dist artifact
-        if: inputs.publish_node_gpr
-        uses: actions/download-artifact@v7
-        with:
-          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-          path: ${{ github.workspace }}/out
-
-      - name: Publish to GitHub Packages from tarball
-        if: inputs.publish_node_gpr
-        shell: bash
-        env:
-          DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
-          NPM_CONFIG_ALWAYS_AUTH: 'true'
-          NODE_AUTH_TOKEN: ${{ github.token }}
-          NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
-          PROJECT: ${{ needs.resolve.outputs.project }}
-          VERSION: ${{ needs.resolve.outputs.version }}
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          set -Eeuo pipefail
-
-          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
-
-  publish-node-gpr-no-npmjs-gate:
-    name: Publish Node package (GitHub Packages)
-    runs-on: ubuntu-latest
-    needs:
-      - resolve
-      - publish-node-gpr-no-npmjs-gate-enabled
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && !inputs.publish_node_npmjs }}
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - name: Node GPR publishing disabled
-        if: ${{ !inputs.publish_node_gpr }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "Node GPR publishing is disabled by policy."
-
-      - name: Ensure enabled publish job succeeded
-        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-no-npmjs-gate-enabled.result != 'success' }}
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result != 'success' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -793,7 +671,7 @@ jobs:
       - versions
       - resolve
       - pack-node
-      - publish-node-gpr-with-npmjs-gate
+      - publish-node-gpr
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
     environment: npmjs
     permissions:
@@ -905,7 +783,7 @@ jobs:
       - resolve
       - prepare-release-notes
       - pack-node
-      - publish-node-gpr-with-npmjs-gate
+      - publish-node-gpr
       - publish-node-npmjs
       - attest-node
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
@@ -928,7 +806,7 @@ jobs:
       - resolve
       - prepare-release-notes
       - pack-node
-      - publish-node-gpr-no-npmjs-gate
+      - publish-node-gpr
       - attest-node
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && !inputs.publish_node_npmjs
     permissions:
