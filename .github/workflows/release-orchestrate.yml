@@ -125,6 +125,7 @@ jobs:
         env:
           CHANNEL: ${{ inputs.channel }}
           SOURCE: ${{ inputs.source }}
+          GITHUB_RELEASE_PRERELEASE: ${{ inputs.github_release_prerelease }}
           ENFORCE_PRERELEASE_ONLY: ${{ inputs.enforce_prerelease_only }}
           ENFORCE_NON_CLOBBER: ${{ inputs.enforce_non_clobber }}
         run: |
@@ -142,6 +143,16 @@ jobs:
 
           if [[ "${CHANNEL}" == "buddy" && "${ENFORCE_NON_CLOBBER}" != "true" ]]; then
             echo "Buddy channel must enforce non-clobber policy." >&2
+            exit 1
+          fi
+
+          if [[ "${CHANNEL}" == "buddy" && "${GITHUB_RELEASE_PRERELEASE}" != "true" ]]; then
+            echo "Buddy channel must set github_release_prerelease=true." >&2
+            exit 1
+          fi
+
+          if [[ "${CHANNEL}" == "official" && "${GITHUB_RELEASE_PRERELEASE}" != "false" ]]; then
+            echo "Official channel must set github_release_prerelease=false." >&2
             exit 1
           fi
 
