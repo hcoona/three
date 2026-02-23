@@ -586,6 +586,24 @@ jobs:
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
       pack_mode: ${{ inputs.node_pack_mode }}
 
+  gate-node-publish-npmjs:
+    name: Approval gate for Node publish (npmjs)
+    runs-on: ubuntu-latest
+    needs:
+      - resolve
+      - pack-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
+    environment: npmjs
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Await npmjs environment approval
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "npmjs environment approval granted."
+
   publish-node-gpr-enabled:
     name: Publish Node package (GitHub Packages)
     runs-on: ubuntu-latest
@@ -593,9 +611,8 @@ jobs:
       - versions
       - resolve
       - pack-node
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr
-    # Intentionally no npmjs environment gate here: Node GPR publish must remain
-    # independent from npmjs target approval to avoid cross-target coupling.
+      - gate-node-publish-npmjs
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr && (!inputs.publish_node_npmjs || needs.gate-node-publish-npmjs.result == 'success') }}
     permissions:
       contents: read
       actions: read
@@ -717,9 +734,9 @@ jobs:
       - versions
       - resolve
       - pack-node
+      - gate-node-publish-npmjs
       - publish-node-gpr
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
-    environment: npmjs
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' }}
     permissions:
       contents: read
       actions: read
