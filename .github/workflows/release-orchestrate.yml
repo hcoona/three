@@ -643,13 +643,6 @@ jobs:
       actions: read
       packages: write
     steps:
-      - name: Node GPR publishing disabled
-        if: ${{ !inputs.publish_node_gpr }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "Node GPR publishing is disabled by policy."
-
       - name: Checkout (workflow scripts)
         if: inputs.publish_node_gpr
         uses: actions/checkout@v6
@@ -943,13 +936,6 @@ jobs:
       actions: read
       packages: write
     steps:
-      - name: Ruby GPR publishing disabled
-        if: ${{ !inputs.publish_ruby_gpr }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "Ruby GPR publishing is disabled by policy."
-
       - name: Checkout (workflow scripts)
         if: inputs.publish_ruby_gpr
         uses: actions/checkout@v6
