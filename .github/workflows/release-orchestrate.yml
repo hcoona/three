@@ -548,7 +548,8 @@ jobs:
       - resolve
       - pack-node
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && inputs.publish_node_gpr
-    environment: npmjs
+    # Intentionally no npmjs environment gate here: Node GPR publish must remain
+    # independent from npmjs target approval to avoid cross-target coupling.
     permissions:
       contents: read
       actions: read

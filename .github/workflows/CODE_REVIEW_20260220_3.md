@@ -32,7 +32,7 @@ Constraint followed during this pass:
 | P2  | `prepare-release-notes` now depends on guard jobs, reducing failure-path observability.                         | **True Positive**       | Guard failures can suppress notes artifacts that were previously available for diagnostics. **Status: Resolved (2026-02-21)** — release-notes generation now depends only on `resolve`, preserving notes artifacts for guard-failure diagnostics while keeping publish/release gating strict. |
 | P3  | Channel prerelease invariant is not fully encoded in orchestrator policy (`buddy=true`, `official=false`).      | **Partially True**      | Callers currently pass expected values, but reusable policy does not fully hard-enforce channel-to-prerelease mapping.     |
 | P4  | Non-trivial internal duplication remains in orchestrator branch jobs.                                           | **True Positive**       | Top-level duplication improved, but internal paired branches still carry drift risk over time.                             |
-| P5  | A Node GPR path is coupled to `environment: npmjs`, creating cross-target inconsistency.                        | **True Positive**       | One GPR branch uses npmjs environment gating while another does not, producing policy/behavior inconsistency.              |
+| P5  | A Node GPR path is coupled to `environment: npmjs`, creating cross-target inconsistency.                        | **True Positive**       | One GPR branch uses npmjs environment gating while another does not, producing policy/behavior inconsistency. **Status: Resolved (2026-02-22)** — Node GPR publish jobs no longer bind to `environment: npmjs`; npmjs environment approval now applies only to npmjs publish target. |
 | P6  | Permissions/toggle alignment has future mismatch risk (especially for buddy path evolution).                    | **Partially True**      | Current defaults are mostly aligned, but future toggle drift can create scope mismatch without stricter policy assertions. |
 
 ---
@@ -41,7 +41,7 @@ Constraint followed during this pass:
 
 ### Current blockers
 
-1. **P5** — Cross-target environment coupling inconsistency for Node publish paths.
+- None. (Previously blocked by **P5**, resolved on 2026-02-22.)
 
 ### High-priority follow-up
 
@@ -50,9 +50,9 @@ Constraint followed during this pass:
 
 ### Recommendation
 
-**Current recommendation: `Block` (do not merge yet).**
+**Current recommendation: `Proceed` (blocker cleared; follow-ups remain).**
 
-Proceed after addressing blockers and re-running strict review/adjudication.
+Proceed with follow-up hardening items and re-run strict review/adjudication as needed.
 
 ---
 
@@ -60,12 +60,13 @@ Proceed after addressing blockers and re-running strict review/adjudication.
 
 1. ✅ Completed (2026-02-21): Scope Node/Ruby target validation by resolved `project_kind` (or equivalent source-specific policy gates).
 2. ✅ Completed (2026-02-21): Decouple release-notes artifact generation from guard-fail paths (publish/release gating remains strict).
-3. Remove Node GPR coupling to `environment: npmjs` (or make environment strategy explicit and consistent across branches).
+3. ✅ Completed (2026-02-22): Remove Node GPR coupling to `environment: npmjs` (environment strategy is now explicit and consistent across Node publish branches).
 4. Enforce channel-prerelease invariants in orchestrator policy (`buddy => true`, `official => false`).
 5. Add policy-level assertions that prevent permission/toggle drift in caller workflows.
 
 ---
 
 Reviewed on: 2026-02-20
+Updated on: 2026-02-22
 Repository: `hcoona/three`
 Branch: `main`
