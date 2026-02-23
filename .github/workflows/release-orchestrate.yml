@@ -128,23 +128,58 @@ jobs:
           GITHUB_RELEASE_PRERELEASE: ${{ inputs.github_release_prerelease }}
           ENFORCE_PRERELEASE_ONLY: ${{ inputs.enforce_prerelease_only }}
           ENFORCE_NON_CLOBBER: ${{ inputs.enforce_non_clobber }}
+          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
+          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
+          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
+          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
+          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
+          ENABLE_ATTESTATION: ${{ inputs.enable_attestation }}
+          NODE_PACK_MODE: ${{ inputs.node_pack_mode }}
         run: |
           set -Eeuo pipefail
+
+          assert_equals() {
+            local key="$1"
+            local actual="$2"
+            local expected="$3"
+            if [[ "${actual}" != "${expected}" ]]; then
+              echo "Channel '${CHANNEL}' policy mismatch for '${key}': expected '${expected}', got '${actual}'." >&2
+              exit 1
+            fi
+          }
 
           if [[ "${SOURCE}" != "tag" && "${SOURCE}" != "manual" ]]; then
             echo "Invalid source '${SOURCE}'." >&2
             exit 1
           fi
 
-          if [[ "${CHANNEL}" == "buddy" && "${ENFORCE_PRERELEASE_ONLY}" != "true" ]]; then
-            echo "Buddy channel must enforce prerelease-only policy." >&2
-            exit 1
-          fi
-
-          if [[ "${CHANNEL}" == "buddy" && "${ENFORCE_NON_CLOBBER}" != "true" ]]; then
-            echo "Buddy channel must enforce non-clobber policy." >&2
-            exit 1
-          fi
+          case "${CHANNEL}" in
+            official)
+              assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "false"
+              assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "false"
+              assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "true"
+              assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
+              assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
+              assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
+              assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
+              assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "true"
+              assert_equals "node_pack_mode" "${NODE_PACK_MODE}" "both"
+              ;;
+            buddy)
+              assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "true"
+              assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "true"
+              assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "false"
+              assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
+              assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "false"
+              assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
+              assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "false"
+              assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "false"
+              assert_equals "node_pack_mode" "${NODE_PACK_MODE}" "gpr-only"
+              ;;
+            *)
+              echo "No strict channel profile assertions for channel '${CHANNEL}'."
+              ;;
+          esac
 
           if [[ "${CHANNEL}" == "buddy" && "${GITHUB_RELEASE_PRERELEASE}" != "true" ]]; then
             echo "Buddy channel must set github_release_prerelease=true." >&2
