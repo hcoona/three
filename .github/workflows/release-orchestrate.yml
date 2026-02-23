@@ -46,6 +46,11 @@ on:
         description: "Release channel label for logs and policy validation (for example: official, buddy)."
         required: true
         type: string
+      channel_allowlist:
+        description: "Comma-separated list of additional channel values allowed to bypass strict profile assertions."
+        required: false
+        default: ""
+        type: string
       artifact_prefix:
         description: "Prefix for generated workflow artifacts (for example: official, buddy)."
         required: true
@@ -124,6 +129,7 @@ jobs:
         shell: bash
         env:
           CHANNEL: ${{ inputs.channel }}
+          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}
           SOURCE: ${{ inputs.source }}
           GITHUB_RELEASE_PRERELEASE: ${{ inputs.github_release_prerelease }}
           ENFORCE_PRERELEASE_ONLY: ${{ inputs.enforce_prerelease_only }}
@@ -146,6 +152,19 @@ jobs:
               echo "Channel '${CHANNEL}' policy mismatch for '${key}': expected '${expected}', got '${actual}'." >&2
               exit 1
             fi
+          }
+
+          is_channel_allowlisted() {
+            local candidate="$1"
+            local entry
+            IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST}"
+            for entry in "${allowlist[@]}"; do
+              entry="$(echo "${entry}" | xargs)"
+              if [[ -n "${entry}" && "${entry}" == "${candidate}" ]]; then
+                return 0
+              fi
+            done
+            return 1
           }
 
           if [[ "${SOURCE}" != "tag" && "${SOURCE}" != "manual" ]]; then
@@ -177,7 +196,13 @@ jobs:
               assert_equals "node_pack_mode" "${NODE_PACK_MODE}" "gpr-only"
               ;;
             *)
-              echo "No strict channel profile assertions for channel '${CHANNEL}'."
+              if is_channel_allowlisted "${CHANNEL}"; then
+                echo "Channel '${CHANNEL}' is explicitly allowlisted; skipping strict channel profile assertions."
+              else
+                echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
+                echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
+                exit 1
+              fi
               ;;
           esac
 
