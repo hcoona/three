@@ -309,6 +309,7 @@ jobs:
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
           NODE_GPR: ${{ inputs.publish_node_gpr }}
           NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
+          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
           RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
           RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
         run: |
@@ -332,10 +333,18 @@ jobs:
             exit 0
           fi
 
+          if [[ "${PROJECT_KIND}" == "python" ]]; then
+            if [[ "${PUBLISH_PYTHON_PYPI}" != "true" ]]; then
+              echo "⚠️ Python project '${PROJECT}' will not publish to PyPI (publish_python_pypi=false). Only a GitHub Release will be created." >> "${GITHUB_STEP_SUMMARY}"
+            fi
+            echo "Python publish-target policy passed for '${PROJECT}'."
+            exit 0
+          fi
+
           # WXT projects are distributed as browser extension archives, not npm packages;
           # all publish_node_* flags are intentionally ignored for WXT projects.
-          if [[ "${PROJECT_KIND}" == "python" || ( "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ) ]]; then
-            echo "No Node/Ruby publish-target policy required for project kind '${PROJECT_KIND}'."
+          if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ]]; then
+            echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
             exit 0
           fi
 
