@@ -469,7 +469,9 @@ jobs:
   resolve:
     name: Resolve release inputs
     uses: ./.github/workflows/release-resolve.yml
-    needs: policy
+    needs:
+      - policy
+      - lint-version-consistency
     permissions:
       contents: read
     with:
