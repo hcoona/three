@@ -642,6 +642,7 @@ jobs:
     needs:
       - resolve
       - build-python
+      - attest-python
     if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
     environment: pypi
     permissions:
@@ -1269,6 +1270,7 @@ jobs:
     needs:
       - resolve
       - build-ruby
+      - attest-ruby
     if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems
     environment: rubygems
     permissions:
