@@ -656,6 +656,7 @@ jobs:
       - resolve
       - pack-node
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
+    environment: npmjs
     permissions:
       contents: read
       actions: read
@@ -668,9 +669,9 @@ jobs:
 
   # NOTE: publish-node-gpr-enabled is intentionally coupled to the npmjs approval gate.
   # When publish_node_npmjs=true, GPR publishing is held until the npmjs environment approval
-  # succeeds. This provides an atomic dual-publish guarantee: either both registries receive
-  # the package, or neither does. If you need independent registry publishes, decouple this
-  # condition by removing the gate-node-publish-npmjs dependency check.
+  # succeeds. This provides approval-synchronized sequencing: either both registries are
+  # approved-and-published together, or neither proceeds. If you need independent registry
+  # publishes, decouple this condition by removing the gate-node-publish-npmjs dependency check.
   publish-node-gpr-enabled:
     name: Publish Node package (GitHub Packages)
     runs-on: ubuntu-latest
