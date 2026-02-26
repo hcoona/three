@@ -141,6 +141,10 @@ jobs:
           PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
           ENABLE_ATTESTATION: ${{ inputs.enable_attestation }}
           NODE_PACK_MODE: ${{ inputs.node_pack_mode }}
+          REF_NAME: ${{ inputs.ref_name }}
+          REF: ${{ inputs.ref }}
+          PROJECT: ${{ inputs.project }}
+          VERSION: ${{ inputs.version }}
         run: |
           set -Eeuo pipefail
 
@@ -170,6 +174,28 @@ jobs:
           if [[ "${SOURCE}" != "tag" && "${SOURCE}" != "manual" ]]; then
             echo "Invalid source '${SOURCE}'." >&2
             exit 1
+          fi
+
+          if [[ "${SOURCE}" == "tag" ]]; then
+            if [[ -z "${REF_NAME}" ]]; then
+              echo "source=tag requires ref_name to be set." >&2
+              exit 1
+            fi
+            if [[ -z "${REF}" ]]; then
+              echo "source=tag requires ref to be set." >&2
+              exit 1
+            fi
+          fi
+
+          if [[ "${SOURCE}" == "manual" ]]; then
+            if [[ -z "${PROJECT}" ]]; then
+              echo "source=manual requires project to be set." >&2
+              exit 1
+            fi
+            if [[ -z "${VERSION}" ]]; then
+              echo "source=manual requires version to be set." >&2
+              exit 1
+            fi
           fi
 
           case "${CHANNEL}" in
@@ -214,6 +240,10 @@ jobs:
           if [[ "${CHANNEL}" == "official" && "${GITHUB_RELEASE_PRERELEASE}" != "false" ]]; then
             echo "Official channel must set github_release_prerelease=false." >&2
             exit 1
+          else
+            # Custom allowlisted channels have no prerelease policy enforcement.
+            # The caller is responsible for setting github_release_prerelease correctly.
+            echo "Channel '${CHANNEL}' is allowlisted; github_release_prerelease='${GITHUB_RELEASE_PRERELEASE}' is not enforced by policy."
           fi
 
   policy-publish-targets:
