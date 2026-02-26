@@ -138,6 +138,24 @@ jobs:
   # design: callers explicitly declare their intent via flags, and the policy job verifies
   # correctness. This catches copy-paste errors in new caller workflows and documents the
   # expected profile for each channel in a single authoritative location.
+  #
+  # Channel profile matrix (authoritative; the case statement below enforces these):
+  #
+  #   Flag                      | official | buddy
+  #   --------------------------|----------|-------
+  #   enforce_prerelease_only   | false    | true
+  #   enforce_non_clobber       | false    | true
+  #   github_release_prerelease | false    | true
+  #   publish_python_pypi       | true     | false
+  #   publish_node_gpr          | true     | true
+  #   publish_node_npmjs        | true     | false
+  #   publish_ruby_gpr          | true     | true
+  #   publish_ruby_rubygems     | true     | false
+  #   enable_attestation        | true     | false
+  #   node_pack_mode            | both     | gpr-only
+  #
+  # Custom channels (allowlisted via channel_allowlist) bypass all assertions.
+  # Callers are solely responsible for setting correct flag values for custom channels.
   policy:
     name: Validate orchestration policy
     runs-on: ubuntu-latest
