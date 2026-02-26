@@ -1302,11 +1302,10 @@ jobs:
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
   # MAINTENANCE: When adding a new release variant (e.g., release-rust-*), update ALL
-  # four sync points in this job. Missing any one will cause incorrect status reporting:
+  # three sync points in this job. Missing any one will cause incorrect status reporting:
   #   1. needs: — add the new job name(s) here
   #   2. env: block in "Check release outcomes" step — add result capture for each new job
-  #   3. failed[] for-loop entries — add "new-job:${NEW_JOB_RESULT}" to the list
-  #   4. success_count for-loop entries — add "${NEW_JOB_RESULT}" to the list
+  #   3. merged for-loop entries — add "new-job:${NEW_JOB_RESULT}" to the list
   release-completed:
     name: Release completed
     runs-on: ubuntu-latest
@@ -1345,6 +1344,7 @@ jobs:
           echo "  release-wxt:                 ${WXT}"
 
           failed=()
+          success_count=0
           for result in \
             "release-python-with-pypi:${PYTHON_WITH_PYPI}" \
             "release-python-no-pypi:${PYTHON_NO_PYPI}" \
@@ -1357,6 +1357,8 @@ jobs:
             status="${result##*:}"
             if [[ "${status}" == "failure" || "${status}" == "cancelled" ]]; then
               failed+=("${job}(${status})")
+            elif [[ "${status}" == "success" ]]; then
+              ((success_count++)) || true
             fi
           done
 
@@ -1364,15 +1366,6 @@ jobs:
             echo "One or more release jobs failed: ${failed[*]}" >&2
             exit 1
           fi
-
-          success_count=0
-          for r in \
-            "${PYTHON_WITH_PYPI}" "${PYTHON_NO_PYPI}" \
-            "${NODE_WITH_NPMJS}" "${NODE_NO_NPMJS}" \
-            "${RUBY_WITH_RUBYGEMS}" "${RUBY_NO_RUBYGEMS}" \
-            "${WXT}"; do
-            [[ "${r}" == "success" ]] && ((success_count++)) || true
-          done
 
           if [[ "${success_count}" -eq 0 ]]; then
             echo "No release job succeeded. This may indicate an upstream gate failure (policy, guards, or build jobs)." >&2
