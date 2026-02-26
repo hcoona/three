@@ -663,6 +663,11 @@ jobs:
           set -Eeuo pipefail
           echo "npmjs environment approval granted."
 
+  # NOTE: publish-node-gpr-enabled is intentionally coupled to the npmjs approval gate.
+  # When publish_node_npmjs=true, GPR publishing is held until the npmjs environment approval
+  # succeeds. This provides an atomic dual-publish guarantee: either both registries receive
+  # the package, or neither does. If you need independent registry publishes, decouple this
+  # condition by removing the gate-node-publish-npmjs dependency check.
   publish-node-gpr-enabled:
     name: Publish Node package (GitHub Packages)
     runs-on: ubuntu-latest
@@ -671,6 +676,10 @@ jobs:
       - resolve
       - pack-node
       - gate-node-publish-npmjs
+    # Condition: Always evaluate (via always()), but only run if: this is a non-WXT Node
+    # project, GPR publishing is enabled, AND (either npmjs is not being published OR the
+    # npmjs approval gate (gate-node-publish-npmjs) has passed). See the comment above this
+    # job for the rationale behind the npmjs gate coupling.
     if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr && (!inputs.publish_node_npmjs || needs.gate-node-publish-npmjs.result == 'success') }}
     permissions:
       contents: read
@@ -678,14 +687,12 @@ jobs:
       packages: write
     steps:
       - name: Checkout (workflow scripts)
-        if: inputs.publish_node_gpr
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
 
       - name: Resolve npm scope
-        if: inputs.publish_node_gpr
         id: npm_scope
         shell: bash
         env:
@@ -696,7 +703,6 @@ jobs:
           echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
 
       - name: Setup Node.js (npm auth)
-        if: inputs.publish_node_gpr
         uses: actions/setup-node@v6
         with:
           node-version: ${{ needs.versions.outputs.node_version }}
@@ -704,7 +710,6 @@ jobs:
           scope: ${{ steps.npm_scope.outputs.scope }}
 
       - name: Create .npmrc for GitHub Packages (GPR)
-        if: inputs.publish_node_gpr
         id: gpr_npmrc
         shell: bash
         env:
@@ -724,14 +729,12 @@ jobs:
           echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
 
       - name: Download dist artifact
-        if: inputs.publish_node_gpr
         uses: actions/download-artifact@v7
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
 
       - name: Publish to GitHub Packages from tarball
-        if: inputs.publish_node_gpr
         shell: bash
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
@@ -892,6 +895,11 @@ jobs:
           set -Eeuo pipefail
           echo "Attestation is disabled for this channel."
 
+  # The release-node-with-npmjs / release-node-no-npmjs split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-node-npmjs must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
   release-node-with-npmjs:
     name: Create GitHub release (Node)
     needs:
