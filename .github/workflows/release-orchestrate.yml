@@ -530,12 +530,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Install jq
-        if: inputs.enforce_non_clobber
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
-        with:
-          version: '1.7.1'
-
       - name: Check existing GitHub Release by tag
         if: inputs.enforce_non_clobber
         shell: bash
@@ -545,49 +539,29 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          api="repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}"
-          resp_file="${RUNNER_TEMP}/gh-api.response"
-          rm -f "${resp_file}"
-
+          prerelease_value=""
           set +e
-          gh api "${api}" --include >"${resp_file}" 2>&1
+          prerelease_value=$(gh release view "${TAG_NAME}" --json prerelease --jq '.prerelease' 2>/dev/null)
           rc=$?
           set -e
 
-          status=$(grep -m1 -E '^HTTP/' "${resp_file}" | awk '{print $2}' || true)
-
-          if [[ "${rc}" -eq 0 ]]; then
-            body=$(sed -n '/^{/,$p' "${resp_file}")
-            if [[ -z "${body}" ]]; then
-              echo "Error: gh api output did not contain a JSON body." >&2
-              cat "${resp_file}" >&2 || true
-              exit 1
-            fi
-
-            prerelease=$(printf '%s' "${body}" | jq -r '.prerelease')
-            if [[ "${prerelease}" != "true" && "${prerelease}" != "false" ]]; then
-              echo "Error: release JSON body missing 'prerelease'." >&2
-              exit 1
-            fi
-
-            if [[ "${prerelease}" == "false" ]]; then
-              echo "A non-prerelease GitHub Release already exists for tag '${TAG_NAME}'." >&2
-              echo "Non-clobber policy refuses to modify official (prerelease=false) releases." >&2
-              exit 1
-            fi
-
-            echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
-            exit 0
-          fi
-
-          if [[ "${status}" == "404" ]]; then
+          if [[ "${rc}" -ne 0 ]]; then
             echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
             exit 0
           fi
 
-          echo "Failed to query release metadata for tag '${TAG_NAME}' (HTTP ${status:-unknown})." >&2
-          cat "${resp_file}" >&2 || true
-          exit 1
+          if [[ "${prerelease_value}" != "true" && "${prerelease_value}" != "false" ]]; then
+            echo "Error: unexpected prerelease value '${prerelease_value}' for tag '${TAG_NAME}'." >&2
+            exit 1
+          fi
+
+          if [[ "${prerelease_value}" == "false" ]]; then
+            echo "A non-prerelease GitHub Release already exists for tag '${TAG_NAME}'." >&2
+            echo "Non-clobber policy refuses to modify official (prerelease=false) releases." >&2
+            exit 1
+          fi
+
+          echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
 
       - name: Guard disabled
         if: ${{ !inputs.enforce_non_clobber }}
