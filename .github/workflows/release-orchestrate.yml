@@ -114,9 +114,13 @@ on:
         type: boolean
 
       node_pack_mode:
-        description: "Pack mode for release-build-node-pack workflow."
+        description: >-
+          Pack mode for release-build-node-pack workflow.
+          Valid values: 'gpr-only' (pack for GitHub Packages registry only) or
+          'both' (pack for both GitHub Packages and npmjs.org; requires
+          publish_node_npmjs=true — enforced by the policy job cross-validation).
         required: false
-        default: both
+        default: gpr-only
         type: string
 
 permissions:
