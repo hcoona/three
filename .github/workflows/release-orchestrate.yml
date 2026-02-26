@@ -799,9 +799,13 @@ jobs:
           echo "This workflow is intended to publish '${PROJECT}' to npmjs.org using npm Trusted Publishing (OIDC)."
           echo "No npm token is provided by this workflow; publishing will fail unless a Trusted Publisher is configured on npmjs.com for:"
           echo "  - Repository: ${GITHUB_REPOSITORY}"
-          echo "  - Workflow: the caller workflow file that invokes this reusable workflow via workflow_call (do not hardcode this file name)"
+          echo "  - Workflow: .github/workflows/release-orchestrate.yml"
+          echo "    (This is the reusable workflow file containing this job."
+          echo "     npm Trusted Publishing validates the OIDC job_workflow_ref claim, which always"
+          echo "     points to the reusable workflow file — not the caller workflow (e.g. official.yml).)"
           echo "  - Environment (if configured on npm): npmjs"
-          echo "If multiple caller workflows can reach this job, each caller workflow may require its own Trusted Publisher mapping."
+          echo "A single Trusted Publisher entry for this reusable workflow covers all callers."
+          echo "Each caller workflow does NOT need a separate Trusted Publisher registration."
           echo "See: https://docs.npmjs.com/trusted-publishers"
 
       - name: Publish to npm registry (idempotent)
