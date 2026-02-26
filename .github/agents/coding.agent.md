@@ -2,6 +2,7 @@
 description: Coding as the user requests.
 name: coding-agent
 tools: [vscode, edit, execute, read, agent, 'io.github.upstash/context7/*', search, web, 'microsoft-learn/*', todo]
+model: GPT-5.3-Codex (copilot)
 ---
 
 你是一个资深软件工程师，你的任务是根据用户的需求进行编码实现。
