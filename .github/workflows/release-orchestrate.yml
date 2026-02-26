@@ -735,7 +735,7 @@ jobs:
   # approved-and-published together, or neither proceeds. If you need independent registry
   # publishes, decouple this condition by removing the gate-node-publish-npmjs dependency check.
   publish-node-gpr-enabled:
-    name: Publish Node package (GitHub Packages)
+    name: Publish Node package (GitHub Packages) [upload]
     runs-on: ubuntu-latest
     needs:
       - resolve
@@ -817,7 +817,7 @@ jobs:
           bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
 
   publish-node-gpr:
-    name: Publish Node package (GitHub Packages)
+    name: Publish Node package (GitHub Packages) [gate]
     runs-on: ubuntu-latest
     needs:
       - resolve
@@ -1046,7 +1046,7 @@ jobs:
   # inconsistency. If you need atomic Ruby dual-publish in the future, mirror the Node pattern
   # by adding an environment approval gate before publish-ruby-gpr-enabled.
   publish-ruby-gpr-enabled:
-    name: Publish Ruby gem (GitHub Packages)
+    name: Publish Ruby gem (GitHub Packages) [upload]
     runs-on: ubuntu-latest
     needs:
       - resolve
@@ -1087,7 +1087,7 @@ jobs:
           bash "${GITHUB_WORKSPACE}/eng/scripts/publish_ruby_gpr_idempotent.sh"
 
   publish-ruby-gpr:
-    name: Publish Ruby gem (GitHub Packages)
+    name: Publish Ruby gem (GitHub Packages) [gate]
     runs-on: ubuntu-latest
     needs:
       - resolve
