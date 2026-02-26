@@ -1301,9 +1301,22 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
-  # MAINTENANCE: When adding a new release variant (e.g., release-rust-*), update ALL
-  # four sync points in this job. Missing any one will cause incorrect status reporting:
-  #   1. needs: — add the new job name(s) here
+  # MAINTENANCE: When adding a new language/runtime (e.g., Rust), update ALL of the
+  # following sync points. Missing any one causes misconfiguration, policy bypass, or
+  # incorrect release status reporting.
+  #
+  # Across files:
+  #   A. release-orchestrate.yml inputs block — add publish_<lang>_<registry> and any
+  #      pack/mode inputs
+  #   B. release-orchestrate.yml policy job case statements — add assert_equals() calls
+  #      for each new input in the 'official' and 'buddy' branches
+  #   C. release-orchestrate.yml policy-publish-targets job — add project_kind check for
+  #      the new language
+  #   D. official.yml — pass new inputs with their official-channel values
+  #   E. buddy.yml — pass new inputs with their buddy-channel values
+  #
+  # Within this job (four internal sync points):
+  #   1. needs: — add the new release job name(s) here
   #   2. env: block in "Check release outcomes" step — add result capture for each new job
   #   3. failed[] for-loop entries — add "new-job:${NEW_JOB_RESULT}" to the list
   #   4. success_count for-loop entries — add "${NEW_JOB_RESULT}" to the list
