@@ -173,7 +173,7 @@ jobs:
       EXPECTED_PNPM_VERSION: '10'
       EXPECTED_RUBY_VERSION: '3.3'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Verify hardcoded versions match env declarations
         shell: bash
