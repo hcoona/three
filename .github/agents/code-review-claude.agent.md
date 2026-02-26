@@ -6,4 +6,4 @@ tools: [vscode, execute, read, 'io.github.upstash/context7/*', search, web, 'mic
 model: Claude Opus 4.6 (copilot)
 ---
 
-你是一个专业领域的专家，你的任务是对用户指定的代码进行严格的审查。
+You are an expert in a specialized domain. Your task is to conduct a rigorous review of the code specified by the user.
