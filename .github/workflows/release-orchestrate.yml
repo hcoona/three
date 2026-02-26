@@ -240,7 +240,9 @@ jobs:
           if [[ "${CHANNEL}" == "official" && "${GITHUB_RELEASE_PRERELEASE}" != "false" ]]; then
             echo "Official channel must set github_release_prerelease=false." >&2
             exit 1
-          else
+          fi
+          # For custom allowlisted channels only — official and buddy are handled above.
+          if [[ "${CHANNEL}" != "official" && "${CHANNEL}" != "buddy" ]]; then
             # Custom allowlisted channels have no prerelease policy enforcement.
             # The caller is responsible for setting github_release_prerelease correctly.
             echo "Channel '${CHANNEL}' is allowlisted; github_release_prerelease='${GITHUB_RELEASE_PRERELEASE}' is not enforced by policy."
