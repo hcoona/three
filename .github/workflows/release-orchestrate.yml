@@ -1549,10 +1549,10 @@ jobs:
   #   D. official.yml — pass new inputs with their official-channel values
   #   E. buddy.yml — pass new inputs with their buddy-channel values
   #
-  # Within this job (three internal sync points):
+  # Within this job (one internal sync point):
   #   1. needs: — add the new release job name(s) here
-  #   2. env: block in "Check release outcomes" step — add result capture for each new job
-  #   3. merged for-loop entries — add "new-job:${NEW_JOB_RESULT}" to the list
+  #      The "Check release outcomes" step uses toJSON(needs) to dynamically process all
+  #      jobs in the needs: list, so no further manual updates are needed in that step.
   release-completed:
     name: Release completed
     runs-on: ubuntu-latest
@@ -1569,48 +1569,35 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
       - name: Check release outcomes
         shell: bash
-        # SYNC: add-new-language — add result capture env var for each new job below
         env:
-          PYTHON_WITH_PYPI: ${{ needs.release-python-with-pypi.result }}
-          PYTHON_NO_PYPI: ${{ needs.release-python-no-pypi.result }}
-          NODE_WITH_NPMJS: ${{ needs.release-node-with-npmjs.result }}
-          NODE_NO_NPMJS: ${{ needs.release-node-no-npmjs.result }}
-          RUBY_WITH_RUBYGEMS: ${{ needs.release-ruby-with-rubygems.result }}
-          RUBY_NO_RUBYGEMS: ${{ needs.release-ruby-no-rubygems.result }}
-          WXT: ${{ needs.release-wxt.result }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           set -Eeuo pipefail
 
+          # Dynamically process all jobs in needs: using toJSON(needs).
+          # This prevents the 3-way sync problem where needs:, env:, and for-loop
+          # all had to be manually updated when adding new language pipelines.
           echo "Release job outcomes:"
-          echo "  release-python-with-pypi:    ${PYTHON_WITH_PYPI}"
-          echo "  release-python-no-pypi:      ${PYTHON_NO_PYPI}"
-          echo "  release-node-with-npmjs:     ${NODE_WITH_NPMJS}"
-          echo "  release-node-no-npmjs:       ${NODE_NO_NPMJS}"
-          echo "  release-ruby-with-rubygems:  ${RUBY_WITH_RUBYGEMS}"
-          echo "  release-ruby-no-rubygems:    ${RUBY_NO_RUBYGEMS}"
-          echo "  release-wxt:                 ${WXT}"
-
           failed=()
           success_count=0
-          # SYNC: add-new-language — add "new-job:${NEW_JOB_RESULT}" entry to the loop below
-          for result in \
-            "release-python-with-pypi:${PYTHON_WITH_PYPI}" \
-            "release-python-no-pypi:${PYTHON_NO_PYPI}" \
-            "release-node-with-npmjs:${NODE_WITH_NPMJS}" \
-            "release-node-no-npmjs:${NODE_NO_NPMJS}" \
-            "release-ruby-with-rubygems:${RUBY_WITH_RUBYGEMS}" \
-            "release-ruby-no-rubygems:${RUBY_NO_RUBYGEMS}" \
-            "release-wxt:${WXT}"; do
-            job="${result%%:*}"
-            status="${result##*:}"
+
+          while IFS= read -r line; do
+            job="${line%%:*}"
+            status="${line##*:}"
+            echo "  ${job}: ${status}"
             if [[ "${status}" == "failure" || "${status}" == "cancelled" ]]; then
               failed+=("${job}(${status})")
             elif [[ "${status}" == "success" ]]; then
               ((success_count++)) || true
             fi
-          done
+          done < <(echo "${NEEDS_JSON}" | jq -r 'to_entries[] | "\(.key):\(.value.result)"')
 
           if [[ "${#failed[@]}" -gt 0 ]]; then
             echo "One or more release jobs failed: ${failed[*]}" >&2
