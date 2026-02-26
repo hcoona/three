@@ -1,7 +1,7 @@
 ---
 description: Coding as the user requests.
 name: coding-agent
-tools: [vscode/getProjectSetupInfo, vscode/runCommand, vscode/askQuestions, execute, read, agent, edit, search, web, 'microsoft.docs.mcp/*', 'io.github.upstash/context7/*', todo]
+tools: [vscode, edit, execute, read, agent, 'io.github.upstash/context7/*', search, web, 'microsoft-learn/*', todo]
 ---
 
 你是一个资深软件工程师，你的任务是根据用户的需求进行编码实现。
