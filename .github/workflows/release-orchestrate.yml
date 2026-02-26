@@ -595,7 +595,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -933,7 +933,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -1191,7 +1191,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -1327,7 +1327,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-path: ${{ github.workspace }}/out/*
 
