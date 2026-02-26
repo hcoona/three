@@ -81,6 +81,7 @@ on:
         default: false
         type: boolean
 
+      # SYNC: add-new-language — add publish_<lang>_<registry> input below
       publish_python_pypi:
         description: "If true, publish Python artifacts to PyPI."
         required: false
@@ -249,6 +250,7 @@ jobs:
             official)
               assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "false"
               assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "false"
+              # SYNC: add-new-language — add assert_equals for publish_<lang>_<registry> in official channel below
               assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "true"
               assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
               assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
@@ -261,6 +263,7 @@ jobs:
             buddy)
               assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "true"
               assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "true"
+              # SYNC: add-new-language — add assert_equals for publish_<lang>_<registry> in buddy channel below
               assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "false"
               assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
               assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "false"
@@ -314,6 +317,7 @@ jobs:
           PROJECT: ${{ needs.resolve.outputs.project }}
           PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
+          # SYNC: add-new-language — add publish_<lang>_<registry> env vars and per-kind validation below
           NODE_GPR: ${{ inputs.publish_node_gpr }}
           NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
           PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
@@ -1398,6 +1402,8 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
+  # SYNC: add-new-language — define new language pipeline jobs (build, pack, publish, release, attestation, etc.) above release-completed
+
   # ===========================================================================
   # SECTION: Release Sentinel
   # ===========================================================================
@@ -1423,6 +1429,7 @@ jobs:
     name: Release completed
     runs-on: ubuntu-latest
     if: always()
+    # SYNC: add-new-language — add new release job name(s) to needs below
     needs:
       - release-python-with-pypi
       - release-python-no-pypi
@@ -1436,6 +1443,7 @@ jobs:
     steps:
       - name: Check release outcomes
         shell: bash
+        # SYNC: add-new-language — add result capture env var for each new job below
         env:
           PYTHON_WITH_PYPI: ${{ needs.release-python-with-pypi.result }}
           PYTHON_NO_PYPI: ${{ needs.release-python-no-pypi.result }}
@@ -1458,6 +1466,7 @@ jobs:
 
           failed=()
           success_count=0
+          # SYNC: add-new-language — add "new-job:${NEW_JOB_RESULT}" entry to the loop below
           for result in \
             "release-python-with-pypi:${PYTHON_WITH_PYPI}" \
             "release-python-no-pypi:${PYTHON_NO_PYPI}" \
