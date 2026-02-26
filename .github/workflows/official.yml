@@ -54,7 +54,7 @@ jobs:
       project: ${{ github.event.inputs.project }}
       version: ${{ github.event.inputs.version }}
       target: ${{ github.event.inputs.target }}
-      force_update_tag: ${{ github.event.inputs.force_update_tag == 'true' || github.event.inputs.force_update_tag == true }}
+      force_update_tag: ${{ inputs.force_update_tag }}
 
       channel: official
       artifact_prefix: official
