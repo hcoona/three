@@ -869,6 +869,7 @@ jobs:
           set -Eeuo pipefail
 
           npmrc="${RUNNER_TEMP}/npmrc-gpr"
+          install -m 600 /dev/null "${npmrc}"
           {
             echo "registry=https://registry.npmjs.org"
             echo "${SCOPE}:registry=https://npm.pkg.github.com"
