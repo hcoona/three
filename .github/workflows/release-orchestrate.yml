@@ -774,9 +774,11 @@ jobs:
       - name: Ensure enabled publish job succeeded
         if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result != 'success' }}
         shell: bash
+        env:
+          RESULT: ${{ needs.publish-node-gpr-enabled.result }}
         run: |
           set -Eeuo pipefail
-          echo "Node GPR publish job did not complete successfully." >&2
+          echo "Node GPR publish job did not complete successfully (result=${RESULT})." >&2
           exit 1
 
       - name: Node GPR publish completed
@@ -1042,9 +1044,11 @@ jobs:
       - name: Ensure enabled publish job succeeded
         if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result != 'success' }}
         shell: bash
+        env:
+          RESULT: ${{ needs.publish-ruby-gpr-enabled.result }}
         run: |
           set -Eeuo pipefail
-          echo "Ruby GPR publish job did not complete successfully." >&2
+          echo "Ruby GPR publish job did not complete successfully (result=${RESULT})." >&2
           exit 1
 
       - name: Ruby GPR publish completed
