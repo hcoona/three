@@ -1327,4 +1327,18 @@ jobs:
             exit 1
           fi
 
+          success_count=0
+          for r in \
+            "${PYTHON_WITH_PYPI}" "${PYTHON_NO_PYPI}" \
+            "${NODE_WITH_NPMJS}" "${NODE_NO_NPMJS}" \
+            "${RUBY_WITH_RUBYGEMS}" "${RUBY_NO_RUBYGEMS}" \
+            "${WXT}"; do
+            [[ "${r}" == "success" ]] && ((success_count++)) || true
+          done
+
+          if [[ "${success_count}" -eq 0 ]]; then
+            echo "No release job succeeded. This may indicate an upstream gate failure (policy, guards, or build jobs)." >&2
+            exit 1
+          fi
+
           echo "All release jobs completed successfully (skipped jobs are expected for non-matching project kinds)."
