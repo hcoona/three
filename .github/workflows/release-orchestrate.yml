@@ -99,7 +99,7 @@ on:
       publish_ruby_gpr:
         description: "If true, publish Ruby gem to GitHub Packages."
         required: false
-        default: true
+        default: false
         type: boolean
       publish_ruby_rubygems:
         description: "If true, publish Ruby gem to RubyGems.org."
