@@ -373,6 +373,7 @@ jobs:
           PROJECT: ${{ needs.resolve.outputs.project }}
           PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
+          CHANNEL: ${{ inputs.channel }}
           # SYNC: add-new-language — add publish_<lang>_<registry> env vars and per-kind validation below
           NODE_GPR: ${{ inputs.publish_node_gpr }}
           NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
@@ -382,11 +383,28 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          assert_disabled() {
+            local flag_name="$1"
+            local flag_value="$2"
+            # official/buddy channel flags are fully validated by the policy job;
+            # cross-kind flags are intentionally set to their channel-profile values.
+            if [[ "${CHANNEL}" == "official" || "${CHANNEL}" == "buddy" ]]; then
+              return 0
+            fi
+            if [[ "${flag_value}" == "true" ]]; then
+              echo "Cross-kind contamination: '${flag_name}' is 'true' for a '${PROJECT_KIND}' project '${PROJECT}'; this flag has no effect and indicates a misconfiguration." >&2
+              exit 1
+            fi
+          }
+
           if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" != "true" ]]; then
             if [[ "${NODE_GPR}" != "true" && "${NODE_NPMJS}" != "true" ]]; then
               echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs). Got: publish_node_gpr=${NODE_GPR}, publish_node_npmjs=${NODE_NPMJS}." >&2
               exit 1
             fi
+            assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
+            assert_disabled "publish_ruby_gpr"       "${RUBY_GPR}"
+            assert_disabled "publish_ruby_rubygems"  "${RUBY_RUBYGEMS}"
             echo "Node publish-target policy passed for '${PROJECT}'."
             exit 0
           fi
@@ -396,6 +414,9 @@ jobs:
               echo "Ruby project '${PROJECT}' requires at least one Ruby publish target (GPR/RubyGems). Got: publish_ruby_gpr=${RUBY_GPR}, publish_ruby_rubygems=${RUBY_RUBYGEMS}." >&2
               exit 1
             fi
+            assert_disabled "publish_python_pypi"  "${PUBLISH_PYTHON_PYPI}"
+            assert_disabled "publish_node_gpr"     "${NODE_GPR}"
+            assert_disabled "publish_node_npmjs"   "${NODE_NPMJS}"
             echo "Ruby publish-target policy passed for '${PROJECT}'."
             exit 0
           fi
@@ -404,6 +425,10 @@ jobs:
             if [[ "${PUBLISH_PYTHON_PYPI}" != "true" ]]; then
               echo "⚠️ Python project '${PROJECT}' will not publish to PyPI (publish_python_pypi=false). Only a GitHub Release will be created." >> "${GITHUB_STEP_SUMMARY}"
             fi
+            assert_disabled "publish_node_gpr"       "${NODE_GPR}"
+            assert_disabled "publish_node_npmjs"     "${NODE_NPMJS}"
+            assert_disabled "publish_ruby_gpr"       "${RUBY_GPR}"
+            assert_disabled "publish_ruby_rubygems"  "${RUBY_RUBYGEMS}"
             echo "Python publish-target policy passed for '${PROJECT}'."
             exit 0
           fi
@@ -411,6 +436,9 @@ jobs:
           # WXT projects are distributed as browser extension archives, not npm packages;
           # all publish_node_* flags are intentionally ignored for WXT projects.
           if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ]]; then
+            assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
+            assert_disabled "publish_ruby_gpr"       "${RUBY_GPR}"
+            assert_disabled "publish_ruby_rubygems"  "${RUBY_RUBYGEMS}"
             echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
             exit 0
           fi
