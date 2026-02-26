@@ -653,10 +653,12 @@ jobs:
       - pack-node
       - gate-node-publish-npmjs
     # Condition: Always evaluate (via always()), but only run if: this is a non-WXT Node
-    # project, GPR publishing is enabled, AND (either npmjs is not being published OR the
-    # npmjs approval gate (gate-node-publish-npmjs) has passed). See the comment above this
-    # job for the rationale behind the npmjs gate coupling.
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr && (!inputs.publish_node_npmjs || needs.gate-node-publish-npmjs.result == 'success') }}
+    # project, GPR publishing is enabled, pack-node succeeded, AND (either npmjs is not
+    # being published OR the npmjs approval gate (gate-node-publish-npmjs) has passed).
+    # The pack-node result check prevents a spurious "artifact not found" failure when
+    # pack-node fails and publish_node_npmjs=false (gate is skipped, not failed).
+    # See the comment above this job for the rationale behind the npmjs gate coupling.
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr && needs.pack-node.result == 'success' && (!inputs.publish_node_npmjs || needs.gate-node-publish-npmjs.result == 'success') }}
     permissions:
       contents: read
       actions: read
