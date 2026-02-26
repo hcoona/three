@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: official-${{ github.workflow }}-${{ github.ref_name || github.run_id }}-${{ inputs.project || 'push' }}
+  group: official-${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.project || 'push' }}
   cancel-in-progress: false
 
 jobs:
