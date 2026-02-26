@@ -134,6 +134,26 @@ env:
   RUBY_VERSION: '3.3'
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # JOB NAMING CONVENTION: Conditional-but-always-verify pairs
+  # ---------------------------------------------------------------------------
+  # Some features (attestation, registry publishing) are conditionally enabled
+  # via input flags. Because GitHub Actions' `needs:` graph is evaluated
+  # statically, downstream jobs cannot selectively depend on a job that may be
+  # skipped. The solution is a two-job pair:
+  #
+  #   *-enabled  — The actual working job. Runs only when the feature flag is
+  #                true. Has no `always()` in its `if:` — it is skipped when
+  #                the flag is false.
+  #   *          — The gate verifier. Always runs via `always()`. If the
+  #                feature is enabled, it verifies the `-enabled` job succeeded
+  #                (failing loudly if not). If disabled, it logs a note and
+  #                exits 0. Downstream jobs depend on this gate unconditionally.
+  #
+  # This pattern appears for:  attest-{python,node,ruby,wxt}  and
+  #   publish-{node,ruby}-gpr  (and any future conditional publish jobs).
+  # ---------------------------------------------------------------------------
+
   # ===========================================================================
   # SECTION: Lint
   # ===========================================================================
