@@ -224,6 +224,7 @@ jobs:
               assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
               assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "true"
               assert_equals "node_pack_mode" "${NODE_PACK_MODE}" "both"
+              assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "false"
               ;;
             buddy)
               assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "true"
@@ -235,6 +236,7 @@ jobs:
               assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "false"
               assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "false"
               assert_equals "node_pack_mode" "${NODE_PACK_MODE}" "gpr-only"
+              assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "true"
               ;;
             *)
               # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy
@@ -243,6 +245,8 @@ jobs:
               # repository branch protection — restrict default-branch merge to trusted contributors.
               if is_channel_allowlisted "${CHANNEL}"; then
                 echo "Channel '${CHANNEL}' is explicitly allowlisted; skipping strict channel profile assertions."
+                # github_release_prerelease is not enforced for custom channels.
+                # The caller is responsible for setting it correctly.
               else
                 echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
                 echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
@@ -250,22 +254,6 @@ jobs:
               fi
               ;;
           esac
-
-          if [[ "${CHANNEL}" == "buddy" && "${GITHUB_RELEASE_PRERELEASE}" != "true" ]]; then
-            echo "Buddy channel must set github_release_prerelease=true." >&2
-            exit 1
-          fi
-
-          if [[ "${CHANNEL}" == "official" && "${GITHUB_RELEASE_PRERELEASE}" != "false" ]]; then
-            echo "Official channel must set github_release_prerelease=false." >&2
-            exit 1
-          fi
-          # For custom allowlisted channels only — official and buddy are handled above.
-          if [[ "${CHANNEL}" != "official" && "${CHANNEL}" != "buddy" ]]; then
-            # Custom allowlisted channels have no prerelease policy enforcement.
-            # The caller is responsible for setting github_release_prerelease correctly.
-            echo "Channel '${CHANNEL}' is allowlisted; github_release_prerelease='${GITHUB_RELEASE_PRERELEASE}' is not enforced by policy."
-          fi
 
   policy-publish-targets:
     name: Validate publish-target policy
