@@ -247,6 +247,20 @@ jobs:
                 echo "Channel '${CHANNEL}' is explicitly allowlisted; skipping strict channel profile assertions."
                 # github_release_prerelease is not enforced for custom channels.
                 # The caller is responsible for setting it correctly.
+                # Validate node_pack_mode for allowlisted channels (valid: both, gpr-only)
+                if [[ "${NODE_PACK_MODE}" != "both" && "${NODE_PACK_MODE}" != "gpr-only" ]]; then
+                  echo "node_pack_mode must be 'both' or 'gpr-only' (got '${NODE_PACK_MODE}')." >&2
+                  exit 1
+                fi
+                # Cross-validate node_pack_mode against publish flags
+                if [[ "${NODE_PACK_MODE}" == "both" && "${PUBLISH_NODE_NPMJS}" != "true" ]]; then
+                  echo "node_pack_mode=both requires publish_node_npmjs=true (got '${PUBLISH_NODE_NPMJS}')." >&2
+                  exit 1
+                fi
+                if [[ "${NODE_PACK_MODE}" == "gpr-only" && "${PUBLISH_NODE_NPMJS}" != "false" ]]; then
+                  echo "node_pack_mode=gpr-only requires publish_node_npmjs=false (got '${PUBLISH_NODE_NPMJS}')." >&2
+                  exit 1
+                fi
               else
                 echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
                 echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
