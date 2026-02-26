@@ -1276,6 +1276,12 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
+  # MAINTENANCE: When adding a new release variant (e.g., release-rust-*), update ALL
+  # four sync points in this job. Missing any one will cause incorrect status reporting:
+  #   1. needs: — add the new job name(s) here
+  #   2. env: block in "Check release outcomes" step — add result capture for each new job
+  #   3. failed[] for-loop entries — add "new-job:${NEW_JOB_RESULT}" to the list
+  #   4. success_count for-loop entries — add "${NEW_JOB_RESULT}" to the list
   release-completed:
     name: Release completed
     runs-on: ubuntu-latest
