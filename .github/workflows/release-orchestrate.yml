@@ -972,10 +972,14 @@ jobs:
         if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result != 'success' }}
         shell: bash
         env:
-          RESULT: ${{ needs.publish-node-gpr-enabled.result }}
+          ENABLED_JOB_RESULT: ${{ needs.publish-node-gpr-enabled.result }}
         run: |
           set -Eeuo pipefail
-          echo "Node GPR publish job did not complete successfully (result=${RESULT})." >&2
+          if [[ "${ENABLED_JOB_RESULT}" == "skipped" ]]; then
+            echo "Node GPR publish gate: enabled job was skipped, likely because pack-node or the npmjs approval gate did not succeed." >&2
+            exit 1
+          fi
+          echo "Node GPR publish gate failed: publish-node-gpr-enabled did not succeed (result=${ENABLED_JOB_RESULT})." >&2
           exit 1
 
       - name: Node GPR publish completed
@@ -1250,10 +1254,14 @@ jobs:
         if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result != 'success' }}
         shell: bash
         env:
-          RESULT: ${{ needs.publish-ruby-gpr-enabled.result }}
+          ENABLED_JOB_RESULT: ${{ needs.publish-ruby-gpr-enabled.result }}
         run: |
           set -Eeuo pipefail
-          echo "Ruby GPR publish job did not complete successfully (result=${RESULT})." >&2
+          if [[ "${ENABLED_JOB_RESULT}" == "skipped" ]]; then
+            echo "Ruby GPR publish gate: enabled job was skipped, likely because build-ruby did not succeed." >&2
+            exit 1
+          fi
+          echo "Ruby GPR publish gate failed: publish-ruby-gpr-enabled did not succeed (result=${ENABLED_JOB_RESULT})." >&2
           exit 1
 
       - name: Ruby GPR publish completed
