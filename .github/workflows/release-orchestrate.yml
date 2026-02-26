@@ -948,6 +948,13 @@ jobs:
       ruby_version: '3.3'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
+  # NOTE: publish-ruby-gpr-enabled and publish-ruby-rubygems are intentionally independent.
+  # Unlike the Node path (where GPR is held until npmjs environment approval to enforce atomic
+  # dual-publish), Ruby GPR (GitHub Packages) and RubyGems.org serve distinct audiences and
+  # are independent artifact stores with no atomicity requirement. A partial publish (GPR
+  # succeeds, RubyGems fails) is a loud failure that surfaces in the workflow, not a silent
+  # inconsistency. If you need atomic Ruby dual-publish in the future, mirror the Node pattern
+  # by adding an environment approval gate before publish-ruby-gpr-enabled.
   publish-ruby-gpr-enabled:
     name: Publish Ruby gem (GitHub Packages)
     runs-on: ubuntu-latest
