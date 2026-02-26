@@ -1249,3 +1249,63 @@ jobs:
       force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  release-completed:
+    name: Release completed
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - release-python-with-pypi
+      - release-python-no-pypi
+      - release-node-with-npmjs
+      - release-node-no-npmjs
+      - release-ruby-with-rubygems
+      - release-ruby-no-rubygems
+      - release-wxt
+    permissions:
+      contents: read
+    steps:
+      - name: Check release outcomes
+        shell: bash
+        env:
+          PYTHON_WITH_PYPI: ${{ needs.release-python-with-pypi.result }}
+          PYTHON_NO_PYPI: ${{ needs.release-python-no-pypi.result }}
+          NODE_WITH_NPMJS: ${{ needs.release-node-with-npmjs.result }}
+          NODE_NO_NPMJS: ${{ needs.release-node-no-npmjs.result }}
+          RUBY_WITH_RUBYGEMS: ${{ needs.release-ruby-with-rubygems.result }}
+          RUBY_NO_RUBYGEMS: ${{ needs.release-ruby-no-rubygems.result }}
+          WXT: ${{ needs.release-wxt.result }}
+        run: |
+          set -Eeuo pipefail
+
+          echo "Release job outcomes:"
+          echo "  release-python-with-pypi:    ${PYTHON_WITH_PYPI}"
+          echo "  release-python-no-pypi:      ${PYTHON_NO_PYPI}"
+          echo "  release-node-with-npmjs:     ${NODE_WITH_NPMJS}"
+          echo "  release-node-no-npmjs:       ${NODE_NO_NPMJS}"
+          echo "  release-ruby-with-rubygems:  ${RUBY_WITH_RUBYGEMS}"
+          echo "  release-ruby-no-rubygems:    ${RUBY_NO_RUBYGEMS}"
+          echo "  release-wxt:                 ${WXT}"
+
+          failed=()
+          for result in \
+            "release-python-with-pypi:${PYTHON_WITH_PYPI}" \
+            "release-python-no-pypi:${PYTHON_NO_PYPI}" \
+            "release-node-with-npmjs:${NODE_WITH_NPMJS}" \
+            "release-node-no-npmjs:${NODE_NO_NPMJS}" \
+            "release-ruby-with-rubygems:${RUBY_WITH_RUBYGEMS}" \
+            "release-ruby-no-rubygems:${RUBY_NO_RUBYGEMS}" \
+            "release-wxt:${WXT}"; do
+            job="${result%%:*}"
+            status="${result##*:}"
+            if [[ "${status}" == "failure" || "${status}" == "cancelled" ]]; then
+              failed+=("${job}(${status})")
+            fi
+          done
+
+          if [[ "${#failed[@]}" -gt 0 ]]; then
+            echo "One or more release jobs failed: ${failed[*]}" >&2
+            exit 1
+          fi
+
+          echo "All release jobs completed successfully (skipped jobs are expected for non-matching project kinds)."
