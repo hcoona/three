@@ -697,9 +697,14 @@ jobs:
         if: inputs.enable_attestation
         shell: bash
         env:
+          BUILD_RESULT: ${{ needs.build-python.result }}
           RESULT: ${{ needs.attest-python-enabled.result }}
         run: |
           set -Eeuo pipefail
+          if [[ "${BUILD_RESULT}" != "success" ]]; then
+            echo "Skipping attestation gate: build-python did not succeed (result=${BUILD_RESULT})."
+            exit 0
+          fi
           if [[ "${RESULT}" != "success" ]]; then
             echo "Attestation job did not succeed (result=${RESULT})." >&2
             exit 1
@@ -1031,9 +1036,14 @@ jobs:
         if: inputs.enable_attestation
         shell: bash
         env:
+          BUILD_RESULT: ${{ needs.pack-node.result }}
           RESULT: ${{ needs.attest-node-enabled.result }}
         run: |
           set -Eeuo pipefail
+          if [[ "${BUILD_RESULT}" != "success" ]]; then
+            echo "Skipping attestation gate: pack-node did not succeed (result=${BUILD_RESULT})."
+            exit 0
+          fi
           if [[ "${RESULT}" != "success" ]]; then
             echo "Attestation job did not succeed (result=${RESULT})." >&2
             exit 1
@@ -1292,9 +1302,14 @@ jobs:
         if: inputs.enable_attestation
         shell: bash
         env:
+          BUILD_RESULT: ${{ needs.build-ruby.result }}
           RESULT: ${{ needs.attest-ruby-enabled.result }}
         run: |
           set -Eeuo pipefail
+          if [[ "${BUILD_RESULT}" != "success" ]]; then
+            echo "Skipping attestation gate: build-ruby did not succeed (result=${BUILD_RESULT})."
+            exit 0
+          fi
           if [[ "${RESULT}" != "success" ]]; then
             echo "Attestation job did not succeed (result=${RESULT})." >&2
             exit 1
@@ -1423,9 +1438,14 @@ jobs:
         if: inputs.enable_attestation
         shell: bash
         env:
+          BUILD_RESULT: ${{ needs.build-wxt.result }}
           RESULT: ${{ needs.attest-wxt-enabled.result }}
         run: |
           set -Eeuo pipefail
+          if [[ "${BUILD_RESULT}" != "success" ]]; then
+            echo "Skipping attestation gate: build-wxt did not succeed (result=${BUILD_RESULT})."
+            exit 0
+          fi
           if [[ "${RESULT}" != "success" ]]; then
             echo "Attestation job did not succeed (result=${RESULT})." >&2
             exit 1
