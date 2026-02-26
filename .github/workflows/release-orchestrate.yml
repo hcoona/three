@@ -793,7 +793,10 @@ jobs:
       - resolve
       - pack-node
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
-    environment: npmjs
+    # npmjs-gate: human approval gate only. The publish job uses environment: npmjs for
+    # OIDC token scoping. Using separate environments prevents a double-approval prompt
+    # when the npmjs environment has required reviewers configured.
+    environment: npmjs-gate
     permissions:
       contents: read
       actions: read
