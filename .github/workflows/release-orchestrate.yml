@@ -1402,6 +1402,8 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
+  # SYNC: add-new-language — define new language pipeline jobs (build, pack, publish, release, attestation, etc.) above release-completed
+
   # ===========================================================================
   # SECTION: Release Sentinel
   # ===========================================================================
