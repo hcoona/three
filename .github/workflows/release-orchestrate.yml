@@ -583,6 +583,21 @@ jobs:
           set -Eeuo pipefail
           echo "Attestation is disabled for this channel."
 
+  # The release-python-with-pypi / release-python-no-pypi split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-python must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
+  # The release-python-with-pypi / release-python-no-pypi split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-python must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
+  # The release-python-with-pypi / release-python-no-pypi split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-python must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
   release-python-with-pypi:
     name: Create GitHub release (Python, with PyPI)
     needs:
@@ -1159,6 +1174,21 @@ jobs:
           set -Eeuo pipefail
           echo "Attestation is disabled for this channel."
 
+  # The release-ruby-with-rubygems / release-ruby-no-rubygems split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-ruby-rubygems must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
+  # The release-ruby-with-rubygems / release-ruby-no-rubygems split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-ruby-rubygems must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
+  # The release-ruby-with-rubygems / release-ruby-no-rubygems split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-ruby-rubygems must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
   release-ruby-with-rubygems:
     name: Create GitHub release (Ruby, with RubyGems)
     needs:
