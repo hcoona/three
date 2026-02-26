@@ -135,6 +135,60 @@ env:
 
 jobs:
   # ===========================================================================
+  # SECTION: Lint
+  # ===========================================================================
+  # Because GitHub Actions `uses: with:` blocks do not evaluate the `env` context,
+  # tool version values (python_version, node_version, pnpm_version, ruby_version)
+  # must be hardcoded in several sub-workflow call sites. This job verifies that all
+  # hardcoded occurrences in this file match the expected values declared below,
+  # catching any accidental drift introduced by copy-paste or partial updates.
+  lint-version-consistency:
+    name: Lint tool version consistency
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      EXPECTED_PYTHON_VERSION: '3.14'
+      EXPECTED_NODE_VERSION: '24'
+      EXPECTED_PNPM_VERSION: '10'
+      EXPECTED_RUBY_VERSION: '3.3'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify hardcoded versions match env declarations
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
+          FAIL=0
+
+          check_version() {
+            local key="$1"
+            local expected="$2"
+            local mismatches
+            mismatches=$(grep -n "^\s*${key}:" "${WORKFLOW_FILE}" \
+              | grep -v "${expected}" || true)
+            if [[ -n "${mismatches}" ]]; then
+              echo "ERROR: '${key}:' value(s) not matching expected '${expected}':" >&2
+              echo "${mismatches}" >&2
+              FAIL=1
+            fi
+          }
+
+          check_version "python_version" "${EXPECTED_PYTHON_VERSION}"
+          check_version "node_version"   "${EXPECTED_NODE_VERSION}"
+          check_version "pnpm_version"   "${EXPECTED_PNPM_VERSION}"
+          check_version "ruby_version"   "${EXPECTED_RUBY_VERSION}"
+
+          if [[ "${FAIL}" -ne 0 ]]; then
+            echo "Version consistency check failed." \
+              "Update hardcoded values in 'with:' blocks to match" \
+              "the 'env:' declarations at the top of the workflow." >&2
+            exit 1
+          fi
+          echo "All hardcoded tool versions are consistent."
+
+  # ===========================================================================
   # SECTION: Policy and Infrastructure
   # ===========================================================================
   # The policy job validates that the caller-provided channel profile flags match the
