@@ -204,6 +204,13 @@ jobs:
             IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST}"
             for entry in "${allowlist[@]}"; do
               entry="$(echo "${entry}" | xargs)"
+              if [[ "${entry}" == "official" || "${entry}" == "buddy" ]]; then
+                echo "Reserved channel '${entry}' cannot appear in channel_allowlist." >&2
+                exit 1
+              fi
+            done
+            for entry in "${allowlist[@]}"; do
+              entry="$(echo "${entry}" | xargs)"
               if [[ -n "${entry}" && "${entry}" == "${candidate}" ]]; then
                 return 0
               fi
