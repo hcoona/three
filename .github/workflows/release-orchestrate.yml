@@ -303,7 +303,7 @@ jobs:
     with:
       source: ${{ inputs.source }}
       run_url: ${{ inputs.run_url }}
-      # Tool version: keep in sync with top-level env: block
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION
       python_version: '3.14'
 
       # source=tag
@@ -453,7 +453,7 @@ jobs:
       target: ${{ needs.resolve.outputs.target }}
       package_dir: ${{ needs.resolve.outputs.package_dir }}
       version: ${{ needs.resolve.outputs.version }}
-      # Keep in sync with top-level env: block
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION
       python_version: '3.14'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
@@ -617,7 +617,7 @@ jobs:
       project: ${{ needs.resolve.outputs.project }}
       package_dir: ${{ needs.resolve.outputs.package_dir }}
       version: ${{ needs.resolve.outputs.version }}
-      # Keep in sync with top-level env: block
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION, env.NODE_VERSION, env.PNPM_VERSION
       python_version: '3.14'
       node_version: '24'
       pnpm_version: '10'
@@ -944,7 +944,7 @@ jobs:
       project: ${{ needs.resolve.outputs.project }}
       package_dir: ${{ needs.resolve.outputs.package_dir }}
       version: ${{ needs.resolve.outputs.version }}
-      # Keep in sync with top-level env: block
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.RUBY_VERSION
       ruby_version: '3.3'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
@@ -1195,7 +1195,7 @@ jobs:
       project: ${{ needs.resolve.outputs.project }}
       package_dir: ${{ needs.resolve.outputs.package_dir }}
       version: ${{ needs.resolve.outputs.version }}
-      # Keep in sync with top-level env: block
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.NODE_VERSION, env.PNPM_VERSION
       node_version: '24'
       pnpm_version: '10'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
