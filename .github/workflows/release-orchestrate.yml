@@ -631,7 +631,6 @@ jobs:
       - resolve
       - pack-node
     if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
-    environment: npmjs
     permissions:
       contents: read
       actions: read
@@ -771,6 +770,7 @@ jobs:
       - gate-node-publish-npmjs
       - publish-node-gpr
     if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' }}
+    environment: npmjs
     permissions:
       contents: read
       actions: read
