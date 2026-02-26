@@ -342,7 +342,7 @@ jobs:
           fi
 
           if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ]]; then
-            echo "No Node/Ruby publish-target policy required for project kind '${PROJECT_KIND}'."
+            echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
             exit 0
           fi
 
