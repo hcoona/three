@@ -953,27 +953,23 @@ jobs:
       packages: write
     steps:
       - name: Checkout (workflow scripts)
-        if: inputs.publish_ruby_gpr
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
 
       - name: Download dist artifact
-        if: inputs.publish_ruby_gpr
         uses: actions/download-artifact@v7
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
 
       - name: Setup Ruby
-        if: inputs.publish_ruby_gpr
         uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
         with:
           ruby-version: ${{ env.RUBY_VERSION }}
 
       - name: Publish to GitHub Packages (idempotent)
-        if: inputs.publish_ruby_gpr
         shell: bash
         env:
           PROJECT: ${{ needs.resolve.outputs.project }}
