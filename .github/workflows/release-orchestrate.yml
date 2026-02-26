@@ -47,7 +47,13 @@ on:
         required: true
         type: string
       channel_allowlist:
-        description: "Comma-separated list of additional channel values allowed to bypass strict profile assertions."
+        description: >-
+          Comma-separated list of custom channel names that are explicitly
+          exempt from strict channel profile assertions (official/buddy policy
+          matrix). Use only for non-production channels (e.g., staging, canary).
+          Callers are fully responsible for setting all publish flags correctly.
+          SECURITY NOTE: allowlisted channels bypass all policy enforcement —
+          only grant default-branch merge access to trusted contributors.
         required: false
         default: ""
         type: string
@@ -222,6 +228,10 @@ jobs:
               assert_equals "node_pack_mode" "${NODE_PACK_MODE}" "gpr-only"
               ;;
             *)
+              # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy
+              # profile matrix is not enforced). This is an intentional escape hatch for
+              # non-production channels (e.g., staging, canary). Access control relies on
+              # repository branch protection — restrict default-branch merge to trusted contributors.
               if is_channel_allowlisted "${CHANNEL}"; then
                 echo "Channel '${CHANNEL}' is explicitly allowlisted; skipping strict channel profile assertions."
               else
