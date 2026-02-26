@@ -528,6 +528,13 @@ jobs:
           packages-dir: ${{ github.workspace }}/out/
           skip-existing: true
 
+  # ATTESTATION GATE PATTERN: Each language uses a pair of jobs:
+  #   1. attest-*-enabled: Runs only when enable_attestation=true. Generates build provenance.
+  #   2. attest-*: Always runs (via always()). If attestation is enabled, it verifies the
+  #      enabled job succeeded. If disabled, it logs a note and exits 0.
+  # This pattern ensures all downstream jobs can unconditionally depend on attest-* without
+  # needing to replicate the enable_attestation condition check in every dependent job.
+  # The same pattern is repeated for Node, Ruby, and WXT below.
   attest-python-enabled:
     name: Attest release assets (Python)
     runs-on: ubuntu-latest
