@@ -557,7 +557,7 @@ jobs:
           echo "Attestation is disabled for this channel."
 
   release-python-with-pypi:
-    name: Create GitHub release (Python)
+    name: Create GitHub release (Python, with PyPI)
     needs:
       - resolve
       - prepare-release-notes
@@ -579,7 +579,7 @@ jobs:
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
   release-python-no-pypi:
-    name: Create GitHub release (Python)
+    name: Create GitHub release (Python, no PyPI)
     needs:
       - resolve
       - prepare-release-notes
@@ -876,7 +876,7 @@ jobs:
   # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
   # does not. The `if:` condition on each variant ensures only one ever runs.
   release-node-with-npmjs:
-    name: Create GitHub release (Node)
+    name: Create GitHub release (Node, with npmjs)
     needs:
       - resolve
       - prepare-release-notes
@@ -899,7 +899,7 @@ jobs:
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
   release-node-no-npmjs:
-    name: Create GitHub release (Node)
+    name: Create GitHub release (Node, no npmjs)
     needs:
       - resolve
       - prepare-release-notes
@@ -1124,7 +1124,7 @@ jobs:
           echo "Attestation is disabled for this channel."
 
   release-ruby-with-rubygems:
-    name: Create GitHub release (Ruby)
+    name: Create GitHub release (Ruby, with RubyGems)
     needs:
       - resolve
       - prepare-release-notes
@@ -1147,7 +1147,7 @@ jobs:
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
   release-ruby-no-rubygems:
-    name: Create GitHub release (Ruby)
+    name: Create GitHub release (Ruby, no RubyGems)
     needs:
       - resolve
       - prepare-release-notes
