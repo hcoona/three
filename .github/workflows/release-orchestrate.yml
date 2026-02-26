@@ -60,6 +60,10 @@ on:
         required: true
         type: boolean
 
+      # Channel profile flags — these are fully determined by 'channel' for official/buddy channels.
+      # Callers MUST pass all flags explicitly; the policy job re-asserts them to catch
+      # misconfiguration at workflow start. For custom allowlisted channels, callers are
+      # responsible for setting these flags to their desired values.
       enforce_prerelease_only:
         description: "If true, enforce resolved version to be prerelease-only."
         required: false
@@ -119,6 +123,11 @@ env:
   RUBY_VERSION: '3.3'
 
 jobs:
+  # The policy job validates that the caller-provided channel profile flags match the
+  # expected profile for the given channel. This is an intentional "belt and suspenders"
+  # design: callers explicitly declare their intent via flags, and the policy job verifies
+  # correctness. This catches copy-paste errors in new caller workflows and documents the
+  # expected profile for each channel in a single authoritative location.
   policy:
     name: Validate orchestration policy
     runs-on: ubuntu-latest
