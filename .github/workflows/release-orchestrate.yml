@@ -133,6 +133,9 @@ env:
   RUBY_VERSION: '3.3'
 
 jobs:
+  # ===========================================================================
+  # SECTION: Policy and Infrastructure
+  # ===========================================================================
   # The policy job validates that the caller-provided channel profile flags match the
   # expected profile for the given channel. This is an intentional "belt and suspenders"
   # design: callers explicitly declare their intent via flags, and the policy job verifies
@@ -485,6 +488,9 @@ jobs:
       run_url: ${{ needs.resolve.outputs.run_url }}
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
 
+  # ===========================================================================
+  # SECTION: Python Release Pipeline
+  # ===========================================================================
   build-python:
     name: Build Python package
     needs:
@@ -688,6 +694,9 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
+  # ===========================================================================
+  # SECTION: Node Release Pipeline
+  # ===========================================================================
   pack-node:
     name: Pack Node tarball(s)
     needs:
@@ -1018,6 +1027,9 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
+  # ===========================================================================
+  # SECTION: Ruby Release Pipeline
+  # ===========================================================================
   build-ruby:
     name: Build Ruby gem
     needs:
@@ -1286,6 +1298,9 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
+  # ===========================================================================
+  # SECTION: WXT (Node Extension) Release Pipeline
+  # ===========================================================================
   build-wxt:
     name: Build package (Node/WXT)
     needs:
@@ -1383,6 +1398,9 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
+  # ===========================================================================
+  # SECTION: Release Sentinel
+  # ===========================================================================
   # MAINTENANCE: When adding a new language/runtime (e.g., Rust), update ALL of the
   # following sync points. Missing any one causes misconfiguration, policy bypass, or
   # incorrect release status reporting.
