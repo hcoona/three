@@ -335,6 +335,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Prerelease-only guard is disabled for this channel."
+          echo "### Guard: Prerelease-only :white_check_mark: disabled" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Prerelease-only enforcement is not enabled for channel \`${{ inputs.channel }}\`." >> "${GITHUB_STEP_SUMMARY}"
 
   guard-non-clobber:
     name: Guard non-clobber policy
@@ -408,6 +410,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Non-clobber guard is disabled for this channel."
+          echo "### Guard: Non-clobber :white_check_mark: disabled" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Non-clobber enforcement is not enabled for channel \`${{ inputs.channel }}\`." >> "${GITHUB_STEP_SUMMARY}"
 
   prepare-release-notes:
     name: Prepare release notes
