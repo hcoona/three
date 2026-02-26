@@ -238,7 +238,7 @@ jobs:
 
           if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" != "true" ]]; then
             if [[ "${NODE_GPR}" != "true" && "${NODE_NPMJS}" != "true" ]]; then
-              echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs)." >&2
+              echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs). Got: publish_node_gpr=${NODE_GPR}, publish_node_npmjs=${NODE_NPMJS}." >&2
               exit 1
             fi
             echo "Node publish-target policy passed for '${PROJECT}'."
@@ -247,7 +247,7 @@ jobs:
 
           if [[ "${PROJECT_KIND}" == "ruby" ]]; then
             if [[ "${RUBY_GPR}" != "true" && "${RUBY_RUBYGEMS}" != "true" ]]; then
-              echo "Ruby project '${PROJECT}' requires at least one Ruby publish target (GPR/RubyGems)." >&2
+              echo "Ruby project '${PROJECT}' requires at least one Ruby publish target (GPR/RubyGems). Got: publish_ruby_gpr=${RUBY_GPR}, publish_ruby_rubygems=${RUBY_RUBYGEMS}." >&2
               exit 1
             fi
             echo "Ruby publish-target policy passed for '${PROJECT}'."
