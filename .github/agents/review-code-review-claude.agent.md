@@ -2,7 +2,7 @@
 name: review-code-review-claude
 description: Performs reviews against code reviews done by AI to ensure the quality of the reviews.
 argument-hint: The code review to analyze, along with brief descriptions about the code changes that were reviewed and any specific areas of concern or focus for the review.
-tools: [vscode, execute, read, agent, 'io.github.upstash/context7/*', edit, search, web, 'microsoft-learn/*', todo]
+tools: [vscode, execute, read, 'io.github.upstash/context7/*', search, web, 'microsoft-learn/*', todo]
 model: Claude Sonnet 4.6 (copilot)
 ---
 
