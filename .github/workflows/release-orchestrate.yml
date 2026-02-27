@@ -109,9 +109,9 @@ on:
         default: false
         type: boolean
       publish_node_gpr:
-        description: "If true, publish Node artifacts to GitHub Packages."
+        description: "If true, publish Node artifacts to GitHub Packages. official/buddy callers always pass this explicitly; default false prevents silent publishing for custom allowlisted channels."
         required: false
-        default: true
+        default: false
         type: boolean
       publish_node_npmjs:
         description: "If true, publish Node artifacts to npmjs.org."
