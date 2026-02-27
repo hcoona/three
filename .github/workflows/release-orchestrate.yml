@@ -183,6 +183,7 @@ jobs:
   lint-version-consistency:
     name: Lint tool version consistency
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -351,10 +352,32 @@ jobs:
             fi
           done
 
+          # Also verify that every attest-* gate job (not *-enabled) is listed in release-completed's needs:.
+          # These are not auto-detected by the release-* check above; this closes the CI-enforcement gap
+          # for the attest-<lang> entries documented in the SYNC: add-new-language checklist.
+          mapfile -t attest_gate_jobs < <(
+            grep -P '^  (attest-[a-z0-9-]+):$' "${WORKFLOW_FILE}" \
+              | grep -oP 'attest-[a-z0-9-]+' \
+              | grep -v '\-enabled$' \
+              | sort -u
+          )
+
+          for job in "${attest_gate_jobs[@]}"; do
+            found=0
+            for entry in "${needs_entries[@]}"; do
+              [[ "${entry}" == "${job}" ]] && found=1 && break
+            done
+            if [[ "${found}" -eq 0 ]]; then
+              echo "ERROR: attest-* gate job '${job}' is not listed in release-completed's needs:." >&2
+              echo "Add '${job}' to the needs: list of release-completed (SYNC: add-new-language step E)." >&2
+              FAIL=1
+            fi
+          done
+
           if [[ "${FAIL}" -ne 0 ]]; then
             exit 1
           fi
-          echo "release-completed needs: coverage check passed."
+          echo "release-completed needs: coverage check passed (release-* and attest-* gates)."
 
   # ===========================================================================
   # SECTION: Policy and Infrastructure
@@ -391,6 +414,7 @@ jobs:
   policy:
     name: Validate orchestration policy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -583,6 +607,12 @@ jobs:
           # SYNC: add-new-language — add the new publish_<lang>_<registry> flag name(s) here.
           # Omitting this step means future regressions (removing assert_equals for the new flag
           # from one branch) will not be caught by the self-test.
+          # NOTE: force_update_tag is intentionally excluded from this list.
+          # It is a per-run operational override, not a channel profile flag, and is not asserted
+          # by the policy job for either channel. Add channel profile flags only.
+          # NOTE: This list is manually maintained. Adding a new publish_<lang>_<registry> input
+          # requires updating BOTH this list AND the assert_equals calls in the case branches
+          # (see SYNC: add-new-language B2 above). The CI check only enforces flags listed here.
           required_flags=(
             enforce_prerelease_only
             enforce_non_clobber
@@ -629,6 +659,7 @@ jobs:
   policy-publish-targets:
     name: Validate publish-target policy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: resolve
     permissions:
       contents: read
@@ -765,6 +796,7 @@ jobs:
   guard-prerelease-only:
     name: Guard prerelease-only policy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - policy  # explicit: ensure channel policy is validated before guards run
@@ -803,6 +835,7 @@ jobs:
   guard-non-clobber:
     name: Guard non-clobber policy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - policy  # explicit: ensure channel policy is validated before guards run
@@ -933,9 +966,16 @@ jobs:
       python_version: '3.14'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
+  # NOTE: publish-python does not use the *-enabled / * gate pair pattern (unlike Node/Ruby GPR
+  # publishing). Python has only one target registry (PyPI) and no conditionally-dependent
+  # downstream job that must run when the flag is false — the job simply does not execute when
+  # publish_python_pypi=false. The environment approval gate (environment: pypi) serves as the
+  # explicit human checkpoint. See the ATTESTATION GATE PATTERN comment below for the gate pattern
+  # used by attest-* jobs.
   publish-python:
     name: Publish Python package (PyPI)
     runs-on: ubuntu-latest
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
     needs:
       - resolve
       - build-python
@@ -1013,6 +1053,7 @@ jobs:
   attest-python-enabled:
     name: Attest release assets (Python)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - build-python
@@ -1037,6 +1078,7 @@ jobs:
   attest-python:
     name: Attestation gate (Python)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - build-python
@@ -1153,6 +1195,7 @@ jobs:
   gate-node-publish-npmjs:
     name: Approval gate for Node publish (npmjs)
     runs-on: ubuntu-latest
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
     needs:
       - resolve
       - pack-node
@@ -1183,6 +1226,7 @@ jobs:
   publish-node-gpr-enabled:
     name: Publish Node package (GitHub Packages) [upload]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - pack-node
@@ -1271,6 +1315,7 @@ jobs:
   publish-node-gpr:
     name: Publish Node package (GitHub Packages) [gate]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - publish-node-gpr-enabled
@@ -1322,13 +1367,17 @@ jobs:
   publish-node-npmjs:
     name: Publish Node package (npmjs.org)
     runs-on: ubuntu-latest
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
     needs:
       - resolve
       - pack-node  # scheduling only: ensures artifact is available before download; safety is enforced via gate-node-publish-npmjs result check
       - gate-node-publish-npmjs
       - publish-node-gpr
       - attest-node
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' && (!inputs.enable_attestation || needs.attest-node.result == 'success') }}
+    # NOTE: No explicit attestation check needed here — it is transitively enforced:
+    # attest-node failure → publish-node-gpr-enabled skipped → publish-node-gpr gate fails
+    # → this job blocked by needs.publish-node-gpr.result == 'success' above.
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' }}
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to npmjs.org via OIDC.
     # SECURITY: The Trusted Publisher registration on npmjs.com MUST set the optional Environment field to 'npmjs'.
@@ -1390,6 +1439,7 @@ jobs:
   attest-node-enabled:
     name: Attest release assets (Node)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - pack-node
@@ -1414,6 +1464,7 @@ jobs:
   attest-node:
     name: Attestation gate (Node)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - pack-node
@@ -1535,6 +1586,7 @@ jobs:
   publish-ruby-gpr-enabled:
     name: Publish Ruby gem (GitHub Packages) [upload]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - build-ruby
@@ -1584,6 +1636,7 @@ jobs:
   publish-ruby-gpr:
     name: Publish Ruby gem (GitHub Packages) [gate]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - publish-ruby-gpr-enabled
@@ -1645,6 +1698,7 @@ jobs:
   publish-ruby-rubygems:
     name: Publish Ruby gem (RubyGems.org)
     runs-on: ubuntu-latest
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
     needs:
       - resolve
       - build-ruby    # cascade-skip safety: if build-ruby fails, this job is skipped before if: is evaluated.
@@ -1702,6 +1756,7 @@ jobs:
   attest-ruby-enabled:
     name: Attest release assets (Ruby)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - build-ruby
@@ -1726,6 +1781,7 @@ jobs:
   attest-ruby:
     name: Attestation gate (Ruby)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - build-ruby
@@ -1823,9 +1879,10 @@ jobs:
   # extensions), this boolean-flag pattern should be refactored into a single
   # project_variant enum output from release-resolve.yml (e.g., 'node-npm',
   # 'node-wxt', 'node-electron') to avoid multiplying conditional branches.
-  # TODO: File a tracking issue for the project_variant enum refactor before adding
-  #       a second Node-based framework variant (Electron, VS Code Extension, etc.).
+  # TODO: Open a GitHub issue for the project_variant enum refactor and reference it here
+  #       before adding a second Node-based framework variant (Electron, VS Code Extension, etc.).
   #       Each new variant currently adds ~6 conditional branches across this file.
+  #       (hcoona/three: open issue under label 'tech-debt' / 'ci' and replace this comment with TODO(#<issue>).)
   # ===========================================================================
   build-wxt:
     name: Build package (Node/WXT)
@@ -1851,6 +1908,7 @@ jobs:
   attest-wxt-enabled:
     name: Attest release assets (WXT)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - build-wxt
@@ -1875,6 +1933,7 @@ jobs:
   attest-wxt:
     name: Attestation gate (WXT)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - resolve
       - build-wxt
@@ -1958,9 +2017,10 @@ jobs:
   #   B. release-orchestrate.yml policy job — two updates required:
   #      B1. Update the channel profile matrix comment table above the policy job
   #          (add a new row for each flag and fill official/buddy values)
-  #      B2. [CI-ENFORCED by self-test policy flag coverage step] Add assert_equals() calls
-  #          for each new input in BOTH 'official' and 'buddy' case branches
-  #          (use the SYNC markers inside each branch)
+  #      B2. Add assert_equals() calls for each new input in BOTH 'official' and 'buddy' case
+  #          branches (use the SYNC markers inside each branch), and add the flag name to the
+  #          required_flags list in the 'Self-test policy flag coverage' step.
+  #          [CI-ENFORCED once added to required_flags; maintaining required_flags is manual]
   #   C. release-orchestrate.yml policy-publish-targets job — add env var and per-kind
   #      validation branch for the new language
   #   D. [CI-ENFORCED by lint-version-consistency job] release-orchestrate.yml
@@ -1988,6 +2048,7 @@ jobs:
   release-completed:
     name: Release completed
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
     # SYNC: add-new-language — add new release job name(s) and attest-<lang> gate to needs below.
     # release-* jobs: [CI-ENFORCED] by "Verify release-completed covers all release-* jobs" lint step.
