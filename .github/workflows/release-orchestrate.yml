@@ -1,0 +1,2142 @@
+name: Release Orchestrator (Reusable)
+
+# PIPELINE OVERVIEW (simplified job dependency graph):
+#
+#   [lint-version-consistency]        [policy]
+#                \                       /
+#                 +------[resolve]-------+
+#                / [guard-prerelease-only] \
+#               /  [guard-non-clobber]      \
+#              /   [prepare-release-notes]   \
+#             /    [policy-publish-targets]   \
+#            /                                 \
+#  [build-<lang>]          ...per-language pipeline...
+#     /         \
+#  [attest-*]  [publish-*]
+#     \           /
+#   [release-<lang>-*]
+#          |
+#  [release-completed]
+#
+# Entry callers: official.yml (push:tag + workflow_dispatch)
+#                buddy.yml   (workflow_dispatch, prerelease-only)
+
+on:
+  workflow_call:
+    inputs:
+      source:
+        description: "Resolution mode: 'tag' derives project/version from release tag; 'manual' uses explicit inputs."
+        required: true
+        type: string
+      # source=tag
+      ref_name:
+        description: "Tag name (caller passes github.ref_name). Required when source=tag."
+        required: false
+        type: string
+      ref:
+        description: "Full ref (caller passes github.ref). Required when source=tag."
+        required: false
+        type: string
+
+      # source=manual
+      project:
+        description: "Workspace package name (unscoped). Required when source=manual."
+        required: false
+        type: string
+      version:
+        description: "Release version string. Required when source=manual."
+        required: false
+        type: string
+      target:
+        description: "Target commit for release/tag when manually triggered (defaults to current commit)."
+        required: false
+        default: ""
+        type: string
+      force_update_tag:
+        description: "Allow force-updating the release tag if it already exists and points to a different commit."
+        required: false
+        default: false
+        type: boolean
+
+      channel:
+        description: "Release channel label for logs and policy validation (for example: official, buddy)."
+        required: true
+        type: string
+      channel_allowlist:
+        description: >-
+          Comma-separated list of custom channel names that are explicitly
+          exempt from strict channel profile assertions (official/buddy policy
+          matrix). Use only for non-production channels (e.g., staging, canary).
+          Callers are fully responsible for setting all publish flags correctly.
+          SECURITY NOTE: allowlisted channels bypass all policy enforcement —
+          only grant default-branch merge access to trusted contributors.
+          Any new caller workflow file that supplies a non-empty channel_allowlist
+          is itself a policy bypass vector and must be subject to the same
+          branch-protection review as official.yml.
+        required: false
+        default: ""
+        type: string
+      artifact_prefix:
+        description: "Prefix for generated workflow artifacts (for example: official, buddy)."
+        required: true
+        type: string
+      github_release_prerelease:
+        description: "Whether GitHub Release is marked as prerelease."
+        required: true
+        type: boolean
+
+      # Channel profile flags — these are fully determined by 'channel' for official/buddy channels.
+      # Callers MUST pass all flags explicitly; the policy job re-asserts them to catch
+      # misconfiguration at workflow start. For custom allowlisted channels, callers are
+      # responsible for setting these flags to their desired values.
+      enforce_prerelease_only:
+        description: "If true, enforce resolved version to be prerelease-only."
+        required: false
+        default: false
+        type: boolean
+      enforce_non_clobber:
+        description: "If true, buddy-like non-clobber protection is enabled."
+        required: false
+        default: false
+        type: boolean
+
+      # SYNC: add-new-language — add publish_<lang>_<registry> input below
+      publish_python_pypi:
+        description: "If true, publish Python artifacts to PyPI."
+        required: false
+        default: false
+        type: boolean
+      publish_node_gpr:
+        description: "If true, publish Node artifacts to GitHub Packages. official/buddy callers always pass this explicitly; default false prevents silent publishing for custom allowlisted channels."
+        required: false
+        default: false
+        type: boolean
+      publish_node_npmjs:
+        description: "If true, publish Node artifacts to npmjs.org."
+        required: false
+        default: false
+        type: boolean
+      publish_ruby_gpr:
+        description: "If true, publish Ruby gem to GitHub Packages."
+        required: false
+        default: false
+        type: boolean
+      publish_ruby_rubygems:
+        description: "If true, publish Ruby gem to RubyGems.org."
+        required: false
+        default: false
+        type: boolean
+
+      enable_attestation:
+        description: "If true, generate GitHub build provenance attestation for release assets."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.14'
+  NODE_VERSION: '24'
+  PNPM_VERSION: '10'
+  RUBY_VERSION: '3.3'
+  # SYNC: keep in step with EXPECTED_*_VERSION in lint-version-consistency job env below.
+  # Updating only one side will either cause the lint gate to fail (if env is updated but
+  # EXPECTED is not) or silently pass with stale runtime env (if EXPECTED is updated but env is not).
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB NAMING CONVENTION: Conditional-but-always-verify pairs
+  # ---------------------------------------------------------------------------
+  # Some features (attestation, registry publishing) are conditionally enabled
+  # via input flags. Because GitHub Actions' `needs:` graph is evaluated
+  # statically, downstream jobs cannot selectively depend on a job that may be
+  # skipped. The solution is a two-job pair:
+  #
+  #   *-enabled  — The actual working job. Runs only when the feature flag is
+  #                true. Typically has no `always()` in its `if:` — it is
+  #                skipped when the flag is false.
+  #                EXCEPTION: If `*-enabled` lists a potentially-skipped job in
+  #                its `needs:`, it must also use `always()` to prevent an
+  #                unwanted cascade-skip. See publish-node-gpr-enabled for an
+  #                example: it lists gate-node-publish-npmjs (which is skipped
+  #                when publish_node_npmjs=false) and therefore requires
+  #                `always()` plus an explicit result check in its `if:`.
+  #   *          — The gate verifier. Always runs via `always()`. If the
+  #                feature is enabled, it verifies the `-enabled` job succeeded
+  #                (failing loudly if not). If disabled, it logs a note and
+  #                exits 0. Downstream jobs depend on this gate unconditionally.
+  #
+  # This pattern appears for:  attest-{python,node,ruby,wxt}  and
+  #   publish-{node,ruby}-gpr  (and any future conditional publish jobs).
+  # ---------------------------------------------------------------------------
+
+  # ===========================================================================
+  # SECTION: Lint
+  # ===========================================================================
+  # Because GitHub Actions `uses: with:` blocks do not evaluate the `env` context,
+  # tool version values (python_version, node_version, pnpm_version, ruby_version)
+  # must be hardcoded in several sub-workflow call sites. This job verifies that all
+  # hardcoded occurrences in this file match the expected values declared below,
+  # catching any accidental drift introduced by copy-paste or partial updates.
+  lint-version-consistency:
+    name: Lint tool version consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      EXPECTED_PYTHON_VERSION: '3.14'
+      EXPECTED_NODE_VERSION: '24'
+      EXPECTED_PNPM_VERSION: '10'
+      EXPECTED_RUBY_VERSION: '3.3'
+      # SYNC: add-new-language — add EXPECTED_<LANG>_VERSION: '<version>' here for each new language tool
+      # SYNC: keep in step with the workflow-level env: block above.
+      # These EXPECTED_* values are what the lint check validates hardcoded with: values against.
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify hardcoded versions match env declarations
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
+          FAIL=0
+
+          # check_version validates hardcoded 'key: value' pairs in the workflow file.
+          # It handles both lowercase with: keys (e.g. python_version: '3.14') and
+          # ALL_CAPS env: block keys (e.g. PYTHON_VERSION: '3.14'). The unquoted character
+          # class is broadened automatically for ALL_CAPS keys since their values may start
+          # with letters or dots (e.g. PNPM_VERSION: latest), while with: keys only expect digits.
+          check_version() {
+            local key="$1"
+            local expected="$2"
+            # Escape '.' so it is treated as a literal character in -P regex, not a metacharacter.
+            local expected_re
+            expected_re=$(printf '%s' "${expected}" | sed 's/\./\\./g')
+            local mismatches
+            # Match lines with pinned version values in any of these forms:
+            #   key: '3.14'   (single-quoted)
+            #   key: "3.14"   (double-quoted)
+            #   key: 3.14     (unquoted scalar — valid YAML for simple version strings)
+            # Skip bare declaration lines (e.g. `python_version:` with no value) by
+            # requiring at least one non-space character after the colon separator.
+            mismatches=$(grep -n "^\s*${key}:\s*['\"]" "${WORKFLOW_FILE}" \
+              | grep -vF "'${expected}'" \
+              | grep -vF "\"${expected}\"" || true)
+            # Also check for unquoted scalar values (e.g. `node_version: 24` or `NODE_VERSION: 24`).
+            # For ALL_CAPS env var keys, use a broader character class since values may start with
+            # letters or dots; lowercase with: keys only expect digit-prefixed version strings.
+            local unquoted_start
+            if [[ "${key}" =~ ^[A-Z_]+$ ]]; then
+              unquoted_start="[0-9A-Za-z.]"
+            else
+              unquoted_start="[0-9]"
+            fi
+            local unquoted
+            unquoted=$(grep -n "^\s*${key}:\s*${unquoted_start}" "${WORKFLOW_FILE}" \
+              | grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" \
+              | grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
+            if [[ -n "${unquoted}" ]]; then
+              mismatches="${mismatches}"$'\n'"${unquoted}"
+            fi
+            mismatches="${mismatches#$'\n'}"
+            if [[ -n "${mismatches}" ]]; then
+              echo "ERROR: '${key}:' value(s) not matching expected '${expected}':" >&2
+              echo "${mismatches}" >&2
+              FAIL=1
+            fi
+            # Assert at least one occurrence of the key exists. A count of zero means
+            # the key was renamed or removed and the mismatch check would silently pass.
+            total=$(grep -cP "^\s*${key}:\s" "${WORKFLOW_FILE}" || true)
+            if [[ "${total}" -eq 0 ]]; then
+              echo "ERROR: Key '${key}:' not found in '${WORKFLOW_FILE}'." \
+                "Was it renamed or deleted? Update both the key name and the EXPECTED_* variable." >&2
+              FAIL=1
+            fi
+          }
+
+          check_version "python_version" "${EXPECTED_PYTHON_VERSION}"
+          check_version "node_version"   "${EXPECTED_NODE_VERSION}"
+          check_version "pnpm_version"   "${EXPECTED_PNPM_VERSION}"
+          check_version "ruby_version"   "${EXPECTED_RUBY_VERSION}"
+          # SYNC: add-new-language — add check_version "<lang>_version" "${EXPECTED_<LANG>_VERSION}" call here
+
+          # Also validate the top-level ALL_CAPS env: block so that runtime
+          # tool versions stay in sync with the hardcoded with: values above.
+          check_version "PYTHON_VERSION" "${EXPECTED_PYTHON_VERSION}"
+          check_version "NODE_VERSION"   "${EXPECTED_NODE_VERSION}"
+          check_version "PNPM_VERSION"   "${EXPECTED_PNPM_VERSION}"
+          check_version "RUBY_VERSION"   "${EXPECTED_RUBY_VERSION}"
+          # SYNC: add-new-language — add check_version "<LANG>_VERSION" "${EXPECTED_<LANG>_VERSION}" call here
+
+          if [[ "${FAIL}" -ne 0 ]]; then
+            echo "Version consistency check failed." \
+              "Update hardcoded values in 'with:' blocks to match" \
+              "the 'env:' declarations at the top of the workflow." >&2
+            exit 1
+          fi
+          echo "All hardcoded tool versions are consistent."
+
+      - name: Verify caller completeness (all publish_* inputs explicitly passed)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ORCHESTRATE_FILE=".github/workflows/release-orchestrate.yml"
+          OFFICIAL_FILE=".github/workflows/official.yml"
+          BUDDY_FILE=".github/workflows/buddy.yml"
+          FAIL=0
+
+          # Extract all publish_* input names declared in the orchestrate workflow inputs: block.
+          # Each one must be explicitly passed in every caller workflow so that a new input
+          # added to the orchestrate file (Step A) is not silently omitted by callers (Steps F, G).
+          # SYNC: add-new-language — this step auto-detects new publish_* inputs; no manual update needed.
+          mapfile -t publish_inputs < <(
+            grep -P '^      publish_\w+:$' "${ORCHESTRATE_FILE}" | grep -oP 'publish_\w+' | sort -u
+          )
+
+          for flag in "${publish_inputs[@]}"; do
+            for caller_file in "${OFFICIAL_FILE}" "${BUDDY_FILE}"; do
+              if ! grep -qP "^\s+${flag}:" "${caller_file}"; then
+                echo "ERROR: '${flag}' is declared in release-orchestrate.yml inputs but not explicitly passed in '${caller_file}'." >&2
+                FAIL=1
+              fi
+            done
+          done
+
+          if [[ "${FAIL}" -ne 0 ]]; then
+            echo "Caller completeness check failed." >&2
+            echo "When adding a new publish_* input to release-orchestrate.yml (Step A)," >&2
+            echo "you MUST also pass it explicitly in official.yml (Step F) and buddy.yml (Step G)." >&2
+            exit 1
+          fi
+          echo "Caller completeness check passed: all publish_* inputs are explicitly passed in official.yml and buddy.yml."
+
+      - name: Verify release-completed covers all release-* jobs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
+          FAIL=0
+
+          # Extract all top-level release-* job keys (except release-completed itself).
+          # Top-level jobs are indented with exactly 2 spaces followed by a colon.
+          mapfile -t release_jobs < <(
+            grep -P '^  (release-[a-z0-9-]+):$' "${WORKFLOW_FILE}" \
+              | grep -oP 'release-[a-z0-9-]+' \
+              | grep -v '^release-completed$' \
+              | sort -u
+          )
+
+          # Extract the needs: list of release-completed using awk.
+          mapfile -t needs_entries < <(
+            awk '
+              /^  release-completed:/ { in_job=1; next }
+              in_job && /^    needs:/ { in_needs=1; next }
+              in_job && in_needs && /^      - / { sub(/^      - /, ""); print; next }
+              in_job && in_needs && !/^      / { in_needs=0 }
+              in_job && /^  [a-z]/ { in_job=0 }
+            ' "${WORKFLOW_FILE}" | sort -u
+          )
+
+          for job in "${release_jobs[@]}"; do
+            found=0
+            for entry in "${needs_entries[@]}"; do
+              [[ "${entry}" == "${job}" ]] && found=1 && break
+            done
+            if [[ "${found}" -eq 0 ]]; then
+              echo "ERROR: release-* job '${job}' is not listed in release-completed's needs:." >&2
+              echo "Add '${job}' to the needs: list of release-completed (SYNC: add-new-language step E)." >&2
+              FAIL=1
+            fi
+          done
+
+          # Also verify that every attest-* gate job (not *-enabled) is listed in release-completed's needs:.
+          # These are not auto-detected by the release-* check above; this closes the CI-enforcement gap
+          # for the attest-<lang> entries documented in the SYNC: add-new-language checklist.
+          mapfile -t attest_gate_jobs < <(
+            grep -P '^  (attest-[a-z0-9-]+):$' "${WORKFLOW_FILE}" \
+              | grep -oP 'attest-[a-z0-9-]+' \
+              | grep -v '\-enabled$' \
+              | sort -u
+          )
+
+          for job in "${attest_gate_jobs[@]}"; do
+            found=0
+            for entry in "${needs_entries[@]}"; do
+              [[ "${entry}" == "${job}" ]] && found=1 && break
+            done
+            if [[ "${found}" -eq 0 ]]; then
+              echo "ERROR: attest-* gate job '${job}' is not listed in release-completed's needs:." >&2
+              echo "Add '${job}' to the needs: list of release-completed (SYNC: add-new-language step E)." >&2
+              FAIL=1
+            fi
+          done
+
+          if [[ "${FAIL}" -ne 0 ]]; then
+            exit 1
+          fi
+          echo "release-completed needs: coverage check passed (release-* and attest-* gates)."
+
+  # ===========================================================================
+  # SECTION: Policy and Infrastructure
+  # ===========================================================================
+  # The policy job validates that the caller-provided channel profile flags match the
+  # expected profile for the given channel. This is an intentional "belt and suspenders"
+  # design: callers explicitly declare their intent via flags, and the policy job verifies
+  # correctness. This catches copy-paste errors in new caller workflows and documents the
+  # expected profile for each channel in a single authoritative location.
+  #
+  # WARNING: This table is maintained manually. Keep it in sync with the assert_equals /
+  # assert_disabled calls in the case statement below. The assertions are the source of
+  # truth — the table is documentation only. When adding a new language or flag, update
+  # BOTH this table and the corresponding assert_equals calls in the case statement.
+  #
+  # Channel profile matrix (DOCUMENTATION ONLY — the assert_equals calls below are the
+  # source of truth; a value in this table that disagrees with an assertion is a bug in
+  # the table, not in the assertion):
+  #
+  #   Flag                      | official | buddy
+  #   --------------------------|----------|-------
+  #   enforce_prerelease_only   | false    | true
+  #   enforce_non_clobber       | false    | true
+  #   github_release_prerelease | false    | true
+  #   publish_python_pypi       | true     | false
+  #   publish_node_gpr          | true     | true
+  #   publish_node_npmjs        | true     | false
+  #   publish_ruby_gpr          | true     | true
+  #   publish_ruby_rubygems     | true     | false
+  #   enable_attestation        | true     | false
+  #
+  # Custom channels (allowlisted via channel_allowlist) bypass all assertions.
+  # Callers are solely responsible for setting correct flag values for custom channels.
+  policy:
+    name: Validate orchestration policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Validate inputs
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}
+          SOURCE: ${{ inputs.source }}
+          GITHUB_RELEASE_PRERELEASE: ${{ inputs.github_release_prerelease }}
+          ENFORCE_PRERELEASE_ONLY: ${{ inputs.enforce_prerelease_only }}
+          ENFORCE_NON_CLOBBER: ${{ inputs.enforce_non_clobber }}
+          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
+          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
+          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
+          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
+          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
+          ENABLE_ATTESTATION: ${{ inputs.enable_attestation }}
+          REF_NAME: ${{ inputs.ref_name }}
+          REF: ${{ inputs.ref }}
+          PROJECT: ${{ inputs.project }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          assert_equals() {
+            local key="$1"
+            local actual="$2"
+            local expected="$3"
+            if [[ "${actual}" != "${expected}" ]]; then
+              echo "Channel '${CHANNEL}' policy mismatch for '${key}': expected '${expected}', got '${actual}'." >&2
+              exit 1
+            fi
+          }
+
+          is_channel_allowlisted() {
+            local candidate="$1"
+            local entry
+            IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST}"
+            for entry in "${allowlist[@]}"; do
+              # Trim leading and trailing whitespace.
+              entry="${entry#"${entry%%[![:space:]]*}"}"
+              entry="${entry%"${entry##*[![:space:]]}"}"
+              [[ -z "${entry}" ]] && continue
+              # Reserved channels cannot be allowlisted.
+              if [[ "${entry}" == "official" || "${entry}" == "buddy" ]]; then
+                echo "Reserved channel '${entry}' cannot appear in channel_allowlist." >&2
+                exit 1
+              fi
+              # Validate channel name charset: only lowercase letters, digits, hyphens, and underscores.
+              if [[ ! "${entry}" =~ ^[a-z0-9_-]+$ ]]; then
+                echo "Invalid channel name '${entry}' in channel_allowlist: only lowercase letters (a-z), digits (0-9), hyphens (-), and underscores (_) are allowed." >&2
+                exit 1
+              fi
+              # Check if this entry matches the candidate.
+              if [[ "${entry}" == "${candidate}" ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          if [[ "${SOURCE}" != "tag" && "${SOURCE}" != "manual" ]]; then
+            echo "Invalid source '${SOURCE}'." >&2
+            exit 1
+          fi
+
+          if [[ "${SOURCE}" == "tag" ]]; then
+            if [[ -z "${REF_NAME}" ]]; then
+              echo "source=tag requires ref_name to be set." >&2
+              exit 1
+            fi
+            if [[ -z "${REF}" ]]; then
+              echo "source=tag requires ref to be set." >&2
+              exit 1
+            fi
+          fi
+
+          if [[ "${SOURCE}" == "manual" ]]; then
+            if [[ -z "${PROJECT}" ]]; then
+              echo "source=manual requires project to be set." >&2
+              exit 1
+            fi
+            if [[ -z "${VERSION}" ]]; then
+              echo "source=manual requires version to be set." >&2
+              exit 1
+            fi
+          fi
+
+          case "${CHANNEL}" in
+            official)
+              assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "false"
+              assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "false"
+              # SYNC: add-new-language — add assert_equals for publish_<lang>_<registry> in official channel below
+              assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "true"
+              assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
+              # Note: WXT projects must still pass publish_node_npmjs=true to satisfy policy,
+              # but all Node publish jobs are gated on is_wxt != 'true', so this flag has
+              # no runtime effect for WXT projects.
+              echo "Note: WXT (browser extension) projects require publish_node_npmjs=true by channel policy even though it has no runtime effect (WXT artifacts are published as browser extension archives, not npm packages). If this assertion fails, set publish_node_npmjs=true in the caller workflow."
+              assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
+              assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
+              assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
+              assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "true"
+              assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "false"
+              ;;
+            buddy)
+              assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "true"
+              assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "true"
+              # SYNC: add-new-language (B2) — add assert_equals / assert_disabled checks for the new
+              # language flags under the buddy channel case. This step is NOT optional: omitting it causes a
+              # silent policy bypass where the buddy channel will not enforce the new language's flags and
+              # misconfigured callers will pass policy validation without error.
+              # B2: Add assert_disabled / assert_equals checks for the new language flags under the buddy channel case.
+              assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "false"
+              assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
+              assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "false"
+              assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
+              assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "false"
+              assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "false"
+              assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "true"
+              ;;
+            *)
+              # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy
+              # profile matrix is not enforced). This is an intentional escape hatch for
+              # non-production channels (e.g., staging, canary). Access control relies on
+              # repository branch protection — restrict default-branch merge to trusted contributors.
+              if is_channel_allowlisted "${CHANNEL}"; then
+                echo "Channel '${CHANNEL}' is explicitly allowlisted; skipping strict channel profile assertions."
+                # github_release_prerelease is not enforced for custom channels.
+                # The caller is responsible for setting it correctly.
+                # SECURITY: Production registry publishing (PyPI/npmjs/RubyGems) is prohibited
+                # for allowlisted channels. These registries rely on GitHub environment required
+                # reviewers as the sole gating mechanism; the reusable workflow cannot enforce
+                # caller origin. To intentionally publish a custom channel to a production
+                # registry, remove these assertions and accept full responsibility for access control.
+                if [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]]; then
+                  echo "Allowlisted channel '${CHANNEL}' may not set publish_python_pypi=true (production registry)." >&2
+                  echo "Production registry publishing is reserved for official and buddy channels." >&2
+                  exit 1
+                fi
+                if [[ "${PUBLISH_NODE_NPMJS}" == "true" ]]; then
+                  echo "Allowlisted channel '${CHANNEL}' may not set publish_node_npmjs=true (production registry)." >&2
+                  echo "Production registry publishing is reserved for official and buddy channels." >&2
+                  exit 1
+                fi
+                if [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]]; then
+                  echo "Allowlisted channel '${CHANNEL}' may not set publish_ruby_rubygems=true (production registry)." >&2
+                  echo "Production registry publishing is reserved for official and buddy channels." >&2
+                  exit 1
+                fi
+                # NOTE: publish_node_gpr and publish_ruby_gpr are intentionally not blocked for
+                # allowlisted channels. GitHub Packages (GPR) authenticates via github.token which
+                # is already scoped to the repository — no OIDC nor environment reviewers are
+                # involved. Custom channels (e.g., staging) commonly use GPR to distribute
+                # pre-production artifacts. If you want to prevent GPR publishing for custom
+                # channels, add an explicit prohibition here.
+                echo "::notice title=Custom channel::Allowlisted channel '${CHANNEL}' active. Actor: ${GITHUB_ACTOR}, ref: ${GITHUB_REF_NAME}. Verify branch protection restricts merge access to trusted contributors."
+                {
+                  echo ""
+                  echo "> [!WARNING]"
+                  echo "> **Custom channel \`${CHANNEL}\` is allowlisted.** Actor: \`${GITHUB_ACTOR}\`, ref: \`${GITHUB_REF_NAME}\`."
+                  echo "> Access control relies entirely on repository branch protection."
+                  echo "> Ensure only trusted contributors have merge access to this caller workflow file."
+                } >> "${GITHUB_STEP_SUMMARY}"
+              else
+                echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
+                echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
+                exit 1
+              fi
+              ;;
+          esac
+
+      - name: Checkout (policy self-test)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Self-test policy flag coverage
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
+          FAIL=0
+
+          # For each flag that must be validated per-channel, verify that assert_equals
+          # appears at least twice in the policy job (once for official, once in buddy).
+          # A count < 2 means the flag was added to one branch but not the other,
+          # which causes a silent policy bypass for the missing channel.
+          # SYNC: add-new-language — add the new publish_<lang>_<registry> flag name(s) here.
+          # Omitting this step means future regressions (removing assert_equals for the new flag
+          # from one branch) will not be caught by the self-test.
+          # NOTE: force_update_tag is intentionally excluded from this list.
+          # It is a per-run operational override, not a channel profile flag, and is not asserted
+          # by the policy job for either channel. Add channel profile flags only.
+          # NOTE: This list is manually maintained. Adding a new publish_<lang>_<registry> input
+          # requires updating BOTH this list AND the assert_equals calls in the case branches
+          # (see SYNC: add-new-language B2 above). The CI check only enforces flags listed here.
+          required_flags=(
+            enforce_prerelease_only
+            enforce_non_clobber
+            publish_python_pypi
+            publish_node_gpr
+            publish_node_npmjs
+            publish_ruby_gpr
+            publish_ruby_rubygems
+            enable_attestation
+            github_release_prerelease
+          )
+
+          for flag in "${required_flags[@]}"; do
+            # Scope the grep to each branch individually to catch the case where a flag
+            # was added to 'official' but not 'buddy' (or vice versa). A global grep
+            # count ≥ 2 would pass even if both assertions are in the same branch while
+            # the other branch is missing them entirely.
+            # Use ';; ' as the branch boundary instead of the sibling branch label.
+            # This is more robust: a nested case/esac inside a branch would cause the
+            # sibling-label approach to over-include lines; ;; always terminates a branch.
+            official_count=$(awk '/^\s+official\)/{f=1} f && /^\s*;;/{exit} f' "${WORKFLOW_FILE}" \
+              | grep -c "assert_equals \"${flag}\"" || true)
+            buddy_count=$(awk '/^\s+buddy\)/{f=1} f && /^\s*;;/{exit} f' "${WORKFLOW_FILE}" \
+              | grep -c "assert_equals \"${flag}\"" || true)
+            if [[ "${official_count}" -lt 1 || "${buddy_count}" -lt 1 ]]; then
+              echo "ERROR: flag '${flag}' missing assert_equals in one or more channel branches (official: ${official_count}, buddy: ${buddy_count}); each flag must be asserted in BOTH 'official' and 'buddy'." >&2
+              FAIL=1
+            fi
+          done
+
+          if [[ "${FAIL}" -ne 0 ]]; then
+            echo "Policy self-test failed. When adding a new language, you MUST add assert_equals calls" >&2
+            echo "for each new flag in BOTH the 'official' AND 'buddy' case branches of the policy job." >&2
+            echo "See SYNC: add-new-language (B2) comment for details." >&2
+            exit 1
+          fi
+          echo "Policy flag coverage self-test passed."
+
+  # NOTE: This job runs AFTER resolve (not at workflow start) because project_kind
+  # (python/node/ruby/wxt) is only known after the resolve step. It validates that
+  # the caller's publish flags are consistent with the resolved project kind.
+  # Contrast with the `policy` job (no needs:) which validates the channel-profile
+  # flags unconditionally at workflow start — before any resolution occurs.
+  policy-publish-targets:
+    name: Validate publish-target policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: resolve
+    permissions:
+      contents: read
+    steps:
+      - name: Validate publish targets by project kind
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
+          IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
+          CHANNEL: ${{ inputs.channel }}
+          # SYNC: add-new-language — (1) add publish_<lang>_<registry> env var(s) to the env: block above
+          # SYNC: add-new-language — (2) add per-kind validation branch (if/elif) to the run: script below
+          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
+          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
+          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
+          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
+          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
+        run: |
+          set -Eeuo pipefail
+
+          # NOTE: If publish_node_gpr or publish_ruby_gpr is true, the caller workflow
+          # MUST grant packages: write to the orchestrate job (workflow_call does not inherit
+          # permissions automatically). A missing permission causes a silent API failure at
+          # runtime, not a policy error. Both official.yml and buddy.yml are expected to
+          # include packages: write. Verify any new caller workflow does the same.
+          if [[ "${PUBLISH_NODE_GPR}" == "true" || "${PUBLISH_RUBY_GPR}" == "true" ]]; then
+            echo "ℹ️ GPR publishing is enabled (publish_node_gpr=${PUBLISH_NODE_GPR}, publish_ruby_gpr=${PUBLISH_RUBY_GPR}). Ensure the caller workflow grants \`packages: write\`." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+          # assert_disabled: Checks that a publish flag is false for a project kind that
+          # does not use it (cross-kind contamination check). This is only enforced for
+          # custom allowlisted channels. For official/buddy channels the policy job already
+          # validates all flags, so this function is intentionally a no-op for them.
+          assert_disabled() {
+            local flag_name="$1"
+            local flag_value="$2"
+            # No-op for official/buddy: the policy job enforces correct flag values
+            # for these channels; cross-kind contamination cannot occur in practice.
+            if [[ "${CHANNEL}" == "official" || "${CHANNEL}" == "buddy" ]]; then
+              return 0
+            fi
+            if [[ "${flag_value}" == "true" ]]; then
+              echo "Cross-kind contamination: '${flag_name}' is 'true' for a '${PROJECT_KIND}' project '${PROJECT}'; this flag has no effect and indicates a misconfiguration." >&2
+              exit 1
+            fi
+          }
+
+          if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" != "true" ]]; then
+            if [[ "${PUBLISH_NODE_GPR}" != "true" && "${PUBLISH_NODE_NPMJS}" != "true" ]]; then
+              echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs). Got: publish_node_gpr=${PUBLISH_NODE_GPR}, publish_node_npmjs=${PUBLISH_NODE_NPMJS}." >&2
+              exit 1
+            fi
+            assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
+            assert_disabled "publish_ruby_gpr"       "${PUBLISH_RUBY_GPR}"
+            assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
+            echo "Node publish-target policy passed for '${PROJECT}'."
+            exit 0
+          fi
+
+          if [[ "${PROJECT_KIND}" == "ruby" ]]; then
+            if [[ "${PUBLISH_RUBY_GPR}" != "true" && "${PUBLISH_RUBY_RUBYGEMS}" != "true" ]]; then
+              echo "Ruby project '${PROJECT}' requires at least one Ruby publish target (GPR/RubyGems). Got: publish_ruby_gpr=${PUBLISH_RUBY_GPR}, publish_ruby_rubygems=${PUBLISH_RUBY_RUBYGEMS}." >&2
+              exit 1
+            fi
+            assert_disabled "publish_python_pypi"  "${PUBLISH_PYTHON_PYPI}"
+            assert_disabled "publish_node_gpr"     "${PUBLISH_NODE_GPR}"
+            assert_disabled "publish_node_npmjs"   "${PUBLISH_NODE_NPMJS}"
+            echo "Ruby publish-target policy passed for '${PROJECT}'."
+            exit 0
+          fi
+
+          if [[ "${PROJECT_KIND}" == "python" ]]; then
+            if [[ "${PUBLISH_PYTHON_PYPI}" != "true" ]]; then
+              echo "⚠️ Python project '${PROJECT}' will not publish to PyPI (publish_python_pypi=false). Only a GitHub Release will be created." >> "${GITHUB_STEP_SUMMARY}"
+            fi
+            assert_disabled "publish_node_gpr"       "${PUBLISH_NODE_GPR}"
+            assert_disabled "publish_node_npmjs"     "${PUBLISH_NODE_NPMJS}"
+            assert_disabled "publish_ruby_gpr"       "${PUBLISH_RUBY_GPR}"
+            assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
+            echo "Python publish-target policy passed for '${PROJECT}'."
+            exit 0
+          fi
+
+          # WXT projects are distributed as browser extension archives, not npm packages;
+          # all publish_node_* flags are intentionally ignored for WXT projects.
+          if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ]]; then
+            # assert_disabled is a no-op for official/buddy channels (policy job already
+            # validated all flags). For custom allowlisted channels it enforces that no
+            # publish_node_* flags are erroneously set to true.
+            assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
+            assert_disabled "publish_node_gpr"       "${PUBLISH_NODE_GPR}"
+            assert_disabled "publish_node_npmjs"     "${PUBLISH_NODE_NPMJS}"
+            assert_disabled "publish_ruby_gpr"       "${PUBLISH_RUBY_GPR}"
+            assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
+            echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
+            echo "ℹ️ WXT project \`${PROJECT}\`: publish_node_gpr=${PUBLISH_NODE_GPR}, publish_node_npmjs=${PUBLISH_NODE_NPMJS} are ignored (browser extension; not published to npm registries)." >> "${GITHUB_STEP_SUMMARY}"
+            # NOTE: For official channel runs, both publish_node_gpr=true and publish_node_npmjs=true
+            # are required by channel policy (the policy job mandates them before project_kind is known).
+            # For WXT projects both flags have no runtime effect — WXT artifacts are distributed as
+            # browser extension archives, not npm packages, and no Node pipeline jobs execute for WXT builds.
+            if [[ "${CHANNEL}" == "official" && ("${PUBLISH_NODE_NPMJS}" == "true" || "${PUBLISH_NODE_GPR}" == "true") ]]; then
+              echo "ℹ️ Official channel note: \`publish_node_gpr=true\` and \`publish_node_npmjs=true\` are required by channel policy but have no effect for WXT projects (browser extension; npm publishing is skipped)." >> "${GITHUB_STEP_SUMMARY}"
+            fi
+            exit 0
+          fi
+
+          echo "Unexpected project kind '${PROJECT_KIND}' while validating publish-target policy." >&2
+          exit 1
+
+  resolve:
+    name: Resolve release inputs
+    uses: ./.github/workflows/release-resolve.yml
+    needs:
+      - policy
+      - lint-version-consistency
+    permissions:
+      contents: read
+    with:
+      source: ${{ inputs.source }}
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION
+      python_version: '3.14'
+
+      # source=tag
+      ref_name: ${{ inputs.ref_name }}
+      ref: ${{ inputs.ref }}
+
+      # source=manual
+      project: ${{ inputs.project }}
+      version: ${{ inputs.version }}
+      target: ${{ inputs.target }}
+      force_update_tag: ${{ inputs.force_update_tag }}
+
+  guard-prerelease-only:
+    name: Guard prerelease-only policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - policy  # explicit: ensure channel policy is validated before guards run
+    permissions:
+      contents: read
+    steps:
+      - name: Enforce prerelease-only
+        if: inputs.enforce_prerelease_only
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          IS_PRERELEASE: ${{ needs.resolve.outputs.is_prerelease }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${IS_PRERELEASE}" != "true" ]]; then
+            echo "Prerelease-only policy is enabled. Refusing '${PROJECT}' version '${VERSION}'." >&2
+            exit 1
+          fi
+          echo "Prerelease-only guard passed for ${PROJECT} ${VERSION}."
+          echo "### Guard: Prerelease-only :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Version \`${VERSION}\` is a prerelease. Guard passed for channel \`${CHANNEL}\`." >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Guard disabled
+        if: ${{ !inputs.enforce_prerelease_only }}
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -Eeuo pipefail
+          echo "Prerelease-only guard is disabled for this channel."
+          echo "### Guard: Prerelease-only :white_check_mark: disabled" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Prerelease-only enforcement is not enabled for channel \`${CHANNEL}\`." >> "${GITHUB_STEP_SUMMARY}"
+
+  guard-non-clobber:
+    name: Guard non-clobber policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - policy  # explicit: ensure channel policy is validated before guards run
+    permissions:
+      contents: read
+    steps:
+      - name: Install jq
+        if: inputs.enforce_non_clobber
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Check existing GitHub Release by tag
+        if: inputs.enforce_non_clobber
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
+        run: |
+          set -Eeuo pipefail
+
+          api="repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}"
+          resp_file="${RUNNER_TEMP}/gh-api.response"
+          rm -f "${resp_file}"
+
+          set +e
+          gh api "${api}" --include > "${resp_file}" 2>&1
+          rc=$?
+          set -e
+
+          status=$(grep -m1 -E '^HTTP/' "${resp_file}" | awk '{print $2}' || true)
+
+          if [[ "${rc}" -eq 0 ]]; then
+            # Extract response body: skip HTTP headers up to and including the blank separator line.
+            body=$(sed '1,/^[[:space:]]*$/d' "${resp_file}")
+            if [[ -z "${body}" ]]; then
+              echo "Error: gh api output did not contain a JSON body." >&2
+              cat "${resp_file}" >&2 || true
+              exit 1
+            fi
+            prerelease=$(printf '%s' "${body}" | jq -r '.prerelease')
+            if [[ "${prerelease}" != "true" && "${prerelease}" != "false" ]]; then
+              echo "Error: release JSON body missing 'prerelease'." >&2
+              exit 1
+            fi
+            if [[ "${prerelease}" == "false" ]]; then
+              echo "A non-prerelease GitHub Release already exists for tag '${TAG_NAME}'." >&2
+              echo "Buddy releases must not modify official (prerelease=false) releases. Aborting." >&2
+              echo "Note: force_update_tag=true controls whether the git tag can be moved, but does not bypass this prerelease-type protection." >&2
+              exit 1
+            fi
+            echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
+            echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+            echo "Tag \`${TAG_NAME}\` — existing release is prerelease=true, safe to proceed." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          if [[ "${status}" == "404" ]]; then
+            echo "No existing GitHub Release found for tag '${TAG_NAME}'."
+            # Secondary check: verify whether the git tag itself already exists.
+            # A tag without a release can appear when a prior run created the tag but
+            # the release step failed. Log a warning so it is visible in the run log.
+            tag_resp="${RUNNER_TEMP}/gh-tag-api.response"
+            set +e
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" --include > "${tag_resp}" 2>&1
+            set -e
+            tag_http=$(grep -m1 -E '^HTTP/' "${tag_resp}" | awk '{print $2}' || true)
+            if [[ "${tag_http}" == "200" ]]; then
+              tag_sha=$(sed '1,/^[[:space:]]*$/d' "${tag_resp}" | jq -r '.object.sha')
+              echo "Warning: git tag '${TAG_NAME}' already exists (sha=${tag_sha}) but has no associated GitHub Release." >&2
+              echo "This is expected if a previous run created the tag but failed before creating the release." >&2
+            fi
+            echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+            echo "Tag \`${TAG_NAME}\` — no existing release found, safe to proceed." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          echo "Failed to query release metadata for tag '${TAG_NAME}' (HTTP ${status:-unknown})." >&2
+          cat "${resp_file}" >&2 || true
+          exit 1
+
+      - name: Guard disabled
+        if: ${{ !inputs.enforce_non_clobber }}
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -Eeuo pipefail
+          echo "Non-clobber guard is disabled for this channel."
+          echo "### Guard: Non-clobber :white_check_mark: disabled" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Non-clobber enforcement is not enabled for channel \`${CHANNEL}\`." >> "${GITHUB_STEP_SUMMARY}"
+
+  prepare-release-notes:
+    name: Prepare release notes
+    needs: resolve
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-prepare-release-notes.yml
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      has_changelog: ${{ needs.resolve.outputs.has_changelog == 'true' }}
+      changelog_path: ${{ needs.resolve.outputs.changelog }}
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      project: ${{ needs.resolve.outputs.project }}
+      version: ${{ needs.resolve.outputs.version }}
+      run_url: ${{ needs.resolve.outputs.run_url }}
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+
+  # ===========================================================================
+  # SECTION: Python Release Pipeline
+  # ===========================================================================
+  build-python:
+    name: Build Python package
+    needs:
+      - resolve
+      - policy-publish-targets
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'python'
+    uses: ./.github/workflows/release-build-python.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION
+      python_version: '3.14'
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  # NOTE: publish-python does not use the *-enabled / * gate pair pattern (unlike Node/Ruby GPR
+  # publishing). Python has only one target registry (PyPI) and no conditionally-dependent
+  # downstream job that must run when the flag is false — the job simply does not execute when
+  # publish_python_pypi=false. The environment approval gate (environment: pypi) serves as the
+  # explicit human checkpoint. See the ATTESTATION GATE PATTERN comment below for the gate pattern
+  # used by attest-* jobs.
+  publish-python:
+    name: Publish Python package (PyPI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
+    needs:
+      - resolve
+      - build-python
+      - attest-python
+    if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
+    # SECURITY: This environment MUST have required reviewers configured in repository settings.
+    # Without reviewers, any workflow in this repository calling with channel: official can publish to PyPI via OIDC.
+    # SECURITY: The Trusted Publisher registration on PyPI MUST set the optional Environment field to 'pypi'.
+    # This adds a second OIDC claim check (job_workflow_environment) so the token is only accepted when the job
+    # runs inside this specific environment, providing defense-in-depth independent of reviewer configuration.
+    environment: pypi
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Note about PyPI Trusted Publishers (OIDC)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+        run: |
+          set -Eeuo pipefail
+          echo "This workflow is intended to publish '${PROJECT}' to PyPI using PyPI Trusted Publishing (OIDC)."
+          echo "No PyPI token is provided by this workflow; publishing will fail unless a Trusted Publisher is configured on PyPI for:"
+          echo "  - Repository: ${GITHUB_REPOSITORY}"
+          echo "  - Workflow: .github/workflows/release-orchestrate.yml"
+          echo "    (This is the reusable workflow file containing this job."
+          echo "     PyPI Trusted Publishing validates the OIDC job_workflow_ref claim, which always"
+          echo "     points to the reusable workflow file — not the caller workflow (e.g. official.yml).)"
+          echo "  - Environment (if configured on PyPI): pypi"
+          echo "A single Trusted Publisher entry for this reusable workflow covers all callers."
+          echo "Each caller workflow does NOT need a separate Trusted Publisher registration."
+          echo "See: https://docs.pypi.org/trusted-publishers/"
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Validate PyPI remote digests (idempotency)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/validate_pypi_remote_digests.sh"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1
+        with:
+          packages-dir: ${{ github.workspace }}/out/
+          skip-existing: true
+
+  # ATTESTATION GATE PATTERN: Each language uses a pair of jobs:
+  #   1. attest-*-enabled: Runs only when enable_attestation=true. Generates build provenance.
+  #   2. attest-*: Always runs (via always()). If attestation is enabled, it verifies the
+  #      enabled job succeeded. If disabled, it logs a note and exits 0.
+  # This pattern ensures all downstream jobs can unconditionally depend on attest-* without
+  # needing to replicate the enable_attestation condition check in every dependent job.
+  # The same pattern is repeated for Node, Ruby, and WXT below.
+  attest-python-enabled:
+    name: Attest release assets (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - build-python
+    if: needs.resolve.outputs.project_kind == 'python' && inputs.enable_attestation
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+  attest-python:
+    name: Attestation gate (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - build-python
+      - attest-python-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'python' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify attestation outcome
+        if: inputs.enable_attestation
+        shell: bash
+        env:
+          BUILD_RESULT: ${{ needs.build-python.result }}
+          RESULT: ${{ needs.attest-python-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${BUILD_RESULT}" != "success" ]]; then
+            echo "Skipping attestation gate: build-python did not succeed (result=${BUILD_RESULT})."
+            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          if [[ "${RESULT}" != "success" ]]; then
+            echo "Attestation job did not succeed (result=${RESULT})." >&2
+            exit 1
+          fi
+          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Attestation disabled
+        if: ${{ !inputs.enable_attestation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Attestation is disabled for this channel."
+          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
+
+  # The release-python-with-pypi / release-python-no-pypi split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-python must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
+  release-python-with-pypi:
+    name: Create GitHub release (Python, with PyPI)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-python
+      - publish-python
+      - attest-python
+    if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  release-python-no-pypi:
+    name: Create GitHub release (Python, no PyPI)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-python
+      - attest-python
+    if: needs.resolve.outputs.project_kind == 'python' && !inputs.publish_python_pypi
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  # ===========================================================================
+  # SECTION: Node Release Pipeline
+  # ===========================================================================
+  pack-node:
+    name: Pack Node tarball(s)
+    needs:
+      - resolve
+      - policy-publish-targets
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
+    uses: ./.github/workflows/release-build-node-pack.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION, env.NODE_VERSION, env.PNPM_VERSION
+      python_version: '3.14'
+      node_version: '24'
+      pnpm_version: '10'
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+      # Defensive: pack_mode uses == true rather than a bare boolean test to prevent
+      # string-coercion bugs (e.g., string 'false' being truthy) if this input's type
+      # were ever changed. For workflow_call with type: boolean this is a benign no-op.
+      pack_mode: ${{ inputs.publish_node_npmjs == true && 'both' || 'gpr-only' }}
+
+  gate-node-publish-npmjs:
+    name: Approval gate for Node publish (npmjs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
+    needs:
+      - resolve
+      - pack-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
+    # npmjs-gate: human approval gate only. The publish job uses environment: npmjs for
+    # OIDC token scoping. Using separate environments prevents a double-approval prompt
+    # when the npmjs environment has required reviewers configured.
+    environment: npmjs-gate
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Await npmjs environment approval
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "npmjs environment approval granted."
+
+  # NOTE: publish-node-gpr-enabled is intentionally coupled to the npmjs approval gate.
+  # When publish_node_npmjs=true, GPR publishing is held until the npmjs environment approval
+  # succeeds. This provides approval-synchronized sequencing: either both registries are
+  # approved-and-published together, or neither proceeds. If you need independent registry
+  # publishes, decouple this condition by removing the gate-node-publish-npmjs dependency check.
+  # Attestation (attest-node) must also complete successfully before GPR publishing proceeds,
+  # ensuring the artifact is attested before it is published to GitHub Packages.
+  # NOTE: This job uses always() (exception to the *-enabled pattern) because gate-node-publish-npmjs
+  # is in needs: and is skipped when publish_node_npmjs=false. See JOB NAMING CONVENTION above.
+  publish-node-gpr-enabled:
+    name: Publish Node package (GitHub Packages) [upload]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - pack-node
+      - attest-node
+      - gate-node-publish-npmjs
+    # Condition: Always evaluate (via always()), but only run if: this is a non-WXT Node
+    # project, GPR publishing is enabled, pack-node succeeded, attest-node succeeded, AND
+    # (either npmjs is not being published OR the npmjs approval gate
+    # (gate-node-publish-npmjs) has passed).
+    # The pack-node result check prevents a spurious "artifact not found" failure when
+    # pack-node fails and publish_node_npmjs=false (gate is skipped, not failed).
+    # See the comment above this job for the rationale behind the npmjs gate coupling.
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr && needs.pack-node.result == 'success' && needs.attest-node.result == 'success' && (!inputs.publish_node_npmjs || needs.gate-node-publish-npmjs.result == 'success') }}
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Resolve npm scope
+        id: npm_scope
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+          scope="@${OWNER,,}"
+          echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # registry-url intentionally omitted: auth is handled by the custom .npmrc
+          # created in the next step. Setting registry-url here would cause setup-node
+          # to write a redundant .npmrc in the workspace root with default file permissions,
+          # which could leak the token on self-hosted runners.
+
+      - name: Create .npmrc for GitHub Packages (GPR)
+        id: gpr_npmrc
+        shell: bash
+        env:
+          SCOPE: ${{ steps.npm_scope.outputs.scope }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          npmrc="${RUNNER_TEMP}/npmrc-gpr"
+          install -m 600 /dev/null "${npmrc}"
+          # Write content with restricted permissions; chmod after redirect as defense-in-depth.
+          {
+            echo "registry=https://registry.npmjs.org"
+            echo "${SCOPE}:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            echo "//npm.pkg.github.com/:always-auth=true"
+          } > "${npmrc}"
+          chmod 600 "${npmrc}"
+
+          echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Publish to GitHub Packages from tarball
+        shell: bash
+        env:
+          DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
+
+  publish-node-gpr:
+    name: Publish Node package (GitHub Packages) [gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - publish-node-gpr-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Node GPR publishing disabled
+        if: ${{ !inputs.publish_node_gpr }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Node GPR publishing is disabled by policy."
+          echo "### GPR publish: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Ensure enabled publish job succeeded
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result != 'success' && needs.publish-node-gpr-enabled.result != 'skipped' }}
+        shell: bash
+        env:
+          ENABLED_JOB_RESULT: ${{ needs.publish-node-gpr-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          echo "Node GPR publish gate failed: publish-node-gpr-enabled did not succeed (result=${ENABLED_JOB_RESULT})." >&2
+          exit 1
+
+      - name: Node GPR publish skipped (upstream did not run)
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result == 'skipped' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Node GPR publish gate: upstream job did not run (publish-node-gpr-enabled was skipped). Check pack-node, attest-node, gate-node-publish-npmjs, or resolve for the root cause." >&2
+          echo "### GPR publish: :x: upstream job skipped (see pack-node / attest-node / gate-node-publish-npmjs / resolve)" >> "${GITHUB_STEP_SUMMARY}"
+          exit 1
+
+      - name: Node GPR publish completed
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result == 'success' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Node GPR publish completed."
+          echo "### GPR publish: :white_check_mark: completed" >> "${GITHUB_STEP_SUMMARY}"
+
+  # RECOVERY: If publish-node-gpr succeeded but publish-node-npmjs is subsequently
+  # blocked (transient environment approval timeout, npmjs outage, or OIDC issue):
+  # 1. Navigate to Actions → select this run → Re-run jobs → Re-run failed jobs.
+  # 2. The gate-node-publish-npmjs approval step will re-prompt; GPR publishing is
+  #    idempotent (publish_node_gpr_idempotent.sh skips if version already exists).
+  publish-node-npmjs:
+    name: Publish Node package (npmjs.org)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
+    needs:
+      - resolve
+      - pack-node  # scheduling only: ensures artifact is available before download; safety is enforced via gate-node-publish-npmjs result check
+      - gate-node-publish-npmjs
+      - publish-node-gpr
+      - attest-node
+    # NOTE: No explicit attestation check needed here — it is transitively enforced:
+    # attest-node failure → publish-node-gpr-enabled skipped → publish-node-gpr gate fails
+    # → this job blocked by needs.publish-node-gpr.result == 'success' above.
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' }}
+    # SECURITY: This environment MUST have required reviewers configured in repository settings.
+    # Without reviewers, any workflow in this repository calling with channel: official can publish to npmjs.org via OIDC.
+    # SECURITY: The Trusted Publisher registration on npmjs.com MUST set the optional Environment field to 'npmjs'.
+    # This adds a second OIDC claim check (job_workflow_environment) so the token is only accepted when the job
+    # runs inside this specific environment, providing defense-in-depth independent of reviewer configuration.
+    environment: npmjs
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Setup Node.js (npmjs)
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Note about npm Trusted Publishers (OIDC)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+        run: |
+          set -Eeuo pipefail
+          echo "This workflow is intended to publish '${PROJECT}' to npmjs.org using npm Trusted Publishing (OIDC)."
+          echo "No npm token is provided by this workflow; publishing will fail unless a Trusted Publisher is configured on npmjs.com for:"
+          echo "  - Repository: ${GITHUB_REPOSITORY}"
+          echo "  - Workflow: .github/workflows/release-orchestrate.yml"
+          echo "    (This is the reusable workflow file containing this job."
+          echo "     npm Trusted Publishing validates the OIDC job_workflow_ref claim, which always"
+          echo "     points to the reusable workflow file — not the caller workflow (e.g. official.yml).)"
+          echo "  - Environment (if configured on npm): npmjs"
+          echo "A single Trusted Publisher entry for this reusable workflow covers all callers."
+          echo "Each caller workflow does NOT need a separate Trusted Publisher registration."
+          echo "See: https://docs.npmjs.com/trusted-publishers"
+
+      - name: Publish to npm registry (idempotent)
+        shell: bash
+        env:
+          DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_npmjs_idempotent.sh"
+
+  attest-node-enabled:
+    name: Attest release assets (Node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - pack-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.enable_attestation
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+  attest-node:
+    name: Attestation gate (Node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - pack-node
+      - attest-node-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify attestation outcome
+        if: inputs.enable_attestation
+        shell: bash
+        env:
+          BUILD_RESULT: ${{ needs.pack-node.result }}
+          RESULT: ${{ needs.attest-node-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${BUILD_RESULT}" != "success" ]]; then
+            echo "Skipping attestation gate: pack-node did not succeed (result=${BUILD_RESULT})."
+            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          if [[ "${RESULT}" != "success" ]]; then
+            echo "Attestation job did not succeed (result=${RESULT})." >&2
+            exit 1
+          fi
+          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Attestation disabled
+        if: ${{ !inputs.enable_attestation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Attestation is disabled for this channel."
+          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
+
+  # The release-node-with-npmjs / release-node-no-npmjs split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-node-npmjs must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
+  release-node-with-npmjs:
+    name: Create GitHub release (Node, with npmjs)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - pack-node
+      - publish-node-gpr
+      - publish-node-npmjs
+      - attest-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  release-node-no-npmjs:
+    name: Create GitHub release (Node, no npmjs)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - pack-node
+      - publish-node-gpr
+      - attest-node
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && !inputs.publish_node_npmjs
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  # ===========================================================================
+  # SECTION: Ruby Release Pipeline
+  # ===========================================================================
+  build-ruby:
+    name: Build Ruby gem
+    needs:
+      - resolve
+      - policy-publish-targets
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'ruby'
+    uses: ./.github/workflows/release-build-ruby-gem.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.RUBY_VERSION
+      ruby_version: '3.3'
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  # NOTE: publish-ruby-gpr-enabled and publish-ruby-rubygems are intentionally independent.
+  # Unlike the Node path (where GPR is held until npmjs environment approval to enforce atomic
+  # dual-publish), Ruby GPR (GitHub Packages) and RubyGems.org serve distinct audiences and
+  # are independent artifact stores with no atomicity requirement. A partial publish (GPR
+  # succeeds, RubyGems fails) is a loud failure that surfaces in the workflow, not a silent
+  # inconsistency. If you need atomic Ruby dual-publish in the future, mirror the Node pattern
+  # by adding an environment approval gate before publish-ruby-gpr-enabled.
+  # Attestation (attest-ruby) is enforced before GPR publishing to ensure the artifact is
+  # attested prior to being published to GitHub Packages.
+  publish-ruby-gpr-enabled:
+    name: Publish Ruby gem (GitHub Packages) [upload]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - build-ruby
+      - attest-ruby
+    # NOTE: This job intentionally does not use always(). If attest-ruby fails, GitHub Actions
+    # skips this job automatically via the needs: mechanism before the if: is evaluated.
+    # The explicit needs.attest-ruby.result == 'success' check is defensive redundancy.
+    # WARNING: If you ever add always() to this job, you MUST keep
+    # needs.attest-ruby.result == 'success' in the if: condition (and ensure attest-ruby itself
+    # does NOT use always()). Removing that check while adding always() here would allow a spurious
+    # publish attempt when build or attestation fails.
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_gpr && needs.attest-ruby.result == 'success'
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+
+      - name: Publish to GitHub Packages (idempotent)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          RUBY_GPR_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_ruby_gpr_idempotent.sh"
+
+  publish-ruby-gpr:
+    name: Publish Ruby gem (GitHub Packages) [gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - publish-ruby-gpr-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'ruby' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Ruby GPR publishing disabled
+        if: ${{ !inputs.publish_ruby_gpr }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Ruby GPR publishing is disabled by policy."
+          echo "### GPR publish: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Ensure enabled publish job succeeded
+        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result != 'success' && needs.publish-ruby-gpr-enabled.result != 'skipped' }}
+        shell: bash
+        env:
+          ENABLED_JOB_RESULT: ${{ needs.publish-ruby-gpr-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          echo "Ruby GPR publish gate failed: publish-ruby-gpr-enabled did not succeed (result=${ENABLED_JOB_RESULT})." >&2
+          exit 1
+
+      - name: Ruby GPR publish skipped (upstream did not run)
+        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result == 'skipped' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Ruby GPR publish gate: upstream job did not run (publish-ruby-gpr-enabled was skipped). Check build-ruby and attest-ruby results for the root cause." >&2
+          echo "### GPR publish: :x: upstream job skipped (see build-ruby / attest-ruby)" >> "${GITHUB_STEP_SUMMARY}"
+          exit 1
+
+      - name: Ruby GPR publish completed
+        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result == 'success' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Ruby GPR publish completed."
+          echo "### GPR publish: :white_check_mark: completed" >> "${GITHUB_STEP_SUMMARY}"
+
+  # NOTE: publish-ruby-rubygems uses an inline attestation guard in its if: condition
+  # (rather than routing through the attest-ruby gate job result). This is intentional:
+  # publish-ruby-rubygems is the terminal stage of the Ruby release path and no downstream
+  # job unconditionally depends on it — so the gate-pattern's always() wrapper is not needed.
+  # The attest-ruby gate job result IS already checked via needs: (it is in the needs: list),
+  # providing the same safety guarantee as the explicit result check in the if: condition.
+  # Do not refactor this to the gate pattern; it would add unnecessary job complexity.
+  #
+  # NOTE: publish-ruby-rubygems intentionally does NOT depend on publish-ruby-gpr.
+  # GPR (GitHub Packages) and RubyGems.org serve distinct audiences (internal/external);
+  # a GPR outage or credential expiry must not block a critical release to the public
+  # registry. This is a deliberate divergence from the Node pipeline's sequential pattern,
+  # where GPR and npmjs are tied together via an environment approval gate for atomic
+  # dual-publish. For Ruby, a partial publish (GPR fails, RubyGems succeeds) is a loud
+  # failure that surfaces in the workflow UI and is manually recoverable.
+  publish-ruby-rubygems:
+    name: Publish Ruby gem (RubyGems.org)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
+    needs:
+      - resolve
+      - build-ruby    # cascade-skip safety: if build-ruby fails, this job is skipped before if: is evaluated.
+                      # Do NOT add always() here without also adding an explicit build-ruby result check to the if: condition.
+      - attest-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems && (!inputs.enable_attestation || needs.attest-ruby.result == 'success')
+    # SECURITY: This environment MUST have required reviewers configured in repository settings.
+    # Without reviewers, any workflow in this repository calling with channel: official can publish to RubyGems.org via OIDC.
+    # SECURITY: The Trusted Publisher registration on RubyGems.org MUST set the optional Environment field to 'rubygems'.
+    # This adds a second OIDC claim check (job_workflow_environment) so the token is only accepted when the job
+    # runs inside this specific environment, providing defense-in-depth independent of reviewer configuration.
+    environment: rubygems
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.resolve.outputs.target }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+
+      - name: Configure RubyGems Trusted Publishing credentials
+        uses: rubygems/configure-rubygems-credentials@bc6dd217f8a4f919d6835fcfefd470ef821f5c44 # v1.0.0
+        with:
+          trusted-publisher: true
+
+      - name: Publish to RubyGems.org (idempotent)
+        shell: bash
+        env:
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          bash "${GITHUB_WORKSPACE}/eng/scripts/publish_rubygems_org_idempotent.sh"
+
+  attest-ruby-enabled:
+    name: Attest release assets (Ruby)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - build-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.enable_attestation
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+  attest-ruby:
+    name: Attestation gate (Ruby)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - build-ruby
+      - attest-ruby-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'ruby' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify attestation outcome
+        if: inputs.enable_attestation
+        shell: bash
+        env:
+          BUILD_RESULT: ${{ needs.build-ruby.result }}
+          RESULT: ${{ needs.attest-ruby-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${BUILD_RESULT}" != "success" ]]; then
+            echo "Skipping attestation gate: build-ruby did not succeed (result=${BUILD_RESULT})."
+            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          if [[ "${RESULT}" != "success" ]]; then
+            echo "Attestation job did not succeed (result=${RESULT})." >&2
+            exit 1
+          fi
+          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Attestation disabled
+        if: ${{ !inputs.enable_attestation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Attestation is disabled for this channel."
+          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
+
+  # The release-ruby-with-rubygems / release-ruby-no-rubygems split is a deliberate workaround for
+  # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
+  # workflow parse time, so a job that conditionally needs publish-ruby-rubygems must be duplicated
+  # into two variants: one that lists it in `needs:` (and therefore waits for it) and one that
+  # does not. The `if:` condition on each variant ensures only one ever runs.
+  release-ruby-with-rubygems:
+    name: Create GitHub release (Ruby, with RubyGems)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-ruby
+      - publish-ruby-gpr
+      - publish-ruby-rubygems
+      - attest-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  release-ruby-no-rubygems:
+    name: Create GitHub release (Ruby, no RubyGems)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-ruby
+      - publish-ruby-gpr
+      - attest-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby' && !inputs.publish_ruby_rubygems
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  # ===========================================================================
+  # SECTION: WXT (Node Extension) Release Pipeline
+  # WXT projects are distributed as browser extension archives, not npm packages;
+  # all publish_node_* flags are intentionally ignored for WXT projects.
+  #
+  # TECH DEBT: WXT is currently identified by the combination of
+  #   project_kind == 'node' && is_wxt == 'true'
+  # If more Node-based framework variants emerge (e.g., Electron apps, VS Code
+  # extensions), this boolean-flag pattern should be refactored into a single
+  # project_variant enum output from release-resolve.yml (e.g., 'node-npm',
+  # 'node-wxt', 'node-electron') to avoid multiplying conditional branches.
+  # TODO: Open a GitHub issue for the project_variant enum refactor and reference it here
+  #       before adding a second Node-based framework variant (Electron, VS Code Extension, etc.).
+  #       Each new variant currently adds ~6 conditional branches across this file.
+  #       (hcoona/three: open issue under label 'tech-debt' / 'ci' and replace this comment with TODO(#<issue>).)
+  # ===========================================================================
+  build-wxt:
+    name: Build package (Node/WXT)
+    needs:
+      - resolve
+      - policy-publish-targets
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    uses: ./.github/workflows/release-build-wxt.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.NODE_VERSION, env.PNPM_VERSION
+      node_version: '24'
+      pnpm_version: '10'
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  attest-wxt-enabled:
+    name: Attest release assets (WXT)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - build-wxt
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' && inputs.enable_attestation
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+  attest-wxt:
+    name: Attestation gate (WXT)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - build-wxt
+      - attest-wxt-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify attestation outcome
+        if: inputs.enable_attestation
+        shell: bash
+        env:
+          BUILD_RESULT: ${{ needs.build-wxt.result }}
+          RESULT: ${{ needs.attest-wxt-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${BUILD_RESULT}" != "success" ]]; then
+            echo "Skipping attestation gate: build-wxt did not succeed (result=${BUILD_RESULT})."
+            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          if [[ "${RESULT}" != "success" ]]; then
+            echo "Attestation job did not succeed (result=${RESULT})." >&2
+            exit 1
+          fi
+          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Attestation disabled
+        if: ${{ !inputs.enable_attestation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Attestation is disabled for this channel."
+          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
+
+  release-wxt:
+    name: Create GitHub release (Node/WXT)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-wxt
+      - attest-wxt
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  # SYNC: add-new-language — define new language pipeline jobs (build, pack, publish,
+  #   attest-<lang>-enabled, attest-<lang> gate, release-<lang>-with-<registry>,
+  #   release-<lang>-no-<registry>) above release-completed. Follow the existing
+  #   Python/Node/Ruby section structure. If the new language has an optional external
+  #   registry, create BOTH release-<lang>-with-<registry> AND release-<lang>-no-<registry>
+  #   variants (static needs: evaluation requires job duplication; see Python/Node for pattern).
+
+  # ===========================================================================
+  # SECTION: Release Sentinel
+  # ===========================================================================
+  # MAINTENANCE: When adding a new language/runtime (e.g., Rust), update ALL of the
+  # following sync points. Missing any one causes misconfiguration, policy bypass, or
+  # incorrect release status reporting.
+  #
+  # WARNING: ALL steps below are MANDATORY. Skipping any step — in particular B2 (buddy
+  # channel policy assertions) — causes a SILENT policy bypass: the new language's flags
+  # will not be enforced for the buddy channel, so a misconfigured caller workflow will
+  # pass policy validation undetected. There is no CI enforcement that all steps are
+  # completed; the checklist is the sole safeguard.
+  #
+  # Across files:
+  #   A. release-orchestrate.yml inputs block — add publish_<lang>_<registry> and any
+  #      pack/mode inputs
+  #   B. release-orchestrate.yml policy job — two updates required:
+  #      B1. Update the channel profile matrix comment table above the policy job
+  #          (add a new row for each flag and fill official/buddy values)
+  #      B2. Add assert_equals() calls for each new input in BOTH 'official' and 'buddy' case
+  #          branches (use the SYNC markers inside each branch), and add the flag name to the
+  #          required_flags list in the 'Self-test policy flag coverage' step.
+  #          [CI-ENFORCED once added to required_flags; maintaining required_flags is manual]
+  #   C. release-orchestrate.yml policy-publish-targets job — add env var and per-kind
+  #      validation branch for the new language
+  #   D. [CI-ENFORCED by lint-version-consistency job] release-orchestrate.yml
+  #      lint-version-consistency job — if the new language uses a versioned tool,
+  #      add EXPECTED_<LANG>_VERSION to the job's env: block and a check_version
+  #      "<lang>_version" call to the verification script step
+  #   E. (SYNC above) Define new pipeline jobs here in release-orchestrate.yml
+  #   F. official.yml — pass new inputs with their official-channel values
+  #   G. buddy.yml — pass new inputs with their buddy-channel values
+  #
+  # Steps A, C, E, F, G are MANUAL-ONLY (no CI enforcement). Steps B2 and D have
+  # automated guards; omitting those steps causes CI to fail at the next run.
+  # Step E's sub-task of adding release-* names to release-completed's needs: is
+  # CI-enforced by the "Verify release-completed covers all release-* jobs" lint step;
+  # writing the actual job definitions is still manual.
+  # WARNING: Step G (buddy.yml) is the highest-risk manual step. The buddy channel
+  # defaults all publish flags to false, so omitting step G causes a silent failure:
+  # the workflow succeeds but skips publishing the new target without any error.
+  #
+  # Within this job (one internal sync point):
+  #   1. needs: — add the new release job name(s) here
+  #      [CI-ENFORCED by lint-version-consistency "Verify release-completed covers all release-* jobs"]
+  #      The "Check release outcomes" step uses toJSON(needs) to dynamically process all
+  #      jobs in the needs: list, so no further manual updates are needed in that step.
+  release-completed:
+    name: Release completed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: always()
+    # SYNC: add-new-language — add new release job name(s) and attest-<lang> gate to needs below.
+    # release-* jobs: [CI-ENFORCED] by "Verify release-completed covers all release-* jobs" lint step.
+    # attest-<lang> gates: MANUAL — add them here; they are not auto-detected by the lint step.
+    needs:
+      - release-python-with-pypi
+      - release-python-no-pypi
+      - release-node-with-npmjs
+      - release-node-no-npmjs
+      - release-ruby-with-rubygems
+      - release-ruby-no-rubygems
+      - release-wxt
+      - attest-python
+      - attest-node
+      - attest-ruby
+      - attest-wxt
+    permissions:
+      contents: read
+    steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
+      - name: Check release outcomes
+        shell: bash
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -Eeuo pipefail
+
+          # Dynamically process all jobs in needs: using toJSON(needs).
+          # This prevents the 3-way sync problem where needs:, env:, and for-loop
+          # all had to be manually updated when adding new language pipelines.
+          echo "Release job outcomes:"
+          failed=()
+          success_count=0
+
+          {
+            echo "## Release Job Outcomes"
+            echo "| Job | Result |"
+            echo "| --- | ------ |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          while IFS= read -r line; do
+            job="${line%%:*}"
+            status="${line##*:}"
+            echo "  ${job}: ${status}"
+            case "${status}" in
+              # Only release-* delivery jobs count toward success_count.
+              # attest-* gate jobs exit 0 (success) when builds fail; including them
+              # here would mask a genuine "no release delivered" condition.
+              success)   icon=":white_check_mark:" ; [[ "${job}" == release-* ]] && success_count=$((success_count + 1)) ;;
+              skipped)   icon=":white_circle:" ;;
+              failure)   icon=":x:" ; failed+=("${job}(${status})") ;;
+              cancelled) icon=":no_entry:" ; failed+=("${job}(${status})") ;;
+              *)         icon=":question:" ; failed+=("${job}(${status}?)") ;;
+            esac
+            echo "| \`${job}\` | ${icon} ${status} |" >> "${GITHUB_STEP_SUMMARY}"
+          done < <(echo "${NEEDS_JSON}" | jq -r 'to_entries[] | "\(.key):\(.value.result)"')
+
+          if [[ "${#failed[@]}" -gt 0 ]]; then
+            echo "One or more release pipeline jobs failed: ${failed[*]}" >&2
+            {
+              echo ""
+              echo "> [!CAUTION]"
+              echo "> One or more release pipeline jobs failed: ${failed[*]}"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+
+          if [[ "${success_count}" -eq 0 ]]; then
+            # NOTE: This path fires when a guard, policy, publish, or build job fails and
+            # cascade-skips its downstream release-* job. Cascade-skipped jobs appear as
+            # "skipped" in toJSON(needs), not "failure", so the failure is invisible here.
+            # Use the GitHub Actions job visualizer to identify the root cause. Common
+            # upstream jobs to inspect: guard-prerelease-only, guard-non-clobber,
+            # policy-publish-targets, publish-node-gpr, publish-node-npmjs, publish-ruby-gpr.
+            echo "No release job succeeded. This may indicate: (1) an upstream gate failure (policy, guards, or publish), (2) a build step failure, or (3) all projects of the detected kind were skipped. Inspect the GitHub Actions job visualizer for upstream failures." >&2
+            {
+              echo ""
+              echo "> [!CAUTION]"
+              echo "> No release job succeeded. This may indicate:"
+              echo "> 1. An upstream gate failure — inspect **guard-prerelease-only**, **guard-non-clobber**, **policy-publish-targets**, **publish-node-gpr**, **publish-node-npmjs**, or **publish-ruby-gpr**."
+              echo "> 2. A build or publish step failure."
+              echo "> 3. All projects of the detected kind were skipped."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+
+          echo "All release jobs completed successfully (skipped jobs are expected for non-matching project kinds)."
