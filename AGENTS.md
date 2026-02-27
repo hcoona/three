@@ -22,6 +22,6 @@ We use [HK](https://hk.jdx.dev/) for both git hooks manager and CI validation ga
 
 Note that in GitHub workflow, we should build C# projects in Windows runners, while Python and JavaScript/TypeScript projects can be built in Ubuntu runners.
 
-Do not stuck yourself on pager when you're executing CLI commands.
+Do not get stuck in a pager when executing CLI commands.
 
 You must use ENGLISH rather than CHINESE for all code, comments, commit messages, documentation in this repository.

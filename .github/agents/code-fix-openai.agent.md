@@ -1,6 +1,6 @@
 ---
 description: Fixes code issues by applying automated patches to the code, ensuring that the fixes are appropriate and do not introduce new issues.
-name: coding-fix-openai
+name: code-fix-openai
 tools: [vscode, edit, execute, read, agent, 'io.github.upstash/context7/*', search, web, 'microsoft-learn/*', todo]
 model: GPT-5.3-Codex (copilot)
 ---
