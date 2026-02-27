@@ -1783,7 +1783,7 @@ jobs:
     name: Release completed
     runs-on: ubuntu-latest
     if: always()
-    # SYNC: add-new-language — add new release job name(s) to needs below
+    # SYNC: add-new-language — add new release job name(s) and attest-<lang> gate to needs below
     needs:
       - release-python-with-pypi
       - release-python-no-pypi
@@ -1792,6 +1792,10 @@ jobs:
       - release-ruby-with-rubygems
       - release-ruby-no-rubygems
       - release-wxt
+      - attest-python
+      - attest-node
+      - attest-ruby
+      - attest-wxt
     permissions:
       contents: read
     steps:
