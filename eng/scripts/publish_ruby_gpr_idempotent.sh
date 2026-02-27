@@ -8,7 +8,7 @@
 #   PROJECT  Gem name
 #   VERSION  Gem version
 #   OWNER    GitHub repository owner (e.g. hcoona)
-#   TOKEN    GitHub token (GITHUB_TOKEN)
+#   RUBY_GPR_TOKEN    GitHub token (GITHUB_TOKEN)
 #
 # Optional env vars:
 #   OUT_DIR  Directory containing the built gem (default: "$GITHUB_WORKSPACE/out")
@@ -18,7 +18,7 @@ set -Eeuo pipefail
 : "${PROJECT:?PROJECT is required}"
 : "${VERSION:?VERSION is required}"
 : "${OWNER:?OWNER is required}"
-: "${TOKEN:?TOKEN is required}"
+: "${RUBY_GPR_TOKEN:?RUBY_GPR_TOKEN is required}"
 
 OUT_DIR="${OUT_DIR:-${GITHUB_WORKSPACE}/out}"
 
@@ -32,7 +32,7 @@ fi
 cred_path=$(gem env credentials)
 mkdir -p "$(dirname "${cred_path}")"
 {
-  echo ":github: Bearer ${TOKEN}"
+  echo ":github: Bearer ${RUBY_GPR_TOKEN}"
 } >"${cred_path}"
 chmod 600 "${cred_path}"
 

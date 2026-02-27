@@ -1354,7 +1354,7 @@ jobs:
           PROJECT: ${{ needs.resolve.outputs.project }}
           VERSION: ${{ needs.resolve.outputs.version }}
           OWNER: ${{ github.repository_owner }}
-          TOKEN: ${{ github.token }}
+          RUBY_GPR_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
 
