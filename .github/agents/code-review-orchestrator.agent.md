@@ -14,7 +14,7 @@ If the user's code changes are complex, mix multiple intents, and the overall mo
 
 Confirm the key modification intents, key constraints, and acceptance criteria you have understood with the user to ensure alignment on these aspects.
 
-First, consider the dimensions from which to review this code modification. Then, for each dimension in parallel, launch the following sub-agents concurrently using `runSubagent`:
+First, consider the dimensions from which to review this code modification. Then, for each dimension in parallel, launch the following sub-agents concurrently using `runSubagent`, which means for each dimension, you will launch three sub-agents concurrently and independently to review the code changes from that dimension using different models:
 
 1. code-review-claude
 2. code-review-gemini
