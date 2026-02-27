@@ -1407,6 +1407,13 @@ jobs:
           set -Eeuo pipefail
           echo "Ruby GPR publish completed."
 
+  # NOTE: publish-ruby-rubygems uses an inline attestation guard in its if: condition
+  # (rather than routing through the attest-ruby gate job result). This is intentional:
+  # publish-ruby-rubygems is the terminal stage of the Ruby release path and no downstream
+  # job unconditionally depends on it — so the gate-pattern's always() wrapper is not needed.
+  # The attest-ruby gate job result IS already checked via needs: (it is in the needs: list),
+  # providing the same safety guarantee as the explicit result check in the if: condition.
+  # Do not refactor this to the gate pattern; it would add unnecessary job complexity.
   publish-ruby-rubygems:
     name: Publish Ruby gem (RubyGems.org)
     runs-on: ubuntu-latest
