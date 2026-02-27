@@ -691,7 +691,7 @@ jobs:
           status=$(grep -m1 -E '^HTTP/' "${resp_file}" | awk '{print $2}' || true)
 
           if [[ "${rc}" -eq 0 ]]; then
-            body=$(sed -n '/^{/,$p' "${resp_file}")
+            body=$(awk 'BEGIN{found=0} /^[[:space:]]*$/{found=1; next} found{print}' "${resp_file}")
             if [[ -z "${body}" ]]; then
               echo "Error: gh api output did not contain a JSON body." >&2
               cat "${resp_file}" >&2 || true
@@ -899,6 +899,7 @@ jobs:
             echo "Attestation job did not succeed (result=${RESULT})." >&2
             exit 1
           fi
+          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Attestation disabled
         if: ${{ !inputs.enable_attestation }}
@@ -906,6 +907,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Attestation is disabled for this channel."
+          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
   # The release-python-with-pypi / release-python-no-pypi split is a deliberate workaround for
   # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
@@ -1137,13 +1139,14 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Node GPR publish completed."
+          echo "### GPR publish: :white_check_mark: completed" >> "${GITHUB_STEP_SUMMARY}"
 
   publish-node-npmjs:
     name: Publish Node package (npmjs.org)
     runs-on: ubuntu-latest
     needs:
       - resolve
-      - pack-node
+      - pack-node  # scheduling only: ensures artifact is available before download; safety is enforced via gate-node-publish-npmjs result check
       - gate-node-publish-npmjs
       - publish-node-gpr
       - attest-node
@@ -1255,6 +1258,7 @@ jobs:
             echo "Attestation job did not succeed (result=${RESULT})." >&2
             exit 1
           fi
+          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Attestation disabled
         if: ${{ !inputs.enable_attestation }}
@@ -1262,6 +1266,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Attestation is disabled for this channel."
+          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
   # The release-node-with-npmjs / release-node-no-npmjs split is a deliberate workaround for
   # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
@@ -1432,6 +1437,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Ruby GPR publish completed."
+          echo "### GPR publish: :white_check_mark: completed" >> "${GITHUB_STEP_SUMMARY}"
 
   # NOTE: publish-ruby-rubygems uses an inline attestation guard in its if: condition
   # (rather than routing through the attest-ruby gate job result). This is intentional:
@@ -1545,6 +1551,7 @@ jobs:
             echo "Attestation job did not succeed (result=${RESULT})." >&2
             exit 1
           fi
+          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Attestation disabled
         if: ${{ !inputs.enable_attestation }}
@@ -1552,6 +1559,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Attestation is disabled for this channel."
+          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
   # The release-ruby-with-rubygems / release-ruby-no-rubygems split is a deliberate workaround for
   # GitHub Actions' static needs evaluation. GitHub Actions resolves the `needs:` graph at
@@ -1691,6 +1699,7 @@ jobs:
             echo "Attestation job did not succeed (result=${RESULT})." >&2
             exit 1
           fi
+          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Attestation disabled
         if: ${{ !inputs.enable_attestation }}
@@ -1698,6 +1707,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Attestation is disabled for this channel."
+          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
   release-wxt:
     name: Create GitHub release (Node/WXT)
