@@ -202,7 +202,10 @@ jobs:
             local key="$1"
             local expected="$2"
             local mismatches
-            mismatches=$(grep -n "^\s*${key}:" "${WORKFLOW_FILE}" \
+            # Require a quote character immediately after the colon+space to match only
+            # pinned version values (e.g. `python_version: '3.14'`) and skip bare input/output
+            # declaration lines (e.g. `python_version:` alone) that carry no version value.
+            mismatches=$(grep -n "^\s*${key}:\s*'" "${WORKFLOW_FILE}" \
               | grep -vF "'${expected}'" || true)
             if [[ -n "${mismatches}" ]]; then
               echo "ERROR: '${key}:' value(s) not matching expected '${expected}':" >&2
@@ -494,12 +497,16 @@ jobs:
           # WXT projects are distributed as browser extension archives, not npm packages;
           # all publish_node_* flags are intentionally ignored for WXT projects.
           if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ]]; then
+            # assert_disabled is a no-op for official/buddy channels (policy job already
+            # validated all flags). For custom allowlisted channels it enforces that no
+            # publish_node_* flags are erroneously set to true.
             assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
             assert_disabled "publish_node_gpr"       "${NODE_GPR}"
             assert_disabled "publish_node_npmjs"     "${NODE_NPMJS}"
             assert_disabled "publish_ruby_gpr"       "${RUBY_GPR}"
             assert_disabled "publish_ruby_rubygems"  "${RUBY_RUBYGEMS}"
             echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
+            echo "ℹ️ WXT project \`${PROJECT}\`: publish_node_gpr=${NODE_GPR}, publish_node_npmjs=${NODE_NPMJS} are ignored (browser extension; not published to npm registries)." >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
 
@@ -533,7 +540,9 @@ jobs:
   guard-prerelease-only:
     name: Guard prerelease-only policy
     runs-on: ubuntu-latest
-    needs: resolve
+    needs:
+      - resolve
+      - policy  # explicit: ensure channel policy is validated before guards run
     permissions:
       contents: read
     steps:
@@ -566,7 +575,9 @@ jobs:
   guard-non-clobber:
     name: Guard non-clobber policy
     runs-on: ubuntu-latest
-    needs: resolve
+    needs:
+      - resolve
+      - policy  # explicit: ensure channel policy is validated before guards run
     permissions:
       contents: read
     steps:
@@ -935,12 +946,14 @@ jobs:
           scope="@${OWNER,,}"
           echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
 
-      - name: Setup Node.js (npm auth)
+      - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          registry-url: https://npm.pkg.github.com
-          scope: ${{ steps.npm_scope.outputs.scope }}
+          # registry-url intentionally omitted: auth is handled by the custom .npmrc
+          # created in the next step. Setting registry-url here would cause setup-node
+          # to write a redundant .npmrc in the workspace root with default file permissions,
+          # which could leak the token on self-hosted runners.
 
       - name: Create .npmrc for GitHub Packages (GPR)
         id: gpr_npmrc
@@ -1235,6 +1248,12 @@ jobs:
       - resolve
       - build-ruby
       - attest-ruby
+    # NOTE: This job intentionally does not use always(). If attest-ruby fails, GitHub Actions
+    # skips this job automatically via the needs: mechanism before the if: is evaluated.
+    # The explicit needs.attest-ruby.result == 'success' check is defensive redundancy.
+    # WARNING: If you ever add always() to this job, you MUST also add an explicit
+    # needs.build-ruby.result == 'success' check to prevent a spurious publish attempt
+    # when the build fails.
     if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_gpr && needs.attest-ruby.result == 'success'
     permissions:
       contents: read
