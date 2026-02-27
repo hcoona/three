@@ -244,14 +244,30 @@ jobs:
           # check_version_caps validates top-level ALL_CAPS env: block entries
           # (e.g. PYTHON_VERSION: '3.14') to ensure the runtime env vars stay
           # in sync with the job-level with: inputs checked by check_version.
+          # Mirrors check_version's two-pass approach: quote-delimited values and
+          # unquoted bare scalars are each checked separately to avoid false positives.
           check_version_caps() {
             local key_caps="$1"
             local expected="$2"
+            # Escape '.' so it is treated as a literal character in -P regex.
+            local expected_re
+            expected_re=$(printf '%s' "${expected}" | sed 's/\./\\./g')
             local mismatches
-            mismatches=$(grep -n "^\s*${key_caps}:\s*" "${WORKFLOW_FILE}" \
+            # First pass: skip empty-value lines (bare declaration, `KEY:` with no value).
+            # Then check quoted values (single- or double-quoted).
+            mismatches=$(grep -n "^\s*${key_caps}:\s*['\"]" "${WORKFLOW_FILE}" \
               | grep -vF "'${expected}'" \
-              | grep -vF "\"${expected}\"" \
-              | grep -vP ":\s*$" || true)  # skip empty-value lines
+              | grep -vF "\"${expected}\"" || true)
+            # Second pass: check unquoted bare scalars (e.g. `NODE_VERSION: 24`).
+            # Uses boundary-anchored regex to avoid matching a prefix of a longer value.
+            local unquoted_caps
+            unquoted_caps=$(grep -n "^\s*${key_caps}:\s*[0-9A-Za-z.]" "${WORKFLOW_FILE}" \
+              | grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" \
+              | grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
+            if [[ -n "${unquoted_caps}" ]]; then
+              mismatches="${mismatches}"$'\n'"${unquoted_caps}"
+            fi
+            mismatches="${mismatches#$'\n'}"
             if [[ -n "${mismatches}" ]]; then
               echo "ERROR: '${key_caps}:' value(s) not matching expected '${expected}':" >&2
               echo "${mismatches}" >&2
@@ -1502,6 +1518,14 @@ jobs:
   # The attest-ruby gate job result IS already checked via needs: (it is in the needs: list),
   # providing the same safety guarantee as the explicit result check in the if: condition.
   # Do not refactor this to the gate pattern; it would add unnecessary job complexity.
+  #
+  # NOTE: publish-ruby-rubygems intentionally does NOT depend on publish-ruby-gpr.
+  # GPR (GitHub Packages) and RubyGems.org serve distinct audiences (internal/external);
+  # a GPR outage or credential expiry must not block a critical release to the public
+  # registry. This is a deliberate divergence from the Node pipeline's sequential pattern,
+  # where GPR and npmjs are tied together via an environment approval gate for atomic
+  # dual-publish. For Ruby, a partial publish (GPR fails, RubyGems succeeds) is a loud
+  # failure that surfaces in the workflow UI and is manually recoverable.
   publish-ruby-rubygems:
     name: Publish Ruby gem (RubyGems.org)
     runs-on: ubuntu-latest
@@ -1509,12 +1533,7 @@ jobs:
       - resolve
       - build-ruby    # scheduling only: ensures artifact is available before download; safety is enforced via attest-ruby result check
       - attest-ruby
-      - publish-ruby-gpr
-    if: >-
-      needs.resolve.outputs.project_kind == 'ruby' &&
-      inputs.publish_ruby_rubygems &&
-      needs.publish-ruby-gpr.result == 'success' &&
-      (!inputs.enable_attestation || needs.attest-ruby.result == 'success')
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems && (!inputs.enable_attestation || needs.attest-ruby.result == 'success')
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to RubyGems.org via OIDC.
     environment: rubygems
