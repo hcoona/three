@@ -227,6 +227,7 @@ jobs:
             # Also check for unquoted integer/bare values (e.g. `node_version: 24`).
             # Use anchored regex to avoid false negatives when the expected value is a
             # numeric prefix of a longer string (e.g. ': 24' must NOT match ': 240').
+            local unquoted
             unquoted=$(grep -n "^\s*${key}:\s*[0-9]" "${WORKFLOW_FILE}" \
               | grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" \
               | grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
@@ -1931,6 +1932,10 @@ jobs:
           fi
 
           if [[ "${success_count}" -eq 0 ]]; then
+            # NOTE: This path also fires when a publish-* job fails and cascade-skips its
+            # release-* job (cascade-skipped jobs appear as "skipped" in toJSON(needs),
+            # not "failure"). Use the GitHub Actions job visualizer to identify the
+            # failing publish step in those cases.
             echo "No release job succeeded. This may indicate: (1) an upstream gate failure (policy or guards), (2) a build or publish step failure, or (3) all projects of the detected kind were skipped." >&2
             {
               echo ""
