@@ -434,11 +434,15 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          # assert_disabled: Checks that a publish flag is false for a project kind that
+          # does not use it (cross-kind contamination check). This is only enforced for
+          # custom allowlisted channels. For official/buddy channels the policy job already
+          # validates all flags, so this function is intentionally a no-op for them.
           assert_disabled() {
             local flag_name="$1"
             local flag_value="$2"
-            # official/buddy channel flags are fully validated by the policy job;
-            # cross-kind flags are intentionally set to their channel-profile values.
+            # No-op for official/buddy: the policy job enforces correct flag values
+            # for these channels; cross-kind contamination cannot occur in practice.
             if [[ "${CHANNEL}" == "official" || "${CHANNEL}" == "buddy" ]]; then
               return 0
             fi
