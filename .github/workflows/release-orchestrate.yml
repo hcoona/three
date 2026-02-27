@@ -1751,7 +1751,7 @@ jobs:
             status="${line##*:}"
             echo "  ${job}: ${status}"
             case "${status}" in
-              success)   icon=":white_check_mark:" ; ((success_count++)) || true ;;
+              success)   icon=":white_check_mark:" ; success_count=$((success_count + 1)) ;;
               skipped)   icon=":white_circle:" ;;
               failure)   icon=":x:" ; failed+=("${job}(${status})") ;;
               cancelled) icon=":no_entry:" ; failed+=("${job}(${status})") ;;
