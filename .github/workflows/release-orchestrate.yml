@@ -973,7 +973,7 @@ jobs:
             echo "registry=https://registry.npmjs.org"
             echo "${SCOPE}:registry=https://npm.pkg.github.com"
             echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
-            echo "always-auth=true"
+            echo "//npm.pkg.github.com/:always-auth=true"
           } > "${npmrc}"
 
           echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
@@ -988,7 +988,6 @@ jobs:
         shell: bash
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
-          NPM_CONFIG_ALWAYS_AUTH: 'true'
           NODE_AUTH_TOKEN: ${{ github.token }}
           NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
           PROJECT: ${{ needs.resolve.outputs.project }}
