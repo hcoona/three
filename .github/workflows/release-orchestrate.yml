@@ -893,6 +893,7 @@ jobs:
           set -Eeuo pipefail
           if [[ "${BUILD_RESULT}" != "success" ]]; then
             echo "Skipping attestation gate: build-python did not succeed (result=${BUILD_RESULT})."
+            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
           if [[ "${RESULT}" != "success" ]]; then
@@ -1118,6 +1119,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Node GPR publishing is disabled by policy."
+          echo "### GPR publish: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Ensure enabled publish job succeeded
         if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result != 'success' }}
@@ -1252,6 +1254,7 @@ jobs:
           set -Eeuo pipefail
           if [[ "${BUILD_RESULT}" != "success" ]]; then
             echo "Skipping attestation gate: pack-node did not succeed (result=${BUILD_RESULT})."
+            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
           if [[ "${RESULT}" != "success" ]]; then
@@ -1416,6 +1419,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "Ruby GPR publishing is disabled by policy."
+          echo "### GPR publish: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Ensure enabled publish job succeeded
         if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result != 'success' }}
@@ -1425,7 +1429,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           if [[ "${ENABLED_JOB_RESULT}" == "skipped" ]]; then
-            echo "Ruby GPR publish gate: enabled job was skipped, likely because build-ruby did not succeed." >&2
+            echo "Ruby GPR publish gate: enabled job was skipped; check build-ruby and attest-ruby results for the root cause." >&2
             exit 1
           fi
           echo "Ruby GPR publish gate failed: publish-ruby-gpr-enabled did not succeed (result=${ENABLED_JOB_RESULT})." >&2
@@ -1545,6 +1549,7 @@ jobs:
           set -Eeuo pipefail
           if [[ "${BUILD_RESULT}" != "success" ]]; then
             echo "Skipping attestation gate: build-ruby did not succeed (result=${BUILD_RESULT})."
+            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
           if [[ "${RESULT}" != "success" ]]; then
@@ -1693,6 +1698,7 @@ jobs:
           set -Eeuo pipefail
           if [[ "${BUILD_RESULT}" != "success" ]]; then
             echo "Skipping attestation gate: build-wxt did not succeed (result=${BUILD_RESULT})."
+            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
           if [[ "${RESULT}" != "success" ]]; then
