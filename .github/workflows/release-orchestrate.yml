@@ -1622,24 +1622,39 @@ jobs:
           failed=()
           success_count=0
 
+          {
+            echo "## Release Job Outcomes"
+            echo "| Job | Result |"
+            echo "| --- | ------ |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
           while IFS= read -r line; do
             job="${line%%:*}"
             status="${line##*:}"
             echo "  ${job}: ${status}"
-            if [[ "${status}" == "failure" || "${status}" == "cancelled" ]]; then
-              failed+=("${job}(${status})")
-            elif [[ "${status}" == "success" ]]; then
-              ((success_count++)) || true
-            fi
+            case "${status}" in
+              success)   icon=":white_check_mark:" ; ((success_count++)) || true ;;
+              skipped)   icon=":white_circle:" ;;
+              failure)   icon=":x:" ; failed+=("${job}(${status})") ;;
+              cancelled) icon=":no_entry:" ; failed+=("${job}(${status})") ;;
+              *)         icon=":question:" ;;
+            esac
+            echo "| \`${job}\` | ${icon} ${status} |" >> "${GITHUB_STEP_SUMMARY}"
           done < <(echo "${NEEDS_JSON}" | jq -r 'to_entries[] | "\(.key):\(.value.result)"')
 
           if [[ "${#failed[@]}" -gt 0 ]]; then
             echo "One or more release jobs failed: ${failed[*]}" >&2
+            echo "" >> "${GITHUB_STEP_SUMMARY}"
+            echo "> [!CAUTION]" >> "${GITHUB_STEP_SUMMARY}"
+            echo "> One or more release jobs failed: ${failed[*]}" >> "${GITHUB_STEP_SUMMARY}"
             exit 1
           fi
 
           if [[ "${success_count}" -eq 0 ]]; then
             echo "No release job succeeded. This may indicate an upstream gate failure (policy, guards, or build jobs)." >&2
+            echo "" >> "${GITHUB_STEP_SUMMARY}"
+            echo "> [!CAUTION]" >> "${GITHUB_STEP_SUMMARY}"
+            echo "> No release job succeeded. This may indicate an upstream gate failure (policy, guards, or build jobs)." >> "${GITHUB_STEP_SUMMARY}"
             exit 1
           fi
 
