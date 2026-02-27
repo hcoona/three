@@ -603,13 +603,17 @@ jobs:
           set -e
 
           if [[ "${rc}" -ne 0 ]]; then
-            if [[ -s "${stderr_file}" ]]; then
-              echo "gh release view exited ${rc} for tag '${TAG_NAME}'. stderr:" >&2
-              cat "${stderr_file}" >&2
-              echo "(Treating non-zero exit as 'release not found'. If this is a network or permissions error, investigate the stderr above.)" >&2
+            if [[ -s "${stderr_file}" ]] && grep -qiF "release not found" "${stderr_file}"; then
+              echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
+              exit 0
             fi
-            echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
-            exit 0
+            echo "gh release view failed for tag '${TAG_NAME}' (rc=${rc}). Failing safe to avoid accidental clobber." >&2
+            if [[ -s "${stderr_file}" ]]; then
+              echo "stderr:" >&2
+              cat "${stderr_file}" >&2
+            fi
+            echo "If this tag genuinely has no release, this is likely a transient error — re-run the workflow." >&2
+            exit 1
           fi
 
           if [[ "${prerelease_value}" != "true" && "${prerelease_value}" != "false" ]]; then
