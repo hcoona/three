@@ -75,6 +75,9 @@ on:
           Callers are fully responsible for setting all publish flags correctly.
           SECURITY NOTE: allowlisted channels bypass all policy enforcement —
           only grant default-branch merge access to trusted contributors.
+          Any new caller workflow file that supplies a non-empty channel_allowlist
+          is itself a policy bypass vector and must be subject to the same
+          branch-protection review as official.yml.
         required: false
         default: ""
         type: string
@@ -263,7 +266,9 @@ jobs:
   # truth — the table is documentation only. When adding a new language or flag, update
   # BOTH this table and the corresponding assert_equals calls in the case statement.
   #
-  # Channel profile matrix (authoritative; the case statement below enforces these):
+  # Channel profile matrix (DOCUMENTATION ONLY — the assert_equals calls below are the
+  # source of truth; a value in this table that disagrees with an assertion is a bug in
+  # the table, not in the assertion):
   #
   #   Flag                      | official | buddy
   #   --------------------------|----------|-------
@@ -584,12 +589,12 @@ jobs:
             assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
             echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
             echo "ℹ️ WXT project \`${PROJECT}\`: publish_node_gpr=${PUBLISH_NODE_GPR}, publish_node_npmjs=${PUBLISH_NODE_NPMJS} are ignored (browser extension; not published to npm registries)." >> "${GITHUB_STEP_SUMMARY}"
-            # NOTE: For official channel runs, publish_node_npmjs=true is required by channel policy
-            # (the policy job mandates it before project_kind is known). For WXT projects that flag
-            # has no effect — WXT artifacts are distributed as browser extension archives, not npm
-            # packages, and no Node pipeline jobs execute for WXT builds.
-            if [[ "${CHANNEL}" == "official" && "${PUBLISH_NODE_NPMJS}" == "true" ]]; then
-              echo "ℹ️ Official channel note: \`publish_node_npmjs=true\` is required by channel policy but has no effect for WXT projects (browser extension; npm publishing is skipped)." >> "${GITHUB_STEP_SUMMARY}"
+            # NOTE: For official channel runs, both publish_node_gpr=true and publish_node_npmjs=true
+            # are required by channel policy (the policy job mandates them before project_kind is known).
+            # For WXT projects both flags have no runtime effect — WXT artifacts are distributed as
+            # browser extension archives, not npm packages, and no Node pipeline jobs execute for WXT builds.
+            if [[ "${CHANNEL}" == "official" && ("${PUBLISH_NODE_NPMJS}" == "true" || "${PUBLISH_NODE_GPR}" == "true") ]]; then
+              echo "ℹ️ Official channel note: \`publish_node_gpr=true\` and \`publish_node_npmjs=true\` are required by channel policy but have no effect for WXT projects (browser extension; npm publishing is skipped)." >> "${GITHUB_STEP_SUMMARY}"
             fi
             exit 0
           fi
@@ -709,6 +714,7 @@ jobs:
             if [[ "${prerelease}" == "false" ]]; then
               echo "A non-prerelease GitHub Release already exists for tag '${TAG_NAME}'." >&2
               echo "Buddy releases must not modify official (prerelease=false) releases. Aborting." >&2
+              echo "Note: force_update_tag=true controls whether the git tag can be moved, but does not bypass this prerelease-type protection." >&2
               exit 1
             fi
             echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
@@ -1142,8 +1148,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          echo "Node GPR publish gate: upstream job did not run (publish-node-gpr-enabled was skipped). Check pack-node or gate-node-publish-npmjs for the root cause."
-          echo "### GPR publish: :white_circle: skipped (upstream job did not run)" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Node GPR publish gate: upstream job did not run (publish-node-gpr-enabled was skipped). Check pack-node or gate-node-publish-npmjs for the root cause." >&2
+          echo "### GPR publish: :x: upstream job skipped (see pack-node / gate-node-publish-npmjs)" >> "${GITHUB_STEP_SUMMARY}"
+          exit 1
 
       - name: Node GPR publish completed
         if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result == 'success' }}
@@ -1446,8 +1453,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          echo "Ruby GPR publish gate: upstream job did not run (publish-ruby-gpr-enabled was skipped). Check build-ruby and attest-ruby results for the root cause."
-          echo "### GPR publish: :white_circle: skipped (upstream job did not run)" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Ruby GPR publish gate: upstream job did not run (publish-ruby-gpr-enabled was skipped). Check build-ruby and attest-ruby results for the root cause." >&2
+          echo "### GPR publish: :x: upstream job skipped (see build-ruby / attest-ruby)" >> "${GITHUB_STEP_SUMMARY}"
+          exit 1
 
       - name: Ruby GPR publish completed
         if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result == 'success' }}
@@ -1776,16 +1784,21 @@ jobs:
   #   B. release-orchestrate.yml policy job — two updates required:
   #      B1. Update the channel profile matrix comment table above the policy job
   #          (add a new row for each flag and fill official/buddy values)
-  #      B2. Add assert_equals() calls for each new input in BOTH 'official' and
-  #          'buddy' case branches (use the SYNC markers inside each branch)
+  #      B2. [CI-ENFORCED by self-test policy flag coverage step] Add assert_equals() calls
+  #          for each new input in BOTH 'official' and 'buddy' case branches
+  #          (use the SYNC markers inside each branch)
   #   C. release-orchestrate.yml policy-publish-targets job — add env var and per-kind
   #      validation branch for the new language
-  #   D. release-orchestrate.yml lint-version-consistency job — if the new language
-  #      uses a versioned tool, add EXPECTED_<LANG>_VERSION to the job's env: block
-  #      and a check_version "<lang>_version" call to the verification script step
+  #   D. [CI-ENFORCED by lint-version-consistency job] release-orchestrate.yml
+  #      lint-version-consistency job — if the new language uses a versioned tool,
+  #      add EXPECTED_<LANG>_VERSION to the job's env: block and a check_version
+  #      "<lang>_version" call to the verification script step
   #   E. (SYNC above) Define new pipeline jobs here in release-orchestrate.yml
   #   F. official.yml — pass new inputs with their official-channel values
   #   G. buddy.yml — pass new inputs with their buddy-channel values
+  #
+  # Steps A, C, E, F, G are MANUAL-ONLY (no CI enforcement). Steps B2 and D have
+  # automated guards; omitting those steps causes CI to fail at the next run.
   #
   # Within this job (one internal sync point):
   #   1. needs: — add the new release job name(s) here
