@@ -380,8 +380,13 @@ jobs:
               assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
               # Note: WXT projects must still pass publish_node_npmjs=true to satisfy policy,
               # but all Node publish jobs are gated on is_wxt != 'true', so this flag has
-              # no runtime effect for WXT projects.
-              assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
+              # no runtime effect for WXT projects. If this assertion fails and the project
+              # is a WXT (browser extension), set publish_node_npmjs=true in the caller workflow.
+              if [[ "${PUBLISH_NODE_NPMJS}" != "true" ]]; then
+                echo "Channel 'official' policy mismatch for 'publish_node_npmjs': expected 'true', got '${PUBLISH_NODE_NPMJS}'." >&2
+                echo "For WXT (browser extension) projects: publish_node_npmjs=true is required by channel policy even though it has no runtime effect (WXT artifacts are published as browser extension archives, not npm packages)." >&2
+                exit 1
+              fi
               assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
               assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
               assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "true"
