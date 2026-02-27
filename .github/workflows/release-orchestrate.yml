@@ -219,9 +219,11 @@ jobs:
               | grep -vF "'${expected}'" \
               | grep -vF "\"${expected}\"" || true)
             # Also check for unquoted integer/bare values (e.g. `node_version: 24`).
+            # Use anchored regex to avoid false negatives when the expected value is a
+            # numeric prefix of a longer string (e.g. ': 24' must NOT match ': 240').
             unquoted=$(grep -n "^\s*${key}:\s*[0-9]" "${WORKFLOW_FILE}" \
-              | grep -vF ": ${expected}" \
-              | grep -vF ":${expected}" || true)
+              | grep -vP ":\s+${expected}([^0-9A-Za-z._]|$)" \
+              | grep -vP ":${expected}([^0-9A-Za-z._]|$)" || true)
             if [[ -n "${unquoted}" ]]; then
               mismatches="${mismatches}"$'\n'"${unquoted}"
             fi
@@ -298,7 +300,6 @@ jobs:
           PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
           PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
           ENABLE_ATTESTATION: ${{ inputs.enable_attestation }}
-          NODE_PACK_MODE: ${{ inputs.publish_node_npmjs && 'both' || 'gpr-only' }}
           REF_NAME: ${{ inputs.ref_name }}
           REF: ${{ inputs.ref }}
           PROJECT: ${{ inputs.project }}
@@ -377,6 +378,9 @@ jobs:
               # SYNC: add-new-language — add assert_equals for publish_<lang>_<registry> in official channel below
               assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "true"
               assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
+              # Note: WXT projects must still pass publish_node_npmjs=true to satisfy policy,
+              # but all Node publish jobs are gated on is_wxt != 'true', so this flag has
+              # no runtime effect for WXT projects.
               assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
               assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
               assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
@@ -501,11 +505,11 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           # SYNC: add-new-language — (1) add publish_<lang>_<registry> env var(s) to the env: block above
           # SYNC: add-new-language — (2) add per-kind validation branch (if/elif) to the run: script below
-          NODE_GPR: ${{ inputs.publish_node_gpr }}
-          NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
+          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
+          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
           PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
-          RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
-          RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
+          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
+          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
         run: |
           set -Eeuo pipefail
 
@@ -528,25 +532,25 @@ jobs:
           }
 
           if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" != "true" ]]; then
-            if [[ "${NODE_GPR}" != "true" && "${NODE_NPMJS}" != "true" ]]; then
-              echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs). Got: publish_node_gpr=${NODE_GPR}, publish_node_npmjs=${NODE_NPMJS}." >&2
+            if [[ "${PUBLISH_NODE_GPR}" != "true" && "${PUBLISH_NODE_NPMJS}" != "true" ]]; then
+              echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs). Got: publish_node_gpr=${PUBLISH_NODE_GPR}, publish_node_npmjs=${PUBLISH_NODE_NPMJS}." >&2
               exit 1
             fi
             assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
-            assert_disabled "publish_ruby_gpr"       "${RUBY_GPR}"
-            assert_disabled "publish_ruby_rubygems"  "${RUBY_RUBYGEMS}"
+            assert_disabled "publish_ruby_gpr"       "${PUBLISH_RUBY_GPR}"
+            assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
             echo "Node publish-target policy passed for '${PROJECT}'."
             exit 0
           fi
 
           if [[ "${PROJECT_KIND}" == "ruby" ]]; then
-            if [[ "${RUBY_GPR}" != "true" && "${RUBY_RUBYGEMS}" != "true" ]]; then
-              echo "Ruby project '${PROJECT}' requires at least one Ruby publish target (GPR/RubyGems). Got: publish_ruby_gpr=${RUBY_GPR}, publish_ruby_rubygems=${RUBY_RUBYGEMS}." >&2
+            if [[ "${PUBLISH_RUBY_GPR}" != "true" && "${PUBLISH_RUBY_RUBYGEMS}" != "true" ]]; then
+              echo "Ruby project '${PROJECT}' requires at least one Ruby publish target (GPR/RubyGems). Got: publish_ruby_gpr=${PUBLISH_RUBY_GPR}, publish_ruby_rubygems=${PUBLISH_RUBY_RUBYGEMS}." >&2
               exit 1
             fi
             assert_disabled "publish_python_pypi"  "${PUBLISH_PYTHON_PYPI}"
-            assert_disabled "publish_node_gpr"     "${NODE_GPR}"
-            assert_disabled "publish_node_npmjs"   "${NODE_NPMJS}"
+            assert_disabled "publish_node_gpr"     "${PUBLISH_NODE_GPR}"
+            assert_disabled "publish_node_npmjs"   "${PUBLISH_NODE_NPMJS}"
             echo "Ruby publish-target policy passed for '${PROJECT}'."
             exit 0
           fi
@@ -555,10 +559,10 @@ jobs:
             if [[ "${PUBLISH_PYTHON_PYPI}" != "true" ]]; then
               echo "⚠️ Python project '${PROJECT}' will not publish to PyPI (publish_python_pypi=false). Only a GitHub Release will be created." >> "${GITHUB_STEP_SUMMARY}"
             fi
-            assert_disabled "publish_node_gpr"       "${NODE_GPR}"
-            assert_disabled "publish_node_npmjs"     "${NODE_NPMJS}"
-            assert_disabled "publish_ruby_gpr"       "${RUBY_GPR}"
-            assert_disabled "publish_ruby_rubygems"  "${RUBY_RUBYGEMS}"
+            assert_disabled "publish_node_gpr"       "${PUBLISH_NODE_GPR}"
+            assert_disabled "publish_node_npmjs"     "${PUBLISH_NODE_NPMJS}"
+            assert_disabled "publish_ruby_gpr"       "${PUBLISH_RUBY_GPR}"
+            assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
             echo "Python publish-target policy passed for '${PROJECT}'."
             exit 0
           fi
@@ -570,17 +574,17 @@ jobs:
             # validated all flags). For custom allowlisted channels it enforces that no
             # publish_node_* flags are erroneously set to true.
             assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
-            assert_disabled "publish_node_gpr"       "${NODE_GPR}"
-            assert_disabled "publish_node_npmjs"     "${NODE_NPMJS}"
-            assert_disabled "publish_ruby_gpr"       "${RUBY_GPR}"
-            assert_disabled "publish_ruby_rubygems"  "${RUBY_RUBYGEMS}"
+            assert_disabled "publish_node_gpr"       "${PUBLISH_NODE_GPR}"
+            assert_disabled "publish_node_npmjs"     "${PUBLISH_NODE_NPMJS}"
+            assert_disabled "publish_ruby_gpr"       "${PUBLISH_RUBY_GPR}"
+            assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
             echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
-            echo "ℹ️ WXT project \`${PROJECT}\`: publish_node_gpr=${NODE_GPR}, publish_node_npmjs=${NODE_NPMJS} are ignored (browser extension; not published to npm registries)." >> "${GITHUB_STEP_SUMMARY}"
+            echo "ℹ️ WXT project \`${PROJECT}\`: publish_node_gpr=${PUBLISH_NODE_GPR}, publish_node_npmjs=${PUBLISH_NODE_NPMJS} are ignored (browser extension; not published to npm registries)." >> "${GITHUB_STEP_SUMMARY}"
             # NOTE: For official channel runs, publish_node_npmjs=true is required by channel policy
             # (the policy job mandates it before project_kind is known). For WXT projects that flag
             # has no effect — WXT artifacts are distributed as browser extension archives, not npm
             # packages, and no Node pipeline jobs execute for WXT builds.
-            if [[ "${CHANNEL}" == "official" && "${NODE_NPMJS}" == "true" ]]; then
+            if [[ "${CHANNEL}" == "official" && "${PUBLISH_NODE_NPMJS}" == "true" ]]; then
               echo "ℹ️ Official channel note: \`publish_node_npmjs=true\` is required by channel policy but has no effect for WXT projects (browser extension; npm publishing is skipped)." >> "${GITHUB_STEP_SUMMARY}"
             fi
             exit 0
@@ -629,6 +633,7 @@ jobs:
           PROJECT: ${{ needs.resolve.outputs.project }}
           VERSION: ${{ needs.resolve.outputs.version }}
           IS_PRERELEASE: ${{ needs.resolve.outputs.is_prerelease }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -Eeuo pipefail
           if [[ "${IS_PRERELEASE}" != "true" ]]; then
@@ -636,6 +641,8 @@ jobs:
             exit 1
           fi
           echo "Prerelease-only guard passed for ${PROJECT} ${VERSION}."
+          echo "### Guard: Prerelease-only :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Version \`${VERSION}\` is a prerelease. Guard passed for channel \`${CHANNEL}\`." >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Guard disabled
         if: ${{ !inputs.enforce_prerelease_only }}
@@ -657,6 +664,12 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Install jq
+        if: inputs.enforce_non_clobber
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: '1.7.1'
+
       - name: Check existing GitHub Release by tag
         if: inputs.enforce_non_clobber
         shell: bash
@@ -666,39 +679,50 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          stderr_file="${RUNNER_TEMP}/gh-release-view-stderr"
-          prerelease_value=""
+          api="repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}"
+          resp_file="${RUNNER_TEMP}/gh-api.response"
+          rm -f "${resp_file}"
+
           set +e
-          prerelease_value=$(gh release view "${TAG_NAME}" --json prerelease --jq '.prerelease' 2>"${stderr_file}")
+          gh api "${api}" --include > "${resp_file}" 2>&1
           rc=$?
           set -e
 
-          if [[ "${rc}" -ne 0 ]]; then
-            if [[ -s "${stderr_file}" ]] && grep -qiF "release not found" "${stderr_file}"; then
-              echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
-              exit 0
+          status=$(grep -m1 -E '^HTTP/' "${resp_file}" | awk '{print $2}' || true)
+
+          if [[ "${rc}" -eq 0 ]]; then
+            body=$(sed -n '/^{/,$p' "${resp_file}")
+            if [[ -z "${body}" ]]; then
+              echo "Error: gh api output did not contain a JSON body." >&2
+              cat "${resp_file}" >&2 || true
+              exit 1
             fi
-            echo "gh release view failed for tag '${TAG_NAME}' (rc=${rc}). Failing safe to avoid accidental clobber." >&2
-            if [[ -s "${stderr_file}" ]]; then
-              echo "stderr:" >&2
-              cat "${stderr_file}" >&2
+            prerelease=$(printf '%s' "${body}" | jq -r '.prerelease')
+            if [[ "${prerelease}" != "true" && "${prerelease}" != "false" ]]; then
+              echo "Error: release JSON body missing 'prerelease'." >&2
+              exit 1
             fi
-            echo "If this tag genuinely has no release, this is likely a transient error — re-run the workflow." >&2
-            exit 1
+            if [[ "${prerelease}" == "false" ]]; then
+              echo "A non-prerelease GitHub Release already exists for tag '${TAG_NAME}'." >&2
+              echo "Buddy releases must not modify official (prerelease=false) releases. Aborting." >&2
+              exit 1
+            fi
+            echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
+            echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+            echo "Tag \`${TAG_NAME}\` — existing release is prerelease=true, safe to proceed." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
           fi
 
-          if [[ "${prerelease_value}" != "true" && "${prerelease_value}" != "false" ]]; then
-            echo "Error: unexpected prerelease value '${prerelease_value}' for tag '${TAG_NAME}'." >&2
-            exit 1
+          if [[ "${status}" == "404" ]]; then
+            echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
+            echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+            echo "Tag \`${TAG_NAME}\` — no existing release found, safe to proceed." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
           fi
 
-          if [[ "${prerelease_value}" == "false" ]]; then
-            echo "A non-prerelease GitHub Release already exists for tag '${TAG_NAME}'." >&2
-            echo "Non-clobber policy refuses to modify official (prerelease=false) releases." >&2
-            exit 1
-          fi
-
-          echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
+          echo "Failed to query release metadata for tag '${TAG_NAME}' (HTTP ${status:-unknown})." >&2
+          cat "${resp_file}" >&2 || true
+          exit 1
 
       - name: Guard disabled
         if: ${{ !inputs.enforce_non_clobber }}
@@ -1044,12 +1068,14 @@ jobs:
 
           npmrc="${RUNNER_TEMP}/npmrc-gpr"
           install -m 600 /dev/null "${npmrc}"
+          # Write content with restricted permissions; chmod after redirect as defense-in-depth.
           {
             echo "registry=https://registry.npmjs.org"
             echo "${SCOPE}:registry=https://npm.pkg.github.com"
             echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
             echo "//npm.pkg.github.com/:always-auth=true"
           } > "${npmrc}"
+          chmod 600 "${npmrc}"
 
           echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
 
