@@ -324,6 +324,11 @@ jobs:
                 echo "Reserved channel '${entry}' cannot appear in channel_allowlist." >&2
                 exit 1
               fi
+              # Validate channel name charset: only lowercase letters, digits, hyphens, and underscores.
+              if [[ ! "${entry}" =~ ^[a-z0-9_-]+$ ]]; then
+                echo "Invalid channel name '${entry}' in channel_allowlist: only lowercase letters (a-z), digits (0-9), hyphens (-), and underscores (_) are allowed." >&2
+                exit 1
+              fi
               # Check if this entry matches the candidate.
               if [[ "${entry}" == "${candidate}" ]]; then
                 return 0
