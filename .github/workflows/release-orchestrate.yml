@@ -555,6 +555,13 @@ jobs:
             assert_disabled "publish_ruby_rubygems"  "${RUBY_RUBYGEMS}"
             echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
             echo "ℹ️ WXT project \`${PROJECT}\`: publish_node_gpr=${NODE_GPR}, publish_node_npmjs=${NODE_NPMJS} are ignored (browser extension; not published to npm registries)." >> "${GITHUB_STEP_SUMMARY}"
+            # NOTE: For official channel runs, publish_node_npmjs=true is required by channel policy
+            # (the policy job mandates it before project_kind is known). For WXT projects that flag
+            # has no effect — WXT artifacts are distributed as browser extension archives, not npm
+            # packages, and no Node pipeline jobs execute for WXT builds.
+            if [[ "${CHANNEL}" == "official" && "${NODE_NPMJS}" == "true" ]]; then
+              echo "ℹ️ Official channel note: \`publish_node_npmjs=true\` is required by channel policy but has no effect for WXT projects (browser extension; npm publishing is skipped)." >> "${GITHUB_STEP_SUMMARY}"
+            fi
             exit 0
           fi
 
