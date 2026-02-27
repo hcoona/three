@@ -413,6 +413,50 @@ jobs:
               ;;
           esac
 
+      - name: Checkout (policy self-test)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Self-test policy flag coverage
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
+          FAIL=0
+
+          # For each flag that must be validated per-channel, verify that assert_equals
+          # appears at least twice in the policy job (once for official, once in buddy).
+          # A count < 2 means the flag was added to one branch but not the other,
+          # which causes a silent policy bypass for the missing channel.
+          required_flags=(
+            enforce_prerelease_only
+            enforce_non_clobber
+            publish_python_pypi
+            publish_node_gpr
+            publish_node_npmjs
+            publish_ruby_gpr
+            publish_ruby_rubygems
+            enable_attestation
+            github_release_prerelease
+          )
+
+          for flag in "${required_flags[@]}"; do
+            count=$(grep -c "assert_equals \"${flag}\"" "${WORKFLOW_FILE}" || true)
+            if [[ "${count}" -lt 2 ]]; then
+              echo "ERROR: flag '${flag}' has assert_equals coverage in only ${count} case branch(es); expected ≥ 2 (once in 'official', once in 'buddy')." >&2
+              FAIL=1
+            fi
+          done
+
+          if [[ "${FAIL}" -ne 0 ]]; then
+            echo "Policy self-test failed. When adding a new language, you MUST add assert_equals calls" >&2
+            echo "for each new flag in BOTH the 'official' AND 'buddy' case branches of the policy job." >&2
+            echo "See SYNC: add-new-language (B2) comment for details." >&2
+            exit 1
+          fi
+          echo "Policy flag coverage self-test passed."
+
   # NOTE: This job runs AFTER resolve (not at workflow start) because project_kind
   # (python/node/ruby/wxt) is only known after the resolve step. It validates that
   # the caller's publish flags are consistent with the resolved project kind.
