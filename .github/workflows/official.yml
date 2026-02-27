@@ -70,4 +70,3 @@ jobs:
       publish_ruby_rubygems: true
 
       enable_attestation: true
-      node_pack_mode: both

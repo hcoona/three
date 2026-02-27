@@ -60,4 +60,3 @@ jobs:
       publish_ruby_rubygems: false
 
       enable_attestation: false
-      node_pack_mode: gpr-only

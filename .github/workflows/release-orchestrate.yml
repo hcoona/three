@@ -135,16 +135,6 @@ on:
         default: false
         type: boolean
 
-      node_pack_mode:
-        description: >-
-          Pack mode for release-build-node-pack workflow.
-          Valid values: 'gpr-only' (pack for GitHub Packages registry only) or
-          'both' (pack for both GitHub Packages and npmjs.org; requires
-          publish_node_npmjs=true — enforced by the policy job cross-validation).
-        required: false
-        default: gpr-only
-        type: string
-
 permissions:
   contents: read
 
@@ -261,7 +251,6 @@ jobs:
   #   publish_ruby_gpr          | true     | true
   #   publish_ruby_rubygems     | true     | false
   #   enable_attestation        | true     | false
-  #   node_pack_mode            | both     | gpr-only  (derived from publish_node_npmjs: both=true, gpr-only=false)
   #
   # Custom channels (allowlisted via channel_allowlist) bypass all assertions.
   # Callers are solely responsible for setting correct flag values for custom channels.
@@ -286,7 +275,7 @@ jobs:
           PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
           PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
           ENABLE_ATTESTATION: ${{ inputs.enable_attestation }}
-          NODE_PACK_MODE: ${{ inputs.node_pack_mode }}
+          NODE_PACK_MODE: ${{ inputs.publish_node_npmjs && 'both' || 'gpr-only' }}
           REF_NAME: ${{ inputs.ref_name }}
           REF: ${{ inputs.ref }}
           PROJECT: ${{ inputs.project }}
@@ -364,7 +353,6 @@ jobs:
               assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
               assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
               assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "true"
-              assert_equals "node_pack_mode" "${NODE_PACK_MODE}" "both"
               assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "false"
               ;;
             buddy)
@@ -381,7 +369,6 @@ jobs:
               assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
               assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "false"
               assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "false"
-              assert_equals "node_pack_mode" "${NODE_PACK_MODE}" "gpr-only"
               assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "true"
               ;;
             *)
@@ -393,20 +380,6 @@ jobs:
                 echo "Channel '${CHANNEL}' is explicitly allowlisted; skipping strict channel profile assertions."
                 # github_release_prerelease is not enforced for custom channels.
                 # The caller is responsible for setting it correctly.
-                # Validate node_pack_mode for allowlisted channels (valid: both, gpr-only)
-                if [[ "${NODE_PACK_MODE}" != "both" && "${NODE_PACK_MODE}" != "gpr-only" ]]; then
-                  echo "node_pack_mode must be 'both' or 'gpr-only' (got '${NODE_PACK_MODE}')." >&2
-                  exit 1
-                fi
-                # Cross-validate node_pack_mode against publish flags
-                if [[ "${NODE_PACK_MODE}" == "both" && "${PUBLISH_NODE_NPMJS}" != "true" ]]; then
-                  echo "node_pack_mode=both requires publish_node_npmjs=true (got '${PUBLISH_NODE_NPMJS}')." >&2
-                  exit 1
-                fi
-                if [[ "${NODE_PACK_MODE}" == "gpr-only" && "${PUBLISH_NODE_NPMJS}" != "false" ]]; then
-                  echo "node_pack_mode=gpr-only requires publish_node_npmjs=false (got '${PUBLISH_NODE_NPMJS}')." >&2
-                  exit 1
-                fi
                 # SECURITY: Production registry publishing (PyPI/npmjs/RubyGems) is prohibited
                 # for allowlisted channels. These registries rely on GitHub environment required
                 # reviewers as the sole gating mechanism; the reusable workflow cannot enforce
@@ -895,7 +868,7 @@ jobs:
       node_version: '24'
       pnpm_version: '10'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-      pack_mode: ${{ inputs.node_pack_mode }}
+      pack_mode: ${{ inputs.publish_node_npmjs && 'both' || 'gpr-only' }}
 
   gate-node-publish-npmjs:
     name: Approval gate for Node publish (npmjs)
