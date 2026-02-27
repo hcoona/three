@@ -691,7 +691,7 @@ jobs:
           status=$(grep -m1 -E '^HTTP/' "${resp_file}" | awk '{print $2}' || true)
 
           if [[ "${rc}" -eq 0 ]]; then
-            body=$(awk 'BEGIN{found=0} /^[[:space:]]*$/{found=1; next} found{print}' "${resp_file}")
+            body=$(sed -n '/^[{[]/,$p' "${resp_file}")
             if [[ -z "${body}" ]]; then
               echo "Error: gh api output did not contain a JSON body." >&2
               cat "${resp_file}" >&2 || true
@@ -982,7 +982,9 @@ jobs:
       node_version: '24'
       pnpm_version: '10'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-      pack_mode: ${{ inputs.publish_node_npmjs && 'both' || 'gpr-only' }}
+      # pack_mode requires inputs.publish_node_npmjs to be a typed boolean (workflow_call type: boolean).
+      # Using == true guards against a string 'false' being truthy and incorrectly selecting 'both'.
+      pack_mode: ${{ inputs.publish_node_npmjs == true && 'both' || 'gpr-only' }}
 
   gate-node-publish-npmjs:
     name: Approval gate for Node publish (npmjs)
