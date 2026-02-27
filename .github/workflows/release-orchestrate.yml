@@ -1705,11 +1705,11 @@ jobs:
           fi
 
           if [[ "${success_count}" -eq 0 ]]; then
-            echo "No release job succeeded. This may indicate an upstream gate failure (policy, guards, or build jobs)." >&2
+            echo "No release job succeeded. This may indicate: (1) an upstream gate failure (policy or guards), (2) a build or publish step failure, or (3) all projects of the detected kind were skipped." >&2
             {
               echo ""
               echo "> [!CAUTION]"
-              echo "> No release job succeeded. This may indicate an upstream gate failure (policy, guards, or build jobs)."
+              echo "> No release job succeeded. This may indicate: (1) an upstream gate failure (policy or guards), (2) a build or publish step failure, or (3) all projects of the detected kind were skipped."
             } >> "${GITHUB_STEP_SUMMARY}"
             exit 1
           fi
