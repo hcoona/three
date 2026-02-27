@@ -278,17 +278,17 @@ jobs:
             local entry
             IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST}"
             for entry in "${allowlist[@]}"; do
+              # Trim leading and trailing whitespace.
               entry="${entry#"${entry%%[![:space:]]*}"}"
               entry="${entry%"${entry##*[![:space:]]}"}"
+              [[ -z "${entry}" ]] && continue
+              # Reserved channels cannot be allowlisted.
               if [[ "${entry}" == "official" || "${entry}" == "buddy" ]]; then
                 echo "Reserved channel '${entry}' cannot appear in channel_allowlist." >&2
                 exit 1
               fi
-            done
-            for entry in "${allowlist[@]}"; do
-              entry="${entry#"${entry%%[![:space:]]*}"}"
-              entry="${entry%"${entry##*[![:space:]]}"}"
-              if [[ -n "${entry}" && "${entry}" == "${candidate}" ]]; then
+              # Check if this entry matches the candidate.
+              if [[ "${entry}" == "${candidate}" ]]; then
                 return 0
               fi
             done
