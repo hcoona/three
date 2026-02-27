@@ -1,5 +1,26 @@
 name: Release Orchestrator (Reusable)
 
+# PIPELINE OVERVIEW (simplified job dependency graph):
+#
+#   [lint-version-consistency]        [policy]
+#                \                       /
+#                 +------[resolve]-------+
+#                / [guard-prerelease-only] \
+#               /  [guard-non-clobber]      \
+#              /   [prepare-release-notes]   \
+#             /    [policy-publish-targets]   \
+#            /                                 \
+#  [build-<lang>]          ...per-language pipeline...
+#     /         \
+#  [attest-*]  [publish-*]
+#     \           /
+#   [release-<lang>-*]
+#          |
+#  [release-completed]
+#
+# Entry callers: official.yml (push:tag + workflow_dispatch)
+#                buddy.yml   (workflow_dispatch, prerelease-only)
+
 on:
   workflow_call:
     inputs:
