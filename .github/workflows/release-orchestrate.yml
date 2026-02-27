@@ -844,20 +844,24 @@ jobs:
   # succeeds. This provides approval-synchronized sequencing: either both registries are
   # approved-and-published together, or neither proceeds. If you need independent registry
   # publishes, decouple this condition by removing the gate-node-publish-npmjs dependency check.
+  # Attestation (attest-node) must also complete successfully before GPR publishing proceeds,
+  # ensuring the artifact is attested before it is published to GitHub Packages.
   publish-node-gpr-enabled:
     name: Publish Node package (GitHub Packages) [upload]
     runs-on: ubuntu-latest
     needs:
       - resolve
       - pack-node
+      - attest-node
       - gate-node-publish-npmjs
     # Condition: Always evaluate (via always()), but only run if: this is a non-WXT Node
-    # project, GPR publishing is enabled, pack-node succeeded, AND (either npmjs is not
-    # being published OR the npmjs approval gate (gate-node-publish-npmjs) has passed).
+    # project, GPR publishing is enabled, pack-node succeeded, attest-node succeeded, AND
+    # (either npmjs is not being published OR the npmjs approval gate
+    # (gate-node-publish-npmjs) has passed).
     # The pack-node result check prevents a spurious "artifact not found" failure when
     # pack-node fails and publish_node_npmjs=false (gate is skipped, not failed).
     # See the comment above this job for the rationale behind the npmjs gate coupling.
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr && needs.pack-node.result == 'success' && (!inputs.publish_node_npmjs || needs.gate-node-publish-npmjs.result == 'success') }}
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr && needs.pack-node.result == 'success' && needs.attest-node.result == 'success' && (!inputs.publish_node_npmjs || needs.gate-node-publish-npmjs.result == 'success') }}
     permissions:
       contents: read
       actions: read
@@ -1168,13 +1172,16 @@ jobs:
   # succeeds, RubyGems fails) is a loud failure that surfaces in the workflow, not a silent
   # inconsistency. If you need atomic Ruby dual-publish in the future, mirror the Node pattern
   # by adding an environment approval gate before publish-ruby-gpr-enabled.
+  # Attestation (attest-ruby) is enforced before GPR publishing to ensure the artifact is
+  # attested prior to being published to GitHub Packages.
   publish-ruby-gpr-enabled:
     name: Publish Ruby gem (GitHub Packages) [upload]
     runs-on: ubuntu-latest
     needs:
       - resolve
       - build-ruby
-    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_gpr
+      - attest-ruby
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_gpr && needs.attest-ruby.result == 'success'
     permissions:
       contents: read
       actions: read
