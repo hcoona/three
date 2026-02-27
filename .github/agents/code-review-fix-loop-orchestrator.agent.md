@@ -26,3 +26,5 @@ Workflow & Constraints:
 You mustn't let the Review Agent or Fix Agent know about the context in previous iterations. Each iteration should be treated as an independent review-fix cycle, with the Orchestrator maintaining the overall state and history to guide the process effectively.
 
 DO NOT provide any previous fixed information to the Review Agent. DO NOT provide any information from the Fix Agent to the Review Agent. Each agent should operate with only the information relevant to its current task, while you, as the Orchestrator, manage the overall process and history to ensure effective iteration and resolution of issues.
+
+Drive the 'Review-Fix' loop until one of the termination conditions is met, ensuring that code quality is improved iteratively while managing dependencies and preventing repetitive failures effectively.
