@@ -207,7 +207,8 @@ jobs:
             # skip bare input/output declaration lines (e.g. `python_version:` alone) that carry
             # no version value on the same line.
             mismatches=$(grep -n "^\s*${key}:\s*['\"]" "${WORKFLOW_FILE}" \
-              | grep -vE "'${expected}'|\"${expected}\"" || true)
+              | grep -vF "'${expected}'" \
+              | grep -vF "\"${expected}\"" || true)
             if [[ -n "${mismatches}" ]]; then
               echo "ERROR: '${key}:' value(s) not matching expected '${expected}':" >&2
               echo "${mismatches}" >&2
