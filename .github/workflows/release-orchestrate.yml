@@ -203,10 +203,11 @@ jobs:
             local expected="$2"
             local mismatches
             # Require a quote character immediately after the colon+space to match only
-            # pinned version values (e.g. `python_version: '3.14'`) and skip bare input/output
-            # declaration lines (e.g. `python_version:` alone) that carry no version value.
-            mismatches=$(grep -n "^\s*${key}:\s*'" "${WORKFLOW_FILE}" \
-              | grep -vF "'${expected}'" || true)
+            # pinned version values (e.g. `python_version: '3.14'` or `node_version: "24"`) and
+            # skip bare input/output declaration lines (e.g. `python_version:` alone) that carry
+            # no version value on the same line.
+            mismatches=$(grep -n "^\s*${key}:\s*['\"]" "${WORKFLOW_FILE}" \
+              | grep -vE "'${expected}'|\"${expected}\"" || true)
             if [[ -n "${mismatches}" ]]; then
               echo "ERROR: '${key}:' value(s) not matching expected '${expected}':" >&2
               echo "${mismatches}" >&2
@@ -1251,9 +1252,10 @@ jobs:
     # NOTE: This job intentionally does not use always(). If attest-ruby fails, GitHub Actions
     # skips this job automatically via the needs: mechanism before the if: is evaluated.
     # The explicit needs.attest-ruby.result == 'success' check is defensive redundancy.
-    # WARNING: If you ever add always() to this job, you MUST also add an explicit
-    # needs.build-ruby.result == 'success' check to prevent a spurious publish attempt
-    # when the build fails.
+    # WARNING: If you ever add always() to this job, you MUST keep
+    # needs.attest-ruby.result == 'success' in the if: condition (and ensure attest-ruby itself
+    # does NOT use always()). Removing that check while adding always() here would allow a spurious
+    # publish attempt when build or attestation fails.
     if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_gpr && needs.attest-ruby.result == 'success'
     permissions:
       contents: read
