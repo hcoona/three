@@ -157,8 +157,14 @@ jobs:
   # skipped. The solution is a two-job pair:
   #
   #   *-enabled  — The actual working job. Runs only when the feature flag is
-  #                true. Has no `always()` in its `if:` — it is skipped when
-  #                the flag is false.
+  #                true. Typically has no `always()` in its `if:` — it is
+  #                skipped when the flag is false.
+  #                EXCEPTION: If `*-enabled` lists a potentially-skipped job in
+  #                its `needs:`, it must also use `always()` to prevent an
+  #                unwanted cascade-skip. See publish-node-gpr-enabled for an
+  #                example: it lists gate-node-publish-npmjs (which is skipped
+  #                when publish_node_npmjs=false) and therefore requires
+  #                `always()` plus an explicit result check in its `if:`.
   #   *          — The gate verifier. Always runs via `always()`. If the
   #                feature is enabled, it verifies the `-enabled` job succeeded
   #                (failing loudly if not). If disabled, it logs a note and
@@ -979,6 +985,8 @@ jobs:
   # publishes, decouple this condition by removing the gate-node-publish-npmjs dependency check.
   # Attestation (attest-node) must also complete successfully before GPR publishing proceeds,
   # ensuring the artifact is attested before it is published to GitHub Packages.
+  # NOTE: This job uses always() (exception to the *-enabled pattern) because gate-node-publish-npmjs
+  # is in needs: and is skipped when publish_node_npmjs=false. See JOB NAMING CONVENTION above.
   publish-node-gpr-enabled:
     name: Publish Node package (GitHub Packages) [upload]
     runs-on: ubuntu-latest
