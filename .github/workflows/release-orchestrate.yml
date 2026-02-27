@@ -445,7 +445,8 @@ jobs:
           PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
           CHANNEL: ${{ inputs.channel }}
-          # SYNC: add-new-language — add publish_<lang>_<registry> env vars and per-kind validation below
+          # SYNC: add-new-language — (1) add publish_<lang>_<registry> env var(s) to the env: block above
+          # SYNC: add-new-language — (2) add per-kind validation branch (if/elif) to the run: script below
           NODE_GPR: ${{ inputs.publish_node_gpr }}
           NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
           PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
@@ -1598,7 +1599,12 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
-  # SYNC: add-new-language — define new language pipeline jobs (build, pack, publish, release, attestation, etc.) above release-completed
+  # SYNC: add-new-language — define new language pipeline jobs (build, pack, publish,
+  #   attest-<lang>-enabled, attest-<lang> gate, release-<lang>-with-<registry>,
+  #   release-<lang>-no-<registry>) above release-completed. Follow the existing
+  #   Python/Node/Ruby section structure. If the new language has an optional external
+  #   registry, create BOTH release-<lang>-with-<registry> AND release-<lang>-no-<registry>
+  #   variants (static needs: evaluation requires job duplication; see Python/Node for pattern).
 
   # ===========================================================================
   # SECTION: Release Sentinel
@@ -1610,12 +1616,19 @@ jobs:
   # Across files:
   #   A. release-orchestrate.yml inputs block — add publish_<lang>_<registry> and any
   #      pack/mode inputs
-  #   B. release-orchestrate.yml policy job case statements — add assert_equals() calls
-  #      for each new input in the 'official' and 'buddy' branches
-  #   C. release-orchestrate.yml policy-publish-targets job — add project_kind check for
-  #      the new language
-  #   D. official.yml — pass new inputs with their official-channel values
-  #   E. buddy.yml — pass new inputs with their buddy-channel values
+  #   B. release-orchestrate.yml policy job — two updates required:
+  #      B1. Update the channel profile matrix comment table above the policy job
+  #          (add a new row for each flag and fill official/buddy values)
+  #      B2. Add assert_equals() calls for each new input in BOTH 'official' and
+  #          'buddy' case branches (use the SYNC markers inside each branch)
+  #   C. release-orchestrate.yml policy-publish-targets job — add env var and per-kind
+  #      validation branch for the new language
+  #   D. release-orchestrate.yml lint-version-consistency job — if the new language
+  #      uses a versioned tool, add EXPECTED_<LANG>_VERSION to the job's env: block
+  #      and a check_version "<lang>_version" call to the verification script step
+  #   E. (SYNC above) Define new pipeline jobs here in release-orchestrate.yml
+  #   F. official.yml — pass new inputs with their official-channel values
+  #   G. buddy.yml — pass new inputs with their buddy-channel values
   #
   # Within this job (one internal sync point):
   #   1. needs: — add the new release job name(s) here
