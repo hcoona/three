@@ -380,6 +380,11 @@ jobs:
               ;;
           esac
 
+  # NOTE: This job runs AFTER resolve (not at workflow start) because project_kind
+  # (python/node/ruby/wxt) is only known after the resolve step. It validates that
+  # the caller's publish flags are consistent with the resolved project kind.
+  # Contrast with the `policy` job (no needs:) which validates the channel-profile
+  # flags unconditionally at workflow start — before any resolution occurs.
   policy-publish-targets:
     name: Validate publish-target policy
     runs-on: ubuntu-latest
