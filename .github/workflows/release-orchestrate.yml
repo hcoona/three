@@ -539,13 +539,19 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          stderr_file="${RUNNER_TEMP}/gh-release-view-stderr"
           prerelease_value=""
           set +e
-          prerelease_value=$(gh release view "${TAG_NAME}" --json prerelease --jq '.prerelease' 2>/dev/null)
+          prerelease_value=$(gh release view "${TAG_NAME}" --json prerelease --jq '.prerelease' 2>"${stderr_file}")
           rc=$?
           set -e
 
           if [[ "${rc}" -ne 0 ]]; then
+            if [[ -s "${stderr_file}" ]]; then
+              echo "gh release view exited ${rc} for tag '${TAG_NAME}'. stderr:" >&2
+              cat "${stderr_file}" >&2
+              echo "(Treating non-zero exit as 'release not found'. If this is a network or permissions error, investigate the stderr above.)" >&2
+            fi
             echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
             exit 0
           fi
