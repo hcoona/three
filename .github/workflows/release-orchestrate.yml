@@ -398,6 +398,26 @@ jobs:
                   echo "node_pack_mode=gpr-only requires publish_node_npmjs=false (got '${PUBLISH_NODE_NPMJS}')." >&2
                   exit 1
                 fi
+                # SECURITY: Production registry publishing (PyPI/npmjs/RubyGems) is prohibited
+                # for allowlisted channels. These registries rely on GitHub environment required
+                # reviewers as the sole gating mechanism; the reusable workflow cannot enforce
+                # caller origin. To intentionally publish a custom channel to a production
+                # registry, remove these assertions and accept full responsibility for access control.
+                if [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]]; then
+                  echo "Allowlisted channel '${CHANNEL}' may not set publish_python_pypi=true (production registry)." >&2
+                  echo "Production registry publishing is reserved for official and buddy channels." >&2
+                  exit 1
+                fi
+                if [[ "${PUBLISH_NODE_NPMJS}" == "true" ]]; then
+                  echo "Allowlisted channel '${CHANNEL}' may not set publish_node_npmjs=true (production registry)." >&2
+                  echo "Production registry publishing is reserved for official and buddy channels." >&2
+                  exit 1
+                fi
+                if [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]]; then
+                  echo "Allowlisted channel '${CHANNEL}' may not set publish_ruby_rubygems=true (production registry)." >&2
+                  echo "Production registry publishing is reserved for official and buddy channels." >&2
+                  exit 1
+                fi
               else
                 echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
                 echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
@@ -661,6 +681,8 @@ jobs:
       - build-python
       - attest-python
     if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
+    # SECURITY: This environment MUST have required reviewers configured in repository settings.
+    # Without reviewers, any allowlisted channel caller can publish to PyPI via OIDC.
     environment: pypi
     permissions:
       contents: read
@@ -1021,6 +1043,8 @@ jobs:
       - publish-node-gpr
       - attest-node
     if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' && (!inputs.enable_attestation || needs.attest-node.result == 'success') }}
+    # SECURITY: This environment MUST have required reviewers configured in repository settings.
+    # Without reviewers, any allowlisted channel caller can publish to npmjs.org via OIDC.
     environment: npmjs
     permissions:
       contents: read
@@ -1305,6 +1329,8 @@ jobs:
       - build-ruby
       - attest-ruby
     if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems
+    # SECURITY: This environment MUST have required reviewers configured in repository settings.
+    # Without reviewers, any allowlisted channel caller can publish to RubyGems.org via OIDC.
     environment: rubygems
     permissions:
       contents: read
@@ -1652,17 +1678,21 @@ jobs:
 
           if [[ "${#failed[@]}" -gt 0 ]]; then
             echo "One or more release jobs failed: ${failed[*]}" >&2
-            echo "" >> "${GITHUB_STEP_SUMMARY}"
-            echo "> [!CAUTION]" >> "${GITHUB_STEP_SUMMARY}"
-            echo "> One or more release jobs failed: ${failed[*]}" >> "${GITHUB_STEP_SUMMARY}"
+            {
+              echo ""
+              echo "> [!CAUTION]"
+              echo "> One or more release jobs failed: ${failed[*]}"
+            } >> "${GITHUB_STEP_SUMMARY}"
             exit 1
           fi
 
           if [[ "${success_count}" -eq 0 ]]; then
             echo "No release job succeeded. This may indicate an upstream gate failure (policy, guards, or build jobs)." >&2
-            echo "" >> "${GITHUB_STEP_SUMMARY}"
-            echo "> [!CAUTION]" >> "${GITHUB_STEP_SUMMARY}"
-            echo "> No release job succeeded. This may indicate an upstream gate failure (policy, guards, or build jobs)." >> "${GITHUB_STEP_SUMMARY}"
+            {
+              echo ""
+              echo "> [!CAUTION]"
+              echo "> No release job succeeded. This may indicate an upstream gate failure (policy, guards, or build jobs)."
+            } >> "${GITHUB_STEP_SUMMARY}"
             exit 1
           fi
 
