@@ -1461,6 +1461,13 @@ jobs:
   # SECTION: WXT (Node Extension) Release Pipeline
   # WXT projects are distributed as browser extension archives, not npm packages;
   # all publish_node_* flags are intentionally ignored for WXT projects.
+  #
+  # TECH DEBT: WXT is currently identified by the combination of
+  #   project_kind == 'node' && is_wxt == 'true'
+  # If more Node-based framework variants emerge (e.g., Electron apps, VS Code
+  # extensions), this boolean-flag pattern should be refactored into a single
+  # project_variant enum output from release-resolve.yml (e.g., 'node-npm',
+  # 'node-wxt', 'node-electron') to avoid multiplying conditional branches.
   # ===========================================================================
   build-wxt:
     name: Build package (Node/WXT)
