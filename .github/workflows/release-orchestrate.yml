@@ -1334,7 +1334,7 @@ jobs:
       - resolve
       - build-ruby
       - attest-ruby
-    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems && (!inputs.enable_attestation || needs.attest-ruby.result == 'success')
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to RubyGems.org via OIDC.
     environment: rubygems
