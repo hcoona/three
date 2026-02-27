@@ -243,6 +243,11 @@ jobs:
   # correctness. This catches copy-paste errors in new caller workflows and documents the
   # expected profile for each channel in a single authoritative location.
   #
+  # WARNING: This table is maintained manually. Keep it in sync with the assert_equals /
+  # assert_disabled calls in the case statement below. The assertions are the source of
+  # truth — the table is documentation only. When adding a new language or flag, update
+  # BOTH this table and the corresponding assert_equals calls in the case statement.
+  #
   # Channel profile matrix (authoritative; the case statement below enforces these):
   #
   #   Flag                      | official | buddy
@@ -256,7 +261,7 @@ jobs:
   #   publish_ruby_gpr          | true     | true
   #   publish_ruby_rubygems     | true     | false
   #   enable_attestation        | true     | false
-  #   node_pack_mode            | both     | gpr-only
+  #   node_pack_mode            | both     | gpr-only  (derived from publish_node_npmjs: both=true, gpr-only=false)
   #
   # Custom channels (allowlisted via channel_allowlist) bypass all assertions.
   # Callers are solely responsible for setting correct flag values for custom channels.
