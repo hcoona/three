@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: official-${{ github.workflow }}-${{ github.ref_name || github.run_id }}-${{ inputs.project || 'push' }}
+  group: official-${{ github.workflow }}-${{ github.ref_name }}-${{ inputs.project || 'push' }}
   cancel-in-progress: false
 
 jobs:
@@ -44,11 +44,13 @@ jobs:
       attestations: write
     with:
       source: ${{ github.event_name == 'push' && 'tag' || 'manual' }}
-      run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
       # source=tag
       ref_name: ${{ github.ref_name }}
       ref: ${{ github.ref }}
+      # NOTE: For source=manual (workflow_dispatch), ref_name and ref above are passed
+      # as the branch name / refs/heads/<branch> but are ignored by the orchestrator
+      # (resolve only reads them when source=tag). They are passed unconditionally to
+      # keep the with: block simple and avoid event-conditional expressions.
 
       # source=manual
       project: ${{ inputs.project }}

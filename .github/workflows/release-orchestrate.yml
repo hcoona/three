@@ -28,11 +28,6 @@ on:
         description: "Resolution mode: 'tag' derives project/version from release tag; 'manual' uses explicit inputs."
         required: true
         type: string
-      run_url:
-        description: "Entry workflow run URL (pass-through for release notes)."
-        required: true
-        type: string
-
       # source=tag
       ref_name:
         description: "Tag name (caller passes github.ref_name). Required when source=tag."
@@ -208,6 +203,11 @@ jobs:
           WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
           FAIL=0
 
+          # check_version validates hardcoded 'key: value' pairs in the workflow file.
+          # It handles both lowercase with: keys (e.g. python_version: '3.14') and
+          # ALL_CAPS env: block keys (e.g. PYTHON_VERSION: '3.14'). The unquoted character
+          # class is broadened automatically for ALL_CAPS keys since their values may start
+          # with letters or dots (e.g. PNPM_VERSION: latest), while with: keys only expect digits.
           check_version() {
             local key="$1"
             local expected="$2"
@@ -224,11 +224,17 @@ jobs:
             mismatches=$(grep -n "^\s*${key}:\s*['\"]" "${WORKFLOW_FILE}" \
               | grep -vF "'${expected}'" \
               | grep -vF "\"${expected}\"" || true)
-            # Also check for unquoted integer/bare values (e.g. `node_version: 24`).
-            # Use anchored regex to avoid false negatives when the expected value is a
-            # numeric prefix of a longer string (e.g. ': 24' must NOT match ': 240').
+            # Also check for unquoted scalar values (e.g. `node_version: 24` or `NODE_VERSION: 24`).
+            # For ALL_CAPS env var keys, use a broader character class since values may start with
+            # letters or dots; lowercase with: keys only expect digit-prefixed version strings.
+            local unquoted_start
+            if [[ "${key}" =~ ^[A-Z_]+$ ]]; then
+              unquoted_start="[0-9A-Za-z.]"
+            else
+              unquoted_start="[0-9]"
+            fi
             local unquoted
-            unquoted=$(grep -n "^\s*${key}:\s*[0-9]" "${WORKFLOW_FILE}" \
+            unquoted=$(grep -n "^\s*${key}:\s*${unquoted_start}" "${WORKFLOW_FILE}" \
               | grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" \
               | grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
             if [[ -n "${unquoted}" ]]; then
@@ -240,38 +246,12 @@ jobs:
               echo "${mismatches}" >&2
               FAIL=1
             fi
-          }
-
-          # check_version_caps validates top-level ALL_CAPS env: block entries
-          # (e.g. PYTHON_VERSION: '3.14') to ensure the runtime env vars stay
-          # in sync with the job-level with: inputs checked by check_version.
-          # Mirrors check_version's two-pass approach: quote-delimited values and
-          # unquoted bare scalars are each checked separately to avoid false positives.
-          check_version_caps() {
-            local key_caps="$1"
-            local expected="$2"
-            # Escape '.' so it is treated as a literal character in -P regex.
-            local expected_re
-            expected_re=$(printf '%s' "${expected}" | sed 's/\./\\./g')
-            local mismatches
-            # First pass: skip empty-value lines (bare declaration, `KEY:` with no value).
-            # Then check quoted values (single- or double-quoted).
-            mismatches=$(grep -n "^\s*${key_caps}:\s*['\"]" "${WORKFLOW_FILE}" \
-              | grep -vF "'${expected}'" \
-              | grep -vF "\"${expected}\"" || true)
-            # Second pass: check unquoted bare scalars (e.g. `NODE_VERSION: 24`).
-            # Uses boundary-anchored regex to avoid matching a prefix of a longer value.
-            local unquoted_caps
-            unquoted_caps=$(grep -n "^\s*${key_caps}:\s*[0-9A-Za-z.]" "${WORKFLOW_FILE}" \
-              | grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" \
-              | grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
-            if [[ -n "${unquoted_caps}" ]]; then
-              mismatches="${mismatches}"$'\n'"${unquoted_caps}"
-            fi
-            mismatches="${mismatches#$'\n'}"
-            if [[ -n "${mismatches}" ]]; then
-              echo "ERROR: '${key_caps}:' value(s) not matching expected '${expected}':" >&2
-              echo "${mismatches}" >&2
+            # Assert at least one occurrence of the key exists. A count of zero means
+            # the key was renamed or removed and the mismatch check would silently pass.
+            total=$(grep -cP "^\s*${key}:\s" "${WORKFLOW_FILE}" || true)
+            if [[ "${total}" -eq 0 ]]; then
+              echo "ERROR: Key '${key}:' not found in '${WORKFLOW_FILE}'." \
+                "Was it renamed or deleted? Update both the key name and the EXPECTED_* variable." >&2
               FAIL=1
             fi
           }
@@ -284,11 +264,11 @@ jobs:
 
           # Also validate the top-level ALL_CAPS env: block so that runtime
           # tool versions stay in sync with the hardcoded with: values above.
-          check_version_caps "PYTHON_VERSION" "${EXPECTED_PYTHON_VERSION}"
-          check_version_caps "NODE_VERSION"   "${EXPECTED_NODE_VERSION}"
-          check_version_caps "PNPM_VERSION"   "${EXPECTED_PNPM_VERSION}"
-          check_version_caps "RUBY_VERSION"   "${EXPECTED_RUBY_VERSION}"
-          # SYNC: add-new-language — add check_version_caps "<LANG>_VERSION" "${EXPECTED_<LANG>_VERSION}" call here
+          check_version "PYTHON_VERSION" "${EXPECTED_PYTHON_VERSION}"
+          check_version "NODE_VERSION"   "${EXPECTED_NODE_VERSION}"
+          check_version "PNPM_VERSION"   "${EXPECTED_PNPM_VERSION}"
+          check_version "RUBY_VERSION"   "${EXPECTED_RUBY_VERSION}"
+          # SYNC: add-new-language — add check_version "<LANG>_VERSION" "${EXPECTED_<LANG>_VERSION}" call here
 
           if [[ "${FAIL}" -ne 0 ]]; then
             echo "Version consistency check failed." \
@@ -297,6 +277,84 @@ jobs:
             exit 1
           fi
           echo "All hardcoded tool versions are consistent."
+
+      - name: Verify caller completeness (all publish_* inputs explicitly passed)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ORCHESTRATE_FILE=".github/workflows/release-orchestrate.yml"
+          OFFICIAL_FILE=".github/workflows/official.yml"
+          BUDDY_FILE=".github/workflows/buddy.yml"
+          FAIL=0
+
+          # Extract all publish_* input names declared in the orchestrate workflow inputs: block.
+          # Each one must be explicitly passed in every caller workflow so that a new input
+          # added to the orchestrate file (Step A) is not silently omitted by callers (Steps F, G).
+          # SYNC: add-new-language — this step auto-detects new publish_* inputs; no manual update needed.
+          mapfile -t publish_inputs < <(
+            grep -P '^      publish_\w+:$' "${ORCHESTRATE_FILE}" | grep -oP 'publish_\w+' | sort -u
+          )
+
+          for flag in "${publish_inputs[@]}"; do
+            for caller_file in "${OFFICIAL_FILE}" "${BUDDY_FILE}"; do
+              if ! grep -qP "^\s+${flag}:" "${caller_file}"; then
+                echo "ERROR: '${flag}' is declared in release-orchestrate.yml inputs but not explicitly passed in '${caller_file}'." >&2
+                FAIL=1
+              fi
+            done
+          done
+
+          if [[ "${FAIL}" -ne 0 ]]; then
+            echo "Caller completeness check failed." >&2
+            echo "When adding a new publish_* input to release-orchestrate.yml (Step A)," >&2
+            echo "you MUST also pass it explicitly in official.yml (Step F) and buddy.yml (Step G)." >&2
+            exit 1
+          fi
+          echo "Caller completeness check passed: all publish_* inputs are explicitly passed in official.yml and buddy.yml."
+
+      - name: Verify release-completed covers all release-* jobs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
+          FAIL=0
+
+          # Extract all top-level release-* job keys (except release-completed itself).
+          # Top-level jobs are indented with exactly 2 spaces followed by a colon.
+          mapfile -t release_jobs < <(
+            grep -P '^  (release-[a-z0-9-]+):$' "${WORKFLOW_FILE}" \
+              | grep -oP 'release-[a-z0-9-]+' \
+              | grep -v '^release-completed$' \
+              | sort -u
+          )
+
+          # Extract the needs: list of release-completed using awk.
+          mapfile -t needs_entries < <(
+            awk '
+              /^  release-completed:/ { in_job=1; next }
+              in_job && /^    needs:/ { in_needs=1; next }
+              in_job && in_needs && /^      - / { sub(/^      - /, ""); print; next }
+              in_job && in_needs && !/^      / { in_needs=0 }
+              in_job && /^  [a-z]/ { in_job=0 }
+            ' "${WORKFLOW_FILE}" | sort -u
+          )
+
+          for job in "${release_jobs[@]}"; do
+            found=0
+            for entry in "${needs_entries[@]}"; do
+              [[ "${entry}" == "${job}" ]] && found=1 && break
+            done
+            if [[ "${found}" -eq 0 ]]; then
+              echo "ERROR: release-* job '${job}' is not listed in release-completed's needs:." >&2
+              echo "Add '${job}' to the needs: list of release-completed (SYNC: add-new-language step E)." >&2
+              FAIL=1
+            fi
+          done
+
+          if [[ "${FAIL}" -ne 0 ]]; then
+            exit 1
+          fi
+          echo "release-completed needs: coverage check passed."
 
   # ===========================================================================
   # SECTION: Policy and Infrastructure
@@ -431,11 +489,8 @@ jobs:
               assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
               # Note: WXT projects must still pass publish_node_npmjs=true to satisfy policy,
               # but all Node publish jobs are gated on is_wxt != 'true', so this flag has
-              # no runtime effect for WXT projects. If this assertion fails and the project
-              # is a WXT (browser extension), set publish_node_npmjs=true in the caller workflow.
-              if [[ "${PUBLISH_NODE_NPMJS}" != "true" ]]; then
-                echo "Hint: if this is a WXT (browser extension) project, publish_node_npmjs=true is required by channel policy even though it has no runtime effect (WXT artifacts are published as browser extension archives, not npm packages)." >&2
-              fi
+              # no runtime effect for WXT projects.
+              echo "Note: WXT (browser extension) projects require publish_node_npmjs=true by channel policy even though it has no runtime effect (WXT artifacts are published as browser extension archives, not npm packages). If this assertion fails, set publish_node_npmjs=true in the caller workflow."
               assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
               assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
               assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
@@ -487,6 +542,20 @@ jobs:
                   echo "Production registry publishing is reserved for official and buddy channels." >&2
                   exit 1
                 fi
+                # NOTE: publish_node_gpr and publish_ruby_gpr are intentionally not blocked for
+                # allowlisted channels. GitHub Packages (GPR) authenticates via github.token which
+                # is already scoped to the repository — no OIDC nor environment reviewers are
+                # involved. Custom channels (e.g., staging) commonly use GPR to distribute
+                # pre-production artifacts. If you want to prevent GPR publishing for custom
+                # channels, add an explicit prohibition here.
+                echo "::notice title=Custom channel::Allowlisted channel '${CHANNEL}' active. Actor: ${GITHUB_ACTOR}, ref: ${GITHUB_REF_NAME}. Verify branch protection restricts merge access to trusted contributors."
+                {
+                  echo ""
+                  echo "> [!WARNING]"
+                  echo "> **Custom channel \`${CHANNEL}\` is allowlisted.** Actor: \`${GITHUB_ACTOR}\`, ref: \`${GITHUB_REF_NAME}\`."
+                  echo "> Access control relies entirely on repository branch protection."
+                  echo "> Ensure only trusted contributors have merge access to this caller workflow file."
+                } >> "${GITHUB_STEP_SUMMARY}"
               else
                 echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
                 echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
@@ -527,9 +596,19 @@ jobs:
           )
 
           for flag in "${required_flags[@]}"; do
-            count=$(grep -c "assert_equals \"${flag}\"" "${WORKFLOW_FILE}" || true)
-            if [[ "${count}" -lt 2 ]]; then
-              echo "ERROR: flag '${flag}' has assert_equals coverage in only ${count} case branch(es); expected ≥ 2 (once in 'official', once in 'buddy')." >&2
+            # Scope the grep to each branch individually to catch the case where a flag
+            # was added to 'official' but not 'buddy' (or vice versa). A global grep
+            # count ≥ 2 would pass even if both assertions are in the same branch while
+            # the other branch is missing them entirely.
+            # Use ';; ' as the branch boundary instead of the sibling branch label.
+            # This is more robust: a nested case/esac inside a branch would cause the
+            # sibling-label approach to over-include lines; ;; always terminates a branch.
+            official_count=$(awk '/^\s+official\)/{f=1} f && /^\s*;;/{exit} f' "${WORKFLOW_FILE}" \
+              | grep -c "assert_equals \"${flag}\"" || true)
+            buddy_count=$(awk '/^\s+buddy\)/{f=1} f && /^\s*;;/{exit} f' "${WORKFLOW_FILE}" \
+              | grep -c "assert_equals \"${flag}\"" || true)
+            if [[ "${official_count}" -lt 1 || "${buddy_count}" -lt 1 ]]; then
+              echo "ERROR: flag '${flag}' missing assert_equals in one or more channel branches (official: ${official_count}, buddy: ${buddy_count}); each flag must be asserted in BOTH 'official' and 'buddy'." >&2
               FAIL=1
             fi
           done
@@ -570,6 +649,15 @@ jobs:
           PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
         run: |
           set -Eeuo pipefail
+
+          # NOTE: If publish_node_gpr or publish_ruby_gpr is true, the caller workflow
+          # MUST grant packages: write to the orchestrate job (workflow_call does not inherit
+          # permissions automatically). A missing permission causes a silent API failure at
+          # runtime, not a policy error. Both official.yml and buddy.yml are expected to
+          # include packages: write. Verify any new caller workflow does the same.
+          if [[ "${PUBLISH_NODE_GPR}" == "true" || "${PUBLISH_RUBY_GPR}" == "true" ]]; then
+            echo "ℹ️ GPR publishing is enabled (publish_node_gpr=${PUBLISH_NODE_GPR}, publish_ruby_gpr=${PUBLISH_RUBY_GPR}). Ensure the caller workflow grants \`packages: write\`." >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
           # assert_disabled: Checks that a publish flag is false for a project kind that
           # does not use it (cross-kind contamination check). This is only enforced for
@@ -661,7 +749,6 @@ jobs:
       contents: read
     with:
       source: ${{ inputs.source }}
-      run_url: ${{ inputs.run_url }}
       # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION
       python_version: '3.14'
 
@@ -774,7 +861,20 @@ jobs:
           fi
 
           if [[ "${status}" == "404" ]]; then
-            echo "No existing release found for tag '${TAG_NAME}'. Proceeding."
+            echo "No existing GitHub Release found for tag '${TAG_NAME}'."
+            # Secondary check: verify whether the git tag itself already exists.
+            # A tag without a release can appear when a prior run created the tag but
+            # the release step failed. Log a warning so it is visible in the run log.
+            tag_resp="${RUNNER_TEMP}/gh-tag-api.response"
+            set +e
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" --include > "${tag_resp}" 2>&1
+            set -e
+            tag_http=$(grep -m1 -E '^HTTP/' "${tag_resp}" | awk '{print $2}' || true)
+            if [[ "${tag_http}" == "200" ]]; then
+              tag_sha=$(sed '1,/^[[:space:]]*$/d' "${tag_resp}" | jq -r '.object.sha')
+              echo "Warning: git tag '${TAG_NAME}' already exists (sha=${tag_sha}) but has no associated GitHub Release." >&2
+              echo "This is expected if a previous run created the tag but failed before creating the release." >&2
+            fi
             echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
             echo "Tag \`${TAG_NAME}\` — no existing release found, safe to proceed." >> "${GITHUB_STEP_SUMMARY}"
             exit 0
@@ -1045,8 +1145,9 @@ jobs:
       node_version: '24'
       pnpm_version: '10'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-      # pack_mode requires inputs.publish_node_npmjs to be a typed boolean (workflow_call type: boolean).
-      # Using == true guards against a string 'false' being truthy and incorrectly selecting 'both'.
+      # Defensive: pack_mode uses == true rather than a bare boolean test to prevent
+      # string-coercion bugs (e.g., string 'false' being truthy) if this input's type
+      # were ever changed. For workflow_call with type: boolean this is a benign no-op.
       pack_mode: ${{ inputs.publish_node_npmjs == true && 'both' || 'gpr-only' }}
 
   gate-node-publish-npmjs:
@@ -1201,8 +1302,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          echo "Node GPR publish gate: upstream job did not run (publish-node-gpr-enabled was skipped). Check pack-node or gate-node-publish-npmjs for the root cause." >&2
-          echo "### GPR publish: :x: upstream job skipped (see pack-node / gate-node-publish-npmjs)" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Node GPR publish gate: upstream job did not run (publish-node-gpr-enabled was skipped). Check pack-node, attest-node, gate-node-publish-npmjs, or resolve for the root cause." >&2
+          echo "### GPR publish: :x: upstream job skipped (see pack-node / attest-node / gate-node-publish-npmjs / resolve)" >> "${GITHUB_STEP_SUMMARY}"
           exit 1
 
       - name: Node GPR publish completed
@@ -1213,6 +1314,11 @@ jobs:
           echo "Node GPR publish completed."
           echo "### GPR publish: :white_check_mark: completed" >> "${GITHUB_STEP_SUMMARY}"
 
+  # RECOVERY: If publish-node-gpr succeeded but publish-node-npmjs is subsequently
+  # blocked (transient environment approval timeout, npmjs outage, or OIDC issue):
+  # 1. Navigate to Actions → select this run → Re-run jobs → Re-run failed jobs.
+  # 2. The gate-node-publish-npmjs approval step will re-prompt; GPR publishing is
+  #    idempotent (publish_node_gpr_idempotent.sh skips if version already exists).
   publish-node-npmjs:
     name: Publish Node package (npmjs.org)
     runs-on: ubuntu-latest
@@ -1867,16 +1973,25 @@ jobs:
   #
   # Steps A, C, E, F, G are MANUAL-ONLY (no CI enforcement). Steps B2 and D have
   # automated guards; omitting those steps causes CI to fail at the next run.
+  # Step E's sub-task of adding release-* names to release-completed's needs: is
+  # CI-enforced by the "Verify release-completed covers all release-* jobs" lint step;
+  # writing the actual job definitions is still manual.
+  # WARNING: Step G (buddy.yml) is the highest-risk manual step. The buddy channel
+  # defaults all publish flags to false, so omitting step G causes a silent failure:
+  # the workflow succeeds but skips publishing the new target without any error.
   #
   # Within this job (one internal sync point):
   #   1. needs: — add the new release job name(s) here
+  #      [CI-ENFORCED by lint-version-consistency "Verify release-completed covers all release-* jobs"]
   #      The "Check release outcomes" step uses toJSON(needs) to dynamically process all
   #      jobs in the needs: list, so no further manual updates are needed in that step.
   release-completed:
     name: Release completed
     runs-on: ubuntu-latest
     if: always()
-    # SYNC: add-new-language — add new release job name(s) and attest-<lang> gate to needs below
+    # SYNC: add-new-language — add new release job name(s) and attest-<lang> gate to needs below.
+    # release-* jobs: [CI-ENFORCED] by "Verify release-completed covers all release-* jobs" lint step.
+    # attest-<lang> gates: MANUAL — add them here; they are not auto-detected by the lint step.
     needs:
       - release-python-with-pypi
       - release-python-no-pypi
@@ -1929,31 +2044,36 @@ jobs:
               skipped)   icon=":white_circle:" ;;
               failure)   icon=":x:" ; failed+=("${job}(${status})") ;;
               cancelled) icon=":no_entry:" ; failed+=("${job}(${status})") ;;
-              *)         icon=":question:" ;;
+              *)         icon=":question:" ; failed+=("${job}(${status}?)") ;;
             esac
             echo "| \`${job}\` | ${icon} ${status} |" >> "${GITHUB_STEP_SUMMARY}"
           done < <(echo "${NEEDS_JSON}" | jq -r 'to_entries[] | "\(.key):\(.value.result)"')
 
           if [[ "${#failed[@]}" -gt 0 ]]; then
-            echo "One or more release jobs failed: ${failed[*]}" >&2
+            echo "One or more release pipeline jobs failed: ${failed[*]}" >&2
             {
               echo ""
               echo "> [!CAUTION]"
-              echo "> One or more release jobs failed: ${failed[*]}"
+              echo "> One or more release pipeline jobs failed: ${failed[*]}"
             } >> "${GITHUB_STEP_SUMMARY}"
             exit 1
           fi
 
           if [[ "${success_count}" -eq 0 ]]; then
-            # NOTE: This path also fires when a publish-* job fails and cascade-skips its
-            # release-* job (cascade-skipped jobs appear as "skipped" in toJSON(needs),
-            # not "failure"). Use the GitHub Actions job visualizer to identify the
-            # failing publish step in those cases.
-            echo "No release job succeeded. This may indicate: (1) an upstream gate failure (policy or guards), (2) a build or publish step failure, or (3) all projects of the detected kind were skipped." >&2
+            # NOTE: This path fires when a guard, policy, publish, or build job fails and
+            # cascade-skips its downstream release-* job. Cascade-skipped jobs appear as
+            # "skipped" in toJSON(needs), not "failure", so the failure is invisible here.
+            # Use the GitHub Actions job visualizer to identify the root cause. Common
+            # upstream jobs to inspect: guard-prerelease-only, guard-non-clobber,
+            # policy-publish-targets, publish-node-gpr, publish-node-npmjs, publish-ruby-gpr.
+            echo "No release job succeeded. This may indicate: (1) an upstream gate failure (policy, guards, or publish), (2) a build step failure, or (3) all projects of the detected kind were skipped. Inspect the GitHub Actions job visualizer for upstream failures." >&2
             {
               echo ""
               echo "> [!CAUTION]"
-              echo "> No release job succeeded. This may indicate: (1) an upstream gate failure (policy or guards), (2) a build or publish step failure, or (3) all projects of the detected kind were skipped."
+              echo "> No release job succeeded. This may indicate:"
+              echo "> 1. An upstream gate failure — inspect **guard-prerelease-only**, **guard-non-clobber**, **policy-publish-targets**, **publish-node-gpr**, **publish-node-npmjs**, or **publish-ruby-gpr**."
+              echo "> 2. A build or publish step failure."
+              echo "> 3. All projects of the detected kind were skipped."
             } >> "${GITHUB_STEP_SUMMARY}"
             exit 1
           fi

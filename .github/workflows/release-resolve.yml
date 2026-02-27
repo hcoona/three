@@ -7,10 +7,6 @@ on:
         description: "Resolution mode: 'tag' derives project/version from the release tag; 'manual' uses explicit inputs."
         required: true
         type: string
-      run_url:
-        description: "Entry workflow run URL (pass-through; should point to official.yml/buddy.yml run)."
-        required: true
-        type: string
       python_version:
         description: "Python version for uv helper scripts."
         required: true
@@ -155,7 +151,6 @@ jobs:
         shell: bash
         env:
           SOURCE: ${{ inputs.source }}
-          RUN_URL: ${{ inputs.run_url }}
 
           REF_NAME: ${{ inputs.ref_name }}
           REF: ${{ inputs.ref }}
@@ -166,6 +161,10 @@ jobs:
           MANUAL_FORCE_UPDATE_TAG: ${{ inputs.force_update_tag }}
         run: |
           set -Eeuo pipefail
+
+          # Compute run_url from the GitHub context rather than accepting it as an input,
+          # since both callers always pass the same expression.
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
           # shellcheck disable=SC2153
           source="${SOURCE}"

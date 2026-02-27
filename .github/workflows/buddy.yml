@@ -39,8 +39,6 @@ jobs:
       packages: write
     with:
       source: manual
-      run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
       project: ${{ inputs.project }}
       version: ${{ inputs.version }}
       target: ${{ inputs.target }}
