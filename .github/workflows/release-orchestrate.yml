@@ -213,7 +213,7 @@ jobs:
             local expected="$2"
             local mismatches
             mismatches=$(grep -n "^\s*${key}:" "${WORKFLOW_FILE}" \
-              | grep -vF "'${expected}'" || true)
+              | grep -vF "${expected}" || true)
             if [[ -n "${mismatches}" ]]; then
               echo "ERROR: '${key}:' value(s) not matching expected '${expected}':" >&2
               echo "${mismatches}" >&2
