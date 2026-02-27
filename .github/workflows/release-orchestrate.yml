@@ -511,6 +511,9 @@ jobs:
           # appears at least twice in the policy job (once for official, once in buddy).
           # A count < 2 means the flag was added to one branch but not the other,
           # which causes a silent policy bypass for the missing channel.
+          # SYNC: add-new-language — add the new publish_<lang>_<registry> flag name(s) here.
+          # Omitting this step means future regressions (removing assert_equals for the new flag
+          # from one branch) will not be caught by the self-test.
           required_flags=(
             enforce_prerelease_only
             enforce_non_clobber
@@ -840,6 +843,9 @@ jobs:
     if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to PyPI via OIDC.
+    # SECURITY: The Trusted Publisher registration on PyPI MUST set the optional Environment field to 'pypi'.
+    # This adds a second OIDC claim check (job_workflow_environment) so the token is only accepted when the job
+    # runs inside this specific environment, providing defense-in-depth independent of reviewer configuration.
     environment: pypi
     permissions:
       contents: read
@@ -1219,6 +1225,9 @@ jobs:
     if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' && (!inputs.enable_attestation || needs.attest-node.result == 'success') }}
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to npmjs.org via OIDC.
+    # SECURITY: The Trusted Publisher registration on npmjs.com MUST set the optional Environment field to 'npmjs'.
+    # This adds a second OIDC claim check (job_workflow_environment) so the token is only accepted when the job
+    # runs inside this specific environment, providing defense-in-depth independent of reviewer configuration.
     environment: npmjs
     permissions:
       contents: read
@@ -1532,11 +1541,15 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - resolve
-      - build-ruby    # scheduling only: ensures artifact is available before download; safety is enforced via attest-ruby result check
+      - build-ruby    # cascade-skip safety: if build-ruby fails, this job is skipped before if: is evaluated.
+                      # Do NOT add always() here without also adding an explicit build-ruby result check to the if: condition.
       - attest-ruby
     if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems && (!inputs.enable_attestation || needs.attest-ruby.result == 'success')
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to RubyGems.org via OIDC.
+    # SECURITY: The Trusted Publisher registration on RubyGems.org MUST set the optional Environment field to 'rubygems'.
+    # This adds a second OIDC claim check (job_workflow_environment) so the token is only accepted when the job
+    # runs inside this specific environment, providing defense-in-depth independent of reviewer configuration.
     environment: rubygems
     permissions:
       contents: read
