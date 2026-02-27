@@ -689,7 +689,7 @@ jobs:
       - attest-python
     if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
-    # Without reviewers, any allowlisted channel caller can publish to PyPI via OIDC.
+    # Without reviewers, any workflow in this repository calling with channel: official can publish to PyPI via OIDC.
     environment: pypi
     permissions:
       contents: read
@@ -1050,7 +1050,7 @@ jobs:
       - attest-node
     if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' && (!inputs.enable_attestation || needs.attest-node.result == 'success') }}
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
-    # Without reviewers, any allowlisted channel caller can publish to npmjs.org via OIDC.
+    # Without reviewers, any workflow in this repository calling with channel: official can publish to npmjs.org via OIDC.
     environment: npmjs
     permissions:
       contents: read
@@ -1336,7 +1336,7 @@ jobs:
       - attest-ruby
     if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
-    # Without reviewers, any allowlisted channel caller can publish to RubyGems.org via OIDC.
+    # Without reviewers, any workflow in this repository calling with channel: official can publish to RubyGems.org via OIDC.
     environment: rubygems
     permissions:
       contents: read
