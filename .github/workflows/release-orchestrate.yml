@@ -186,6 +186,7 @@ jobs:
       EXPECTED_NODE_VERSION: '24'
       EXPECTED_PNPM_VERSION: '10'
       EXPECTED_RUBY_VERSION: '3.3'
+      # SYNC: add-new-language — add EXPECTED_<LANG>_VERSION: '<version>' here for each new language tool
       # SYNC: keep in step with the workflow-level env: block above.
       # These EXPECTED_* values are what the lint check validates hardcoded with: values against.
     steps:
@@ -220,6 +221,7 @@ jobs:
           check_version "node_version"   "${EXPECTED_NODE_VERSION}"
           check_version "pnpm_version"   "${EXPECTED_PNPM_VERSION}"
           check_version "ruby_version"   "${EXPECTED_RUBY_VERSION}"
+          # SYNC: add-new-language — add check_version "<lang>_version" "${EXPECTED_<LANG>_VERSION}" call here
 
           if [[ "${FAIL}" -ne 0 ]]; then
             echo "Version consistency check failed." \
