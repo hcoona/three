@@ -211,6 +211,9 @@ jobs:
           check_version() {
             local key="$1"
             local expected="$2"
+            # Escape '.' so it is treated as a literal character in -P regex, not a metacharacter.
+            local expected_re
+            expected_re=$(printf '%s' "${expected}" | sed 's/\./\\./g')
             local mismatches
             # Match lines with pinned version values in any of these forms:
             #   key: '3.14'   (single-quoted)
@@ -225,8 +228,8 @@ jobs:
             # Use anchored regex to avoid false negatives when the expected value is a
             # numeric prefix of a longer string (e.g. ': 24' must NOT match ': 240').
             unquoted=$(grep -n "^\s*${key}:\s*[0-9]" "${WORKFLOW_FILE}" \
-              | grep -vP ":\s+${expected}([^0-9A-Za-z._]|$)" \
-              | grep -vP ":${expected}([^0-9A-Za-z._]|$)" || true)
+              | grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" \
+              | grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
             if [[ -n "${unquoted}" ]]; then
               mismatches="${mismatches}"$'\n'"${unquoted}"
             fi
@@ -238,11 +241,37 @@ jobs:
             fi
           }
 
+          # check_version_caps validates top-level ALL_CAPS env: block entries
+          # (e.g. PYTHON_VERSION: '3.14') to ensure the runtime env vars stay
+          # in sync with the job-level with: inputs checked by check_version.
+          check_version_caps() {
+            local key_caps="$1"
+            local expected="$2"
+            local mismatches
+            mismatches=$(grep -n "^\s*${key_caps}:\s*" "${WORKFLOW_FILE}" \
+              | grep -vF "'${expected}'" \
+              | grep -vF "\"${expected}\"" \
+              | grep -vP ":\s*$" || true)  # skip empty-value lines
+            if [[ -n "${mismatches}" ]]; then
+              echo "ERROR: '${key_caps}:' value(s) not matching expected '${expected}':" >&2
+              echo "${mismatches}" >&2
+              FAIL=1
+            fi
+          }
+
           check_version "python_version" "${EXPECTED_PYTHON_VERSION}"
           check_version "node_version"   "${EXPECTED_NODE_VERSION}"
           check_version "pnpm_version"   "${EXPECTED_PNPM_VERSION}"
           check_version "ruby_version"   "${EXPECTED_RUBY_VERSION}"
           # SYNC: add-new-language — add check_version "<lang>_version" "${EXPECTED_<LANG>_VERSION}" call here
+
+          # Also validate the top-level ALL_CAPS env: block so that runtime
+          # tool versions stay in sync with the hardcoded with: values above.
+          check_version_caps "PYTHON_VERSION" "${EXPECTED_PYTHON_VERSION}"
+          check_version_caps "NODE_VERSION"   "${EXPECTED_NODE_VERSION}"
+          check_version_caps "PNPM_VERSION"   "${EXPECTED_PNPM_VERSION}"
+          check_version_caps "RUBY_VERSION"   "${EXPECTED_RUBY_VERSION}"
+          # SYNC: add-new-language — add check_version_caps "<LANG>_VERSION" "${EXPECTED_<LANG>_VERSION}" call here
 
           if [[ "${FAIL}" -ne 0 ]]; then
             echo "Version consistency check failed." \
@@ -700,7 +729,8 @@ jobs:
           status=$(grep -m1 -E '^HTTP/' "${resp_file}" | awk '{print $2}' || true)
 
           if [[ "${rc}" -eq 0 ]]; then
-            body=$(sed -n '/^[{[]/,$p' "${resp_file}")
+            # Extract response body: skip HTTP headers up to and including the blank separator line.
+            body=$(sed '1,/^[[:space:]]*$/d' "${resp_file}")
             if [[ -z "${body}" ]]; then
               echo "Error: gh api output did not contain a JSON body." >&2
               cat "${resp_file}" >&2 || true
@@ -1477,9 +1507,14 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - resolve
-      - build-ruby
+      - build-ruby    # scheduling only: ensures artifact is available before download; safety is enforced via attest-ruby result check
       - attest-ruby
-    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems && (!inputs.enable_attestation || needs.attest-ruby.result == 'success')
+      - publish-ruby-gpr
+    if: >-
+      needs.resolve.outputs.project_kind == 'ruby' &&
+      inputs.publish_ruby_rubygems &&
+      needs.publish-ruby-gpr.result == 'success' &&
+      (!inputs.enable_attestation || needs.attest-ruby.result == 'success')
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to RubyGems.org via OIDC.
     environment: rubygems
