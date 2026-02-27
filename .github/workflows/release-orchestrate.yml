@@ -1129,21 +1129,25 @@ jobs:
           echo "### GPR publish: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Ensure enabled publish job succeeded
-        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result != 'success' }}
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result != 'success' && needs.publish-node-gpr-enabled.result != 'skipped' }}
         shell: bash
         env:
           ENABLED_JOB_RESULT: ${{ needs.publish-node-gpr-enabled.result }}
         run: |
           set -Eeuo pipefail
-          if [[ "${ENABLED_JOB_RESULT}" == "skipped" ]]; then
-            echo "Node GPR publish gate: enabled job was skipped, likely because pack-node or the npmjs approval gate did not succeed." >&2
-            exit 1
-          fi
           echo "Node GPR publish gate failed: publish-node-gpr-enabled did not succeed (result=${ENABLED_JOB_RESULT})." >&2
           exit 1
 
+      - name: Node GPR publish skipped (upstream did not run)
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result == 'skipped' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Node GPR publish gate: upstream job did not run (publish-node-gpr-enabled was skipped). Check pack-node or gate-node-publish-npmjs for the root cause."
+          echo "### GPR publish: :white_circle: skipped (upstream job did not run)" >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Node GPR publish completed
-        if: inputs.publish_node_gpr
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result == 'success' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -1429,21 +1433,25 @@ jobs:
           echo "### GPR publish: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Ensure enabled publish job succeeded
-        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result != 'success' }}
+        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result != 'success' && needs.publish-ruby-gpr-enabled.result != 'skipped' }}
         shell: bash
         env:
           ENABLED_JOB_RESULT: ${{ needs.publish-ruby-gpr-enabled.result }}
         run: |
           set -Eeuo pipefail
-          if [[ "${ENABLED_JOB_RESULT}" == "skipped" ]]; then
-            echo "Ruby GPR publish gate: enabled job was skipped; check build-ruby and attest-ruby results for the root cause." >&2
-            exit 1
-          fi
           echo "Ruby GPR publish gate failed: publish-ruby-gpr-enabled did not succeed (result=${ENABLED_JOB_RESULT})." >&2
           exit 1
 
+      - name: Ruby GPR publish skipped (upstream did not run)
+        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result == 'skipped' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Ruby GPR publish gate: upstream job did not run (publish-ruby-gpr-enabled was skipped). Check build-ruby and attest-ruby results for the root cause."
+          echo "### GPR publish: :white_circle: skipped (upstream job did not run)" >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Ruby GPR publish completed
-        if: inputs.publish_ruby_gpr
+        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result == 'success' }}
         shell: bash
         run: |
           set -Eeuo pipefail
