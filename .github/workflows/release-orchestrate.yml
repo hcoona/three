@@ -513,6 +513,8 @@ jobs:
           # all publish_node_* flags are intentionally ignored for WXT projects.
           if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ]]; then
             assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
+            assert_disabled "publish_node_gpr"       "${NODE_GPR}"
+            assert_disabled "publish_node_npmjs"     "${NODE_NPMJS}"
             assert_disabled "publish_ruby_gpr"       "${RUBY_GPR}"
             assert_disabled "publish_ruby_rubygems"  "${RUBY_RUBYGEMS}"
             echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
