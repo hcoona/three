@@ -222,7 +222,7 @@ jobs:
             #   key: 3.14     (unquoted scalar — valid YAML for simple version strings)
             # Skip bare declaration lines (e.g. `python_version:` with no value) by
             # requiring at least one non-space character after the colon separator.
-            mismatches=$(grep -n "^\s*${key}:\s*['\"]" "${WORKFLOW_FILE}" \
+            mismatches=$(grep -n "^[[:space:]]*${key}:[[:space:]]*['\"]" "${WORKFLOW_FILE}" \
               | grep -vF "'${expected}'" \
               | grep -vF "\"${expected}\"" || true)
             # Also check for unquoted scalar values (e.g. `node_version: 24` or `NODE_VERSION: 24`).
@@ -235,7 +235,7 @@ jobs:
               unquoted_start="[0-9]"
             fi
             local unquoted
-            unquoted=$(grep -n "^\s*${key}:\s*${unquoted_start}" "${WORKFLOW_FILE}" \
+            unquoted=$(grep -n "^[[:space:]]*${key}:[[:space:]]*${unquoted_start}" "${WORKFLOW_FILE}" \
               | grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" \
               | grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
             if [[ -n "${unquoted}" ]]; then
@@ -633,9 +633,9 @@ jobs:
             # Use ';; ' as the branch boundary instead of the sibling branch label.
             # This is more robust: a nested case/esac inside a branch would cause the
             # sibling-label approach to over-include lines; ;; always terminates a branch.
-            official_count=$(awk '/^\s+official\)/{f=1} f && /^\s*;;/{exit} f' "${WORKFLOW_FILE}" \
+            official_count=$(awk '/^[[:space:]]+official\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${WORKFLOW_FILE}" \
               | grep -c "assert_equals \"${flag}\"" || true)
-            buddy_count=$(awk '/^\s+buddy\)/{f=1} f && /^\s*;;/{exit} f' "${WORKFLOW_FILE}" \
+            buddy_count=$(awk '/^[[:space:]]+buddy\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${WORKFLOW_FILE}" \
               | grep -c "assert_equals \"${flag}\"" || true)
             if [[ "${official_count}" -lt 1 || "${buddy_count}" -lt 1 ]]; then
               echo "ERROR: flag '${flag}' missing assert_equals in one or more channel branches (official: ${official_count}, buddy: ${buddy_count}); each flag must be asserted in BOTH 'official' and 'buddy'." >&2
