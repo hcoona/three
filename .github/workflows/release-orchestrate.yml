@@ -365,7 +365,11 @@ jobs:
             buddy)
               assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "true"
               assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "true"
-              # SYNC: add-new-language — add assert_equals for publish_<lang>_<registry> in buddy channel below
+              # SYNC: add-new-language (B2) — add assert_equals / assert_disabled checks for the new
+              # language flags under the buddy channel case. This step is NOT optional: omitting it causes a
+              # silent policy bypass where the buddy channel will not enforce the new language's flags and
+              # misconfigured callers will pass policy validation without error.
+              # B2: Add assert_disabled / assert_equals checks for the new language flags under the buddy channel case.
               assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "false"
               assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
               assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "false"
@@ -1617,6 +1621,12 @@ jobs:
   # MAINTENANCE: When adding a new language/runtime (e.g., Rust), update ALL of the
   # following sync points. Missing any one causes misconfiguration, policy bypass, or
   # incorrect release status reporting.
+  #
+  # WARNING: ALL steps below are MANDATORY. Skipping any step — in particular B2 (buddy
+  # channel policy assertions) — causes a SILENT policy bypass: the new language's flags
+  # will not be enforced for the buddy channel, so a misconfigured caller workflow will
+  # pass policy validation undetected. There is no CI enforcement that all steps are
+  # completed; the checklist is the sole safeguard.
   #
   # Across files:
   #   A. release-orchestrate.yml inputs block — add publish_<lang>_<registry> and any
