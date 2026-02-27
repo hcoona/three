@@ -132,6 +132,9 @@ env:
   NODE_VERSION: '24'
   PNPM_VERSION: '10'
   RUBY_VERSION: '3.3'
+  # SYNC: keep in step with EXPECTED_*_VERSION in lint-version-consistency job env below.
+  # Updating only one side will either cause the lint gate to fail (if env is updated but
+  # EXPECTED is not) or silently pass with stale runtime env (if EXPECTED is updated but env is not).
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -172,6 +175,8 @@ jobs:
       EXPECTED_NODE_VERSION: '24'
       EXPECTED_PNPM_VERSION: '10'
       EXPECTED_RUBY_VERSION: '3.3'
+      # SYNC: keep in step with the workflow-level env: block above.
+      # These EXPECTED_* values are what the lint check validates hardcoded with: values against.
     steps:
       - uses: actions/checkout@v6
 
