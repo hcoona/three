@@ -1558,6 +1558,9 @@ jobs:
   # extensions), this boolean-flag pattern should be refactored into a single
   # project_variant enum output from release-resolve.yml (e.g., 'node-npm',
   # 'node-wxt', 'node-electron') to avoid multiplying conditional branches.
+  # TODO: File a tracking issue for the project_variant enum refactor before adding
+  #       a second Node-based framework variant (Electron, VS Code Extension, etc.).
+  #       Each new variant currently adds ~6 conditional branches across this file.
   # ===========================================================================
   build-wxt:
     name: Build package (Node/WXT)
