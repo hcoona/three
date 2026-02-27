@@ -1019,7 +1019,8 @@ jobs:
       - pack-node
       - gate-node-publish-npmjs
       - publish-node-gpr
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' }}
+      - attest-node
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' && (!inputs.enable_attestation || needs.attest-node.result == 'success') }}
     environment: npmjs
     permissions:
       contents: read
