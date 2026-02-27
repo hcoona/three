@@ -203,13 +203,23 @@ jobs:
             local key="$1"
             local expected="$2"
             local mismatches
-            # Require a quote character immediately after the colon+space to match only
-            # pinned version values (e.g. `python_version: '3.14'` or `node_version: "24"`) and
-            # skip bare input/output declaration lines (e.g. `python_version:` alone) that carry
-            # no version value on the same line.
+            # Match lines with pinned version values in any of these forms:
+            #   key: '3.14'   (single-quoted)
+            #   key: "3.14"   (double-quoted)
+            #   key: 3.14     (unquoted scalar — valid YAML for simple version strings)
+            # Skip bare declaration lines (e.g. `python_version:` with no value) by
+            # requiring at least one non-space character after the colon separator.
             mismatches=$(grep -n "^\s*${key}:\s*['\"]" "${WORKFLOW_FILE}" \
               | grep -vF "'${expected}'" \
               | grep -vF "\"${expected}\"" || true)
+            # Also check for unquoted integer/bare values (e.g. `node_version: 24`).
+            unquoted=$(grep -n "^\s*${key}:\s*[0-9]" "${WORKFLOW_FILE}" \
+              | grep -vF ": ${expected}" \
+              | grep -vF ":${expected}" || true)
+            if [[ -n "${unquoted}" ]]; then
+              mismatches="${mismatches}"$'\n'"${unquoted}"
+            fi
+            mismatches="${mismatches#$'\n'}"
             if [[ -n "${mismatches}" ]]; then
               echo "ERROR: '${key}:' value(s) not matching expected '${expected}':" >&2
               echo "${mismatches}" >&2
