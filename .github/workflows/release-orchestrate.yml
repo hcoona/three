@@ -358,6 +358,9 @@ jobs:
   # NOTE: All guard jobs and policy-publish-targets are included in needs: so any spoke
   # routing job added inside THIS workflow file that depends on this job transitively
   # inherits full guard and policy enforcement, within this workflow's DAG only.
+  # NOTE: prepare-release-notes is intentionally NOT in needs: here — release-notes
+  # preparation is not routing context. Step-6 routing jobs that consume release notes
+  # MUST add prepare-release-notes to their own needs: directly.
   # IMPORTANT: This guarantee does NOT extend across workflow_call boundaries. A spoke
   # workflow file invoked via 'uses:' runs in its own context and has no visibility of
   # this workflow's guard jobs. Direct callers of a spoke workflow bypass ALL hub guards.
@@ -377,13 +380,14 @@ jobs:
     # This job must never acquire OIDC tokens; only hardcoded-environment spoke publish
     # jobs should hold id-token: write.
     # SYNC: add-new-language — if a new language adds a hub-level output, add it here.
-    # Output value domains (spoke consumers should treat these as stable contracts):
+    # Published outputs (forwarding contract — stable for spoke consumers):
     #   channel_profile:    'official' | 'buddy' | 'custom'
     #   target_environment: 'release-official' | 'release-buddy' | 'release-<sanitized>'
+    #   publish_mode:       'publish' | 'build-only'
+    # Hub-internal derived value (NOT in outputs:, do NOT forward to spokes):
     #   project_variant:    known values: 'python' | 'ruby' | 'node-npm' | 'node-wxt';
     #                       unrecognized PROJECT_KIND values cause a hard failure (exit 1).
     #                       SYNC: add-new-language — add a branch in the variant mapping below.
-    #   publish_mode:       'publish' | 'build-only'
     # SECURITY: target_environment is routing/approval-gate metadata only.
     # Spoke OIDC publish jobs MUST use hardcoded environment names ('pypi', 'npmjs',
     # 'rubygems', etc.), NOT this output. The 'environment:' field determines the
@@ -407,21 +411,22 @@ jobs:
     outputs:
       channel_profile: ${{ steps.context.outputs.channel_profile }}
       target_environment: ${{ steps.context.outputs.target_environment }}
-      # SPOKE-CONTRACT: EXCLUDED — project_variant is NOT forwarded in spoke with: blocks.
-      # HUB-ROUTING: consumed only for publish_mode derivation and step-summary diagnostics within this workflow.
-      # See REFACTOR_PLAN.md §2.2 for the spoke forwarding contract.
-      project_variant: ${{ steps.context.outputs.project_variant }}
       publish_mode: ${{ steps.context.outputs.publish_mode }}
       # COMPLIANCE: publish_mode='publish'|'build-only' is the current routing contract.
       # See REFACTOR_PLAN.md §2.2 for the routing contract and the Step 4 design decision
       # note for the known node-npm multi-target gap.
+      # NOTE: project_variant is intentionally NOT a job output — it is hub-internal only.
+      # (HUB-ROUTING: used only for publish_mode derivation and step-summary diagnostics.)
+      # Do NOT promote it to outputs: — any needs: resolve-hub-context consumer could
+      # accidentally forward it to a spoke, violating the §2.2 spoke forwarding contract.
+      # Re-introduce as a job output only when Step 6 routing jobs have an explicit need.
     steps:
       - name: Derive normalized orchestration context
         id: context
         shell: bash
         env:
           CHANNEL: ${{ inputs.channel }}
-          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}
+          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}  # diagnostic only — allowlist validation is done in the policy job
           PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
           # SYNC: add-new-language — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} here
@@ -463,6 +468,11 @@ jobs:
               # Sed passes: (1) replace non-slug chars with '-';
               #             (2) strip any leading '-' or '_'; (3) strip any trailing '-' or '_';
               #             (4) collapse runs of 2 or more consecutive dashes to a single '-'.
+              # NOTE: Pass 3 strips both trailing dashes AND trailing underscores (both are treated
+              # as separators). This asymmetry with pass 4 (which collapses only consecutive dashes,
+              # not underscores) means interior underscore runs in local-testing inputs are preserved
+              # while trailing underscores are stripped — both behaviours are intentional and
+              # documented; all such inputs are blocked by the allowlist regex in production.
               # NOTE: Pass 4 collapses consecutive dashes only, not consecutive underscores.
               # Underscore runs (e.g. 'my__channel') are intentionally preserved to keep
               # 'my__channel' ≠ 'my-channel' as distinct environment names.
@@ -471,7 +481,18 @@ jobs:
               # allowlist regex (^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$), so they cannot appear
               # in a validated allowlist entry. The defensive/local-testing path may produce
               # environment names with these sequences, which is acceptable and documented.
-              sanitized="$(printf '%s' "${lower_channel}" | sed -E 's/[^a-z0-9_-]+/-/g; s/^[-_]+//; s/[-_]+$//; s/-{2,}/-/g')"
+              sanitized="$(printf '%s' "${lower_channel}" | sed -E \
+                -e 's/[^a-z0-9_-]+/-/g' \
+                -e 's/^[-_]+//' \
+                -e 's/[-_]+$//' \
+                -e 's/-{2,}/-/g')"
+              # Fallback: if sanitization produces an empty string (all-symbol input like '!!!'),
+              # use 'custom' as the sentinel environment name. In production this path is
+              # unreachable: the policy job (in needs:) rejects any CHANNEL that finds no matching
+              # allowlist entry; no valid allowlist entry can equal '!!!'. In local testing,
+              # note that a user with 'custom' in their allowlist and this fallback triggered
+              # would route to the same 'release-custom' environment — an accepted local-testing
+              # limitation since the policy gate prevents this in production.
               if [[ -z "${sanitized}" ]]; then
                 sanitized="custom"
               fi
@@ -491,6 +512,18 @@ jobs:
               target_environment="release-${sanitized}"
               ;;
           esac
+
+          # Invariant: target_environment must be non-empty (every channel case branch must
+          # assign it). This guard is placed here — immediately after the channel case block —
+          # so that any future branch that forgets to assign target_environment fails before
+          # any project_variant or publish_mode computation runs on an inconsistent state.
+          # It is symmetric with the project_variant guard below and prevents a silent empty
+          # environment name from reaching GITHUB_OUTPUT, which would cause downstream gate
+          # jobs to run without a GitHub Environment (bypassing required reviewers).
+          if [[ -z "${target_environment}" ]]; then
+            echo "::error::BUG: target_environment is empty after channel resolution. Every case branch must assign target_environment before this point. This is a programming error." >&2
+            exit 1
+          fi
 
           # Strip all POSIX whitespace from PROJECT_KIND BEFORE variant mapping. Stripping first
           # ensures exact comparisons work correctly: e.g. 'node ' (trailing space) would miss
@@ -531,6 +564,7 @@ jobs:
               # regardless of PUBLISH_NODE_NPMJS/GPR flags. Policy may require PUBLISH_NODE_NPMJS=true
               # for official WXT channels (forward-compatibility baseline), but the flag has no
               # routing effect here. See validate_inputs.sh official case for the policy assertion.
+              publish_mode="build-only"  # explicit assignment; does not rely on pre-loop initialization
               echo "::notice title=WXT project::publish_mode=build-only for WXT projects regardless of publish_node_npmjs/gpr flags. WXT produces browser extension archives, not npm packages."
               ;;
             ruby)
@@ -550,10 +584,11 @@ jobs:
           # Unlike GITHUB_STEP_SUMMARY (informational), a write failure here must be
           # surfaced immediately rather than silently swallowed. In local/offline testing,
           # set GITHUB_OUTPUT to a temporary file to avoid an unbound-variable error.
+          # NOTE: project_variant is intentionally NOT written here — it is hub-internal.
+          # See the outputs: block comment above for the rationale.
           {
             echo "channel_profile=${channel_profile}"
             echo "target_environment=${target_environment}"
-            echo "project_variant=${project_variant}"
             echo "publish_mode=${publish_mode}"
           } >> "${GITHUB_OUTPUT}"
 

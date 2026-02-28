@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
+# The policy logic (assert_equals calls for official/buddy channel flags) lives in
+# the policy validation script, not in the orchestration workflow YAML. This variable
+# was previously pointing to the YAML file, which caused the self-test to always fail
+# silently. Fixed to point to the correct source file.
+POLICY_SCRIPT="eng/scripts/release_orchestrate_policy_validate_inputs.sh"
 FAIL=0
 
 # For each flag that must be validated per-channel, verify that assert_equals
@@ -37,9 +41,9 @@ for flag in "${required_flags[@]}"; do
   # Use ';; ' as the branch boundary instead of the sibling branch label.
   # This is more robust: a nested case/esac inside a branch would cause the
   # sibling-label approach to over-include lines; ;; always terminates a branch.
-  official_count=$(awk '/^[[:space:]]+official\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${WORKFLOW_FILE}" \
+  official_count=$(awk '/^[[:space:]]+official\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${POLICY_SCRIPT}" \
     | grep -c "assert_equals \"${flag}\"" || true)
-  buddy_count=$(awk '/^[[:space:]]+buddy\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${WORKFLOW_FILE}" \
+  buddy_count=$(awk '/^[[:space:]]+buddy\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${POLICY_SCRIPT}" \
     | grep -c "assert_equals \"${flag}\"" || true)
   if [[ "${official_count}" -lt 1 || "${buddy_count}" -lt 1 ]]; then
     echo "ERROR: flag '${flag}' missing assert_equals in one or more channel branches (official: ${official_count}, buddy: ${buddy_count}); each flag must be asserted in BOTH 'official' and 'buddy'." >&2
@@ -54,3 +58,51 @@ if [[ "${FAIL}" -ne 0 ]]; then
   exit 1
 fi
 echo "Policy flag coverage self-test passed."
+
+# ==== Step-2 pre-case guard presence checks ====
+# These checks verify that the new CHANNEL validation guards introduced in Step 2
+# are still present in release_orchestrate_policy_validate_inputs.sh, catching
+# regressions where a guard is accidentally removed or misplaced.
+VALIDATE_INPUTS_SH="eng/scripts/release_orchestrate_policy_validate_inputs.sh"
+FAIL=0
+
+check_pattern_present() {
+  local description="${1}"
+  local pattern="${2}"
+  local file="${3}"
+  if ! grep -qE -- "${pattern}" "${file}"; then
+    echo "ERROR: missing guard in ${file}: ${description}" >&2
+    FAIL=1
+  fi
+}
+
+# Empty channel guard
+check_pattern_present "empty CHANNEL guard" \
+  '-z "\$\{CHANNEL\}"' "${VALIDATE_INPUTS_SH}"
+
+# Whitespace guard
+check_pattern_present "whitespace-in-CHANNEL guard" \
+  '\$\{CHANNEL\}.*\[\[:space:\]\]' "${VALIDATE_INPUTS_SH}"
+
+# Uppercase guard
+check_pattern_present "uppercase-CHANNEL guard" \
+  '\$\{CHANNEL\}.*\$\{CHANNEL,,\}' "${VALIDATE_INPUTS_SH}"
+
+# Reserved escape-slug guard for direct CHANNEL input
+check_pattern_present "x-official/x-buddy direct CHANNEL guard" \
+  '\$\{CHANNEL\}.*x-official' "${VALIDATE_INPUTS_SH}"
+
+# Reserved escape-slug guard inside is_channel_allowlisted
+check_pattern_present "x-official/x-buddy allowlist entry guard" \
+  '\$\{entry\}.*x-official' "${VALIDATE_INPUTS_SH}"
+
+# Format check in *) arm (prevents misleading "add to allowlist" guidance for invalid formats)
+check_pattern_present "format check in *) case arm" \
+  "invalid format and cannot be used" "${VALIDATE_INPUTS_SH}"
+
+if [[ "${FAIL}" -ne 0 ]]; then
+  echo "Step-2 guard presence check failed. A CHANNEL validation guard is missing" >&2
+  echo "from ${VALIDATE_INPUTS_SH}. Restore the guard or update this self-test." >&2
+  exit 1
+fi
+echo "Step-2 guard presence self-test passed."

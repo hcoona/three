@@ -29,6 +29,10 @@ is_channel_allowlisted() {
     # 'x-official' and 'x-buddy' are reserved sanitization escape slugs used by the hub
     # context job to remap near-miss inputs (e.g. 'official-' → 'x-official') and thus
     # prevent impersonation of the real official/buddy environment gates.
+    # NOTE: The underscore variants 'x_official' / 'x_buddy' are intentionally NOT blocked
+    # here: the hub's sanitization always produces 'x-official'/'x-buddy' (hyphen), so
+    # 'release-x_official' ≠ 'release-x-official' — they are distinct environment names and
+    # do not collide with the escape-slug environments.
     if [[ "${entry}" == "x-official" || "${entry}" == "x-buddy" ]]; then
       echo "Channel '${entry}' is reserved for internal use by the release system. These names prevent collisions with the release-official and release-buddy environments. Choose a different channel name." >&2
       exit 1
@@ -43,12 +47,16 @@ is_channel_allowlisted() {
     # BREAKING (Step 2): This regex is stricter than the pre-Step-2 pattern (^[a-z0-9_-]+$).
     # channel_allowlist entries with consecutive hyphens, consecutive underscores, leading/trailing
     # separators, or mixed sequences are no longer accepted. Migration examples:
-    #   my--channel  → my-channel   (consecutive hyphens collapsed)
-    #   my__channel  → my-channel   (consecutive underscores collapsed)
+    #   my--channel  → my-channel   (consecutive hyphens: rename manually — the new regex rejects
+    #                               this allowlist entry; note: sed auto-collapse of consecutive dashes
+    #                               applies only to direct CHANNEL inputs in the hub job, not here)
+    #   my__channel  → my_channel or my-channel   (consecutive underscores: NOT auto-collapsed;
+    #                               rename manually — sed preserves underscore runs by design)
     #   -beta        → beta         (leading separator removed)
-    #   alpha-       → alpha        (trailing separator removed)
+    #   alpha-       → alpha        (trailing hyphen separator removed)
+    #   alpha_       → alpha        (trailing underscore separator removed)
     #   a_-b         → a-b          (mixed sequence normalized)
-    if [[ ! "${entry}" =~ ^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$ ]]; then
+    if [[ ! "${entry}" =~ ^[a-z0-9]([a-z0-9]|[-_][a-z0-9])*$ ]]; then
       echo "Invalid channel name '${entry}' in channel_allowlist." >&2
       echo "  Required format: start and end with a lowercase letter or digit; each hyphen or underscore must be immediately preceded and followed by a lowercase letter or digit (no consecutive separators, mixed sequences, or leading/trailing separators)." >&2
       echo "  Valid examples: staging, my-channel, canary2" >&2
@@ -88,6 +96,12 @@ if [[ "${SOURCE}" == "manual" ]]; then
     echo "source=manual requires version to be set." >&2
     exit 1
   fi
+fi
+
+# Reject empty channel.
+if [[ -z "${CHANNEL}" ]]; then
+  echo "Channel must not be empty." >&2
+  exit 1
 fi
 
 # Reject channel names containing any whitespace (leading, trailing, or internal).
@@ -153,6 +167,20 @@ case "${CHANNEL}" in
     assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "true"
     ;;
   *)
+    # Validate CHANNEL format before allowlist lookup so operators get a targeted
+    # "invalid format" error (with rename guidance) rather than the generic
+    # "Unknown channel — add to allowlist" message, which would send them in the
+    # wrong direction (adding an invalid-format entry would itself fail immediately).
+    # The official/buddy values never reach this branch (handled by the case arms above),
+    # and x-official/x-buddy are rejected by the pre-case guards, so we check only
+    # the custom-channel format here.
+    if [[ ! "${CHANNEL}" =~ ^[a-z0-9]([a-z0-9]|[-_][a-z0-9])*$ ]]; then
+      echo "Channel '${CHANNEL}' has an invalid format and cannot be used or allowlisted." >&2
+      echo "  Required format: start and end with a lowercase letter or digit;" >&2
+      echo "  each hyphen or underscore must be immediately preceded and followed by a letter or digit." >&2
+      echo "  No consecutive separators, mixed sequences, or leading/trailing separators." >&2
+      exit 1
+    fi
     # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy
     # profile matrix is not enforced). This is an intentional escape hatch for
     # non-production channels (e.g., staging, canary). Access control relies on
