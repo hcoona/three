@@ -87,13 +87,21 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 #### Breaking changes in Step 2
 
 - **Stricter `channel_allowlist` regex.** The pre-Step-2 pattern was `^[a-z0-9_-]+$`; the new pattern is `^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$`. This rejects consecutive hyphens/underscores, leading/trailing separators, and mixed sequences. Migration:
-  - `my--channel` → `my-channel` (collapse consecutive hyphens)
-  - `my__channel` → `my-channel` (collapse consecutive underscores)
+  - `my--channel` → must be manually renamed to `my-channel` in `channel_allowlist` (the new regex rejects this allowlist entry; direct dispatch input `channel: my--channel` is *also* rejected by policy — the format check in the `*)` case arm rejects it before the allowlist lookup since `my--channel` violates the consecutive-separator rule; the hub's sed collapse of consecutive dashes is a defensive local-testing path only)
+  - `my__channel` → `my_channel` or `my-channel` (consecutive underscores are rejected and are **not** auto-collapsed; rename manually)
   - `-beta` → `beta` (remove leading separator)
-  - `alpha-` → `alpha` (remove trailing separator)
+  - `alpha-` → `alpha` (remove trailing hyphen separator)
+  - `alpha_` → `alpha` (remove trailing underscore separator)
   - `a_-b` → `a-b` (normalize mixed sequence)
 
-  The rationale is to make the allowlist-to-`target_environment` mapping injective: the hub context job collapses consecutive dashes via `sed 's/-{2,}/-/g'`, so `my--channel` and `my-channel` would previously both map to the same `release-my-channel` environment, creating a near-miss collision.
+  The rationale is to make the allowlist-to-`target_environment` mapping injective: the hub context job collapses consecutive dashes via `sed 's/-{2,}/-/g'`, so `my--channel` and `my-channel` would previously both map to the same `release-my-channel` environment, creating a near-miss collision. Note: consecutive underscores are intentionally **not** collapsed by the sanitization sed pipeline, which is why `my__channel` must be renamed rather than auto-migrated.
+
+- **New reserved channel names: `x-official` and `x-buddy`.** These values are now rejected both as direct `channel:` inputs and as `channel_allowlist` entries. They are reserved as internal sanitization escape slugs used by `resolve-hub-context` to prevent near-miss inputs (e.g., `official-`) from impersonating the `release-official`/`release-buddy` protected environments. Under the old regex (`^[a-z0-9_-]+$`), these names were syntactically valid. Migration: rename to any other slug that satisfies the allowlist regex (e.g., `x-off`, `ext-official`).
+
+- **New pre-case validation guards on `channel:` input.** Three new guards now reject invalid `channel:` inputs earlier, with targeted error messages. Previously these inputs were all rejected, but via the allowlist/case path with generic messages. The rejection *outcome* for any valid caller is unchanged; only the error message and exit point differ for edge-case inputs:
+  1. Empty `channel:` input: rejected immediately with "Channel must not be empty."
+  2. `channel:` containing whitespace (leading, trailing, or internal): rejected with a whitespace-specific message.
+  3. `channel:` containing uppercase characters: rejected with an uppercase-specific message (including a suggested lowercase rename).
 
 ### Step 3: Create Python spoke workflow
 
