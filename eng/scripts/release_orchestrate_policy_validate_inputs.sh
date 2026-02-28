@@ -39,8 +39,8 @@ is_channel_allowlisted() {
     fi
     # Validate channel name charset: only lowercase letters, digits, hyphens, and underscores;
     # must start with a lowercase letter or digit; every hyphen or underscore must be
-    # immediately followed by a lowercase letter or digit (no leading/trailing or consecutive
-    # hyphens/underscores, no mixed -_ sequences). This guarantees the sanitised form produced
+    # immediately followed by a lowercase letter or digit (no leading/trailing separators,
+    # no consecutive separator pairs: --, __, -_, _-). This guarantees the sanitised form produced
     # by resolve-hub-context (which collapses consecutive dashes via sed s/-{2,}/-/g) is
     # identical to the raw entry — making the allowlist → target_environment mapping injective
     # and preventing near-miss collisions like 'my--channel' → 'my-channel'.
