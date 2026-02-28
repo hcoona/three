@@ -186,7 +186,7 @@ case "${CHANNEL}" in
         echo "> **Custom channel \`${CHANNEL}\` is allowlisted.** Actor: \`${GITHUB_ACTOR}\`, ref: \`${GITHUB_REF_NAME}\`."
         echo "> Access control relies entirely on repository branch protection."
         echo "> Ensure only trusted contributors have merge access to this caller workflow file."
-      } >> "${GITHUB_STEP_SUMMARY}"
+      } >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
     else
       echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
       echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
