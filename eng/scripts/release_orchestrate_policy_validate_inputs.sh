@@ -21,13 +21,31 @@ is_channel_allowlisted() {
     entry="${entry%"${entry##*[![:space:]]}"}"
     [[ -z "${entry}" ]] && continue
     # Reserved channels cannot be allowlisted.
+    # 'official' and 'buddy' are first-class policy channels with fixed assertion matrices.
     if [[ "${entry}" == "official" || "${entry}" == "buddy" ]]; then
-      echo "Reserved channel '${entry}' cannot appear in channel_allowlist." >&2
+      echo "Channel '${entry}' is a policy-governed built-in and cannot appear in channel_allowlist." >&2
       exit 1
     fi
-    # Validate channel name charset: only lowercase letters, digits, hyphens, and underscores.
-    if [[ ! "${entry}" =~ ^[a-z0-9_-]+$ ]]; then
-      echo "Invalid channel name '${entry}' in channel_allowlist: only lowercase letters (a-z), digits (0-9), hyphens (-), and underscores (_) are allowed." >&2
+    # 'x-official' and 'x-buddy' are reserved sanitization escape slugs used by the hub
+    # context job to remap near-miss inputs (e.g. 'official-' → 'x-official') and thus
+    # prevent impersonation of the real official/buddy environment gates.
+    if [[ "${entry}" == "x-official" || "${entry}" == "x-buddy" ]]; then
+      echo "Channel '${entry}' is a reserved sanitization escape slug. Choose a different name that does not use 'x-official' or 'x-buddy'." >&2
+      exit 1
+    fi
+    # Validate channel name charset: only lowercase letters, digits, hyphens, and underscores;
+    # must start with a lowercase letter or digit; every hyphen or underscore must be
+    # immediately followed by a lowercase letter or digit (no leading/trailing or consecutive
+    # hyphens/underscores, no mixed -_ sequences). This guarantees the sanitised form produced
+    # by resolve-hub-context (which collapses consecutive dashes via sed s/-{2,}/-/g) is
+    # identical to the raw entry — making the allowlist → target_environment mapping injective
+    # and preventing near-miss collisions like 'my--channel' → 'my-channel'.
+    # BREAKING (Step 2): This regex is stricter than the pre-Step-2 pattern (^[a-z0-9_-]+$).
+    # channel_allowlist entries with consecutive hyphens (my--channel), consecutive underscores
+    # (my__channel), leading/trailing separators (-beta, alpha-), or mixed sequences (a_-b) are
+    # no longer accepted. Normalize to equivalent slug form (e.g., my--channel → my-channel).
+    if [[ ! "${entry}" =~ ^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$ ]]; then
+      echo "Invalid channel name '${entry}' in channel_allowlist: must start and end with a lowercase letter or digit; each hyphen or underscore must be immediately preceded and followed by a lowercase letter or digit (no consecutive hyphens, underscores, or mixed sequences). Valid examples: staging, my-channel, canary2. Common fixes: use lowercase only; remove leading/trailing separators; avoid consecutive hyphens/underscores." >&2
       exit 1
     fi
     # Check if this entry matches the candidate.
@@ -63,6 +81,15 @@ if [[ "${SOURCE}" == "manual" ]]; then
     echo "source=manual requires version to be set." >&2
     exit 1
   fi
+fi
+
+# Channel names must be all-lowercase. The hub routing job normalises channel to
+# lowercase before routing, but policy validates the raw dispatch value. A mismatch
+# means policy and hub would evaluate different values — fail fast with an actionable
+# message rather than falling through to 'Unknown channel' in the case below.
+if [[ "${CHANNEL}" != "${CHANNEL,,}" ]]; then
+  echo "Channel '${CHANNEL}' contains uppercase characters. Channel names must be all-lowercase (e.g., use '${CHANNEL,,}'). The hub routing job normalises channel to lowercase; passing uppercase here means policy and hub would evaluate different values." >&2
+  exit 1
 fi
 
 case "${CHANNEL}" in
@@ -112,6 +139,11 @@ case "${CHANNEL}" in
       # reviewers as the sole gating mechanism; the reusable workflow cannot enforce
       # caller origin. To intentionally publish a custom channel to a production
       # registry, remove these assertions and accept full responsibility for access control.
+      # SYNC: add-new-language — add a prohibition clause here for each new production
+      # registry flag (PUBLISH_<LANG>_<REGISTRY>) to prevent allowlisted custom channels
+      # from publishing to production registries without explicit policy approval.
+      # Note: GPR flags (publish_node_gpr, publish_ruby_gpr) are intentionally excluded —
+      # GPR authenticates via github.token (no OIDC, no environment reviewers required).
       if [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]]; then
         echo "Allowlisted channel '${CHANNEL}' may not set publish_python_pypi=true (production registry)." >&2
         echo "Production registry publishing is reserved for official and buddy channels." >&2
