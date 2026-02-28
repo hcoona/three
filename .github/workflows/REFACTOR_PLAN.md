@@ -30,6 +30,9 @@ We will adopt a **Hub-and-Spoke model** with **Dynamic Environments**.
         target_environment: { type: string, required: true }
         channel_profile: { type: string, required: true }  # 'official' | 'buddy' | 'custom'
         publish_mode: { type: string, required: true }  # 'publish' | 'build-only'
+        # TODO(Step 4): node-npm publish_mode is currently binary — 'publish' fires when *any*
+        # node-npm registry flag is true. The node-npm spoke will need GPR-only / npmjs-only /
+        # both disambiguation. See the Step 4 design decision note below.
     ```
 
     > **Note:** This is the minimal routing contract from the Hub. Each Spoke also receives
@@ -55,6 +58,16 @@ We will adopt a **Hub-and-Spoke model** with **Dynamic Environments**.
   >    hardcoded to match the registry's Trusted Publisher registration): the OIDC `environment`
   >    claim must match the registration exactly or the registry hard-rejects the token.
   >    Never assign `target_environment` to a job that requests `id-token: write`.
+
+  > **GPR vs OIDC registries (custom channels):** GPR (GitHub Packages Registry) authenticates
+  > via `github.token` — it does not use OIDC and does not require a separate publish environment.
+  > `publish_node_gpr=true` or `publish_ruby_gpr=true` on a custom allowlisted channel will set
+  > `publish_mode=publish`, causing the spoke to run its gate job and request `target_environment`
+  > approval. If the custom environment (e.g. `release-staging`) lacks required-reviewer rules,
+  > GitHub auto-creates it with no protection, and the publish proceeds without human approval.
+  > This is intentional: GPR is treated as a lower-trust registry for custom channels. If you
+  > require approval gates for GPR publishes on custom channels, pre-create the environment with
+  > required reviewers in repository Settings → Environments.
 
 ---
 

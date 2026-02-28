@@ -440,6 +440,7 @@ jobs:
 
           channel_profile="custom"      # default for custom/allowlisted channels (overridden by known channels below)
           target_environment=""         # set in every case branch; pre-initialized for set -u safety
+          sanitized=""                  # set only in the *) custom branch; pre-initialized for set -u safety in step summary
 
           case "${lower_channel}" in
             official)
@@ -551,16 +552,23 @@ jobs:
             # Show both raw and normalized channel so operators can spot unintended normalization
             # at a glance without inspecting workflow dispatch inputs.
             echo "- channel (raw): \`${CHANNEL}\`"
+            # NOTE: In a normal workflow run, the policy job (in needs:) rejects any CHANNEL
+            # containing whitespace or uppercase before this job runs, so lower_channel == CHANNEL
+            # is always true here. The 'normalized to' branch is defensive — it would fire only
+            # if this script is invoked without the policy gate (e.g. local testing).
             if [[ "${lower_channel}" != "${CHANNEL}" ]]; then
               echo "  - normalized to: \`${lower_channel}\` (whitespace stripped and lowercased)"
-            else
-              echo "- channel (normalized): \`${lower_channel}\`"
             fi
             echo "- project_kind: \`${PROJECT_KIND}\`"
             echo "- is_wxt: \`${IS_WXT}\`"
             echo "#### Derived outputs"
             echo "- channel_profile: \`${channel_profile}\`"
             echo "- target_environment: \`${target_environment}\`"
+            if [[ -n "${sanitized}" ]]; then
+              # Show sanitized channel for custom channels so operators can trace
+              # the normalisation path: lower_channel → sanitized → target_environment.
+              echo "  - channel sanitized to: \`${sanitized}\`"
+            fi
             echo "- project_variant: \`${project_variant}\`"
             echo "- publish_mode: \`${publish_mode}\`"
             if [[ "${project_variant}" == "node-wxt" ]]; then
