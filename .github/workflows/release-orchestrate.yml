@@ -201,183 +201,19 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
-          FAIL=0
-
-          # check_version validates hardcoded 'key: value' pairs in the workflow file.
-          # It handles both lowercase with: keys (e.g. python_version: '3.14') and
-          # ALL_CAPS env: block keys (e.g. PYTHON_VERSION: '3.14'). The unquoted character
-          # class is broadened automatically for ALL_CAPS keys since their values may start
-          # with letters or dots (e.g. PNPM_VERSION: latest), while with: keys only expect digits.
-          check_version() {
-            local key="$1"
-            local expected="$2"
-            # Escape '.' so it is treated as a literal character in -P regex, not a metacharacter.
-            local expected_re
-            expected_re=$(printf '%s' "${expected}" | sed 's/\./\\./g')
-            local mismatches
-            # Match lines with pinned version values in any of these forms:
-            #   key: '3.14'   (single-quoted)
-            #   key: "3.14"   (double-quoted)
-            #   key: 3.14     (unquoted scalar — valid YAML for simple version strings)
-            # Skip bare declaration lines (e.g. `python_version:` with no value) by
-            # requiring at least one non-space character after the colon separator.
-            mismatches=$(grep -n "^[[:space:]]*${key}:[[:space:]]*['\"]" "${WORKFLOW_FILE}" \
-              | grep -vF "'${expected}'" \
-              | grep -vF "\"${expected}\"" || true)
-            # Also check for unquoted scalar values (e.g. `node_version: 24` or `NODE_VERSION: 24`).
-            # For ALL_CAPS env var keys, use a broader character class since values may start with
-            # letters or dots; lowercase with: keys only expect digit-prefixed version strings.
-            local unquoted_start
-            if [[ "${key}" =~ ^[A-Z_]+$ ]]; then
-              unquoted_start="[0-9A-Za-z.]"
-            else
-              unquoted_start="[0-9]"
-            fi
-            local unquoted
-            unquoted=$(grep -n "^[[:space:]]*${key}:[[:space:]]*${unquoted_start}" "${WORKFLOW_FILE}" \
-              | grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" \
-              | grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
-            if [[ -n "${unquoted}" ]]; then
-              mismatches="${mismatches}"$'\n'"${unquoted}"
-            fi
-            mismatches="${mismatches#$'\n'}"
-            if [[ -n "${mismatches}" ]]; then
-              echo "ERROR: '${key}:' value(s) not matching expected '${expected}':" >&2
-              echo "${mismatches}" >&2
-              FAIL=1
-            fi
-            # Assert at least one occurrence of the key exists. A count of zero means
-            # the key was renamed or removed and the mismatch check would silently pass.
-            total=$(grep -cP "^\s*${key}:\s" "${WORKFLOW_FILE}" || true)
-            if [[ "${total}" -eq 0 ]]; then
-              echo "ERROR: Key '${key}:' not found in '${WORKFLOW_FILE}'." \
-                "Was it renamed or deleted? Update both the key name and the EXPECTED_* variable." >&2
-              FAIL=1
-            fi
-          }
-
-          check_version "python_version" "${EXPECTED_PYTHON_VERSION}"
-          check_version "node_version"   "${EXPECTED_NODE_VERSION}"
-          check_version "pnpm_version"   "${EXPECTED_PNPM_VERSION}"
-          check_version "ruby_version"   "${EXPECTED_RUBY_VERSION}"
-          # SYNC: add-new-language — add check_version "<lang>_version" "${EXPECTED_<LANG>_VERSION}" call here
-
-          # Also validate the top-level ALL_CAPS env: block so that runtime
-          # tool versions stay in sync with the hardcoded with: values above.
-          check_version "PYTHON_VERSION" "${EXPECTED_PYTHON_VERSION}"
-          check_version "NODE_VERSION"   "${EXPECTED_NODE_VERSION}"
-          check_version "PNPM_VERSION"   "${EXPECTED_PNPM_VERSION}"
-          check_version "RUBY_VERSION"   "${EXPECTED_RUBY_VERSION}"
-          # SYNC: add-new-language — add check_version "<LANG>_VERSION" "${EXPECTED_<LANG>_VERSION}" call here
-
-          if [[ "${FAIL}" -ne 0 ]]; then
-            echo "Version consistency check failed." \
-              "Update hardcoded values in 'with:' blocks to match" \
-              "the 'env:' declarations at the top of the workflow." >&2
-            exit 1
-          fi
-          echo "All hardcoded tool versions are consistent."
+          bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_lint_tool_versions.sh"
 
       - name: Verify caller completeness (all publish_* inputs explicitly passed)
         shell: bash
         run: |
           set -Eeuo pipefail
-          ORCHESTRATE_FILE=".github/workflows/release-orchestrate.yml"
-          OFFICIAL_FILE=".github/workflows/official.yml"
-          BUDDY_FILE=".github/workflows/buddy.yml"
-          FAIL=0
-
-          # Extract all publish_* input names declared in the orchestrate workflow inputs: block.
-          # Each one must be explicitly passed in every caller workflow so that a new input
-          # added to the orchestrate file (Step A) is not silently omitted by callers (Steps F, G).
-          # SYNC: add-new-language — this step auto-detects new publish_* inputs; no manual update needed.
-          mapfile -t publish_inputs < <(
-            grep -P '^      publish_\w+:$' "${ORCHESTRATE_FILE}" | grep -oP 'publish_\w+' | sort -u
-          )
-
-          for flag in "${publish_inputs[@]}"; do
-            for caller_file in "${OFFICIAL_FILE}" "${BUDDY_FILE}"; do
-              if ! grep -qP "^\s+${flag}:" "${caller_file}"; then
-                echo "ERROR: '${flag}' is declared in release-orchestrate.yml inputs but not explicitly passed in '${caller_file}'." >&2
-                FAIL=1
-              fi
-            done
-          done
-
-          if [[ "${FAIL}" -ne 0 ]]; then
-            echo "Caller completeness check failed." >&2
-            echo "When adding a new publish_* input to release-orchestrate.yml (Step A)," >&2
-            echo "you MUST also pass it explicitly in official.yml (Step F) and buddy.yml (Step G)." >&2
-            exit 1
-          fi
-          echo "Caller completeness check passed: all publish_* inputs are explicitly passed in official.yml and buddy.yml."
+          bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_lint_caller_completeness.sh"
 
       - name: Verify release-completed covers all release-* jobs
         shell: bash
         run: |
           set -Eeuo pipefail
-          WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
-          FAIL=0
-
-          # Extract all top-level release-* job keys (except release-completed itself).
-          # Top-level jobs are indented with exactly 2 spaces followed by a colon.
-          mapfile -t release_jobs < <(
-            grep -P '^  (release-[a-z0-9-]+):$' "${WORKFLOW_FILE}" \
-              | grep -oP 'release-[a-z0-9-]+' \
-              | grep -v '^release-completed$' \
-              | sort -u
-          )
-
-          # Extract the needs: list of release-completed using awk.
-          mapfile -t needs_entries < <(
-            awk '
-              /^  release-completed:/ { in_job=1; next }
-              in_job && /^    needs:/ { in_needs=1; next }
-              in_job && in_needs && /^      - / { sub(/^      - /, ""); print; next }
-              in_job && in_needs && !/^      / { in_needs=0 }
-              in_job && /^  [a-z]/ { in_job=0 }
-            ' "${WORKFLOW_FILE}" | sort -u
-          )
-
-          for job in "${release_jobs[@]}"; do
-            found=0
-            for entry in "${needs_entries[@]}"; do
-              [[ "${entry}" == "${job}" ]] && found=1 && break
-            done
-            if [[ "${found}" -eq 0 ]]; then
-              echo "ERROR: release-* job '${job}' is not listed in release-completed's needs:." >&2
-              echo "Add '${job}' to the needs: list of release-completed (SYNC: add-new-language step E)." >&2
-              FAIL=1
-            fi
-          done
-
-          # Also verify that every attest-* gate job (not *-enabled) is listed in release-completed's needs:.
-          # These are not auto-detected by the release-* check above; this closes the CI-enforcement gap
-          # for the attest-<lang> entries documented in the SYNC: add-new-language checklist.
-          mapfile -t attest_gate_jobs < <(
-            grep -P '^  (attest-[a-z0-9-]+):$' "${WORKFLOW_FILE}" \
-              | grep -oP 'attest-[a-z0-9-]+' \
-              | grep -v '\-enabled$' \
-              | sort -u
-          )
-
-          for job in "${attest_gate_jobs[@]}"; do
-            found=0
-            for entry in "${needs_entries[@]}"; do
-              [[ "${entry}" == "${job}" ]] && found=1 && break
-            done
-            if [[ "${found}" -eq 0 ]]; then
-              echo "ERROR: attest-* gate job '${job}' is not listed in release-completed's needs:." >&2
-              echo "Add '${job}' to the needs: list of release-completed (SYNC: add-new-language step E)." >&2
-              FAIL=1
-            fi
-          done
-
-          if [[ "${FAIL}" -ne 0 ]]; then
-            exit 1
-          fi
-          echo "release-completed needs: coverage check passed (release-* and attest-* gates)."
+          bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_lint_release_completed_needs.sh"
 
   # ===========================================================================
   # SECTION: Policy and Infrastructure
@@ -418,6 +254,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout (policy scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
       - name: Validate inputs
         shell: bash
         env:
@@ -439,217 +280,13 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -Eeuo pipefail
-
-          assert_equals() {
-            local key="$1"
-            local actual="$2"
-            local expected="$3"
-            if [[ "${actual}" != "${expected}" ]]; then
-              echo "Channel '${CHANNEL}' policy mismatch for '${key}': expected '${expected}', got '${actual}'." >&2
-              exit 1
-            fi
-          }
-
-          is_channel_allowlisted() {
-            local candidate="$1"
-            local entry
-            IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST}"
-            for entry in "${allowlist[@]}"; do
-              # Trim leading and trailing whitespace.
-              entry="${entry#"${entry%%[![:space:]]*}"}"
-              entry="${entry%"${entry##*[![:space:]]}"}"
-              [[ -z "${entry}" ]] && continue
-              # Reserved channels cannot be allowlisted.
-              if [[ "${entry}" == "official" || "${entry}" == "buddy" ]]; then
-                echo "Reserved channel '${entry}' cannot appear in channel_allowlist." >&2
-                exit 1
-              fi
-              # Validate channel name charset: only lowercase letters, digits, hyphens, and underscores.
-              if [[ ! "${entry}" =~ ^[a-z0-9_-]+$ ]]; then
-                echo "Invalid channel name '${entry}' in channel_allowlist: only lowercase letters (a-z), digits (0-9), hyphens (-), and underscores (_) are allowed." >&2
-                exit 1
-              fi
-              # Check if this entry matches the candidate.
-              if [[ "${entry}" == "${candidate}" ]]; then
-                return 0
-              fi
-            done
-            return 1
-          }
-
-          if [[ "${SOURCE}" != "tag" && "${SOURCE}" != "manual" ]]; then
-            echo "Invalid source '${SOURCE}'." >&2
-            exit 1
-          fi
-
-          if [[ "${SOURCE}" == "tag" ]]; then
-            if [[ -z "${REF_NAME}" ]]; then
-              echo "source=tag requires ref_name to be set." >&2
-              exit 1
-            fi
-            if [[ -z "${REF}" ]]; then
-              echo "source=tag requires ref to be set." >&2
-              exit 1
-            fi
-          fi
-
-          if [[ "${SOURCE}" == "manual" ]]; then
-            if [[ -z "${PROJECT}" ]]; then
-              echo "source=manual requires project to be set." >&2
-              exit 1
-            fi
-            if [[ -z "${VERSION}" ]]; then
-              echo "source=manual requires version to be set." >&2
-              exit 1
-            fi
-          fi
-
-          case "${CHANNEL}" in
-            official)
-              assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "false"
-              assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "false"
-              # SYNC: add-new-language — add assert_equals for publish_<lang>_<registry> in official channel below
-              assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "true"
-              assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
-              # Note: WXT projects must still pass publish_node_npmjs=true to satisfy policy,
-              # but all Node publish jobs are gated on is_wxt != 'true', so this flag has
-              # no runtime effect for WXT projects.
-              echo "Note: WXT (browser extension) projects require publish_node_npmjs=true by channel policy even though it has no runtime effect (WXT artifacts are published as browser extension archives, not npm packages). If this assertion fails, set publish_node_npmjs=true in the caller workflow."
-              assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
-              assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
-              assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
-              assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "true"
-              assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "false"
-              ;;
-            buddy)
-              assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "true"
-              assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "true"
-              # SYNC: add-new-language (B2) — add assert_equals / assert_disabled checks for the new
-              # language flags under the buddy channel case. This step is NOT optional: omitting it causes a
-              # silent policy bypass where the buddy channel will not enforce the new language's flags and
-              # misconfigured callers will pass policy validation without error.
-              # B2: Add assert_disabled / assert_equals checks for the new language flags under the buddy channel case.
-              assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "false"
-              assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
-              assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "false"
-              assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
-              assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "false"
-              assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "false"
-              assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "true"
-              ;;
-            *)
-              # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy
-              # profile matrix is not enforced). This is an intentional escape hatch for
-              # non-production channels (e.g., staging, canary). Access control relies on
-              # repository branch protection — restrict default-branch merge to trusted contributors.
-              if is_channel_allowlisted "${CHANNEL}"; then
-                echo "Channel '${CHANNEL}' is explicitly allowlisted; skipping strict channel profile assertions."
-                # github_release_prerelease is not enforced for custom channels.
-                # The caller is responsible for setting it correctly.
-                # SECURITY: Production registry publishing (PyPI/npmjs/RubyGems) is prohibited
-                # for allowlisted channels. These registries rely on GitHub environment required
-                # reviewers as the sole gating mechanism; the reusable workflow cannot enforce
-                # caller origin. To intentionally publish a custom channel to a production
-                # registry, remove these assertions and accept full responsibility for access control.
-                if [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]]; then
-                  echo "Allowlisted channel '${CHANNEL}' may not set publish_python_pypi=true (production registry)." >&2
-                  echo "Production registry publishing is reserved for official and buddy channels." >&2
-                  exit 1
-                fi
-                if [[ "${PUBLISH_NODE_NPMJS}" == "true" ]]; then
-                  echo "Allowlisted channel '${CHANNEL}' may not set publish_node_npmjs=true (production registry)." >&2
-                  echo "Production registry publishing is reserved for official and buddy channels." >&2
-                  exit 1
-                fi
-                if [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]]; then
-                  echo "Allowlisted channel '${CHANNEL}' may not set publish_ruby_rubygems=true (production registry)." >&2
-                  echo "Production registry publishing is reserved for official and buddy channels." >&2
-                  exit 1
-                fi
-                # NOTE: publish_node_gpr and publish_ruby_gpr are intentionally not blocked for
-                # allowlisted channels. GitHub Packages (GPR) authenticates via github.token which
-                # is already scoped to the repository — no OIDC nor environment reviewers are
-                # involved. Custom channels (e.g., staging) commonly use GPR to distribute
-                # pre-production artifacts. If you want to prevent GPR publishing for custom
-                # channels, add an explicit prohibition here.
-                echo "::notice title=Custom channel::Allowlisted channel '${CHANNEL}' active. Actor: ${GITHUB_ACTOR}, ref: ${GITHUB_REF_NAME}. Verify branch protection restricts merge access to trusted contributors."
-                {
-                  echo ""
-                  echo "> [!WARNING]"
-                  echo "> **Custom channel \`${CHANNEL}\` is allowlisted.** Actor: \`${GITHUB_ACTOR}\`, ref: \`${GITHUB_REF_NAME}\`."
-                  echo "> Access control relies entirely on repository branch protection."
-                  echo "> Ensure only trusted contributors have merge access to this caller workflow file."
-                } >> "${GITHUB_STEP_SUMMARY}"
-              else
-                echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
-                echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
-                exit 1
-              fi
-              ;;
-          esac
-
-      - name: Checkout (policy self-test)
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
+          bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_policy_validate_inputs.sh"
 
       - name: Self-test policy flag coverage
         shell: bash
         run: |
           set -Eeuo pipefail
-          WORKFLOW_FILE=".github/workflows/release-orchestrate.yml"
-          FAIL=0
-
-          # For each flag that must be validated per-channel, verify that assert_equals
-          # appears at least twice in the policy job (once for official, once in buddy).
-          # A count < 2 means the flag was added to one branch but not the other,
-          # which causes a silent policy bypass for the missing channel.
-          # SYNC: add-new-language — add the new publish_<lang>_<registry> flag name(s) here.
-          # Omitting this step means future regressions (removing assert_equals for the new flag
-          # from one branch) will not be caught by the self-test.
-          # NOTE: force_update_tag is intentionally excluded from this list.
-          # It is a per-run operational override, not a channel profile flag, and is not asserted
-          # by the policy job for either channel. Add channel profile flags only.
-          # NOTE: This list is manually maintained. Adding a new publish_<lang>_<registry> input
-          # requires updating BOTH this list AND the assert_equals calls in the case branches
-          # (see SYNC: add-new-language B2 above). The CI check only enforces flags listed here.
-          required_flags=(
-            enforce_prerelease_only
-            enforce_non_clobber
-            publish_python_pypi
-            publish_node_gpr
-            publish_node_npmjs
-            publish_ruby_gpr
-            publish_ruby_rubygems
-            enable_attestation
-            github_release_prerelease
-          )
-
-          for flag in "${required_flags[@]}"; do
-            # Scope the grep to each branch individually to catch the case where a flag
-            # was added to 'official' but not 'buddy' (or vice versa). A global grep
-            # count ≥ 2 would pass even if both assertions are in the same branch while
-            # the other branch is missing them entirely.
-            # Use ';; ' as the branch boundary instead of the sibling branch label.
-            # This is more robust: a nested case/esac inside a branch would cause the
-            # sibling-label approach to over-include lines; ;; always terminates a branch.
-            official_count=$(awk '/^[[:space:]]+official\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${WORKFLOW_FILE}" \
-              | grep -c "assert_equals \"${flag}\"" || true)
-            buddy_count=$(awk '/^[[:space:]]+buddy\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${WORKFLOW_FILE}" \
-              | grep -c "assert_equals \"${flag}\"" || true)
-            if [[ "${official_count}" -lt 1 || "${buddy_count}" -lt 1 ]]; then
-              echo "ERROR: flag '${flag}' missing assert_equals in one or more channel branches (official: ${official_count}, buddy: ${buddy_count}); each flag must be asserted in BOTH 'official' and 'buddy'." >&2
-              FAIL=1
-            fi
-          done
-
-          if [[ "${FAIL}" -ne 0 ]]; then
-            echo "Policy self-test failed. When adding a new language, you MUST add assert_equals calls" >&2
-            echo "for each new flag in BOTH the 'official' AND 'buddy' case branches of the policy job." >&2
-            echo "See SYNC: add-new-language (B2) comment for details." >&2
-            exit 1
-          fi
-          echo "Policy flag coverage self-test passed."
+          bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_policy_self_test.sh"
 
   # NOTE: This job runs AFTER resolve (not at workflow start) because project_kind
   # (python/node/ruby/wxt) is only known after the resolve step. It validates that
@@ -664,6 +301,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout (policy publish-target scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
       - name: Validate publish targets by project kind
         shell: bash
         env:
@@ -680,95 +322,7 @@ jobs:
           PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
         run: |
           set -Eeuo pipefail
-
-          # NOTE: If publish_node_gpr or publish_ruby_gpr is true, the caller workflow
-          # MUST grant packages: write to the orchestrate job (workflow_call does not inherit
-          # permissions automatically). A missing permission causes a silent API failure at
-          # runtime, not a policy error. Both official.yml and buddy.yml are expected to
-          # include packages: write. Verify any new caller workflow does the same.
-          if [[ "${PUBLISH_NODE_GPR}" == "true" || "${PUBLISH_RUBY_GPR}" == "true" ]]; then
-            echo "ℹ️ GPR publishing is enabled (publish_node_gpr=${PUBLISH_NODE_GPR}, publish_ruby_gpr=${PUBLISH_RUBY_GPR}). Ensure the caller workflow grants \`packages: write\`." >> "${GITHUB_STEP_SUMMARY}"
-          fi
-
-          # assert_disabled: Checks that a publish flag is false for a project kind that
-          # does not use it (cross-kind contamination check). This is only enforced for
-          # custom allowlisted channels. For official/buddy channels the policy job already
-          # validates all flags, so this function is intentionally a no-op for them.
-          assert_disabled() {
-            local flag_name="$1"
-            local flag_value="$2"
-            # No-op for official/buddy: the policy job enforces correct flag values
-            # for these channels; cross-kind contamination cannot occur in practice.
-            if [[ "${CHANNEL}" == "official" || "${CHANNEL}" == "buddy" ]]; then
-              return 0
-            fi
-            if [[ "${flag_value}" == "true" ]]; then
-              echo "Cross-kind contamination: '${flag_name}' is 'true' for a '${PROJECT_KIND}' project '${PROJECT}'; this flag has no effect and indicates a misconfiguration." >&2
-              exit 1
-            fi
-          }
-
-          if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" != "true" ]]; then
-            if [[ "${PUBLISH_NODE_GPR}" != "true" && "${PUBLISH_NODE_NPMJS}" != "true" ]]; then
-              echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs). Got: publish_node_gpr=${PUBLISH_NODE_GPR}, publish_node_npmjs=${PUBLISH_NODE_NPMJS}." >&2
-              exit 1
-            fi
-            assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
-            assert_disabled "publish_ruby_gpr"       "${PUBLISH_RUBY_GPR}"
-            assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
-            echo "Node publish-target policy passed for '${PROJECT}'."
-            exit 0
-          fi
-
-          if [[ "${PROJECT_KIND}" == "ruby" ]]; then
-            if [[ "${PUBLISH_RUBY_GPR}" != "true" && "${PUBLISH_RUBY_RUBYGEMS}" != "true" ]]; then
-              echo "Ruby project '${PROJECT}' requires at least one Ruby publish target (GPR/RubyGems). Got: publish_ruby_gpr=${PUBLISH_RUBY_GPR}, publish_ruby_rubygems=${PUBLISH_RUBY_RUBYGEMS}." >&2
-              exit 1
-            fi
-            assert_disabled "publish_python_pypi"  "${PUBLISH_PYTHON_PYPI}"
-            assert_disabled "publish_node_gpr"     "${PUBLISH_NODE_GPR}"
-            assert_disabled "publish_node_npmjs"   "${PUBLISH_NODE_NPMJS}"
-            echo "Ruby publish-target policy passed for '${PROJECT}'."
-            exit 0
-          fi
-
-          if [[ "${PROJECT_KIND}" == "python" ]]; then
-            if [[ "${PUBLISH_PYTHON_PYPI}" != "true" ]]; then
-              echo "⚠️ Python project '${PROJECT}' will not publish to PyPI (publish_python_pypi=false). Only a GitHub Release will be created." >> "${GITHUB_STEP_SUMMARY}"
-            fi
-            assert_disabled "publish_node_gpr"       "${PUBLISH_NODE_GPR}"
-            assert_disabled "publish_node_npmjs"     "${PUBLISH_NODE_NPMJS}"
-            assert_disabled "publish_ruby_gpr"       "${PUBLISH_RUBY_GPR}"
-            assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
-            echo "Python publish-target policy passed for '${PROJECT}'."
-            exit 0
-          fi
-
-          # WXT projects are distributed as browser extension archives, not npm packages;
-          # all publish_node_* flags are intentionally ignored for WXT projects.
-          if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ]]; then
-            # assert_disabled is a no-op for official/buddy channels (policy job already
-            # validated all flags). For custom allowlisted channels it enforces that no
-            # publish_node_* flags are erroneously set to true.
-            assert_disabled "publish_python_pypi"    "${PUBLISH_PYTHON_PYPI}"
-            assert_disabled "publish_node_gpr"       "${PUBLISH_NODE_GPR}"
-            assert_disabled "publish_node_npmjs"     "${PUBLISH_NODE_NPMJS}"
-            assert_disabled "publish_ruby_gpr"       "${PUBLISH_RUBY_GPR}"
-            assert_disabled "publish_ruby_rubygems"  "${PUBLISH_RUBY_RUBYGEMS}"
-            echo "WXT project '${PROJECT}' skips registry publish-target policy (browser extension distribution)."
-            echo "ℹ️ WXT project \`${PROJECT}\`: publish_node_gpr=${PUBLISH_NODE_GPR}, publish_node_npmjs=${PUBLISH_NODE_NPMJS} are ignored (browser extension; not published to npm registries)." >> "${GITHUB_STEP_SUMMARY}"
-            # NOTE: For official channel runs, both publish_node_gpr=true and publish_node_npmjs=true
-            # are required by channel policy (the policy job mandates them before project_kind is known).
-            # For WXT projects both flags have no runtime effect — WXT artifacts are distributed as
-            # browser extension archives, not npm packages, and no Node pipeline jobs execute for WXT builds.
-            if [[ "${CHANNEL}" == "official" && ("${PUBLISH_NODE_NPMJS}" == "true" || "${PUBLISH_NODE_GPR}" == "true") ]]; then
-              echo "ℹ️ Official channel note: \`publish_node_gpr=true\` and \`publish_node_npmjs=true\` are required by channel policy but have no effect for WXT projects (browser extension; npm publishing is skipped)." >> "${GITHUB_STEP_SUMMARY}"
-            fi
-            exit 0
-          fi
-
-          echo "Unexpected project kind '${PROJECT_KIND}' while validating publish-target policy." >&2
-          exit 1
+          bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_policy_publish_targets.sh"
 
   resolve:
     name: Resolve release inputs
@@ -848,6 +402,12 @@ jobs:
         with:
           version: '1.7.1'
 
+      - name: Checkout (non-clobber guard scripts)
+        if: inputs.enforce_non_clobber
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
       - name: Check existing GitHub Release by tag
         if: inputs.enforce_non_clobber
         shell: bash
@@ -856,66 +416,7 @@ jobs:
           TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
         run: |
           set -Eeuo pipefail
-
-          api="repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}"
-          resp_file="${RUNNER_TEMP}/gh-api.response"
-          rm -f "${resp_file}"
-
-          set +e
-          gh api "${api}" --include > "${resp_file}" 2>&1
-          rc=$?
-          set -e
-
-          status=$(grep -m1 -E '^HTTP/' "${resp_file}" | awk '{print $2}' || true)
-
-          if [[ "${rc}" -eq 0 ]]; then
-            # Extract response body: skip HTTP headers up to and including the blank separator line.
-            body=$(sed '1,/^[[:space:]]*$/d' "${resp_file}")
-            if [[ -z "${body}" ]]; then
-              echo "Error: gh api output did not contain a JSON body." >&2
-              cat "${resp_file}" >&2 || true
-              exit 1
-            fi
-            prerelease=$(printf '%s' "${body}" | jq -r '.prerelease')
-            if [[ "${prerelease}" != "true" && "${prerelease}" != "false" ]]; then
-              echo "Error: release JSON body missing 'prerelease'." >&2
-              exit 1
-            fi
-            if [[ "${prerelease}" == "false" ]]; then
-              echo "A non-prerelease GitHub Release already exists for tag '${TAG_NAME}'." >&2
-              echo "Buddy releases must not modify official (prerelease=false) releases. Aborting." >&2
-              echo "Note: force_update_tag=true controls whether the git tag can be moved, but does not bypass this prerelease-type protection." >&2
-              exit 1
-            fi
-            echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
-            echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
-            echo "Tag \`${TAG_NAME}\` — existing release is prerelease=true, safe to proceed." >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-
-          if [[ "${status}" == "404" ]]; then
-            echo "No existing GitHub Release found for tag '${TAG_NAME}'."
-            # Secondary check: verify whether the git tag itself already exists.
-            # A tag without a release can appear when a prior run created the tag but
-            # the release step failed. Log a warning so it is visible in the run log.
-            tag_resp="${RUNNER_TEMP}/gh-tag-api.response"
-            set +e
-            gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" --include > "${tag_resp}" 2>&1
-            set -e
-            tag_http=$(grep -m1 -E '^HTTP/' "${tag_resp}" | awk '{print $2}' || true)
-            if [[ "${tag_http}" == "200" ]]; then
-              tag_sha=$(sed '1,/^[[:space:]]*$/d' "${tag_resp}" | jq -r '.object.sha')
-              echo "Warning: git tag '${TAG_NAME}' already exists (sha=${tag_sha}) but has no associated GitHub Release." >&2
-              echo "This is expected if a previous run created the tag but failed before creating the release." >&2
-            fi
-            echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
-            echo "Tag \`${TAG_NAME}\` — no existing release found, safe to proceed." >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-
-          echo "Failed to query release metadata for tag '${TAG_NAME}' (HTTP ${status:-unknown})." >&2
-          cat "${resp_file}" >&2 || true
-          exit 1
+          bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_guard_non_clobber.sh"
 
       - name: Guard disabled
         if: ${{ !inputs.enforce_non_clobber }}
@@ -2068,6 +1569,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout (release sentinel scripts)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
       - name: Install jq
         uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
         with:
@@ -2079,64 +1585,4 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           set -Eeuo pipefail
-
-          # Dynamically process all jobs in needs: using toJSON(needs).
-          # This prevents the 3-way sync problem where needs:, env:, and for-loop
-          # all had to be manually updated when adding new language pipelines.
-          echo "Release job outcomes:"
-          failed=()
-          success_count=0
-
-          {
-            echo "## Release Job Outcomes"
-            echo "| Job | Result |"
-            echo "| --- | ------ |"
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-          while IFS= read -r line; do
-            job="${line%%:*}"
-            status="${line##*:}"
-            echo "  ${job}: ${status}"
-            case "${status}" in
-              # Only release-* delivery jobs count toward success_count.
-              # attest-* gate jobs exit 0 (success) when builds fail; including them
-              # here would mask a genuine "no release delivered" condition.
-              success)   icon=":white_check_mark:" ; [[ "${job}" == release-* ]] && success_count=$((success_count + 1)) ;;
-              skipped)   icon=":white_circle:" ;;
-              failure)   icon=":x:" ; failed+=("${job}(${status})") ;;
-              cancelled) icon=":no_entry:" ; failed+=("${job}(${status})") ;;
-              *)         icon=":question:" ; failed+=("${job}(${status}?)") ;;
-            esac
-            echo "| \`${job}\` | ${icon} ${status} |" >> "${GITHUB_STEP_SUMMARY}"
-          done < <(echo "${NEEDS_JSON}" | jq -r 'to_entries[] | "\(.key):\(.value.result)"')
-
-          if [[ "${#failed[@]}" -gt 0 ]]; then
-            echo "One or more release pipeline jobs failed: ${failed[*]}" >&2
-            {
-              echo ""
-              echo "> [!CAUTION]"
-              echo "> One or more release pipeline jobs failed: ${failed[*]}"
-            } >> "${GITHUB_STEP_SUMMARY}"
-            exit 1
-          fi
-
-          if [[ "${success_count}" -eq 0 ]]; then
-            # NOTE: This path fires when a guard, policy, publish, or build job fails and
-            # cascade-skips its downstream release-* job. Cascade-skipped jobs appear as
-            # "skipped" in toJSON(needs), not "failure", so the failure is invisible here.
-            # Use the GitHub Actions job visualizer to identify the root cause. Common
-            # upstream jobs to inspect: guard-prerelease-only, guard-non-clobber,
-            # policy-publish-targets, publish-node-gpr, publish-node-npmjs, publish-ruby-gpr.
-            echo "No release job succeeded. This may indicate: (1) an upstream gate failure (policy, guards, or publish), (2) a build step failure, or (3) all projects of the detected kind were skipped. Inspect the GitHub Actions job visualizer for upstream failures." >&2
-            {
-              echo ""
-              echo "> [!CAUTION]"
-              echo "> No release job succeeded. This may indicate:"
-              echo "> 1. An upstream gate failure — inspect **guard-prerelease-only**, **guard-non-clobber**, **policy-publish-targets**, **publish-node-gpr**, **publish-node-npmjs**, or **publish-ruby-gpr**."
-              echo "> 2. A build or publish step failure."
-              echo "> 3. All projects of the detected kind were skipped."
-            } >> "${GITHUB_STEP_SUMMARY}"
-            exit 1
-          fi
-
-          echo "All release jobs completed successfully (skipped jobs are expected for non-matching project kinds)."
+          bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_release_completed_check.sh"
