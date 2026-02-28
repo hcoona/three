@@ -407,8 +407,9 @@ jobs:
     outputs:
       channel_profile: ${{ steps.context.outputs.channel_profile }}
       target_environment: ${{ steps.context.outputs.target_environment }}
-      # HUB-ONLY: project_variant is NOT forwarded to spoke with: blocks — see REFACTOR_PLAN.md §2.2.
-      # It is used only for publish_mode derivation and step-summary diagnostics within this workflow.
+      # SPOKE-CONTRACT: EXCLUDED — project_variant is NOT forwarded in spoke with: blocks.
+      # HUB-ROUTING: consumed only for publish_mode derivation and step-summary diagnostics within this workflow.
+      # See REFACTOR_PLAN.md §2.2 for the spoke forwarding contract.
       project_variant: ${{ steps.context.outputs.project_variant }}
       publish_mode: ${{ steps.context.outputs.publish_mode }}
       # COMPLIANCE: publish_mode='publish'|'build-only' is the current routing contract.
@@ -483,17 +484,17 @@ jobs:
               ;;
           esac
 
+          # Strip all POSIX whitespace from PROJECT_KIND BEFORE variant mapping. Stripping first
+          # ensures exact comparisons work correctly: e.g. 'node ' (trailing space) would miss
+          # both 'node' branches without this normalization step. The tr call also satisfies the
+          # empty-string guard below by ensuring a whitespace-only PROJECT_KIND resolves to "".
           # SYNC: add-new-language — add elif branch for new project_kind → project_variant mapping if sub-variants apply
-          project_variant="${PROJECT_KIND}"
-          if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ]]; then
+          project_variant="$(printf '%s' "${PROJECT_KIND}" | tr -d '[:space:]')"  # strip all POSIX whitespace first
+          if [[ "${project_variant}" == "node" && "${IS_WXT}" == "true" ]]; then
             project_variant="node-wxt"
-          elif [[ "${PROJECT_KIND}" == "node" ]]; then
+          elif [[ "${project_variant}" == "node" ]]; then
             project_variant="node-npm"
           fi
-          # Sanitize project_variant: strip all whitespace (including newlines, carriage returns,
-          # tabs, and spaces) to prevent GITHUB_OUTPUT injection and ensure the empty-string guard
-          # below correctly catches a whitespace-only PROJECT_KIND from the upstream resolve job.
-          project_variant="$(printf '%s' "${project_variant}" | tr -d '[:space:]')"  # strip all POSIX whitespace
 
           # Fail fast if PROJECT_KIND was empty — upstream resolve contract violation.
           if [[ -z "${project_variant}" ]]; then
@@ -547,9 +548,14 @@ jobs:
           {
             echo "### Hub context"
             echo "#### Raw inputs"
-            # Use lower_channel (normalized) rather than raw ${CHANNEL} to avoid embedding
-            # untriaged user input in the step summary without explicit sanitization.
-            echo "- channel (normalized): \`${lower_channel}\`"
+            # Show both raw and normalized channel so operators can spot unintended normalization
+            # at a glance without inspecting workflow dispatch inputs.
+            echo "- channel (raw): \`${CHANNEL}\`"
+            if [[ "${lower_channel}" != "${CHANNEL}" ]]; then
+              echo "  - normalized to: \`${lower_channel}\` (whitespace stripped and lowercased)"
+            else
+              echo "- channel (normalized): \`${lower_channel}\`"
+            fi
             echo "- project_kind: \`${PROJECT_KIND}\`"
             echo "- is_wxt: \`${IS_WXT}\`"
             echo "#### Derived outputs"
@@ -557,6 +563,9 @@ jobs:
             echo "- target_environment: \`${target_environment}\`"
             echo "- project_variant: \`${project_variant}\`"
             echo "- publish_mode: \`${publish_mode}\`"
+            if [[ "${project_variant}" == "node-wxt" ]]; then
+              echo "  - note: WXT produces browser extension archives; publish_mode is always build-only regardless of publish_node_npmjs/gpr flag values"
+            fi
             if [[ "${publish_mode}" == "publish" ]]; then
               active_flags=()
               # SYNC: add-new-language — add a case branch for the new project_variant.
@@ -564,6 +573,8 @@ jobs:
               # diagnostics when cross-language flags are also set by the channel policy.
               # SYNC[paired-blocks]: this case block and the publish_mode case block above
               # must cover the same set of project_variant arms (divergence = misleading summary).
+              # TODO(Step 6): merge this case block and the publish_mode case block above into
+              # a single pass once Step 6 static routing jobs eliminate the need for two passes.
               case "${project_variant}" in
                 python)
                   [[ "${PUBLISH_PYTHON_PYPI}"   == "true" ]] && active_flags+=("publish_python_pypi")
