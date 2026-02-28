@@ -381,7 +381,8 @@ jobs:
     #   channel_profile:    'official' | 'buddy' | 'custom'
     #   target_environment: 'release-official' | 'release-buddy' | 'release-<sanitized>'
     #   project_variant:    known values: 'python' | 'ruby' | 'node-npm' | 'node-wxt';
-    #                       unrecognized PROJECT_KIND values pass through as-is with a warning.
+    #                       unrecognized PROJECT_KIND values cause a hard failure (exit 1).
+    #                       SYNC: add-new-language — add a branch in the variant mapping below.
     #   publish_mode:       'publish' | 'build-only'
     # SECURITY: target_environment is routing/approval-gate metadata only.
     # Spoke OIDC publish jobs MUST use hardcoded environment names ('pypi', 'npmjs',
@@ -468,9 +469,13 @@ jobs:
               # Guard: prevent sanitization from silently collapsing to a reserved environment
               # name. e.g. 'official-' has its trailing dash stripped → 'official', which
               # would produce 'release-official' and impersonate the real official gate.
-              # Only 'official' and 'buddy' are reserved; 'x-official'/'x-buddy' are NOT
-              # reserved environment names and are blocked by validate_inputs.sh for custom
-              # channels — no double-escape is needed or correct here.
+              # Only 'official' and 'buddy' are reserved environment gates; 'x-official'/'x-buddy'
+              # are the escape slugs produced here and are not protected gates themselves.
+              # validate_inputs.sh blocks the exact strings 'x-official'/'x-buddy' as channel
+              # inputs, but inputs that sanitize to 'x-official' via other paths (e.g. 'x-official-')
+              # still land on 'release-x-official'. This is intentional and not a security concern:
+              # 'release-x-official' is not a protected gate — the collision guard's only job
+              # is to prevent 'release-official' and 'release-buddy' impersonation.
               if [[ "${sanitized}" == "official" || "${sanitized}" == "buddy" ]]; then
                 sanitized="x-${sanitized}"
               fi
