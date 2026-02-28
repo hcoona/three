@@ -22,16 +22,39 @@ We will adopt a **Hub-and-Spoke model** with **Dynamic Environments**.
 ### 2.2 The Spokes (`release-orchestrate-<lang>.yml`)
 
 - **Responsibilities:** Language-specific execution (build, attestation, registry publish).
-- **Interface:** Adheres to a strict Data Contract (standardized `inputs` and `outputs`).
+- **Routing contract** (minimal; spokes additionally receive language-specific inputs from the Hub routing job):
 
     ```yaml
     inputs:
-        project_path: { type: string, required: true }
+        package_dir: { type: string, required: true }
         target_environment: { type: string, required: true }
-        publish_registry_mode: { type: boolean, required: true }
+        channel_profile: { type: string, required: true }  # 'official' | 'buddy' | 'custom'
+        publish_mode: { type: string, required: true }  # 'publish' | 'build-only'
     ```
 
+    > **Note:** This is the minimal routing contract from the Hub. Each Spoke also receives
+    > language-specific inputs (`version`, `project`, `tag_name`, `target`, `artifact_prefix`,
+    > tool version pins, etc.) forwarded by the routing job from `resolve` outputs.
+    > The `project_variant` hub output is **NOT** forwarded to spokes: each spoke is
+    > inherently single-language; `project_variant` is used only for hub-side `publish_mode`
+    > derivation and step-summary diagnostics.
+
+    > **Pending Step 4 (node-npm):** `publish_mode='publish'` is currently binary (fires when
+    > *any* node-npm registry flag is true). The node-npm spoke will need to distinguish
+    > GPR-only / npmjs-only / both. Resolve before implementing Step 4 — see the Step 4 design
+    > decision note below. Until then, treat `publish_mode` as binary in all spokes.
+
 - **Job Deduplication:** Uses the dynamically injected `target_environment` to trigger native GitHub Environment deployment gates. Only one publish job is needed per Spoke, entirely eliminating `*-with-registry`/`*-no-registry` pairs.
+
+  > **OIDC two-job pattern (mandatory):** GitHub Actions `environment:` simultaneously controls
+  > approval gates and the `environment` sub-claim baked into the OIDC token. These cannot be
+  > separated on a single job. Every Spoke MUST implement a two-job split:
+  > 1. **Gate job** — `environment: ${{ inputs.target_environment }}`: holds the per-channel
+  >    human-approval gate; requests no OIDC token (`id-token: write` absent).
+  > 2. **Publish job** — `needs: [gate]`, `environment: pypi` (or `npmjs`, `rubygems` —
+  >    hardcoded to match the registry's Trusted Publisher registration): the OIDC `environment`
+  >    claim must match the registration exactly or the registry hard-rejects the token.
+  >    Never assign `target_environment` to a job that requests `id-token: write`.
 
 ---
 
@@ -43,7 +66,7 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 
 - Ensure the current `release-orchestrate.yml` is acting as a stable, testable baseline before structural changes begin.
 
-### Step 2: Extract central policy jobs
+### Step 2: Extract central policy jobs [COMPLETED]
 
 - Prepare the Hub structure.
 - Define dynamic environment outputs (Official vs Buddy) directly in the Context/Policy resolution jobs.
@@ -57,6 +80,13 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 
 - Migrate PNPM packing, GitHub Packages (GPR) publish, and npmjs mapping.
 - Consolidate WXT extensions into the same Spoke or an inherited process to reduce Node pipeline duplication.
+- **Design decision required before this step:** `publish_mode='publish'` from the Hub is binary
+  (fires when *any* node-npm registry flag is true). The node-npm spoke must distinguish three
+  states: GPR-only, npmjs-only, both. Resolve by either (a) passing `publish_node_gpr` and
+  `publish_node_npmjs` as additional explicit spoke inputs alongside `publish_mode` (contract
+  stays `'publish' | 'build-only'`), or (b) extending `publish_mode` to encode the registry
+  set (e.g. `'publish-gpr'`, `'publish-npmjs'`, `'publish-both'`) — note option (b) requires
+  updating the routing contract documentation in Section 2.2 above.
 
 ### Step 5: Create Ruby spoke workflow
 
