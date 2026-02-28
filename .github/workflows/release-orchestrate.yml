@@ -468,16 +468,10 @@ jobs:
               # Guard: prevent sanitization from silently collapsing to a reserved environment
               # name. e.g. 'official-' has its trailing dash stripped → 'official', which
               # would produce 'release-official' and impersonate the real official gate.
-              # The guard escapes those to 'x-official'/'x-buddy' → 'release-x-official'.
-              # For callers that literally pass channel='x-official' or 'x-buddy', the same
-              # guard fires again (double-escape): 'x-official' → 'x-x-official' →
-              # 'release-x-x-official'. This means the two paths no longer collide:
-              #   near-miss 'official-'   → 'release-x-official'
-              #   literal   'x-official' → 'release-x-x-official'
-              # 'x-official'/'x-buddy' are also blocked in the channel input description
-              # and in validate_inputs.sh, but this guard makes the hub script self-contained.
-              if [[ "${sanitized}" == "official" || "${sanitized}" == "buddy" || \
-                    "${sanitized}" == "x-official" || "${sanitized}" == "x-buddy" ]]; then
+              # Only 'official' and 'buddy' are reserved; 'x-official'/'x-buddy' are NOT
+              # reserved environment names and are blocked by validate_inputs.sh for custom
+              # channels — no double-escape is needed or correct here.
+              if [[ "${sanitized}" == "official" || "${sanitized}" == "buddy" ]]; then
                 sanitized="x-${sanitized}"
               fi
               target_environment="release-${sanitized}"
@@ -491,9 +485,10 @@ jobs:
           elif [[ "${PROJECT_KIND}" == "node" ]]; then
             project_variant="node-npm"
           fi
-          # Sanitize project_variant: strip newlines, carriage returns, and tabs to prevent
-          # GITHUB_OUTPUT injection if the upstream resolve job's project_kind output is malformed.
-          project_variant="$(printf '%s' "${project_variant}" | tr -d '\n\r\t')"
+          # Sanitize project_variant: strip all whitespace (including newlines, carriage returns,
+          # tabs, and spaces) to prevent GITHUB_OUTPUT injection and ensure the empty-string guard
+          # below correctly catches a whitespace-only PROJECT_KIND from the upstream resolve job.
+          project_variant="$(printf '%s' "${project_variant}" | tr -d '[:space:]')"  # strip all POSIX whitespace
 
           # Fail fast if PROJECT_KIND was empty — upstream resolve contract violation.
           if [[ -z "${project_variant}" ]]; then
@@ -547,7 +542,9 @@ jobs:
           {
             echo "### Hub context"
             echo "#### Raw inputs"
-            echo "- channel (raw): \`${CHANNEL}\`"
+            # Use lower_channel (normalized) rather than raw ${CHANNEL} to avoid embedding
+            # untriaged user input in the step summary without explicit sanitization.
+            echo "- channel (normalized): \`${lower_channel}\`"
             echo "- project_kind: \`${PROJECT_KIND}\`"
             echo "- is_wxt: \`${IS_WXT}\`"
             echo "#### Derived outputs"

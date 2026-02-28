@@ -87,13 +87,13 @@ if [[ "${SOURCE}" == "manual" ]]; then
   fi
 fi
 
-# Reject channel names with leading or trailing whitespace. The hub routing job strips
-# whitespace via sed before routing, but policy validates the raw dispatch value.
-# Whitespace in channel names also prevents is_channel_allowlisted from matching entries
-# (the allowlist trimming loop trims allowlist entries, not CHANNEL itself).
-# Note: two separate [[ ]] tests avoid SC2055 (the || is at shell level, not inside [[)
-if [[ "${CHANNEL}" != "${CHANNEL#[[:space:]]}" ]] || [[ "${CHANNEL}" != "${CHANNEL%[[:space:]]}" ]]; then
-  echo "Channel '${CHANNEL}' has leading or trailing whitespace. Channel names must not have leading or trailing whitespace. The hub routing job strips whitespace; passing it here means policy and hub evaluate different effective values." >&2
+# Reject channel names containing any whitespace (leading, trailing, or internal).
+# The hub routing job strips ALL whitespace via ${CHANNEL//[[:space:]]/} before routing,
+# but policy evaluates the raw dispatch value. Any whitespace mismatch means policy and hub
+# evaluate different effective channel strings, and is_channel_allowlisted would fail to
+# match (the allowlist trimming loop trims allowlist entries, not CHANNEL itself).
+if [[ "${CHANNEL}" =~ [[:space:]] ]]; then
+  echo "Channel '${CHANNEL}' contains whitespace (leading, trailing, or internal). Channel names must be free of all whitespace." >&2
   exit 1
 fi
 
