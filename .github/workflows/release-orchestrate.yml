@@ -60,9 +60,10 @@ on:
 
       channel:
         description: >-
+          Do NOT use 'x-official' or 'x-buddy' — reserved sanitization escape slugs.
           Release channel label for logs and policy validation (example: official, buddy).
           Reserved values: 'official' and 'buddy' are governed by strict policy assertions.
-          Custom allowlisted channels must not use 'x-official' or 'x-buddy' — these names
+          Custom allowlisted channels must not use 'x-official' or 'x-buddy' as these names
           are reserved as sanitization escape slugs and will collide with mis-typed official/buddy
           inputs in the generated target_environment output.
         required: true
@@ -355,25 +356,32 @@ jobs:
   # HUB PREP: Centralize normalized orchestration context for future spoke workflows.
   # This job is intentionally additive in Step 2 (no behavior change to current jobs yet).
   # NOTE: All guard jobs and policy-publish-targets are included in needs: so any spoke
-  # routing job that depends on this job transitively inherits full guard and policy
-  # enforcement, rather than requiring each routing job to re-declare them individually.
+  # routing job added inside THIS workflow file that depends on this job transitively
+  # inherits full guard and policy enforcement, within this workflow's DAG only.
+  # IMPORTANT: This guarantee does NOT extend across workflow_call boundaries. A spoke
+  # workflow file invoked via 'uses:' runs in its own context and has no visibility of
+  # this workflow's guard jobs. Direct callers of a spoke workflow bypass ALL hub guards.
+  # Spoke workflow files MUST document this at their top-level security comment.
   resolve-hub-context:
     name: Resolve hub orchestration context
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 1
     needs:
       - policy
       - resolve
       - policy-publish-targets
       - guard-prerelease-only
       - guard-non-clobber
-    permissions:
-      contents: read
+    permissions: {}
+    # id-token: write is intentionally absent — this job performs no OIDC operations.
+    # This job must never acquire OIDC tokens; only hardcoded-environment spoke publish
+    # jobs should hold id-token: write.
     # SYNC: add-new-language — if a new language adds a hub-level output, add it here.
     # Output value domains (spoke consumers should treat these as stable contracts):
     #   channel_profile:    'official' | 'buddy' | 'custom'
     #   target_environment: 'release-official' | 'release-buddy' | 'release-<sanitized>'
-    #   project_variant:    'python' | 'ruby' | 'node-npm' | 'node-wxt' (defaults to project_kind for unknown kinds)
+    #   project_variant:    known values: 'python' | 'ruby' | 'node-npm' | 'node-wxt';
+    #                       unrecognized PROJECT_KIND values pass through as-is with a warning.
     #   publish_mode:       'publish' | 'build-only'
     # SECURITY: target_environment is routing/approval-gate metadata only.
     # Spoke OIDC publish jobs MUST use hardcoded environment names ('pypi', 'npmjs',
@@ -382,16 +390,24 @@ jobs:
     # configurations validate this sub-claim by name — a mismatch causes a hard OIDC
     # rejection (publish failure), and a dynamic environment name may also lack the
     # required-reviewer gate that is the real human approval barrier.
-    # NOTE: Spokes MUST use a two-job pattern: a gate job with
-    # 'environment: ${{ inputs.target_environment }}' for human approval, followed by
-    # a separate publish job with a hardcoded 'environment: pypi' (or equivalent)
-    # for OIDC token acquisition.
+    # NOTE: Spokes MUST use a two-job pattern:
+    #   gate job:    environment: ${{ inputs.target_environment }}  # human approval; NO id-token: write
+    #   publish job: needs: [gate], environment: pypi               # hardcoded; id-token: write here only
+    # WRONG pattern (do NOT do this — bypasses human approval gate or misroutes OIDC token):
+    #   if: needs.resolve-hub-context.outputs.publish_mode == 'publish'  # insufficient alone
+    #   environment: ${{ inputs.target_environment }}  # on a job with id-token: write = WRONG
     # SECURITY: publish_mode is informational routing intent, not an authorization
     # decision. It MUST NOT be the sole if: condition guarding OIDC token requests.
     # The environment: field with required reviewers is the real security boundary.
+    # PREREQUISITE: The GitHub Environments 'release-official' and 'release-buddy' MUST
+    # be pre-created in repository Settings → Environments with required reviewers before
+    # any spoke is deployed. GitHub auto-creates missing environments with NO protection
+    # rules, silently bypassing the approval gate. See REFACTOR_PLAN.md §3 Step 3 notes.
     outputs:
       channel_profile: ${{ steps.context.outputs.channel_profile }}
       target_environment: ${{ steps.context.outputs.target_environment }}
+      # HUB-ONLY: project_variant is NOT forwarded to spoke with: blocks — see REFACTOR_PLAN.md §2.2.
+      # It is used only for publish_mode derivation and step-summary diagnostics within this workflow.
       project_variant: ${{ steps.context.outputs.project_variant }}
       publish_mode: ${{ steps.context.outputs.publish_mode }}
       # COMPLIANCE: publish_mode='publish'|'build-only' is the current routing contract.
@@ -475,17 +491,24 @@ jobs:
           elif [[ "${PROJECT_KIND}" == "node" ]]; then
             project_variant="node-npm"
           fi
-          # Sanitize project_variant: strip newlines/carriage returns to prevent GITHUB_OUTPUT
-          # injection if the upstream resolve job's project_kind output is malformed.
-          project_variant="$(printf '%s' "${project_variant}" | tr -d '\n\r')"
+          # Sanitize project_variant: strip newlines, carriage returns, and tabs to prevent
+          # GITHUB_OUTPUT injection if the upstream resolve job's project_kind output is malformed.
+          project_variant="$(printf '%s' "${project_variant}" | tr -d '\n\r\t')"
+
+          # Fail fast if PROJECT_KIND was empty — upstream resolve contract violation.
+          if [[ -z "${project_variant}" ]]; then
+            echo "::error::project_variant resolved to empty string. PROJECT_KIND='${PROJECT_KIND}' is empty; upstream resolve job output contract is violated." >&2
+            exit 1
+          fi
 
           # Determine publish_mode scoped to the resolved project variant.
           # This avoids cross-language flag contamination: e.g. official-channel WXT builds have
           # publish_node_gpr=true by policy, but WXT publishes no npm artifacts.
           # SYNC: add-new-language — add a case branch for the new project_kind with its registry flag(s)
           # SYNC[paired-blocks]: this case block and the active_flags case block in the
-          # GITHUB_STEP_SUMMARY section below MUST remain structurally identical — same arms,
-          # same variants. When adding a new project_variant, update both blocks together.
+          # GITHUB_STEP_SUMMARY section below must cover the same set of project_variant arms.
+          # Divergence produces misleading publish-flag diagnostics in the step summary
+          # (not a functional failure). When adding a new project_variant, update both blocks.
           publish_mode="build-only"
           case "${project_variant}" in
             python)
@@ -495,17 +518,22 @@ jobs:
               [[ "${PUBLISH_NODE_GPR}"      == "true" || "${PUBLISH_NODE_NPMJS}" == "true" ]] && publish_mode="publish"
               ;;
             node-wxt)
-              : # WXT distributes browser extension archives; no npm registry target regardless of channel policy flags
+              # WXT distributes browser extension archives; publish_mode is always 'build-only'
+              # regardless of PUBLISH_NODE_NPMJS/GPR flags. Policy may require PUBLISH_NODE_NPMJS=true
+              # for official WXT channels (forward-compatibility baseline), but the flag has no
+              # routing effect here. See validate_inputs.sh official case for the policy assertion.
+              echo "::notice title=WXT project::publish_mode=build-only for WXT projects regardless of publish_node_npmjs/gpr flags. WXT produces browser extension archives, not npm packages."
               ;;
             ruby)
               [[ "${PUBLISH_RUBY_GPR}"      == "true" || "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] && publish_mode="publish"
               ;;
             *)
-              # Unknown project_variant: emit a diagnostic rather than silently defaulting to
-              # build-only. This can occur when PROJECT_KIND from release-resolve.yml is empty
-              # or a new language not yet added to the variant mapping above.
-              # SYNC: add-new-language — update this message once the new variant is handled above.
-              echo "::warning::Unrecognized project_variant '${project_variant}' (PROJECT_KIND='${PROJECT_KIND}', IS_WXT='${IS_WXT}'); defaulting publish_mode to build-only. Known variants: python, node-npm, node-wxt, ruby. If this is a new language, add a branch above."
+              # Unknown project_variant: fail rather than silently producing incorrect routing.
+              # This can occur when PROJECT_KIND from release-resolve.yml is a new language
+              # not yet added to the variant mapping above.
+              # SYNC: add-new-language — add a branch above and remove this error once handled.
+              echo "::error::Unrecognized project_variant '${project_variant}' (PROJECT_KIND='${PROJECT_KIND}', IS_WXT='${IS_WXT}'). Known variants: python, node-npm, node-wxt, ruby. If this is a new language, add a branch above." >&2
+              exit 1
               ;;
           esac
 
@@ -533,7 +561,7 @@ jobs:
               # Collect only flags for the resolved project_variant to avoid misleading
               # diagnostics when cross-language flags are also set by the channel policy.
               # SYNC[paired-blocks]: this case block and the publish_mode case block above
-              # MUST remain structurally identical — same arms, same variants.
+              # must cover the same set of project_variant arms (divergence = misleading summary).
               case "${project_variant}" in
                 python)
                   [[ "${PUBLISH_PYTHON_PYPI}"   == "true" ]] && active_flags+=("publish_python_pypi")
@@ -569,7 +597,7 @@ jobs:
             else
               echo "- channel_allowlist: empty"
             fi
-          } >> "${GITHUB_STEP_SUMMARY}"
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
 
   guard-prerelease-only:
     name: Guard prerelease-only policy
