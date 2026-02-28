@@ -435,6 +435,9 @@ jobs:
 
           # Strip all whitespace and lowercase the channel to ensure deterministic case
           # matching regardless of workflow_dispatch user input (e.g. ' Official' or 'BUDDY').
+          # NOTE (defensive path only): this strip is lossy — 'my channel' collapses to
+          # 'mychannel' with no error. In production the policy job (in needs:) rejects any
+          # CHANNEL with whitespace before this job runs, making the strip a no-op.
           channel_trimmed="${CHANNEL//[[:space:]]/}"
           lower_channel="${channel_trimmed,,}"
 
@@ -460,10 +463,14 @@ jobs:
               # Sed passes: (1) replace non-slug chars with '-';
               #             (2) strip any leading '-' or '_'; (3) strip any trailing '-' or '_';
               #             (4) collapse runs of 2 or more consecutive dashes to a single '-'.
-              # NOTE: Pass 4 only collapses consecutive dashes, not consecutive underscores;
-              # underscore runs (e.g. 'my__channel') are preserved to keep 'my__channel' ≠
-              # 'my-channel' as distinct environment names. The allowlist regex independently
-              # forbids consecutive underscores, so no allowlisted entry is affected by this.
+              # NOTE: Pass 4 collapses consecutive dashes only, not consecutive underscores.
+              # Underscore runs (e.g. 'my__channel') are intentionally preserved to keep
+              # 'my__channel' ≠ 'my-channel' as distinct environment names.
+              # Mixed sequences (e.g. '_-' or '-_') are not collapsed either; however, both
+              # consecutive underscores and mixed separator sequences are rejected by the
+              # allowlist regex (^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$), so they cannot appear
+              # in a validated allowlist entry. The defensive/local-testing path may produce
+              # environment names with these sequences, which is acceptable and documented.
               sanitized="$(printf '%s' "${lower_channel}" | sed -E 's/[^a-z0-9_-]+/-/g; s/^[-_]+//; s/[-_]+$//; s/-{2,}/-/g')"
               if [[ -z "${sanitized}" ]]; then
                 sanitized="custom"
@@ -539,6 +546,10 @@ jobs:
               ;;
           esac
 
+          # GITHUB_OUTPUT: outputs are critical — intentionally no fallback.
+          # Unlike GITHUB_STEP_SUMMARY (informational), a write failure here must be
+          # surfaced immediately rather than silently swallowed. In local/offline testing,
+          # set GITHUB_OUTPUT to a temporary file to avoid an unbound-variable error.
           {
             echo "channel_profile=${channel_profile}"
             echo "target_environment=${target_environment}"
@@ -602,6 +613,11 @@ jobs:
                   : # no publish flags for WXT
                   ;;
                 *)
+                  # This arm is unreachable in a valid run: the publish_mode case block
+                  # above calls 'exit 1' for any unrecognized project_variant, so the script
+                  # never reaches this summary section with an unknown variant. It is kept as
+                  # a maintenance reminder: if a new variant is added to the publish_mode block
+                  # but not here, diagnostics will flag it instead of silently omitting flags.
                   # SYNC: add-new-language — update this case arm when a new project_variant
                   # is added so publish-flag diagnostics remain accurate.
                   active_flags+=("(unhandled variant '${project_variant}': update summary block)")
