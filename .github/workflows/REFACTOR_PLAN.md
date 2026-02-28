@@ -71,10 +71,38 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 - Prepare the Hub structure.
 - Define dynamic environment outputs (Official vs Buddy) directly in the Context/Policy resolution jobs.
 
+#### Breaking changes in Step 2
+
+- **Stricter `channel_allowlist` regex.** The pre-Step-2 pattern was `^[a-z0-9_-]+$`; the new pattern is `^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$`. This rejects consecutive hyphens/underscores, leading/trailing separators, and mixed sequences. Migration:
+  - `my--channel` → `my-channel` (collapse consecutive hyphens)
+  - `my__channel` → `my-channel` (collapse consecutive underscores)
+  - `-beta` → `beta` (remove leading separator)
+  - `alpha-` → `alpha` (remove trailing separator)
+  - `a_-b` → `a-b` (normalize mixed sequence)
+
+  The rationale is to make the allowlist-to-`target_environment` mapping injective: the hub context job collapses consecutive dashes via `sed 's/-{2,}/-/g'`, so `my--channel` and `my-channel` would previously both map to the same `release-my-channel` environment, creating a near-miss collision.
+
 ### Step 3: Create Python spoke workflow
 
 - Migrate `build-python`, `attest-python`, and PyPI publishing.
 - Apply dynamic environment variables and standard boolean flags to simplify the Spoke logic.
+
+> **Prerequisite — GitHub Environments pre-creation (OPS REQUIRED BEFORE DEPLOYMENT):**
+> Before the Python spoke is deployed, the following GitHub Environments **MUST** be manually
+> pre-created in repository **Settings → Environments** with required-reviewer protection rules:
+>
+> | Environment name   | Required reviewers | Purpose |
+> |---|---|---|
+> | `release-official` | Prod team          | Approval gate for official channel spoke jobs |
+> | `release-buddy`    | Dev team           | Approval gate for buddy channel spoke jobs |
+>
+> **Warning:** GitHub silently auto-creates missing environments with **no protection rules**
+> when a workflow first references them via `environment:`. This would cause the human-approval
+> gate to be absent on the first real publish run. Do not deploy the spoke without confirming
+> the environments exist and have required reviewers configured.
+>
+> Custom channel environments (e.g., `release-staging`) may be created on-demand per team
+> policy, but must also have appropriate protection rules before being used in production.
 
 ### Step 4: Create Node/WXT spoke workflow
 

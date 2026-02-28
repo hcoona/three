@@ -41,9 +41,13 @@ is_channel_allowlisted() {
     # identical to the raw entry — making the allowlist → target_environment mapping injective
     # and preventing near-miss collisions like 'my--channel' → 'my-channel'.
     # BREAKING (Step 2): This regex is stricter than the pre-Step-2 pattern (^[a-z0-9_-]+$).
-    # channel_allowlist entries with consecutive hyphens (my--channel), consecutive underscores
-    # (my__channel), leading/trailing separators (-beta, alpha-), or mixed sequences (a_-b) are
-    # no longer accepted. Normalize to equivalent slug form (e.g., my--channel → my-channel).
+    # channel_allowlist entries with consecutive hyphens, consecutive underscores, leading/trailing
+    # separators, or mixed sequences are no longer accepted. Migration examples:
+    #   my--channel  → my-channel   (consecutive hyphens collapsed)
+    #   my__channel  → my-channel   (consecutive underscores collapsed)
+    #   -beta        → beta         (leading separator removed)
+    #   alpha-       → alpha        (trailing separator removed)
+    #   a_-b         → a-b          (mixed sequence normalized)
     if [[ ! "${entry}" =~ ^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$ ]]; then
       echo "Invalid channel name '${entry}' in channel_allowlist: must start and end with a lowercase letter or digit; each hyphen or underscore must be immediately preceded and followed by a lowercase letter or digit (no consecutive hyphens, underscores, or mixed sequences). Valid examples: staging, my-channel, canary2. Common fixes: use lowercase only; remove leading/trailing separators; avoid consecutive hyphens/underscores." >&2
       exit 1
@@ -81,6 +85,16 @@ if [[ "${SOURCE}" == "manual" ]]; then
     echo "source=manual requires version to be set." >&2
     exit 1
   fi
+fi
+
+# Reject channel names with leading or trailing whitespace. The hub routing job strips
+# whitespace via sed before routing, but policy validates the raw dispatch value.
+# Whitespace in channel names also prevents is_channel_allowlisted from matching entries
+# (the allowlist trimming loop trims allowlist entries, not CHANNEL itself).
+# Note: two separate [[ ]] tests avoid SC2055 (the || is at shell level, not inside [[)
+if [[ "${CHANNEL}" != "${CHANNEL#[[:space:]]}" ]] || [[ "${CHANNEL}" != "${CHANNEL%[[:space:]]}" ]]; then
+  echo "Channel '${CHANNEL}' has leading or trailing whitespace. Channel names must not have leading or trailing whitespace. The hub routing job strips whitespace; passing it here means policy and hub evaluate different effective values." >&2
+  exit 1
 fi
 
 # Channel names must be all-lowercase. The hub routing job normalises channel to
