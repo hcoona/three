@@ -30,7 +30,7 @@ is_channel_allowlisted() {
     # context job to remap near-miss inputs (e.g. 'official-' → 'x-official') and thus
     # prevent impersonation of the real official/buddy environment gates.
     if [[ "${entry}" == "x-official" || "${entry}" == "x-buddy" ]]; then
-      echo "Channel '${entry}' is a reserved sanitization escape slug. Choose a different name that does not use 'x-official' or 'x-buddy'." >&2
+      echo "Channel '${entry}' is reserved for internal use by the release system. These names prevent collisions with the release-official and release-buddy environments. Choose a different channel name." >&2
       exit 1
     fi
     # Validate channel name charset: only lowercase letters, digits, hyphens, and underscores;
@@ -49,7 +49,10 @@ is_channel_allowlisted() {
     #   alpha-       → alpha        (trailing separator removed)
     #   a_-b         → a-b          (mixed sequence normalized)
     if [[ ! "${entry}" =~ ^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$ ]]; then
-      echo "Invalid channel name '${entry}' in channel_allowlist: must start and end with a lowercase letter or digit; each hyphen or underscore must be immediately preceded and followed by a lowercase letter or digit (no consecutive hyphens, underscores, or mixed sequences). Valid examples: staging, my-channel, canary2. Common fixes: use lowercase only; remove leading/trailing separators; avoid consecutive hyphens/underscores." >&2
+      echo "Invalid channel name '${entry}' in channel_allowlist." >&2
+      echo "  Required format: start and end with a lowercase letter or digit; each hyphen or underscore must be immediately preceded and followed by a lowercase letter or digit (no consecutive separators, mixed sequences, or leading/trailing separators)." >&2
+      echo "  Valid examples: staging, my-channel, canary2" >&2
+      echo "  Common fixes: use lowercase only; remove leading/trailing separators; avoid consecutive hyphens/underscores." >&2
       exit 1
     fi
     # Check if this entry matches the candidate.
@@ -103,6 +106,16 @@ fi
 # message rather than falling through to 'Unknown channel' in the case below.
 if [[ "${CHANNEL}" != "${CHANNEL,,}" ]]; then
   echo "Channel '${CHANNEL}' contains uppercase characters. Channel names must be all-lowercase (e.g., use '${CHANNEL,,}'). The hub routing job normalises channel to lowercase; passing uppercase here means policy and hub would evaluate different values." >&2
+  exit 1
+fi
+
+# Explicitly reject 'x-official' and 'x-buddy' as CHANNEL inputs. These values are
+# reserved as sanitization escape slugs: the hub context job remaps near-miss inputs
+# (e.g. 'official-' → 'x-official') to prevent them from impersonating 'release-official'
+# or 'release-buddy'. Accepting them as direct channel inputs would route to
+# 'release-x-official'/'release-x-buddy' and undermine the escape-slug convention.
+if [[ "${CHANNEL}" == "x-official" || "${CHANNEL}" == "x-buddy" ]]; then
+  echo "Channel '${CHANNEL}' is reserved as an internal remapping slug and cannot be used as a direct channel input. These names are used by the release system to prevent environment name collisions. Choose a different channel name." >&2
   exit 1
 fi
 
