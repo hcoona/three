@@ -92,6 +92,10 @@ check_pattern_present "uppercase-CHANNEL guard" \
 check_pattern_present "x-official/x-buddy direct CHANNEL guard" \
   '\$\{CHANNEL\}.*x-official' "${VALIDATE_INPUTS_SH}"
 
+# Built-in channel guard inside is_channel_allowlisted (official/buddy cannot be allowlisted)
+check_pattern_present "official/buddy allowlist entry builtin guard" \
+  '\$\{entry\}.*==.*"official"' "${VALIDATE_INPUTS_SH}"
+
 # Reserved escape-slug guard inside is_channel_allowlisted
 check_pattern_present "x-official/x-buddy allowlist entry guard" \
   '\$\{entry\}.*x-official' "${VALIDATE_INPUTS_SH}"
