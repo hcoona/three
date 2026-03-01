@@ -47,17 +47,17 @@
       },
       "WebMarkupMin.Core": {
         "type": "Direct",
-        "requested": "[2.20.1, )",
-        "resolved": "2.20.1",
-        "contentHash": "8gQEqcgQn/VOpTUvsZQKI3/diwvJoQSh5Vj+jf6fRTUCsFIoxOKotFqQCMBqPvB96VTwCJgSDY6MvwK0quxksw==",
+        "requested": "[2.20.2, )",
+        "resolved": "2.20.2",
+        "contentHash": "VkOtB5hZDmXtcZpyQQIYrW8Wf948HafneTHi2B2Frwm/H0GAeNK2o9lTuVU+rwmxHx62pSbsbpheFW3KoUmNSw==",
         "dependencies": {
-          "AdvancedStringBuilder": "0.1.1"
+          "AdvancedStringBuilder": "0.2.0"
         }
       },
       "AdvancedStringBuilder": {
         "type": "Transitive",
-        "resolved": "0.1.1",
-        "contentHash": "32IrlspOA59ewotQ4tlKP27QhKxMKGB7oncqlwVHn/hAz+j/r3HvLr6/W9ni9Mnyktlcg6kt7QZS8rEgur1+4Q=="
+        "resolved": "0.2.0",
+        "contentHash": "+XOjGvq+4pnmAWLLUimuINKsQTHEqxuA6eDkqUmzIBEsQH1Uz55nGmgVHE6QsocOk1BGnu1janyPeH+cOt00Tg=="
       },
       "Microsoft.Build.Tasks.Git": {
         "type": "Transitive",
