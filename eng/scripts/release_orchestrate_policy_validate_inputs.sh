@@ -9,6 +9,10 @@ set -Eeuo pipefail
 # Format: start/end with lowercase letter or digit; each hyphen/underscore must be
 # immediately preceded and followed by a lowercase letter or digit (no leading/trailing separators,
 # no consecutive separator pairs: --, __, -_, _-).
+# INVARIANT: any CHANNEL value that satisfies this regex is a fixed-point of the hub's
+# sed sanitization passes (strip non-[a-z0-9_-], strip leading/trailing separators,
+# collapse consecutive dashes). Relaxing this regex may silently break that identity
+# property and cause sanitized != original for previously-valid allowlist entries.
 readonly CHANNEL_NAME_REGEX='^[a-z0-9]([a-z0-9]|[-_][a-z0-9])*$'
 
 assert_equals() {
@@ -162,7 +166,7 @@ case "${CHANNEL}" in
   official)
     assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "false"
     assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "false"
-    # SYNC: add-new-language — add assert_equals for publish_<lang>_<registry> in official channel below
+    # SYNC[add-new-language] — add assert_equals for publish_<lang>_<registry> in official channel below
     assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "true"
     assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
     # Note: WXT projects must still pass publish_node_npmjs=true to satisfy policy,
@@ -178,7 +182,7 @@ case "${CHANNEL}" in
   buddy)
     assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "true"
     assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "true"
-    # SYNC: add-new-language (B2) — add assert_equals / assert_disabled checks for the new
+    # SYNC[add-new-language] (B2) — add assert_equals / assert_disabled checks for the new
     # language flags under the buddy channel case. This step is NOT optional: omitting it causes a
     # silent policy bypass where the buddy channel will not enforce the new language's flags and
     # misconfigured callers will pass policy validation without error.
@@ -222,7 +226,7 @@ case "${CHANNEL}" in
       # reviewers as the sole gating mechanism; the reusable workflow cannot enforce
       # caller origin. To intentionally publish a custom channel to a production
       # registry, remove these assertions and accept full responsibility for access control.
-      # SYNC: add-new-language — add a prohibition clause here for each new production
+      # SYNC[add-new-language] — add a prohibition clause here for each new production
       # registry flag (PUBLISH_<LANG>_<REGISTRY>) to prevent allowlisted custom channels
       # from publishing to production registries without explicit policy approval.
       # Note: GPR flags (publish_node_gpr, publish_ruby_gpr) are intentionally excluded —

@@ -61,7 +61,7 @@ check_version "python_version" "${EXPECTED_PYTHON_VERSION}"
 check_version "node_version"   "${EXPECTED_NODE_VERSION}"
 check_version "pnpm_version"   "${EXPECTED_PNPM_VERSION}"
 check_version "ruby_version"   "${EXPECTED_RUBY_VERSION}"
-# SYNC: add-new-language — add check_version "<lang>_version" "${EXPECTED_<LANG>_VERSION}" call here
+# SYNC[add-new-language] — add check_version "<lang>_version" "${EXPECTED_<LANG>_VERSION}" call here
 
 # Also validate the top-level ALL_CAPS env: block so that runtime
 # tool versions stay in sync with the hardcoded with: values above.
@@ -69,7 +69,7 @@ check_version "PYTHON_VERSION" "${EXPECTED_PYTHON_VERSION}"
 check_version "NODE_VERSION"   "${EXPECTED_NODE_VERSION}"
 check_version "PNPM_VERSION"   "${EXPECTED_PNPM_VERSION}"
 check_version "RUBY_VERSION"   "${EXPECTED_RUBY_VERSION}"
-# SYNC: add-new-language — add check_version "<LANG>_VERSION" "${EXPECTED_<LANG>_VERSION}" call here
+# SYNC[add-new-language] — add check_version "<LANG>_VERSION" "${EXPECTED_<LANG>_VERSION}" call here
 
 if [[ "${FAIL}" -ne 0 ]]; then
   echo "Version consistency check failed." \

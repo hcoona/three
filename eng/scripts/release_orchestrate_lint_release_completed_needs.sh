@@ -31,14 +31,14 @@ for job in "${release_jobs[@]}"; do
   done
   if [[ "${found}" -eq 0 ]]; then
     echo "ERROR: release-* job '${job}' is not listed in release-completed's needs:." >&2
-    echo "Add '${job}' to the needs: list of release-completed (SYNC: add-new-language step E)." >&2
+    echo "Add '${job}' to the needs: list of release-completed (SYNC[add-new-language] step E)." >&2
     FAIL=1
   fi
 done
 
 # Also verify that every attest-* gate job (not *-enabled) is listed in release-completed's needs:.
 # These are not auto-detected by the release-* check above; this closes the CI-enforcement gap
-# for the attest-<lang> entries documented in the SYNC: add-new-language checklist.
+# for the attest-<lang> entries documented in the SYNC[add-new-language] checklist.
 mapfile -t attest_gate_jobs < <(
   grep -P '^  (attest-[a-z0-9-]+):$' "${WORKFLOW_FILE}" \
     | grep -oP 'attest-[a-z0-9-]+' \
@@ -53,7 +53,7 @@ for job in "${attest_gate_jobs[@]}"; do
   done
   if [[ "${found}" -eq 0 ]]; then
     echo "ERROR: attest-* gate job '${job}' is not listed in release-completed's needs:." >&2
-    echo "Add '${job}' to the needs: list of release-completed (SYNC: add-new-language step E)." >&2
+    echo "Add '${job}' to the needs: list of release-completed (SYNC[add-new-language] step E)." >&2
     FAIL=1
   fi
 done
