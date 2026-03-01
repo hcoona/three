@@ -5,8 +5,9 @@ assert_equals() {
   local key="$1"
   local actual="$2"
   local expected="$3"
+  local channel="${CHANNEL}"  # capture at call-time; explicit rather than relying on scope
   if [[ "${actual}" != "${expected}" ]]; then
-    echo "Channel '${CHANNEL}' policy mismatch for '${key}': expected '${expected}', got '${actual}'." >&2
+    echo "Channel '${channel}' policy mismatch for '${key}': expected '${expected}', got '${actual}'." >&2
     exit 1
   fi
 }
@@ -14,7 +15,7 @@ assert_equals() {
 is_channel_allowlisted() {
   local candidate="$1"
   local entry
-  IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST}"
+  IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST:-}"
   for entry in "${allowlist[@]}"; do
     # Trim leading and trailing whitespace.
     entry="${entry#"${entry%%[![:space:]]*}"}"
@@ -23,7 +24,7 @@ is_channel_allowlisted() {
     # Reserved channels cannot be allowlisted.
     # 'official' and 'buddy' are first-class policy channels with fixed assertion matrices.
     if [[ "${entry}" == "official" || "${entry}" == "buddy" ]]; then
-      echo "Channel '${entry}' is a policy-governed built-in and cannot appear in channel_allowlist." >&2
+      echo "Allowlist entry '${entry}' is invalid: 'official' and 'buddy' are policy-governed built-in channels and cannot appear in channel_allowlist. Remove this entry from channel_allowlist." >&2
       exit 1
     fi
     # 'x-official' and 'x-buddy' are reserved sanitization escape slugs used by the hub
@@ -34,7 +35,7 @@ is_channel_allowlisted() {
     # 'release-x_official' ≠ 'release-x-official' — they are distinct environment names and
     # do not collide with the escape-slug environments.
     if [[ "${entry}" == "x-official" || "${entry}" == "x-buddy" ]]; then
-      echo "Channel '${entry}' is reserved for internal use by the release system. These names prevent collisions with the release-official and release-buddy environments. Choose a different channel name." >&2
+      echo "Channel '${entry}' is reserved (hyphen form only — underscore variants 'x_official'/'x_buddy' are distinct names and are not blocked). These hyphenated forms are reserved as internal sanitisation escape slugs; they prevent environment-name collisions with the release-official/release-buddy gates. Choose a different channel name." >&2
       exit 1
     fi
     # Validate channel name charset: only lowercase letters, digits, hyphens, and underscores;
@@ -123,7 +124,11 @@ if [[ "${CHANNEL}" != "${CHANNEL,,}" ]]; then
   if [[ "${lower_channel}" == "x-official" || "${lower_channel}" == "x-buddy" ]]; then
     echo "Channel '${CHANNEL}' contains uppercase characters, and its lowercase form '${lower_channel}' is reserved by the release system. Choose a different channel name." >&2
   else
-    echo "Channel '${CHANNEL}' contains uppercase characters. Channel names must be all-lowercase (e.g., use '${lower_channel}'). The hub routing job normalises channel to lowercase; passing uppercase here means policy and hub would evaluate different values." >&2
+    msg="Channel '${CHANNEL}' contains uppercase characters. Channel names must be all-lowercase (e.g., use '${lower_channel}')."
+    if [[ "${lower_channel}" == "official" || "${lower_channel}" == "buddy" ]]; then
+      msg+=' Note: the lowercase form is a policy-governed built-in channel that requires specific flag values — verify all channel profile flags before using it.'
+    fi
+    echo "${msg} The hub routing job normalises channel to lowercase; passing uppercase here means policy and hub would evaluate different values." >&2
   fi
   exit 1
 fi
@@ -134,7 +139,7 @@ fi
 # or 'release-buddy'. Accepting them as direct channel inputs would route to
 # 'release-x-official'/'release-x-buddy' and undermine the escape-slug convention.
 if [[ "${CHANNEL}" == "x-official" || "${CHANNEL}" == "x-buddy" ]]; then
-  echo "Channel '${CHANNEL}' is reserved as an internal remapping slug and cannot be used as a direct channel input. These names are used by the release system to prevent environment name collisions. Choose a different channel name." >&2
+  echo "Channel '${CHANNEL}' is reserved as an internal remapping slug and cannot be used as a direct channel input. These names are used by the release system to prevent environment name collisions. Choose a different channel name. See .github/workflows/REFACTOR_PLAN.md \"Breaking changes in Step 2\" for migration guidance." >&2
   exit 1
 fi
 
@@ -148,7 +153,7 @@ case "${CHANNEL}" in
     # Note: WXT projects must still pass publish_node_npmjs=true to satisfy policy,
     # but all Node publish jobs are gated on is_wxt != 'true', so this flag has
     # no runtime effect for WXT projects.
-    echo "Note: WXT (browser extension) projects require publish_node_npmjs=true by channel policy even though it has no runtime effect (WXT artifacts are published as browser extension archives, not npm packages). If this assertion fails, set publish_node_npmjs=true in the caller workflow."
+    echo "::notice::Official channel policy requires publish_node_npmjs=true. For WXT (browser extension) projects this flag satisfies policy but has no runtime effect (WXT artifacts are not published as npm packages); for Node-npm projects it gates npmjs publishing."
     assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
     assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
     assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
@@ -186,6 +191,7 @@ case "${CHANNEL}" in
       echo "  No consecutive separators, mixed sequences, or leading/trailing separators." >&2
       echo "  Valid examples: staging, my-channel, canary2" >&2
       echo "  Common fixes: use lowercase only; remove leading/trailing separators; avoid consecutive hyphens/underscores." >&2
+      echo "  See .github/workflows/REFACTOR_PLAN.md \"Breaking changes in Step 2\" for migration examples." >&2
       exit 1
     fi
     # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy
@@ -208,17 +214,17 @@ case "${CHANNEL}" in
       # GPR authenticates via github.token (no OIDC, no environment reviewers required).
       if [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]]; then
         echo "Allowlisted channel '${CHANNEL}' may not set publish_python_pypi=true (production registry)." >&2
-        echo "Production registry publishing is reserved for official and buddy channels." >&2
+        echo "Production registry publishing (PyPI/npmjs/RubyGems) is restricted to the official channel only." >&2
         exit 1
       fi
       if [[ "${PUBLISH_NODE_NPMJS}" == "true" ]]; then
         echo "Allowlisted channel '${CHANNEL}' may not set publish_node_npmjs=true (production registry)." >&2
-        echo "Production registry publishing is reserved for official and buddy channels." >&2
+        echo "Production registry publishing (PyPI/npmjs/RubyGems) is restricted to the official channel only." >&2
         exit 1
       fi
       if [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]]; then
         echo "Allowlisted channel '${CHANNEL}' may not set publish_ruby_rubygems=true (production registry)." >&2
-        echo "Production registry publishing is reserved for official and buddy channels." >&2
+        echo "Production registry publishing (PyPI/npmjs/RubyGems) is restricted to the official channel only." >&2
         exit 1
       fi
       # NOTE: publish_node_gpr and publish_ruby_gpr are intentionally not blocked for

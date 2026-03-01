@@ -30,9 +30,10 @@ We will adopt a **Hub-and-Spoke model** with **Dynamic Environments**.
         target_environment: { type: string, required: true }
         channel_profile: { type: string, required: true } # 'official' | 'buddy' | 'custom'
         publish_mode: { type: string, required: true } # 'publish' | 'build-only'
-        # TODO(Step 4): node-npm publish_mode is currently binary — 'publish' fires when *any*
-        # node-npm registry flag is true. The node-npm spoke will need GPR-only / npmjs-only /
-        # both disambiguation. See the Step 4 design decision note below.
+        # node-npm spokes additionally receive (per Step 4 Option a decision):
+        #   publish_node_gpr:   { type: boolean } # forwarded from hub routing job
+        #   publish_node_npmjs: { type: boolean } # forwarded from hub routing job
+        # See Step 4 design decision in §3 for rationale.
     ```
 
     > **Note:** This is the minimal routing contract from the Hub. Each Spoke also receives
@@ -97,7 +98,7 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 
     The rationale is to make the allowlist-to-`target_environment` mapping injective: the hub context job collapses consecutive dashes via `sed 's/-{2,}/-/g'`, so `my--channel` and `my-channel` would previously both map to the same `release-my-channel` environment, creating a near-miss collision. Note: consecutive underscores are intentionally **not** collapsed by the sanitization sed pipeline, which is why `my__channel` must be renamed rather than auto-migrated.
 
-- **New reserved channel names: `x-official` and `x-buddy`.** These values are now rejected both as direct `channel:` inputs and as `channel_allowlist` entries. They are reserved as internal sanitization escape slugs used by `resolve-hub-context` to prevent near-miss inputs (e.g., `official-`) from impersonating the `release-official`/`release-buddy` protected environments. Under the old regex (`^[a-z0-9_-]+$`), these names were syntactically valid. Migration: rename to any other slug that satisfies the allowlist regex (e.g., `x-off`, `ext-official`).
+- **New reserved channel names: `x-official` and `x-buddy`.** These values are now rejected both as direct `channel:` inputs and as `channel_allowlist` entries. They are reserved as internal sanitization escape slugs used by `resolve-hub-context` to prevent near-miss inputs (e.g., `official-`) from impersonating the `release-official`/`release-buddy` protected environments. Under the old regex (`^[a-z0-9_-]+$`), these names were syntactically valid. Migration: rename to any other slug that satisfies the allowlist regex (e.g., `ext-off`, `ext-official`).
 
 - **New pre-case validation guards on `channel:` input.** Three new guards now reject invalid `channel:` inputs earlier, with targeted error messages. Previously these inputs were all rejected, but via the allowlist/case path with generic messages. The rejection _outcome_ for any valid caller is unchanged; only the error message and exit point differ for edge-case inputs:
     1. Empty `channel:` input: rejected immediately with "Channel must not be empty."
@@ -127,6 +128,15 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 >
 > - [ ] Verify `release-official` and `release-buddy` already exist in Settings → Environments.
 > - [ ] Verify both environments have required-reviewer rules configured.
+> - [ ] Confirm `release-resolve.yml`'s `project_kind` output values are a strict subset of
+>       the variants handled in `resolve-hub-context`'s `project_variant` mapping
+>       (`python` | `node` | `ruby`). Any new language added to `release-resolve.yml` MUST
+>       be added to the variant mapping in `resolve-hub-context` in the same PR, or the
+>       release workflow will fail the `resolve-hub-context` job on every run.
+>       Note: `project_kind='node'` maps to **two** variants (`node-npm` when `is_wxt!=true`,
+>       `node-wxt` when `is_wxt==true`). A new language with sub-variants must add
+>       corresponding branches to **both** the `project_variant` mapping **and** the
+>       `publish_mode` case block in `resolve-hub-context` in the same PR.
 >
 > Custom channel environments (e.g., `release-staging`) may be created on-demand per team
 > policy, but must also have appropriate protection rules before being used in production.
@@ -135,13 +145,14 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 
 - Migrate PNPM packing, GitHub Packages (GPR) publish, and npmjs mapping.
 - Consolidate WXT extensions into the same Spoke or an inherited process to reduce Node pipeline duplication.
-- **Design decision required before this step:** `publish_mode='publish'` from the Hub is binary
+- **Design decision (resolved — Option a selected):** `publish_mode='publish'` from the Hub is binary
   (fires when _any_ node-npm registry flag is true). The node-npm spoke must distinguish three
-  states: GPR-only, npmjs-only, both. Resolve by either (a) passing `publish_node_gpr` and
-  `publish_node_npmjs` as additional explicit spoke inputs alongside `publish_mode` (contract
-  stays `'publish' | 'build-only'`), or (b) extending `publish_mode` to encode the registry
-  set (e.g. `'publish-gpr'`, `'publish-npmjs'`, `'publish-both'`) — note option (b) requires
-  updating the routing contract documentation in Section 2.2 above.
+  states: GPR-only, npmjs-only, both. **Selected approach: Option (a)** — pass `publish_node_gpr`
+  and `publish_node_npmjs` as additional explicit spoke inputs alongside `publish_mode`. The
+  `publish_mode` contract remains `'publish' | 'build-only'` as documented in Section 2.2.
+  Option (b) (extending `publish_mode` to encode registry set, e.g. `'publish-gpr'`,
+  `'publish-npmjs'`, `'publish-both'`) is rejected: it would require updating the routing contract
+  in Section 2.2 and all existing consumers simultaneously.
 
 ### Step 5: Create Ruby spoke workflow
 
@@ -152,6 +163,20 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 
 - Wire the Hub (`release-orchestrate.yml`) to call `.github/workflows/release-orchestrate-python.yml`, etc., via `uses:` blocks equipped with static `if: project_kind == '...'` expressions.
 - Clear out the migrated language-specific blocks in the Hub.
+- **`project_kind` sourcing:** Hub routing jobs MUST source `project_kind` from
+  `needs.resolve.outputs.project_kind` directly. Do NOT source it from
+  `needs.resolve-hub-context.outputs` — `project_variant` is hub-internal and is intentionally
+  absent from `resolve-hub-context` outputs (see the job comment in `release-orchestrate.yml`).
+  The routing `if:` expressions should read:
+  - Python: `if: needs.resolve.outputs.project_kind == 'python'`
+  - Ruby: `if: needs.resolve.outputs.project_kind == 'ruby'`
+  - Node/npm: `if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'`
+  - Node/WXT: `if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'`
+
+  Note: Node projects split into two distinct spokes based on `is_wxt`. Do NOT route all `project_kind == 'node'` projects to a single spoke — WXT and npm have separate build and publish pipelines. The `is_wxt` output from `release-resolve.yml` MUST always be an explicit `'true'` or `'false'` string for every `project_kind == 'node'` run; if `is_wxt` is ever absent or empty, `!= 'true'` will match it and silently route a WXT project to the node-npm spoke.
+- **`prepare-release-notes` dependency:** Routing jobs that pass release-notes artifacts to a
+  spoke MUST add `prepare-release-notes` to their own `needs:` directly (it is absent from
+  `resolve-hub-context/needs:`; see `SYNC[routing-jobs]` comment at the job definition).
 
 ### Step 7: Centralize GitHub release finalizer
 

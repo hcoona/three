@@ -59,8 +59,9 @@ on:
         type: boolean
 
       channel:
-        description: >-
-          Do NOT use 'x-official' or 'x-buddy' — reserved sanitization escape slugs.
+        description: |-
+          Do NOT use 'x-official', 'x-buddy', or any value that normalizes to these
+          (e.g. 'x-official-') — reserved sanitization escape slugs.
           Release channel label for logs and policy validation (example: official, buddy).
           Reserved values: 'official' and 'buddy' are governed by strict policy assertions.
           Custom allowlisted channels must not use 'x-official' or 'x-buddy' as these names
@@ -354,7 +355,11 @@ jobs:
       force_update_tag: ${{ inputs.force_update_tag }}
 
   # HUB PREP: Centralize normalized orchestration context for future spoke workflows.
-  # This job is intentionally additive in Step 2 (no changes to existing job execution paths).
+  # This *job* is intentionally additive in Step 2: no existing job lists resolve-hub-context
+  # in its needs:, so no existing execution path is altered by the presence of this job.
+  # NOTE: The validate_inputs.sh changes shipped in the same Step 2 PR ARE breaking for
+  # edge-case callers (stricter channel_allowlist regex, new reserved names x-official/x-buddy,
+  # new pre-case guards). See REFACTOR_PLAN.md §2 (Breaking changes in Step 2) for details.
   # NOTE: Any exit 1 in this job (e.g., unrecognized project_variant) will fail the overall
   # workflow run even though no existing job depends on this one. This is intentional: the
   # hub context must be derivable on every run so that Step-3 spokes can be wired safely.
@@ -432,7 +437,7 @@ jobs:
         shell: bash
         env:
           CHANNEL: ${{ inputs.channel }}
-          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}  # diagnostic only — allowlist validation is done in the policy job
+          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}  # display only in step summary — allowlist enforcement is solely in the policy job
           PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
           # SYNC: add-new-language — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} here
@@ -441,6 +446,10 @@ jobs:
           PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
           PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
           PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
+        # TODO(Step 6): Extract this run: block to eng/scripts/release_orchestrate_hub_context.sh
+        # for improved local testability and Phase 3 self-test coverage (structural +
+        # behavioral guards equivalent to Phase 0/2 in release_orchestrate_policy_self_test.sh).
+        # See REFACTOR_PLAN.md Step 6 for context on the extraction plan.
         run: |
           set -Eeuo pipefail
 
@@ -460,10 +469,12 @@ jobs:
             official)
               channel_profile="official"
               target_environment="release-official"
+              # sanitized remains "" — not applicable for known channels
               ;;
             buddy)
               channel_profile="buddy"
               target_environment="release-buddy"
+              # sanitized remains "" — not applicable for known channels
               ;;
             *)
               # For allowlisted custom channels, keep a deterministic environment naming
@@ -501,6 +512,13 @@ jobs:
               # limitation since the policy gate prevents this in production.
               if [[ -z "${sanitized}" ]]; then
                 sanitized="custom"
+              fi
+              # Defensive: sanitized is produced by stripping whitespace then applying sed;
+              # in normal production runs it cannot contain a newline (policy pre-gate blocks
+              # whitespace CHANNEL; set -u prevents empty). Guard here for out-of-gate testing.
+              if [[ "${sanitized}" == *$'\n'* ]]; then
+                echo "::error::BUG: sanitized channel contains a newline — output would corrupt GITHUB_OUTPUT." >&2
+                exit 1
               fi
               # Guard: prevent sanitization from silently collapsing to a reserved environment
               # name. e.g. 'official-' has its trailing dash stripped → 'official', which
@@ -574,7 +592,6 @@ jobs:
               # for official WXT channels (forward-compatibility baseline), but the flag has no
               # routing effect here. See validate_inputs.sh official case for the policy assertion.
               publish_mode="build-only"  # explicit assignment; does not rely on pre-loop initialization
-              echo "publish_mode=build-only for WXT projects (WXT distributes browser extension archives; publish_node_npmjs/gpr flags have no routing effect)"
               ;;
             ruby)
               [[ "${PUBLISH_RUBY_GPR}"      == "true" || "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] && publish_mode="publish"
@@ -614,7 +631,10 @@ jobs:
             # is always true here. The 'normalized to' branch is defensive — it would fire only
             # if this script is invoked without the policy gate (e.g. local testing).
             if [[ "${lower_channel}" != "${CHANNEL}" ]]; then
-              echo "  - normalized to: \`${lower_channel}\` (whitespace stripped and lowercased)"
+              norm_desc=""
+              [[ "${channel_trimmed}" != "${CHANNEL}" ]] && norm_desc="whitespace stripped"
+              [[ "${lower_channel}" != "${channel_trimmed}" ]] && norm_desc="${norm_desc:+${norm_desc}, }lowercased"
+              echo "  - normalized to: \`${lower_channel}\` (${norm_desc})"
             fi
             echo "- project_kind: \`${PROJECT_KIND}\`"
             echo "- is_wxt: \`${IS_WXT}\`"
@@ -656,10 +676,12 @@ jobs:
                   [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] && active_flags+=("publish_ruby_rubygems")
                   ;;
                 node-wxt)
-                  # node-wxt never reaches here: the outer publish_mode case explicitly sets
-                  # publish_mode='build-only' for node-wxt and emits a notice, so the
-                  # enclosing if [[ "${publish_mode}" == "publish" ]] guard excludes this arm.
-                  # This branch is retained as a defensive guard against future drift.
+                  # INTENTIONALLY retained even though unreachable today (the outer
+                  # if [[ publish_mode == 'publish' ]] is always false for node-wxt since
+                  # publish_mode is explicitly forced to 'build-only' for this variant).
+                  # Do NOT delete: if publish_mode derivation ever changes for node-wxt,
+                  # this arm prevents the *) fallback from printing a misleading diagnostic.
+                  # SYNC[paired-blocks]: keep this arm in sync with the publish_mode case block.
                   : # no publish flags for WXT
                   ;;
                 *)
@@ -768,6 +790,9 @@ jobs:
           echo "### Guard: Non-clobber :white_check_mark: disabled" >> "${GITHUB_STEP_SUMMARY}"
           echo "Non-clobber enforcement is not enabled for channel \`${CHANNEL}\`." >> "${GITHUB_STEP_SUMMARY}"
 
+  # SYNC[routing-jobs]: Step-6 routing jobs that consume release notes MUST add
+  # prepare-release-notes to their own needs: directly; it is intentionally absent
+  # from resolve-hub-context/needs: (see the resolve-hub-context comment above).
   prepare-release-notes:
     name: Prepare release notes
     needs: resolve
