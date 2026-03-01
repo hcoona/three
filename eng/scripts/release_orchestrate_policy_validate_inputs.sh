@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# CHANNEL_NAME_REGEX: canonical format regex for channel names. Used in two places:
+#   1. is_channel_allowlisted: validates each allowlist entry before looking it up
+#   2. *) case arm: validates the raw CHANNEL input before the allowlist lookup
+# Both sites must use this single constant to stay in sync. If you change the regex,
+# update it here only; both sites will pick up the new value automatically.
+# Format: start/end with lowercase letter or digit; each hyphen/underscore must be
+# immediately followed by a lowercase letter or digit (no leading/trailing separators,
+# no consecutive separator pairs: --, __, -_, _-).
+readonly CHANNEL_NAME_REGEX='^[a-z0-9]([a-z0-9]|[-_][a-z0-9])*$'
+
 assert_equals() {
   local key="$1"
   local actual="$2"
@@ -57,7 +67,7 @@ is_channel_allowlisted() {
     #   alpha-       → alpha        (trailing hyphen separator removed)
     #   alpha_       → alpha        (trailing underscore separator removed)
     #   a_-b         → a-b          (mixed sequence normalized)
-    if [[ ! "${entry}" =~ ^[a-z0-9]([a-z0-9]|[-_][a-z0-9])*$ ]]; then
+    if [[ ! "${entry}" =~ ${CHANNEL_NAME_REGEX} ]]; then
       echo "Invalid channel name '${entry}' in channel_allowlist." >&2
       echo "  Required format: start and end with a lowercase letter or digit; each hyphen or underscore must be immediately preceded and followed by a lowercase letter or digit (no consecutive separators, mixed sequences, or leading/trailing separators)." >&2
       echo "  Valid examples: staging, my-channel, canary2" >&2
@@ -184,7 +194,7 @@ case "${CHANNEL}" in
     # The official/buddy values never reach this branch (handled by the case arms above),
     # and x-official/x-buddy are rejected by the pre-case guards, so we check only
     # the custom-channel format here.
-    if [[ ! "${CHANNEL}" =~ ^[a-z0-9]([a-z0-9]|[-_][a-z0-9])*$ ]]; then
+    if [[ ! "${CHANNEL}" =~ ${CHANNEL_NAME_REGEX} ]]; then
       echo "Channel '${CHANNEL}' has an invalid format and cannot be used or allowlisted." >&2
       echo "  Required format: start and end with a lowercase letter or digit;" >&2
       echo "  each hyphen or underscore must be immediately preceded and followed by a letter or digit." >&2

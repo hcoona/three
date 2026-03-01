@@ -35,9 +35,24 @@ check_guard_rejects() {
   local channel_value="$2"
   local expected_fragment="$3"
   local output
-  output=$(run_policy_check "${channel_value}")
+  # BLK-1: Capture stdout+stderr AND exit code inline. Appending 'echo "EXIT:$?"' after
+  # the command means the outer 'set -Eeuo pipefail' shell stays clean while we can
+  # still inspect whether the inner command actually exited non-zero.
+  output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
+    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+    CHANNEL="${channel_value}" bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  # Verify non-zero exit: a guard that prints the error but omits 'exit 1' must fail here.
+  if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: pre-case guard did not reject — '${description}' (channel='${channel_value}'): expected non-zero exit" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
   if ! echo "${output}" | grep -qF "${expected_fragment}"; then
-    echo "ERROR: pre-case guard not working — '${description}' (channel='${channel_value}')" >&2
+    echo "ERROR: pre-case guard missing expected message — '${description}' (channel='${channel_value}')" >&2
     echo "  Expected message containing: '${expected_fragment}'" >&2
     echo "  Got: ${output}" >&2
     FAIL=1
@@ -59,6 +74,20 @@ check_guard_rejects "trailing-underscore channel (invalid format)"    "alpha_"  
 check_guard_rejects "consecutive-underscore channel (invalid format)" "my__channel" "invalid format and cannot be used"
 check_guard_rejects "mixed-separator channel (invalid format)"        "a_-b"       "invalid format and cannot be used"
 
+# NB-6: Whitespace guard — also covers leading, trailing, and tab characters.
+# 'my channel' (internal space) is already tested above; these add the variants that
+# are common transcription errors in GitHub Actions 'with:' blocks.
+check_guard_rejects "leading-space channel"  " staging"    "contains whitespace"
+check_guard_rejects "trailing-space channel" "staging "    "contains whitespace"
+check_guard_rejects "tab channel"            $'stag\ting'  "contains whitespace"
+
+# NB-5: Uppercase + reserved slug — triggers a distinct inner guard with its own message.
+# 'Official' (plain uppercase) is tested above; 'X-OFFICIAL' hits an inner if-branch
+# that emits a different message ('its lowercase form ... is reserved'). Without this test,
+# that inner branch is dead code from the test suite's perspective.
+check_guard_rejects "uppercase reserved slug X-OFFICIAL"      "X-OFFICIAL" "its lowercase form"
+check_guard_rejects "mixed-case reserved slug x-Official"     "x-Official" "its lowercase form"
+
 # Behavioral smoke tests for is_channel_allowlisted reserved-entry guards.
 # These use a valid CHANNEL (staging) with a CHANNEL_ALLOWLIST entry that should be
 # rejected, verifying that the allowlist loop guard fires and exits non-zero.
@@ -69,6 +98,10 @@ check_allowlist_rejects() {
   local allowlist_value="$2"
   local expected_fragment="$3"
   local output
+  # 'staging' is the stable anchor CHANNEL: it passes all pre-case guards so the
+  # allowlist validation loop is always reached. The test exercises the invalid/reserved
+  # CHANNEL_ALLOWLIST entry, not the channel value itself.
+  # BLK-1: Capture exit code inline (same pattern as check_guard_rejects).
   output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
     CHANNEL_ALLOWLIST="${allowlist_value}" \
     ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
@@ -76,9 +109,14 @@ check_allowlist_rejects() {
     PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
     ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
     GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1 || true)
+    CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: allowlist entry guard did not reject — '${description}' (allowlist='${allowlist_value}'): expected non-zero exit" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
   if ! echo "${output}" | grep -qF "${expected_fragment}"; then
-    echo "ERROR: allowlist entry guard not working — '${description}' (allowlist='${allowlist_value}')" >&2
+    echo "ERROR: allowlist entry guard missing expected message — '${description}' (allowlist='${allowlist_value}')" >&2
     echo "  Expected message containing: '${expected_fragment}'" >&2
     echo "  Got: ${output}" >&2
     FAIL=1
@@ -93,6 +131,23 @@ check_allowlist_rejects "x-official in allowlist (reserved slug)" \
   "x-official" "reserved"
 check_allowlist_rejects "x-buddy in allowlist (reserved slug)" \
   "x-buddy" "reserved"
+
+# BLK-4: Behavioral tests for is_channel_allowlisted FORMAT validation.
+# These exercise the regex guard INSIDE is_channel_allowlisted — a completely separate
+# code path from the *) arm's direct CHANNEL format check. The anchor CHANNEL=staging
+# is always valid; the invalid value under test is the CHANNEL_ALLOWLIST entry itself.
+check_allowlist_rejects "invalid allowlist entry: consecutive hyphen" \
+  "a--b" "Invalid channel name 'a--b' in channel_allowlist"
+check_allowlist_rejects "invalid allowlist entry: leading separator" \
+  "-beta" "Invalid channel name '-beta' in channel_allowlist"
+check_allowlist_rejects "invalid allowlist entry: trailing hyphen" \
+  "alpha-" "Invalid channel name 'alpha-' in channel_allowlist"
+check_allowlist_rejects "invalid allowlist entry: trailing underscore" \
+  "alpha_" "Invalid channel name 'alpha_' in channel_allowlist"
+check_allowlist_rejects "invalid allowlist entry: consecutive underscore" \
+  "my__channel" "Invalid channel name 'my__channel' in channel_allowlist"
+check_allowlist_rejects "invalid allowlist entry: mixed separator" \
+  "a_-b" "Invalid channel name 'a_-b' in channel_allowlist"
 
 check_guard_accepts() {
   # Verify that a valid channel value is NOT rejected by the pre-case guards.
@@ -120,6 +175,11 @@ check_guard_accepts "simple lowercase channel"   "staging"
 check_guard_accepts "hyphenated channel"         "my-channel"
 check_guard_accepts "channel with digit suffix"  "canary2"
 check_guard_accepts "channel with underscore"    "my_channel"
+# NB-4: The underscore variants x_official and x_buddy are explicitly documented as NOT
+# blocked (see validate_inputs.sh comment). Without acceptance tests, a developer could
+# silently tighten the guard and remove this deliberate allowance with no test failure.
+check_guard_accepts "x_official is allowed (underscore form, not reserved)" "x_official"
+check_guard_accepts "x_buddy is allowed (underscore form, not reserved)"    "x_buddy"
 
 # Verify that the built-in channels pass the pre-case guards AND satisfy policy when
 # the correct flag profile is provided. This guards against accidental changes to the
@@ -153,6 +213,77 @@ check_builtin_channel_accepted "buddy channel with correct profile" \
   PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
   PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
   ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+
+# BLK-2: Verify built-in channels REJECT an incorrect flag profile.
+# check_builtin_channel_accepted only tests the happy path; a polarity inversion in
+# assert_equals ('!=' accidentally changed to '==') would be invisible to it.
+# Phase 1 catches assertion *removal* but not operator inversion — only a behavioral
+# reject test covers that gap.
+check_builtin_channel_rejects() {
+  local description="$1"
+  shift
+  local output
+  output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+    "$@" bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: built-in channel incorrectly accepted wrong profile — '${description}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+}
+
+# One wrong flag per channel is sufficient to catch an assert_equals polarity inversion.
+check_builtin_channel_rejects "official rejects PUBLISH_PYTHON_PYPI=false" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
+
+check_builtin_channel_rejects "buddy rejects PUBLISH_PYTHON_PYPI=true" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+
+# BLK-3: Verify production registry flags are prohibited for allowlisted channels.
+# These three guards in the *) arm prevent staging/canary channels from accidentally
+# publishing to PyPI/npmjs/RubyGems. Removing any one guard would be invisible to all
+# other Phase 0 and Phase 2 checks without these behavioral tests.
+check_allowlist_registry_rejects() {
+  local description="$1"
+  local flag_override="$2"  # single KEY=VALUE string, e.g. PUBLISH_PYTHON_PYPI=true
+  local expected_fragment="$3"
+  local output
+  output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+    CHANNEL_ALLOWLIST="staging" \
+    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+    "${flag_override}" CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: registry prohibition not enforced — '${description}': expected non-zero exit" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+  if ! echo "${output}" | grep -qF "${expected_fragment}"; then
+    echo "ERROR: registry prohibition missing expected message — '${description}'" >&2
+    echo "  Expected message containing: '${expected_fragment}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+}
+
+check_allowlist_registry_rejects "allowlisted channel must not publish to PyPI" \
+  "PUBLISH_PYTHON_PYPI=true" "restricted to the official channel only"
+check_allowlist_registry_rejects "allowlisted channel must not publish to npmjs" \
+  "PUBLISH_NODE_NPMJS=true" "restricted to the official channel only"
+check_allowlist_registry_rejects "allowlisted channel must not publish to RubyGems" \
+  "PUBLISH_RUBY_RUBYGEMS=true" "restricted to the official channel only"
 
 if [[ "${FAIL}" -ne 0 ]]; then
   echo "Pre-case guard behavioral smoke tests failed. See errors above." >&2

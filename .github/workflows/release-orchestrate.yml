@@ -252,6 +252,7 @@ jobs:
   #   publish_ruby_rubygems     | true     | false
   #   enable_attestation        | true     | false
   #
+  # SYNC: add-new-language — add a new row to the matrix table above for each new flag.
   # Custom channels (allowlisted via channel_allowlist) bypass all assertions.
   # Callers are solely responsible for setting correct flag values for custom channels.
   policy:
@@ -275,6 +276,7 @@ jobs:
           GITHUB_RELEASE_PRERELEASE: ${{ inputs.github_release_prerelease }}
           ENFORCE_PRERELEASE_ONLY: ${{ inputs.enforce_prerelease_only }}
           ENFORCE_NON_CLOBBER: ${{ inputs.enforce_non_clobber }}
+          # SYNC: add-new-language — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} env var here
           PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
           PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
           PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
@@ -558,7 +560,7 @@ jobs:
           # If no sub-variants exist, skip this block; project_variant defaults to "${PROJECT_KIND}"
           # and the publish_mode case below is the first mandatory extension point.
           project_variant="$(printf '%s' "${PROJECT_KIND}" | tr -d '[:space:]')"  # strip all POSIX whitespace first
-          if [[ "${project_variant}" == "node" && "${IS_WXT}" == "true" ]]; then
+          if [[ "${project_variant}" == "node" && "${IS_WXT:-}" == "true" ]]; then
             project_variant="node-wxt"
           elif [[ "${project_variant}" == "node" ]]; then
             project_variant="node-npm"
@@ -603,7 +605,7 @@ jobs:
               # SYNC: add-new-language — add a case arm ABOVE for the new variant.
               # Do NOT delete this *) arm — it MUST remain as a permanent catch-all guard.
               # Only replace the 'exit 1' with correct handler logic when the variant is supported.
-              echo "::error::Unrecognized project_variant '${project_variant}' (PROJECT_KIND='${PROJECT_KIND}', IS_WXT='${IS_WXT}'). Known variants: python, node-npm, node-wxt, ruby. If this is a new language, add a branch above." >&2
+              echo "::error::Unrecognized project_variant '${project_variant}' (PROJECT_KIND='${PROJECT_KIND}', IS_WXT='${IS_WXT:-}'). Known variants: python, node-npm, node-wxt, ruby. If this is a new language, add a branch above." >&2
               exit 1
               ;;
           esac
@@ -637,7 +639,7 @@ jobs:
               echo "  - normalized to: \`${lower_channel}\` (${norm_desc})"
             fi
             echo "- project_kind: \`${PROJECT_KIND}\`"
-            echo "- is_wxt: \`${IS_WXT}\`"
+            echo "- is_wxt: \`${IS_WXT:-}\`"
             echo "#### Derived outputs"
             echo "- channel_profile: \`${channel_profile}\`"
             echo "- target_environment: \`${target_environment}\`"
@@ -659,10 +661,14 @@ jobs:
               # SYNC[paired-blocks]: this case block and the publish_mode case block above
               # must cover the same set of project_variant arms (divergence = misleading summary).
               # TODO(Step 6): merge this case block and the publish_mode case block above into
-              # a single pass. Do NOT merge them in this job — the sequential write to GITHUB_OUTPUT
-              # must complete before the summary block reads publish_mode. Remove both blocks once
-              # Step 6 routes each language to its own spoke job, making hub-level publish_mode
-              # derivation unnecessary.
+              # a single pass. Do NOT merge without first extracting the GITHUB_OUTPUT writes
+              # (in the publish_mode case block) into a dedicated write section — the current
+              # structure writes to GITHUB_OUTPUT mid-case, and a merged block would interleave
+              # output writes with summary state. The summary block reads bash variable
+              # ${publish_mode} directly (not from the GITHUB_OUTPUT file), so the ordering
+              # constraint is about code structure, not I/O ordering.
+              # Remove both blocks once Step 6 routes each language to its own spoke job,
+              # making hub-level publish_mode derivation unnecessary.
               case "${project_variant}" in
                 python)
                   [[ "${PUBLISH_PYTHON_PYPI}"   == "true" ]] && active_flags+=("publish_python_pypi")
