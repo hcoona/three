@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# SYNC: add-new-language — when adding a new language registry target (e.g., NuGet for C#),
+# add the corresponding PUBLISH_<LANG>_<REGISTRY> variable check in this file.
+# This file validates cross-kind contamination and emits GPR permission warnings.
+
 # NOTE: If publish_node_gpr or publish_ruby_gpr is true, the caller workflow
 # MUST grant packages: write to the orchestrate job (workflow_call does not inherit
 # permissions automatically). A missing permission causes a silent API failure at

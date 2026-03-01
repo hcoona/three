@@ -354,7 +354,10 @@ jobs:
       force_update_tag: ${{ inputs.force_update_tag }}
 
   # HUB PREP: Centralize normalized orchestration context for future spoke workflows.
-  # This job is intentionally additive in Step 2 (no behavior change to current jobs yet).
+  # This job is intentionally additive in Step 2 (no changes to existing job execution paths).
+  # NOTE: Any exit 1 in this job (e.g., unrecognized project_variant) will fail the overall
+  # workflow run even though no existing job depends on this one. This is intentional: the
+  # hub context must be derivable on every run so that Step-3 spokes can be wired safely.
   # NOTE: All guard jobs and policy-publish-targets are included in needs: so any spoke
   # routing job added inside THIS workflow file that depends on this job transitively
   # inherits full guard and policy enforcement, within this workflow's DAG only.
@@ -532,7 +535,10 @@ jobs:
           # ensures exact comparisons work correctly: e.g. 'node ' (trailing space) would miss
           # both 'node' branches without this normalization step. The tr call also satisfies the
           # empty-string guard below by ensuring a whitespace-only PROJECT_KIND resolves to "".
-          # SYNC: add-new-language — add elif branch for new project_kind → project_variant mapping if sub-variants apply
+          # SYNC: add-new-language — if the new language has sub-variants (like node has WXT),
+          # add an elif branch here to remap project_variant to the sub-variant slug.
+          # If no sub-variants exist, skip this block; project_variant defaults to "${PROJECT_KIND}"
+          # and the publish_mode case below is the first mandatory extension point.
           project_variant="$(printf '%s' "${PROJECT_KIND}" | tr -d '[:space:]')"  # strip all POSIX whitespace first
           if [[ "${project_variant}" == "node" && "${IS_WXT}" == "true" ]]; then
             project_variant="node-wxt"
@@ -568,7 +574,7 @@ jobs:
               # for official WXT channels (forward-compatibility baseline), but the flag has no
               # routing effect here. See validate_inputs.sh official case for the policy assertion.
               publish_mode="build-only"  # explicit assignment; does not rely on pre-loop initialization
-              echo "::notice title=WXT project::publish_mode=build-only for WXT projects regardless of publish_node_npmjs/gpr flags. WXT produces browser extension archives, not npm packages."
+              echo "publish_mode=build-only for WXT projects (WXT distributes browser extension archives; publish_node_npmjs/gpr flags have no routing effect)"
               ;;
             ruby)
               [[ "${PUBLISH_RUBY_GPR}"      == "true" || "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] && publish_mode="publish"
@@ -577,7 +583,9 @@ jobs:
               # Unknown project_variant: fail rather than silently producing incorrect routing.
               # This can occur when PROJECT_KIND from release-resolve.yml is a new language
               # not yet added to the variant mapping above.
-              # SYNC: add-new-language — add a branch above and remove this error once handled.
+              # SYNC: add-new-language — add a case arm ABOVE for the new variant.
+              # Do NOT delete this *) arm — it MUST remain as a permanent catch-all guard.
+              # Only replace the 'exit 1' with correct handler logic when the variant is supported.
               echo "::error::Unrecognized project_variant '${project_variant}' (PROJECT_KIND='${PROJECT_KIND}', IS_WXT='${IS_WXT}'). Known variants: python, node-npm, node-wxt, ruby. If this is a new language, add a branch above." >&2
               exit 1
               ;;
@@ -631,7 +639,10 @@ jobs:
               # SYNC[paired-blocks]: this case block and the publish_mode case block above
               # must cover the same set of project_variant arms (divergence = misleading summary).
               # TODO(Step 6): merge this case block and the publish_mode case block above into
-              # a single pass once Step 6 static routing jobs eliminate the need for two passes.
+              # a single pass. Do NOT merge them in this job — the sequential write to GITHUB_OUTPUT
+              # must complete before the summary block reads publish_mode. Remove both blocks once
+              # Step 6 routes each language to its own spoke job, making hub-level publish_mode
+              # derivation unnecessary.
               case "${project_variant}" in
                 python)
                   [[ "${PUBLISH_PYTHON_PYPI}"   == "true" ]] && active_flags+=("publish_python_pypi")

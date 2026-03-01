@@ -184,6 +184,8 @@ case "${CHANNEL}" in
       echo "  Required format: start and end with a lowercase letter or digit;" >&2
       echo "  each hyphen or underscore must be immediately preceded and followed by a letter or digit." >&2
       echo "  No consecutive separators, mixed sequences, or leading/trailing separators." >&2
+      echo "  Valid examples: staging, my-channel, canary2" >&2
+      echo "  Common fixes: use lowercase only; remove leading/trailing separators; avoid consecutive hyphens/underscores." >&2
       exit 1
     fi
     # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy
