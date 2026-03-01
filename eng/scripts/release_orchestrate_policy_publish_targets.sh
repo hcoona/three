@@ -10,10 +10,14 @@ if [[ -z "${PROJECT_KIND:-}" ]]; then
   exit 1
 fi
 
-# Contract: IS_WXT must be exactly 'true' or 'false' for node projects.
-# Non-canonical values ('yes', '1', 'TRUE', etc.) pass the -z empty check but fail the
-# == 'true' routing branches below, silently treating WXT projects as node-npm.
-if [[ "${PROJECT_KIND}" == "node" && -n "${IS_WXT:-}" && "${IS_WXT:-}" != "true" && "${IS_WXT:-}" != "false" ]]; then
+# Contract: IS_WXT must be non-empty and exactly 'true' or 'false' for node projects.
+if [[ "${PROJECT_KIND}" == "node" && -z "${IS_WXT:-}" ]]; then
+  echo "IS_WXT is empty for PROJECT_KIND=node. The upstream release-resolve job output contract requires exactly 'true' or 'false'." >&2
+  exit 1
+fi
+# Non-canonical values ('yes', '1', 'TRUE', etc.) are not empty but fail the
+# == 'true' routing branch below, silently treating WXT projects as node-npm.
+if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT:-}" != "true" && "${IS_WXT:-}" != "false" ]]; then
   echo "IS_WXT has non-canonical value '${IS_WXT:-}' for PROJECT_KIND=node. The upstream release-resolve job output contract requires exactly 'true' or 'false'." >&2
   exit 1
 fi

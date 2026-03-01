@@ -661,7 +661,13 @@ check_publish_targets_rejects "empty PROJECT_KIND is rejected" \
   "PROJECT_KIND is empty" \
   PROJECT_KIND=""
 
-# PT-2: IS_WXT non-canonical value contract
+# PT-2: IS_WXT empty and non-canonical value contract
+# PT-2a: IS_WXT unset/empty must be rejected (Bug-1 fix: guard was previously skipped for
+# empty IS_WXT via -n, silently routing WXT projects as node-npm).
+check_publish_targets_rejects "IS_WXT empty is rejected for node project" \
+  "IS_WXT is empty" \
+  PROJECT_KIND=node PUBLISH_NODE_GPR=true
+# PT-2b: Non-canonical non-empty values must also be rejected.
 check_publish_targets_rejects "IS_WXT='yes' is rejected for node project" \
   "non-canonical value" \
   PROJECT_KIND=node IS_WXT=yes PUBLISH_NODE_GPR=true
@@ -682,14 +688,36 @@ check_publish_targets_accepts "node-npm project with npmjs publish target" \
 check_publish_targets_accepts "WXT project on official channel accepts node flags" \
   PROJECT_KIND=node IS_WXT=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true
 
-# PT-5: python acceptance — also validates GITHUB_STEP_SUMMARY:-/dev/null defensive fix:
-# when GITHUB_STEP_SUMMARY is unset the script must not abort via set -u.
-check_publish_targets_accepts "python project accepts (GITHUB_STEP_SUMMARY via :- default)" \
+# PT-5: python acceptance (standard path — GITHUB_STEP_SUMMARY=/dev/null via test helper).
+check_publish_targets_accepts "python project accepts (GITHUB_STEP_SUMMARY=/dev/null)" \
   PROJECT_KIND=python
+
+# PT-5b: validates GITHUB_STEP_SUMMARY:-/dev/null defensive fix: the :- default must be
+# exercised when GITHUB_STEP_SUMMARY is unset, so the script must not abort via set -u.
+if pt5b_out=$(env -u GITHUB_STEP_SUMMARY \
+    PROJECT=test-project CHANNEL=official \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    PROJECT_KIND=python \
+    bash "${PUBLISH_TARGETS_SCRIPT}" 2>&1); then
+  :
+else
+  echo "ERROR: publish_targets.sh incorrectly rejected — 'python project accepts (GITHUB_STEP_SUMMARY unset)'" >&2
+  echo "  Got: ${pt5b_out}" >&2
+  FAIL_PHASE3=1
+fi
 
 # PT-6: ruby acceptance
 check_publish_targets_accepts "ruby project with RubyGems publish target" \
   PROJECT_KIND=ruby PUBLISH_RUBY_RUBYGEMS=true
+
+# PT-7: cross-kind contamination rejected for custom channel (assert_disabled behavioral test).
+# All Phase 3 acceptance tests above use CHANNEL=official where assert_disabled is a no-op;
+# this test uses a custom allowlisted channel to exercise the actual contamination check path.
+check_publish_targets_rejects "cross-kind contamination rejected for custom channel" \
+  "Cross-kind contamination" \
+  PROJECT_KIND=python PUBLISH_NODE_GPR=true CHANNEL=staging \
+  CHANNEL_ALLOWLIST=staging
 
 if [[ "${FAIL_PHASE3}" -ne 0 ]]; then
   echo "publish_targets.sh behavioral tests failed. See errors above." >&2
