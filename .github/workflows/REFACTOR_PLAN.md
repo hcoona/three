@@ -81,7 +81,7 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 
 - Ensure the current `release-orchestrate.yml` is acting as a stable, testable baseline before structural changes begin.
 
-### Step 2: Extract central policy jobs [COMPLETED]
+### Step 2: Extract central policy jobs [COMPLETED — breaking validator changes]
 
 - Prepare the Hub structure.
 - Define dynamic environment outputs (Official vs Buddy) directly in the Context/Policy resolution jobs.

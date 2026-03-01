@@ -80,6 +80,9 @@ on:
           Any new caller workflow file that supplies a non-empty channel_allowlist
           is itself a policy bypass vector and must be subject to the same
           branch-protection review as official.yml.
+          RESERVED NAMES: do not include 'x-official' or 'x-buddy' in the
+          allowlist — these values are reserved sanitization escape slugs and
+          will be rejected at runtime by the policy job.
         required: false
         default: ""
         type: string
@@ -107,7 +110,7 @@ on:
         default: false
         type: boolean
 
-      # SYNC: add-new-language — add publish_<lang>_<registry> input below
+      # SYNC[add-new-language] — add publish_<lang>_<registry> input below
       publish_python_pypi:
         description: "If true, publish Python artifacts to PyPI."
         required: false
@@ -148,7 +151,7 @@ env:
   NODE_VERSION: '24'
   PNPM_VERSION: '10'
   RUBY_VERSION: '3.3'
-  # SYNC: keep in step with EXPECTED_*_VERSION in lint-version-consistency job env below.
+  # SYNC[tool-versions]: keep in step with EXPECTED_*_VERSION in lint-version-consistency job env below.
   # Updating only one side will either cause the lint gate to fail (if env is updated but
   # EXPECTED is not) or silently pass with stale runtime env (if EXPECTED is updated but env is not).
 
@@ -198,8 +201,8 @@ jobs:
       EXPECTED_NODE_VERSION: '24'
       EXPECTED_PNPM_VERSION: '10'
       EXPECTED_RUBY_VERSION: '3.3'
-      # SYNC: add-new-language — add EXPECTED_<LANG>_VERSION: '<version>' here for each new language tool
-      # SYNC: keep in step with the workflow-level env: block above.
+      # SYNC[add-new-language] — add EXPECTED_<LANG>_VERSION: '<version>' here for each new language tool
+      # SYNC[tool-versions]: keep in step with the workflow-level env: block above.
       # These EXPECTED_* values are what the lint check validates hardcoded with: values against.
     steps:
       - uses: actions/checkout@v6
@@ -252,7 +255,7 @@ jobs:
   #   publish_ruby_rubygems     | true     | false
   #   enable_attestation        | true     | false
   #
-  # SYNC: add-new-language — add a new row to the matrix table above for each new flag.
+  # SYNC[add-new-language] — add a new row to the matrix table above for each new flag.
   # Custom channels (allowlisted via channel_allowlist) bypass all assertions.
   # Callers are solely responsible for setting correct flag values for custom channels.
   policy:
@@ -276,7 +279,7 @@ jobs:
           GITHUB_RELEASE_PRERELEASE: ${{ inputs.github_release_prerelease }}
           ENFORCE_PRERELEASE_ONLY: ${{ inputs.enforce_prerelease_only }}
           ENFORCE_NON_CLOBBER: ${{ inputs.enforce_non_clobber }}
-          # SYNC: add-new-language — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} env var here
+          # SYNC[add-new-language] — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} env var here
           PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
           PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
           PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
@@ -322,8 +325,8 @@ jobs:
           PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
           CHANNEL: ${{ inputs.channel }}
-          # SYNC: add-new-language — (1) add publish_<lang>_<registry> env var(s) to the env: block above
-          # SYNC: add-new-language — (2) add per-kind validation branch (if/elif) to the run: script below
+          # SYNC[add-new-language] — (1) add publish_<lang>_<registry> env var(s) to the env: block above
+          # SYNC[add-new-language] — (2) add per-kind validation branch (if/elif) to the run: script below
           PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
           PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
           PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
@@ -389,7 +392,7 @@ jobs:
     # id-token: write is intentionally absent — this job performs no OIDC operations.
     # This job must never acquire OIDC tokens; only hardcoded-environment spoke publish
     # jobs should hold id-token: write.
-    # SYNC: add-new-language — if a new language adds a hub-level output, add it here.
+    # SYNC[add-new-language] — if a new language adds a hub-level output, add it here.
     # Published outputs (forwarding contract — stable for spoke consumers):
     #   channel_profile:    'official' | 'buddy' | 'custom'
     #   target_environment: 'release-official' | 'release-buddy' | 'release-<sanitized>'
@@ -397,7 +400,7 @@ jobs:
     # Hub-internal derived value (NOT in outputs:, do NOT forward to spokes):
     #   project_variant:    known values: 'python' | 'ruby' | 'node-npm' | 'node-wxt';
     #                       unrecognized PROJECT_KIND values cause a hard failure (exit 1).
-    #                       SYNC: add-new-language — add a branch in the variant mapping below.
+    #                       SYNC[add-new-language] — add a branch in the variant mapping below.
     # SECURITY: target_environment is routing/approval-gate metadata only.
     # Spoke OIDC publish jobs MUST use hardcoded environment names ('pypi', 'npmjs',
     # 'rubygems', etc.), NOT this output. The 'environment:' field determines the
@@ -442,7 +445,7 @@ jobs:
           CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}  # display only in step summary — allowlist enforcement is solely in the policy job
           PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
-          # SYNC: add-new-language — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} here
+          # SYNC[add-new-language] — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} here
           PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
           PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
           PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
@@ -515,9 +518,10 @@ jobs:
               if [[ -z "${sanitized}" ]]; then
                 sanitized="custom"
               fi
-              # Defensive: sanitized is produced by stripping whitespace then applying sed;
-              # in normal production runs it cannot contain a newline (policy pre-gate blocks
-              # whitespace CHANNEL; set -u prevents empty). Guard here for out-of-gate testing.
+              # Defensive: structurally unreachable — channel_trimmed already strips all
+              # [[:space:]] including \n before sed runs, and the sed passes cannot introduce
+              # newlines. Retained as an explicit guard against future refactoring that moves
+              # whitespace stripping after the sed pipeline.
               if [[ "${sanitized}" == *$'\n'* ]]; then
                 echo "::error::BUG: sanitized channel contains a newline — output would corrupt GITHUB_OUTPUT." >&2
                 exit 1
@@ -555,7 +559,7 @@ jobs:
           # ensures exact comparisons work correctly: e.g. 'node ' (trailing space) would miss
           # both 'node' branches without this normalization step. The tr call also satisfies the
           # empty-string guard below by ensuring a whitespace-only PROJECT_KIND resolves to "".
-          # SYNC: add-new-language — if the new language has sub-variants (like node has WXT),
+          # SYNC[add-new-language] — if the new language has sub-variants (like node has WXT),
           # add an elif branch here to remap project_variant to the sub-variant slug.
           # If no sub-variants exist, skip this block; project_variant defaults to "${PROJECT_KIND}"
           # and the publish_mode case below is the first mandatory extension point.
@@ -566,6 +570,13 @@ jobs:
           # the npm publish path, producing silent cross-kind contamination in CI.
           if [[ "${project_variant}" == "node" && -z "${IS_WXT:-}" ]]; then
             echo "::error::IS_WXT is empty for project_kind=node. The upstream release-resolve job output contract requires IS_WXT='true' or 'false' for all node projects. Set IS_WXT in the resolve step." >&2
+            exit 1
+          fi
+          # Contract: IS_WXT must be exactly 'true' or 'false' for node projects.
+          # Non-canonical values ('yes', '1', 'TRUE', etc.) pass the empty check above but
+          # fail the == 'true' branch below, silently routing WXT projects as node-npm.
+          if [[ "${project_variant}" == "node" && "${IS_WXT:-}" != "true" && "${IS_WXT:-}" != "false" ]]; then
+            echo "::error::IS_WXT has non-canonical value '${IS_WXT:-}' for project_kind=node. The upstream release-resolve job output contract requires exactly 'true' or 'false'." >&2
             exit 1
           fi
           if [[ "${project_variant}" == "node" && "${IS_WXT:-}" == "true" ]]; then
@@ -583,7 +594,7 @@ jobs:
           # Determine publish_mode scoped to the resolved project variant.
           # This avoids cross-language flag contamination: e.g. official-channel WXT builds have
           # publish_node_gpr=true by policy, but WXT publishes no npm artifacts.
-          # SYNC: add-new-language — add a case branch for the new project_kind with its registry flag(s)
+          # SYNC[add-new-language] — add a case branch for the new project_kind with its registry flag(s)
           # SYNC[paired-blocks]: this case block and the active_flags case block in the
           # GITHUB_STEP_SUMMARY section below must cover the same set of project_variant arms.
           # Divergence produces misleading publish-flag diagnostics in the step summary
@@ -610,7 +621,7 @@ jobs:
               # Unknown project_variant: fail rather than silently producing incorrect routing.
               # This can occur when PROJECT_KIND from release-resolve.yml is a new language
               # not yet added to the variant mapping above.
-              # SYNC: add-new-language — add a case arm ABOVE for the new variant.
+              # SYNC[add-new-language] — add a case arm ABOVE for the new variant.
               # Do NOT delete this *) arm — it MUST remain as a permanent catch-all guard.
               # Only replace the 'exit 1' with correct handler logic when the variant is supported.
               echo "::error::Unrecognized project_variant '${project_variant}' (PROJECT_KIND='${PROJECT_KIND}', IS_WXT='${IS_WXT:-}'). Known variants: python, node-npm, node-wxt, ruby. If this is a new language, add a branch above." >&2
@@ -663,7 +674,7 @@ jobs:
             fi
             if [[ "${publish_mode}" == "publish" ]]; then
               active_flags=()
-              # SYNC: add-new-language — add a case branch for the new project_variant.
+              # SYNC[add-new-language] — add a case branch for the new project_variant.
               # Collect only flags for the resolved project_variant to avoid misleading
               # diagnostics when cross-language flags are also set by the channel policy.
               # SYNC[paired-blocks]: this case block and the publish_mode case block above
@@ -704,7 +715,7 @@ jobs:
                   # never reaches this summary section with an unknown variant. It is kept as
                   # a maintenance reminder: if a new variant is added to the publish_mode block
                   # but not here, diagnostics will flag it instead of silently omitting flags.
-                  # SYNC: add-new-language — update this case arm when a new project_variant
+                  # SYNC[add-new-language] — update this case arm when a new project_variant
                   # is added so publish-flag diagnostics remain accurate.
                   active_flags+=("(unhandled variant '${project_variant}': update summary block)")
                   ;;
@@ -1870,7 +1881,7 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
-  # SYNC: add-new-language — define new language pipeline jobs (build, pack, publish,
+  # SYNC[add-new-language] — define new language pipeline jobs (build, pack, publish,
   #   attest-<lang>-enabled, attest-<lang> gate, release-<lang>-with-<registry>,
   #   release-<lang>-no-<registry>) above release-completed. Follow the existing
   #   Python/Node/Ruby section structure. If the new language has an optional external
@@ -1929,7 +1940,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: always()
-    # SYNC: add-new-language — add new release job name(s) and attest-<lang> gate to needs below.
+    # SYNC[add-new-language] — add new release job name(s) and attest-<lang> gate to needs below.
     # release-* jobs: [CI-ENFORCED] by "Verify release-completed covers all release-* jobs" lint step.
     # attest-<lang> gates: MANUAL — add them here; they are not auto-detected by the lint step.
     needs:

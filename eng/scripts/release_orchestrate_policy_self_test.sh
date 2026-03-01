@@ -262,7 +262,7 @@ check_builtin_channel_rejects() {
   fi
 }
 
-# SYNC: add-new-language — add a check_builtin_channel_rejects call below for each new
+# SYNC[add-new-language] — add a check_builtin_channel_rejects call below for each new
 # publish_<lang>_<registry> flag, flipping it to its wrong value relative to the expected
 # official/buddy profile. Without this, removing or inverting the new assert_equals in
 # one of the channel arms would produce no self-test failure.
@@ -494,7 +494,7 @@ echo "Pre-case guard behavioral smoke tests passed."
 # appears at least twice in the policy job (once for official, once in buddy).
 # A count < 2 means the flag was added to one branch but not the other,
 # which causes a silent policy bypass for the missing channel.
-# SYNC: add-new-language — add the new publish_<lang>_<registry> flag name(s) here.
+# SYNC[add-new-language] — add the new publish_<lang>_<registry> flag name(s) here.
 # Omitting this step means future regressions (removing assert_equals for the new flag
 # from one branch) will not be caught by the self-test.
 # NOTE: force_update_tag is intentionally excluded from this list.
@@ -502,7 +502,7 @@ echo "Pre-case guard behavioral smoke tests passed."
 # by the policy job for either channel. Add channel profile flags only.
 # NOTE: This list is manually maintained. Adding a new publish_<lang>_<registry> input
 # requires updating BOTH this list AND the assert_equals calls in the case branches
-# (see SYNC: add-new-language B2 above). The CI check only enforces flags listed here.
+# (see SYNC[add-new-language] B2 above). The CI check only enforces flags listed here.
 required_flags=(
   enforce_prerelease_only
   enforce_non_clobber
@@ -536,7 +536,7 @@ done
 if [[ "${FAIL}" -ne 0 ]]; then
   echo "Policy self-test failed. When adding a new language, you MUST add assert_equals calls" >&2
   echo "for each new flag in BOTH the 'official' AND 'buddy' case branches of the policy job." >&2
-  echo "See SYNC: add-new-language (B2) comment for details." >&2
+  echo "See SYNC[add-new-language] (B2) comment for details." >&2
   exit 1
 fi
 echo "Policy flag coverage self-test passed."
@@ -604,3 +604,95 @@ if [[ "${FAIL_PHASE2}" -ne 0 ]]; then
   exit 1
 fi
 echo "Step-2 guard presence self-test passed."
+
+# ==== Phase 3: publish_targets.sh behavioral tests ====
+# Covers the three new changes introduced in Step 2 for
+# release_orchestrate_policy_publish_targets.sh:
+#   PT-1: PROJECT_KIND empty guard (new behavior — exit 1 with clear message)
+#   PT-2: IS_WXT canonical value contract (new behavior — reject 'yes', '1', etc.)
+#   PT-3+: Acceptance paths (node-npm, node-wxt, python, ruby) confirming the
+#          defensive IS_WXT:- and GITHUB_STEP_SUMMARY:-/dev/null fixes work under
+#          the test runner's environment (where both vars are unset).
+PUBLISH_TARGETS_SCRIPT="eng/scripts/release_orchestrate_policy_publish_targets.sh"
+FAIL_PHASE3=0
+
+check_publish_targets_rejects() {
+  local description="$1"
+  local expected_fragment="$2"
+  shift 2
+  local output
+  output=$(env PROJECT=test-project CHANNEL=official \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    GITHUB_STEP_SUMMARY=/dev/null \
+    "$@" bash "${PUBLISH_TARGETS_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: publish_targets.sh incorrectly accepted — '${description}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL_PHASE3=1
+    return
+  fi
+  if ! echo "${output}" | grep -qF "${expected_fragment}"; then
+    echo "ERROR: publish_targets.sh rejected for wrong reason — '${description}'" >&2
+    echo "  Expected to find: '${expected_fragment}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL_PHASE3=1
+  fi
+}
+
+check_publish_targets_accepts() {
+  local description="$1"
+  shift
+  local output
+  output=$(env PROJECT=test-project CHANNEL=official \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    GITHUB_STEP_SUMMARY=/dev/null \
+    "$@" bash "${PUBLISH_TARGETS_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if ! echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: publish_targets.sh incorrectly rejected — '${description}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL_PHASE3=1
+  fi
+}
+
+# PT-1: PROJECT_KIND empty guard
+check_publish_targets_rejects "empty PROJECT_KIND is rejected" \
+  "PROJECT_KIND is empty" \
+  PROJECT_KIND=""
+
+# PT-2: IS_WXT non-canonical value contract
+check_publish_targets_rejects "IS_WXT='yes' is rejected for node project" \
+  "non-canonical value" \
+  PROJECT_KIND=node IS_WXT=yes PUBLISH_NODE_GPR=true
+check_publish_targets_rejects "IS_WXT='1' is rejected for node project" \
+  "non-canonical value" \
+  PROJECT_KIND=node IS_WXT=1 PUBLISH_NODE_GPR=true
+check_publish_targets_rejects "IS_WXT='TRUE' is rejected for node project" \
+  "non-canonical value" \
+  PROJECT_KIND=node IS_WXT=TRUE PUBLISH_NODE_GPR=true
+
+# PT-3: node-npm acceptance (IS_WXT=false, at least one Node publish target)
+check_publish_targets_accepts "node-npm project with GPR publish target" \
+  PROJECT_KIND=node IS_WXT=false PUBLISH_NODE_GPR=true
+check_publish_targets_accepts "node-npm project with npmjs publish target" \
+  PROJECT_KIND=node IS_WXT=false PUBLISH_NODE_NPMJS=true
+
+# PT-4: node-wxt acceptance (IS_WXT=true; official channel permits node flags by policy)
+check_publish_targets_accepts "WXT project on official channel accepts node flags" \
+  PROJECT_KIND=node IS_WXT=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true
+
+# PT-5: python acceptance — also validates GITHUB_STEP_SUMMARY:-/dev/null defensive fix:
+# when GITHUB_STEP_SUMMARY is unset the script must not abort via set -u.
+check_publish_targets_accepts "python project accepts (GITHUB_STEP_SUMMARY via :- default)" \
+  PROJECT_KIND=python
+
+# PT-6: ruby acceptance
+check_publish_targets_accepts "ruby project with RubyGems publish target" \
+  PROJECT_KIND=ruby PUBLISH_RUBY_RUBYGEMS=true
+
+if [[ "${FAIL_PHASE3}" -ne 0 ]]; then
+  echo "publish_targets.sh behavioral tests failed. See errors above." >&2
+  exit 1
+fi
+echo "publish_targets.sh behavioral tests passed."
