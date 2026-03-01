@@ -59,6 +59,41 @@ check_guard_rejects "trailing-underscore channel (invalid format)"    "alpha_"  
 check_guard_rejects "consecutive-underscore channel (invalid format)" "my__channel" "invalid format and cannot be used"
 check_guard_rejects "mixed-separator channel (invalid format)"        "a_-b"       "invalid format and cannot be used"
 
+# Behavioral smoke tests for is_channel_allowlisted reserved-entry guards.
+# These use a valid CHANNEL (staging) with a CHANNEL_ALLOWLIST entry that should be
+# rejected, verifying that the allowlist loop guard fires and exits non-zero.
+# Phase 2 has structural checks for these guards, but a polarity inversion
+# (e.g., == changed to !=) would pass Phase 2 silently.
+check_allowlist_rejects() {
+  local description="$1"
+  local allowlist_value="$2"
+  local expected_fragment="$3"
+  local output
+  output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+    CHANNEL_ALLOWLIST="${allowlist_value}" \
+    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+    CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1 || true)
+  if ! echo "${output}" | grep -qF "${expected_fragment}"; then
+    echo "ERROR: allowlist entry guard not working — '${description}' (allowlist='${allowlist_value}')" >&2
+    echo "  Expected message containing: '${expected_fragment}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+}
+
+check_allowlist_rejects "official in allowlist (built-in channel)" \
+  "official" "cannot appear in channel_allowlist"
+check_allowlist_rejects "buddy in allowlist (built-in channel)" \
+  "buddy" "cannot appear in channel_allowlist"
+check_allowlist_rejects "x-official in allowlist (reserved slug)" \
+  "x-official" "reserved"
+check_allowlist_rejects "x-buddy in allowlist (reserved slug)" \
+  "x-buddy" "reserved"
+
 check_guard_accepts() {
   # Verify that a valid channel value is NOT rejected by the pre-case guards.
   # Uses a minimal allowlist that allowlists the test channel so the script can
