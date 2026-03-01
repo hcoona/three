@@ -68,6 +68,7 @@ check_guard_rejects "mixed-separator channel (invalid format)"        "a_-b"    
 check_guard_rejects "leading-space channel"  " staging"    "contains whitespace"
 check_guard_rejects "trailing-space channel" "staging "    "contains whitespace"
 check_guard_rejects "tab channel"            $'stag\ting'  "contains whitespace"
+check_guard_rejects "newline channel"        $'stag\ning'  "contains whitespace"
 
 # NB-5: Uppercase + reserved slug — triggers a distinct inner guard with its own message.
 # 'Official' (plain uppercase) is tested above; 'X-OFFICIAL' hits an inner if-branch
@@ -75,6 +76,13 @@ check_guard_rejects "tab channel"            $'stag\ting'  "contains whitespace"
 # that inner branch is dead code from the test suite's perspective.
 check_guard_rejects "uppercase reserved slug X-OFFICIAL"      "X-OFFICIAL" "its lowercase form"
 check_guard_rejects "mixed-case reserved slug x-Official"     "x-Official" "its lowercase form"
+
+# NB-7: Valid-format channel with empty allowlist → "Unknown channel" path.
+# This verifies the *) arm's allowlist lookup fires correctly when CHANNEL is a valid-format
+# channel that simply isn't listed. Without this test, removing the allowlist lookup
+# entirely would be invisible to all format-check guard tests above.
+check_guard_rejects "valid-format channel not in allowlist (unknown-channel path)" \
+  "unlisted" "Unknown channel"
 
 # Behavioral smoke tests for is_channel_allowlisted reserved-entry guards.
 # These use a valid CHANNEL (staging) with a CHANNEL_ALLOWLIST entry that should be
@@ -115,10 +123,13 @@ check_allowlist_rejects "official in allowlist (built-in channel)" \
   "official" "cannot appear in channel_allowlist"
 check_allowlist_rejects "buddy in allowlist (built-in channel)" \
   "buddy" "cannot appear in channel_allowlist"
+# NB-8: Use a unique substring from the actual reserved-slug error message rather than
+# 'x-official'/'x-buddy' themselves -- those strings appear in the input being tested
+# and a polarity inversion that printed them regardless would produce a false pass.
 check_allowlist_rejects "x-official in allowlist (reserved slug)" \
-  "x-official" "x-official"
+  "x-official" "reserved (hyphen form only"
 check_allowlist_rejects "x-buddy in allowlist (reserved slug)" \
-  "x-buddy" "x-buddy"
+  "x-buddy" "reserved (hyphen form only"
 
 # BLK-4: Behavioral tests for is_channel_allowlisted FORMAT validation.
 # These exercise the regex guard INSIDE is_channel_allowlisted — a completely separate
@@ -168,6 +179,26 @@ check_guard_accepts "channel with underscore"    "my_channel"
 # silently tighten the guard and remove this deliberate allowance with no test failure.
 check_guard_accepts "x_official is allowed (underscore form, not reserved)" "x_official"
 check_guard_accepts "x_buddy is allowed (underscore form, not reserved)"    "x_buddy"
+
+# BLK-5: Multi-entry allowlist — verify is_channel_allowlisted iterates ALL entries and
+# correctly accepts a channel that appears as the non-first (second) entry.
+# Single-entry tests above confirm the basic happy path; this guards against an
+# off-by-one regression where only the first allowlist entry is ever compared.
+{
+  _me_output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+    CHANNEL_ALLOWLIST="other,staging" \
+    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+    CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if ! echo "${_me_output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: multi-entry allowlist: 'staging' should be accepted in 'other,staging' allowlist" >&2
+    echo "  Got: ${_me_output}" >&2
+    FAIL=1
+  fi
+}
 
 # Verify that the built-in channels pass the pre-case guards AND satisfy policy when
 # the correct flag profile is provided. This guards against accidental changes to the
@@ -231,6 +262,10 @@ check_builtin_channel_rejects() {
   fi
 }
 
+# SYNC: add-new-language — add a check_builtin_channel_rejects call below for each new
+# publish_<lang>_<registry> flag, flipping it to its wrong value relative to the expected
+# official/buddy profile. Without this, removing or inverting the new assert_equals in
+# one of the channel arms would produce no self-test failure.
 # Each call flips exactly one flag relative to the correct profile to verify that every
 # assert_equals is present and uses the correct operator. Covering all 9 flags (7 of which
 # are asymmetric, 2 symmetric: PUBLISH_NODE_GPR and PUBLISH_RUBY_GPR) prevents a
@@ -387,6 +422,66 @@ check_allowlist_registry_rejects "allowlisted channel must not publish to npmjs"
   "restricted to the official channel only" "PUBLISH_NODE_NPMJS=true"
 check_allowlist_registry_rejects "allowlisted channel must not publish to RubyGems" \
   "restricted to the official channel only" "PUBLISH_RUBY_RUBYGEMS=true"
+
+# BLK-6: SOURCE=tag input validation behavioral tests.
+# These verify that the source=tag path's REF_NAME/REF guards fire correctly. All other
+# Phase 0 tests use SOURCE=manual — these add coverage for the source=tag code path that
+# is otherwise completely untested. A guard removal in the tag path would be invisible
+# to every other Phase 0 test.
+check_source_tag_rejects() {
+  local description="$1"
+  local expected_fragment="$2"
+  shift 2
+  local output
+  # Base env: fully valid SOURCE=tag with official channel profile.
+  # Caller overrides specific vars via "$@" to trigger the guard under test.
+  # REF_NAME and REF are included in the base so a single override to "" triggers
+  # exactly the missing-field guard without unbound-variable errors.
+  output=$(env SOURCE=tag REF_NAME="v1.0.0" REF="refs/tags/v1.0.0" \
+    CHANNEL=official CHANNEL_ALLOWLIST="" \
+    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+    PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+    PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+    ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=refs/tags/v1.0.0 \
+    "$@" bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: source=tag guard did not reject — '${description}': expected non-zero exit" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+  if ! echo "${output}" | grep -qF "${expected_fragment}"; then
+    echo "ERROR: source=tag guard missing expected message — '${description}'" >&2
+    echo "  Expected message containing: '${expected_fragment}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+}
+
+check_source_tag_accepts() {
+  local description="$1"
+  shift
+  local output
+  output=$(env SOURCE=tag REF_NAME="v1.0.0" REF="refs/tags/v1.0.0" \
+    CHANNEL=official CHANNEL_ALLOWLIST="" \
+    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+    PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+    PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+    ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=refs/tags/v1.0.0 \
+    "$@" bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if ! echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: source=tag incorrectly rejected — '${description}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+}
+
+check_source_tag_rejects "source=tag missing REF_NAME" \
+  "source=tag requires ref_name to be set." REF_NAME=""
+check_source_tag_rejects "source=tag missing REF" \
+  "source=tag requires ref to be set." REF=""
+check_source_tag_accepts "source=tag with all required fields (official channel)"
 
 if [[ "${FAIL}" -ne 0 ]]; then
   echo "Pre-case guard behavioral smoke tests failed. See errors above." >&2

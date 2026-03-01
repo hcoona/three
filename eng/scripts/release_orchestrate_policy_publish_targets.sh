@@ -37,7 +37,7 @@ assert_disabled() {
   fi
 }
 
-if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" != "true" ]]; then
+if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT:-}" != "true" ]]; then
   if [[ "${PUBLISH_NODE_GPR}" != "true" && "${PUBLISH_NODE_NPMJS}" != "true" ]]; then
     echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs). Got: publish_node_gpr=${PUBLISH_NODE_GPR}, publish_node_npmjs=${PUBLISH_NODE_NPMJS}." >&2
     exit 1
@@ -75,7 +75,7 @@ fi
 
 # WXT projects are distributed as browser extension archives, not npm packages;
 # all publish_node_* flags are intentionally ignored for WXT projects.
-if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT}" == "true" ]]; then
+if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT:-}" == "true" ]]; then
   # assert_disabled is a no-op for official/buddy channels (policy job already
   # validated all flags). For custom allowlisted channels it enforces that no
   # publish_node_* flags are erroneously set to true.
