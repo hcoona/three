@@ -116,9 +116,9 @@ check_allowlist_rejects "official in allowlist (built-in channel)" \
 check_allowlist_rejects "buddy in allowlist (built-in channel)" \
   "buddy" "cannot appear in channel_allowlist"
 check_allowlist_rejects "x-official in allowlist (reserved slug)" \
-  "x-official" "reserved"
+  "x-official" "x-official"
 check_allowlist_rejects "x-buddy in allowlist (reserved slug)" \
-  "x-buddy" "reserved"
+  "x-buddy" "x-buddy"
 
 # BLK-4: Behavioral tests for is_channel_allowlisted FORMAT validation.
 # These exercise the regex guard INSIDE is_channel_allowlisted — a completely separate
@@ -216,6 +216,15 @@ check_builtin_channel_rejects() {
     "$@" bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
   if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: built-in channel incorrectly accepted wrong profile — '${description}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+  # Verify the rejection came from an assert_equals mismatch, not an unrelated pre-case
+  # failure. Without this check, a regression that breaks env-var handling before the
+  # case block would make all 18 tests appear to pass (they exit non-zero) while never
+  # actually exercising any assertion.
+  if ! echo "${output}" | grep -qF "policy mismatch for"; then
+    echo "ERROR: built-in channel rejected but not via assert_equals — '${description}'" >&2
     echo "  Got: ${output}" >&2
     FAIL=1
   fi
