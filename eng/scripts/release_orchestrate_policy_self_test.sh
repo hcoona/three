@@ -222,8 +222,9 @@ check_builtin_channel_rejects() {
 }
 
 # Each call flips exactly one flag relative to the correct profile to verify that every
-# assert_equals is present and uses the correct operator. Covering all 9 flags (6 of which
-# are asymmetric) prevents a polarity-inversion regression from going undetected.
+# assert_equals is present and uses the correct operator. Covering all 9 flags (7 of which
+# are asymmetric, 2 symmetric: PUBLISH_NODE_GPR and PUBLISH_RUBY_GPR) prevents a
+# polarity-inversion regression from going undetected.
 check_builtin_channel_rejects "official rejects PUBLISH_PYTHON_PYPI=false" \
   CHANNEL=official \
   ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
@@ -236,11 +237,29 @@ check_builtin_channel_rejects "official rejects ENFORCE_PRERELEASE_ONLY=true" \
   PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
   PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
   ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
+check_builtin_channel_rejects "official rejects ENFORCE_NON_CLOBBER=true" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
+check_builtin_channel_rejects "official rejects PUBLISH_NODE_GPR=false" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
 check_builtin_channel_rejects "official rejects PUBLISH_NODE_NPMJS=false" \
   CHANNEL=official \
   ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
   PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
   PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
+check_builtin_channel_rejects "official rejects PUBLISH_RUBY_GPR=false" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=true \
   ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
 check_builtin_channel_rejects "official rejects ENABLE_ATTESTATION=false" \
   CHANNEL=official \
@@ -267,10 +286,22 @@ check_builtin_channel_rejects "buddy rejects PUBLISH_PYTHON_PYPI=true" \
   PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
   PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
   ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+check_builtin_channel_rejects "buddy rejects ENFORCE_PRERELEASE_ONLY=false" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
 check_builtin_channel_rejects "buddy rejects ENFORCE_NON_CLOBBER=false" \
   CHANNEL=buddy \
   ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=false \
   PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+check_builtin_channel_rejects "buddy rejects PUBLISH_NODE_GPR=false" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
   PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
   ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
 check_builtin_channel_rejects "buddy rejects PUBLISH_RUBY_RUBYGEMS=true" \
@@ -278,6 +309,12 @@ check_builtin_channel_rejects "buddy rejects PUBLISH_RUBY_RUBYGEMS=true" \
   ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=true \
   PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
   PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+check_builtin_channel_rejects "buddy rejects PUBLISH_RUBY_GPR=false" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
   ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
 check_builtin_channel_rejects "buddy rejects ENABLE_ATTESTATION=true" \
   CHANNEL=buddy \
@@ -306,6 +343,9 @@ check_allowlist_registry_rejects() {
   # Usage: check_allowlist_registry_rejects <description> <expected_fragment> [KEY=VALUE ...]
   # Each KEY=VALUE is passed as a separate env override; 'env' treats each as one assignment.
   # Do NOT combine multiple overrides into one quoted string (env cannot split them).
+  # Override flags are placed AFTER the defaults in the env command. GNU env resolves
+  # duplicate variables by using the last value — this is the GNU env left-to-right
+  # last-writer-wins behaviour (not guaranteed by POSIX, but reliable on Linux CI).
   local description="$1"
   local expected_fragment="$2"
   shift 2
