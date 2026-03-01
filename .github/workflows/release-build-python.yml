@@ -83,7 +83,7 @@ jobs:
           uv run --script eng/scripts/verify_python_artifact_version.py "${EXPECTED}" "${GITHUB_WORKSPACE}/out"
 
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ github.workspace }}/out/*
