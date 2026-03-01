@@ -7,7 +7,7 @@ set -Eeuo pipefail
 # Both sites must use this single constant to stay in sync. If you change the regex,
 # update it here only; both sites will pick up the new value automatically.
 # Format: start/end with lowercase letter or digit; each hyphen/underscore must be
-# immediately followed by a lowercase letter or digit (no leading/trailing separators,
+# immediately preceded and followed by a lowercase letter or digit (no leading/trailing separators,
 # no consecutive separator pairs: --, __, -_, _-).
 readonly CHANNEL_NAME_REGEX='^[a-z0-9]([a-z0-9]|[-_][a-z0-9])*$'
 
@@ -25,7 +25,12 @@ assert_equals() {
 is_channel_allowlisted() {
   local candidate="$1"
   local entry
-  IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST:-}"
+  # NIT: When CHANNEL_ALLOWLIST is empty, 'read -ra' still produces a one-element array
+  # containing an empty string. The early-return below avoids entering the loop in that
+  # case, making the empty-allowlist behaviour explicit rather than relying on the
+  # '[[ -z "${entry}" ]] && continue' guard inside the loop.
+  [[ -z "${CHANNEL_ALLOWLIST:-}" ]] && return 1
+  IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST}"
   for entry in "${allowlist[@]}"; do
     # Trim leading and trailing whitespace.
     entry="${entry#"${entry%%[![:space:]]*}"}"
