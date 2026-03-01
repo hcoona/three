@@ -523,7 +523,7 @@ jobs:
           ref: ${{ needs.resolve.outputs.target }}
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
@@ -566,7 +566,7 @@ jobs:
       attestations: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
@@ -794,7 +794,7 @@ jobs:
           echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
@@ -903,7 +903,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
@@ -952,7 +952,7 @@ jobs:
       attestations: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
@@ -1112,7 +1112,7 @@ jobs:
           ref: ${{ needs.resolve.outputs.target }}
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
@@ -1229,7 +1229,7 @@ jobs:
           ref: ${{ needs.resolve.outputs.target }}
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
@@ -1269,7 +1269,7 @@ jobs:
       attestations: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
@@ -1421,7 +1421,7 @@ jobs:
       attestations: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
           path: ${{ github.workspace }}/out
