@@ -218,6 +218,7 @@ check_builtin_channel_rejects() {
     echo "ERROR: built-in channel incorrectly accepted wrong profile — '${description}'" >&2
     echo "  Got: ${output}" >&2
     FAIL=1
+    return  # skip assert_equals check; script accepted, so no rejection message to inspect
   fi
   # Verify the rejection came from an assert_equals mismatch, not an unrelated pre-case
   # failure. Without this check, a regression that breaks env-var handling before the
