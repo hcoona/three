@@ -119,7 +119,12 @@ fi
 # means policy and hub would evaluate different values — fail fast with an actionable
 # message rather than falling through to 'Unknown channel' in the case below.
 if [[ "${CHANNEL}" != "${CHANNEL,,}" ]]; then
-  echo "Channel '${CHANNEL}' contains uppercase characters. Channel names must be all-lowercase (e.g., use '${CHANNEL,,}'). The hub routing job normalises channel to lowercase; passing uppercase here means policy and hub would evaluate different values." >&2
+  lower_channel="${CHANNEL,,}"
+  if [[ "${lower_channel}" == "x-official" || "${lower_channel}" == "x-buddy" ]]; then
+    echo "Channel '${CHANNEL}' contains uppercase characters, and its lowercase form '${lower_channel}' is reserved by the release system. Choose a different channel name." >&2
+  else
+    echo "Channel '${CHANNEL}' contains uppercase characters. Channel names must be all-lowercase (e.g., use '${lower_channel}'). The hub routing job normalises channel to lowercase; passing uppercase here means policy and hub would evaluate different values." >&2
+  fi
   exit 1
 fi
 

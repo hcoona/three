@@ -368,7 +368,7 @@ jobs:
   resolve-hub-context:
     name: Resolve hub orchestration context
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 2
     needs:
       - policy
       - resolve
@@ -410,6 +410,9 @@ jobs:
     # rules, silently bypassing the approval gate. See REFACTOR_PLAN.md §3 Step 3 notes.
     outputs:
       channel_profile: ${{ steps.context.outputs.channel_profile }}
+      # ROUTING-ONLY: channel_profile is metadata for spoke routing and diagnostics.
+      # Spokes MUST NOT use channel_profile to gate attestation or other policy-critical
+      # behavior; use explicit policy inputs (for example: enable_attestation) instead.
       target_environment: ${{ steps.context.outputs.target_environment }}
       publish_mode: ${{ steps.context.outputs.publish_mode }}
       # COMPLIANCE: publish_mode='publish'|'build-only' is the current routing contract.
@@ -642,9 +645,10 @@ jobs:
                   [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] && active_flags+=("publish_ruby_rubygems")
                   ;;
                 node-wxt)
-                  # node-wxt never reaches here: its publish_mode is always 'build-only'
-                  # (the node-wxt outer case branch is a no-op ':'), so this arm is a
-                  # defensive guard against future drift.
+                  # node-wxt never reaches here: the outer publish_mode case explicitly sets
+                  # publish_mode='build-only' for node-wxt and emits a notice, so the
+                  # enclosing if [[ "${publish_mode}" == "publish" ]] guard excludes this arm.
+                  # This branch is retained as a defensive guard against future drift.
                   : # no publish flags for WXT
                   ;;
                 *)

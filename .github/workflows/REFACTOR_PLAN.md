@@ -28,8 +28,8 @@ We will adopt a **Hub-and-Spoke model** with **Dynamic Environments**.
     inputs:
         package_dir: { type: string, required: true }
         target_environment: { type: string, required: true }
-        channel_profile: { type: string, required: true }  # 'official' | 'buddy' | 'custom'
-        publish_mode: { type: string, required: true }  # 'publish' | 'build-only'
+        channel_profile: { type: string, required: true } # 'official' | 'buddy' | 'custom'
+        publish_mode: { type: string, required: true } # 'publish' | 'build-only'
         # TODO(Step 4): node-npm publish_mode is currently binary — 'publish' fires when *any*
         # node-npm registry flag is true. The node-npm spoke will need GPR-only / npmjs-only /
         # both disambiguation. See the Step 4 design decision note below.
@@ -41,33 +41,34 @@ We will adopt a **Hub-and-Spoke model** with **Dynamic Environments**.
     > The `project_variant` hub output is **NOT** forwarded to spokes: each spoke is
     > inherently single-language; `project_variant` is used only for hub-side `publish_mode`
     > derivation and step-summary diagnostics.
-
+    >
     > **Pending Step 4 (node-npm):** `publish_mode='publish'` is currently binary (fires when
-    > *any* node-npm registry flag is true). The node-npm spoke will need to distinguish
+    > _any_ node-npm registry flag is true). The node-npm spoke will need to distinguish
     > GPR-only / npmjs-only / both. Resolve before implementing Step 4 — see the Step 4 design
     > decision note below. Until then, treat `publish_mode` as binary in all spokes.
 
 - **Job Deduplication:** Uses the dynamically injected `target_environment` to trigger native GitHub Environment deployment gates. Only one publish job is needed per Spoke, entirely eliminating `*-with-registry`/`*-no-registry` pairs.
 
-  > **OIDC two-job pattern (mandatory):** GitHub Actions `environment:` simultaneously controls
-  > approval gates and the `environment` sub-claim baked into the OIDC token. These cannot be
-  > separated on a single job. Every Spoke MUST implement a two-job split:
-  > 1. **Gate job** — `environment: ${{ inputs.target_environment }}`: holds the per-channel
-  >    human-approval gate; requests no OIDC token (`id-token: write` absent).
-  > 2. **Publish job** — `needs: [gate]`, `environment: pypi` (or `npmjs`, `rubygems` —
-  >    hardcoded to match the registry's Trusted Publisher registration): the OIDC `environment`
-  >    claim must match the registration exactly or the registry hard-rejects the token.
-  >    Never assign `target_environment` to a job that requests `id-token: write`.
-
-  > **GPR vs OIDC registries (custom channels):** GPR (GitHub Packages Registry) authenticates
-  > via `github.token` — it does not use OIDC and does not require a separate publish environment.
-  > `publish_node_gpr=true` or `publish_ruby_gpr=true` on a custom allowlisted channel will set
-  > `publish_mode=publish`, causing the spoke to run its gate job and request `target_environment`
-  > approval. If the custom environment (e.g. `release-staging`) lacks required-reviewer rules,
-  > GitHub auto-creates it with no protection, and the publish proceeds without human approval.
-  > This is intentional: GPR is treated as a lower-trust registry for custom channels. If you
-  > require approval gates for GPR publishes on custom channels, pre-create the environment with
-  > required reviewers in repository Settings → Environments.
+    > **OIDC two-job pattern (mandatory):** GitHub Actions `environment:` simultaneously controls
+    > approval gates and the `environment` sub-claim baked into the OIDC token. These cannot be
+    > separated on a single job. Every Spoke MUST implement a two-job split:
+    >
+    > 1. **Gate job** — `environment: ${{ inputs.target_environment }}`: holds the per-channel
+    >    human-approval gate; requests no OIDC token (`id-token: write` absent).
+    > 2. **Publish job** — `needs: [gate]`, `environment: pypi` (or `npmjs`, `rubygems` —
+    >    hardcoded to match the registry's Trusted Publisher registration): the OIDC `environment`
+    >    claim must match the registration exactly or the registry hard-rejects the token.
+    >    Never assign `target_environment` to a job that requests `id-token: write`.
+    >
+    > **GPR vs OIDC registries (custom channels):** GPR (GitHub Packages Registry) authenticates
+    > via `github.token` — it does not use OIDC and does not require a separate publish environment.
+    > `publish_node_gpr=true` or `publish_ruby_gpr=true` on a custom allowlisted channel will set
+    > `publish_mode=publish`, causing the spoke to run its gate job and request `target_environment`
+    > approval. If the custom environment (e.g. `release-staging`) lacks required-reviewer rules,
+    > GitHub auto-creates it with no protection, and the publish proceeds without human approval.
+    > This is intentional: GPR is treated as a lower-trust registry for custom channels. If you
+    > require approval gates for GPR publishes on custom channels, pre-create the environment with
+    > required reviewers in repository Settings → Environments.
 
 ---
 
@@ -87,21 +88,21 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 #### Breaking changes in Step 2
 
 - **Stricter `channel_allowlist` regex.** The pre-Step-2 pattern was `^[a-z0-9_-]+$`; the new pattern is `^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$`. This rejects consecutive hyphens/underscores, leading/trailing separators, and mixed sequences. Migration:
-  - `my--channel` → must be manually renamed to `my-channel` in `channel_allowlist` (the new regex rejects this allowlist entry; direct dispatch input `channel: my--channel` is *also* rejected by policy — the format check in the `*)` case arm rejects it before the allowlist lookup since `my--channel` violates the consecutive-separator rule; the hub's sed collapse of consecutive dashes is a defensive local-testing path only)
-  - `my__channel` → `my_channel` or `my-channel` (consecutive underscores are rejected and are **not** auto-collapsed; rename manually)
-  - `-beta` → `beta` (remove leading separator)
-  - `alpha-` → `alpha` (remove trailing hyphen separator)
-  - `alpha_` → `alpha` (remove trailing underscore separator)
-  - `a_-b` → `a-b` (normalize mixed sequence)
+    - `my--channel` → must be manually renamed to `my-channel` in `channel_allowlist` (the new regex rejects this allowlist entry; direct dispatch input `channel: my--channel` is _also_ rejected by policy — the format check in the `*)` case arm rejects it before the allowlist lookup since `my--channel` violates the consecutive-separator rule; the hub's sed collapse of consecutive dashes is a defensive local-testing path only)
+    - `my__channel` → `my_channel` or `my-channel` (consecutive underscores are rejected and are **not** auto-collapsed; rename manually)
+    - `-beta` → `beta` (remove leading separator)
+    - `alpha-` → `alpha` (remove trailing hyphen separator)
+    - `alpha_` → `alpha` (remove trailing underscore separator)
+    - `a_-b` → `a-b` (normalize mixed sequence)
 
-  The rationale is to make the allowlist-to-`target_environment` mapping injective: the hub context job collapses consecutive dashes via `sed 's/-{2,}/-/g'`, so `my--channel` and `my-channel` would previously both map to the same `release-my-channel` environment, creating a near-miss collision. Note: consecutive underscores are intentionally **not** collapsed by the sanitization sed pipeline, which is why `my__channel` must be renamed rather than auto-migrated.
+    The rationale is to make the allowlist-to-`target_environment` mapping injective: the hub context job collapses consecutive dashes via `sed 's/-{2,}/-/g'`, so `my--channel` and `my-channel` would previously both map to the same `release-my-channel` environment, creating a near-miss collision. Note: consecutive underscores are intentionally **not** collapsed by the sanitization sed pipeline, which is why `my__channel` must be renamed rather than auto-migrated.
 
 - **New reserved channel names: `x-official` and `x-buddy`.** These values are now rejected both as direct `channel:` inputs and as `channel_allowlist` entries. They are reserved as internal sanitization escape slugs used by `resolve-hub-context` to prevent near-miss inputs (e.g., `official-`) from impersonating the `release-official`/`release-buddy` protected environments. Under the old regex (`^[a-z0-9_-]+$`), these names were syntactically valid. Migration: rename to any other slug that satisfies the allowlist regex (e.g., `x-off`, `ext-official`).
 
-- **New pre-case validation guards on `channel:` input.** Three new guards now reject invalid `channel:` inputs earlier, with targeted error messages. Previously these inputs were all rejected, but via the allowlist/case path with generic messages. The rejection *outcome* for any valid caller is unchanged; only the error message and exit point differ for edge-case inputs:
-  1. Empty `channel:` input: rejected immediately with "Channel must not be empty."
-  2. `channel:` containing whitespace (leading, trailing, or internal): rejected with a whitespace-specific message.
-  3. `channel:` containing uppercase characters: rejected with an uppercase-specific message (including a suggested lowercase rename).
+- **New pre-case validation guards on `channel:` input.** Three new guards now reject invalid `channel:` inputs earlier, with targeted error messages. Previously these inputs were all rejected, but via the allowlist/case path with generic messages. The rejection _outcome_ for any valid caller is unchanged; only the error message and exit point differ for edge-case inputs:
+    1. Empty `channel:` input: rejected immediately with "Channel must not be empty."
+    2. `channel:` containing whitespace (leading, trailing, or internal): rejected with a whitespace-specific message.
+    3. `channel:` containing uppercase characters: rejected with an uppercase-specific message (including a suggested lowercase rename).
 
 ### Step 3: Create Python spoke workflow
 
@@ -112,15 +113,20 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 > Before the Python spoke is deployed, the following GitHub Environments **MUST** be manually
 > pre-created in repository **Settings → Environments** with required-reviewer protection rules:
 >
-> | Environment name   | Required reviewers | Purpose |
-> |---|---|---|
+> | Environment name   | Required reviewers | Purpose                                       |
+> | ------------------ | ------------------ | --------------------------------------------- |
 > | `release-official` | Prod team          | Approval gate for official channel spoke jobs |
-> | `release-buddy`    | Dev team           | Approval gate for buddy channel spoke jobs |
+> | `release-buddy`    | Dev team           | Approval gate for buddy channel spoke jobs    |
 >
 > **Warning:** GitHub silently auto-creates missing environments with **no protection rules**
 > when a workflow first references them via `environment:`. This would cause the human-approval
 > gate to be absent on the first real publish run. Do not deploy the spoke without confirming
 > the environments exist and have required reviewers configured.
+>
+> **Merge gate for the Step 3 PR (required before merge):**
+>
+> - [ ] Verify `release-official` and `release-buddy` already exist in Settings → Environments.
+> - [ ] Verify both environments have required-reviewer rules configured.
 >
 > Custom channel environments (e.g., `release-staging`) may be created on-demand per team
 > policy, but must also have appropriate protection rules before being used in production.
@@ -130,7 +136,7 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 - Migrate PNPM packing, GitHub Packages (GPR) publish, and npmjs mapping.
 - Consolidate WXT extensions into the same Spoke or an inherited process to reduce Node pipeline duplication.
 - **Design decision required before this step:** `publish_mode='publish'` from the Hub is binary
-  (fires when *any* node-npm registry flag is true). The node-npm spoke must distinguish three
+  (fires when _any_ node-npm registry flag is true). The node-npm spoke must distinguish three
   states: GPR-only, npmjs-only, both. Resolve by either (a) passing `publish_node_gpr` and
   `publish_node_npmjs` as additional explicit spoke inputs alongside `publish_mode` (contract
   stays `'publish' | 'build-only'`), or (b) extending `publish_mode` to encode the registry
