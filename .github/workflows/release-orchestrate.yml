@@ -560,6 +560,14 @@ jobs:
           # If no sub-variants exist, skip this block; project_variant defaults to "${PROJECT_KIND}"
           # and the publish_mode case below is the first mandatory extension point.
           project_variant="$(printf '%s' "${PROJECT_KIND}" | tr -d '[:space:]')"  # strip all POSIX whitespace first
+          # Fail fast if IS_WXT is empty for node projects. The upstream release-resolve job
+          # is contractually required to output IS_WXT='true' or 'false' for all node projects.
+          # Silently treating an absent IS_WXT as 'false' risks misrouting WXT projects through
+          # the npm publish path, producing silent cross-kind contamination in CI.
+          if [[ "${project_variant}" == "node" && -z "${IS_WXT:-}" ]]; then
+            echo "::error::IS_WXT is empty for project_kind=node. The upstream release-resolve job output contract requires IS_WXT='true' or 'false' for all node projects. Set IS_WXT in the resolve step." >&2
+            exit 1
+          fi
           if [[ "${project_variant}" == "node" && "${IS_WXT:-}" == "true" ]]; then
             project_variant="node-wxt"
           elif [[ "${project_variant}" == "node" ]]; then
