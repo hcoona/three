@@ -1,12 +1,130 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# This script must be run from the repository root (the directory containing eng/).
+# In CI it is invoked as: bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_policy_self_test.sh"
+# with cwd set to GITHUB_WORKSPACE by the runner.
+# For local testing: cd /path/to/repo/root && bash eng/scripts/release_orchestrate_policy_self_test.sh
+
 # The policy logic (assert_equals calls for official/buddy channel flags) lives in
 # the policy validation script, not in the orchestration workflow YAML. This variable
 # was previously pointing to the YAML file, which caused the self-test to always fail
 # silently. Fixed to point to the correct source file.
 POLICY_SCRIPT="eng/scripts/release_orchestrate_policy_validate_inputs.sh"
 FAIL=0
+
+# ==== Phase 0: Pre-case guard behavioral smoke tests ====
+# These tests run the policy script directly to verify that the CHANNEL validation
+# guards added in Step 2 actually reject invalid inputs. Unlike Phase 2 (which is
+# structural/presence-only), these tests catch polarity inversions or logic errors
+# that a grep-based check cannot detect.
+run_policy_check() {
+  # Run the policy script with minimal valid env vars, CHANNEL set to $1.
+  # Always exits 0; stderr+stdout are captured by the caller.
+  env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
+    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+    CHANNEL="$1" bash "${POLICY_SCRIPT}" 2>&1 || true
+}
+
+check_guard_rejects() {
+  local description="$1"
+  local channel_value="$2"
+  local expected_fragment="$3"
+  local output
+  output=$(run_policy_check "${channel_value}")
+  if ! echo "${output}" | grep -qF "${expected_fragment}"; then
+    echo "ERROR: pre-case guard not working — '${description}' (channel='${channel_value}')" >&2
+    echo "  Expected message containing: '${expected_fragment}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+}
+
+check_guard_rejects "empty channel"        ""           "Channel must not be empty."
+check_guard_rejects "whitespace channel"   "my channel" "contains whitespace"
+check_guard_rejects "uppercase channel"    "Official"   "contains uppercase"
+check_guard_rejects "x-official reserved" "x-official" "reserved as an internal remapping slug"
+check_guard_rejects "x-buddy reserved"    "x-buddy"    "reserved as an internal remapping slug"
+# Format checks: these channels pass all pre-case guards but fail the regex in the *) arm.
+# These tests guard against a polarity inversion or regex error in the format check that
+# would cause invalid-format channels to fall through to the allowlist lookup instead.
+check_guard_rejects "consecutive-hyphen channel (invalid format)"    "a--b"       "invalid format and cannot be used"
+check_guard_rejects "leading-separator channel (invalid format)"      "-beta"      "invalid format and cannot be used"
+check_guard_rejects "trailing-hyphen channel (invalid format)"        "alpha-"     "invalid format and cannot be used"
+check_guard_rejects "trailing-underscore channel (invalid format)"    "alpha_"     "invalid format and cannot be used"
+check_guard_rejects "consecutive-underscore channel (invalid format)" "my__channel" "invalid format and cannot be used"
+check_guard_rejects "mixed-separator channel (invalid format)"        "a_-b"       "invalid format and cannot be used"
+
+check_guard_accepts() {
+  # Verify that a valid channel value is NOT rejected by the pre-case guards.
+  # Uses a minimal allowlist that allowlists the test channel so the script can
+  # proceed past the policy case block and exit 0.
+  local description="$1"
+  local channel_value="$2"
+  local output
+  output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+    CHANNEL_ALLOWLIST="${channel_value}" \
+    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+    CHANNEL="${channel_value}" bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if ! echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: guard incorrectly rejected valid channel — '${description}' (channel='${channel_value}')" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+}
+
+check_guard_accepts "simple lowercase channel"   "staging"
+check_guard_accepts "hyphenated channel"         "my-channel"
+check_guard_accepts "channel with digit suffix"  "canary2"
+check_guard_accepts "channel with underscore"    "my_channel"
+
+# Verify that the built-in channels pass the pre-case guards AND satisfy policy when
+# the correct flag profile is provided. This guards against accidental changes to the
+# guard conditions that would block official/buddy from ever passing (e.g., adding a
+# guard that rejects channels without a hyphen, or a case-insensitive reserved-name
+# check that matches "official").
+check_builtin_channel_accepted() {
+  local description="$1"
+  shift
+  local output
+  output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+    "$@" bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if ! echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: built-in channel incorrectly rejected — '${description}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+}
+
+check_builtin_channel_accepted "official channel with correct profile" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
+
+check_builtin_channel_accepted "buddy channel with correct profile" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+
+if [[ "${FAIL}" -ne 0 ]]; then
+  echo "Pre-case guard behavioral smoke tests failed. See errors above." >&2
+  exit 1
+fi
+echo "Pre-case guard behavioral smoke tests passed."
+# Invariant: FAIL==0 here (Phase 0 exits on any failure above).
 
 # For each flag that must be validated per-channel, verify that assert_equals
 # appears at least twice in the policy job (once for official, once in buddy).
@@ -38,7 +156,7 @@ for flag in "${required_flags[@]}"; do
   # was added to 'official' but not 'buddy' (or vice versa). A global grep
   # count ≥ 2 would pass even if both assertions are in the same branch while
   # the other branch is missing them entirely.
-  # Use ';; ' as the branch boundary instead of the sibling branch label.
+  # Use '^[[:space:]]*;;' as the branch boundary instead of the sibling branch label.
   # This is more robust: a nested case/esac inside a branch would cause the
   # sibling-label approach to over-include lines; ;; always terminates a branch.
   official_count=$(awk '/^[[:space:]]+official\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${POLICY_SCRIPT}" \
@@ -64,8 +182,9 @@ echo "Policy flag coverage self-test passed."
 # are still present in release_orchestrate_policy_validate_inputs.sh, catching
 # regressions where a guard is accidentally removed or misplaced.
 VALIDATE_INPUTS_SH="${POLICY_SCRIPT}"  # same file; single canonical path declared above
-# FAIL is guaranteed 0 here — Phase 1 above exits on failure.
-FAIL=0
+# Use a separate variable for Phase 2 — Phase 1 exits on failure so FAIL is
+# guaranteed 0 here, but an explicit name makes the phase boundary clear.
+FAIL_PHASE2=0
 
 check_pattern_present() {
   local description="${1}"
@@ -73,7 +192,7 @@ check_pattern_present() {
   local file="${3}"
   if ! grep -qE -- "${pattern}" "${file}"; then
     echo "ERROR: missing guard in ${file}: ${description}" >&2
-    FAIL=1
+    FAIL_PHASE2=1
   fi
 }
 
@@ -84,9 +203,10 @@ check_pattern_present() {
 check_pattern_present "empty CHANNEL guard" \
   '^[^#]*-z "\$\{CHANNEL\}"' "${VALIDATE_INPUTS_SH}"
 
-# Whitespace guard
+# whitespace guard — pattern requires both the =~ operator and the [[:space:]] literal,
+# making it specific enough to detect guard removal while tolerating quote styles.
 check_pattern_present "whitespace-in-CHANNEL guard" \
-  '^[^#]*\$\{CHANNEL\}.*\[\[:space:\]\]' "${VALIDATE_INPUTS_SH}"
+  '^[^#]*\$\{CHANNEL\}.*=~.*\[\[:space:\]\]' "${VALIDATE_INPUTS_SH}"
 
 # Uppercase guard
 check_pattern_present "uppercase-CHANNEL guard" \
@@ -108,7 +228,7 @@ check_pattern_present "x-official/x-buddy allowlist entry guard" \
 check_pattern_present "format check in *) case arm" \
   '^[^#]*invalid format and cannot be used' "${VALIDATE_INPUTS_SH}"
 
-if [[ "${FAIL}" -ne 0 ]]; then
+if [[ "${FAIL_PHASE2}" -ne 0 ]]; then
   echo "Step-2 guard presence check failed. A CHANNEL validation guard is missing" >&2
   echo "from ${VALIDATE_INPUTS_SH}. See each guard's inline comment for design intent." >&2
   echo "See REFACTOR_PLAN.md §2 (Step 2) for the full validation design." >&2
