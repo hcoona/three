@@ -63,7 +63,8 @@ echo "Policy flag coverage self-test passed."
 # These checks verify that the new CHANNEL validation guards introduced in Step 2
 # are still present in release_orchestrate_policy_validate_inputs.sh, catching
 # regressions where a guard is accidentally removed or misplaced.
-VALIDATE_INPUTS_SH="eng/scripts/release_orchestrate_policy_validate_inputs.sh"
+VALIDATE_INPUTS_SH="${POLICY_SCRIPT}"  # same file; single canonical path declared above
+# FAIL is guaranteed 0 here — Phase 1 above exits on failure.
 FAIL=0
 
 check_pattern_present() {
@@ -76,37 +77,41 @@ check_pattern_present() {
   fi
 }
 
+# NOTE: patterns are prefixed with '^[^#]*' to exclude comment lines, preventing a
+# removed guard whose comment residue remains from producing a false-positive match.
+
 # Empty channel guard
 check_pattern_present "empty CHANNEL guard" \
-  '-z "\$\{CHANNEL\}"' "${VALIDATE_INPUTS_SH}"
+  '^[^#]*-z "\$\{CHANNEL\}"' "${VALIDATE_INPUTS_SH}"
 
 # Whitespace guard
 check_pattern_present "whitespace-in-CHANNEL guard" \
-  '\$\{CHANNEL\}.*\[\[:space:\]\]' "${VALIDATE_INPUTS_SH}"
+  '^[^#]*\$\{CHANNEL\}.*\[\[:space:\]\]' "${VALIDATE_INPUTS_SH}"
 
 # Uppercase guard
 check_pattern_present "uppercase-CHANNEL guard" \
-  '\$\{CHANNEL\}.*\$\{CHANNEL,,\}' "${VALIDATE_INPUTS_SH}"
+  '^[^#]*\$\{CHANNEL\}.*\$\{CHANNEL,,\}' "${VALIDATE_INPUTS_SH}"
 
 # Reserved escape-slug guard for direct CHANNEL input
 check_pattern_present "x-official/x-buddy direct CHANNEL guard" \
-  '\$\{CHANNEL\}.*x-official' "${VALIDATE_INPUTS_SH}"
+  '^[^#]*\$\{CHANNEL\}.*x-official' "${VALIDATE_INPUTS_SH}"
 
 # Built-in channel guard inside is_channel_allowlisted (official/buddy cannot be allowlisted)
 check_pattern_present "official/buddy allowlist entry builtin guard" \
-  '\$\{entry\}.*==.*"official"' "${VALIDATE_INPUTS_SH}"
+  '^[^#]*\$\{entry\}.*==.*"official"' "${VALIDATE_INPUTS_SH}"
 
 # Reserved escape-slug guard inside is_channel_allowlisted
 check_pattern_present "x-official/x-buddy allowlist entry guard" \
-  '\$\{entry\}.*x-official' "${VALIDATE_INPUTS_SH}"
+  '^[^#]*\$\{entry\}.*x-official' "${VALIDATE_INPUTS_SH}"
 
 # Format check in *) arm (prevents misleading "add to allowlist" guidance for invalid formats)
 check_pattern_present "format check in *) case arm" \
-  "invalid format and cannot be used" "${VALIDATE_INPUTS_SH}"
+  '^[^#]*invalid format and cannot be used' "${VALIDATE_INPUTS_SH}"
 
 if [[ "${FAIL}" -ne 0 ]]; then
   echo "Step-2 guard presence check failed. A CHANNEL validation guard is missing" >&2
-  echo "from ${VALIDATE_INPUTS_SH}. Restore the guard or update this self-test." >&2
+  echo "from ${VALIDATE_INPUTS_SH}. See each guard's inline comment for design intent." >&2
+  echo "See REFACTOR_PLAN.md §2 (Step 2) for the full validation design." >&2
   exit 1
 fi
 echo "Step-2 guard presence self-test passed."
