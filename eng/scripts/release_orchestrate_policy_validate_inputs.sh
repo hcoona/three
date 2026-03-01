@@ -42,6 +42,10 @@ is_channel_allowlisted() {
     [[ -z "${entry}" ]] && continue
     # Reserved channels cannot be allowlisted.
     # 'official' and 'buddy' are first-class policy channels with fixed assertion matrices.
+    # NOTE: exit 1 is intentional here rather than return 1. A reserved name appearing in
+    # channel_allowlist is a fatal misconfiguration in the caller's workflow file—not a
+    # normal "channel not found" result. Using return 1 would silently fall through as if the
+    # channel is merely absent from the allowlist, masking the configuration error entirely.
     if [[ "${entry}" == "official" || "${entry}" == "buddy" ]]; then
       echo "Allowlist entry '${entry}' is invalid: 'official' and 'buddy' are policy-governed built-in channels and cannot appear in channel_allowlist. Remove this entry from channel_allowlist." >&2
       exit 1
@@ -138,6 +142,10 @@ fi
 # lowercase before routing, but policy validates the raw dispatch value. A mismatch
 # means policy and hub would evaluate different values — fail fast with an actionable
 # message rather than falling through to 'Unknown channel' in the case below.
+# ORDERING: This guard must come after the whitespace guard above. ${CHANNEL,,} folds
+# case but does NOT strip spaces; a value like ' Official' would lowercase to ' official',
+# differ from CHANNEL, and trigger this guard with a misleading "uppercase" message
+# instead of the correct "whitespace" message required by the whitespace guard.
 if [[ "${CHANNEL}" != "${CHANNEL,,}" ]]; then
   lower_channel="${CHANNEL,,}"
   if [[ "${lower_channel}" == "x-official" || "${lower_channel}" == "x-buddy" ]]; then
