@@ -18,18 +18,6 @@ FAIL=0
 # guards added in Step 2 actually reject invalid inputs. Unlike Phase 2 (which is
 # structural/presence-only), these tests catch polarity inversions or logic errors
 # that a grep-based check cannot detect.
-run_policy_check() {
-  # Run the policy script with minimal valid env vars, CHANNEL set to $1.
-  # Always exits 0; stderr+stdout are captured by the caller.
-  env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
-    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    CHANNEL="$1" bash "${POLICY_SCRIPT}" 2>&1 || true
-}
-
 check_guard_rejects() {
   local description="$1"
   local channel_value="$2"
@@ -233,13 +221,45 @@ check_builtin_channel_rejects() {
   fi
 }
 
-# One wrong flag per channel is sufficient to catch an assert_equals polarity inversion.
+# Each call flips exactly one flag relative to the correct profile to verify that every
+# assert_equals is present and uses the correct operator. Covering all 9 flags (6 of which
+# are asymmetric) prevents a polarity-inversion regression from going undetected.
 check_builtin_channel_rejects "official rejects PUBLISH_PYTHON_PYPI=false" \
   CHANNEL=official \
   ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
   PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
   PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
   ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
+check_builtin_channel_rejects "official rejects ENFORCE_PRERELEASE_ONLY=true" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
+check_builtin_channel_rejects "official rejects PUBLISH_NODE_NPMJS=false" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
+check_builtin_channel_rejects "official rejects ENABLE_ATTESTATION=false" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false
+check_builtin_channel_rejects "official rejects PUBLISH_RUBY_RUBYGEMS=false" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false
+check_builtin_channel_rejects "official rejects GITHUB_RELEASE_PRERELEASE=true" \
+  CHANNEL=official \
+  ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=true
 
 check_builtin_channel_rejects "buddy rejects PUBLISH_PYTHON_PYPI=true" \
   CHANNEL=buddy \
@@ -247,15 +267,48 @@ check_builtin_channel_rejects "buddy rejects PUBLISH_PYTHON_PYPI=true" \
   PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
   PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
   ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+check_builtin_channel_rejects "buddy rejects ENFORCE_NON_CLOBBER=false" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=false \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+check_builtin_channel_rejects "buddy rejects PUBLISH_RUBY_RUBYGEMS=true" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+check_builtin_channel_rejects "buddy rejects ENABLE_ATTESTATION=true" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
+  ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=true
+check_builtin_channel_rejects "buddy rejects PUBLISH_NODE_NPMJS=true" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=true
+check_builtin_channel_rejects "buddy rejects GITHUB_RELEASE_PRERELEASE=false" \
+  CHANNEL=buddy \
+  ENFORCE_PRERELEASE_ONLY=true ENFORCE_NON_CLOBBER=true \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=false \
+  ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false
 
 # BLK-3: Verify production registry flags are prohibited for allowlisted channels.
 # These three guards in the *) arm prevent staging/canary channels from accidentally
 # publishing to PyPI/npmjs/RubyGems. Removing any one guard would be invisible to all
 # other Phase 0 and Phase 2 checks without these behavioral tests.
 check_allowlist_registry_rejects() {
+  # Usage: check_allowlist_registry_rejects <description> <expected_fragment> [KEY=VALUE ...]
+  # Each KEY=VALUE is passed as a separate env override; 'env' treats each as one assignment.
+  # Do NOT combine multiple overrides into one quoted string (env cannot split them).
   local description="$1"
-  local flag_override="$2"  # single KEY=VALUE string, e.g. PUBLISH_PYTHON_PYPI=true
-  local expected_fragment="$3"
+  local expected_fragment="$2"
+  shift 2
   local output
   output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
     CHANNEL_ALLOWLIST="staging" \
@@ -264,7 +317,7 @@ check_allowlist_registry_rejects() {
     PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
     ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
     GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    "${flag_override}" CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+    "$@" CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
   if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: registry prohibition not enforced — '${description}': expected non-zero exit" >&2
     echo "  Got: ${output}" >&2
@@ -279,11 +332,11 @@ check_allowlist_registry_rejects() {
 }
 
 check_allowlist_registry_rejects "allowlisted channel must not publish to PyPI" \
-  "PUBLISH_PYTHON_PYPI=true" "restricted to the official channel only"
+  "restricted to the official channel only" "PUBLISH_PYTHON_PYPI=true"
 check_allowlist_registry_rejects "allowlisted channel must not publish to npmjs" \
-  "PUBLISH_NODE_NPMJS=true" "restricted to the official channel only"
+  "restricted to the official channel only" "PUBLISH_NODE_NPMJS=true"
 check_allowlist_registry_rejects "allowlisted channel must not publish to RubyGems" \
-  "PUBLISH_RUBY_RUBYGEMS=true" "restricted to the official channel only"
+  "restricted to the official channel only" "PUBLISH_RUBY_RUBYGEMS=true"
 
 if [[ "${FAIL}" -ne 0 ]]; then
   echo "Pre-case guard behavioral smoke tests failed. See errors above." >&2
@@ -347,6 +400,11 @@ echo "Policy flag coverage self-test passed."
 # These checks verify that the new CHANNEL validation guards introduced in Step 2
 # are still present in release_orchestrate_policy_validate_inputs.sh, catching
 # regressions where a guard is accidentally removed or misplaced.
+# NOTE (NB-4): These are PRESENCE-only checks (grep/awk). They cannot verify that
+# guards appear in the correct order relative to the case statement. Guard ordering
+# correctness is guaranteed by Phase 0 behavioral tests above — those tests exercise
+# the actual execution path and would fail if a guard were moved to the wrong position
+# (e.g., inside the *) arm instead of before the case block).
 VALIDATE_INPUTS_SH="${POLICY_SCRIPT}"  # same file; single canonical path declared above
 # Use a separate variable for Phase 2 — Phase 1 exits on failure so FAIL is
 # guaranteed 0 here, but an explicit name makes the phase boundary clear.
