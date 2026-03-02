@@ -19,7 +19,7 @@ assert_equals() {
   local key="$1"
   local actual="$2"
   local expected="$3"
-  local channel="${CHANNEL}"  # capture at call-time; explicit rather than relying on scope
+  local channel="${CHANNEL:-}"  # capture at call-time; explicit rather than relying on scope
   if [[ "${actual}" != "${expected}" ]]; then
     echo "Channel '${channel}' policy mismatch for '${key}': expected '${expected}', got '${actual}'." >&2
     exit 1
@@ -123,7 +123,7 @@ if [[ "${SOURCE}" == "manual" ]]; then
 fi
 
 # Reject empty channel.
-if [[ -z "${CHANNEL}" ]]; then
+if [[ -z "${CHANNEL:-}" ]]; then
   echo "Channel must not be empty." >&2
   exit 1
 fi
