@@ -9,7 +9,7 @@ FAIL=0
 # Extract all publish_* input names declared in the orchestrate workflow inputs: block.
 # Each one must be explicitly passed in every caller workflow so that a new input
 # added to the orchestrate file (Step A) is not silently omitted by callers (Steps F, G).
-# SYNC: add-new-language — this step auto-detects new publish_* inputs; no manual update needed.
+# SYNC[add-new-language] — this step auto-detects new publish_* inputs; no manual update needed.
 mapfile -t publish_inputs < <(
   grep -P '^      publish_\w+:$' "${ORCHESTRATE_FILE}" | grep -oP 'publish_\w+' | sort -u
 )

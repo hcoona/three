@@ -59,7 +59,14 @@ on:
         type: boolean
 
       channel:
-        description: "Release channel label for logs and policy validation (for example: official, buddy)."
+        description: |-
+          Do NOT use 'x-official', 'x-buddy', or any value that normalizes to these
+          (e.g. 'x-official-') — reserved sanitization escape slugs.
+          Release channel label for logs and policy validation (example: official, buddy).
+          Reserved values: 'official' and 'buddy' are governed by strict policy assertions.
+          Custom allowlisted channels must not use 'x-official' or 'x-buddy' as these names
+          are reserved as sanitization escape slugs and will collide with mis-typed official/buddy
+          inputs in the generated target_environment output.
         required: true
         type: string
       channel_allowlist:
@@ -73,6 +80,9 @@ on:
           Any new caller workflow file that supplies a non-empty channel_allowlist
           is itself a policy bypass vector and must be subject to the same
           branch-protection review as official.yml.
+          RESERVED NAMES: do not include 'x-official' or 'x-buddy' in the
+          allowlist — these values are reserved sanitization escape slugs and
+          will be rejected at runtime by the policy job.
         required: false
         default: ""
         type: string
@@ -100,7 +110,7 @@ on:
         default: false
         type: boolean
 
-      # SYNC: add-new-language — add publish_<lang>_<registry> input below
+      # SYNC[add-new-language] — add publish_<lang>_<registry> input below
       publish_python_pypi:
         description: "If true, publish Python artifacts to PyPI."
         required: false
@@ -141,7 +151,7 @@ env:
   NODE_VERSION: '24'
   PNPM_VERSION: '10'
   RUBY_VERSION: '3.3'
-  # SYNC: keep in step with EXPECTED_*_VERSION in lint-version-consistency job env below.
+  # SYNC[tool-versions]: keep in step with EXPECTED_*_VERSION in lint-version-consistency job env below.
   # Updating only one side will either cause the lint gate to fail (if env is updated but
   # EXPECTED is not) or silently pass with stale runtime env (if EXPECTED is updated but env is not).
 
@@ -191,8 +201,8 @@ jobs:
       EXPECTED_NODE_VERSION: '24'
       EXPECTED_PNPM_VERSION: '10'
       EXPECTED_RUBY_VERSION: '3.3'
-      # SYNC: add-new-language — add EXPECTED_<LANG>_VERSION: '<version>' here for each new language tool
-      # SYNC: keep in step with the workflow-level env: block above.
+      # SYNC[add-new-language] — add EXPECTED_<LANG>_VERSION: '<version>' here for each new language tool
+      # SYNC[tool-versions]: keep in step with the workflow-level env: block above.
       # These EXPECTED_* values are what the lint check validates hardcoded with: values against.
     steps:
       - uses: actions/checkout@v6
@@ -245,6 +255,7 @@ jobs:
   #   publish_ruby_rubygems     | true     | false
   #   enable_attestation        | true     | false
   #
+  # SYNC[add-new-language] — add a new row to the matrix table above for each new flag.
   # Custom channels (allowlisted via channel_allowlist) bypass all assertions.
   # Callers are solely responsible for setting correct flag values for custom channels.
   policy:
@@ -268,6 +279,7 @@ jobs:
           GITHUB_RELEASE_PRERELEASE: ${{ inputs.github_release_prerelease }}
           ENFORCE_PRERELEASE_ONLY: ${{ inputs.enforce_prerelease_only }}
           ENFORCE_NON_CLOBBER: ${{ inputs.enforce_non_clobber }}
+          # SYNC[add-new-language] — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} env var here
           PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
           PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
           PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
@@ -313,8 +325,8 @@ jobs:
           PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
           CHANNEL: ${{ inputs.channel }}
-          # SYNC: add-new-language — (1) add publish_<lang>_<registry> env var(s) to the env: block above
-          # SYNC: add-new-language — (2) add per-kind validation branch (if/elif) to the run: script below
+          # SYNC[add-new-language] — (1) add publish_<lang>_<registry> env var(s) to the env: block above
+          # SYNC[add-new-language] — (2) add per-kind validation branch (if/elif) to the run: script below
           PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
           PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
           PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
@@ -346,6 +358,384 @@ jobs:
       version: ${{ inputs.version }}
       target: ${{ inputs.target }}
       force_update_tag: ${{ inputs.force_update_tag }}
+
+  # HUB PREP: Centralize normalized orchestration context for future spoke workflows.
+  # This *job* is intentionally additive in Step 2: no existing job lists resolve-hub-context
+  # in its needs:, so no existing execution path is altered by the presence of this job.
+  # NOTE: The validate_inputs.sh changes shipped in the same Step 2 PR ARE breaking for
+  # edge-case callers (stricter channel_allowlist regex, new reserved names x-official/x-buddy,
+  # new pre-case guards). See REFACTOR_PLAN.md §2 (Breaking changes in Step 2) for details.
+  # NOTE: Any exit 1 in this job (e.g., unrecognized project_variant) will fail the overall
+  # workflow run even though no existing job depends on this one. This is intentional: the
+  # hub context must be derivable on every run so that Step-3 spokes can be wired safely.
+  # NOTE: All guard jobs and policy-publish-targets are included in needs: so any spoke
+  # routing job added inside THIS workflow file that depends on this job transitively
+  # inherits full guard and policy enforcement, within this workflow's DAG only.
+  # NOTE: prepare-release-notes is intentionally NOT in needs: here — release-notes
+  # preparation is not routing context. Step-6 routing jobs that consume release notes
+  # MUST add prepare-release-notes to their own needs: directly.
+  # IMPORTANT: This guarantee does NOT extend across workflow_call boundaries. A spoke
+  # workflow file invoked via 'uses:' runs in its own context and has no visibility of
+  # this workflow's guard jobs. Direct callers of a spoke workflow bypass ALL hub guards.
+  # Spoke workflow files MUST document this at their top-level security comment.
+  resolve-hub-context:
+    name: Resolve hub orchestration context
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs:
+      - policy
+      - resolve
+      - policy-publish-targets
+      - guard-prerelease-only
+      - guard-non-clobber
+    permissions: {}
+    # id-token: write is intentionally absent — this job performs no OIDC operations.
+    # This job must never acquire OIDC tokens; only hardcoded-environment spoke publish
+    # jobs should hold id-token: write.
+    # SYNC[add-new-language] — if a new language adds a hub-level output, add it here.
+    # Published outputs (forwarding contract — stable for spoke consumers):
+    #   channel_profile:    'official' | 'buddy' | 'custom'
+    #   target_environment: 'release-official' | 'release-buddy' | 'release-<sanitized>'
+    #   publish_mode:       'publish' | 'build-only'
+    # Hub-internal derived value (NOT in outputs:, do NOT forward to spokes):
+    #   project_variant:    known values: 'python' | 'ruby' | 'node-npm' | 'node-wxt';
+    #                       unrecognized PROJECT_KIND values cause a hard failure (exit 1).
+    #                       SYNC[add-new-language] — add a branch in the variant mapping below.
+    # SECURITY: target_environment is routing/approval-gate metadata only.
+    # Spoke OIDC publish jobs MUST use hardcoded environment names ('pypi', 'npmjs',
+    # 'rubygems', etc.), NOT this output. The 'environment:' field determines the
+    # 'environment' sub-claim baked into the OIDC token; registry Trusted Publisher
+    # configurations validate this sub-claim by name — a mismatch causes a hard OIDC
+    # rejection (publish failure), and a dynamic environment name may also lack the
+    # required-reviewer gate that is the real human approval barrier.
+    # NOTE: Spokes MUST use a two-job pattern:
+    #   gate job:    environment: ${{ inputs.target_environment }}  # human approval; NO id-token: write
+    #   publish job: needs: [gate], environment: pypi               # hardcoded; id-token: write here only
+    # WRONG pattern (do NOT do this — bypasses human approval gate or misroutes OIDC token):
+    #   if: needs.resolve-hub-context.outputs.publish_mode == 'publish'  # insufficient alone
+    #   environment: ${{ inputs.target_environment }}  # on a job with id-token: write = WRONG
+    # SECURITY: publish_mode is informational routing intent, not an authorization
+    # decision. It MUST NOT be the sole if: condition guarding OIDC token requests.
+    # The environment: field with required reviewers is the real security boundary.
+    # PREREQUISITE: The GitHub Environments 'release-official' and 'release-buddy' MUST
+    # be pre-created in repository Settings → Environments with required reviewers before
+    # any spoke is deployed. GitHub auto-creates missing environments with NO protection
+    # rules, silently bypassing the approval gate. See REFACTOR_PLAN.md §3 Step 3 notes.
+    outputs:
+      channel_profile: ${{ steps.context.outputs.channel_profile }}
+      # ROUTING-ONLY: channel_profile is metadata for spoke routing and diagnostics.
+      # Spokes MUST NOT use channel_profile to gate attestation or other policy-critical
+      # behavior; use explicit policy inputs (for example: enable_attestation) instead.
+      target_environment: ${{ steps.context.outputs.target_environment }}
+      publish_mode: ${{ steps.context.outputs.publish_mode }}
+      # COMPLIANCE: publish_mode='publish'|'build-only' is the current routing contract.
+      # See REFACTOR_PLAN.md §2.2 for the routing contract and the Step 4 design decision
+      # note for the known node-npm multi-target gap.
+      # NOTE: project_variant is intentionally NOT a job output — it is hub-internal only.
+      # (HUB-ROUTING: used only for publish_mode derivation and step-summary diagnostics.)
+      # Do NOT promote it to outputs: — any needs: resolve-hub-context consumer could
+      # accidentally forward it to a spoke, violating the §2.2 spoke forwarding contract.
+      # Re-introduce as a job output only when Step 6 routing jobs have an explicit need.
+    steps:
+      - name: Derive normalized orchestration context
+        id: context
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}  # display only in step summary — allowlist enforcement is solely in the policy job
+          PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
+          IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
+          # SYNC[add-new-language] — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} here
+          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
+          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
+          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
+          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
+          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
+        # TODO(Step 6): Extract this run: block to eng/scripts/release_orchestrate_hub_context.sh
+        # for improved local testability and Phase 3 self-test coverage (structural +
+        # behavioral guards equivalent to Phase 0/2 in release_orchestrate_policy_self_test.sh).
+        # See REFACTOR_PLAN.md Step 6 for context on the extraction plan.
+        run: |
+          set -Eeuo pipefail
+
+          # Strip all whitespace and lowercase the channel to ensure deterministic case
+          # matching regardless of workflow_dispatch user input (e.g. ' Official' or 'BUDDY').
+          # NOTE (defensive path only): this strip is lossy — 'my channel' collapses to
+          # 'mychannel' with no error. In production the policy job (in needs:) rejects any
+          # CHANNEL with whitespace before this job runs, making the strip a no-op.
+          channel_trimmed="${CHANNEL//[[:space:]]/}"
+          lower_channel="${channel_trimmed,,}"
+
+          channel_profile="custom"      # default for custom/allowlisted channels (overridden by known channels below)
+          target_environment=""         # set in every case branch; pre-initialized for set -u safety
+          sanitized=""                  # set only in the *) custom branch; pre-initialized for set -u safety in step summary
+
+          case "${lower_channel}" in
+            official)
+              channel_profile="official"
+              target_environment="release-official"
+              # sanitized remains "" — not applicable for known channels
+              ;;
+            buddy)
+              channel_profile="buddy"
+              target_environment="release-buddy"
+              # sanitized remains "" — not applicable for known channels
+              ;;
+            *)
+              # For allowlisted custom channels, keep a deterministic environment naming
+              # convention for future spoke workflow migration.
+              # policy permits underscores in channel names; retain them here to avoid
+              # collisions between 'my_channel' and 'my-channel'. Replace other
+              # non [a-z0-9_-] characters with '-'.
+              # Sed passes: (1) replace non-slug chars with '-';
+              #             (2) strip any leading '-' or '_'; (3) strip any trailing '-' or '_';
+              #             (4) collapse runs of 2 or more consecutive dashes to a single '-'.
+              # NOTE: Pass 3 strips both trailing dashes AND trailing underscores (both are treated
+              # as separators). This asymmetry with pass 4 (which collapses only consecutive dashes,
+              # not underscores) means interior underscore runs in local-testing inputs are preserved
+              # while trailing underscores are stripped — both behaviours are intentional and
+              # documented; all such inputs are blocked by the allowlist regex in production.
+              # NOTE: Pass 4 collapses consecutive dashes only, not consecutive underscores.
+              # Underscore runs (e.g. 'my__channel') are intentionally preserved to keep
+              # 'my__channel' ≠ 'my-channel' as distinct environment names.
+              # Mixed sequences (e.g. '_-' or '-_') are not collapsed either; however, both
+              # consecutive underscores and mixed separator sequences are rejected by the
+              # allowlist regex (^[a-z0-9]([a-z0-9]|[_-][a-z0-9])*$), so they cannot appear
+              # in a validated allowlist entry. The defensive/local-testing path may produce
+              # environment names with these sequences, which is acceptable and documented.
+              sanitized="$(printf '%s' "${lower_channel}" | sed -E \
+                -e 's/[^a-z0-9_-]+/-/g' \
+                -e 's/^[-_]+//' \
+                -e 's/[-_]+$//' \
+                -e 's/-{2,}/-/g')"
+              # Fallback: if sanitization produces an empty string (all-symbol input like '!!!'),
+              # use 'custom' as the sentinel environment name. In production this path is
+              # unreachable: the policy job (in needs:) rejects any CHANNEL that finds no matching
+              # allowlist entry; no valid allowlist entry can equal '!!!'. In local testing,
+              # note that a user with 'custom' in their allowlist and this fallback triggered
+              # would route to the same 'release-custom' environment — an accepted local-testing
+              # limitation since the policy gate prevents this in production.
+              if [[ -z "${sanitized}" ]]; then
+                sanitized="custom"
+              fi
+              # Defensive: structurally unreachable — channel_trimmed already strips all
+              # [[:space:]] including \n before sed runs, and the sed passes cannot introduce
+              # newlines. Retained as an explicit guard against future refactoring that moves
+              # whitespace stripping after the sed pipeline.
+              if [[ "${sanitized}" == *$'\n'* ]]; then
+                echo "::error::BUG: sanitized channel contains a newline — output would corrupt GITHUB_OUTPUT." >&2
+                exit 1
+              fi
+              # Guard: prevent sanitization from silently collapsing to a reserved environment
+              # name. e.g. 'official-' has its trailing dash stripped → 'official', which
+              # would produce 'release-official' and impersonate the real official gate.
+              # Only 'official' and 'buddy' are reserved environment gates; 'x-official'/'x-buddy'
+              # are the escape slugs produced here and are not protected gates themselves.
+              # validate_inputs.sh blocks the exact strings 'x-official'/'x-buddy' as channel
+              # inputs, but inputs that sanitize to 'x-official' via other paths (e.g. 'x-official-')
+              # still land on 'release-x-official'. This is intentional and not a security concern:
+              # 'release-x-official' is not a protected gate — the collision guard's only job
+              # is to prevent 'release-official' and 'release-buddy' impersonation.
+              if [[ "${sanitized}" == "official" || "${sanitized}" == "buddy" ]]; then
+                sanitized="x-${sanitized}"
+              fi
+              target_environment="release-${sanitized}"
+              ;;
+          esac
+
+          # Invariant: target_environment must be non-empty (every channel case branch must
+          # assign it). This guard is placed here — immediately after the channel case block —
+          # so that any future branch that forgets to assign target_environment fails before
+          # any project_variant or publish_mode computation runs on an inconsistent state.
+          # It is symmetric with the project_variant guard below and prevents a silent empty
+          # environment name from reaching GITHUB_OUTPUT, which would cause downstream gate
+          # jobs to run without a GitHub Environment (bypassing required reviewers).
+          if [[ -z "${target_environment}" ]]; then
+            echo "::error::BUG: target_environment is empty after channel resolution. Every case branch must assign target_environment before this point. This is a programming error." >&2
+            exit 1
+          fi
+
+          # Strip all POSIX whitespace from PROJECT_KIND BEFORE variant mapping. Stripping first
+          # ensures exact comparisons work correctly: e.g. 'node ' (trailing space) would miss
+          # both 'node' branches without this normalization step. The tr call also satisfies the
+          # empty-string guard below by ensuring a whitespace-only PROJECT_KIND resolves to "".
+          # SYNC[add-new-language] — if the new language has sub-variants (like node has WXT),
+          # add an elif branch here to remap project_variant to the sub-variant slug.
+          # If no sub-variants exist, skip this block; project_variant defaults to "${PROJECT_KIND}"
+          # and the publish_mode case below is the first mandatory extension point.
+          project_variant="$(printf '%s' "${PROJECT_KIND}" | tr -d '[:space:]')"  # strip all POSIX whitespace first
+          # Fail fast if IS_WXT is empty for node projects. The upstream release-resolve job
+          # is contractually required to output IS_WXT='true' or 'false' for all node projects.
+          # Silently treating an absent IS_WXT as 'false' risks misrouting WXT projects through
+          # the npm publish path, producing silent cross-kind contamination in CI.
+          if [[ "${project_variant}" == "node" && -z "${IS_WXT:-}" ]]; then
+            echo "::error::IS_WXT is empty for project_kind=node. The upstream release-resolve job output contract requires IS_WXT='true' or 'false' for all node projects. Set IS_WXT in the resolve step." >&2
+            exit 1
+          fi
+          # Contract: IS_WXT must be exactly 'true' or 'false' for node projects.
+          # Non-canonical values ('yes', '1', 'TRUE', etc.) pass the empty check above but
+          # fail the == 'true' branch below, silently routing WXT projects as node-npm.
+          if [[ "${project_variant}" == "node" && "${IS_WXT:-}" != "true" && "${IS_WXT:-}" != "false" ]]; then
+            echo "::error::IS_WXT has non-canonical value '${IS_WXT:-}' for project_kind=node. The upstream release-resolve job output contract requires exactly 'true' or 'false'." >&2
+            exit 1
+          fi
+          if [[ "${project_variant}" == "node" && "${IS_WXT:-}" == "true" ]]; then
+            project_variant="node-wxt"
+          elif [[ "${project_variant}" == "node" ]]; then
+            project_variant="node-npm"
+          fi
+
+          # Fail fast if PROJECT_KIND was empty — upstream resolve contract violation.
+          if [[ -z "${project_variant}" ]]; then
+            echo "::error::project_variant resolved to empty string. PROJECT_KIND='${PROJECT_KIND}' is empty; upstream resolve job output contract is violated." >&2
+            exit 1
+          fi
+
+          # Determine publish_mode scoped to the resolved project variant.
+          # This avoids cross-language flag contamination: e.g. official-channel WXT builds have
+          # publish_node_gpr=true by policy, but WXT publishes no npm artifacts.
+          # SYNC[add-new-language] — add a case branch for the new project_kind with its registry flag(s)
+          # SYNC[paired-blocks]: this case block and the active_flags case block in the
+          # GITHUB_STEP_SUMMARY section below must cover the same set of project_variant arms.
+          # Divergence produces misleading publish-flag diagnostics in the step summary
+          # (not a functional failure). When adding a new project_variant, update both blocks.
+          publish_mode="build-only"
+          case "${project_variant}" in
+            python)
+              [[ "${PUBLISH_PYTHON_PYPI}"   == "true" ]] && publish_mode="publish"
+              ;;
+            node-npm)
+              [[ "${PUBLISH_NODE_GPR}"      == "true" || "${PUBLISH_NODE_NPMJS}" == "true" ]] && publish_mode="publish"
+              ;;
+            node-wxt)
+              # WXT distributes browser extension archives; publish_mode is always 'build-only'
+              # regardless of PUBLISH_NODE_NPMJS/GPR flags. Policy may require PUBLISH_NODE_NPMJS=true
+              # for official WXT channels (forward-compatibility baseline), but the flag has no
+              # routing effect here. See validate_inputs.sh official case for the policy assertion.
+              publish_mode="build-only"  # explicit assignment; does not rely on pre-loop initialization
+              ;;
+            ruby)
+              [[ "${PUBLISH_RUBY_GPR}"      == "true" || "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] && publish_mode="publish"
+              ;;
+            *)
+              # Unknown project_variant: fail rather than silently producing incorrect routing.
+              # This can occur when PROJECT_KIND from release-resolve.yml is a new language
+              # not yet added to the variant mapping above.
+              # SYNC[add-new-language] — add a case arm ABOVE for the new variant.
+              # Do NOT delete this *) arm — it MUST remain as a permanent catch-all guard.
+              # Only replace the 'exit 1' with correct handler logic when the variant is supported.
+              echo "::error::Unrecognized project_variant '${project_variant}' (PROJECT_KIND='${PROJECT_KIND}', IS_WXT='${IS_WXT:-}'). Known variants: python, node-npm, node-wxt, ruby. If this is a new language, add a branch above." >&2
+              exit 1
+              ;;
+          esac
+
+          # GITHUB_OUTPUT: outputs are critical — intentionally no fallback.
+          # Unlike GITHUB_STEP_SUMMARY (informational), a write failure here must be
+          # surfaced immediately rather than silently swallowed. In local/offline testing,
+          # set GITHUB_OUTPUT to a temporary file to avoid an unbound-variable error.
+          # NOTE: project_variant is intentionally NOT written here — it is hub-internal.
+          # See the outputs: block comment above for the rationale.
+          # SAFETY: it is safe to write these three values unquoted to GITHUB_OUTPUT because
+          # both the sed normalization step (which strips all characters outside [a-z0-9_-])
+          # and the explicit newline guard above have already run. No embedded newlines or
+          # special characters can reach this point to corrupt the KEY=VALUE line format.
+          {
+            echo "channel_profile=${channel_profile}"
+            echo "target_environment=${target_environment}"
+            echo "publish_mode=${publish_mode}"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "### Hub context"
+            echo "#### Raw inputs"
+            # Show both raw and normalized channel so operators can spot unintended normalization
+            # at a glance without inspecting workflow dispatch inputs.
+            echo "- channel (raw): \`${CHANNEL}\`"
+            # NOTE: In a normal workflow run, the policy job (in needs:) rejects any CHANNEL
+            # containing whitespace or uppercase before this job runs, so lower_channel == CHANNEL
+            # is always true here. The 'normalized to' branch is defensive — it would fire only
+            # if this script is invoked without the policy gate (e.g. local testing).
+            if [[ "${lower_channel}" != "${CHANNEL}" ]]; then
+              norm_desc=""
+              [[ "${channel_trimmed}" != "${CHANNEL}" ]] && norm_desc="whitespace stripped"
+              [[ "${lower_channel}" != "${channel_trimmed}" ]] && norm_desc="${norm_desc:+${norm_desc}, }lowercased"
+              echo "  - normalized to: \`${lower_channel}\` (${norm_desc})"
+            fi
+            echo "- project_kind: \`${PROJECT_KIND}\`"
+            echo "- is_wxt: \`${IS_WXT:-}\`"
+            echo "#### Derived outputs"
+            echo "- channel_profile: \`${channel_profile}\`"
+            echo "- target_environment: \`${target_environment}\`"
+            if [[ -n "${sanitized}" ]]; then
+              # Show sanitized channel for custom channels so operators can trace
+              # the normalisation path: lower_channel → sanitized → target_environment.
+              echo "  - channel sanitized to: \`${sanitized}\`"
+            fi
+            echo "- project_variant: \`${project_variant}\`"
+            echo "- publish_mode: \`${publish_mode}\`"
+            if [[ "${project_variant}" == "node-wxt" ]]; then
+              echo "  - note: WXT produces browser extension archives; publish_mode is always build-only regardless of publish_node_npmjs/gpr flag values"
+            fi
+            if [[ "${publish_mode}" == "publish" ]]; then
+              active_flags=()
+              # SYNC[add-new-language] — add a case branch for the new project_variant.
+              # Collect only flags for the resolved project_variant to avoid misleading
+              # diagnostics when cross-language flags are also set by the channel policy.
+              # SYNC[paired-blocks]: this case block and the publish_mode case block above
+              # must cover the same set of project_variant arms (divergence = misleading summary).
+              # TODO(Step 6): merge this case block and the publish_mode case block above into
+              # a single pass. Do NOT merge without first extracting the GITHUB_OUTPUT writes
+              # (in the publish_mode case block) into a dedicated write section — the current
+              # structure writes to GITHUB_OUTPUT mid-case, and a merged block would interleave
+              # output writes with summary state. The summary block reads bash variable
+              # ${publish_mode} directly (not from the GITHUB_OUTPUT file), so the ordering
+              # constraint is about code structure, not I/O ordering.
+              # Remove both blocks once Step 6 routes each language to its own spoke job,
+              # making hub-level publish_mode derivation unnecessary.
+              case "${project_variant}" in
+                python)
+                  [[ "${PUBLISH_PYTHON_PYPI}"   == "true" ]] && active_flags+=("publish_python_pypi")
+                  ;;
+                node-npm)
+                  [[ "${PUBLISH_NODE_GPR}"      == "true" ]] && active_flags+=("publish_node_gpr")
+                  [[ "${PUBLISH_NODE_NPMJS}"    == "true" ]] && active_flags+=("publish_node_npmjs")
+                  ;;
+                ruby)
+                  [[ "${PUBLISH_RUBY_GPR}"      == "true" ]] && active_flags+=("publish_ruby_gpr")
+                  [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] && active_flags+=("publish_ruby_rubygems")
+                  ;;
+                node-wxt)
+                  # INTENTIONALLY retained even though unreachable today (the outer
+                  # if [[ publish_mode == 'publish' ]] is always false for node-wxt since
+                  # publish_mode is explicitly forced to 'build-only' for this variant).
+                  # Do NOT delete: if publish_mode derivation ever changes for node-wxt,
+                  # this arm prevents the *) fallback from printing a misleading diagnostic.
+                  # SYNC[paired-blocks]: keep this arm in sync with the publish_mode case block.
+                  : # no publish flags for WXT
+                  ;;
+                *)
+                  # This arm is unreachable in a valid run: the publish_mode case block
+                  # above calls 'exit 1' for any unrecognized project_variant, so the script
+                  # never reaches this summary section with an unknown variant. It is kept as
+                  # a maintenance reminder: if a new variant is added to the publish_mode block
+                  # but not here, diagnostics will flag it instead of silently omitting flags.
+                  # SYNC[add-new-language] — update this case arm when a new project_variant
+                  # is added so publish-flag diagnostics remain accurate.
+                  active_flags+=("(unhandled variant '${project_variant}': update summary block)")
+                  ;;
+              esac
+              if [[ ${#active_flags[@]} -gt 0 ]]; then
+                echo "  - active: ${active_flags[*]}"
+              else
+                echo "  - active: (none)"
+              fi
+            fi
+            if [[ -n "${CHANNEL_ALLOWLIST}" ]]; then
+              echo "- channel_allowlist: configured"
+            else
+              echo "- channel_allowlist: empty"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
 
   guard-prerelease-only:
     name: Guard prerelease-only policy
@@ -429,6 +819,9 @@ jobs:
           echo "### Guard: Non-clobber :white_check_mark: disabled" >> "${GITHUB_STEP_SUMMARY}"
           echo "Non-clobber enforcement is not enabled for channel \`${CHANNEL}\`." >> "${GITHUB_STEP_SUMMARY}"
 
+  # SYNC[routing-jobs]: Step-6 routing jobs that consume release notes MUST add
+  # prepare-release-notes to their own needs: directly; it is intentionally absent
+  # from resolve-hub-context/needs: (see the resolve-hub-context comment above).
   prepare-release-notes:
     name: Prepare release notes
     needs: resolve
@@ -1492,7 +1885,7 @@ jobs:
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
-  # SYNC: add-new-language — define new language pipeline jobs (build, pack, publish,
+  # SYNC[add-new-language] — define new language pipeline jobs (build, pack, publish,
   #   attest-<lang>-enabled, attest-<lang> gate, release-<lang>-with-<registry>,
   #   release-<lang>-no-<registry>) above release-completed. Follow the existing
   #   Python/Node/Ruby section structure. If the new language has an optional external
@@ -1551,7 +1944,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: always()
-    # SYNC: add-new-language — add new release job name(s) and attest-<lang> gate to needs below.
+    # SYNC[add-new-language] — add new release job name(s) and attest-<lang> gate to needs below.
     # release-* jobs: [CI-ENFORCED] by "Verify release-completed covers all release-* jobs" lint step.
     # attest-<lang> gates: MANUAL — add them here; they are not auto-detected by the lint step.
     needs:
