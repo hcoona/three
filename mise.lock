@@ -33,6 +33,24 @@ backend = "aqua:cli/cli"
 "platforms.macos-x64" = { checksum = "sha256:ced7094d05702eb54a63542abd8a1dc570b7e5ae94951844eb1626ba74bc2c60", url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_macOS_amd64.zip"}
 "platforms.windows-x64" = { checksum = "sha256:983c74a8c594366b198485187cd6d4d07638f0bf9a9948d51a2a81a5164d8bfd", url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_windows_amd64.zip"}
 
+[[tools."github:hadolint/hadolint"]]
+version = "2.14.0"
+backend = "github:hadolint/hadolint"
+"platforms.linux-arm64" = { checksum = "sha256:331f1d3511b84a4f1e3d18d52fec284723e4019552f4f47b19322a53ce9a40ed", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-arm64", url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/295944081"}
+"platforms.linux-x64" = { checksum = "sha256:6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-x86_64", url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/295944080"}
+"platforms.macos-arm64" = { checksum = "sha256:3625e2e9f43dcfe7bd38738a5f5520ed50ce39ed28485266e6803dd7bc197b10", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-macos-arm64", url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/295944077"}
+"platforms.macos-x64" = { checksum = "sha256:2b69a853433f1eca522ffb921cd490bd1321424d03331fd8390f93b7fb4a02e9", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-macos-x86_64", url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/295944082"}
+"platforms.windows-x64" = { checksum = "sha256:8e0ee174f88edb14f207a68430c7a53c2883ed509cdbde9a3a26fffa140fa5e4", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-windows-x86_64.exe", url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/295944079"}
+
+[[tools."github:koalaman/shellcheck"]]
+version = "latest"
+backend = "github:koalaman/shellcheck"
+"platforms.linux-arm64" = { checksum = "sha256:685490d147ecf8b3a9b7c2a02c6c1ef2e32fbf1510b4f9aca6b921cebb140c34", url = "https://github.com/koalaman/shellcheck/releases/download/latest/shellcheck-latest.linux.aarch64.tar.gz", url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/349226171"}
+"platforms.linux-x64" = { checksum = "sha256:c1ff2d56a01bbc1dcb25bf1b3e5f959a42664efebd27d0c30be6e58b32b0397a", url = "https://github.com/koalaman/shellcheck/releases/download/latest/shellcheck-latest.linux.x86_64.tar.gz", url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/349226188"}
+"platforms.macos-arm64" = { checksum = "sha256:4d094ac4292996c8bc782b86c7fc62be0286ee9af971f8b1c2add1bb37f30b2a", url = "https://github.com/koalaman/shellcheck/releases/download/latest/shellcheck-latest.darwin.aarch64.tar.gz", url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/349226173"}
+"platforms.macos-x64" = { checksum = "sha256:963b5fa52e4a79fd6466e67b5adb3059b17d05b21df97fd5c70e43b4650aa6cd", url = "https://github.com/koalaman/shellcheck/releases/download/latest/shellcheck-latest.darwin.x86_64.tar.gz", url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/349226175"}
+"platforms.windows-x64" = { checksum = "sha256:b2e2a5a6b78fef4e207cf101518e25afda4e6f87237a1e1352507ded1d3622c9", url = "https://github.com/koalaman/shellcheck/releases/download/latest/shellcheck-latest.zip", url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/349226191"}
+
 [[tools.go]]
 version = "1.25.6"
 backend = "core:go"
@@ -57,16 +75,6 @@ backend = "go:github.com/rhysd/actionlint/cmd/actionlint"
 [[tools."go:mvdan.cc/sh/v3/cmd/shfmt"]]
 version = "3.12.0"
 backend = "go:mvdan.cc/sh/v3/cmd/shfmt"
-
-[[tools.hadolint]]
-version = "2.14.0"
-backend = "ubi:hadolint/hadolint"
-"platforms.linux-arm64" = { checksum = "sha256:331f1d3511b84a4f1e3d18d52fec284723e4019552f4f47b19322a53ce9a40ed", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-arm64"}
-"platforms.linux-x64" = { checksum = "sha256:6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-x86_64"}
-"platforms.macos-arm64" = { checksum = "sha256:3625e2e9f43dcfe7bd38738a5f5520ed50ce39ed28485266e6803dd7bc197b10", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-macos-arm64"}
-"platforms.macos-x64" = { checksum = "sha256:2b69a853433f1eca522ffb921cd490bd1321424d03331fd8390f93b7fb4a02e9", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-macos-x86_64"}
-"platforms.windows-x64" = { checksum = "sha256:8e0ee174f88edb14f207a68430c7a53c2883ed509cdbde9a3a26fffa140fa5e4", url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-windows-x86_64.exe"}
-"platforms.windows-x64-hadolint.exe" = { checksum = "blake3:2030d7af1646eeb906bf706fced35dbceb23aa365803244f0cb4b06af1ee0010"}
 
 [[tools.hk]]
 version = "1.36.0"
@@ -148,16 +156,6 @@ backend = "core:ruby"
 "platforms.macos-arm64" = { checksum = "sha256:bdbfeceee5981e29a64c0d515a29755fad723ef17c259317af7976aedca22098", url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.macos.tar.gz"}
 "platforms.macos-x64" = { checksum = "sha256:b555baa467a306cfc8e6c6ed24d0d27b27e9a1bed1d91d95509859eac6b0e928", url = "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.10.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:80203102617b216dc0bcdcc8c21cc3889aa3fde7f15860e2e22ee5487480f694", url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.3.10-1/rubyinstaller-3.3.10-1-x64.7z"}
-
-[[tools.shellcheck]]
-version = "0.11.0"
-backend = "ubi:koalaman/shellcheck"
-"platforms.linux-arm64" = { checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"}
-"platforms.linux-x64" = { checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"}
-"platforms.linux-x64-shellcheck" = { checksum = "blake3:3297f19e635c3225457702704fa328408adbbfdcaa0a7c7fe591d8af1cc588f4"}
-"platforms.macos-arm64" = { checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz"}
-"platforms.macos-x64" = { checksum = "sha256:3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.xz"}
-"platforms.windows-x64" = { checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"}
 
 [[tools.taplo]]
 version = "0.10.0"
