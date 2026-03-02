@@ -32,8 +32,8 @@ if [[ "${rc}" -eq 0 ]]; then
     exit 1
   fi
   echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
-  echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
-  echo "Tag \`${TAG_NAME}\` — existing release is prerelease=true, safe to proceed." >> "${GITHUB_STEP_SUMMARY}"
+  echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
+  echo "Tag \`${TAG_NAME}\` — existing release is prerelease=true, safe to proceed." >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
   exit 0
 fi
 
@@ -52,8 +52,8 @@ if [[ "${status}" == "404" ]]; then
     echo "Warning: git tag '${TAG_NAME}' already exists (sha=${tag_sha}) but has no associated GitHub Release." >&2
     echo "This is expected if a previous run created the tag but failed before creating the release." >&2
   fi
-  echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
-  echo "Tag \`${TAG_NAME}\` — no existing release found, safe to proceed." >> "${GITHUB_STEP_SUMMARY}"
+  echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
+  echo "Tag \`${TAG_NAME}\` — no existing release found, safe to proceed." >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
   exit 0
 fi
 

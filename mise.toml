@@ -39,11 +39,11 @@ typos = "latest"
 "go:github.com/rhysd/actionlint/cmd/actionlint" = "latest"
 
 # Bash
-shellcheck = "latest"
+"github:koalaman/shellcheck" = { version = "latest", platforms = { "windows-x64" = { asset_pattern = "shellcheck-*.zip" } } }
 "go:mvdan.cc/sh/v3/cmd/shfmt" = "latest"
 
 # Dockerfile
-hadolint = "latest"
+"github:hadolint/hadolint" = "latest"
 
 # .env
 dotenv-linter = "latest"

@@ -16,7 +16,7 @@ The code linting and formatting tools are set up as follows:
 2. Python: `ruff` for linting and formatting, `pyrefly` for type checking.
 3. JavaScript/TypeScript: `biome` for linting and formatting, `tsgo` for type checking.
 
-We use [MISE](https://mise.jdx.dev/) to manage tools across different projects in the monorepo. Check `.mise.toml` for further details.
+We use [MISE](https://mise.jdx.dev/) to manage tools across different projects in the monorepo. Check `mise.toml` for further details.
 
 We use [HK](https://hk.jdx.dev/) for both git hooks manager and CI validation gate. Check `hk.pkl` for further details.
 

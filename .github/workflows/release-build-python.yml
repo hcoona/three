@@ -48,7 +48,7 @@ jobs:
           python-version: ${{ inputs.python_version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7
+        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7
         with:
           python-version: ${{ inputs.python_version }}
           cache-dependency-glob: 'uv.lock'
@@ -83,7 +83,7 @@ jobs:
           uv run --script eng/scripts/verify_python_artifact_version.py "${EXPECTED}" "${GITHUB_WORKSPACE}/out"
 
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ github.workspace }}/out/*
