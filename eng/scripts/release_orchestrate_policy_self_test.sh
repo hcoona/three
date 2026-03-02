@@ -69,6 +69,12 @@ check_guard_rejects "leading-space channel"  " staging"    "contains whitespace"
 check_guard_rejects "trailing-space channel" "staging "    "contains whitespace"
 check_guard_rejects "tab channel"            $'stag\ting'  "contains whitespace"
 check_guard_rejects "newline channel"        $'stag\ning'  "contains whitespace"
+# NB-6b: Combined leading-space + uppercase (' Official') — the whitespace guard must fire
+# BEFORE the uppercase guard. ${CHANNEL,,} folds ' Official' → ' official' (space preserved),
+# which differs from CHANNEL and would trigger the uppercase guard with a misleading message.
+# ORDERING: This is the canonical motivating example for the 'whitespace guard before
+# uppercase guard' ordering rule documented in validate_inputs.sh.
+check_guard_rejects "leading-space+uppercase channel" " Official" "contains whitespace"
 
 # NB-5: Uppercase + reserved slug — triggers a distinct inner guard with its own message.
 # 'Official' (plain uppercase) is tested above; 'X-OFFICIAL' hits an inner if-branch
@@ -483,6 +489,44 @@ check_source_tag_rejects "source=tag missing REF" \
   "source=tag requires ref to be set." REF=""
 check_source_tag_accepts "source=tag with all required fields (official channel)"
 
+# BLK-7: SOURCE=manual input validation behavioral tests.
+# SOURCE=manual checks run BEFORE the CHANNEL pre-case guards (see validate_inputs.sh
+# line order: source validation → channel guards). These tests verify the PROJECT and
+# VERSION guards fire correctly for the manual source path, which is the default path
+# used by all other Phase 0 tests. Without dedicated tests a guard removal here would
+# be invisible because all other tests pass PROJECT=dummy VERSION=1.0.0.
+check_source_manual_rejects() {
+  local description="$1"
+  local expected_fragment="$2"
+  shift 2
+  local output
+  # Base env: fully valid SOURCE=manual. Caller overrides specific vars via "$@".
+  output=$(env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+    CHANNEL=official CHANNEL_ALLOWLIST="" \
+    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+    "$@" bash "${POLICY_SCRIPT}" 2>&1; echo "EXIT:$?")
+  if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
+    echo "ERROR: source=manual guard did not reject — '${description}': expected non-zero exit" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+  if ! echo "${output}" | grep -qF "${expected_fragment}"; then
+    echo "ERROR: source=manual guard missing expected message — '${description}'" >&2
+    echo "  Expected message containing: '${expected_fragment}'" >&2
+    echo "  Got: ${output}" >&2
+    FAIL=1
+  fi
+}
+
+check_source_manual_rejects "source=manual missing PROJECT" \
+  "source=manual requires project to be set." PROJECT=""
+check_source_manual_rejects "source=manual missing VERSION" \
+  "source=manual requires version to be set." VERSION=""
+
 if [[ "${FAIL}" -ne 0 ]]; then
   echo "Pre-case guard behavioral smoke tests failed. See errors above." >&2
   exit 1
@@ -677,12 +721,27 @@ check_publish_targets_rejects "IS_WXT='1' is rejected for node project" \
 check_publish_targets_rejects "IS_WXT='TRUE' is rejected for node project" \
   "non-canonical value" \
   PROJECT_KIND=node IS_WXT=TRUE PUBLISH_NODE_GPR=true
+# Non-canonical 'false' variants: mixed-case and uppercase must also be rejected so that
+# a typo like 'False' is caught rather than silently routed via the != "true" fallthrough.
+check_publish_targets_rejects "IS_WXT='False' is rejected for node project" \
+  "non-canonical value" \
+  PROJECT_KIND=node IS_WXT=False PUBLISH_NODE_GPR=true
+check_publish_targets_rejects "IS_WXT='FALSE' is rejected for node project" \
+  "non-canonical value" \
+  PROJECT_KIND=node IS_WXT=FALSE PUBLISH_NODE_GPR=true
 
 # PT-3: node-npm acceptance (IS_WXT=false, at least one Node publish target)
 check_publish_targets_accepts "node-npm project with GPR publish target" \
   PROJECT_KIND=node IS_WXT=false PUBLISH_NODE_GPR=true
 check_publish_targets_accepts "node-npm project with npmjs publish target" \
   PROJECT_KIND=node IS_WXT=false PUBLISH_NODE_NPMJS=true
+# PT-3b: node-npm with both publish targets disabled must be rejected.
+# The acceptance tests above each enable exactly one target; this test verifies the guard
+# fires when both are false, catching a polarity inversion that would let misconfigured
+# projects silently skip all Node publish steps.
+check_publish_targets_rejects "node-npm with no publish target is rejected" \
+  "requires at least one Node publish target" \
+  PROJECT_KIND=node IS_WXT=false
 
 # PT-4: node-wxt acceptance (IS_WXT=true; official channel permits node flags by policy)
 check_publish_targets_accepts "WXT project on official channel accepts node flags" \

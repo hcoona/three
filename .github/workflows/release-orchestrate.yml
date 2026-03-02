@@ -635,6 +635,10 @@ jobs:
           # set GITHUB_OUTPUT to a temporary file to avoid an unbound-variable error.
           # NOTE: project_variant is intentionally NOT written here — it is hub-internal.
           # See the outputs: block comment above for the rationale.
+          # SAFETY: it is safe to write these three values unquoted to GITHUB_OUTPUT because
+          # both the sed normalization step (which strips all characters outside [a-z0-9_-])
+          # and the explicit newline guard above have already run. No embedded newlines or
+          # special characters can reach this point to corrupt the KEY=VALUE line format.
           {
             echo "channel_profile=${channel_profile}"
             echo "target_environment=${target_environment}"
