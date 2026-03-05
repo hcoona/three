@@ -38,6 +38,8 @@ buddy 是用户手工触发的，用户在触发时会指定这次是跑哪个�
 1. 桌面应用：打包成 exe 或 msi，发布到 GitHub Release
 2. NuGet 包：打包成 nupkg，发布到 GitHub Package Registry
 
+有的项目可能还需要多重发布，例如既要发布 GitHub Package Registry，又要发布到 GitHub Release。
+
 正因为是用户手工触发的，所以还要补上打 git tag 的步骤，免得无法追溯。
 
 ## official.yml
@@ -45,3 +47,9 @@ buddy 是用户手工触发的，用户在触发时会指定这次是跑哪个�
 和 buddy.yml 类似，但它是通过正式 Git tag 触发的，主要用于发布到正式环境。
 
 正式环境的发布流程和非正式环境会不同，例如 NuGet 包可能需要发布到 NuGet 官方库，而不是 GitHub Package Registry。
+
+## 其他澄清说明
+
+1. 已知事实：使用 GitHub Workflow 的 Token 进行 push 和 tag 的操作，不会继续触发新的 workflow 运行。
+2. 我们想要使用 release/项目名/v版本号 这样的 tag 来进行发布，这样可以清晰地知道这个 tag 是哪个项目的哪个版本。
+3. 已知事实：HK 不是项目或者语言相关的，是直接在整个 repo 上跑的，HK 会根据文件类型来选择合适的工具进行分析。
