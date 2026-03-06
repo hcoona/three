@@ -1,84 +1,210 @@
-# GitHub Workflows Design (v2)
+# GitHub Workflows Design (v2.1)
 
-This document describes the GitHub Actions workflow architecture for the three monorepo.
+This document describes the GitHub Actions workflow architecture for the `three` monorepo.
 
-## 1. 架构总览设计 (Hub-and-Spoke 模式)
+## 1. Architecture Overview (Hub-and-Spoke Pattern)
 
-为了避免在三个主 Workflow 中写大量重复的构建和部署代码，强烈建议引入**可重用工作流 (Reusable Workflows)** 作为底层支撑：
+To avoid duplicating build and deploy logic across three entry workflows, the design adopts reusable workflows as the execution layer.
 
-- **入口层 (Entry Workflows)**: `ci.yml`, `buddy.yml`, `official.yml`
-- **执行层 (Reusable Workflows, 存放在 `.github/workflows/` 下)**:
-    - `_build-test-csharp.yml` (跑在 `windows-latest`)
-    - `_build-test-python.yml` (跑在 `ubuntu-latest`)
-    - `_build-test-jsts.yml` (跑在 `ubuntu-latest`)
-    - `_publish-target.yml` (处理具体的推送动作，如推 GitHub Packages, GitHub Releases, 或 NuGet.org)
+**Entry layer (Entry Workflows):** `ci.yml`, `buddy.yml`, `official.yml`
 
-## 2. `ci.yml` (PR 验证流：精准并发，左移拦截)
+**Execution layer (Reusable Workflows under `.github/workflows/`):**
 
-**触发条件**: `on: pull_request`
+- `_build-test-csharp.yml` — runs on `windows-latest`
+- `_build-test-python.yml` — runs on `ubuntu-latest`
+- `_build-test-jsts.yml` — runs on `ubuntu-latest`
+- `_publish-nuget.yml` — publishes `.nupkg` to GPR NuGet feed **or** NuGet.org (parameterized by `feed-url`)
+- `_publish-npm.yml` — publishes npm tarball to GPR npm feed **or** npmjs (parameterized by `registry`)
+- `_publish-pypi.yml` — publishes wheel/sdist to PyPI
+- `_publish-rubygems.yml` — publishes gem to GPR RubyGems feed **or** RubyGems.org (parameterized by `host`)
+- `_publish-github-release.yml` — publishes downloadable assets to GitHub Releases
 
-为了提高效率，CI 不应该每次全量编译，而是利用路径过滤（如 `dorny/paths-filter`）来实现精准并发。
+The split axis is **ecosystem (tooling)**, not destination. Publishing a NuGet package to GPR vs NuGet.org uses the same tool (`dotnet nuget push`) with a different `--source` URL; the same applies to npm, RubyGems, etc. Each reusable workflow encapsulates one tool and one package format, accepting the destination as an input parameter. The caller (buddy or official) controls which destination and auth method to use.
 
-**工作流作业 (Jobs) 编排**：
+Callers must pass `secrets: inherit` (or name each secret individually) when invoking reusable workflows. Note that `secrets: inherit` only forwards **repository/organization secrets** — it does NOT affect `permissions` (OIDC tokens, `GITHUB_TOKEN` scopes, etc.). Permissions are inherited automatically: a reusable workflow receives the caller job's `permissions` grants as long as the reusable workflow itself does **not** declare its own `permissions` block. This is what allows the same `_publish-nuget.yml` to operate under `packages: write` when called from `buddy.yml` and under `id-token: write` when called from `official.yml`.
 
-1. **`static-analysis`**: 启动最快的 Ubuntu Runner，直接在全局运行 `jdx/hk`（执行 `hk check`）。因为 HK 自动识别文件类型，这里作为第一道防线即可拦截格式、Lint 等失败。
-2. **`detect-changes`**: 使用 `paths-filter` 插件，检测 PR 修改的文件类型。
-    - `csharp`: `['**/*.cs', '**/*.csproj', 'global.json', 'Directory.*.props']`
-    - `python`: `['**/*.py', 'pyproject.toml', 'uv.lock']`
-    - `jsts`: `['**/*.ts', '**/*.js', 'package.json', 'pnpm-workspace.yaml']`
-3. **`test-csharp` / `test-python` / `test-jsts` (并发执行)**:
-    - 依赖: `needs: [detect-changes, static-analysis]`
-    - 条件判断: 例如 `if: needs.detect-changes.outputs.csharp == 'true'`。
-    - 各自调用对应的 Reusable Workflow。C# 明确使用 `windows-latest` 跑单元测试，另两个使用 Ubuntu。
+**Permissions model:** Every entry workflow declares `permissions: {}` at workflow level. Individual jobs then request only the scopes they need (principle of least privilege). Key scopes:
 
-## 3. `buddy.yml` (非正式发布流：动态矩阵，打 Tag 隔离)
+| Job kind                            | Required `permissions` |
+| ----------------------------------- | ---------------------- |
+| Push tags                           | `contents: write`      |
+| GitHub Packages (any feed)          | `packages: write`      |
+| OIDC publish to official registries | `id-token: write`      |
+| Read-only checkout                  | `contents: read`       |
 
-**触发条件**: `on: workflow_dispatch`
-**输入参数**: 用户手工输入/选择 `project-name`。
+All four official registries (NuGet.org, PyPI, npmjs, RubyGems.org) support OIDC Trusted Publishing. GPR feeds use `GITHUB_TOKEN` with `packages: write` instead.
 
-因为即便同语言也有不同打包发布方式（EXE, NuGet 等），这里必须解析项目配置来生成**发布矩阵**。
+**Concurrency policy:** Each entry workflow defines a `concurrency:` group to prevent resource races:
 
-**工作流作业 (Jobs) 编排**：
+- `ci.yml`: `group: ci-${{ github.ref }}`, `cancel-in-progress: true`
+- `buddy.yml`: `group: buddy-${{ inputs.project-name }}`, `cancel-in-progress: false`
+- `official.yml`: `group: official-${{ inputs.tag-name }}`, `cancel-in-progress: false`
+
+**Third-party actions:** All third-party actions must be pinned to full commit SHA. Use Renovate or Dependabot to manage updates:
+
+```yaml
+uses: dorny/paths-filter@de90cc6ed7cd597cb74b84a7e832ce805e3c7b15 # v3.0.2
+```
+
+## 2. `ci.yml` — PR Validation (Targeted Concurrency, Shift-Left)
+
+**Trigger:** `on: pull_request`
+
+CI does not build everything on every PR. It uses path filtering (`dorny/paths-filter`, SHA-pinned) to run only the affected language test suites.
+
+**Jobs:**
+
+1. **`static-analysis`**: Runs `jdx/hk` (`hk check`) on an Ubuntu runner. HK auto-detects file types, serving as the first gate for formatting and linting failures.
+
+2. **`detect-changes`**: Uses `dorny/paths-filter` to classify modified files:
+    - `csharp`: `['**/*.cs', '**/*.csproj', 'global.json', 'Directory.*.props', 'NuGet.Config', '**/*.targets', '**/packages.lock.json']`
+    - `python`: `['**/*.py', 'pyproject.toml', 'uv.lock', 'mise.toml']`
+    - `jsts`: `['**/*.ts', '**/*.js', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'biome.jsonc', 'tsconfig*.json']`
+    - `infra`: `['.github/workflows/**', 'eng/scripts/**', 'mise.toml', 'hk.pkl']`
+
+    When `infra` changes are detected, all three language test suites are triggered regardless of other filters.
+
+    > **Scaling note:** The current filters operate at language level (`**/*.cs` triggers all C# builds). As the monorepo grows past ~10 projects per language, this should evolve to per-project granularity using affected-project detection from `eng/scripts/find_*_project_path.py`.
+
+3. **`test-csharp` / `test-python` / `test-jsts`** (run in parallel):
+    - `needs: [detect-changes, static-analysis]`
+    - Conditional: e.g. `if: needs.detect-changes.outputs.csharp == 'true' || needs.detect-changes.outputs.infra == 'true'`
+    - Each calls its corresponding reusable workflow. C# uses `windows-latest`; the others use `ubuntu-latest`.
+
+4. **`ci-passed`** (final gate job):
+    - `if: always()`
+    - `needs: [test-csharp, test-python, test-jsts]`
+    - Asserts all required checks either passed or were legitimately skipped. This prevents the "skipped-all blocks required status checks" problem when a PR modifies only docs or non-code files.
+
+    ```yaml
+    ci-passed:
+        if: always()
+        needs: [test-csharp, test-python, test-jsts]
+        runs-on: ubuntu-latest
+        steps:
+            - name: Assert all required checks passed or were skipped
+              run: |
+                  results='${{ toJson(needs) }}'
+                  echo "$results" | jq -e '
+                    to_entries
+                    | map(.value.result == "success" or .value.result == "skipped")
+                    | all'
+    ```
+
+## 3. `buddy.yml` — Unofficial Release (Dynamic Matrix, Tag Isolation)
+
+**Trigger:** `on: workflow_dispatch`
+**Input:** User selects `project-name`.
+
+Even within the same language, different projects may have different packaging strategies (EXE, NuGet, wheel, etc.). The workflow resolves publish targets dynamically from project configuration.
+
+**Jobs:**
 
 1. **`resolve-context`**:
-    - 跑一个脚本（复用你现有的 `eng/scripts/find_*_project_path`），基于输入的 `project-name` 获取：语言类型、项目路径、版本号 (通过 NBGV)。
-    - **核心设计**：读取项目的发布配置文件（或项目文件中的 Meta 信息），输出一个需发布的 Target JSON 数组（例如 `["gpr", "github_release"]`）。
-2. **`static-analysis`**: 针对提取出的项目路径，精准跑一次 `hk` 检查。
-3. **`build-and-pack`**:
-    - 依赖: `needs: [resolve-context, static-analysis]`
-    - 根据语言动态调用对应的 Reusable Workflow，将构建产物（`.nupkg`, `.whl`, `.exe` 等）上传到 CI Artifacts。
-4. **`publish-unofficial` (动态矩阵)**:
-    - 策略: `strategy.matrix.target: ${{ fromJson(needs.resolve-context.outputs.targets) }}`
-    - 此 Job 根据矩阵目标，将产物同时、并发地发布到 GitHub Packages 和 GitHub Releases 等非正式环境。
+    - Runs a script (reusing `eng/scripts/find_*_project_path`) to determine: language, project path, and version (via NBGV).
+    - **NBGV resolution:** The checkout must use `fetch-depth: 0` so NBGV can compute version height from git history. The script locates the correct `version.json` by searching upward from the project directory. If the resolved version has already been published, the script should warn but not fail (the idempotent publish scripts handle this downstream).
+    - Reads the project's release configuration and emits a JSON array of publish targets. Targets use the format `ecosystem:destination` (e.g. `["nuget:gpr", "nuget:official", "github_release"]`).
+    - **Validates the output** against an explicit allowlist before setting the job output:
+
+    ```python
+    VALID_TARGETS = frozenset({
+        "nuget:gpr", "nuget:official",
+        "npm:gpr", "npm:official",
+        "pypi:official",
+        "rubygems:gpr", "rubygems:official",
+        "github_release",
+    })
+    assert all(t in VALID_TARGETS for t in targets), f"Unknown target in {targets}"
+    assert len(targets) > 0, "No publish targets resolved"
+    ```
+
+2. **`static-analysis`**: Runs `hk check` scoped to the resolved project path.
+
+3. **`build-csharp` / `build-python` / `build-jsts`** (static conditional jobs):
+    - `needs: [resolve-context, static-analysis]`
+    - Because GitHub Actions resolves `uses:` statically at parse time, a single job cannot dynamically select a reusable workflow at runtime. Instead, three separate jobs are defined with conditional execution:
+
+    ```yaml
+    build-csharp:
+        needs: [resolve-context, static-analysis]
+        if: needs.resolve-context.outputs.language == 'csharp'
+        uses: ./.github/workflows/_build-test-csharp.yml
+        secrets: inherit
+
+    build-python:
+        needs: [resolve-context, static-analysis]
+        if: needs.resolve-context.outputs.language == 'python'
+        uses: ./.github/workflows/_build-test-python.yml
+        secrets: inherit
+
+    build-jsts:
+        needs: [resolve-context, static-analysis]
+        if: needs.resolve-context.outputs.language == 'jsts'
+        uses: ./.github/workflows/_build-test-jsts.yml
+        secrets: inherit
+    ```
+
+    Only one of this three jobs will actually execute. Build artifacts (`.nupkg`, `.whl`, `.exe`, etc.) are uploaded to CI Artifacts.
+
+4. **`publish-unofficial`** (dynamic matrix):
+    - `needs: [resolve-context, build-csharp, build-python, build-jsts]`
+    - `if: always() && !cancelled() && !failure()` (to handle the two skipped build jobs)
+    - `strategy.matrix.target: ${{ fromJson(needs.resolve-context.outputs.targets) }}`
+    - Each matrix leg parses the `ecosystem:destination` target value, calls the corresponding `_publish-{ecosystem}.yml` reusable workflow, and passes the destination (GPR feed URL vs official registry) as an input parameter.
+    - For GPR targets, auth uses `GITHUB_TOKEN` with `packages: write`. No OIDC is needed.
+    - Each publish step uses the idempotent scripts (`eng/scripts/publish_*_idempotent.sh`) that treat "version already exists" as a success exit code.
+
 5. **`create-traceability-tag`**:
-    - 依赖: `needs: publish-unofficial`
-    - 按你的格式组装并推送 Git Tag: `release/<project-name>/v<version>`。
-    - **关键机制**：使用系统自带的 `${{ secrets.GITHUB_TOKEN }}` 执行 `git push origin <tag>`。已知事实表明，GitHub 官方 Token 推出的 Tag **绝对不会**触发其他依赖 Tag 的 Workflow（防止递归死循环机制）。这完美实现了非正式版 Buddy 标记了源码，但不会引爆 `official.yml`！
+    - `needs: publish-unofficial`
+    - `permissions: contents: write`
+    - Assembles and pushes a Git tag: `release/<project-name>/v<version>`.
+    - Uses `${{ secrets.GITHUB_TOKEN }}` to run `git push origin <tag>`. Per GitHub docs, events triggered by `GITHUB_TOKEN` will **not** create new workflow runs (anti-recursion mechanism). This ensures the traceability tag records the source commit without triggering `official.yml`.
 
-## 4. `official.yml` (正式环境生产发布流)
+## 4. `official.yml` — Production Release
 
-**触发条件**:
+**Important:** `buddy.yml` and `official.yml` are **independent release channels**, not a sequential promotion pipeline. Buddy publishes to unofficial registries (GitHub Packages, GitHub Releases); official publishes to production registries (NuGet.org, PyPI, npmjs). A buddy run is NOT a prerequisite for an official run — either can be triggered independently.
+
+**Trigger:**
 
 ```yaml
 on:
-    push:
-        tags:
-            - 'release/*/v*'
+    workflow_dispatch:
+        inputs:
+            tag-name:
+                description: 'Release tag (e.g. release/my-project/v1.2.3)'
+                required: true
+                type: string
 ```
 
-正式发布的触发必须足够可信（比如通过具有特定权限的 PAT 或者专门部署脚本打的 Tag 才能触发此流）。
+`workflow_dispatch` is the **primary trigger**. The operator specifies the exact tag to release. The workflow must explicitly `git checkout` the commit referenced by that tag — not the branch HEAD selected in the dispatch UI.
 
-**工作流作业 (Jobs) 编排**：
+> **Optional secondary trigger:** `on: push: tags: 'release/*/v*'` may be retained as an automated trigger. If so, a GitHub repository ruleset **must** restrict creation of `release/**` tags to maintainer accounts or a release-bot service account (see "Prerequisites" below).
 
-1. **`parse-tag`**: 解析 `${{ github.ref_name }}`，无缝拆解出 `project-name` 和 `version`。同时判定需要向哪些官方渠道库（Official Registry）发布。
+**Prerequisites (must be configured before first run):**
+
+- **`environment: production`** must exist in GitHub repository settings with protection rules (required reviewers, deployment branches, etc.) **before** the workflow is ever triggered. If this environment does not pre-exist, GitHub auto-creates it with **zero** protection rules and the human approval gate silently does not exist.
+- If `push: tags:` is used, a **tag protection ruleset** must restrict the `release/**` namespace to authorized accounts only.
+
+**Jobs:**
+
+1. **`resolve-tag`**: Parses `${{ inputs.tag-name }}` (or `${{ github.ref_name }}` when triggered by tag push) to extract `project-name` and `version`. Determines which official registries to publish to.
+
 2. **`clean-build`**:
-    - 为了确保供应链安全，不要复用任何旧包，从 Tag 指向的历史 Commit 从头再执行一次强隔离的构建与测试。调用对应的语言 Reusable Workflow（Windows / Ubuntu）。
-3. **`publish-official`**:
-    - 采取矩阵策略并发推送到官方环境（如 NuGet.org, PyPI, npmjs）。
-    - **安全建议**：在此 Job 挂载 GitHub Actions 环境 (`environment: production`)，以便进行人工审核卡点，并利用 OIDC (`id-token: write`) 进行免密、高安全的发布（如 PyPI Trusted Publishers 或 NPM Provenance）。
+    - For supply chain security, no prior artifacts are reused. A fresh build and test run is performed from the exact commit the tag points to.
+    - Uses the same three static conditional build jobs pattern as `buddy.yml` (`build-csharp` / `build-python` / `build-jsts`), calling the corresponding reusable workflow.
 
-### 总结优势：
+3. **`publish-official`** (dynamic matrix):
+    - `needs: [resolve-tag, clean-build]`
+    - `environment: production` — **mandatory**, not optional. This enables human approval gates and OIDC token issuance.
+    - `permissions: id-token: write` — scoped only to this job for OIDC Trusted Publishing (NuGet.org, PyPI, npmjs, RubyGems.org all support OIDC).
+    - `strategy.fail-fast: false` — a failure in one registry must not cancel others.
+    - Each matrix leg calls the same per-ecosystem `_publish-{ecosystem}.yml` workflow as `buddy.yml`, but with the official destination and OIDC auth instead of GPR + `GITHUB_TOKEN`.
+    - Each publish step uses the idempotent scripts (`eng/scripts/publish_*_idempotent.sh`). If a version already exists at the target registry, the step exits successfully. This ensures the workflow can be safely re-run after partial failures.
 
-1. **PR 速度最大化**：只修改前端 JS 的 PR，再也不会去排队等漫长的 Windows C# 构建。
-2. **防误触与可追溯性兼得**：`buddy.yml` 结尾打 Tag 既做到了历史版本代码的强追溯，又利用了 GitHub Token 的免递归特性，完美阻断了向 `official.yml` 的泄露。
-3. **高度解耦和可配性**：多形态发布（exe / nupkg 共存）问题通过 `buddy.yml` 中的 **动态 JSON Matrix** 完美解决，不管一个项目有 1 个还是 3 个发布目标，都能开箱即用地散发给并行 Job 去推送。
+## Summary of Key Design Properties
+
+1. **PR speed maximized**: A JS-only PR never waits for the Windows C# build queue.
+2. **Channel isolation with traceability**: `buddy.yml` tags the source commit for unofficial releases using `GITHUB_TOKEN`'s anti-recursion property, while `official.yml` runs independently via `workflow_dispatch`.
+3. **Highly decoupled**: Multi-target publishing (exe / nupkg coexistence) is handled by dynamic JSON matrix — whether a project has 1 or 3 publish targets, they fan out to parallel jobs automatically.
+4. **Idempotent and recoverable**: All publish steps treat "already exists" as success, enabling safe re-runs after partial failures.
+5. **Least-privilege security**: Workflow-level `permissions: {}` with per-job escalation, OIDC for production registries, `environment: production` with mandatory approval gates.
