@@ -27,7 +27,7 @@ The split axis is **ecosystem (tooling)**, not destination. Publishing a NuGet p
 **Secrets:**
 
 - **Build-test workflows** have no secret requirements. Callers should pass secrets explicitly: `secrets: {}` (empty). This limits the blast radius if a compromised dependency or malicious test reads the environment during build/test execution.
-- **Publish workflows** require `secrets: inherit` from the caller. Note that `secrets: inherit` forwards **repository secrets, organization secrets, and environment secrets accessible to the calling job** (i.e., if the calling job specifies `environment: production`, environment-scoped secrets are included). It does NOT affect `permissions` (OIDC tokens, `GITHUB_TOKEN` scopes, etc.).
+- **Publish workflows** should also default to `secrets: {}`. Prefer the automatic `GITHUB_TOKEN`, caller-granted `permissions`, and OIDC Trusted Publishing. If a future destination cannot use those mechanisms and needs an explicit credential, the caller must pass only that named secret; blanket `secrets: inherit` is prohibited in this design.
 
 Permissions are inherited automatically: a reusable workflow receives the caller job's `permissions` grants as long as the reusable workflow itself does **not** declare its own `permissions` block. This is what allows the same `_publish-nuget.yml` to operate under `packages: write` when called from `buddy.yml` and under `id-token: write` when called from `official.yml`.
 
@@ -37,6 +37,7 @@ Permissions are inherited automatically: a reusable workflow receives the caller
 
 | Job kind                            | Required `permissions` |
 | ----------------------------------- | ---------------------- |
+| Read repository metadata / releases | `contents: read`       |
 | Read-only checkout                  | `contents: read`       |
 | Push tags                           | `contents: write`      |
 | Create GitHub Release               | `contents: write`      |
@@ -45,7 +46,7 @@ Permissions are inherited automatically: a reusable workflow receives the caller
 
 All four official registries (NuGet.org, PyPI, npmjs, RubyGems.org) support OIDC Trusted Publishing. GPR feeds use `GITHUB_TOKEN` with `packages: write` instead.
 
-> **Note:** With `permissions: {}` at workflow level, every job that runs `actions/checkout` must explicitly declare at least `permissions: { contents: read }`. Build jobs included — without this, the zero-permission `GITHUB_TOKEN` cannot clone the repository (private or internal repos fail immediately; public repos may also fail depending on runner configuration).
+> **Note:** With `permissions: {}` at workflow level, every job that runs `actions/checkout` or reads GitHub release metadata must explicitly declare at least `permissions: { contents: read }`. Build jobs included — without this, the zero-permission `GITHUB_TOKEN` cannot clone the repository (private or internal repos fail immediately; public repos may also fail depending on runner configuration).
 
 **Concurrency policy:** Each entry workflow defines a `concurrency:` group to prevent resource races:
 
@@ -120,6 +121,8 @@ CI does not build everything on every PR. It uses path filtering (`dorny/paths-f
 
 All workflow inputs must be mapped to intermediate environment variables before use in shell scripts (e.g., `env: PROJECT_NAME: ${{ inputs.project-name }}`; use `"$PROJECT_NAME"` in bash, never `${{ inputs.project-name }}` directly in `run:` blocks).
 
+`force=true` is a **privileged** path. Any buddy run that enables it must execute behind a separate protected environment or equivalent release-admin approval flow; it is not a normal retry switch.
+
 Even within the same language, different projects may have different packaging strategies (EXE, NuGet, wheel, etc.). The workflow resolves publish targets dynamically from project configuration.
 
 **Jobs:**
@@ -130,12 +133,28 @@ Even within the same language, different projects may have different packaging s
     - Runs `eng/scripts/find_project_path.py` to determine: language (from `project_kind` output), project path (from `package_dir` output).
     - **NBGV resolution:** The checkout must use `fetch-depth: 0` so NBGV can compute version height from git history. All jobs that use NBGV or rely on git-history-derived metadata must also checkout with full history. The script locates the correct `version.json` by searching upward from the project directory. Version validation is performed programmatically using the existing scripts: `eng/scripts/validate_semver2_version.py` (for NuGet, npm, RubyGems ecosystems) or `eng/scripts/validate_pep440_version.py` (for Python/PyPI).
     - Reads the project's release configuration (see **Section 5: Release Configuration Contract**) and emits a JSON array of publish targets. Targets use the format `ecosystem:destination` (e.g. `["nuget:gpr", "github:release"]`).
-    - **Validates the output** against the unofficial-only allowlist before setting the job output:
+    - **Strictly validates** the target list before filtering to unofficial-only targets:
 
     ```python
+    KNOWN_TARGETS = frozenset({
+        "nuget:gpr", "nuget:official",
+        "npm:gpr", "npm:official",
+        "pypi:official",
+        "rubygems:gpr", "rubygems:official",
+        "github:release", "github:official",
+    })
     UNOFFICIAL_TARGETS = frozenset({
         "nuget:gpr", "npm:gpr", "rubygems:gpr", "github:release",
     })
+    assert len(targets) > 0, "release.json targets must be non-empty"
+    assert len(set(targets)) == len(targets), (
+        f"Duplicate publish targets are not allowed: {targets}"
+    )
+    unknown_targets = [t for t in targets if t not in KNOWN_TARGETS]
+    assert len(unknown_targets) == 0, (
+        f"Unrecognized publish targets: {unknown_targets}. "
+        f"known={sorted(KNOWN_TARGETS)}"
+    )
     buddy_targets = [t for t in targets if t in UNOFFICIAL_TARGETS]
     assert len(buddy_targets) > 0, (
         f"No unofficial publish targets found. "
@@ -143,7 +162,7 @@ Even within the same language, different projects may have different packaging s
     )
     ```
 
-    Official-only targets (`nuget:official`, `npm:official`, `pypi:official`, `rubygems:official`) in `release.json` are silently filtered out — they are only processed by `official.yml`. This ensures clean channel separation: buddy never attempts to publish to production registries.
+    Targets that belong to the official channel are filtered out only **after** strict validation succeeds. Unknown or duplicate target values are hard failures. In this design, Python has no unofficial registry target; a Python project that wants a buddy preview must declare `github:release`.
     - **Overwrite guard:** Before proceeding, check whether a non-pre-release GitHub Release already exists for this project and version. If it does, fail immediately — stable releases must not be overwritten. If only a pre-release GitHub Release exists, allow overwrite only when `inputs.force` is `true`; otherwise fail with a clear message. Similarly, if a traceability tag exists pointing to a different commit, allow overwrite only when `inputs.force` is `true`.
     - **Outputs:** `language`, `project-name`, `project-path`, `version`, `targets` (JSON array of filtered unofficial targets).
     - **On failure**, the script must print: the resolved project path, the contents of `release.json` if found, and the specific validation rule that was violated.
@@ -210,7 +229,7 @@ Even within the same language, different projects may have different packaging s
             artifact-name: build-output-${{ needs.resolve-context.outputs.project-name }}
             version: ${{ needs.resolve-context.outputs.version }}
             feed-url: https://nuget.pkg.github.com/hcoona/index.json
-        secrets: inherit
+        secrets: {}
 
     publish-npm-gpr:
         needs: [resolve-context, build-csharp, build-python, build-jsts, build-ruby]
@@ -224,7 +243,7 @@ Even within the same language, different projects may have different packaging s
             artifact-name: build-output-${{ needs.resolve-context.outputs.project-name }}
             version: ${{ needs.resolve-context.outputs.version }}
             registry: https://npm.pkg.github.com
-        secrets: inherit
+        secrets: {}
 
     publish-rubygems-gpr:
         needs: [resolve-context, build-csharp, build-python, build-jsts, build-ruby]
@@ -238,7 +257,7 @@ Even within the same language, different projects may have different packaging s
             artifact-name: build-output-${{ needs.resolve-context.outputs.project-name }}
             version: ${{ needs.resolve-context.outputs.version }}
             host: https://rubygems.pkg.github.com/hcoona
-        secrets: inherit
+        secrets: {}
 
     publish-github-release:
         needs: [resolve-context, build-csharp, build-python, build-jsts, build-ruby]
@@ -253,11 +272,12 @@ Even within the same language, different projects may have different packaging s
             version: ${{ needs.resolve-context.outputs.version }}
             tag-name: release/${{ needs.resolve-context.outputs.project-name }}/v${{ needs.resolve-context.outputs.version }}
             prerelease: true
-        secrets: inherit
+        secrets: {}
     ```
 
     - The `if: always() && !cancelled() && !failure()` guard ensures the publish jobs run despite the three skipped build jobs in the `needs` chain. This condition is safe because skipped jobs are treated as neither failure nor cancellation.
     - For GPR targets, auth uses `GITHUB_TOKEN` with `packages: write`. No OIDC is needed.
+    - All buddy publish jobs use `secrets: {}`. No repository, organization, or environment secrets are forwarded by default.
     - Each publish step uses the idempotent scripts (`eng/scripts/publish_*_idempotent.sh`) that treat "version already exists" as a success exit code.
 
 5. **`create-traceability-tag`**:
@@ -267,10 +287,11 @@ Even within the same language, different projects may have different packaging s
     - Assembles and pushes a lightweight Git tag: `release/<project-name>/v<version>`.
     - **Tag overwrite logic:** If the tag does not exist, create it. If it exists and points to the same commit, succeed as no-op. If it exists but points to a different commit: when `inputs.force` is `true`, force-update the tag; otherwise fail with a clear error message.
     - Uses `${{ secrets.GITHUB_TOKEN }}` to run `git push origin <tag>`. Per GitHub docs, events triggered by `GITHUB_TOKEN` will **not** create new workflow runs (anti-recursion mechanism). This ensures the traceability tag records the source commit without triggering `official.yml`.
+    - This tag format is also a valid release-identity tag for later `official.yml` runs. A buddy-created tag is a convenience path, not a prerequisite for official publication.
 
 ## 4. `official.yml` — Production Release
 
-**Important:** `buddy.yml` and `official.yml` are **independent release channels**, not a sequential promotion pipeline. Buddy publishes to unofficial registries (GitHub Packages, GitHub Releases as pre-release); official publishes to production registries (NuGet.org, PyPI, npmjs, RubyGems.org). A buddy run is NOT a prerequisite for an official run — either can be triggered independently.
+**Important:** `buddy.yml` and `official.yml` are **independent release channels**, not a sequential promotion pipeline. Buddy publishes to unofficial registries and optional GitHub pre-releases via `github:release`; official publishes to production registries and optional stable GitHub Releases via `github:official`. A buddy run is NOT a prerequisite for an official run — either can be triggered independently for registry delivery and for GitHub Release delivery.
 
 **Trigger:** `on: workflow_dispatch` only (no `push: tags:` trigger — `workflow_dispatch` is sufficient and avoids the bootstrapping-window risk where a tag trigger is live before the tag protection ruleset is verified).
 
@@ -286,7 +307,7 @@ on:
 
 All workflow inputs must be mapped to intermediate environment variables before use in shell scripts (same pattern as `buddy.yml`).
 
-**Tag checkout mechanism:** Validation must occur as the first step in `resolve-tag`, before any `actions/checkout` or git operations. The tag name is validated using `eng/scripts/validate_semver2_version.py` (or the appropriate per-ecosystem validator) on the version segment extracted from the tag. After validation, the checkout step uses `ref: refs/tags/${{ inputs.tag-name }}` (not the branch HEAD selected in the dispatch UI). An assertion step then verifies the checked-out `HEAD` commit SHA matches the dereferenced tag target SHA (using `git rev-parse HEAD` vs `git rev-parse refs/tags/<tag>^{commit}` to handle both lightweight and annotated tags correctly). This prevents accidental releases from the wrong commit.
+**Tag checkout mechanism:** `resolve-tag` is a two-phase validation job. Before checkout, it validates only the structural shape of `inputs.tag-name` (`release/<project-name>/v<version>`) and the safe character set of `project-name`. After that structural validation, the checkout step uses `ref: refs/tags/${{ inputs.tag-name }}` with `fetch-depth: 0` (not the branch HEAD selected in the dispatch UI). Once the tagged commit is checked out, the workflow resolves `language` and `project-path`, then runs the ecosystem-specific semantic version validator (`eng/scripts/validate_semver2_version.py` or `eng/scripts/validate_pep440_version.py`) against the extracted version string. Finally, it asserts that `git rev-parse HEAD` matches `git rev-parse refs/tags/<tag>^{commit}` to handle both lightweight and annotated tags correctly. This ordering avoids a pre-checkout language-decision loop while still preventing accidental releases from the wrong commit.
 
 **Prerequisites (must be configured before first run):**
 
@@ -294,20 +315,44 @@ All workflow inputs must be mapped to intermediate environment variables before 
 - **`environment: production`** must exist in GitHub repository settings with protection rules (required reviewers, deployment branches, etc.) **before** the workflow is ever triggered. If this environment does not pre-exist, GitHub auto-creates it with **zero** protection rules and the human approval gate silently does not exist.
 - **OIDC trust policies:** Each external registry's Trusted Publisher configuration must enforce both:
     1. The `environment = "production"` claim in its OIDC subject/claims filter.
-    2. The `job_workflow_ref` claim matching `.github/workflows/official.yml@refs/heads/main` (or per-registry equivalent claim name). This prevents other workflows in the same repository (that also declare `environment: production` for unrelated purposes) from minting valid production publish tokens.
+    2. The `job_workflow_ref` claim matching the **called reusable publish workflow** (for example, `.github/workflows/_publish-nuget.yml@refs/heads/main`, `.github/workflows/_publish-pypi.yml@refs/heads/main`, etc.). This prevents other workflows in the same repository from minting valid production publish tokens by reusing a different publish implementation. If a registry also supports caller-workflow claims, enforce `official.yml` as an additional defense-in-depth check.
 
 **Jobs:**
 
-1. **`resolve-tag`**:
-    - **Input validation (first step, before checkout):** Extract `project-name` and `version` from `${{ inputs.tag-name }}`. Validate `project-name` against `[A-Za-z0-9._-]+` and the version string using the appropriate version validator script (`eng/scripts/validate_semver2_version.py` or `eng/scripts/validate_pep440_version.py`, determined by project language). Reject malformed tags with a hard failure.
+1. **`preflight-check`**:
+    - Runs before `resolve-tag`.
+    - Verifies that `environment: production` already exists and has at least one protection rule.
+    - Fails hard if the environment is missing or unprotected. This turns the documented prerequisite into an executable guardrail.
+
+2. **`resolve-tag`**:
+    - **Structural validation (first step, before checkout):** Extract `project-name` and `version` from `${{ inputs.tag-name }}`. Validate the tag shape `release/<project-name>/v<version>` and the `[A-Za-z0-9._-]+` character class for `project-name`. Do not select an ecosystem-specific semantic version validator yet.
     - **Runner and tooling:** Runs on `ubuntu-latest`. Like `resolve-context` in `buddy.yml`, version resolution uses the `nbgv-python` adapter and does not require a Windows runner even for C# projects.
+    - **Checkout:** Use `ref: refs/tags/${{ inputs.tag-name }}` with `fetch-depth: 0`.
     - Runs `eng/scripts/find_project_path.py` to resolve `language` and `project-path` from `project-name`.
+    - **Semantic version validation (after checkout):** Validate the extracted `version` using `eng/scripts/validate_semver2_version.py` or `eng/scripts/validate_pep440_version.py`, chosen after the project language is known.
     - Reads `release.json` and filters to official-only targets:
 
     ```python
+    KNOWN_TARGETS = frozenset({
+        "nuget:gpr", "nuget:official",
+        "npm:gpr", "npm:official",
+        "pypi:official",
+        "rubygems:gpr", "rubygems:official",
+        "github:release", "github:official",
+    })
     OFFICIAL_TARGETS = frozenset({
         "nuget:official", "npm:official", "pypi:official", "rubygems:official",
+        "github:official",
     })
+    assert len(targets) > 0, "release.json targets must be non-empty"
+    assert len(set(targets)) == len(targets), (
+        f"Duplicate publish targets are not allowed: {targets}"
+    )
+    unknown_targets = [t for t in targets if t not in KNOWN_TARGETS]
+    assert len(unknown_targets) == 0, (
+        f"Unrecognized publish targets: {unknown_targets}. "
+        f"known={sorted(KNOWN_TARGETS)}"
+    )
     official_targets = [t for t in targets if t in OFFICIAL_TARGETS]
     assert len(official_targets) > 0, (
         f"No official publish targets found. "
@@ -315,19 +360,19 @@ All workflow inputs must be mapped to intermediate environment variables before 
     )
     ```
 
-    - **Overwrite guard:** Check whether a non-pre-release GitHub Release already exists for this version. If it does, fail immediately — stable releases must not be overwritten. Then check whether the traceability tag exists and points to a different commit than the tag being released; if so, fail immediately. If only a pre-release GitHub Release exists, allow overwrite (the official release promotes it to stable).
-    - **Outputs:** `language`, `project-name`, `project-path`, `version`, `targets` (JSON array of filtered official targets).
+    - **Overwrite guard:** If `github:official` is among the resolved targets, check GitHub Releases state for the supplied tag. If no GitHub Release exists, proceed — this is the normal first official run. If a non-pre-release GitHub Release already exists for the same tag, treat that publish target as an idempotent no-op. If a non-pre-release GitHub Release already exists for the same version but a different tag or commit, fail immediately. If a pre-release GitHub Release exists for the same tag, replace it with a stable release.
+    - **Outputs:** `tag-name`, `language`, `project-name`, `project-path`, `version`, `targets` (JSON array of filtered official targets).
 
-2. **`clean-build`** (`build-csharp` / `build-python` / `build-jsts` / `build-ruby`):
+3. **`clean-build`** (`build-csharp` / `build-python` / `build-jsts` / `build-ruby`):
     - For supply chain security, no prior artifacts are reused. A fresh build and test run is performed from the exact commit the tag points to. The checkout must use `fetch-depth: 0` for NBGV resolution.
     - Uses the same four static conditional build jobs pattern as `buddy.yml`, with `permissions: { contents: read }` and `secrets: {}`. Only the language-matching build job executes; the others are skipped.
 
-3. **Publish jobs** (static conditional, one job per official ecosystem-destination pair):
-    - Uses the same per-destination split pattern as `buddy.yml`'s publish jobs, but only official targets are present.
+4. **Publish jobs** (static conditional, one job per official ecosystem-destination pair):
+    - Uses the same per-destination split pattern as `buddy.yml`, but official targets now include `github:official` in addition to the production package registries.
     - `needs: [resolve-tag, build-csharp, build-python, build-jsts, build-ruby]`
-    - `environment: production` — **mandatory**, not optional. This enables human approval gates and OIDC token issuance. Note: when multiple publish jobs each declare `environment: production`, each triggers its own independent approval gate. This is intentional — approvers must confirm each destination individually.
-    - `permissions: { id-token: write }` — scoped only to these jobs for OIDC Trusted Publishing (NuGet.org, PyPI, npmjs, RubyGems.org all support OIDC).
-    - Each publish job calls the same per-ecosystem `_publish-{ecosystem}.yml` workflow as `buddy.yml`, but with the official destination and OIDC auth instead of GPR + `GITHUB_TOKEN`.
+    - `environment: production` — **mandatory**, not optional. This enables human approval gates and OIDC token issuance. Each destination still triggers its own approval step. This trades operator convenience for per-destination isolation of approvals and tokens. If reviewer fatigue becomes material later, migrate to a single reviewed gate plus destination-specific non-reviewed environments.
+    - Package-registry publish jobs use `permissions: { id-token: write }` for OIDC Trusted Publishing. `publish-github-official` uses `permissions: { contents: write }`.
+    - All official publish jobs use `secrets: {}`. OIDC and the automatic `GITHUB_TOKEN` are the default mechanisms; no blanket secret inheritance is allowed.
     - Each publish step uses the idempotent scripts (`eng/scripts/publish_*_idempotent.sh`). If a version already exists at the target registry, the step exits successfully. This ensures the workflow can be safely re-run after partial failures.
 
     ```yaml
@@ -344,7 +389,7 @@ All workflow inputs must be mapped to intermediate environment variables before 
             artifact-name: build-output-${{ needs.resolve-tag.outputs.project-name }}
             version: ${{ needs.resolve-tag.outputs.version }}
             feed-url: https://api.nuget.org/v3/index.json
-        secrets: inherit
+        secrets: {}
 
     publish-npm-official:
         needs: [resolve-tag, build-csharp, build-python, build-jsts, build-ruby]
@@ -359,7 +404,7 @@ All workflow inputs must be mapped to intermediate environment variables before 
             artifact-name: build-output-${{ needs.resolve-tag.outputs.project-name }}
             version: ${{ needs.resolve-tag.outputs.version }}
             registry: https://registry.npmjs.org
-        secrets: inherit
+        secrets: {}
 
     publish-pypi-official:
         needs: [resolve-tag, build-csharp, build-python, build-jsts, build-ruby]
@@ -373,7 +418,7 @@ All workflow inputs must be mapped to intermediate environment variables before 
         with:
             artifact-name: build-output-${{ needs.resolve-tag.outputs.project-name }}
             version: ${{ needs.resolve-tag.outputs.version }}
-        secrets: inherit
+        secrets: {}
 
     publish-rubygems-official:
         needs: [resolve-tag, build-csharp, build-python, build-jsts, build-ruby]
@@ -388,14 +433,24 @@ All workflow inputs must be mapped to intermediate environment variables before 
             artifact-name: build-output-${{ needs.resolve-tag.outputs.project-name }}
             version: ${{ needs.resolve-tag.outputs.version }}
             host: https://rubygems.org
-        secrets: inherit
-    ```
+        secrets: {}
 
-4. **`promote-github-release`** (optional):
-    - `needs: [resolve-tag, publish-nuget-official, publish-npm-official, publish-pypi-official, publish-rubygems-official]`
-    - `if: always() && !cancelled() && !failure()`
-    - `permissions: { contents: write }`
-    - If a pre-release GitHub Release exists for this tag (created by a prior buddy run), promote it to a stable release (clear the `prerelease` flag). If no GitHub Release exists, this step is a no-op.
+    publish-github-official:
+        needs: [resolve-tag, build-csharp, build-python, build-jsts, build-ruby]
+        permissions:
+            contents: write
+        environment: production
+        if: |
+            always() && !cancelled() && !failure() &&
+            contains(fromJson(needs.resolve-tag.outputs.targets), 'github:official')
+        uses: ./.github/workflows/_publish-github.yml
+        with:
+            artifact-name: build-output-${{ needs.resolve-tag.outputs.project-name }}
+            version: ${{ needs.resolve-tag.outputs.version }}
+            tag-name: ${{ needs.resolve-tag.outputs.tag-name }}
+            prerelease: false
+        secrets: {}
+    ```
 
 ## 5. Release Configuration Contract
 
@@ -405,7 +460,12 @@ Each project that can be released must have a release configuration file at `<pr
 
 ```json
 {
-    "targets": ["nuget:gpr", "nuget:official", "github:release"]
+    "targets": [
+        "nuget:gpr",
+        "nuget:official",
+        "github:release",
+        "github:official"
+    ]
 }
 ```
 
@@ -414,6 +474,15 @@ Each project that can be released must have a release configuration file at `<pr
 | Field     | Type       | Required | Description                                                 |
 | --------- | ---------- | -------- | ----------------------------------------------------------- |
 | `targets` | `string[]` | Yes      | Array of publish targets in `ecosystem:destination` format. |
+
+**Validation rules:**
+
+- `release.json` must be valid JSON.
+- `targets` must be a non-empty array of unique strings.
+- Every target must be one of the explicitly supported values in the table below. Unknown values are hard failures.
+- A workflow may filter out valid targets that belong to the opposite release channel, but only **after** validation succeeds.
+- After channel filtering, the invoking workflow must still have at least one applicable target.
+- In this design, Python has no unofficial registry target. A Python project that wants a buddy preview must include `github:release`.
 
 **Lookup behavior:** The script searches for `release.json` starting from the project directory (resolved by `eng/scripts/find_project_path.py`). If the file is absent, the workflow fails with a clear error — there is no default target set. On failure, the script must print: the resolved project path, the contents of `release.json` if found, and the specific validation rule that was violated.
 
@@ -428,9 +497,10 @@ Each project that can be released must have a release configuration file at `<pr
 | `pypi:official`     | Official   | `official.yml` | Publish wheel/sdist to PyPI                     |
 | `rubygems:gpr`      | Unofficial | `buddy.yml`    | Publish gem to GitHub Packages RubyGems feed    |
 | `rubygems:official` | Official   | `official.yml` | Publish gem to RubyGems.org                     |
-| `github:release`    | Unofficial | `buddy.yml`    | Upload assets to GitHub Releases (pre-release)  |
+| `github:release`    | Unofficial | `buddy.yml`    | Create or update a GitHub pre-release with downloadable assets |
+| `github:official`   | Official   | `official.yml` | Create or update a stable GitHub Release with downloadable assets |
 
-`buddy.yml` filters to unofficial targets only. `official.yml` filters to official targets only. A `release.json` may declare targets from both channels — each workflow ignores the targets it does not handle.
+`buddy.yml` filters to unofficial targets only. `official.yml` filters to official targets only. A `release.json` may declare targets from both channels, but opposite-channel filtering happens only after strict validation; unknown targets are hard failures.
 
 ## 6. Reusable Workflow I/O Contracts
 
@@ -459,6 +529,10 @@ All four build-test workflows share the same input/output structure:
 | RubyGems  | One `.gem` file                                         |
 | GitHub    | All files in the artifact (uploaded as release assets)  |
 
+**Artifact retention:** CI artifacts are an ephemeral hand-off mechanism, not permanent release storage. Recommended defaults: `retention-days: 7` for PR and buddy runs, `retention-days: 14` for official runs.
+
+**Artifact validation:** Before publishing, each reusable publish workflow must verify that the expected files exist at the artifact root and fail on empty artifacts, missing required files, or ambiguous layouts. `_publish-github.yml` uploads only top-level files from the downloaded artifact; build workflows must flatten release assets accordingly.
+
 ### Publish Workflows
 
 All publish workflows share a common set of inputs, with ecosystem-specific additions:
@@ -479,7 +553,17 @@ All publish workflows share a common set of inputs, with ecosystem-specific addi
 | `_publish-github.yml`   | `tag-name`   | `string`  | Git tag for the GitHub Release             |
 | `_publish-github.yml`   | `prerelease` | `boolean` | Whether to mark the release as pre-release |
 
-**Secrets:** `secrets: inherit` from the caller. Publish workflows must NOT declare their own `permissions:` block (see Section 1 constraint).
+**Required caller permissions:**
+
+| Workflow                | Required caller `permissions`                 |
+| ----------------------- | --------------------------------------------- |
+| `_publish-nuget.yml`    | `packages: write` (GPR) or `id-token: write` |
+| `_publish-npm.yml`      | `packages: write` (GPR) or `id-token: write` |
+| `_publish-pypi.yml`     | `id-token: write`                            |
+| `_publish-rubygems.yml` | `packages: write` (GPR) or `id-token: write` |
+| `_publish-github.yml`   | `contents: write`                            |
+
+**Secrets:** `secrets: {}` by default. If a future publish target requires an explicit credential, the caller must pass only that named secret. `secrets: inherit` is prohibited. Publish workflows must NOT declare their own `permissions:` block (see Section 1 constraint).
 
 ## 7. Overwrite and Idempotency Policy
 
@@ -499,13 +583,15 @@ Both `buddy.yml` and `official.yml` check for existing artifacts before proceedi
 
 ### Official (Production)
 
-| Condition                                           | Behavior                                                             |
-| --------------------------------------------------- | -------------------------------------------------------------------- |
-| Non-pre-release GitHub Release exists               | **Hard fail** — stable releases must not be overwritten              |
-| Traceability tag exists, different commit           | **Hard fail** — tag SHA mismatch indicates an integrity problem      |
-| Traceability tag exists, same commit                | **No-op** (idempotent)                                               |
-| Pre-release GitHub Release exists                   | **Allow overwrite** (promote to stable via `promote-github-release`) |
-| Package version already exists at official registry | **Success** (idempotent publish scripts)                             |
+GitHub Release rows apply only when `github:official` is present in the resolved target list.
+
+| Condition                                                                    | Behavior                                                                                   |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| No GitHub Release exists for the supplied tag                                | **Proceed** — normal first official run                                                    |
+| Non-pre-release GitHub Release exists for the supplied tag                   | **Success** (idempotent no-op)                                                             |
+| Non-pre-release GitHub Release exists for the same version but different tag/commit | **Hard fail** — stable releases must not be rebound to a different release identity        |
+| Pre-release GitHub Release exists for the supplied tag                       | **Replace with stable release**                                                            |
+| Package version already exists at official registry                          | **Success** (idempotent publish scripts)                                                   |
 
 ### Recovery Playbook
 
@@ -513,7 +599,7 @@ If a workflow run fails partway through (e.g., nuget:gpr succeeds but npm:gpr fa
 
 1. Fix the root cause of the failure (network issue, auth, etc.).
 2. Re-trigger the same workflow with the same inputs. The idempotent publish scripts treat "already exists" as success, so completed steps are no-ops on re-run.
-3. For buddy with the same version but different commit, re-run with `force=true`. For official, this scenario is an integrity failure and requires investigation.
+3. For buddy with the same version but different commit, re-run with `force=true` through the privileged force path. For official, create a new release tag/version instead of rebinding an existing stable release identity.
 
 ## 8. Build Provenance (Future Enhancement)
 
@@ -522,7 +608,7 @@ Published packages currently carry no build provenance attestation. As a future 
 ## Summary of Key Design Properties
 
 1. **PR speed maximized**: A JS-only PR never waits for the Windows C# build queue.
-2. **Channel isolation**: `buddy.yml` publishes only to unofficial registries (GPR feeds, GitHub Releases as pre-release). `official.yml` publishes only to production registries (NuGet.org, PyPI, npmjs, RubyGems.org). Neither channel can reach the other's destinations. Traceability tags created by buddy use `GITHUB_TOKEN`'s anti-recursion property.
+2. **Channel isolation**: `buddy.yml` publishes only to unofficial registries plus optional GitHub pre-releases (`github:release`). `official.yml` publishes only to production registries plus optional stable GitHub Releases (`github:official`). Neither channel requires the other to run first for registry delivery.
 3. **Static conditional dispatch**: Because `uses:` paths must be static, both build and publish jobs use conditional `if:` guards instead of dynamic matrix dispatch to reusable workflows. Each ecosystem-destination pair has its own dedicated job.
-4. **Overwrite-safe with force escape hatch**: Buddy guards against overwriting stable releases and requires explicit `force=true` to overwrite pre-release artifacts. Official guards are stricter — stable overwrites and tag SHA mismatches always fail.
-5. **Least-privilege security**: Workflow-level `permissions: {}` with per-job escalation; build jobs receive `secrets: {}` (no publish credentials); OIDC for production registries with `environment = "production"` and `job_workflow_ref` claim enforcement at the registry level; `environment: production` with mandatory approval gates; branch protection on default branch.
+4. **Overwrite-safe with force escape hatch**: Buddy guards against overwriting stable releases and uses a privileged `force=true` path to overwrite pre-release artifacts or re-point the unofficial traceability tag. Official publishes are idempotent for the same release identity and never rebind a stable release to a different tag or commit.
+5. **Least-privilege security**: Workflow-level `permissions: {}` with per-job escalation; build and publish jobs default to `secrets: {}`; OIDC for production registries with `environment = "production"` and `job_workflow_ref` enforcement against the called reusable publish workflow; `environment: production` with mandatory approval gates; branch protection on default branch.
