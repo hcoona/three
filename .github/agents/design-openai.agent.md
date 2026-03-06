@@ -3,7 +3,7 @@ name: design-openai
 description: Performs design tasks using OpenAI AI to analyze requirements, brainstorm solutions, and create comprehensive designs.
 argument-hint: The requirements and context for the design task, along with any previous design iteration results.
 tools: [vscode, execute, read, 'io.github.upstash/context7/*', search, web, 'microsoft-learn/*', todo]
-model: GPT-5.3-Codex (copilot)
+model: GPT-5.4 (copilot)
 user-invokable: false
 ---
 

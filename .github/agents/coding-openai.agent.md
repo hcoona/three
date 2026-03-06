@@ -2,7 +2,7 @@
 description: Coding as the user requests.
 name: coding-openai
 tools: [vscode, edit, execute, read, agent, 'io.github.upstash/context7/*', search, web, 'microsoft-learn/*', todo]
-model: GPT-5.3-Codex (copilot)
+model: GPT-5.4 (copilot)
 ---
 
 You are a senior software engineer. Your task is to implement code based on the user's requirements.

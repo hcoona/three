@@ -15,8 +15,8 @@ User-invokable entry points
      ▼            ▼                            ▼            ▼
   code-review-    code-fix-              coding-fix-    code-review-
   orchestrator    orchestrator           openai         claude
-  (see below)     (see right ──────────► GPT-5.3-       Claude Opus 4.6
-                   column)               Codex)
+  (see below)     (see right ──────────► GPT-5.4       Claude Opus 4.6
+                   column)
 ───────────────────────────────────────────────────────────────────────
   code-review-orchestrator
   (Claude Sonnet 4.6)
@@ -33,7 +33,7 @@ User-invokable entry points
   code-review-gemini          │
   (Gemini 3.1 Pro)   ─────────┤
   code-review-openai          │
-  (GPT-5.3-Codex)    ─────────┘
+  (GPT-5.4)          ─────────┘
 ───────────────────────────────────────────────────────────────────────
 
 Legend
