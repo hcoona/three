@@ -20,19 +20,26 @@ Current assumptions:
 - build and publish jobs default to `secrets: {}`
 - OIDC trust matches the called reusable publish workflow
 - official tag validation is two-phase: structure first, semantic validation after checkout
+- official releases use a centralized control-plane model: tagged source, current protected workflow logic
 - reusable workflow shell steps must map `inputs.*` through `env:` before use
 - `release.json` is strict: valid JSON, non-empty, unique targets, unknown targets fail
 - `release.json` has `schemaVersion: 1` and allows only `schemaVersion` plus `targets`
 - release identity tag format is `release/<project-name>/v<version>`
+- each `buddy.yml` / `official.yml` run releases exactly one project
+- buddy intentionally allows releases from development branches
 - official releases must come from protected `main` or protected maintenance branches `release/<project-name>/v<series>`
 - official release tags under `refs/tags/release/**` must be protected
 - Python unofficial preview uses `github:release`
 - stable GitHub Releases use `github:official`
 - same-tag stable GitHub Release is idempotent, not a hard fail
 - `official.yml` includes `preflight-check` for `environment: production` with required reviewers
+- `preflight-check` must hard-fail on GitHub API errors outside explicitly handled cases
 - buddy `force=true` is privileged by policy, but not yet separated by a workflow-enforced approval gate
 - reusable workflows must not declare `permissions:` blocks
 - build reusable workflows require caller `contents: read`
+- buddy publish jobs must depend on `static-analysis` directly
+- official and reusable publish workflow files must be protected by `CODEOWNERS` review
+- renaming the trusted control branch or moving `_publish-*.yml` requires registry-side OIDC trust updates
 - reusable publish docs must list required caller permissions
 - idempotent publish handling only treats duplicate-version outcomes as success; auth and upstream failures stay hard-fail
 
