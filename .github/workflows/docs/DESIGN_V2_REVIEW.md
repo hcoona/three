@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD036 -->
 
-**Overall Verdict:** The architecture's hub-and-spoke pattern, runner separation by ecosystem, channel isolation between CI/buddy/official, and OIDC direction are all well-reasoned design decisions appropriate for a polyglot monorepo. However, **two blocking technical errors** make the design unimplementable as written, and several operational gaps must be resolved before implementation begins.
+**Overall Verdict:** The architecture's hub-and-spoke pattern, runner separation by ecosystem, channel isolation between CI/buddy/official, and OIDC direction are all well-reasoned design decisions appropriate for a polyglot monorepo. However, **one blocking technical error** makes part of the design unimplementable as written, one high-severity trigger-model issue needs clarification, and several operational gaps must be resolved before implementation begins.
 
 ---
 
@@ -33,15 +33,23 @@ build-jsts:
     uses: ./.github/workflows/_build-test-jsts.yml
 ```
 
-### B-2 — The `buddy.yml` → `official.yml` Promotion Path Is Mechanically Broken
+### ~~B-2~~ → H-0 — `official.yml` Trigger Model Needs `workflow_dispatch`
 
-**Section 3 + Section 4**
+**Section 3 + Section 4** _(downgraded from Blocking to High)_
 
-`buddy.yml` creates tag `release/<project>/v1.2.3` via `GITHUB_TOKEN`. `official.yml` listens for `on: push: tags: release/*/v*`. The claim that `GITHUB_TOKEN`-pushed tags will not trigger `official.yml` is **technically correct** (confirmed by GitHub docs: "events triggered by the GITHUB_TOKEN will not create a new workflow run"). However, because the tag `release/<project>/v1.2.3` already exists in Git after `buddy.yml` runs, the PAT-based promotion step alluded to in Section 4 will fail — you cannot re-push an existing tag without `--force`, which is unsafe for release tags.
+`buddy.yml` creates tag `release/<project>/v1.2.3` via `GITHUB_TOKEN`. The claim that `GITHUB_TOKEN`-pushed tags will not trigger `official.yml` is **technically correct** (confirmed by GitHub docs: "events triggered by the GITHUB_TOKEN will not create a new workflow run"). This traceability tag correctly records the source commit for the unofficial release without triggering the official pipeline.
 
-The design's own "absolutist" language ("绝对不会 / absolutely never") is editorially imprecise but technically correct for the stated scenario. The real problem is that the promotion model is mechanically broken.
+However, the design only specifies `on: push: tags: release/*/v*` for `official.yml` and vaguely alludes to "a PAT or dedicated deployment script" as the trigger — without defining a concrete mechanism. Since the tag already exists after `buddy.yml` runs, a PAT-based re-push would require `--force`, which is unsafe.
 
-**Fix direction:** Use a distinct tag namespace for buddy builds (e.g., `buddy/<project>/v<version>`) and reserve `release/<project>/v<version>` exclusively for official releases. The official trigger pattern then unambiguously targets only official-intent tag pushes.
+**Important clarification:** `buddy.yml` and `official.yml` are **independent release channels**, not a sequential promotion pipeline. Buddy publishes to unofficial registries (GitHub Packages, GitHub Releases); official publishes to production registries (NuGet.org, PyPI, npmjs). A buddy run is NOT a prerequisite for an official run — either can be triggered independently for any project at any time.
+
+**Fix direction:** Add `workflow_dispatch` as the **primary trigger** for `official.yml`, accepting a `tag-name` (or `project-name` + `version`) input parameter. The workflow must explicitly `git checkout` the commit referenced by that tag, not the branch HEAD selected in the dispatch UI. This gives the team a clear, auditable trigger path that:
+
+- Works regardless of whether `buddy.yml` has already created the tag
+- Pairs naturally with `environment: production` approval as a double-confirmation gate
+- Eliminates the need for PAT-based tag pushing entirely
+
+If `push: tags:` is retained as a secondary automated trigger, then H-2 (tag protection ruleset) remains necessary to prevent unauthorized tag pushes from triggering production releases.
 
 ---
 
@@ -59,9 +67,11 @@ NuGet.org, PyPI, and npmjs permanently reject republishing an identical version.
 
 **Section 4 trigger**
 
-Any repository collaborator with write access can push a `release/<project>/v99.0.0` tag from their local Git client and trigger a full production publish run. The design states official releases require "a PAT with specific permissions," but provides no enforcement mechanism.
+If `on: push: tags:` is retained as a trigger for `official.yml` (alongside `workflow_dispatch`), any repository collaborator with write access can push a `release/<project>/v99.0.0` tag from their local Git client and trigger a full production publish run. The design provides no enforcement mechanism.
 
-**Fix:** Document a required GitHub repository ruleset restricting creation of `release/**` tags to maintainer accounts or a release-bot service account. This is a mandatory pre-deployment prerequisite, not a recommendation.
+If `official.yml` is changed to use `workflow_dispatch` as its **sole** trigger (see H-0), this issue is eliminated — tag pushes no longer trigger anything, and `workflow_dispatch` access is governed by repository permissions and environment approval gates.
+
+**Fix:** Either (a) remove `push: tags:` from `official.yml` entirely and rely solely on `workflow_dispatch`, or (b) if both triggers are kept, document a required GitHub repository ruleset restricting creation of `release/**` tags to maintainer accounts or a release-bot service account.
 
 ### H-3 — `publish-unofficial` Missing `needs: build-and-pack`
 
@@ -187,11 +197,11 @@ uses: dorny/paths-filter@de90cc6ed7cd597cb74b84a7e832ce805e3c7b15 # v3.0.2
 
 ## Additional Design Gaps
 
-### G-1 — `official.yml` Has No Defined Trigger Mechanism
+### ~~G-1~~ — `official.yml` Has No Defined Trigger Mechanism _(Resolved by H-0)_
 
 **Section 4**
 
-The design states `official.yml` is triggered by "a tag pushed by a PAT or dedicated deployment script" but never defines what creates that tag. There is no `promote.yml` workflow, no documented manual procedure, and no Git command specified. As written, `official.yml` is a dead workflow with no concrete trigger path.
+The design states `official.yml` is triggered by "a tag pushed by a PAT or dedicated deployment script" but never defines what creates that tag. Adding `workflow_dispatch` as the primary trigger (see H-0) resolves this gap entirely — the operator manually dispatches the workflow, specifying the tag/project to release.
 
 ### G-2 — `_publish-target.yml` Interface Is Entirely Undefined
 
@@ -241,24 +251,24 @@ The document must be translated to English before it can be committed to the cod
 
 ## Summary Table
 
-| ID  | Finding                                                                                              | Severity       |
-| --- | ---------------------------------------------------------------------------------------------------- | -------------- |
-| B-1 | Dynamic `uses:` dispatch is a GitHub Actions platform error — impossible to implement                | **Blocking**   |
-| B-2 | buddy→official promotion path is mechanically broken (tag already exists at official trigger moment) | **Blocking**   |
-| H-1 | Official publish matrix has no idempotency / recovery path after partial failure                     | High           |
-| H-2 | No tag protection ruleset for `release/*/v*` — any write-access user can trigger production          | High           |
-| H-3 | `publish-unofficial` missing `needs: build-and-pack`                                                 | High           |
-| H-4 | No `permissions:` model documented for any workflow                                                  | High           |
-| H-5 | `_publish-target.yml` monolithic design (SRP violation, will become unmaintainable)                  | High           |
-| H-6 | `environment: production` framed as optional recommendation, not a hard prerequisite                 | High           |
-| M-1 | CI path filter blind spots (mise.toml, hk.pkl, biome.jsonc, eng/scripts/, etc.)                      | Medium         |
-| M-2 | Skipped-all pattern will block PRs when required status checks are configured                        | Medium         |
-| M-3 | No concurrency groups — race conditions on simultaneous buddy triggers                               | Medium         |
-| M-4 | Dynamic matrix output has no schema validation or allowlist                                          | Medium         |
-| M-5 | Reusable workflow secret inheritance not addressed                                                   | Medium         |
-| M-6 | Third-party actions not SHA-pinned (supply chain risk)                                               | Medium         |
-| G-1 | `official.yml` has no defined trigger mechanism (no promote workflow specified)                      | Gap            |
-| G-2 | `_publish-target.yml` interface (inputs/secrets/outputs) is entirely undefined                       | Gap            |
-| G-3 | NBGV multi-project version resolution behavior not addressed                                         | Gap            |
-| G-4 | Language-level CI path filtering does not scale past ~10 projects per language                       | Gap            |
-| Doc | Design document is in Chinese, violating AGENTS.md                                                   | Administrative |
+| ID  | Finding                                                                                                                   | Severity       |
+| --- | ------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| B-1 | Dynamic `uses:` dispatch is a GitHub Actions platform error — impossible to implement                                     | **Blocking**   |
+| H-0 | `official.yml` trigger model needs `workflow_dispatch`; buddy and official are independent channels (was B-2, downgraded) | High           |
+| H-1 | Official publish matrix has no idempotency / recovery path after partial failure                                          | High           |
+| H-2 | No tag protection ruleset for `release/*/v*` (only if `push: tags:` trigger is retained)                                  | High           |
+| H-3 | `publish-unofficial` missing `needs: build-and-pack`                                                                      | High           |
+| H-4 | No `permissions:` model documented for any workflow                                                                       | High           |
+| H-5 | `_publish-target.yml` monolithic design (SRP violation, will become unmaintainable)                                       | High           |
+| H-6 | `environment: production` framed as optional recommendation, not a hard prerequisite                                      | High           |
+| M-1 | CI path filter blind spots (mise.toml, hk.pkl, biome.jsonc, eng/scripts/, etc.)                                           | Medium         |
+| M-2 | Skipped-all pattern will block PRs when required status checks are configured                                             | Medium         |
+| M-3 | No concurrency groups — race conditions on simultaneous buddy triggers                                                    | Medium         |
+| M-4 | Dynamic matrix output has no schema validation or allowlist                                                               | Medium         |
+| M-5 | Reusable workflow secret inheritance not addressed                                                                        | Medium         |
+| M-6 | Third-party actions not SHA-pinned (supply chain risk)                                                                    | Medium         |
+| G-1 | ~~`official.yml` has no defined trigger mechanism~~ _(resolved by H-0)_                                                   | ~~Gap~~        |
+| G-2 | `_publish-target.yml` interface (inputs/secrets/outputs) is entirely undefined                                            | Gap            |
+| G-3 | NBGV multi-project version resolution behavior not addressed                                                              | Gap            |
+| G-4 | Language-level CI path filtering does not scale past ~10 projects per language                                            | Gap            |
+| Doc | Design document is in Chinese, violating AGENTS.md                                                                        | Administrative |
