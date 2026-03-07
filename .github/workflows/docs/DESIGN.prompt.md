@@ -4,7 +4,7 @@ The externally exposed entry workflows must remain exactly these 3 files:
 
 1. `ci.yml`: triggered on pull requests, used for code-quality validation and test execution.
 2. `buddy.yml`: triggered manually, used for unofficial releases.
-3. `official.yml`: triggered manually with a formal release tag as input, used for official production releases.
+3. `official.yml`: triggered manually, used for official production releases.
 
 Behind these 3 entry workflows, you should assume a shared execution layer made of reusable workflows. The split axis is ecosystem and packaging tool, not release channel. For example, NuGet-to-GPR and NuGet-to-NuGet.org should reuse the same publish workflow with different destination parameters.
 
@@ -70,7 +70,7 @@ Because of this, publish targets must be read from per-project release metadata 
 8. run exactly one ecosystem-specific build workflow through static conditional jobs,
 9. run publish jobs as separate static jobs per ecosystem-destination pair,
 10. use idempotent publish scripts for duplicate-version handling,
-11. create the traceability tag `release/<project-name>/v<version>` after successful unofficial publication.
+11. create the traceability tag `buddy/<project-name>/v<version>` after successful unofficial publication.
 
 Because GitHub Actions resolves `uses:` statically, both build dispatch and publish dispatch should be modeled as multiple conditional jobs rather than a single dynamically selected reusable workflow call.
 
@@ -82,7 +82,7 @@ Buddy is allowed to release from development branches. It is not a promotion pre
 
 `official.yml` is similar to `buddy.yml`, but it is the production release channel.
 
-In the current design, it is not triggered automatically by `push: tags:`. Instead, it is triggered manually with a `tag-name` input, and then it checks out `refs/tags/<tag-name>` to release the exact tagged commit.
+In the current design, it is not triggered automatically by `push: tags:`. Instead, it is triggered manually with `project-name` as input. The branch selected in the `workflow_dispatch` UI supplies both the trusted control-plane code and the release payload source. The workflow resolves the version from that selected protected branch, derives the official release tag `release/<project-name>/v<version>` internally, and creates that protected release tag itself before official publish jobs run.
 
 The release identity tag format must be:
 
@@ -91,14 +91,15 @@ The release identity tag format must be:
 This workflow should:
 
 1. perform a preflight check that `environment: production` already exists and has required reviewers configured,
-2. validate the structural shape of `tag-name` before checkout,
-3. check out the exact tag ref with full history,
-4. resolve `project-name`, `language`, `project-path`, and version after checkout,
+2. validate `project-name` against a safe character set,
+3. check out the dispatch-selected protected source ref with full history,
+4. resolve `project-name`, `language`, `project-path`, and version from that selected source ref,
 5. run the correct version validator only after the ecosystem is known,
-6. verify that the tagged commit is reachable from protected release sources such as `main` or the correct maintenance branch,
+6. verify that the selected protected branch matches the resolved release line, using `main` for the current mainline release line and `release/<project-name>/v<release-line>` for supported maintenance lines,
 7. read and strictly validate `release.json`, then filter to official-only targets,
-8. rebuild and retest from the tagged commit instead of reusing prior unofficial artifacts,
-9. publish to official registries and/or stable GitHub Releases using dedicated publish jobs.
+8. rebuild and retest from the dispatch-selected commit instead of reusing prior unofficial artifacts,
+9. derive and create the protected official release tag `release/<project-name>/v<version>` inside the workflow,
+10. publish to official registries and/or stable GitHub Releases using dedicated publish jobs.
 
 Official publishing differs from buddy publishing. For example, a NuGet package may go to NuGet.org instead of GitHub Packages, npm packages may go to npmjs, Python packages go to PyPI, and Ruby packages go to RubyGems.org.
 
