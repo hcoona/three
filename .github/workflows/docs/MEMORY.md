@@ -44,7 +44,7 @@ Current assumptions:
 - official releases must come from protected `main` or protected maintenance branches `release/<project-name>/v<series>`
 - maintenance branches are explicitly managed supported lines; missing non-default lines fail with operator guidance, and non-`main` release lines require a separate maintenance-branch existence check plus exact caller-ref matching before official release is allowed
 - official release-line validation derives `release/<project-name>/v<series>` by stripping suffix material, keeping at most the first three numeric release components, zero-padding to three, and rendering `v<major>.<minor>.x`
-- official release-line validation first compares the resolved release line against the current `main` release line; if they match, caller ref must be `main`; if they differ, caller ref must be the exact matching protected maintenance branch
+- official release-line validation first compares the resolved release line against a frozen `origin/main` comparison snapshot captured at the start of `resolve-context`; if they match, caller ref must be `main`; if they differ, caller ref must be the exact matching protected maintenance branch
 - official release tags under `refs/tags/release/**` must be protected
 - buddy traceability tags under `refs/tags/buddy/**` are separate from the official release-identity namespace
 - tag protection must cover both tag creation and tag updates; legacy protection that only blocks deletion or force-push is insufficient for `refs/tags/release/**` and `refs/tags/buddy/**`
@@ -56,37 +56,44 @@ Current assumptions:
 - `official.yml` includes `preflight-check` for `environment: production` with required reviewers
 - `official.yml` also runs `static-analysis` symmetrically with `buddy.yml`
 - repository protection uses GitHub repository rulesets only for protected branches and protected tags; legacy branch-protection compatibility is out of scope before implementation starts
-- `preflight-check` requires `actions: read` and `contents: read` for GitHub Environments metadata and must use whichever minimally scoped read credential can also read repository rulesets metadata; if `GITHUB_TOKEN` is insufficient, the ruleset check still remains mandatory
+- `preflight-check` uses `permissions: {}` on the job, does not perform checkout, and mints a dedicated just-in-time read-only GitHub App installation token for both environment metadata and repository rulesets metadata; the GitHub App private key lives in an organization-level Actions secret scoped only to this repository
 - `preflight-check` must hard-fail on GitHub API errors outside explicitly handled cases
 - `preflight-check` must set an explicit client timeout on every GitHub API call so a hung response fails fast rather than consuming the whole job timeout
 - `preflight-check` must specifically require a `required_reviewers` protection rule, `prevent_self_review = true`, an exact-name deployment branch policy restricted to the official protected control-plane branch set, reject wildcard deployment-branch patterns, query the Repository Rulesets API only, verify that allowed maintenance branches carry the same ruleset profile as `main`, and verify active tag rulesets for both `refs/tags/release/**` and `refs/tags/buddy/**`
-- `preflight-check` verifies the protection profile of every branch already listed in the production deployment policy; completeness of the allowed official caller-ref set is enforced separately by `resolve-context`'s OIDC inventory preflight
+- `preflight-check` verifies the protection profile of every branch already listed in the production deployment policy; completeness of the allowed official caller-ref set is enforced separately by `resolve-context`'s publish trust inventory preflight
 - `preflight-check` is an audit-before-use guard and still has a residual TOCTOU window if environment or tag-ruleset protection changes after the check passes; later environment evaluation and live tag ruleset evaluation remain authoritative
 - buddy `force=true` is privileged by policy, but not yet separated by a workflow-enforced approval gate
+- operators must inspect the current buddy concurrency-group run state before dispatching `force=true`; queued-run replacement does not preserve overwrite intent for an already in-progress run
 - reusable workflows must not declare `permissions:` blocks
 - build reusable workflows require caller `contents: read`
 - build reusable workflows perform internal `fetch-depth: 0` checkout with `persist-credentials: false` and accept `checkout-ref` so callers can pin the exact workflow commit when they want to be explicit
 - buddy publish jobs must depend on `static-analysis` directly
 - buddy publish jobs also gate explicitly on `resolve-context.result == 'success'` and `static-analysis.result == 'success'`
+- buddy publish jobs also gate explicitly on the single language-matching build job succeeding while the three non-matching build jobs are skipped
 - `buddy.yml` and `official.yml` end with a `release-complete` gate that first asserts resolver/static-analysis success, validates the selected target set against the actual publish-job results, requires non-selected publish jobs to be skipped, and verifies the single language-matching build result
 - `create-traceability-tag` depends on `release-complete` plus `resolve-context` outputs rather than reimplementing publish completeness checks itself
-- official publish jobs should gate explicitly on `resolve-context.result == 'success'`, `static-analysis.result == 'success'`, and `create-release-tag.result == 'success'`
-- `.github/CODEOWNERS`, `.github/workflows/**`, `.github/oidc-trust-inventory.json`, `eng/scripts/**`, `mise.toml`, `mise.lock`, and other trusted control-plane helper files must be protected by `CODEOWNERS` review, and protected control-plane branches must require code-owner review via rulesets
+- `create-traceability-tag` also performs a preflight-style ruleset verification for `refs/tags/buddy/**` before pushing the buddy tag
+- official publish jobs should gate explicitly on `resolve-context.result == 'success'`, `static-analysis.result == 'success'`, and `create-release-tag.result == 'success'`, using `fromJson(... || '[]')` style defaults for target-array guards
+- `.github/CODEOWNERS`, `.github/workflows/**`, `.github/actions/**`, `.github/publish-trust-inventory.json`, `.github/release-recovery-ledger.jsonl`, `eng/scripts/**`, `**/release.json`, `**/version.json`, `hk.pkl`, `PklProject`, `PklProject.deps.json`, `mise.toml`, `mise.lock`, and other trusted control-plane helper files must be protected by `CODEOWNERS` review, and protected control-plane branches must require code-owner review via rulesets
 - `environment: production` deployment branch policy allows only the official protected control-plane branch set and only as exact branch names, never wildcard patterns
 - OIDC trusted publisher configuration uses the strongest claim set each registry supports; the authoritative branch restriction is GitHub `environment: production` deployment branch policy, exact caller-ref is required where the target registry supports it, and PyPI/npmjs/RubyGems.org rely on the protected GitHub deployment-branch policy for branch restriction
-- no portable wildcard future-branch trust is assumed; renaming a protected control-plane branch, adding or retiring an allowed protected maintenance branch ref, or moving `_publish-*.yml` requires registry-side OIDC trust updates and a same-change update to the checked-in OIDC trust inventory at `.github/oidc-trust-inventory.json`
-- the OIDC trust inventory has `schemaVersion: 1`, records `entryWorkflowPath`, fully qualified `allowedCallerRefs`, and a target-to-publish-workflow-path mapping for official targets
-- official `resolve-context` performs an OIDC inventory preflight against the checked-in trust inventory from the current protected caller ref after official target resolution and before any publish job becomes eligible
+- no portable wildcard future-branch trust is assumed; renaming a protected control-plane branch, adding or retiring an allowed protected maintenance branch ref, changing an official target's auth mechanism, or moving an OIDC-backed publish workflow requires registry-side trust updates, while any official target whose trusted workflow path, caller refs, or auth mode change requires a same-PR update to the checked-in publish trust inventory at `.github/publish-trust-inventory.json`
+- the publish trust inventory has `schemaVersion: 1`, records `entryWorkflowPath`, fully qualified `allowedCallerRefs`, a target-to-publish-workflow-path mapping, and a target-to-auth-mechanism mapping for official targets, including non-OIDC targets such as `github:official`
+- official `resolve-context` performs a publish trust inventory preflight against the checked-in inventory from the current protected caller ref after official target resolution and before any publish job becomes eligible
+- CI includes an explicit `trusted-release-inventory` job that compares the post-change `entryWorkflowPath`, the deduplicated fully qualified `allowedCallerRefs` set, the `publishWorkflowPaths` mapping, and the `targetAuthMechanisms` mapping for every official target against `.github/publish-trust-inventory.json`; CI fails on any mismatch whether or not the inventory file itself changed
 - registry-side OIDC trust settings are not queried portably; release operators must verify registry-side trust separately when diagnosing control-plane drift
 - reusable publish docs must list required caller permissions
 - idempotent publish handling only treats duplicate-version outcomes as success when remote artifact identity matches; auth and upstream failures stay hard-fail
 - reusable publish workflows must emit a machine-readable workflow output indicating whether the run performed a new publish or an idempotent no-op
 - a selected publish target that settles as `publish-result = no-op` still finishes with job result `success`; job result `skipped` is reserved for non-selected targets only
-- `_publish-github.yml` receives buddy-only `force` explicitly, declares `default: false`, enforces GitHub Release overwrite/idempotency at publish time, and hard-fails if `force=true` is combined with `prerelease=false`, a non-`buddy/<project-name>/v<version>` tag, or a non-buddy pre-release title; official callers do not use `force`
+- `_publish-github.yml` receives buddy-only `force` explicitly, declares `default: false`, also receives `source-commit-sha`, enforces exact tag-name and title contracts for both buddy and official paths, and hard-fails if `force=true` is combined with `prerelease=false`; official callers do not use `force`
 - `_publish-github.yml` also receives `project-name` explicitly so it can create deterministic release titles `<project-name> v<version>` for official releases and `<project-name> v<version> (pre-release)` for buddy pre-releases
+- GitHub Release scans in `resolve-context` and `_publish-github.yml` must paginate to completion and hard-fail on API, auth, rate-limit, transport, or response-shape errors; overwrite and no-op decisions are never made from partial scan results
+- because buddy and official can run concurrently, `_publish-github.yml` re-checks for a conflicting stable release title immediately before mutating GitHub Release state on both buddy and official paths, and `force=true` never bypasses that guard
 - official GitHub Release idempotency also requires matching remote asset identity
 - read-only checkouts in resolve/static-analysis jobs use `persist-credentials: false`
 - every workflow job must declare `timeout-minutes`; omission is a lint failure enforced through `hk`/`actionlint`
+- timeout defaults are explicit: `preflight-check`/resolve/static-analysis `15`, Ubuntu builds `30`, Windows builds `45` because hosted Windows runners have higher startup and restore/test overhead, publish jobs `15`, tag-management jobs `10`, and `ci-passed`/`release-complete` `10`
 - reusable workflow `permissions:` prohibition is also lint-enforced through a custom `hk` check because `actionlint` does not cover it directly
 - official `resolve-context` depends explicitly on `preflight-check`
 - official static-analysis evaluates the dispatch-selected source ref directly, the same payload that will be built and released by that run
@@ -94,38 +101,48 @@ Current assumptions:
 - `resolve-context` outputs the NBGV-resolved version directly in both channels; official then derives the protected release tag `release/<project-name>/v<version>` from that resolved version
 - buddy NBGV versions may differ across branches or after new commits change git-history height; that is expected unofficial-channel behavior rather than a recovery bug
 - PEP 440 epoch markers (`!`) are intentionally unsupported in release tag versions
-- release-line derivation is uniform across ecosystems: strip suffix material, keep at most three numeric release components, zero-pad to three, then render `v<major>.<minor>.x` (for example `1.1 -> v1.1.x`, `1.2.3.4 -> v1.2.x`)
+- release-line derivation is uniform across ecosystems: strip suffix material, read at most the first two numeric release components, zero-pad a missing minor component to `0`, then render `v<major>.<minor>.x` (for example `1.1 -> v1.1.x`, `1.2.3.4 -> v1.2.x`)
 - `mise.lock` is committed alongside `mise.toml`; jobs hard-fail when `mise.lock` is absent, key caches by both files, and use lockfile-backed digest verification where supported by the selected MISE backend
 - `release.json` is loaded only from `<project-root>/release.json`; there is no upward search or inherited fallback
 - release target validation is language-aware: `csharp -> nuget/github`, `jsts -> npm/github`, `python -> pypi/github`, `ruby -> rubygems/github`
 - RubyGems repository policy accepts only `MAJOR.MINOR.PATCH[.suffix...]` with no leading `v`, no `-` or `+`, ASCII-alphanumeric suffix segments, and at least one letter in any suffix chain
 - official creates the protected release tag only after resolver, static-analysis, and build success are sufficient to reserve the release identity before publish jobs run
 - official GitHub Releases use deterministic release titles `<project-name> v<version>` so overwrite guards can detect same-version identity conflicts across tags
-- buddy overwrite guards scan non-pre-release GitHub Releases by the deterministic stable title `<project-name> v<version>`, while buddy pre-releases themselves use the deterministic title `<project-name> v<version> (pre-release)`
-- build artifacts include a manifest of published files and SHA-256 digests; publish workflows verify that manifest before upload, `artifact-manifest.json` is internal metadata rather than a GitHub Release asset, and that manifest uses a fixed schema with `schemaVersion: 1` plus a non-empty `files` array of `{path, sha256}` objects
+- buddy overwrite guards scan non-pre-release GitHub Releases, including drafts, by the deterministic stable title `<project-name> v<version>`, while buddy pre-releases themselves use the deterministic title `<project-name> v<version> (pre-release)`
+- build artifacts include a manifest of published files and SHA-256 digests; publish workflows verify that manifest before upload, the manifest file name is fixed as `artifact-manifest.json`, it is internal metadata rather than a GitHub Release asset, and it uses a fixed schema with `schemaVersion: 1` plus a non-empty `files` array of `{path, sha256}` objects
 - NuGet build artifacts may also include matching `.snupkg` symbol packages, which should be pushed alongside the corresponding `.nupkg` when the target supports them
 - build workflows must produce reproducible package outputs for the same source commit and locked toolchain so rerun idempotency remains valid
-- `_publish-npm.yml` must not move the stable `latest` dist-tag backward in SemVer ordering; publication chronology is not the comparison rule
+- `_publish-npm.yml` must use an explicit dist-tag on every publish, buddy GPR publishes must use a non-stable tag such as `buddy`, and official npmjs publishes must not move the stable `latest` dist-tag backward in SemVer ordering; publication chronology is not the comparison rule
 - GitHub Packages versions are treated as immutable within workflow execution even though GitHub supports delete/restore with elevated package-admin privileges; the workflow design does not request delete/admin permissions and does not support delete-and-republish recovery
 - recovery guidance distinguishes fresh dispatch from GitHub's Re-run button and covers partial official publishes plus preflight failures
 - recovery guidance tells operators to check the original run's artifacts in the GitHub Actions run UI or API before choosing rerun versus fresh dispatch
+- recovery guidance also distinguishes GitHub's approximately 35-day workflow-run lifetime from the 30-day deployment-approval expiry and 45-day official artifact retention
 - recovery guidance also distinguishes pre-publish validation/build failures from partial publish failures
 - recovery guidance distinguishes official failures that happen before `resolve-context` succeeds, before `create-release-tag` succeeds, and after the immutable official release tag has already been created
 - recovery guidance explicitly states that `force=true` only covers buddy GitHub pre-release assets and buddy traceability tags, not GPR package versions
 - recovery guidance includes OIDC trust drift after control-plane branch or workflow-path changes
-- recovery guidance distinguishes repository-side `resolve-context` OIDC inventory preflight failures from registry-side Trusted Publisher drift during publish jobs
+- recovery guidance distinguishes repository-side `resolve-context` publish trust inventory preflight failures from registry-side Trusted Publisher drift during publish jobs
 - recovery guidance treats `release-complete` target-mapping failures as control-plane wiring drift that must be fixed in workflow code rather than retried
-- recovery guidance prefers `Re-run failed jobs` on the same official workflow run for transient or partial-publish recovery; a fresh dispatch is valid only when the selected protected branch still points to the same commit as the original run
+- recovery guidance prefers `Re-run failed jobs` on the same official workflow run for transient failures, uses `Re-run all jobs` for declined or expired environment approvals, and allows a fresh dispatch only when the selected protected branch still points to the same commit as the original run
 - recovery guidance covers the case where buddy traceability tag recovery still fails because the tag points to a different commit and requires an explicit choice between `force=true` and manual tag cleanup
-- orphaned official tags are not silently accepted; recovery either reruns against the same commit or explicitly deletes the tag with authorized bypass before abandoning that release identity
+- orphaned official tags are not silently accepted; recovery either reruns against the same commit or explicitly deletes the tag with a member of the dedicated release-engineering group configured as a `refs/tags/release/**` bypass actor before abandoning that release identity
+- recovery guidance includes the case where a draft or published stable GitHub Release with deterministic title blocks a new official run and must be resolved explicitly rather than bypassed by renaming
 - if official artifacts expire and the protected branch has moved, the previous partially released identity is treated as burned and recovery proceeds with the next version
+- burned and partially published official identities are recorded in a durable recovery ledger at `.github/release-recovery-ledger.jsonl` with a fixed JSONL schema under `CODEOWNERS` review
 - `mise.lock` is mandatory repository state, regenerated with `mise lock`, and enforced by `hk check --all`
-- the checked-in OIDC trust inventory is drift detection and audit trail only, not an independent cryptographic backstop
-- official tag rulesets and buddy tag rulesets must use the narrowest available automation bypass actors rather than broad human repository roles
-- reusable publish workflows must write `publish-result` to both workflow outputs and `$GITHUB_STEP_SUMMARY`, and `release-complete` aggregates selected-target outcomes into its own summary
+- the checked-in publish trust inventory is drift detection and audit trail only, not an independent cryptographic backstop
+- reusable publish workflows must write `publish-result` to both workflow outputs and `$GITHUB_STEP_SUMMARY`, and `release-complete` both validates selected-target `publish-result` values and aggregates them into its own summary
 - build reusable workflows default `checkout-ref` to the caller job's `github.sha` when the input is omitted
-- maintenance branch onboarding rolls back the production deployment policy change if OIDC inventory/trust updates fail
-- maintenance branch retirement first drains queued or in-progress official runs from that branch, then removes the exact branch from the production deployment policy and OIDC inventory before registry-side trust is removed
+- maintenance branch onboarding updates registry-side OIDC trust before merging the matching inventory change, and if onboarding aborts after registry-side trust exists, that trust entry is removed before the production deployment policy change is rolled back
+- maintenance branch retirement first drains queued, waiting, action-required, pending, or in-progress official runs from that branch with separate status-specific queries, resolves any partial-publish run before continuing, then removes the exact branch from the production deployment policy and publish trust inventory before registry-side trust is removed; if registry-side trust removal fails, the branch remains retired until trust state is repaired or the GitHub-side retirement is explicitly rolled back in matching order
+
+- `ci-passed` must re-derive which language suites were required from `detect-changes.outputs` and may not treat an unexplained skipped test job as success
+- buddy and official static-analysis scope HK by passing the project path directly to `hk check`; the design no longer pre-enumerates file lists in shell
+- official artifact retention is `45` days to exceed GitHub's 30-day deployment-approval expiry and preserve post-expiry recovery margin
+- official tag and buddy tag rulesets use dedicated GitHub Apps as workflow automation bypass actors rather than the GitHub Actions app; emergency manual cleanup is limited to the dedicated release-engineering group
+- stable GitHub Release conflict detection treats draft releases with the deterministic stable title as part of the same stable identity space rather than a separate namespace
+- declined or expired environment approvals are recovered with `Re-run all jobs`, while transient failed jobs use `Re-run failed jobs`
+- operations must audit protected `release/**` tags against completed official releases at least once every 7 days and after every approval-expiry incident, and record that audit in `.github/release-recovery-ledger.jsonl`, so approval-expired orphan tags are tracked explicitly
 
 If any of these rules changes, update both:
 
