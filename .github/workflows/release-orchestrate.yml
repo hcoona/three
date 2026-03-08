@@ -1511,7 +1511,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Setup Ruby
-        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        uses: ruby/setup-ruby@6ca151fd1bfcfd6fe0c4eb6837eb0584d0134a0c # v1
         with:
           ruby-version: ${{ env.RUBY_VERSION }}
 
@@ -1628,7 +1628,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Setup Ruby
-        uses: ruby/setup-ruby@09a7688d3b55cf0e976497ff046b70949eeaccfd # v1
+        uses: ruby/setup-ruby@6ca151fd1bfcfd6fe0c4eb6837eb0584d0134a0c # v1
         with:
           ruby-version: ${{ env.RUBY_VERSION }}
 
