@@ -46,7 +46,6 @@ Main responsibilities:
 3. Run unit tests.
 4. Package when required.
 5. Publish to unofficial destinations.
-6. Create or update a traceability tag.
 
 `buddy.yml` is manually triggered. The operator specifies which project to release. The workflow must resolve project metadata from repository state rather than hard-coding per-project logic into the entry workflow.
 
@@ -60,7 +59,7 @@ Because of this, publish targets must be read from per-project release metadata 
 
 `buddy.yml` should:
 
-1. accept `project-name` and `force` inputs,
+1. accept `project-name` as input,
 2. validate `project-name` against a safe character set,
 3. resolve `language`, `project-path`, and version using existing repository scripts,
 4. require full git history where NBGV-derived versioning is needed,
@@ -69,14 +68,11 @@ Because of this, publish targets must be read from per-project release metadata 
 7. run project-scoped HK checks,
 8. run exactly one ecosystem-specific build workflow through static conditional jobs,
 9. run publish jobs as separate static jobs per ecosystem-destination pair,
-10. use idempotent publish scripts for duplicate-version handling,
-11. create the traceability tag `buddy/<project-name>/v<version>` after successful unofficial publication.
+10. use idempotent publish scripts for duplicate-version handling.
 
 Because GitHub Actions resolves `uses:` statically, both build dispatch and publish dispatch should be modeled as multiple conditional jobs rather than a single dynamically selected reusable workflow call.
 
 Buddy is allowed to release from development branches. It is not a promotion prerequisite for official release. It is an independent unofficial release channel.
-
-`force=true` is a privileged overwrite path. The design should allow it only for unofficial overwrite scenarios such as re-pointing a traceability tag or replacing a pre-release, while still treating stable-release overwrite as a hard failure.
 
 ## `official.yml`
 
@@ -90,7 +86,7 @@ The release identity tag format must be:
 
 This workflow should:
 
-1. perform a preflight check that `environment: production` already exists and has required reviewers configured,
+1. perform a preflight check that the derived project-scoped environment `production-<project-name>` already exists and has required reviewers configured,
 2. validate `project-name` against a safe character set,
 3. check out the dispatch-selected protected source ref with full history,
 4. resolve `project-name`, `language`, `project-path`, and version from that selected source ref,
