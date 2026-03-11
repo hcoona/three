@@ -17,14 +17,26 @@ For AI agents editing workflow design docs.
 - reusable workflow contracts that omit caller `permissions`
 - action pinning rules that exempt first-party `actions/*`
 
-## Independently verified external-system facts from the March 2026 research
+## March 2026 external-system research
 
+### Confirmed documented facts
+
+- GitHub's documented rerun availability for a workflow run is 30 days from the initial run
+- GitHub's public examples for build attestations require both `id-token: write` and `attestations: write`
 - npmjs trusted publishing is anchored to the calling workflow filename `.github/workflows/official.yml`; when publish happens through a reusable workflow, npmjs does not treat the called reusable workflow path as the trust anchor
+- npm publicly documents the OIDC audience value `npm:registry.npmjs.org`
 - PyPI's documented GitHub Actions trusted-publishing audience is `pypi`
+- RubyGems.org publicly documents reusable-workflow binding via GitHub's `job_workflow_ref` behavior
 - this design does not rely on any documented exact branch, tag, or commit-SHA binding in the provider UI for `npmjs`, `PyPI`, or `RubyGems.org`
 - this design does not treat `NuGet.org` as having a documented GitHub Actions trusted-publishing path; official NuGet publication therefore uses an explicit API key instead
-- `npmjs` and `RubyGems.org` are not modeled with a checked-in audience value because this design does not rely on a documented provider audience string for them
-- `gh attestation verify` can verify attestation claims including repository, ref, source SHA, `job_workflow_ref`, workflow SHA, repository owner ID, and environment when that claim is present
+- GitHub attestation verification publicly documents repository identity, repository owner identity, ref, source SHA, signer workflow path, and workflow digest as verifiable provenance dimensions; environment may be present when the job used a GitHub environment
+
+### Not yet documented or still treated as reviewed assumptions
+
+- GitHub does not publicly document a separate environment-approval expiry clock; pending approvals are therefore tracked operationally against the enclosing run's 30-day rerun deadline rather than against an assumed GitHub expiry
+- PyPI publicly documents workflow-file trust but does not explicitly document reusable-workflow path handling; the design models `pypi:official` as reusable-workflow based on GitHub `job_workflow_ref` semantics and requires pre-implementation validation
+- npmjs does not publicly document stronger job-level separation when multiple jobs in the same entry workflow enter the same protected environment, so the design treats those jobs as one shared external trust boundary
+- RubyGems.org does not publicly document a required OIDC audience value that this design can check into inventory
 
 ## Current assumptions
 
@@ -92,7 +104,7 @@ For AI agents editing workflow design docs.
 - official registry auth is split by documented provider capability: `npmjs`, `PyPI`, and `RubyGems.org` use trusted publishing, while `NuGet.org` uses an explicit `NUGET_API_KEY` environment secret because no documented trusted-publishing path is assumed in this design
 - no portable wildcard future-branch trust is assumed; branch-set changes are therefore managed on the GitHub side by exact deployment-branch-policy entries plus same-PR updates to `.github/official-caller-refs.json`, `.github/planned-change-windows.json`, and `.github/publish-trust-inventory.json`, while only repository-identity changes, auth-mode changes, selector-workflow changes, or documented audience changes require registry-side auth updates
 - the authoritative repository-side source of active official caller refs is `.github/official-caller-refs.json`; every active protected control-plane branch carries the same normalized contents, and inventory `allowedCallerRefs` must mirror it exactly
-- the publish trust inventory has `schemaVersion: 1`, records `entryWorkflowPath`, fully qualified `allowedCallerRefs`, a target-to-publish-workflow-path mapping, a target-to-environment mapping, a target-to-auth-mechanism mapping for official targets, a `targetTrustedPublisherSelectors` mapping for trusted-publisher-backed targets, and `targetOidcAudiences` only for targets whose provider documents a required audience; buddy targets are intentionally excluded because they do not rely on external registry-side trust state
+- the publish trust inventory has `schemaVersion: 1`, records `entryWorkflowPath`, fully qualified `allowedCallerRefs`, a target-to-publish-workflow-path mapping, a target-to-environment mapping, a target-to-auth-mechanism mapping for official targets, a `targetTrustedPublisherSelectors` mapping for trusted-publisher-backed targets, and `targetOidcAudiences` only for targets whose provider publicly documents a required audience; buddy targets are intentionally excluded because they do not rely on external registry-side trust state
 - publish trust inventory validation is strict and equivalent to `additionalProperties: false` at the top level
 - official `resolve-context` performs a publish trust inventory preflight against the checked-in inventory from the current protected caller ref after official target resolution and before any publish job becomes eligible
 - CI includes an explicit `trusted-release-inventory` job that checks out the PR merge commit and compares the post-change `entryWorkflowPath`, the deduplicated fully qualified `allowedCallerRefs` set derived from `.github/official-caller-refs.json`, the `publishWorkflowPaths` mapping, the `targetEnvironments` mapping, the `targetAuthMechanisms` mapping, the `targetTrustedPublisherSelectors` mapping, and the `targetOidcAudiences` mapping against `.github/publish-trust-inventory.json`; CI fails on any mismatch whether or not the inventory file itself changed
@@ -136,7 +148,7 @@ For AI agents editing workflow design docs.
 - recovery-ledger incident disposition includes `abandoned-after-partial-publish` in addition to `abandoned-before-publish`
 - build artifacts include a manifest of published files and SHA-256 digests; publish workflows verify that manifest before upload, the manifest file name is fixed as `artifact-manifest.json`, it is internal metadata rather than a GitHub Release asset, and it uses a fixed schema with `schemaVersion: 1` plus a non-empty `files` array of `{path, sha256, publishRoles}` objects with strict key whitelists and exact 64-character lowercase SHA-256 digests
 - official build workflows with `require-provenance: true` also emit a separate provenance artifact `build-provenance-<project-name>` plus a durable identity record `artifact-evidence.json`, and `artifactManifestEvidenceUrl` in the recovery ledger points to a repository-controlled durable copy of that evidence rather than to an expiring CI artifact URL
-- `artifact-evidence.json` is strict rather than open-ended and records exact attestation verification outputs including verified repository, ref, source SHA, `job_workflow_ref`, workflow SHA, repository owner ID, verifier tool, and optional verified environment
+- `artifact-evidence.json` is strict rather than open-ended and records exact attestation verification outputs including verified repository, ref, source SHA, `job_workflow_ref`, workflow SHA, repository owner identity, verifier tool, and optional verified environment
 - every `artifact-manifest.json` entry path must be a flat top-level file name with no `/` or `\`, and every publish workflow rejects nested paths during manifest validation
 - `_publish-github.yml` derives and uploads a public checksum asset such as `SHA256SUMS` from `artifact-manifest.json` so GitHub Release consumers can verify downloaded assets with standard tooling in addition to the attestation-based provenance gate
 - NuGet build artifacts may also include matching `.snupkg` symbol packages, which should be pushed alongside the corresponding `.nupkg` when the target supports them
@@ -147,13 +159,13 @@ For AI agents editing workflow design docs.
 - recovery guidance distinguishes fresh dispatch from GitHub's Re-run button and covers partial official publishes plus preflight failures
 - GitHub reruns use the original workflow snapshot and do not pick up later fixes to workflow files, reusable workflows, or helper scripts
 - recovery guidance tells operators to check the original run's artifacts in the GitHub Actions run UI or API before choosing rerun versus fresh dispatch
-- recovery guidance also distinguishes GitHub's approximately 35-day workflow-run lifetime from the 30-day deployment-approval expiry and 90-day official artifact retention
+- recovery guidance distinguishes GitHub's documented 30-day workflow-rerun limit from the 90-day official artifact retention window and treats long-lived pending approvals against that rerun boundary rather than against an undocumented GitHub approval-expiry clock
 - recovery guidance also distinguishes pre-publish validation/build failures from partial publish failures
 - recovery guidance distinguishes official failures that happen before `resolve-context` succeeds, before `create-release-tag` succeeds, and after the immutable official release tag has already been created
 - recovery guidance includes OIDC trust drift after control-plane branch or workflow-path changes
 - recovery guidance distinguishes repository-side `resolve-context` publish trust inventory preflight failures from registry-side Trusted Publisher drift during publish jobs
 - recovery guidance treats `release-complete` target-mapping failures as control-plane wiring drift that must be fixed in workflow code rather than retried
-- recovery guidance prefers `Re-run failed jobs` on the same official workflow run for transient failures, uses `Re-run all jobs` for declined or expired environment approvals, requires inspecting and draining stale queued runs in the same concurrency group before any fresh dispatch, and allows a fresh dispatch only when the selected protected branch still points to the same commit as the original run
+- recovery guidance prefers `Re-run failed jobs` on the same official workflow run for transient failures, uses `Re-run all jobs` for declined approvals and other cancellation-style approval outcomes, requires inspecting and draining stale queued runs in the same concurrency group before any fresh dispatch, and allows a fresh dispatch only when the selected protected branch still points to the same commit as the original run
 - if a corrected official source commit still resolves to the same version as a burned identity, recovery must bump the version or explicitly delete the burned protected tag through the authorized bypass path before redispatch
 - orphaned official tags are not silently accepted; recovery either reruns against the same commit or explicitly deletes the tag with a member of the dedicated release-engineering group configured as a `refs/tags/release/**` bypass actor before abandoning that release identity
 - recovery guidance includes the case where a draft or published stable GitHub Release with deterministic title blocks a new official run and must be resolved explicitly rather than bypassed by renaming
@@ -170,12 +182,12 @@ For AI agents editing workflow design docs.
 - `official.yml` uses three GitHub Apps in the design: a metadata reader App, a release-tag writer App scoped to protected tag creation, and a release-evidence writer App scoped only to the protected `release-evidence` branch
 - `ci-passed` must re-derive which language suites were required from `detect-changes.outputs` and may not treat an unexplained skipped test job as success
 - buddy and official static-analysis scope HK by passing the project path directly to `hk check`; the design no longer pre-enumerates file lists in shell
-- official artifact retention is `90` days to exceed GitHub's 30-day deployment-approval expiry and preserve post-expiry recovery margin
+- official artifact retention is `90` days to exceed GitHub's documented 30-day workflow-rerun limit and preserve post-expiry recovery margin
 - official tag rulesets use a dedicated GitHub App as the workflow automation bypass actor rather than the GitHub Actions app; emergency manual cleanup is limited to the dedicated release-engineering group
 - stable GitHub Release conflict detection treats draft releases with the deterministic stable title as part of the same stable identity space rather than a separate namespace
-- declined or expired environment approvals are recovered with `Re-run all jobs`, while transient failed jobs use `Re-run failed jobs`
-- operations must audit protected `release/**` tags against completed official releases at least once every 7 days and immediately after approval expiry, run expiry, manual orphan-tag deletion, or burned-identity declaration, and record that audit in `.github/release-recovery-ledger.jsonl`
-- official recovery monitoring uses three control-plane monitors: a 6-hour approval-deadline monitor with its own external heartbeat, an event-driven post-tag failure monitor for non-success official runs after tag creation, and a 7-day operational audit with its own external heartbeat
+- declined approvals and other cancellation-style approval outcomes are recovered with `Re-run all jobs`, while transient failed jobs use `Re-run failed jobs`
+- operations must audit protected `release/**` tags against completed official releases at least once every 7 days and immediately after run expiry, manual orphan-tag deletion, burned-identity declaration, or an escalated long-waiting approval incident, and record that audit in `.github/release-recovery-ledger.jsonl`
+- official recovery monitoring uses three control-plane monitors: a 6-hour approval-age monitor with its own external heartbeat, an event-driven post-tag failure monitor for non-success official runs after tag creation, and a 7-day operational audit with its own external heartbeat
 - the periodic protected-tag audit may automatically append `audit` ledger records only when `result = clean` and `followUpStatus = not-required`; discrepancies, reconciliations, break-glass actions, and incident-state changes still require reviewed ledger updates
 - any `open-partial-publish` incident that remains unresolved for 14 days escalates automatically to release-engineering owners with current live-state evidence
 - the registry-withdrawal runbook and the registry-auth rollback runbook require release-engineering re-attestation at least every 90 days
