@@ -81,6 +81,34 @@ url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64
 checksum = "sha256:318aa2a6fa664325933e81fda60d523fff29444129e91ebf0726b5b3bcd8b059"
 url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-pc-windows-msvc.zip"
 
+[[tools.fd]]
+version = "10.4.2"
+backend = "aqua:sharkdp/fd"
+
+[tools.fd."platforms.linux-arm64"]
+checksum = "sha256:f32d3657473fba74e2600babc8db0b93420d51169223b7e8143b2ed55d8fd9e8"
+url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-aarch64-unknown-linux-musl.tar.gz"
+
+[tools.fd."platforms.linux-arm64-musl"]
+checksum = "sha256:f32d3657473fba74e2600babc8db0b93420d51169223b7e8143b2ed55d8fd9e8"
+url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-aarch64-unknown-linux-musl.tar.gz"
+
+[tools.fd."platforms.linux-x64"]
+checksum = "sha256:e3257d48e29a6be965187dbd24ce9af564e0fe67b3e73c9bdcd180f4ec11bdde"
+url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.fd."platforms.linux-x64-musl"]
+checksum = "sha256:e3257d48e29a6be965187dbd24ce9af564e0fe67b3e73c9bdcd180f4ec11bdde"
+url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.fd."platforms.macos-arm64"]
+checksum = "sha256:623dc0afc81b92e4d4606b380d7bc91916ba7b97814263e554d50923a39e480a"
+url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-aarch64-apple-darwin.tar.gz"
+
+[tools.fd."platforms.windows-x64"]
+checksum = "sha256:b2816e506390a89941c63c9187d58a3cc10e9a55f2ef0685f9ea0eccaf7c98c8"
+url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip"
+
 [[tools.github-cli]]
 version = "2.86.0"
 backend = "aqua:cli/cli"
@@ -112,6 +140,38 @@ url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_macOS_amd6
 [tools.github-cli."platforms.windows-x64"]
 checksum = "sha256:983c74a8c594366b198485187cd6d4d07638f0bf9a9948d51a2a81a5164d8bfd"
 url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_windows_amd64.zip"
+
+[[tools.github-cli]]
+version = "2.88.0"
+backend = "aqua:cli/cli"
+
+[tools.github-cli."platforms.linux-arm64"]
+checksum = "sha256:d9bffed5c9bb65fca9d6097eaa3ebd6edb7438c8bfd641f8595a39c7dc69042f"
+url = "https://github.com/cli/cli/releases/download/v2.88.0/gh_2.88.0_linux_arm64.tar.gz"
+
+[tools.github-cli."platforms.linux-arm64-musl"]
+checksum = "sha256:d9bffed5c9bb65fca9d6097eaa3ebd6edb7438c8bfd641f8595a39c7dc69042f"
+url = "https://github.com/cli/cli/releases/download/v2.88.0/gh_2.88.0_linux_arm64.tar.gz"
+
+[tools.github-cli."platforms.linux-x64"]
+checksum = "sha256:4d268420ad31846a807e3012ac4b6547df662777e7776fa7f4c55ce062e15b15"
+url = "https://github.com/cli/cli/releases/download/v2.88.0/gh_2.88.0_linux_amd64.tar.gz"
+
+[tools.github-cli."platforms.linux-x64-musl"]
+checksum = "sha256:4d268420ad31846a807e3012ac4b6547df662777e7776fa7f4c55ce062e15b15"
+url = "https://github.com/cli/cli/releases/download/v2.88.0/gh_2.88.0_linux_amd64.tar.gz"
+
+[tools.github-cli."platforms.macos-arm64"]
+checksum = "sha256:0ea4edb4b1be0ffa2b4c53bcce81691dd58647bb03bfb5b9fdb01ee5b2afc581"
+url = "https://github.com/cli/cli/releases/download/v2.88.0/gh_2.88.0_macOS_arm64.zip"
+
+[tools.github-cli."platforms.macos-x64"]
+checksum = "sha256:49d309a6b2152807fb0a70d6db02d14a2d9264b01f52c852938aadb331f4cf70"
+url = "https://github.com/cli/cli/releases/download/v2.88.0/gh_2.88.0_macOS_amd64.zip"
+
+[tools.github-cli."platforms.windows-x64"]
+checksum = "sha256:0cbf0abde47cd873edbf937e30665d665c07145ff14199f81358d0188affae57"
+url = "https://github.com/cli/cli/releases/download/v2.88.0/gh_2.88.0_windows_amd64.zip"
 
 [[tools."github:hadolint/hadolint"]]
 version = "2.14.0"
