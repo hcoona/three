@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./.github/hooks/scripts/telegram-notify.ps1 -EventName Stop",
+        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\.github\\hooks\\scripts\\telegram-notify.ps1 -EventName Stop",
+        "cwd": ".",
+        "timeout": 20
+      }
+    ]
+  }
+}

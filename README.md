@@ -40,6 +40,31 @@ Development flow:
 
 For publishing/versioning, follow pnpm’s [Changesets guide](https://pnpm.io/using-changesets) so both packages can share a single release workflow.
 
+## GitHub Copilot Telegram notifications
+
+This repo includes a workspace-level GitHub Copilot hook configuration under `.github/hooks/telegram-notify.json`.
+The hook calls `.github/hooks/scripts/telegram-notify.ps1` with `pwsh`, so the same setup works in Windows and WSL as long as the repository toolchain is bootstrapped with Mise.
+
+For VS Code agent sessions, the notification hook sends Telegram messages when the agent session stops:
+
+- `Stop`
+
+This means you receive the notification when the current agent session ends, not after every individual back-and-forth in the same ongoing chat thread.
+If you keep chatting in the same session, no stop notification is emitted yet.
+According to the official VS Code hooks documentation, the `Stop` event only receives the common hook fields plus `stop_hook_active`; it does not guarantee `source` or `reason`, so those fields might be absent in the notification.
+
+Each notification includes a self-describing `run_id` built from the host, execution environment, repo name, worktree tag, branch, commit SHA, and timestamp so concurrent worktrees and machines stay easy to tell apart.
+For GitHub remotes, the repo field is displayed as `owner/repo` (for example, `hcoona/three`). For Azure DevOps remotes, it is displayed as `organization/project/repository`.
+
+To enable notifications:
+
+1. Create a bot with `@BotFather`.
+2. Send `/start` to the bot once from the target chat.
+3. Fill in `TG_BOT_TOKEN` and `TG_CHAT_ID` in the local `.env` file at the repo root.
+
+The PowerShell script loads the repo-root `.env` file automatically when those environment variables are not already present in the current process.
+The official VS Code hooks documentation says hook files in `.github/hooks/*.json` are loaded automatically after save. If behavior seems stale in an already-running session, reloading the VS Code window is still a reasonable fallback.
+
 [asciidoctor-upstream]: https://github.com/hcoona/asciidoctor-latexmath
 [asciidoctor-commit]: https://github.com/hcoona/asciidoctor-latexmath/commit/514d685558dc1c8215d0b1e42ff5ea2762ecd3b2
 [ioe-upstream]: https://github.com/hcoona/ImageOcclusionEditor
