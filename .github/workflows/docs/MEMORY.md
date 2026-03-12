@@ -71,6 +71,26 @@ For AI agents editing workflow design docs.
 - NuGet unlisting is semantically distinct from both deprecation and removal: it hides a package from normal search while still allowing exact-version installs and does not itself surface a deprecation warning
 - GitHub artifact attestations are stored as Sigstore bundles that embed run-specific provenance metadata, and later reruns are not expected to reproduce byte-identical attestation bundles even for identical artifacts
 
+### March 2026 external-system confirmation for the current DESIGN cleanup
+
+#### Confirmed facts
+
+- GitHub Environments required reviewers remain a one-of-N approval gate, jobs show `waiting` while environment protection rules are still blocking execution, and administrator bypass can be disabled explicitly in environment settings
+- three sequential environment-gated jobs with independent 7-day wait timers would create an approximately 21-day minimum elapsed path for a single official release, because the waits accumulate across the dependency chain
+- GitHub's REST API treats `action_required` as a workflow-run status value that can be queried directly; it is not a step or job conclusion value
+- GitHub web URLs do not support immutable `/blob/<blob-sha>/path` navigation; immutable blob reads must use the Git blobs API, while human-facing web links must be anchored by a commit SHA rather than a blob SHA
+- npm unpublish remains time-windowed and destructive: an unpublished `name@version` tuple cannot be reused later, and removing all versions of a package name imposes a 24-hour block before any new version of that package name may be published again
+- PyPI yanking is the non-destructive withdrawal path, while deletion is permanent and burns the deleted filename/version identity so the same file cannot be re-uploaded later
+- RubyGems public documentation confirms `gem yank` removal semantics but does not publicly document same-version republish as a supported recovery path after yank
+- NuGet symbol publication depends on the corresponding `.nupkg` already existing, and a missing primary package causes symbol upload to fail rather than silently creating partial state
+- npm publicly documents the trusted-publishing OIDC audience `npm:registry.npmjs.org`, PyPI publicly documents the audience `pypi`, and RubyGems.org public trusted-publishing documentation still does not publish a required audience value
+
+#### Remaining assumptions
+
+- although GitHub run status exposes `waiting`, provider APIs do not publicly guarantee a distinct machine-readable reason that always separates wait-timer delay from reviewer-pending delay for every environment-gated job state transition
+- RubyGems may or may not permit same-version republish after `gem yank` in some operational edge cases, but because that behavior is not a documented contract, this design should continue to treat it as unsupported
+- GitHub's documented artifact-retention behavior is clear, but a separate universally documented artifact-based recovery contract beyond the 30-day rerun limit was not found in public docs; design recovery should therefore rely on durable repository-controlled evidence rather than on artifact reavailability assumptions
+
 ### March 2026 external-system follow-up assumptions for v2.7 remediation
 
 - if emergency-cleanup membership expiry is implemented through an identity provider rather than GitHub-native automation, the exact TTL guarantee depends on that external identity system and is outside GitHub's own documented contract
@@ -88,6 +108,21 @@ For AI agents editing workflow design docs.
 - because GitHub lacks a documented `workflow_dispatch` actor allowlist, this design treats protected-branch selection plus environment approval and repository-policy checks as the authoritative guardrails for manual official dispatches
 - because private-repo fork PR runs cannot use the metadata App secret path safely, external contributions that need secret-backed control-plane validation must be mirrored onto same-repository branches before this design's CI path is used
 - because npmjs and PyPI public setup docs remain entry-workflow-centric and do not document reusable-workflow UI support, this design models those providers through the documented entry workflow contract and treats any provider-side reusable-workflow behavior as a rollout-time validation item rather than as a guaranteed external contract
+
+### Independent external verification summary for the current DESIGN.v2 remediation
+
+#### Confirmed facts
+
+- GitHub caller jobs that use `uses:` to invoke a reusable workflow may still declare `environment:`; the documented restriction is about `on.workflow_call` environment-secret behavior rather than a blanket caller-job environment ban
+- for reusable-workflow attestation and OIDC identity, `job_workflow_ref` binds to the reusable workflow file rather than to the caller workflow file
+- GitHub Releases marked as prereleases do not become the repository's Latest Release; stable-versus-prerelease handling must therefore stay explicit in the GitHub publish contract
+- NuGet.org repository-signs uploaded packages, so downloaded `.nupkg` bytes are not expected to match the originally uploaded unsigned `.nupkg` bytes
+- npm does not mutate uploaded package tarball bytes after publish, and an unpublished `name@version` tuple cannot be reused later
+
+#### Remaining assumptions
+
+- npmjs and PyPI public trusted-publishing setup documentation still does not describe reusable-workflow selector handling as a stable user-facing contract, so this design keeps official trusted-publisher-backed jobs in `official.yml`
+- PyPI rollout validation may later prove reusable-workflow selectors viable, but that remains an implementation-time experiment rather than a design-time guarantee
 
 ### Not yet documented or still treated as reviewed assumptions
 
