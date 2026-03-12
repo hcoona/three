@@ -3,18 +3,26 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./.github/hooks/scripts/copilot-summary-state.ps1",
-        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\.github\\hooks\\scripts\\copilot-summary-state.ps1",
+        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./src/private/app/vscode-copilot-telegram-hook/scripts/copilot-summary-state.ps1",
+        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\src\\private\\app\\vscode-copilot-telegram-hook\\scripts\\copilot-summary-state.ps1",
         "cwd": ".",
+        "env": {
+          "COPILOT_TELEGRAM_HOOK_ID": "hcoona.vscode-copilot-telegram-hook",
+          "COPILOT_TELEGRAM_GOPASS_PREFIX": "copilot/vscode-copilot-telegram-hook"
+        },
         "timeout": 10
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./.github/hooks/scripts/telegram-notify.ps1",
-        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\.github\\hooks\\scripts\\telegram-notify.ps1",
+        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./src/private/app/vscode-copilot-telegram-hook/scripts/telegram-notify.ps1",
+        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\src\\private\\app\\vscode-copilot-telegram-hook\\scripts\\telegram-notify.ps1",
         "cwd": ".",
+        "env": {
+          "COPILOT_TELEGRAM_HOOK_ID": "hcoona.vscode-copilot-telegram-hook",
+          "COPILOT_TELEGRAM_GOPASS_PREFIX": "copilot/vscode-copilot-telegram-hook"
+        },
         "timeout": 10
       }
     ]

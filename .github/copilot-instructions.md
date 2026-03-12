@@ -25,8 +25,8 @@ Use this JSON shape:
     "Updated the Telegram hook to include summary fields when available."
   ],
   "changed_files": [
-    ".github/hooks/scripts/telegram-notify.ps1",
-    ".github/copilot-instructions.md"
+    "src/private/app/vscode-copilot-telegram-hook/scripts/telegram-notify.ps1",
+    "src/private/app/vscode-copilot-telegram-hook/Install-UserCopilotHook.ps1"
   ],
   "next_steps": [
     "Test the hooks with multiple prompts in the same chat session."

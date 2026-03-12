@@ -3,174 +3,7 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-function Get-RepoRootFromScript {
-    return (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)))
-}
-
-function Import-DotEnvFile {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return
-    }
-
-    foreach ($line in Get-Content -LiteralPath $Path) {
-        if ([string]::IsNullOrWhiteSpace($line)) {
-            continue
-        }
-
-        $trimmed = $line.Trim()
-        if ($trimmed.StartsWith("#")) {
-            continue
-        }
-
-        $match = [regex]::Match($trimmed, '^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$')
-        if (-not $match.Success) {
-            continue
-        }
-
-        $name = $match.Groups[1].Value
-        $value = $match.Groups[2].Value.Trim()
-
-        if (
-            ($value.Length -ge 2) -and (
-                (($value.StartsWith('"')) -and ($value.EndsWith('"'))) -or
-                (($value.StartsWith("'")) -and ($value.EndsWith("'")))
-            )
-        ) {
-            $value = $value.Substring(1, $value.Length - 2)
-        }
-
-        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, "Process"))) {
-            [Environment]::SetEnvironmentVariable($name, $value, "Process")
-        }
-    }
-}
-
-function Test-IsPlaceholderValue {
-    param([AllowNull()][string]$Value)
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $true
-    }
-
-    return $Value -match '^__.+__$'
-}
-
-function Get-ExecutionEnvironment {
-    if ($IsWindows) {
-        return "windows"
-    }
-
-    if ($IsLinux) {
-        if (-not [string]::IsNullOrWhiteSpace($env:WSL_DISTRO_NAME)) {
-            return "wsl"
-        }
-
-        try {
-            if (Test-Path -LiteralPath "/proc/sys/kernel/osrelease") {
-                $osRelease = Get-Content -LiteralPath "/proc/sys/kernel/osrelease" -Raw
-                if ($osRelease -match "(?i)microsoft|wsl") {
-                    return "wsl"
-                }
-            }
-        }
-        catch {
-        }
-
-        return "linux"
-    }
-
-    if ($IsMacOS) {
-        return "macos"
-    }
-
-    return "unknown"
-}
-
-function Invoke-GitSafe {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$WorkingDirectory,
-
-        [Parameter(Mandatory = $true)]
-        [string[]]$Arguments
-    )
-
-    try {
-        $output = & git -C $WorkingDirectory @Arguments 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return (($output -join "`n").Trim())
-        }
-    }
-    catch {
-    }
-
-    return $null
-}
-
-function Get-RepositoryDisplayName {
-    param(
-        [AllowNull()][string]$RemoteUrl,
-
-        [Parameter(Mandatory = $true)]
-        [string]$FallbackName
-    )
-
-    if ([string]::IsNullOrWhiteSpace($RemoteUrl)) {
-        return $FallbackName
-    }
-
-    $trimmedRemoteUrl = $RemoteUrl.Trim()
-
-    if ($trimmedRemoteUrl -match '^(?:https://|ssh://git@)github\.com[/:](?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?/?$') {
-        return "$($Matches.owner)/$($Matches.repo)"
-    }
-
-    if ($trimmedRemoteUrl -match '^git@github\.com:(?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?/?$') {
-        return "$($Matches.owner)/$($Matches.repo)"
-    }
-
-    if ($trimmedRemoteUrl -match '^https://(?:[^@/]+@)?dev\.azure\.com/(?<org>[^/]+)/(?<project>[^/]+)/_git/(?<repo>[^/]+?)(?:\.git)?/?$') {
-        return "$($Matches.org)/$($Matches.project)/$($Matches.repo)"
-    }
-
-    if ($trimmedRemoteUrl -match '^https://(?<org>[^./]+)\.visualstudio\.com/(?<project>[^/]+)/_git/(?<repo>[^/]+?)(?:\.git)?/?$') {
-        return "$($Matches.org)/$($Matches.project)/$($Matches.repo)"
-    }
-
-    if ($trimmedRemoteUrl -match '^git@ssh\.dev\.azure\.com:v3/(?<org>[^/]+)/(?<project>[^/]+)/(?<repo>[^/]+?)(?:\.git)?/?$') {
-        return "$($Matches.org)/$($Matches.project)/$($Matches.repo)"
-    }
-
-    if ($trimmedRemoteUrl -match '^ssh://git@ssh\.dev\.azure\.com/v3/(?<org>[^/]+)/(?<project>[^/]+)/(?<repo>[^/]+?)(?:\.git)?/?$') {
-        return "$($Matches.org)/$($Matches.project)/$($Matches.repo)"
-    }
-
-    return $FallbackName
-}
-
-function Get-HookEventTime {
-    param([AllowNull()][string]$Value)
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return [DateTimeOffset]::UtcNow
-    }
-
-    try {
-        return [DateTimeOffset]::Parse(
-            $Value,
-            [System.Globalization.CultureInfo]::InvariantCulture,
-            [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal
-        )
-    }
-    catch {
-        return [DateTimeOffset]::UtcNow
-    }
-}
+. (Join-Path $PSScriptRoot "CopilotHook.Common.ps1")
 
 function Escape-Html {
     param([AllowNull()][string]$Text)
@@ -199,62 +32,6 @@ function Normalize-OneLine {
     }
 
     return $normalized.Substring(0, $MaxLength - 1) + "…"
-}
-
-function Read-JsonFile {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return $null
-    }
-
-    try {
-        $raw = Get-Content -LiteralPath $Path -Raw
-        if ([string]::IsNullOrWhiteSpace($raw)) {
-            return $null
-        }
-
-        return $raw | ConvertFrom-Json -Depth 30
-    }
-    catch {
-        return $null
-    }
-}
-
-function Write-JsonFile {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path,
-
-        [Parameter(Mandatory = $true)]
-        $Value
-    )
-
-    $directory = Split-Path -Parent $Path
-    if (-not [string]::IsNullOrWhiteSpace($directory) -and (-not (Test-Path -LiteralPath $directory))) {
-        New-Item -ItemType Directory -Path $directory -Force | Out-Null
-    }
-
-    $Value | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $Path -Encoding utf8
-}
-
-function Get-NotifyStatePaths {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$RepoRoot
-    )
-
-    $stateDirectory = Join-Path $RepoRoot ".copilot"
-
-    return [ordered]@{
-        Directory = $stateDirectory
-        Session = Join-Path $stateDirectory "notify-session.json"
-        Summary = Join-Path $stateDirectory "notify-summary.json"
-        LastSent = Join-Path $stateDirectory "notify-last-sent.json"
-    }
 }
 
 function Convert-ToStringArray {
@@ -375,16 +152,6 @@ function Update-LastNotificationState {
 }
 
 try {
-    $repoRoot = Get-RepoRootFromScript
-    Import-DotEnvFile -Path (Join-Path $repoRoot ".env")
-
-    $botToken = $env:TG_BOT_TOKEN
-    $chatId = $env:TG_CHAT_ID
-    if ((Test-IsPlaceholderValue $botToken) -or (Test-IsPlaceholderValue $chatId)) {
-        Write-Host "Telegram hook skipped: TG_BOT_TOKEN or TG_CHAT_ID is not configured."
-        exit 0
-    }
-
     $stdinRaw = [Console]::In.ReadToEnd()
     $hookInput = if ([string]::IsNullOrWhiteSpace($stdinRaw)) {
         @{}
@@ -395,30 +162,24 @@ try {
 
     $eventTime = Get-HookEventTime -Value $hookInput.timestamp
     $timestampIso = $eventTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+    $workspaceContext = Resolve-HookWorkspaceContext -HookInput $hookInput -FallbackPath ((Get-Location).Path)
+    $cwd = $workspaceContext.Cwd
+    $resolvedRepoRoot = $workspaceContext.RepoRoot
+    $branch = $workspaceContext.Branch
+    $sha = $workspaceContext.Sha
+    $remoteUrl = $workspaceContext.RemoteUrl
 
-    $cwd = if ($hookInput.cwd) { "$($hookInput.cwd)" } else { $repoRoot }
+    $credentials = Get-TelegramCredentials -RepoRoot $resolvedRepoRoot
+    $botToken = $credentials.BotToken
+    $chatId = $credentials.ChatId
+    if ((Test-IsPlaceholderValue -Value $botToken) -or (Test-IsPlaceholderValue -Value $chatId)) {
+        Write-Host "Telegram hook skipped: configure TG_BOT_TOKEN/TG_CHAT_ID or gopass secrets under '$($credentials.SecretPrefix)'."
+        exit 0
+    }
+
     $hostName = [System.Net.Dns]::GetHostName()
     $executionEnvironment = Get-ExecutionEnvironment
-
-    $gitAvailable = $null -ne (Get-Command git -ErrorAction SilentlyContinue)
-    $gitWorkingDirectory = if (Test-Path -LiteralPath $cwd) { $cwd } else { $repoRoot }
-
-    $resolvedRepoRoot = $null
-    $branch = $null
-    $sha = $null
-    $remoteUrl = $null
-    if ($gitAvailable) {
-        $resolvedRepoRoot = Invoke-GitSafe -WorkingDirectory $gitWorkingDirectory -Arguments @("rev-parse", "--show-toplevel")
-        $branch = Invoke-GitSafe -WorkingDirectory $gitWorkingDirectory -Arguments @("rev-parse", "--abbrev-ref", "HEAD")
-        $sha = Invoke-GitSafe -WorkingDirectory $gitWorkingDirectory -Arguments @("rev-parse", "--short=12", "HEAD")
-        $remoteUrl = Invoke-GitSafe -WorkingDirectory $gitWorkingDirectory -Arguments @("remote", "get-url", "origin")
-    }
-
-    if ([string]::IsNullOrWhiteSpace($resolvedRepoRoot)) {
-        $resolvedRepoRoot = $repoRoot
-    }
-
-    $notifyStatePaths = Get-NotifyStatePaths -RepoRoot $resolvedRepoRoot
+    $notifyStatePaths = Get-NotifyStatePaths -StateRoot $cwd
     $sessionState = Read-JsonFile -Path $notifyStatePaths.Session
     $summaryState = Read-JsonFile -Path $notifyStatePaths.Summary
     $matchingSummary = Get-MatchingSummaryRecord -SummaryRecord $summaryState -SessionRecord $sessionState
@@ -450,7 +211,6 @@ try {
     }
 
     $runId = $sessionRunId
-
     $summaryUpdatedAt = if (($null -ne $matchingSummary) -and $matchingSummary.updated_at) { "$($matchingSummary.updated_at)" } else { $null }
 
     if (Should-SkipDuplicateNotification -Path $notifyStatePaths.LastSent -RunId $runId -SummaryUpdatedAt $summaryUpdatedAt) {
