@@ -900,3 +900,8 @@ _version.py
 
 # Exclude Pnpm Store
 /.pnpm-store/
+
+# Exclude Copilot notification state
+/.copilot/notify-session.json
+/.copilot/notify-summary.json
+/.copilot/notify-last-sent.json

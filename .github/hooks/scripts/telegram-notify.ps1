@@ -1,9 +1,4 @@
 [CmdletBinding()]
-param(
-    [Parameter(Mandatory = $true)]
-    [ValidateSet("Stop", "sessionEnd", "errorOccurred")]
-    [string]$EventName
-)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -158,23 +153,22 @@ function Get-RepositoryDisplayName {
     return $FallbackName
 }
 
-function Get-ShortHash {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Text,
+function Get-HookEventTime {
+    param([AllowNull()][string]$Value)
 
-        [int]$Length = 8
-    )
-
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $hash = $sha256.ComputeHash($bytes)
-        $hex = -join ($hash | ForEach-Object { $_.ToString("x2") })
-        return $hex.Substring(0, [Math]::Min($Length, $hex.Length))
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return [DateTimeOffset]::UtcNow
     }
-    finally {
-        $sha256.Dispose()
+
+    try {
+        return [DateTimeOffset]::Parse(
+            $Value,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal
+        )
+    }
+    catch {
+        return [DateTimeOffset]::UtcNow
     }
 }
 
@@ -207,6 +201,179 @@ function Normalize-OneLine {
     return $normalized.Substring(0, $MaxLength - 1) + "…"
 }
 
+function Read-JsonFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return $null
+        }
+
+        return $raw | ConvertFrom-Json -Depth 30
+    }
+    catch {
+        return $null
+    }
+}
+
+function Write-JsonFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        $Value
+    )
+
+    $directory = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($directory) -and (-not (Test-Path -LiteralPath $directory))) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    }
+
+    $Value | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $Path -Encoding utf8
+}
+
+function Get-NotifyStatePaths {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot
+    )
+
+    $stateDirectory = Join-Path $RepoRoot ".copilot"
+
+    return [ordered]@{
+        Directory = $stateDirectory
+        Session = Join-Path $stateDirectory "notify-session.json"
+        Summary = Join-Path $stateDirectory "notify-summary.json"
+        LastSent = Join-Path $stateDirectory "notify-last-sent.json"
+    }
+}
+
+function Convert-ToStringArray {
+    param([AllowNull()]$Value)
+
+    $items = [System.Collections.Generic.List[string]]::new()
+    if ($null -eq $Value) {
+        return @()
+    }
+
+    if (($Value -is [System.Collections.IEnumerable]) -and (-not ($Value -is [string]))) {
+        foreach ($item in $Value) {
+            if ($null -eq $item) {
+                continue
+            }
+
+            $text = "$item".Trim()
+            if (-not [string]::IsNullOrWhiteSpace($text)) {
+                $items.Add($text)
+            }
+        }
+
+        return $items.ToArray()
+    }
+
+    $singleValue = "$Value".Trim()
+    if ([string]::IsNullOrWhiteSpace($singleValue)) {
+        return @()
+    }
+
+    return @($singleValue)
+}
+
+function Get-MatchingSummaryRecord {
+    param(
+        [AllowNull()]$SummaryRecord,
+        [AllowNull()]$SessionRecord
+    )
+
+    if ($null -eq $SummaryRecord) {
+        return $null
+    }
+
+    $summaryRunId = if ($SummaryRecord.run_id) { "$($SummaryRecord.run_id)" } else { $null }
+    $sessionRunId = if (($null -ne $SessionRecord) -and $SessionRecord.run_id) { "$($SessionRecord.run_id)" } else { $null }
+    if ((-not [string]::IsNullOrWhiteSpace($sessionRunId)) -and ($summaryRunId -ne $sessionRunId)) {
+        return $null
+    }
+
+    $summaryStatus = if ($SummaryRecord.status) { "$($SummaryRecord.status)" } else { $null }
+    $summaryText = if ($SummaryRecord.summary) { "$($SummaryRecord.summary)" } else { $null }
+    if ([string]::IsNullOrWhiteSpace($summaryStatus) -or ($summaryStatus -eq "pending")) {
+        return $null
+    }
+
+    if ([string]::IsNullOrWhiteSpace($summaryText)) {
+        return $null
+    }
+
+    return $SummaryRecord
+}
+
+function Should-SkipDuplicateNotification {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [AllowNull()][string]$RunId,
+
+        [AllowNull()][string]$SummaryUpdatedAt
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RunId)) {
+        return $false
+    }
+
+    $previousNotification = Read-JsonFile -Path $Path
+    if ($null -eq $previousNotification) {
+        return $false
+    }
+
+    $previousRunId = if ($previousNotification.run_id) { "$($previousNotification.run_id)" } else { $null }
+    if ($previousRunId -ne $RunId) {
+        return $false
+    }
+
+    $previousSummaryUpdatedAt = if ($previousNotification.summary_updated_at) { "$($previousNotification.summary_updated_at)" } else { $null }
+    if ([string]::IsNullOrWhiteSpace($SummaryUpdatedAt)) {
+        return [string]::IsNullOrWhiteSpace($previousSummaryUpdatedAt)
+    }
+
+    return $previousSummaryUpdatedAt -eq $SummaryUpdatedAt
+}
+
+function Update-LastNotificationState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [AllowNull()][string]$RunId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TimestampIso,
+
+        [AllowNull()][string]$SummaryUpdatedAt
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RunId)) {
+        return
+    }
+
+    Write-JsonFile -Path $Path -Value ([ordered]@{
+        version = 1
+        run_id = $RunId
+        sent_at = $TimestampIso
+        summary_updated_at = $SummaryUpdatedAt
+    })
+}
+
 try {
     $repoRoot = Get-RepoRootFromScript
     Import-DotEnvFile -Path (Join-Path $repoRoot ".env")
@@ -226,17 +393,8 @@ try {
         $stdinRaw | ConvertFrom-Json -Depth 30
     }
 
-    [int64]$timestampMs = 0
-    if ($null -ne $hookInput.timestamp) {
-        [void][int64]::TryParse("$($hookInput.timestamp)", [ref]$timestampMs)
-    }
-    if ($timestampMs -le 0) {
-        $timestampMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-    }
-
-    $eventTime = [DateTimeOffset]::FromUnixTimeMilliseconds($timestampMs).ToUniversalTime()
+    $eventTime = Get-HookEventTime -Value $hookInput.timestamp
     $timestampIso = $eventTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-    $timestampCompact = $eventTime.ToString("yyyyMMddTHHmmssZ")
 
     $cwd = if ($hookInput.cwd) { "$($hookInput.cwd)" } else { $repoRoot }
     $hostName = [System.Net.Dns]::GetHostName()
@@ -260,6 +418,17 @@ try {
         $resolvedRepoRoot = $repoRoot
     }
 
+    $notifyStatePaths = Get-NotifyStatePaths -RepoRoot $resolvedRepoRoot
+    $sessionState = Read-JsonFile -Path $notifyStatePaths.Session
+    $summaryState = Read-JsonFile -Path $notifyStatePaths.Summary
+    $matchingSummary = Get-MatchingSummaryRecord -SummaryRecord $summaryState -SessionRecord $sessionState
+    $sessionId = if ($hookInput.sessionId) { "$($hookInput.sessionId)" } else { $null }
+    $transcriptPath = if ($hookInput.transcript_path) { "$($hookInput.transcript_path)" } else { $null }
+    $stopHookActive = $false
+    if ($null -ne $hookInput.stop_hook_active) {
+        $stopHookActive = [bool]$hookInput.stop_hook_active
+    }
+
     $repoName = Split-Path -Leaf $resolvedRepoRoot
     if ([string]::IsNullOrWhiteSpace($repoName)) {
         $repoName = "unknown-repo"
@@ -274,76 +443,92 @@ try {
         $sha = "unknown"
     }
 
-    $worktreeLeaf = Split-Path -Leaf $cwd
-    if ([string]::IsNullOrWhiteSpace($worktreeLeaf)) {
-        $worktreeLeaf = "root"
+    $sessionRunId = if (($null -ne $sessionState) -and $sessionState.run_id) { "$($sessionState.run_id)" } else { $null }
+
+    if ([string]::IsNullOrWhiteSpace($sessionRunId)) {
+        exit 0
     }
 
-    $worktreeTag = "$worktreeLeaf-$(Get-ShortHash -Text $cwd -Length 8)"
-    $runId = "$hostName|$executionEnvironment|$repoName|$worktreeTag|$branch|$sha|$timestampCompact"
+    $runId = $sessionRunId
 
-    $source = if ($hookInput.source) { "$($hookInput.source)" } else { $null }
+    $summaryUpdatedAt = if (($null -ne $matchingSummary) -and $matchingSummary.updated_at) { "$($matchingSummary.updated_at)" } else { $null }
 
-    $headline = "Copilot hook event"
-    $emoji = "ℹ️"
-    $reason = if ($hookInput.reason) { "$($hookInput.reason)" } else { $null }
-    if ($EventName -eq "Stop") {
-        $headline = "Copilot agent stopped"
-        $emoji = "ℹ️"
-        if (-not [string]::IsNullOrWhiteSpace($reason)) {
-            switch ($reason) {
-                "complete" { $headline = "Copilot session completed"; $emoji = "✅" }
-                "error" { $headline = "Copilot session ended with error"; $emoji = "⚠️" }
-                "abort" { $headline = "Copilot session aborted"; $emoji = "⚠️" }
-                "timeout" { $headline = "Copilot session timed out"; $emoji = "⏱️" }
-                "user_exit" { $headline = "Copilot session exited by user"; $emoji = "👋" }
-                default { $headline = "Copilot agent stopped"; $emoji = "ℹ️" }
-            }
-        }
+    if (Should-SkipDuplicateNotification -Path $notifyStatePaths.LastSent -RunId $runId -SummaryUpdatedAt $summaryUpdatedAt) {
+        exit 0
     }
-    elseif ($EventName -eq "sessionEnd") {
-        switch ($reason) {
-            "complete" { $headline = "Copilot session completed"; $emoji = "✅" }
-            "error" { $headline = "Copilot session ended with error"; $emoji = "⚠️" }
-            "abort" { $headline = "Copilot session aborted"; $emoji = "⚠️" }
-            "timeout" { $headline = "Copilot session timed out"; $emoji = "⏱️" }
-            "user_exit" { $headline = "Copilot session exited by user"; $emoji = "👋" }
-            default { $headline = "Copilot session ended"; $emoji = "ℹ️" }
-        }
-    }
-    elseif ($EventName -eq "errorOccurred") {
-        $headline = "Copilot error occurred"
-        $emoji = "❌"
-    }
+
+    $headline = "Copilot task finished"
+    $emoji = "✅"
 
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add("<b>$emoji $headline</b>")
-    $lines.Add("<b>event</b>: <code>$(Escape-Html $EventName)</code>")
     $lines.Add("<b>run_id</b>: <code>$(Escape-Html $runId)</code>")
+    if (-not [string]::IsNullOrWhiteSpace($sessionId)) {
+        $lines.Add("<b>session_id</b>: <code>$(Escape-Html $sessionId)</code>")
+    }
     $lines.Add("")
     $lines.Add("<b>host</b>: <code>$(Escape-Html $hostName)</code>")
     $lines.Add("<b>env</b>: <code>$(Escape-Html $executionEnvironment)</code>")
-    if (-not [string]::IsNullOrWhiteSpace($source)) {
-        $lines.Add("<b>source</b>: <code>$(Escape-Html $source)</code>")
-    }
     $lines.Add("<b>repo</b>: <code>$(Escape-Html $repoDisplayName)</code>")
     $lines.Add("<b>worktree</b>: <code>$(Escape-Html $cwd)</code>")
     $lines.Add("<b>branch</b>: <code>$(Escape-Html $branch)</code>")
     $lines.Add("<b>sha</b>: <code>$(Escape-Html $sha)</code>")
     $lines.Add("<b>timestamp</b>: <code>$(Escape-Html $timestampIso)</code>")
-
-    if (($EventName -in @("Stop", "sessionEnd")) -and (-not [string]::IsNullOrWhiteSpace($reason))) {
-        $lines.Add("<b>reason</b>: <code>$(Escape-Html $reason)</code>")
+    if ($stopHookActive) {
+        $lines.Add("<b>stop_hook_active</b>: <code>true</code>")
     }
-    elseif ($EventName -eq "errorOccurred") {
-        $errorName = if ($hookInput.error.name) { "$($hookInput.error.name)" } else { "UnknownError" }
-        $errorMessage = if ($hookInput.error.message) { "$($hookInput.error.message)" } else { "No message provided" }
-        $errorStack = if ($hookInput.error.stack) { Normalize-OneLine -Text "$($hookInput.error.stack)" -MaxLength 900 } else { "" }
+    if (-not [string]::IsNullOrWhiteSpace($transcriptPath)) {
+        $lines.Add("<b>transcript_path</b>: <code>$(Escape-Html $transcriptPath)</code>")
+    }
 
-        $lines.Add("<b>error</b>: <code>$(Escape-Html $errorName)</code>")
-        $lines.Add("<b>message</b>: <code>$(Escape-Html (Normalize-OneLine -Text $errorMessage -MaxLength 700))</code>")
-        if (-not [string]::IsNullOrWhiteSpace($errorStack)) {
-            $lines.Add("<b>stack</b>: <code>$(Escape-Html $errorStack)</code>")
+    if ($null -ne $matchingSummary) {
+        $summaryStatus = Normalize-OneLine -Text "$($matchingSummary.status)" -MaxLength 40
+        $summaryText = Normalize-OneLine -Text "$($matchingSummary.summary)" -MaxLength 800
+        $detailItems = Convert-ToStringArray -Value $matchingSummary.details
+        $changedFiles = Convert-ToStringArray -Value $matchingSummary.changed_files
+        $nextSteps = Convert-ToStringArray -Value $matchingSummary.next_steps
+
+        $lines.Add("")
+        $lines.Add("<b>summary_status</b>: <code>$(Escape-Html $summaryStatus)</code>")
+        $lines.Add("<b>summary</b>: $(Escape-Html $summaryText)")
+
+        if ($detailItems.Count -gt 0) {
+            $lines.Add("<b>details</b>:")
+            $detailPreview = @($detailItems | Select-Object -First 5)
+            foreach ($detailItem in $detailPreview) {
+                $lines.Add("• $(Escape-Html (Normalize-OneLine -Text $detailItem -MaxLength 220))")
+            }
+
+            $remainingDetails = $detailItems.Count - $detailPreview.Count
+            if ($remainingDetails -gt 0) {
+                $lines.Add("• <i>+$remainingDetails more</i>")
+            }
+        }
+
+        if ($changedFiles.Count -gt 0) {
+            $lines.Add("<b>changed_files</b>:")
+            $filePreview = @($changedFiles | Select-Object -First 8)
+            foreach ($changedFile in $filePreview) {
+                $lines.Add("• <code>$(Escape-Html (Normalize-OneLine -Text $changedFile -MaxLength 160))</code>")
+            }
+
+            $remainingFiles = $changedFiles.Count - $filePreview.Count
+            if ($remainingFiles -gt 0) {
+                $lines.Add("• <i>+$remainingFiles more</i>")
+            }
+        }
+
+        if ($nextSteps.Count -gt 0) {
+            $lines.Add("<b>next_steps</b>:")
+            $nextStepPreview = @($nextSteps | Select-Object -First 5)
+            foreach ($nextStep in $nextStepPreview) {
+                $lines.Add("• $(Escape-Html (Normalize-OneLine -Text $nextStep -MaxLength 220))")
+            }
+
+            $remainingSteps = $nextSteps.Count - $nextStepPreview.Count
+            if ($remainingSteps -gt 0) {
+                $lines.Add("• <i>+$remainingSteps more</i>")
+            }
         }
     }
 
@@ -361,6 +546,7 @@ try {
 
     $uri = "https://api.telegram.org/bot$botToken/sendMessage"
     [void](Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 5)
+    Update-LastNotificationState -Path $notifyStatePaths.LastSent -RunId $runId -TimestampIso $timestampIso -SummaryUpdatedAt $summaryUpdatedAt
     exit 0
 }
 catch {

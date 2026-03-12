@@ -42,19 +42,22 @@ For publishing/versioning, follow pnpm’s [Changesets guide](https://pnpm.io/us
 
 ## GitHub Copilot Telegram notifications
 
-This repo includes a workspace-level GitHub Copilot hook configuration under `.github/hooks/telegram-notify.json`.
-The hook calls `.github/hooks/scripts/telegram-notify.ps1` with `pwsh`, so the same setup works in Windows and WSL as long as the repository toolchain is bootstrapped with Mise.
+This repo uses the Visual Studio Code GitHub Copilot agent hooks preview under `.github/hooks/telegram-notify.json`.
+The hook file lives in the official workspace location `.github/hooks/*.json`, which VS Code loads automatically after the file is saved.
+The hooks call `.github/hooks/scripts/copilot-summary-state.ps1` and `.github/hooks/scripts/telegram-notify.ps1` with `pwsh`, so the same setup works in Windows and WSL as long as the repository toolchain is bootstrapped with Mise.
 
-For VS Code agent sessions, the notification hook sends Telegram messages when the agent session stops:
+The current configuration uses only the VS Code hook events that this repo actually relies on:
 
-- `Stop`
+- `SessionStart` initializes `.copilot/notify-session.json` and the placeholder `.copilot/notify-summary.json`
+- `Stop` sends the Telegram notification for the latest completed summary snapshot
 
-This means you receive the notification when the current agent session ends, not after every individual back-and-forth in the same ongoing chat thread.
-If you keep chatting in the same session, no stop notification is emitted yet.
-According to the official VS Code hooks documentation, the `Stop` event only receives the common hook fields plus `stop_hook_active`; it does not guarantee `source` or `reason`, so those fields might be absent in the notification.
+There are no extra compatibility branches for older Copilot CLI event names in this repository.
 
-Each notification includes a self-describing `run_id` built from the host, execution environment, repo name, worktree tag, branch, commit SHA, and timestamp so concurrent worktrees and machines stay easy to tell apart.
-For GitHub remotes, the repo field is displayed as `owner/repo` (for example, `hcoona/three`). For Azure DevOps remotes, it is displayed as `organization/project/repository`.
+A chat session can still contain multiple prompts. To avoid losing notifications for later completed tasks in the same session, the Telegram hook records both the stable session `run_id` and the latest `.copilot/notify-summary.json` `updated_at` value.
+That means a new completed task in the same session still produces a new Telegram message, while an identical replay of the same `Stop` payload is ignored.
+
+Each notification includes a self-describing `run_id` stored in `.copilot/notify-session.json`, plus the VS Code `sessionId` when available, so concurrent worktrees and machines stay easy to tell apart.
+For GitHub remotes, the repo field is displayed as `owner/repo` (for example, `hcoona/three`). If the remote URL does not match the GitHub patterns, the script falls back to the local repository folder name.
 
 To enable notifications:
 
@@ -63,7 +66,7 @@ To enable notifications:
 3. Fill in `TG_BOT_TOKEN` and `TG_CHAT_ID` in the local `.env` file at the repo root.
 
 The PowerShell script loads the repo-root `.env` file automatically when those environment variables are not already present in the current process.
-The official VS Code hooks documentation says hook files in `.github/hooks/*.json` are loaded automatically after save. If behavior seems stale in an already-running session, reloading the VS Code window is still a reasonable fallback.
+If behavior seems stale in an already-running session, reloading the VS Code window is still a reasonable fallback.
 
 [asciidoctor-upstream]: https://github.com/hcoona/asciidoctor-latexmath
 [asciidoctor-commit]: https://github.com/hcoona/asciidoctor-latexmath/commit/514d685558dc1c8215d0b1e42ff5ea2762ecd3b2

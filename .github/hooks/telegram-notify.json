@@ -1,12 +1,21 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./.github/hooks/scripts/copilot-summary-state.ps1",
+        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\.github\\hooks\\scripts\\copilot-summary-state.ps1",
+        "cwd": ".",
+        "timeout": 10
+      }
+    ],
     "Stop": [
       {
         "type": "command",
-        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./.github/hooks/scripts/telegram-notify.ps1 -EventName Stop",
-        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\.github\\hooks\\scripts\\telegram-notify.ps1 -EventName Stop",
+        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./.github/hooks/scripts/telegram-notify.ps1",
+        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\.github\\hooks\\scripts\\telegram-notify.ps1",
         "cwd": ".",
-        "timeout": 20
+        "timeout": 10
       }
     ]
   }
