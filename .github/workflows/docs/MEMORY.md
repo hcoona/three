@@ -30,7 +30,7 @@ For AI agents editing workflow design docs.
 - npmjs publicly documents trusted publishing for GitHub Actions with repository owner/name, workflow filename, optional environment, and the documented audience `npm:registry.npmjs.org`
 - npm publicly documents the OIDC audience value `npm:registry.npmjs.org`
 - npm trusted publishing can auto-generate provenance for eligible publishes; `npm publish --provenance` remains a separately documented manual path
-- PyPI's documented GitHub Actions trusted-publishing audience is `pypi`
+- PyPI's documented GitHub Actions trusted-publishing flow uses runtime audience discovery rather than a stable checked-in audience literal
 - PyPI's documented GitHub Actions trusted-publishing flow requires `id-token: write`; environment binding is optional in provider configuration but still recommended by PyPI and required by this design on the GitHub side
 - RubyGems.org publicly documents reusable-workflow support and the separate Workflow Repository Owner/Name fields used when the reusable workflow lives in a different repository
 - the public provider documentation reviewed for March 2026 did not document exact branch, tag, or commit-SHA binding in the provider UI for `npmjs`, `PyPI`, or `RubyGems.org`
@@ -83,7 +83,7 @@ For AI agents editing workflow design docs.
 - PyPI yanking is the non-destructive withdrawal path, while deletion is permanent and burns the deleted filename/version identity so the same file cannot be re-uploaded later
 - RubyGems public documentation confirms `gem yank` removal semantics but does not publicly document same-version republish as a supported recovery path after yank
 - NuGet symbol publication depends on the corresponding `.nupkg` already existing, and a missing primary package causes symbol upload to fail rather than silently creating partial state
-- npm publicly documents the trusted-publishing OIDC audience `npm:registry.npmjs.org`, PyPI publicly documents the audience `pypi`, and RubyGems.org public trusted-publishing documentation still does not publish a required audience value
+- npm publicly documents the trusted-publishing OIDC audience `npm:registry.npmjs.org`; PyPI's trusted-publishing client discovers its audience from the documented upload endpoint rather than relying on a stable checked-in literal; and RubyGems.org public trusted-publishing documentation still does not publish a required audience value
 
 #### Remaining assumptions
 
@@ -131,7 +131,26 @@ For AI agents editing workflow design docs.
 - public `NuGet.org` documentation still does not document a GitHub Actions trusted-publishing path, so `NuGet.org` remains on the explicit `NUGET_API_KEY` design path
 - the PyPI JSON API at `/pypi/<project>/<version>/json` exposes the released file list and is sufficient to verify that both the expected wheel and source distribution are present before `confirm-publish-state` closes
 - RubyGems.org public documentation still does not document same-version republish after `gem yank` as a supported recovery contract
-- npm publicly documents the GitHub trusted-publishing audience `npm:registry.npmjs.org`, PyPI publicly documents the audience `pypi`, and RubyGems.org still does not publicly document a required audience value
+- npm publicly documents the GitHub trusted-publishing audience `npm:registry.npmjs.org`; PyPI trusted publishing uses runtime audience discovery rather than a stable checked-in literal; and RubyGems.org still does not publicly document a required audience value
+
+### March 2026 independent external confirmation for the v2.8 cleanup
+
+#### Confirmed facts
+
+- `npm publish` accepts either a package directory or a tarball path, and npm publicly documents `--ignore-scripts` as the supported way to suppress package lifecycle scripts during publish
+- npm publicly documents the trusted-publishing OIDC audience `npm:registry.npmjs.org`
+- public npm documentation clearly describes lifecycle execution for directory publish, but the same public docs reviewed here do not explicitly promise that tarball publish alone suppresses package scripts, so the design should require both tarball-only publish and `--ignore-scripts`
+- Twine uploads pre-built distribution files and does not run `setup.py` as part of upload; `twine check --strict` is the documented local validation step before upload
+- PyPI trusted publishing obtains the OIDC audience from `https://upload.pypi.org/legacy/_/oidc/audience` rather than from a stable publicly documented literal baked into workflow examples
+- no publicly documented non-mutating PyPI server-side preflight upload endpoint was found in the reviewed docs, so design preflight should stay local and repository-controlled
+- RubyGems.org publicly documents trusted publishing with reusable-workflow support, and `gem push` uploads a pre-built `.gem` rather than executing package build scripts during upload
+- RubyGems.org public documentation reviewed here still does not publish a required OIDC audience value
+
+#### Remaining assumptions
+
+- public npm documentation reviewed here does not state unambiguously whether tarball-mode publish without `--ignore-scripts` would still avoid all lifecycle script execution, so the design should continue to treat that as unsafe rather than relying on inferred behavior
+- PyPI may change its runtime audience-discovery endpoint behavior in the future, but the current reviewed public contract is discovery-based rather than a static checked-in literal
+- RubyGems.org may have additional operational behavior around same-version republish after `gem yank`, but because the reviewed public docs do not define that as a stable contract, the design should continue to treat it as unsupported
 
 #### Remaining assumptions
 
@@ -210,12 +229,12 @@ For AI agents editing workflow design docs.
 - `.github/CODEOWNERS`, `.github/workflows/**`, `.github/actions/**`, `.github/official-caller-refs.json`, `.github/publish-trust-inventory.json`, `.github/planned-change-windows.json`, `.github/release-recovery-ledger.jsonl`, `eng/scripts/**`, `**/release.json`, `**/version.json`, `hk.pkl`, `PklProject`, `PklProject.deps.json`, `mise.toml`, `mise.lock`, `global.json`, `nuget.config`, `**/NuGet.Config`, `Directory.*.props`, `**/*.targets`, `package.json`, `pyproject.toml`, `biome.jsonc`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.npmrc`, `**/.npmrc`, `uv.lock`, `Gemfile.lock`, `Directory.Packages.props`, and other trusted control-plane helper or shared dependency-control files must be protected by `CODEOWNERS` review, and protected control-plane branches must require code-owner review via rulesets
 - project-scoped environments `production-<project-name>`, `production-tag-write-<project-name>`, and `production-evidence-write-<project-name>` replace the old single `environment: production` model, and each such environment's deployment branch policy allows only the official protected control-plane branch set for that project and only as exact branch names, never wildcard patterns
 - official registry auth is split by documented provider capability: `npmjs`, `PyPI`, and `RubyGems.org` use trusted publishing, while `NuGet.org` uses an explicit `NUGET_API_KEY` environment secret because no documented trusted-publishing path is assumed in this design
-- no portable wildcard future-branch trust is assumed; branch-set changes are therefore managed on the GitHub side by exact deployment-branch-policy entries plus same-PR updates to `.github/official-caller-refs.json`, `.github/planned-change-windows.json`, and `.github/publish-trust-inventory.json`, while only repository-identity changes, auth-mode changes, selector-workflow changes, or documented audience changes require registry-side auth updates
+- no portable wildcard future-branch trust is assumed; branch-set changes are therefore managed on the GitHub side by exact deployment-branch-policy entries plus same-PR updates to `.github/official-caller-refs.json`, `.github/planned-change-windows.json`, and `.github/publish-trust-inventory.json`, while only repository-identity changes, auth-mode changes, selector-workflow changes, fixed-audience changes, or audience-discovery-endpoint changes require registry-side auth updates
 - the authoritative repository-side source of active official caller refs is `.github/official-caller-refs.json`; every active protected control-plane branch carries the same normalized contents, and inventory `allowedCallerRefs` must mirror it exactly
-- the publish trust inventory has `schemaVersion: 2`, records `entryWorkflowPath`, fully qualified `allowedCallerRefs`, and per-target `publishExecutionPath`, `environment`, `authMechanism`, optional `trustedPublisherSelector`, and optional `documentedOidcAudience` fields for official targets; buddy targets are intentionally excluded because they do not rely on external registry-side trust state
+- the publish trust inventory has `schemaVersion: 2`, records `entryWorkflowPath`, fully qualified `allowedCallerRefs`, and per-target `publishExecutionPath`, `environment`, `authMechanism`, optional `trustedPublisherSelector`, optional `documentedOidcAudience`, and optional `oidcAudienceEndpoint` fields for official targets; buddy targets are intentionally excluded because they do not rely on external registry-side trust state
 - publish trust inventory validation is strict and equivalent to `additionalProperties: false` at the top level
 - official `resolve-context` performs a publish trust inventory preflight against the checked-in inventory from the current protected caller ref after official target resolution and before any publish job becomes eligible
-- CI includes an explicit `trusted-release-inventory` job that checks out the PR merge commit and compares the post-change `entryWorkflowPath`, the deduplicated fully qualified `allowedCallerRefs` set derived from `.github/official-caller-refs.json`, and the per-target `publishExecutionPath`, `environment`, `authMechanism`, optional `trustedPublisherSelector`, and optional `documentedOidcAudience` fields against `.github/publish-trust-inventory.json`; CI fails on any mismatch whether or not the inventory file itself changed
+- CI includes an explicit `trusted-release-inventory` job that checks out the PR merge commit and compares the post-change `entryWorkflowPath`, the deduplicated fully qualified `allowedCallerRefs` set derived from `.github/official-caller-refs.json`, and the per-target `publishExecutionPath`, `environment`, `authMechanism`, optional `trustedPublisherSelector`, optional `documentedOidcAudience`, and optional `oidcAudienceEndpoint` fields against `.github/publish-trust-inventory.json`; CI fails on any mismatch whether or not the inventory file itself changed
 - registry-side OIDC trust settings are not queried portably; release operators must verify registry-side trust separately when diagnosing control-plane drift
 - reusable publish docs must list required caller permissions
 - package-registry publish workflows require caller `contents: read` plus their registry-specific write scope so they can check out trusted helper code; `_publish-github.yml` is official-only and uses `contents: write`
@@ -231,7 +250,7 @@ For AI agents editing workflow design docs.
 - official GitHub Release idempotency also requires matching remote asset identity
 - read-only checkouts in resolve/static-analysis jobs use `persist-credentials: false`
 - every workflow job must declare `timeout-minutes`; omission is a lint failure enforced through `hk`/`actionlint`
-- timeout defaults are explicit: `preflight-check`/resolve/static-analysis `15`, Ubuntu builds `30`, Windows builds `45` because hosted Windows runners have higher startup and restore/test overhead, isolated attestation jobs `15`, `require-provenance` `45`, publish jobs `25` except `publish-pypi-official` `35`, `confirm-publish-state` `30`, tag-management jobs `10`, and `ci-passed`/`release-complete` `10`
+- timeout defaults are explicit: `preflight-check`/resolve/static-analysis `15`, Ubuntu builds `30`, Windows builds `45` because hosted Windows runners have higher startup and restore/test overhead, isolated attestation jobs `15`, `require-provenance` `45`, publish jobs `25` except `publish-pypi-official` `35`, `confirm-publish-state` `45`, tag-management jobs `10`, and `ci-passed`/`release-complete` `10`
 - reusable workflow `permissions:` prohibition is also lint-enforced through a custom `hk` check because `actionlint` does not cover it directly
 - official `resolve-context` depends explicitly on `preflight-check`
 - official static-analysis evaluates the dispatch-selected source ref directly, the same payload that will be built and released by that run
