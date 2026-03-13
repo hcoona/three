@@ -17,6 +17,7 @@ function Invoke-GitSafe {
         }
     }
     catch {
+        Write-Verbose -Message "Ignoring git command failure while probing repository context."
     }
 
     return $null
@@ -81,7 +82,7 @@ function Write-JsonFile {
     $Value | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $Path -Encoding utf8
 }
 
-function Get-NotifyStatePaths {
+function Get-NotifyStatePath {
     param(
         [Parameter(Mandatory = $true)]
         [string]$StateRoot
@@ -91,9 +92,9 @@ function Get-NotifyStatePaths {
 
     return [ordered]@{
         Directory = $stateDirectory
-        Session = Join-Path $stateDirectory "notify-session.json"
-        Summary = Join-Path $stateDirectory "notify-summary.json"
-        LastSent = Join-Path $stateDirectory "notify-last-sent.json"
+        Session   = Join-Path $stateDirectory "notify-session.json"
+        Summary   = Join-Path $stateDirectory "notify-summary.json"
+        LastSent  = Join-Path $stateDirectory "notify-last-sent.json"
     }
 }
 
@@ -116,6 +117,7 @@ function Get-ExecutionEnvironment {
             }
         }
         catch {
+            Write-Verbose -Message "Unable to inspect the Linux kernel release while detecting the execution environment."
         }
 
         return "linux"
@@ -258,10 +260,10 @@ function Resolve-HookWorkspaceContext {
     }
 
     return [ordered]@{
-        Cwd = $cwd
-        RepoRoot = $resolvedRepoRoot
-        Branch = $branch
-        Sha = $sha
+        Cwd       = $cwd
+        RepoRoot  = $resolvedRepoRoot
+        Branch    = $branch
+        Sha       = $sha
         RemoteUrl = $remoteUrl
     }
 }
@@ -278,9 +280,9 @@ function Get-GopassSecret {
     }
 
     foreach ($arguments in @(
-        @("show", "--password", $SecretPath),
-        @("show", "-o", $SecretPath)
-    )) {
+            @("show", "--password", $SecretPath),
+            @("show", "-o", $SecretPath)
+        )) {
         try {
             $raw = & $gopassCommand.Source @arguments 2>$null
             $value = ($raw -join "`n").Trim()
@@ -289,6 +291,7 @@ function Get-GopassSecret {
             }
         }
         catch {
+            Write-Verbose -Message "Ignoring gopass retrieval failure while resolving Telegram credentials."
         }
     }
 
@@ -303,7 +306,7 @@ function Get-TelegramSecretPrefix {
     return "copilot/vscode-copilot-telegram-hook"
 }
 
-function Get-TelegramCredentials {
+function Get-TelegramCredential {
     param(
         [Parameter(Mandatory = $true)]
         [string]$RepoRoot
@@ -324,8 +327,8 @@ function Get-TelegramCredentials {
     }
 
     return [ordered]@{
-        BotToken = $botToken
-        ChatId = $chatId
+        BotToken     = $botToken
+        ChatId       = $chatId
         SecretPrefix = $secretPrefix
     }
 }

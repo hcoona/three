@@ -1,7 +1,7 @@
 ---
 name: copilot-notify-summary
 description: Keep .copilot/notify-summary.json updated so the VS Code GitHub Copilot Telegram notification hook can send a task summary when the session stops.
-applyTo: "**"
+applyTo: '**'
 ---
 
 # Notification summary handoff
@@ -26,21 +26,19 @@ Use this JSON shape:
 
 ```json
 {
-  "version": 1,
-  "run_id": "<value from .copilot/notify-session.json>",
-  "updated_at": "2026-03-11T12:34:56.789Z",
-  "status": "success",
-  "summary": "Implemented a VS Code GitHub Copilot hook that sends Telegram notifications with a task summary.",
-  "details": [
-    "Installed user-level hooks and instructions for summary handoff.",
-    "Updated the Telegram notification runtime to read the generated summary file."
-  ],
-  "changed_files": [
-    "src/private/app/vscode-copilot-telegram-hook/Install-UserCopilotHook.ps1",
-    "src/private/app/vscode-copilot-telegram-hook/instructions/copilot-notify-summary.instructions.md"
-  ],
-  "next_steps": [
-    "Validate the user-level setup in a second workspace."
-  ]
+    "version": 1,
+    "run_id": "<value from .copilot/notify-session.json>",
+    "updated_at": "2026-03-11T12:34:56.789Z",
+    "status": "success",
+    "summary": "Implemented a VS Code GitHub Copilot hook that sends Telegram notifications with a task summary.",
+    "details": [
+        "Installed user-level hooks and instructions for summary handoff.",
+        "Updated the Telegram notification runtime to read the generated summary file."
+    ],
+    "changed_files": [
+        "src/private/app/vscode-copilot-telegram-hook/Install-UserCopilotHook.ps1",
+        "src/private/app/vscode-copilot-telegram-hook/instructions/copilot-notify-summary.instructions.md"
+    ],
+    "next_steps": ["Validate the user-level setup in a second workspace."]
 }
 ```

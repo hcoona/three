@@ -54,7 +54,8 @@ function Get-UserInstallRoot {
 }
 
 function Get-UserHookConfigPath {
-    return (Join-Path (Join-Path (Get-UserHomeDirectory) ".claude") "settings.json")
+    $claudeDirectory = Join-Path -Path (Get-UserHomeDirectory) -ChildPath ".claude"
+    return (Join-Path -Path $claudeDirectory -ChildPath "settings.json")
 }
 
 function Get-UserInstructionsRoot {
@@ -65,7 +66,7 @@ function Get-UserInstructionFilePath {
     return (Join-Path (Get-UserInstructionsRoot) "hcoona-vscode-copilot-telegram-hook.instructions.md")
 }
 
-function Ensure-Directory {
+function Initialize-Directory {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
@@ -105,7 +106,7 @@ function Write-JsonMapFile {
 
     $directory = Split-Path -Parent $Path
     if (-not [string]::IsNullOrWhiteSpace($directory)) {
-        Ensure-Directory -Path $directory
+        Initialize-Directory -Path $directory
     }
 
     $Value | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $Path -Encoding utf8
@@ -176,9 +177,9 @@ function Get-GopassSecret {
     )
 
     foreach ($arguments in @(
-        @("show", "--password", $SecretPath),
-        @("show", "-o", $SecretPath)
-    )) {
+            @("show", "--password", $SecretPath),
+            @("show", "-o", $SecretPath)
+        )) {
         try {
             $raw = & gopass @arguments 2>$null
             $value = ($raw -join "`n").Trim()
@@ -187,6 +188,7 @@ function Get-GopassSecret {
             }
         }
         catch {
+            Write-Verbose ("gopass lookup failed for '{0}' with arguments '{1}': {2}" -f $SecretPath, ($arguments -join " "), $_.Exception.Message)
         }
     }
 
@@ -211,6 +213,7 @@ function ConvertTo-PlainText {
 }
 
 function Set-GopassSecret {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory = $true)]
         [string]$SecretPath,
@@ -223,9 +226,11 @@ function Set-GopassSecret {
         throw "Secret value for '$SecretPath' cannot be empty."
     }
 
-    $SecretValue | & gopass insert -f $SecretPath 1>$null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to write '$SecretPath' into gopass."
+    if ($PSCmdlet.ShouldProcess($SecretPath, "Write gopass secret")) {
+        $SecretValue | & gopass insert -f $SecretPath 1>$null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to write '$SecretPath' into gopass."
+        }
     }
 }
 
@@ -248,56 +253,68 @@ function Confirm-UpdateExistingValue {
     }
 }
 
-function Prompt-RequiredSecret {
+function Read-RequiredSecret {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Prompt
     )
 
     while ($true) {
-        try {
-            $value = ConvertTo-PlainText -Value (Read-Host -AsSecureString $Prompt)
-        }
-        catch {
-            if (Test-IsPromptUnavailableError -Exception $_.Exception) {
-                throw "$Prompt is required but prompting is unavailable. $(Get-HeadlessInstallGuidance)"
-            }
-
-            throw
-        }
+        $value = ConvertTo-PlainText -Value (Read-Host -AsSecureString $Prompt)
 
         if (-not [string]::IsNullOrWhiteSpace($value)) {
             return $value
         }
 
-        Write-Host "A value is required."
+        Write-Warning "A value is required."
     }
 }
 
-function Prompt-RequiredText {
+function Read-RequiredText {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Prompt
     )
 
     while ($true) {
-        try {
-            $value = (Read-Host $Prompt).Trim()
-        }
-        catch {
-            if (Test-IsPromptUnavailableError -Exception $_.Exception) {
-                throw "$Prompt is required but prompting is unavailable. $(Get-HeadlessInstallGuidance)"
-            }
-
-            throw
-        }
+        $value = (Read-Host $Prompt).Trim()
 
         if (-not [string]::IsNullOrWhiteSpace($value)) {
             return $value
         }
 
-        Write-Host "A value is required."
+        Write-Warning "A value is required."
     }
+}
+
+function Get-SecretValueResolution {
+    param(
+        [Parameter(Mandatory = $true)]
+        [bool]$ShouldUpdate,
+
+        [AllowNull()][string]$Value
+    )
+
+    return [ordered]@{
+        ShouldUpdate = $ShouldUpdate
+        Value        = $Value
+    }
+}
+
+function Read-ResolvedSecretValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Label,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$IsSecure
+    )
+
+    if ($IsSecure) {
+        return (Read-RequiredSecret -Prompt $Label)
+    }
+
+    return (Read-RequiredText -Prompt $Label)
 }
 
 function Resolve-SecretValue {
@@ -317,55 +334,28 @@ function Resolve-SecretValue {
     )
 
     if (-not [string]::IsNullOrWhiteSpace($ProvidedValue)) {
-        return [ordered]@{
-            ShouldUpdate = $true
-            Value = $ProvidedValue
-        }
+        return (Get-SecretValueResolution -ShouldUpdate $true -Value $ProvidedValue)
     }
 
     if ($SkipPrompt) {
         if (-not [string]::IsNullOrWhiteSpace($ExistingValue)) {
-            return [ordered]@{
-                ShouldUpdate = $false
-                Value = $ExistingValue
-            }
+            return (Get-SecretValueResolution -ShouldUpdate $false -Value $ExistingValue)
         }
 
         throw "$Label is required when -SkipSecretPrompt is used and no existing gopass value is present."
     }
 
     if ([string]::IsNullOrWhiteSpace($ExistingValue)) {
-        $value = if ($IsSecure) {
-            Prompt-RequiredSecret -Prompt $Label
-        }
-        else {
-            Prompt-RequiredText -Prompt $Label
-        }
-
-        return [ordered]@{
-            ShouldUpdate = $true
-            Value = $value
-        }
+        $value = Read-ResolvedSecretValue -Label $Label -IsSecure $IsSecure
+        return (Get-SecretValueResolution -ShouldUpdate $true -Value $value)
     }
 
     if (-not (Confirm-UpdateExistingValue -Label $Label)) {
-        return [ordered]@{
-            ShouldUpdate = $false
-            Value = $ExistingValue
-        }
+        return (Get-SecretValueResolution -ShouldUpdate $false -Value $ExistingValue)
     }
 
-    $updatedValue = if ($IsSecure) {
-        Prompt-RequiredSecret -Prompt $Label
-    }
-    else {
-        Prompt-RequiredText -Prompt $Label
-    }
-
-    return [ordered]@{
-        ShouldUpdate = $true
-        Value = $updatedValue
-    }
+    $updatedValue = Read-ResolvedSecretValue -Label $Label -IsSecure $IsSecure
+    return (Get-SecretValueResolution -ShouldUpdate $true -Value $updatedValue)
 }
 
 function Test-IsLikelyTelegramBotToken {
@@ -421,7 +411,7 @@ function Install-ManagedFileOnce {
 
     $destinationDirectory = Split-Path -Parent $DestinationPath
     if (-not [string]::IsNullOrWhiteSpace($destinationDirectory)) {
-        Ensure-Directory -Path $destinationDirectory
+        Initialize-Directory -Path $destinationDirectory
     }
 
     if (Test-Path -LiteralPath $DestinationPath) {
@@ -440,7 +430,12 @@ function Install-ManagedFileOnce {
                 throw "Copy-on-write installation is not supported in native Windows mode. Use Copy or Hardlink instead."
             }
 
-            & cp --reflink=always --preserve=mode,timestamps -- $SourcePath $DestinationPath 2>$null
+            $cpCommand = Get-Command -Name "cp" -CommandType Application -ErrorAction SilentlyContinue
+            if ($null -eq $cpCommand) {
+                throw "cp is required for copy-on-write installation mode but was not found in PATH."
+            }
+
+            & $cpCommand.Source --reflink=always --preserve=mode, timestamps -- $SourcePath $DestinationPath 2>$null
             if ($LASTEXITCODE -ne 0) {
                 throw "cp --reflink=always failed for '$SourcePath'."
             }
@@ -529,13 +524,11 @@ function Test-IsManagedHookEntry {
     return $false
 }
 
-function Set-ManagedHookEvent {
+function Get-ManagedHookEventEntryCollection {
     param(
-        [Parameter(Mandatory = $true)]
-        $Hooks,
-
-        [Parameter(Mandatory = $true)]
-        [string]$EventName,
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [array]$ExistingEntries,
 
         [Parameter(Mandatory = $true)]
         [hashtable]$Entry,
@@ -544,27 +537,16 @@ function Set-ManagedHookEvent {
         [string]$InstallRoot
     )
 
-    if (-not (Test-IsDictionaryObject -Value $Hooks)) {
-        throw "Hook container for '$EventName' must be a dictionary object."
-    }
-
-    $existingEntries = @()
-    if ((Test-MapContainsKey -Map $Hooks -Key $EventName) -and ($null -ne $Hooks[$EventName])) {
-        $existingEntries = @($Hooks[$EventName])
-    }
-
-    $filteredEntries = @(
-        foreach ($existingEntry in $existingEntries) {
-            if (-not (Test-IsManagedHookEntry -Entry $existingEntry -InstallRoot $InstallRoot)) {
-                $existingEntry
-            }
+    $filteredEntries = foreach ($existingEntry in $existingEntries) {
+        if (-not (Test-IsManagedHookEntry -Entry $existingEntry -InstallRoot $InstallRoot)) {
+            $existingEntry
         }
-    )
+    }
 
-    $Hooks[$EventName] = @($filteredEntries + $Entry)
+    return @($filteredEntries + $Entry)
 }
 
-function New-ManagedHookEntry {
+function Get-ManagedHookEntry {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ScriptPath,
@@ -577,11 +559,11 @@ function New-ManagedHookEntry {
     )
 
     return [ordered]@{
-        type = "command"
+        type    = "command"
         command = (Format-HookCommand -ScriptPath $ScriptPath)
-        cwd = "."
-        env = [ordered]@{
-            COPILOT_TELEGRAM_HOOK_ID = $managedHookId
+        cwd     = "."
+        env     = [ordered]@{
+            COPILOT_TELEGRAM_HOOK_ID       = $managedHookId
             COPILOT_TELEGRAM_GOPASS_PREFIX = $SecretPrefix
         }
         timeout = $TimeoutSeconds
@@ -610,13 +592,13 @@ function Write-InstallManifest {
     )
 
     $manifest = [ordered]@{
-        version = 1
-        installed_at = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-        install_mode = $InstallMode
-        gopass_prefix = $GopassPrefix
-        hook_config_path = $HookConfigPath
+        version               = 1
+        installed_at          = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        install_mode          = $InstallMode
+        gopass_prefix         = $GopassPrefix
+        hook_config_path      = $HookConfigPath
         instruction_file_path = $InstructionFilePath
-        files = $Files
+        files                 = $Files
     }
 
     $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8
@@ -630,18 +612,19 @@ try {
     Test-GopassReady
 
     $sourceRoot = $PSScriptRoot
-    $sourceScriptsRoot = Join-Path $sourceRoot "scripts"
     $sourceInstructionsRoot = Join-Path $sourceRoot "instructions"
     $installRoot = Get-UserInstallRoot
     $installScriptsRoot = Join-Path $installRoot "scripts"
     $hookConfigPath = Get-UserHookConfigPath
     $instructionFilePath = Get-UserInstructionFilePath
     $manifestPath = Join-Path $installRoot "install-manifest.json"
+    $hookConfigDirectory = Split-Path -Parent $hookConfigPath
+    $instructionDirectory = Split-Path -Parent $instructionFilePath
 
-    Ensure-Directory -Path $installRoot
-    Ensure-Directory -Path $installScriptsRoot
-    Ensure-Directory -Path (Split-Path -Parent $hookConfigPath)
-    Ensure-Directory -Path (Split-Path -Parent $instructionFilePath)
+    Initialize-Directory -Path $installRoot
+    Initialize-Directory -Path $installScriptsRoot
+    Initialize-Directory -Path $hookConfigDirectory
+    Initialize-Directory -Path $instructionDirectory
 
     $botTokenSecretPath = "$gopassPrefix/bot-token"
     $chatIdSecretPath = "$gopassPrefix/chat-id"
@@ -668,8 +651,18 @@ try {
         $null
     }
 
-    $botTokenResolution = Resolve-SecretValue -Label "Telegram bot token" -ProvidedValue $providedBotToken -ExistingValue $existingBotToken -IsSecure $true -SkipPrompt $SkipSecretPrompt.IsPresent
-    $chatIdResolution = Resolve-SecretValue -Label "Telegram chat ID" -ProvidedValue $providedChatId -ExistingValue $existingChatId -IsSecure $false -SkipPrompt $SkipSecretPrompt.IsPresent
+    $botTokenResolution = Resolve-SecretValue `
+        -Label "Telegram bot token" `
+        -ProvidedValue $providedBotToken `
+        -ExistingValue $existingBotToken `
+        -IsSecure $true `
+        -SkipPrompt $SkipSecretPrompt.IsPresent
+    $chatIdResolution = Resolve-SecretValue `
+        -Label "Telegram chat ID" `
+        -ProvidedValue $providedChatId `
+        -ExistingValue $existingChatId `
+        -IsSecure $false `
+        -SkipPrompt $SkipSecretPrompt.IsPresent
 
     Assert-ValidTelegramConfig -BotToken $botTokenResolution.Value -ChatId $chatIdResolution.Value
 
@@ -683,27 +676,27 @@ try {
 
     $installedFiles = [System.Collections.Generic.List[hashtable]]::new()
     foreach ($relativePath in @(
-        "scripts/CopilotHook.Common.ps1",
-        "scripts/copilot-summary-state.ps1",
-        "scripts/telegram-notify.ps1"
-    )) {
+            "scripts/CopilotHook.Common.ps1",
+            "scripts/copilot-summary-state.ps1",
+            "scripts/telegram-notify.ps1"
+        )) {
         $sourcePath = Join-Path $sourceRoot $relativePath
         $destinationPath = Join-Path $installRoot $relativePath
         $resolvedMode = Install-ManagedFile -SourcePath $sourcePath -DestinationPath $destinationPath -Mode $InstallMode
         $installedFiles.Add([ordered]@{
-            source = $sourcePath
-            destination = $destinationPath
-            mode = $resolvedMode
-        })
+                source      = $sourcePath
+                destination = $destinationPath
+                mode        = $resolvedMode
+            })
     }
 
     $instructionSourcePath = Join-Path $sourceInstructionsRoot "copilot-notify-summary.instructions.md"
     $instructionResolvedMode = Install-ManagedFile -SourcePath $instructionSourcePath -DestinationPath $instructionFilePath -Mode $InstallMode
     $installedFiles.Add([ordered]@{
-        source = $instructionSourcePath
-        destination = $instructionFilePath
-        mode = $instructionResolvedMode
-    })
+            source      = $instructionSourcePath
+            destination = $instructionFilePath
+            mode        = $instructionResolvedMode
+        })
 
     $hookConfig = Read-JsonMapFile -Path $hookConfigPath
     if (-not (Test-MapContainsKey -Map $hookConfig -Key "hooks") -or ($null -eq $hookConfig["hooks"])) {
@@ -715,20 +708,45 @@ try {
         throw "The existing ~/.claude/settings.json file has a non-object 'hooks' field."
     }
 
-    Set-ManagedHookEvent -Hooks $hooks -EventName "SessionStart" -Entry (New-ManagedHookEntry -ScriptPath (Join-Path $installScriptsRoot "copilot-summary-state.ps1") -TimeoutSeconds 10 -SecretPrefix $gopassPrefix) -InstallRoot $installRoot
-    Set-ManagedHookEvent -Hooks $hooks -EventName "Stop" -Entry (New-ManagedHookEntry -ScriptPath (Join-Path $installScriptsRoot "telegram-notify.ps1") -TimeoutSeconds 10 -SecretPrefix $gopassPrefix) -InstallRoot $installRoot
+    $sessionStartScriptPath = Join-Path $installScriptsRoot "copilot-summary-state.ps1"
+    $stopScriptPath = Join-Path $installScriptsRoot "telegram-notify.ps1"
+    $sessionStartHookEntry = Get-ManagedHookEntry -ScriptPath $sessionStartScriptPath -TimeoutSeconds 10 -SecretPrefix $gopassPrefix
+    $stopHookEntry = Get-ManagedHookEntry -ScriptPath $stopScriptPath -TimeoutSeconds 10 -SecretPrefix $gopassPrefix
+
+    $sessionStartEntries = if (Test-MapContainsKey -Map $hooks -Key "SessionStart") {
+        @($hooks["SessionStart"])
+    }
+    else {
+        @()
+    }
+    $stopEntries = if (Test-MapContainsKey -Map $hooks -Key "Stop") {
+        @($hooks["Stop"])
+    }
+    else {
+        @()
+    }
+
+    $hooks["SessionStart"] = Get-ManagedHookEventEntryCollection -ExistingEntries $sessionStartEntries -Entry $sessionStartHookEntry -InstallRoot $installRoot
+    $hooks["Stop"] = Get-ManagedHookEventEntryCollection -ExistingEntries $stopEntries -Entry $stopHookEntry -InstallRoot $installRoot
     $hookConfig["hooks"] = $hooks
 
     Write-JsonMapFile -Path $hookConfigPath -Value $hookConfig
-    Write-InstallManifest -Path $manifestPath -InstallMode $InstallMode -GopassPrefix $gopassPrefix -HookConfigPath $hookConfigPath -InstructionFilePath $instructionFilePath -Files $installedFiles.ToArray()
+    $installedFilesArray = $installedFiles.ToArray()
+    Write-InstallManifest -Path $manifestPath -InstallMode $InstallMode -GopassPrefix $gopassPrefix -HookConfigPath $hookConfigPath -InstructionFilePath $instructionFilePath -Files $installedFilesArray
 
-    Write-Host "Installed VS Code Copilot Telegram hooks into '$installRoot'."
-    Write-Host "Updated user hook configuration at '$hookConfigPath'."
-    Write-Host "Installed VS Code GitHub Copilot user instructions at '$instructionFilePath'."
-    Write-Host "Using gopass prefix '$gopassPrefix'."
+    Write-Output "Installed VS Code Copilot Telegram hooks into '$installRoot'."
+    Write-Output "Updated user hook configuration at '$hookConfigPath'."
+    Write-Output "Installed VS Code GitHub Copilot user instructions at '$instructionFilePath'."
+    Write-Output "Using gopass prefix '$gopassPrefix'."
     exit 0
 }
 catch {
-    Write-Error $_.Exception.Message
+    $errorMessage = $_.Exception.Message
+    if (Test-IsPromptUnavailableError -Exception $_.Exception) {
+        $headlessInstallGuidance = Get-HeadlessInstallGuidance
+        $errorMessage = "$errorMessage $headlessInstallGuidance"
+    }
+
+    Write-Error $errorMessage
     exit 1
 }

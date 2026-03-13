@@ -41,32 +41,32 @@ try {
     $repoRoot = $workspaceContext.RepoRoot
     $sessionId = if ($hookInput.sessionId) { "$($hookInput.sessionId)" } else { "unknown-session" }
 
-    $notifyStatePaths = Get-NotifyStatePaths -StateRoot $cwd
+    $notifyStatePaths = Get-NotifyStatePath -StateRoot $cwd
     $runIdSeed = "$repoRoot|$cwd|$sessionId|$($eventTime.ToString('O'))"
     $runId = "copilot-$($eventTime.ToString('yyyyMMddTHHmmssfffZ'))-$(Get-ShortHash -Text $runIdSeed -Length 12)"
 
     Write-JsonFile -Path $notifyStatePaths.Session -Value ([ordered]@{
-        version = 1
-        run_id = $runId
-        repo_root = $repoRoot
-        cwd = $cwd
-        started_at = $timestampIso
-    })
+            version    = 1
+            run_id     = $runId
+            repo_root  = $repoRoot
+            cwd        = $cwd
+            started_at = $timestampIso
+        })
 
     Write-JsonFile -Path $notifyStatePaths.Summary -Value ([ordered]@{
-        version = 1
-        run_id = $runId
-        updated_at = $timestampIso
-        status = "pending"
-        summary = ""
-        details = @()
-        changed_files = @()
-        next_steps = @()
-    })
+            version       = 1
+            run_id        = $runId
+            updated_at    = $timestampIso
+            status        = "pending"
+            summary       = ""
+            details       = @()
+            changed_files = @()
+            next_steps    = @()
+        })
 
     exit 0
 }
 catch {
-    Write-Host "Summary state hook failed: $($_.Exception.Message)"
+    Write-Warning -Message "Summary state hook failed: $($_.Exception.Message)"
     exit 0
 }
