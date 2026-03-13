@@ -75,5 +75,5 @@ GitHub Copilot.
 
 The user-level instruction file, however, is installed in the GitHub
 Copilot-specific `~/.copilot/instructions` location.
-The runtime still honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process or
-workspace `.env` as explicit overrides, but `gopass` is the primary mechanism.
+The runtime honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process
+environment as explicit overrides, but `gopass` is the primary mechanism.

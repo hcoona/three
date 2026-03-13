@@ -430,13 +430,14 @@ function Install-ManagedFileOnce {
                 throw "Copy-on-write installation is not supported in native Windows mode. Use Copy or Hardlink instead."
             }
 
-            $cpCommand = Get-Command -Name "cp" -CommandType Application -ErrorAction SilentlyContinue
+            $cpCommand = Get-Command -Name "cp" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($null -eq $cpCommand) {
                 throw "cp is required for copy-on-write installation mode but was not found in PATH."
             }
 
-            & $cpCommand.Source --reflink=always --preserve=mode, timestamps -- $SourcePath $DestinationPath 2>$null
-            if ($LASTEXITCODE -ne 0) {
+            $cpPath = $cpCommand.Source
+            & $cpPath "--reflink=always" "--preserve=mode,timestamps" "--" $SourcePath $DestinationPath 2>$null
+            if (($LASTEXITCODE -ne 0) -or (-not (Test-Path -LiteralPath $DestinationPath))) {
                 throw "cp --reflink=always failed for '$SourcePath'."
             }
         }
@@ -458,6 +459,14 @@ function Install-ManagedFile {
 
     $candidateModes = switch ($Mode) {
         "Auto" {
+            if ($IsWindows) {
+                @("Hardlink", "Copy")
+            }
+            else {
+                @("Cow", "Hardlink", "Copy")
+            }
+        }
+        "Cow" {
             if ($IsWindows) {
                 @("Hardlink", "Copy")
             }
@@ -531,19 +540,21 @@ function Get-ManagedHookEventEntryCollection {
         [array]$ExistingEntries,
 
         [Parameter(Mandatory = $true)]
-        [hashtable]$Entry,
+        [System.Collections.IDictionary]$Entry,
 
         [Parameter(Mandatory = $true)]
         [string]$InstallRoot
     )
 
-    $filteredEntries = foreach ($existingEntry in $existingEntries) {
+    $entries = [System.Collections.Generic.List[object]]::new()
+    foreach ($existingEntry in $existingEntries) {
         if (-not (Test-IsManagedHookEntry -Entry $existingEntry -InstallRoot $InstallRoot)) {
-            $existingEntry
+            $entries.Add($existingEntry)
         }
     }
 
-    return @($filteredEntries + $Entry)
+    $entries.Add($Entry)
+    return $entries.ToArray()
 }
 
 function Get-ManagedHookEntry {
