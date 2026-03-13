@@ -5,7 +5,7 @@ $ProgressPreference = "SilentlyContinue"
 
 . (Join-Path $PSScriptRoot "CopilotHook.Common.ps1")
 
-function Escape-Html {
+function ConvertTo-HtmlEscapedText {
     param([AllowNull()][string]$Text)
 
     if ($null -eq $Text) {
@@ -15,7 +15,7 @@ function Escape-Html {
     return $Text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;")
 }
 
-function Normalize-OneLine {
+function Format-OneLineText {
     param(
         [AllowNull()][string]$Text,
 
@@ -31,7 +31,7 @@ function Normalize-OneLine {
         return $normalized
     }
 
-    return $normalized.Substring(0, $MaxLength - 1) + "…"
+    return $normalized.Substring(0, $MaxLength - 3) + "..."
 }
 
 function Convert-ToStringArray {
@@ -94,7 +94,7 @@ function Get-MatchingSummaryRecord {
     return $SummaryRecord
 }
 
-function Should-SkipDuplicateNotification {
+function Test-NotificationAlreadySent {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
@@ -126,7 +126,8 @@ function Should-SkipDuplicateNotification {
     return $previousSummaryUpdatedAt -eq $SummaryUpdatedAt
 }
 
-function Update-LastNotificationState {
+function Set-LastNotificationState {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
@@ -143,12 +144,14 @@ function Update-LastNotificationState {
         return
     }
 
-    Write-JsonFile -Path $Path -Value ([ordered]@{
-        version = 1
-        run_id = $RunId
-        sent_at = $TimestampIso
-        summary_updated_at = $SummaryUpdatedAt
-    })
+    if ($PSCmdlet.ShouldProcess($Path, "Write last notification state")) {
+        Write-JsonFile -Path $Path -Value ([ordered]@{
+                version            = 1
+                run_id             = $RunId
+                sent_at            = $TimestampIso
+                summary_updated_at = $SummaryUpdatedAt
+            })
+    }
 }
 
 try {
@@ -169,17 +172,17 @@ try {
     $sha = $workspaceContext.Sha
     $remoteUrl = $workspaceContext.RemoteUrl
 
-    $credentials = Get-TelegramCredentials -RepoRoot $resolvedRepoRoot
+    $credentials = Get-TelegramCredential -RepoRoot $resolvedRepoRoot
     $botToken = $credentials.BotToken
     $chatId = $credentials.ChatId
     if ((Test-IsPlaceholderValue -Value $botToken) -or (Test-IsPlaceholderValue -Value $chatId)) {
-        Write-Host "Telegram hook skipped: configure TG_BOT_TOKEN/TG_CHAT_ID or gopass secrets under '$($credentials.SecretPrefix)'."
+        Write-Verbose -Message "Telegram hook skipped: configure TG_BOT_TOKEN/TG_CHAT_ID or gopass secrets under '$($credentials.SecretPrefix)'."
         exit 0
     }
 
     $hostName = [System.Net.Dns]::GetHostName()
     $executionEnvironment = Get-ExecutionEnvironment
-    $notifyStatePaths = Get-NotifyStatePaths -StateRoot $cwd
+    $notifyStatePaths = Get-NotifyStatePath -StateRoot $cwd
     $sessionState = Read-JsonFile -Path $notifyStatePaths.Session
     $summaryState = Read-JsonFile -Path $notifyStatePaths.Summary
     $matchingSummary = Get-MatchingSummaryRecord -SummaryRecord $summaryState -SessionRecord $sessionState
@@ -213,55 +216,55 @@ try {
     $runId = $sessionRunId
     $summaryUpdatedAt = if (($null -ne $matchingSummary) -and $matchingSummary.updated_at) { "$($matchingSummary.updated_at)" } else { $null }
 
-    if (Should-SkipDuplicateNotification -Path $notifyStatePaths.LastSent -RunId $runId -SummaryUpdatedAt $summaryUpdatedAt) {
+    if (Test-NotificationAlreadySent -Path $notifyStatePaths.LastSent -RunId $runId -SummaryUpdatedAt $summaryUpdatedAt) {
         exit 0
     }
 
     $headline = "Copilot task finished"
-    $emoji = "✅"
+    $statusPrefix = "[OK]"
 
     $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add("<b>$emoji $headline</b>")
-    $lines.Add("<b>run_id</b>: <code>$(Escape-Html $runId)</code>")
+    $lines.Add("<b>$statusPrefix $headline</b>")
+    $lines.Add("<b>run_id</b>: <code>$(ConvertTo-HtmlEscapedText $runId)</code>")
     if (-not [string]::IsNullOrWhiteSpace($sessionId)) {
-        $lines.Add("<b>session_id</b>: <code>$(Escape-Html $sessionId)</code>")
+        $lines.Add("<b>session_id</b>: <code>$(ConvertTo-HtmlEscapedText $sessionId)</code>")
     }
     $lines.Add("")
-    $lines.Add("<b>host</b>: <code>$(Escape-Html $hostName)</code>")
-    $lines.Add("<b>env</b>: <code>$(Escape-Html $executionEnvironment)</code>")
-    $lines.Add("<b>repo</b>: <code>$(Escape-Html $repoDisplayName)</code>")
-    $lines.Add("<b>worktree</b>: <code>$(Escape-Html $cwd)</code>")
-    $lines.Add("<b>branch</b>: <code>$(Escape-Html $branch)</code>")
-    $lines.Add("<b>sha</b>: <code>$(Escape-Html $sha)</code>")
-    $lines.Add("<b>timestamp</b>: <code>$(Escape-Html $timestampIso)</code>")
+    $lines.Add("<b>host</b>: <code>$(ConvertTo-HtmlEscapedText $hostName)</code>")
+    $lines.Add("<b>env</b>: <code>$(ConvertTo-HtmlEscapedText $executionEnvironment)</code>")
+    $lines.Add("<b>repo</b>: <code>$(ConvertTo-HtmlEscapedText $repoDisplayName)</code>")
+    $lines.Add("<b>worktree</b>: <code>$(ConvertTo-HtmlEscapedText $cwd)</code>")
+    $lines.Add("<b>branch</b>: <code>$(ConvertTo-HtmlEscapedText $branch)</code>")
+    $lines.Add("<b>sha</b>: <code>$(ConvertTo-HtmlEscapedText $sha)</code>")
+    $lines.Add("<b>timestamp</b>: <code>$(ConvertTo-HtmlEscapedText $timestampIso)</code>")
     if ($stopHookActive) {
         $lines.Add("<b>stop_hook_active</b>: <code>true</code>")
     }
     if (-not [string]::IsNullOrWhiteSpace($transcriptPath)) {
-        $lines.Add("<b>transcript_path</b>: <code>$(Escape-Html $transcriptPath)</code>")
+        $lines.Add("<b>transcript_path</b>: <code>$(ConvertTo-HtmlEscapedText $transcriptPath)</code>")
     }
 
     if ($null -ne $matchingSummary) {
-        $summaryStatus = Normalize-OneLine -Text "$($matchingSummary.status)" -MaxLength 40
-        $summaryText = Normalize-OneLine -Text "$($matchingSummary.summary)" -MaxLength 800
+        $summaryStatus = Format-OneLineText -Text "$($matchingSummary.status)" -MaxLength 40
+        $summaryText = Format-OneLineText -Text "$($matchingSummary.summary)" -MaxLength 800
         $detailItems = Convert-ToStringArray -Value $matchingSummary.details
         $changedFiles = Convert-ToStringArray -Value $matchingSummary.changed_files
         $nextSteps = Convert-ToStringArray -Value $matchingSummary.next_steps
 
         $lines.Add("")
-        $lines.Add("<b>summary_status</b>: <code>$(Escape-Html $summaryStatus)</code>")
-        $lines.Add("<b>summary</b>: $(Escape-Html $summaryText)")
+        $lines.Add("<b>summary_status</b>: <code>$(ConvertTo-HtmlEscapedText $summaryStatus)</code>")
+        $lines.Add("<b>summary</b>: $(ConvertTo-HtmlEscapedText $summaryText)")
 
         if ($detailItems.Count -gt 0) {
             $lines.Add("<b>details</b>:")
             $detailPreview = @($detailItems | Select-Object -First 5)
             foreach ($detailItem in $detailPreview) {
-                $lines.Add("• $(Escape-Html (Normalize-OneLine -Text $detailItem -MaxLength 220))")
+                $lines.Add("- $(ConvertTo-HtmlEscapedText (Format-OneLineText -Text $detailItem -MaxLength 220))")
             }
 
             $remainingDetails = $detailItems.Count - $detailPreview.Count
             if ($remainingDetails -gt 0) {
-                $lines.Add("• <i>+$remainingDetails more</i>")
+                $lines.Add("- <i>+$remainingDetails more</i>")
             }
         }
 
@@ -269,12 +272,12 @@ try {
             $lines.Add("<b>changed_files</b>:")
             $filePreview = @($changedFiles | Select-Object -First 8)
             foreach ($changedFile in $filePreview) {
-                $lines.Add("• <code>$(Escape-Html (Normalize-OneLine -Text $changedFile -MaxLength 160))</code>")
+                $lines.Add("- <code>$(ConvertTo-HtmlEscapedText (Format-OneLineText -Text $changedFile -MaxLength 160))</code>")
             }
 
             $remainingFiles = $changedFiles.Count - $filePreview.Count
             if ($remainingFiles -gt 0) {
-                $lines.Add("• <i>+$remainingFiles more</i>")
+                $lines.Add("- <i>+$remainingFiles more</i>")
             }
         }
 
@@ -282,12 +285,12 @@ try {
             $lines.Add("<b>next_steps</b>:")
             $nextStepPreview = @($nextSteps | Select-Object -First 5)
             foreach ($nextStep in $nextStepPreview) {
-                $lines.Add("• $(Escape-Html (Normalize-OneLine -Text $nextStep -MaxLength 220))")
+                $lines.Add("- $(ConvertTo-HtmlEscapedText (Format-OneLineText -Text $nextStep -MaxLength 220))")
             }
 
             $remainingSteps = $nextSteps.Count - $nextStepPreview.Count
             if ($remainingSteps -gt 0) {
-                $lines.Add("• <i>+$remainingSteps more</i>")
+                $lines.Add("- <i>+$remainingSteps more</i>")
             }
         }
     }
@@ -298,18 +301,18 @@ try {
     }
 
     $payload = @{
-        chat_id = $chatId
-        text = $message
-        parse_mode = "HTML"
+        chat_id                  = $chatId
+        text                     = $message
+        parse_mode               = "HTML"
         disable_web_page_preview = $true
     }
 
     $uri = "https://api.telegram.org/bot$botToken/sendMessage"
     [void](Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 5)
-    Update-LastNotificationState -Path $notifyStatePaths.LastSent -RunId $runId -TimestampIso $timestampIso -SummaryUpdatedAt $summaryUpdatedAt
+    Set-LastNotificationState -Path $notifyStatePaths.LastSent -RunId $runId -TimestampIso $timestampIso -SummaryUpdatedAt $summaryUpdatedAt
     exit 0
 }
 catch {
-    Write-Host "Telegram hook failed: $($_.Exception.Message)"
+    Write-Warning -Message "Telegram hook failed: $($_.Exception.Message)"
     exit 0
 }

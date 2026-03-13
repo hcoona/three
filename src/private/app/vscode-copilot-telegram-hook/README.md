@@ -42,7 +42,11 @@ For headless installation, pass the Telegram values explicitly or through
 environment variables:
 
 ```powershell
-pwsh -NoLogo -NoProfile -NonInteractive -File ./src/private/app/vscode-copilot-telegram-hook/Install-UserCopilotHook.ps1 -TelegramBotToken '<bot-token>' -TelegramChatId '<chat-id>' -SkipSecretPrompt
+pwsh -NoLogo -NoProfile -NonInteractive `
+  -File ./src/private/app/vscode-copilot-telegram-hook/Install-UserCopilotHook.ps1 `
+  -TelegramBotToken '<bot-token>' `
+  -TelegramChatId '<chat-id>' `
+  -SkipSecretPrompt
 ```
 
 The installer:
@@ -67,7 +71,9 @@ user-level installation and this repository's workspace hook resolve the same
 secrets.
 As of the current official VS Code docs, the user-level hook file location is
 still `~/.claude/settings.json`, even when the feature is used from VS Code
-GitHub Copilot. The user-level instruction file, however, is installed in the
-GitHub Copilot-specific `~/.copilot/instructions` location.
+GitHub Copilot.
+
+The user-level instruction file, however, is installed in the GitHub
+Copilot-specific `~/.copilot/instructions` location.
 The runtime still honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process or
 workspace `.env` as explicit overrides, but `gopass` is the primary mechanism.
