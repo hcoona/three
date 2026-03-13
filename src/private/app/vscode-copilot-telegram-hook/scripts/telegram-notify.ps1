@@ -154,6 +154,69 @@ function Set-LastNotificationState {
     }
 }
 
+function Get-NotificationHeading {
+    param([AllowNull()]$SummaryRecord)
+
+    $status = if (($null -ne $SummaryRecord) -and $SummaryRecord.status) {
+        "$($SummaryRecord.status)".Trim().ToLowerInvariant()
+    }
+    else {
+        ""
+    }
+
+    switch ($status) {
+        "success" {
+            return [ordered]@{
+                Prefix   = "[OK]"
+                Headline = "Copilot task finished"
+            }
+        }
+        "info" {
+            return [ordered]@{
+                Prefix   = "[INFO]"
+                Headline = "Copilot task finished"
+            }
+        }
+        { $_ -in @("failure", "failed", "error") } {
+            return [ordered]@{
+                Prefix   = "[FAIL]"
+                Headline = "Copilot task failed"
+            }
+        }
+        default {
+            return [ordered]@{
+                Prefix   = "[DONE]"
+                Headline = "Copilot task finished"
+            }
+        }
+    }
+}
+
+function Assert-TelegramSendResponse {
+    param([AllowNull()]$Response)
+
+    if ($null -eq $Response) {
+        throw "Telegram API returned no response."
+    }
+
+    $okProperty = $Response.PSObject.Properties["ok"]
+    if ($null -eq $okProperty) {
+        throw "Telegram API response did not include an 'ok' flag."
+    }
+
+    if (-not [bool]$okProperty.Value) {
+        $descriptionProperty = $Response.PSObject.Properties["description"]
+        $description = if ($null -ne $descriptionProperty) {
+            "$($descriptionProperty.Value)"
+        }
+        else {
+            "Telegram API returned ok=false."
+        }
+
+        throw "Telegram API rejected the message: $description"
+    }
+}
+
 try {
     $stdinRaw = [Console]::In.ReadToEnd()
     $hookInput = if ([string]::IsNullOrWhiteSpace($stdinRaw)) {
@@ -172,7 +235,7 @@ try {
     $sha = $workspaceContext.Sha
     $remoteUrl = $workspaceContext.RemoteUrl
 
-    $credentials = Get-TelegramCredential -RepoRoot $resolvedRepoRoot
+    $credentials = Get-TelegramCredential
     $botToken = $credentials.BotToken
     $chatId = $credentials.ChatId
     if ((Test-IsPlaceholderValue -Value $botToken) -or (Test-IsPlaceholderValue -Value $chatId)) {
@@ -220,8 +283,9 @@ try {
         exit 0
     }
 
-    $headline = "Copilot task finished"
-    $statusPrefix = "[OK]"
+    $notificationHeading = Get-NotificationHeading -SummaryRecord $matchingSummary
+    $headline = $notificationHeading.Headline
+    $statusPrefix = $notificationHeading.Prefix
 
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add("<b>$statusPrefix $headline</b>")
@@ -308,7 +372,8 @@ try {
     }
 
     $uri = "https://api.telegram.org/bot$botToken/sendMessage"
-    [void](Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 5)
+    $response = Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 5
+    Assert-TelegramSendResponse -Response $response
     Set-LastNotificationState -Path $notifyStatePaths.LastSent -RunId $runId -TimestampIso $timestampIso -SummaryUpdatedAt $summaryUpdatedAt
     exit 0
 }

@@ -171,49 +171,6 @@ function Get-RepositoryDisplayName {
     return $FallbackName
 }
 
-function Import-DotEnvFile {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return
-    }
-
-    foreach ($line in Get-Content -LiteralPath $Path) {
-        if ([string]::IsNullOrWhiteSpace($line)) {
-            continue
-        }
-
-        $trimmed = $line.Trim()
-        if ($trimmed.StartsWith("#")) {
-            continue
-        }
-
-        $match = [regex]::Match($trimmed, '^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$')
-        if (-not $match.Success) {
-            continue
-        }
-
-        $name = $match.Groups[1].Value
-        $value = $match.Groups[2].Value.Trim()
-
-        if (
-            ($value.Length -ge 2) -and (
-                (($value.StartsWith('"')) -and ($value.EndsWith('"'))) -or
-                (($value.StartsWith("'")) -and ($value.EndsWith("'")))
-            )
-        ) {
-            $value = $value.Substring(1, $value.Length - 2)
-        }
-
-        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, "Process"))) {
-            [Environment]::SetEnvironmentVariable($name, $value, "Process")
-        }
-    }
-}
-
 function Test-IsPlaceholderValue {
     param([AllowNull()][string]$Value)
 
@@ -307,13 +264,6 @@ function Get-TelegramSecretPrefix {
 }
 
 function Get-TelegramCredential {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$RepoRoot
-    )
-
-    Import-DotEnvFile -Path (Join-Path $RepoRoot ".env")
-
     $secretPrefix = Get-TelegramSecretPrefix
     $botToken = $env:TG_BOT_TOKEN
     $chatId = $env:TG_CHAT_ID
