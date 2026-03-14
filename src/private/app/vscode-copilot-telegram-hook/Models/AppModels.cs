@@ -12,10 +12,10 @@ internal sealed class SessionStartHookInput
     [JsonPropertyName("cwd")]
     public string Cwd { get; set; } = string.Empty;
 
-    [JsonPropertyName("sessionId")]
+    [JsonPropertyName("session_id")]
     public string SessionId { get; set; } = string.Empty;
 
-    [JsonPropertyName("hookEventName")]
+    [JsonPropertyName("hook_event_name")]
     public string HookEventName { get; set; } = string.Empty;
 
     [JsonPropertyName("transcript_path")]
@@ -33,10 +33,10 @@ internal sealed class UserPromptSubmitHookInput
     [JsonPropertyName("cwd")]
     public string Cwd { get; set; } = string.Empty;
 
-    [JsonPropertyName("sessionId")]
+    [JsonPropertyName("session_id")]
     public string SessionId { get; set; } = string.Empty;
 
-    [JsonPropertyName("hookEventName")]
+    [JsonPropertyName("hook_event_name")]
     public string HookEventName { get; set; } = string.Empty;
 
     [JsonPropertyName("transcript_path")]
@@ -54,10 +54,10 @@ internal sealed class StopHookInput
     [JsonPropertyName("cwd")]
     public string Cwd { get; set; } = string.Empty;
 
-    [JsonPropertyName("sessionId")]
+    [JsonPropertyName("session_id")]
     public string SessionId { get; set; } = string.Empty;
 
-    [JsonPropertyName("hookEventName")]
+    [JsonPropertyName("hook_event_name")]
     public string HookEventName { get; set; } = string.Empty;
 
     [JsonPropertyName("transcript_path")]

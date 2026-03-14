@@ -7,6 +7,7 @@
     - the VS Code reference set preserved in
       [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)
     - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
+    - [`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md)
     - non-normative repository context reviewed for comparison
 - Scope note: H-002 and H-003 may refine project interpretation, but the
   external research basis for this note is the user-provided VS Code reference
@@ -47,9 +48,10 @@ This research focuses on the hook events and input fields that are directly rele
 - [Agent hooks in Visual Studio Code (Preview)](https://code.visualstudio.com/docs/copilot/customization/hooks)
 - [Use custom instructions in VS Code](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)
 
-### Later human clarification
+### Later human clarification and verification
 
 - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
+- [`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md)
 
 These VS Code references are part of the user-provided reference set preserved
 in [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md).
@@ -71,6 +73,21 @@ The VS Code hooks documentation states that **every hook receives a JSON object 
 | `sessionId`       | Agent session identifier            | The main documented session-level correlation key               |
 | `hookEventName`   | Current hook event name             | Distinguishes `SessionStart`, `Stop`, and others                |
 | `transcript_path` | Path to the session transcript JSON | Potentially useful for traceability and turn/session inspection |
+
+### Current project implementation note
+
+The external documentation currently describes these field names in camelCase,
+such as `sessionId` and `hookEventName`.
+
+However, the current project implementation follows the later human
+verification recorded in
+[`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md):
+the current observed runtime for this project uses `session_id` and
+`hook_event_name`.
+
+For this project, the external documentation is still the authoritative source
+for the documented platform contract, but current implementation follows the
+measured runtime contract recorded in H-005 when the two conflict.
 
 ### Key observation
 

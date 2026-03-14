@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Hcoona.VsCodeCopilotTelegramHook.Notifications;
 using Hcoona.VsCodeCopilotTelegramHook.State;
@@ -22,10 +23,10 @@ internal sealed class HookCommandService(
         IDisposable? logScope = null;
         try
         {
-            SessionStartHookInput? hookInput = await JsonSerializer.DeserializeAsync(
-                standardInput,
-                AppJsonSerializerContext.Default.SessionStartHookInput,
-                cancellationToken);
+            byte[] payload = await ReadPayloadAsync(standardInput, cancellationToken);
+            SessionStartHookInput? hookInput = DeserializePayload(
+                payload,
+                AppJsonSerializerContext.Default.SessionStartHookInput);
 
             string? workspacePath = GetWorkspacePathOrNull(hookInput?.Cwd);
             logScope = TryOpenHookLogScope(workspacePath, hookInput?.SessionId);
@@ -36,8 +37,9 @@ internal sealed class HookCommandService(
             {
                 string reason = BuildInvalidInputReason(
                     hookInput,
+                    payload,
                     ("cwd", workspacePath is null),
-                    ("sessionId", string.IsNullOrWhiteSpace(hookInput?.SessionId)));
+                    ("session_id", string.IsNullOrWhiteSpace(hookInput?.SessionId)));
                 AppLog.IgnoringInvalidHookInput(logger, "SessionStart", reason);
                 await Console.Error.WriteLineAsync($"SessionStart hook warning: {reason}");
                 return 0;
@@ -84,10 +86,10 @@ internal sealed class HookCommandService(
         IDisposable? logScope = null;
         try
         {
-            UserPromptSubmitHookInput? hookInput = await JsonSerializer.DeserializeAsync(
-                standardInput,
-                AppJsonSerializerContext.Default.UserPromptSubmitHookInput,
-                cancellationToken);
+            byte[] payload = await ReadPayloadAsync(standardInput, cancellationToken);
+            UserPromptSubmitHookInput? hookInput = DeserializePayload(
+                payload,
+                AppJsonSerializerContext.Default.UserPromptSubmitHookInput);
 
             string? workspacePath = GetWorkspacePathOrNull(hookInput?.Cwd);
             logScope = TryOpenHookLogScope(workspacePath, hookInput?.SessionId);
@@ -98,8 +100,9 @@ internal sealed class HookCommandService(
             {
                 string reason = BuildInvalidInputReason(
                     hookInput,
+                    payload,
                     ("cwd", workspacePath is null),
-                    ("sessionId", string.IsNullOrWhiteSpace(hookInput?.SessionId)));
+                    ("session_id", string.IsNullOrWhiteSpace(hookInput?.SessionId)));
                 AppLog.IgnoringInvalidHookInput(logger, "UserPromptSubmit", reason);
                 await Console.Error.WriteLineAsync($"UserPromptSubmit hook warning: {reason}");
                 return 0;
@@ -132,10 +135,10 @@ internal sealed class HookCommandService(
         IDisposable? logScope = null;
         try
         {
-            StopHookInput? hookInput = await JsonSerializer.DeserializeAsync(
-                standardInput,
-                AppJsonSerializerContext.Default.StopHookInput,
-                cancellationToken);
+            byte[] payload = await ReadPayloadAsync(standardInput, cancellationToken);
+            StopHookInput? hookInput = DeserializePayload(
+                payload,
+                AppJsonSerializerContext.Default.StopHookInput);
 
             string? workspacePath = GetWorkspacePathOrNull(hookInput?.Cwd);
             logScope = TryOpenHookLogScope(workspacePath, hookInput?.SessionId);
@@ -147,8 +150,9 @@ internal sealed class HookCommandService(
             {
                 string reason = BuildInvalidInputReason(
                     hookInput,
+                    payload,
                     ("cwd", workspacePath is null),
-                    ("sessionId", string.IsNullOrWhiteSpace(hookInput?.SessionId)),
+                    ("session_id", string.IsNullOrWhiteSpace(hookInput?.SessionId)),
                     ("timestamp", string.IsNullOrWhiteSpace(hookInput?.Timestamp)));
                 AppLog.IgnoringInvalidHookInput(logger, "Stop", reason);
                 await Console.Error.WriteLineAsync($"Stop hook warning: {reason}");
@@ -307,12 +311,17 @@ internal sealed class HookCommandService(
 
     private static string BuildInvalidInputReason<T>(
         T? hookInput,
+        ReadOnlyMemory<byte> payload,
         params (string FieldName, bool IsMissing)[] fieldChecks)
         where T : class
     {
+        string? payloadShape = TryDescribePayloadShape(payload);
+
         if (hookInput is null)
         {
-            return "payload could not be deserialized.";
+            return payloadShape is null
+                ? "payload could not be deserialized."
+                : $"payload could not be deserialized; {payloadShape}";
         }
 
         string[] missingFields = fieldChecks
@@ -320,8 +329,64 @@ internal sealed class HookCommandService(
             .Select(static fieldCheck => fieldCheck.FieldName)
             .ToArray();
 
-        return missingFields.Length == 0
+        string reason = missingFields.Length == 0
             ? "payload could not be processed."
             : $"missing required field(s): {string.Join(", ", missingFields)}.";
+
+        return payloadShape is null ? reason : $"{reason} {payloadShape}";
+    }
+
+    private static T? DeserializePayload<T>(
+        ReadOnlyMemory<byte> payload,
+        JsonTypeInfo<T> jsonTypeInfo)
+        where T : class
+    {
+        if (payload.IsEmpty)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize(payload.Span, jsonTypeInfo);
+    }
+
+    private static async Task<byte[]> ReadPayloadAsync(
+        Stream standardInput,
+        CancellationToken cancellationToken)
+    {
+        using MemoryStream buffer = new();
+        await standardInput.CopyToAsync(buffer, cancellationToken);
+        return buffer.ToArray();
+    }
+
+    private static string? TryDescribePayloadShape(ReadOnlyMemory<byte> payload)
+    {
+        if (payload.IsEmpty)
+        {
+            return "payload was empty.";
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(payload);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return $"payload root kind was {root.ValueKind}.";
+            }
+
+            string[] propertyNames = root
+                .EnumerateObject()
+                .Select(static property => property.Name)
+                .OrderBy(static name => name, StringComparer.Ordinal)
+                .ToArray();
+
+            return propertyNames.Length == 0
+                ? "payload object had no top-level fields."
+                : $"present top-level field(s): {string.Join(", ", propertyNames)}.";
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

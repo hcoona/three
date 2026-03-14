@@ -132,6 +132,56 @@ public sealed class HookCommandServiceTests
     }
 
     [Fact]
+    public async Task HandleUserPromptSubmitAsyncAcceptsSnakeCaseHookFields()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            HookCommandService service = CreateHookCommandService(
+                new RecordingHttpMessageHandler(),
+                stateStore: stateStore);
+            string payload = $$"""
+                {
+                    "cwd": "{{tempDirectory.FullName}}",
+                    "session_id": "session-123",
+                    "timestamp": "2026-03-14T15:51:50.783Z",
+                    "hook_event_name": "UserPromptSubmit",
+                    "transcript_path": "/tmp/transcript.json",
+                    "prompt": "Summarize the task."
+                }
+                """;
+
+            int exitCode = await service.HandleUserPromptSubmitAsync(
+                new MemoryStream(System.Text.Encoding.UTF8.GetBytes(payload)),
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+
+            TurnState? turnState = await stateStore.TryReadTurnAsync(
+                tempDirectory.FullName,
+                "session-123",
+                CancellationToken.None);
+            SummaryRecord? summaryRecord = await stateStore.TryReadSummaryAsync(
+                tempDirectory.FullName,
+                "session-123",
+                CancellationToken.None);
+
+            Assert.NotNull(turnState);
+            Assert.NotNull(summaryRecord);
+            Assert.Equal("session-123", turnState!.SessionId);
+            Assert.Equal(turnState.TurnId, summaryRecord!.TurnId);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task HandleUserPromptSubmitAsyncWritesSessionLogFile()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
@@ -453,8 +503,65 @@ public sealed class HookCommandServiceTests
                 "Ignoring invalid Stop hook input",
                 logContent,
                 StringComparison.Ordinal);
-            Assert.Contains("sessionId", logContent, StringComparison.Ordinal);
+            Assert.Contains("session_id", logContent, StringComparison.Ordinal);
             FileAssertions.AssertOwnerOnlyFileMode(workspaceLogPath);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandleStopAsyncWithoutSessionIdLogsObservedTopLevelFields()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            SessionLogFileContext logContext = new();
+            using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.ClearProviders();
+                builder.SetMinimumLevel(LogLevel.Debug);
+                builder.AddProvider(new SessionFileLoggerProvider(logContext));
+            });
+
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(
+                handler,
+                loggerFactory: loggerFactory,
+                logContext: logContext);
+            string payload = $$"""
+                {
+                    "cwd": "{{tempDirectory.FullName}}",
+                    "sessionId": "session-123",
+                    "hookEventName": "Stop",
+                    "timestamp": "2026-03-14T15:51:50.783Z"
+                }
+                """;
+
+            int exitCode = await service.HandleStopAsync(
+                new MemoryStream(System.Text.Encoding.UTF8.GetBytes(payload)),
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+            Assert.Empty(handler.Requests);
+
+            string workspaceLogPath = AppPaths.GetWorkspaceLogPath(tempDirectory.FullName);
+            Assert.True(File.Exists(workspaceLogPath));
+
+            string logContent = await File.ReadAllTextAsync(
+                workspaceLogPath,
+                CancellationToken.None);
+            Assert.Contains(
+                "missing required field(s): session_id.",
+                logContent,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "present top-level field(s): cwd, hookEventName, sessionId, timestamp.",
+                logContent,
+                StringComparison.Ordinal);
         }
         finally
         {

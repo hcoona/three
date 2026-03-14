@@ -17,24 +17,54 @@ Use this file as the first stop when you need to answer questions such as:
   exchange is not itself stored in the repository.
 - Derived documents should be listed here together with their upstream inputs.
 
+## Authoritative external documentation and cache policy
+
+Repository source code is authoritative for repository behavior.
+
+Research documents in this folder are condensed local caches of external
+authoritative documentation. They reduce repeated upstream lookups, but they do
+not replace the upstream sources or repository source code as the ultimate
+authority.
+
+The current authoritative external references for this documentation set are:
+
+- [VS Code custom instructions documentation](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)
+- [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks)
+- [Telegram Bot API](https://core.telegram.org/bots/api)
+
+Cache refresh behavior follows two rules:
+
+1. **Read-through refresh**: when a needed fact is not already cached locally,
+   consult the authoritative upstream source and update the relevant research
+   document.
+2. **Explicit verification refresh**: when a user explicitly requests
+   verification or a refresh, re-check the authoritative upstream source and
+   correct the local cache as needed.
+
 ## Human-authored source inputs
 
 The items in this section are treated as direct human inputs and are preserved
 as standalone H-series source documents.
 
-| ID    | Document                                                                                               | Summary                                                                       | Notes                                                                                                                                   |
-| ----- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| H-001 | [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)                         | Preserves the original requirement brief and the user-provided reference set. | This is the upstream source for the external references later used by research documents.                                               |
-| H-002 | [`h-002-human-confirmation-2026-03-13.md`](./h-002-human-confirmation-2026-03-13.md)                   | Preserves the later confirmed product decisions from chat.                    | This clarifies and, where necessary, supersedes parts of H-001 for later derived documents.                                             |
-| H-003 | [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md) | Preserves the follow-up clarification round from chat.                        | This tightens product assumptions around hook-locality interpretation, secret storage, failure handling, and overlength notifications.  |
-| H-004 | [`h-004-human-confirmation-2026-03-14.md`](./h-004-human-confirmation-2026-03-14.md)                   | Preserves the post-review clarification round from chat.                      | This relaxes the Chinese-summary requirement to best-effort and distinguishes persisted secret storage from explicit runtime overrides. |
+| ID    | Document                                                                                                                           | Summary                                                                       | Notes                                                                                                                                                                                   |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H-001 | [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)                                                     | Preserves the original requirement brief and the user-provided reference set. | This is the upstream source for the external references later used by research documents.                                                                                               |
+| H-002 | [`h-002-human-confirmation-2026-03-13.md`](./h-002-human-confirmation-2026-03-13.md)                                               | Preserves the later confirmed product decisions from chat.                    | This clarifies and, where necessary, supersedes parts of H-001 for later derived documents.                                                                                             |
+| H-003 | [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)                             | Preserves the follow-up clarification round from chat.                        | This tightens product assumptions around hook-locality interpretation, secret storage, failure handling, and overlength notifications.                                                  |
+| H-004 | [`h-004-human-confirmation-2026-03-14.md`](./h-004-human-confirmation-2026-03-14.md)                                               | Preserves the post-review clarification round from chat.                      | This relaxes the Chinese-summary requirement to best-effort and distinguishes persisted secret storage from explicit runtime overrides.                                                 |
+| H-005 | [`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md) | Preserves the manual verification of current hook input field names.          | This records that the current observed runtime uses `session_id` and `hook_event_name`, and that implementation should follow measurement when it conflicts with current external docs. |
 
 ## Reference derivation rule
 
 Research documents in this folder should be grounded in the user-provided
 references recorded in H-001.
 
-Human confirmation in H-002, H-003, and H-004 may refine the interpretation,
+Research documents are condensed local caches of the authoritative external
+references listed above. They should be refreshed through the documented
+read-through workflow and explicit verification refresh workflow rather than by
+mixing repository-local runtime notes into the external-doc cache.
+
+Human confirmation in H-002, H-003, H-004, and H-005 may refine the interpretation,
 scope, and design inputs for those research documents, but the external research
 claims should be traced back to the reference set listed in H-001 rather than
 reconstructed from derived repository documents.
@@ -44,13 +74,13 @@ reconstructed from derived repository documents.
 The items in this section are derived from the human-authored inputs above,
 from official external documentation, or from both.
 
-| ID    | Document                                                                                   | Kind                                          | Derived from                                                                                                | Notes                                                                                                                                                                                    |
-| ----- | ------------------------------------------------------------------------------------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D-001 | [`functional-requirements.md`](./functional-requirements.md)                               | Derived functional specification              | H-001, H-002, H-003, H-004, D-002, and D-003                                                                | Defines product-facing functional requirements after interpretation and normalization.                                                                                                   |
-| D-002 | [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md) | Derived research and supporting specification | H-001 reference set, H-002, H-003, and H-004                                                                | Grounds research claims in the user-provided references from H-001 while recording later confirmed product decisions from H-002, H-003, and H-004.                                       |
-| D-003 | [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)                       | Derived technical research note               | H-001 reference set, H-003, and non-normative repository context                                            | Explains hook input capabilities and the summary-correlation boundary using the VS Code references provided in H-001, including the later clarification on hook-locality interpretation. |
-| D-004 | [`../README.md`](../README.md)                                                             | Derived project overview                      | H-001, H-002, H-003, H-004, D-001, D-002, and D-005                                                         | Convenient project entry point, but not the primary provenance ledger.                                                                                                                   |
-| D-005 | [`implementation-language-evaluation.md`](./implementation-language-evaluation.md)         | Derived implementation design research note   | H-001, H-002, H-003, D-002, D-003, and official docs reviewed during the implementation-language evaluation | Compares PowerShell, Python, and C# (including native AOT) for the supported product scope without turning language choice into a product requirement.                                   |
+| ID    | Document                                                                                   | Kind                                          | Derived from                                                                                                | Notes                                                                                                                                                                                                                                                        |
+| ----- | ------------------------------------------------------------------------------------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D-001 | [`functional-requirements.md`](./functional-requirements.md)                               | Derived functional specification              | H-001, H-002, H-003, H-004, D-002, and D-003                                                                | Defines product-facing functional requirements after interpretation and normalization.                                                                                                                                                                       |
+| D-002 | [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md) | Derived research and supporting specification | H-001 reference set, H-002, H-003, and H-004                                                                | Grounds research claims in the user-provided references from H-001 while recording later confirmed product decisions from H-002, H-003, and H-004.                                                                                                           |
+| D-003 | [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)                       | Derived technical research note               | H-001 reference set, H-003, H-005, and non-normative repository context                                     | Explains hook input capabilities and the summary-correlation boundary using the VS Code references provided in H-001, including the later clarification on hook-locality interpretation and the later human verification of the current runtime field names. |
+| D-004 | [`../README.md`](../README.md)                                                             | Derived project overview                      | H-001, H-002, H-003, H-004, H-005, D-001, D-002, and D-005                                                  | Convenient project entry point, but not the primary provenance ledger.                                                                                                                                                                                       |
+| D-005 | [`implementation-language-evaluation.md`](./implementation-language-evaluation.md)         | Derived implementation design research note   | H-001, H-002, H-003, D-002, D-003, and official docs reviewed during the implementation-language evaluation | Compares PowerShell, Python, and C# (including native AOT) for the supported product scope without turning language choice into a product requirement.                                                                                                       |
 
 ## Current derivation chain
 
@@ -65,18 +95,22 @@ The current documentation flow is:
 4. H-004 records a later clarification that Chinese summary language is
    best-effort and that secure secret storage remains the managed persistence
    path while explicit runtime environment-variable overrides are acceptable.
-5. D-002 and D-003 research the H-001 reference set, with D-002 and D-003 also
-   incorporating the later confirmed decisions from H-002, H-003, and H-004
+5. H-005 records the later manual verification that the current observed hook
+   runtime uses `session_id` and `hook_event_name`, and that current
+   implementation should follow the measured runtime contract when it conflicts
+   with the current external documentation.
+6. D-002 and D-003 research the H-001 reference set, with D-002 and D-003 also
+   incorporating the later confirmed decisions from H-002, H-003, H-004, and H-005
    where needed.
-6. D-001 derives the functional specification from H-001, H-002, H-003, H-004,
+7. D-001 derives the functional specification from H-001, H-002, H-003, H-004,
    and the research outputs.
-7. D-005 records the later implementation-language evaluation using the H-series
+8. D-005 records the later implementation-language evaluation using the H-series
    inputs, the research outputs, and the official documentation reviewed during
    that evaluation.
-8. D-004 synchronizes the repository overview with the current derived
+9. D-004 synchronizes the repository overview with the current derived
    specification set.
-9. Future design and architecture documents should cite this file together with
-   the specific H-series and D-series documents they derive from.
+10. Future design and architecture documents should cite this file together with
+    the specific H-series and D-series documents they derive from.
 
 ## Maintenance rules
 
@@ -91,3 +125,6 @@ To keep the traceability chain useful:
 5. When a repository overview file is synchronized with derived documents, keep
    using this file as the provenance ledger rather than treating the overview as
    the authoritative source of human input.
+6. Refresh research documents through the documented read-through workflow or an
+   explicit user-requested verification refresh, and keep repository-local
+   runtime notes separate from the external-doc cache.
