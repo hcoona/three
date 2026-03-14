@@ -581,9 +581,11 @@ public sealed class HookCommandServiceTests
         };
 
         SessionLogFileContext context = logContext ?? new SessionLogFileContext();
-        ProcessRunner processRunner = new(CreateLogger<ProcessRunner>(loggerFactory));
+        IProcessRunner processRunner = new ProcessRunner(
+            CreateLogger<ProcessRunner>(loggerFactory));
         TelegramCredentialProvider credentialProvider = new(
             processRunner,
+            new SystemInteractiveConsole(),
             CreateLogger<TelegramCredentialProvider>(loggerFactory));
         GitRepositoryProbe gitRepositoryProbe = new(
             processRunner,

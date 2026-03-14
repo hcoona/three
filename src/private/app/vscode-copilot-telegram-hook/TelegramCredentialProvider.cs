@@ -1,11 +1,11 @@
-using System.Text;
 using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace Hcoona.VsCodeCopilotTelegramHook;
 
 internal sealed class TelegramCredentialProvider(
-    ProcessRunner processRunner,
+    IProcessRunner processRunner,
+    IInteractiveConsole interactiveConsole,
     ILogger<TelegramCredentialProvider> logger)
 {
     private static readonly ProcessLogOptions SensitiveProcessLogOptions = new(
@@ -71,6 +71,142 @@ internal sealed class TelegramCredentialProvider(
         return new TelegramCredentials(botToken, chatId, source);
     }
 
+    public async Task<StoredTelegramSecrets> ReadStoredSecretsAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnsureSecretStoreAvailableAsync(cancellationToken);
+        return await ReadStoredSecretsCoreAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<string>> StoreForInstallAsync(
+        string? botTokenOption,
+        string? chatIdOption,
+        bool skipPrompt,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSecretStoreAvailableAsync(cancellationToken);
+
+        StoredTelegramSecrets existingSecrets = await ReadStoredSecretsCoreAsync(
+            cancellationToken);
+        bool canPrompt = !skipPrompt && interactiveConsole.CanPrompt;
+
+        SecretInstallDecision botTokenDecision = DetermineInstallDecision(
+            "Telegram bot token",
+            "Telegram bot token: ",
+            isSensitive: true,
+            existingSecrets.BotToken,
+            NullIfWhitespace(botTokenOption)
+                ?? NullIfWhitespace(
+                    Environment.GetEnvironmentVariable(
+                        AppConstants.TelegramBotTokenEnvironmentVariable)),
+            canPrompt);
+
+        SecretInstallDecision chatIdDecision = DetermineInstallDecision(
+            "Telegram chat id",
+            "Telegram chat id: ",
+            isSensitive: false,
+            existingSecrets.ChatId,
+            NullIfWhitespace(chatIdOption)
+                ?? NullIfWhitespace(
+                    Environment.GetEnvironmentVariable(
+                        AppConstants.TelegramChatIdEnvironmentVariable)),
+            canPrompt);
+
+        if (string.IsNullOrWhiteSpace(botTokenDecision.Value)
+            || string.IsNullOrWhiteSpace(chatIdDecision.Value))
+        {
+            AppLog.MissingCredentialInput(logger);
+            throw new InvalidOperationException(
+                "Both the Telegram bot token and chat id are required. Pass them explicitly, "
+                + "set TG_BOT_TOKEN and TG_CHAT_ID, or allow interactive prompts.");
+        }
+
+        bool storedAny = false;
+
+        if (botTokenDecision.ShouldStore)
+        {
+            await StoreSecretAsync(
+                AppPaths.GetTelegramBotTokenSecretPath(),
+                botTokenDecision.Value,
+                cancellationToken);
+            storedAny = true;
+        }
+
+        if (chatIdDecision.ShouldStore)
+        {
+            await StoreSecretAsync(
+                AppPaths.GetTelegramChatIdSecretPath(),
+                chatIdDecision.Value,
+                cancellationToken);
+            storedAny = true;
+        }
+
+        if (storedAny)
+        {
+            AppLog.StoredTelegramCredentials(logger);
+        }
+        else
+        {
+            AppLog.UsingExistingTelegramCredentials(logger);
+        }
+
+        return [botTokenDecision.Message, chatIdDecision.Message];
+    }
+
+    public async Task<IReadOnlyList<string>> SetStoredSecretsAsync(
+        string? botTokenOption,
+        string? chatIdOption,
+        bool promptForMissing,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSecretStoreAvailableAsync(cancellationToken);
+
+        bool canPrompt = promptForMissing && interactiveConsole.CanPrompt;
+        string? botToken = NullIfWhitespace(botTokenOption);
+        string? chatId = NullIfWhitespace(chatIdOption);
+
+        if (string.IsNullOrWhiteSpace(botToken) && canPrompt)
+        {
+            botToken = NullIfWhitespace(interactiveConsole.ReadSecret("Telegram bot token: "));
+        }
+
+        if (string.IsNullOrWhiteSpace(chatId) && canPrompt)
+        {
+            chatId = NullIfWhitespace(interactiveConsole.ReadLine("Telegram chat id: "));
+        }
+
+        List<string> messages = [];
+
+        if (!string.IsNullOrWhiteSpace(botToken))
+        {
+            await StoreSecretAsync(
+                AppPaths.GetTelegramBotTokenSecretPath(),
+                botToken,
+                cancellationToken);
+            messages.Add("Stored Telegram bot token in gopass.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(chatId))
+        {
+            await StoreSecretAsync(
+                AppPaths.GetTelegramChatIdSecretPath(),
+                chatId,
+                cancellationToken);
+            messages.Add("Stored Telegram chat id in gopass.");
+        }
+
+        if (messages.Count == 0)
+        {
+            AppLog.MissingCredentialInput(logger);
+            throw new InvalidOperationException(
+                "No secret values were supplied. Pass --telegram-bot-token, "
+                + "--telegram-chat-id, or --prompt.");
+        }
+
+        AppLog.StoredTelegramCredentials(logger);
+        return messages;
+    }
+
     public async Task<bool> IsSecretStoreAvailableAsync(CancellationToken cancellationToken)
     {
         try
@@ -93,58 +229,6 @@ internal sealed class TelegramCredentialProvider(
         }
     }
 
-    public async Task StoreAsync(
-        string? botTokenOption,
-        string? chatIdOption,
-        bool skipPrompt,
-        CancellationToken cancellationToken)
-    {
-        string? botToken = NullIfWhitespace(botTokenOption)
-            ?? NullIfWhitespace(
-                Environment.GetEnvironmentVariable(
-                    AppConstants.TelegramBotTokenEnvironmentVariable));
-
-        string? chatId = NullIfWhitespace(chatIdOption)
-            ?? NullIfWhitespace(
-                Environment.GetEnvironmentVariable(AppConstants.TelegramChatIdEnvironmentVariable));
-
-        bool canPrompt = !skipPrompt && !Console.IsInputRedirected;
-
-        if (string.IsNullOrWhiteSpace(botToken) && canPrompt)
-        {
-            botToken = NullIfWhitespace(ReadSecretFromConsole("Telegram bot token: "));
-        }
-
-        if (string.IsNullOrWhiteSpace(chatId) && canPrompt)
-        {
-            chatId = NullIfWhitespace(ReadLineFromConsole("Telegram chat id: "));
-        }
-
-        if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(chatId))
-        {
-            AppLog.MissingCredentialInput(logger);
-            throw new InvalidOperationException(
-                "Both the Telegram bot token and chat id are required. Pass them explicitly, "
-                + "set TG_BOT_TOKEN and TG_CHAT_ID, or allow interactive prompts.");
-        }
-
-        if (!await IsSecretStoreAvailableAsync(cancellationToken))
-        {
-            throw new InvalidOperationException(
-                "gopass is required for user-level installation but is not available on PATH.");
-        }
-
-        await StoreSecretAsync(
-            AppPaths.GetTelegramBotTokenSecretPath(),
-            botToken,
-            cancellationToken);
-        await StoreSecretAsync(
-            AppPaths.GetTelegramChatIdSecretPath(),
-            chatId,
-            cancellationToken);
-        AppLog.StoredTelegramCredentials(logger);
-    }
-
     public async Task RemoveStoredSecretsAsync(CancellationToken cancellationToken)
     {
         if (!await IsSecretStoreAvailableAsync(cancellationToken))
@@ -156,6 +240,28 @@ internal sealed class TelegramCredentialProvider(
         await TryRemoveSecretAsync(AppPaths.GetTelegramBotTokenSecretPath(), cancellationToken);
         await TryRemoveSecretAsync(AppPaths.GetTelegramChatIdSecretPath(), cancellationToken);
         AppLog.RemovedTelegramCredentials(logger);
+    }
+
+    private async Task EnsureSecretStoreAvailableAsync(CancellationToken cancellationToken)
+    {
+        if (!await IsSecretStoreAvailableAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "gopass is required for user-level installation but is not available on PATH.");
+        }
+    }
+
+    private async Task<StoredTelegramSecrets> ReadStoredSecretsCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        string? botToken = await TryReadSecretAsync(
+            AppPaths.GetTelegramBotTokenSecretPath(),
+            cancellationToken);
+        string? chatId = await TryReadSecretAsync(
+            AppPaths.GetTelegramChatIdSecretPath(),
+            cancellationToken);
+
+        return new StoredTelegramSecrets(botToken, chatId);
     }
 
     private async Task<string?> TryReadSecretAsync(
@@ -228,47 +334,96 @@ internal sealed class TelegramCredentialProvider(
         }
     }
 
-    private static string ReadSecretFromConsole(string prompt)
+    private SecretInstallDecision DetermineInstallDecision(
+        string displayName,
+        string prompt,
+        bool isSensitive,
+        string? existingValue,
+        string? providedValue,
+        bool canPrompt)
     {
-        Console.Write(prompt);
+        string normalizedDisplayName = displayName.ToLowerInvariant();
+        string? normalizedExistingValue = NullIfWhitespace(existingValue);
+        string? normalizedProvidedValue = NullIfWhitespace(providedValue);
 
-        StringBuilder builder = new();
-        while (true)
+        if (!string.IsNullOrWhiteSpace(normalizedExistingValue))
         {
-            ConsoleKeyInfo key = Console.ReadKey(intercept: true);
-            if (key.Key == ConsoleKey.Enter)
+            if (!string.IsNullOrWhiteSpace(normalizedProvidedValue)
+                && string.Equals(
+                    normalizedExistingValue,
+                    normalizedProvidedValue,
+                    StringComparison.Ordinal))
             {
-                Console.WriteLine();
-                break;
+                return new(
+                    normalizedExistingValue,
+                    ShouldStore: false,
+                    $"{displayName} already matches the stored value in gopass.");
             }
 
-            if (key.Key == ConsoleKey.Backspace)
+            if (!string.IsNullOrWhiteSpace(normalizedProvidedValue))
             {
-                if (builder.Length > 0)
+                if (canPrompt
+                    && interactiveConsole.Confirm(
+                        $"{displayName} is already stored. Overwrite it?",
+                        defaultAnswer: false))
                 {
-                    builder.Length -= 1;
-                    Console.Write("\b \b");
+                    return new(
+                        normalizedProvidedValue,
+                        ShouldStore: true,
+                        $"Stored {normalizedDisplayName} in gopass.");
                 }
 
-                continue;
+                return new(
+                    normalizedExistingValue,
+                    ShouldStore: false,
+                    canPrompt
+                        ? $"Kept existing {normalizedDisplayName} in gopass."
+                        : $"Kept existing {normalizedDisplayName} in gopass; "
+                        + "install defaults to not overwriting stored secrets "
+                        + "when prompts are disabled.");
             }
 
-            if (!char.IsControl(key.KeyChar))
+            if (canPrompt
+                && interactiveConsole.Confirm(
+                    $"{displayName} is already stored. Overwrite it?",
+                    defaultAnswer: false))
             {
-                builder.Append(key.KeyChar);
-                Console.Write('*');
+                string? promptedValue = ReadInteractiveValue(prompt, isSensitive);
+                if (!string.IsNullOrWhiteSpace(promptedValue))
+                {
+                    return new(
+                        promptedValue,
+                        ShouldStore: true,
+                        $"Stored {normalizedDisplayName} in gopass.");
+                }
             }
+
+            return new(
+                normalizedExistingValue,
+                ShouldStore: false,
+                $"Kept existing {normalizedDisplayName} in gopass.");
         }
 
-        return builder.ToString();
+        string? resolvedValue = normalizedProvidedValue;
+        if (string.IsNullOrWhiteSpace(resolvedValue) && canPrompt)
+        {
+            resolvedValue = ReadInteractiveValue(prompt, isSensitive);
+        }
+
+        resolvedValue = NullIfWhitespace(resolvedValue);
+        return new(
+            resolvedValue,
+            ShouldStore: !string.IsNullOrWhiteSpace(resolvedValue),
+            $"Stored {normalizedDisplayName} in gopass.");
     }
 
-    private static string ReadLineFromConsole(string prompt)
-    {
-        Console.Write(prompt);
-        return Console.ReadLine() ?? string.Empty;
-    }
+    private string ReadInteractiveValue(string prompt, bool isSensitive)
+        => isSensitive
+            ? interactiveConsole.ReadSecret(prompt)
+            : interactiveConsole.ReadLine(prompt);
 
     private static string? NullIfWhitespace(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record SecretInstallDecision(string? Value, bool ShouldStore, string Message);
 }

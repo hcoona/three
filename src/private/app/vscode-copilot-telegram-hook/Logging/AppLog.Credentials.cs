@@ -49,6 +49,13 @@ internal static partial class AppLog
     public static partial void StoredTelegramCredentials(ILogger logger);
 
     [LoggerMessage(
+        EventId = 1213,
+        EventName = nameof(UsingExistingTelegramCredentials),
+        Level = LogLevel.Information,
+        Message = "Using existing stored Telegram credentials without overwriting them.")]
+    public static partial void UsingExistingTelegramCredentials(ILogger logger);
+
+    [LoggerMessage(
         EventId = 1206,
         EventName = nameof(SkippingSecretRemoval),
         Level = LogLevel.Debug,

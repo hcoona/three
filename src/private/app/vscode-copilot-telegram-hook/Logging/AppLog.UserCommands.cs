@@ -117,4 +117,28 @@ internal static partial class AppLog
         Level = LogLevel.Information,
         Message = "Completed test-notification command successfully.")]
     public static partial void CompletedTestNotification(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 1615,
+        EventName = nameof(StartingUserSecret),
+        Level = LogLevel.Information,
+        Message = "Starting user secret command.")]
+    public static partial void StartingUserSecret(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 1616,
+        EventName = nameof(UserSecretFailed),
+        Level = LogLevel.Error,
+        Message = "User secret command failed.")]
+    public static partial void UserSecretFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 1617,
+        EventName = nameof(CompletedUserSecret),
+        Level = LogLevel.Information,
+        Message = "Completed user secret command under {InstallRoot}; updated={Updated}.")]
+    public static partial void CompletedUserSecret(
+        ILogger logger,
+        string installRoot,
+        bool updated);
 }

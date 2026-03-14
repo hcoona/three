@@ -26,7 +26,8 @@ internal static class Program
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<SessionLogFileContext>();
         builder.Services.AddSingleton<ILoggerProvider, SessionFileLoggerProvider>();
-        builder.Services.AddSingleton<ProcessRunner>();
+        builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+        builder.Services.AddSingleton<IInteractiveConsole, SystemInteractiveConsole>();
         builder.Services.AddSingleton<TelegramCredentialProvider>();
         builder.Services.AddSingleton<GitRepositoryProbe>();
         builder.Services.AddSingleton<WorkspaceStateStore>();

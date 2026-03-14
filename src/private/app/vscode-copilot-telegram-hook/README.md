@@ -63,8 +63,8 @@ binary="$app/bin/Release/net10.0/linux-x64/publish/vscode-copilot-telegram-hook"
   --binary-path "$binary"
 ```
 
-For headless installation, pass the Telegram values explicitly or through
-environment variables:
+For headless installation, you can seed missing Telegram values explicitly or
+through environment variables:
 
 ```bash
 app=./src/private/app/vscode-copilot-telegram-hook
@@ -82,17 +82,30 @@ The installer command:
 
 - prompts for the Telegram bot token and chat ID,
 - accepts `TG_BOT_TOKEN` and `TG_CHAT_ID` as non-interactive input sources,
-- stores them in `gopass`,
+- stores missing values in `gopass`,
+- asks before overwriting existing stored secrets and defaults to keeping them,
 - installs the published Native AOT binary into a user-owned data directory,
 - updates `~/.claude/settings.json` so VS Code loads the hook globally,
 - installs a VS Code GitHub Copilot user instruction file under
   `~/.copilot/instructions` so task summaries are produced in every workspace.
+
+If you need to inspect or update stored Telegram secrets after installation,
+use the dedicated secret-management command:
+
+```bash
+app=./src/private/app/vscode-copilot-telegram-hook
+binary="$app/bin/Release/net10.0/linux-x64/publish/vscode-copilot-telegram-hook"
+
+"$binary" user secret
+"$binary" user secret --telegram-bot-token '<bot-token>' --telegram-chat-id '<chat-id>'
+```
 
 The CLI also provides:
 
 - `user uninstall`: remove the managed installation.
 - `user health`: validate the current installation and credential resolution.
 - `user diagnose`: print a detailed diagnostic report.
+- `user secret`: read or update the stored Telegram secrets.
 - `user test-notification`: send a test Telegram message without waiting for a
   Copilot stop event.
 - `hook session-start`, `hook user-prompt-submit`, and `hook stop`: internal
@@ -108,7 +121,7 @@ supports Unix file modes:
 - Fallback hook log for malformed hook payloads before a session context is
   usable: `.copilot/hook.log`
 - User command log for `user install`, `user uninstall`, `user health`,
-  `user diagnose`, and `user test-notification`:
+  `user diagnose`, `user secret`, and `user test-notification`:
   `<install-root>/user-command.log`
 
 The session-scoped hook log keeps its diagnostics next to the corresponding

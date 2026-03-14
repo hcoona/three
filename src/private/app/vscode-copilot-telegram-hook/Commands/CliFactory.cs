@@ -70,17 +70,30 @@ internal static class CliFactory
 
         Option<string?> telegramBotTokenOption = new("--telegram-bot-token")
         {
-            Description = "Telegram bot token to persist in the secret store.",
+            Description =
+                "Telegram bot token to persist in gopass when the secret "
+                + "is missing or overwrite is confirmed.",
         };
 
         Option<string?> telegramChatIdOption = new("--telegram-chat-id")
         {
-            Description = "Telegram chat id to persist in the secret store.",
+            Description =
+                "Telegram chat id to persist in gopass when the secret "
+                + "is missing or overwrite is confirmed.",
         };
 
         Option<bool> skipSecretPromptOption = new("--skip-secret-prompt")
         {
-            Description = "Fail instead of prompting when the Telegram credentials are missing.",
+            Description =
+                "Do not prompt for missing values or overwrite "
+                + "confirmation; keep existing stored secrets when present.",
+        };
+
+        Option<bool> promptOption = new("--prompt")
+        {
+            Description =
+                "Prompt interactively for any secret values not provided "
+                + "explicitly when updating stored secrets.",
         };
 
         Option<DirectoryInfo?> installRootOption = new("--install-root")
@@ -190,6 +203,26 @@ internal static class CliFactory
                 },
                 cancellationToken));
 
+        Command secretCommand = new(
+            "secret",
+            "Read or update the stored Telegram secrets.")
+        {
+            telegramBotTokenOption,
+            telegramChatIdOption,
+            promptOption,
+            installRootOption,
+        };
+        secretCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
+            userCommandService.SecretAsync(
+                new SecretCommandOptions
+                {
+                    TelegramBotToken = parseResult.GetValue(telegramBotTokenOption),
+                    TelegramChatId = parseResult.GetValue(telegramChatIdOption),
+                    Prompt = parseResult.GetValue(promptOption),
+                    InstallRoot = parseResult.GetValue(installRootOption),
+                },
+                cancellationToken));
+
         Command testNotificationCommand = new(
             "test-notification",
             "Send a test Telegram notification using the configured credentials.")
@@ -215,6 +248,7 @@ internal static class CliFactory
         userCommand.Subcommands.Add(uninstallCommand);
         userCommand.Subcommands.Add(healthCommand);
         userCommand.Subcommands.Add(diagnoseCommand);
+        userCommand.Subcommands.Add(secretCommand);
         userCommand.Subcommands.Add(testNotificationCommand);
 
         return userCommand;

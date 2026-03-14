@@ -275,6 +275,15 @@ internal sealed class TestNotificationCommandOptions : UserPathOverrides
     public string? Message { get; init; }
 }
 
+internal sealed class SecretCommandOptions : UserPathOverrides
+{
+    public string? TelegramBotToken { get; init; }
+
+    public string? TelegramChatId { get; init; }
+
+    public bool Prompt { get; init; }
+}
+
 internal sealed record UserInstallationPaths(
     string InstallRoot,
     string InstalledBinaryPath,
@@ -284,6 +293,8 @@ internal sealed record UserInstallationPaths(
     string UserLogFilePath);
 
 internal sealed record TelegramCredentials(string BotToken, string ChatId, string Source);
+
+internal sealed record StoredTelegramSecrets(string? BotToken, string? ChatId);
 
 internal sealed record GitRepositoryMetadata(
     string TopLevelPath,

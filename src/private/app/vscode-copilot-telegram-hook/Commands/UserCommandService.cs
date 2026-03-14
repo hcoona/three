@@ -25,11 +25,12 @@ internal sealed class UserCommandService(
             string sourceBinaryPath = ResolveInstallableBinaryPath(options.BinaryPath);
             string currentTimestamp = GetCurrentUtcTimestamp();
 
-            await telegramCredentialProvider.StoreAsync(
-                options.TelegramBotToken,
-                options.TelegramChatId,
-                options.SkipSecretPrompt,
-                cancellationToken);
+            IReadOnlyList<string> secretMessages =
+                await telegramCredentialProvider.StoreForInstallAsync(
+                    options.TelegramBotToken,
+                    options.TelegramChatId,
+                    options.SkipSecretPrompt,
+                    cancellationToken);
 
             CopyBinary(sourceBinaryPath, userPaths.InstalledBinaryPath);
 
@@ -53,8 +54,14 @@ internal sealed class UserCommandService(
             await Console.Out.WriteLineAsync($"Installed binary: {userPaths.InstalledBinaryPath}");
             await Console.Out.WriteLineAsync(hooksResult.Message);
             await Console.Out.WriteLineAsync(instructionResult.Message);
+
+            foreach (string secretMessage in secretMessages)
+            {
+                await Console.Out.WriteLineAsync(secretMessage);
+            }
+
             await Console.Out.WriteLineAsync(
-                $"Stored Telegram credentials in gopass under '{AppConstants.SecretPrefix}'.");
+                $"Telegram credentials are ready in gopass under '{AppConstants.SecretPrefix}'.");
 
             if (hooksResult.CandidatePath is not null)
             {
@@ -245,6 +252,56 @@ internal sealed class UserCommandService(
         }
     }
 
+    public async Task<int> SecretAsync(
+        SecretCommandOptions options,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            using IDisposable logScope = sessionLogFileContext.UseLogFile(
+                userPaths.UserLogFilePath);
+            AppLog.StartingUserSecret(logger);
+
+            bool isUpdate = options.Prompt
+                || !string.IsNullOrWhiteSpace(options.TelegramBotToken)
+                || !string.IsNullOrWhiteSpace(options.TelegramChatId);
+
+            if (isUpdate)
+            {
+                IReadOnlyList<string> messages = await telegramCredentialProvider
+                    .SetStoredSecretsAsync(
+                        options.TelegramBotToken,
+                        options.TelegramChatId,
+                        options.Prompt,
+                        cancellationToken);
+
+                foreach (string message in messages)
+                {
+                    await Console.Out.WriteLineAsync(message);
+                }
+            }
+            else
+            {
+                StoredTelegramSecrets storedSecrets = await telegramCredentialProvider
+                    .ReadStoredSecretsAsync(cancellationToken);
+                await Console.Out.WriteLineAsync(
+                    $"Stored Telegram bot token: {FormatSecretValue(storedSecrets.BotToken)}");
+                await Console.Out.WriteLineAsync(
+                    $"Stored Telegram chat id: {FormatSecretValue(storedSecrets.ChatId)}");
+            }
+
+            AppLog.CompletedUserSecret(logger, userPaths.InstallRoot, isUpdate);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            AppLog.UserSecretFailed(logger, ex);
+            await Console.Error.WriteLineAsync($"Secret command failed: {ex.Message}");
+            return 1;
+        }
+    }
+
     public async Task<int> TestNotificationAsync(
         TestNotificationCommandOptions options,
         CancellationToken cancellationToken)
@@ -405,6 +462,9 @@ internal sealed class UserCommandService(
 
     private static string FormatCheck(string label, bool isSuccess, string details)
         => $"{(isSuccess ? "[OK]" : "[FAIL]")} {label}: {details}";
+
+    private static string FormatSecretValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "<missing>" : value;
 
     private async Task<bool> TryResolveCredentialsAsync(CancellationToken cancellationToken)
         => await telegramCredentialProvider.TryResolveAsync(cancellationToken) is not null;

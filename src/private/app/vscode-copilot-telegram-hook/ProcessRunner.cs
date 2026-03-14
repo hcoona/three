@@ -5,7 +5,18 @@ using Microsoft.Extensions.Logging;
 
 namespace Hcoona.VsCodeCopilotTelegramHook;
 
-internal sealed class ProcessRunner(ILogger<ProcessRunner> logger)
+internal interface IProcessRunner
+{
+    Task<ProcessExecutionResult> RunAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        string? standardInput,
+        ProcessLogOptions? logOptions,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class ProcessRunner(ILogger<ProcessRunner> logger) : IProcessRunner
 {
     private const int MaxLoggedStandardErrorLength = 300;
 

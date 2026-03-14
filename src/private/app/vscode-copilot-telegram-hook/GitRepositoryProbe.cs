@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace Hcoona.VsCodeCopilotTelegramHook;
 
 internal sealed class GitRepositoryProbe(
-    ProcessRunner processRunner,
+    IProcessRunner processRunner,
     ILogger<GitRepositoryProbe> logger)
 {
     public async Task<GitRepositoryMetadata?> TryProbeAsync(
