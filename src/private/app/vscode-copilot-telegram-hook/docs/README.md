@@ -22,32 +22,33 @@ Use this file as the first stop when you need to answer questions such as:
 The items in this section are treated as direct human inputs and are preserved
 as standalone H-series source documents.
 
-| ID    | Document                                                                             | Summary                                                                       | Notes                                                                                       |
-| ----- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| H-001 | [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)       | Preserves the original requirement brief and the user-provided reference set. | This is the upstream source for the external references later used by research documents.   |
-| H-002 | [`h-002-human-confirmation-2026-03-13.md`](./h-002-human-confirmation-2026-03-13.md) | Preserves the later confirmed product decisions from chat.                    | This clarifies and, where necessary, supersedes parts of H-001 for later derived documents. |
+| ID    | Document                                                                                               | Summary                                                                       | Notes                                                                                                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| H-001 | [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)                         | Preserves the original requirement brief and the user-provided reference set. | This is the upstream source for the external references later used by research documents.                                              |
+| H-002 | [`h-002-human-confirmation-2026-03-13.md`](./h-002-human-confirmation-2026-03-13.md)                   | Preserves the later confirmed product decisions from chat.                    | This clarifies and, where necessary, supersedes parts of H-001 for later derived documents.                                            |
+| H-003 | [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md) | Preserves the follow-up clarification round from chat.                        | This tightens product assumptions around hook-locality interpretation, secret storage, failure handling, and overlength notifications. |
 
 ## Reference derivation rule
 
 Research documents in this folder should be grounded in the user-provided
 references recorded in H-001.
 
-Human confirmation in H-002 may refine the interpretation, scope, and design
-inputs for those research documents, but the external research claims should be
-traced back to the reference set listed in H-001 rather than reconstructed from
-derived repository documents.
+Human confirmation in H-002 and H-003 may refine the interpretation, scope,
+and design inputs for those research documents, but the external research
+claims should be traced back to the reference set listed in H-001 rather than
+reconstructed from derived repository documents.
 
 ## Derived repository documents
 
 The items in this section are derived from the human-authored inputs above,
 from official external documentation, or from both.
 
-| ID    | Document                                                                                   | Kind                                          | Derived from                                              | Notes                                                                                                                            |
-| ----- | ------------------------------------------------------------------------------------------ | --------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| D-001 | [`functional-requirements.md`](./functional-requirements.md)                               | Derived functional specification              | H-001, H-002, D-002, and D-003                            | Defines product-facing functional requirements after interpretation and normalization.                                           |
-| D-002 | [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md) | Derived research and supporting specification | H-001 reference set and H-002                             | Grounds research claims in the user-provided references from H-001 while recording later confirmed product decisions from H-002. |
-| D-003 | [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)                       | Derived technical research note               | H-001 reference set plus non-normative repository context | Explains hook input capabilities and the summary-correlation boundary using the VS Code references provided in H-001.            |
-| D-004 | [`../README.md`](../README.md)                                                             | Derived project overview                      | H-001, H-002, D-001, and D-002                            | Convenient project entry point, but not the primary provenance ledger.                                                           |
+| ID    | Document                                                                                   | Kind                                          | Derived from                                                     | Notes                                                                                                                                                                                    |
+| ----- | ------------------------------------------------------------------------------------------ | --------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D-001 | [`functional-requirements.md`](./functional-requirements.md)                               | Derived functional specification              | H-001, H-002, H-003, D-002, and D-003                            | Defines product-facing functional requirements after interpretation and normalization.                                                                                                   |
+| D-002 | [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md) | Derived research and supporting specification | H-001 reference set, H-002, and H-003                            | Grounds research claims in the user-provided references from H-001 while recording later confirmed product decisions from H-002 and H-003.                                               |
+| D-003 | [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)                       | Derived technical research note               | H-001 reference set, H-003, and non-normative repository context | Explains hook input capabilities and the summary-correlation boundary using the VS Code references provided in H-001, including the later clarification on hook-locality interpretation. |
+| D-004 | [`../README.md`](../README.md)                                                             | Derived project overview                      | H-001, H-002, H-003, D-001, and D-002                            | Convenient project entry point, but not the primary provenance ledger.                                                                                                                   |
 
 ## Current derivation chain
 
@@ -57,13 +58,16 @@ The current documentation flow is:
    external reference set.
 2. H-002 records later human confirmation that clarifies and, where necessary,
    supersedes parts of H-001.
-3. D-002 and D-003 research the H-001 reference set, with D-002 also recording
-   the later confirmed decisions from H-002 where needed.
-4. D-001 derives the functional specification from H-001, H-002, and the
-   research outputs.
-5. D-004 synchronizes the repository overview with the current derived
+3. H-003 records a follow-up clarification round that further tightens the
+   product boundary, failure expectations, and overlength-message treatment.
+4. D-002 and D-003 research the H-001 reference set, with D-002 and D-003 also
+   incorporating the later confirmed decisions from H-002 and H-003 where
+   needed.
+5. D-001 derives the functional specification from H-001, H-002, H-003, and
+   the research outputs.
+6. D-004 synchronizes the repository overview with the current derived
    specification set.
-6. Future design and architecture documents should cite this file together with
+7. Future design and architecture documents should cite this file together with
    the specific H-series and D-series documents they derive from.
 
 ## Maintenance rules

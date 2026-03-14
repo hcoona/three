@@ -6,6 +6,7 @@
 - Derived from:
     - [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)
     - [`h-002-human-confirmation-2026-03-13.md`](./h-002-human-confirmation-2026-03-13.md)
+    - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
     - [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md)
     - [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)
 - Purpose: translate the human-authored source inputs and supporting research
@@ -32,7 +33,7 @@ name, or external summary-file schema.
 
 ## Functional Scope
 
-The solution shall provide a formally supported user-level capability for VS Code GitHub Copilot that sends a Telegram notification for each `Stop` event that ends the current chat turn and includes a concise Chinese task summary when available, or an explicit indication that the summary is missing, plus relevant execution context when available.
+The solution shall provide a formally supported user-level capability for VS Code GitHub Copilot that sends Telegram notifications to one configured Telegram destination per user installation for each `Stop` event that ends the current chat turn and includes a concise Chinese task summary when available, or an explicit indication that the summary is missing, plus relevant execution context when available.
 
 ## Functional Requirements
 
@@ -105,7 +106,9 @@ If the current `Stop` event does not have usable summary content, the solution s
 
 ### FR-014 Telegram delivery target
 
-The solution shall send notifications to a Telegram destination identified by a bot token and a target chat identifier.
+The solution shall send notifications to a single Telegram destination per
+user-level installation, identified by a bot token and a target chat
+identifier.
 
 ### FR-015 Credential resolution for delivery
 
@@ -123,6 +126,11 @@ Each notification shall include, at minimum:
 - either the concise summary or an explicit missing-summary notice,
 - a delivery timestamp, and
 - enough identifying context to distinguish the delivered result from other notifications for the same workspace or session.
+
+If the notification content for a tracked result cannot fit into a single
+Telegram message while remaining valid under Telegram formatting rules, the
+solution shall preserve the heading and identifying context and continue the
+summary across additional Telegram messages.
 
 ### FR-018 Context enrichment
 

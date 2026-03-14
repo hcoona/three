@@ -6,10 +6,11 @@
 - Derived from:
     - the VS Code reference set preserved in
       [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)
+    - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
     - non-normative repository context reviewed for comparison
-- Scope note: H-002 may refine project interpretation, but the external
-  research basis for this note is the user-provided VS Code reference set in
-  H-001.
+- Scope note: H-002 and H-003 may refine project interpretation, but the
+  external research basis for this note is the user-provided VS Code reference
+  set in H-001.
 - Purpose: explain what the documented hook inputs do and do not provide for
   this project without treating current repository implementation choices as
   normative.
@@ -44,6 +45,10 @@ This research focuses on the hook events and input fields that are directly rele
 
 - [Agent hooks in Visual Studio Code (Preview)](https://code.visualstudio.com/docs/copilot/customization/hooks)
 - [Use custom instructions in VS Code](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)
+
+### Later human clarification
+
+- [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
 
 These VS Code references are part of the user-provided reference set preserved
 in [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md).
@@ -118,6 +123,32 @@ Based on the official hook input contract, the hook runtime already has document
 3. tell which lifecycle event is running (`hookEventName`),
 4. record when the event happened (`timestamp`), and
 5. reference the transcript (`transcript_path`).
+
+## Locality and execution-model clarification
+
+The official hooks documentation explicitly says that hooks are designed to
+work across **local agents**, **background agents**, and **cloud agents**. The
+same document also states that OS-specific hook commands are selected based on
+the **extension host platform**, which may differ from the user's local
+operating system in remote development scenarios.
+
+### Practical meaning for this project
+
+The documented workspace and user hook file locations are local configuration
+locations, but the upstream documentation does not define hooks as a purely
+local execution model.
+
+Therefore, the safer project interpretation is:
+
+- the current supported product target can still remain user-level installation
+  for the user's Windows and WSL Linux setups; but
+- broader remote or non-local execution semantics should be treated as upstream
+  platform constraints, not as proof that the product must widen its formal
+  support scope before design begins.
+
+This reframes the earlier concern from an unresolved pre-design requirement gap
+into a platform constraint that later design work should tolerate where
+practical.
 
 ## What the Hook Input Does **Not** Automatically Solve
 

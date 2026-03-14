@@ -91,10 +91,12 @@ Use these documents as the authoritative sources:
 - [`docs/README.md`](./docs/README.md): provenance ledger and derivation map.
 - [`docs/h-001-original-requirement-brief.md`](./docs/h-001-original-requirement-brief.md): original human-authored requirement brief and reference set.
 - [`docs/h-002-human-confirmation-2026-03-13.md`](./docs/h-002-human-confirmation-2026-03-13.md): later human confirmation of product decisions.
+- [`docs/h-003-human-confirmation-2026-03-13-addendum.md`](./docs/h-003-human-confirmation-2026-03-13-addendum.md): follow-up human clarification on scope, failure handling, and overlength notifications.
 - [`docs/functional-requirements.md`](./docs/functional-requirements.md): current derived functional specification.
 - [`docs/nonfunctional-and-constraints-research.md`](./docs/nonfunctional-and-constraints-research.md): current non-functional requirements and external constraints research.
 - [`docs/vscode-hook-inputs-research.md`](./docs/vscode-hook-inputs-research.md): project-focused analysis of the VS Code hook input contract.
 
 In short, the current product target is a user-level VS Code GitHub Copilot
 hook that attempts Telegram delivery for each completed-turn `Stop` event and
-includes a concise Chinese summary when available.
+includes a concise Chinese summary when available, continuing across multiple
+Telegram messages when needed to stay within Telegram limits.
