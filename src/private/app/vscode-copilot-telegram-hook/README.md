@@ -5,8 +5,8 @@ Telegram notification hooks.
 
 It serves two use cases:
 
-1. The repository-local hook entry in `.github/hooks/telegram-notify.json`.
-2. A user-level installation that applies to any workspace in VS Code.
+1. The repository-local hook entry in `.github/hooks/telegram-notify.json`, used only for pre-release testing in this repository.
+2. A user-level installation that applies to any workspace in VS Code and represents the formally supported product use case.
 
 The implementation follows the official VS Code Copilot hooks preview behavior:
 
@@ -23,6 +23,8 @@ instructions behavior:
 
 ## Files
 
+- `docs/README.md`: tracks human-authored source inputs and derivation
+  relationships for the documentation set in `docs/`.
 - `scripts/copilot-summary-state.ps1`: initializes `.copilot/notify-session.json`
   and `.copilot/notify-summary.json` for the current workspace.
 - `scripts/telegram-notify.ps1`: sends Telegram notifications for completed
@@ -77,3 +79,22 @@ The user-level instruction file, however, is installed in the GitHub
 Copilot-specific `~/.copilot/instructions` location.
 The runtime honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process
 environment as explicit overrides, but `gopass` is the primary mechanism.
+
+## Requirements and documentation map
+
+This README is a project entry point, not the authoritative requirements
+ledger. The detailed requirement, research, and provenance material lives under
+[`docs/`](./docs/).
+
+Use these documents as the authoritative sources:
+
+- [`docs/README.md`](./docs/README.md): provenance ledger and derivation map.
+- [`docs/h-001-original-requirement-brief.md`](./docs/h-001-original-requirement-brief.md): original human-authored requirement brief and reference set.
+- [`docs/h-002-human-confirmation-2026-03-13.md`](./docs/h-002-human-confirmation-2026-03-13.md): later human confirmation of product decisions.
+- [`docs/functional-requirements.md`](./docs/functional-requirements.md): current derived functional specification.
+- [`docs/nonfunctional-and-constraints-research.md`](./docs/nonfunctional-and-constraints-research.md): current non-functional requirements and external constraints research.
+- [`docs/vscode-hook-inputs-research.md`](./docs/vscode-hook-inputs-research.md): project-focused analysis of the VS Code hook input contract.
+
+In short, the current product target is a user-level VS Code GitHub Copilot
+hook that attempts Telegram delivery for each completed-turn `Stop` event and
+includes a concise Chinese summary when available.
