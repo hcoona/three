@@ -95,6 +95,7 @@ Use these documents as the authoritative sources:
 - [`docs/functional-requirements.md`](./docs/functional-requirements.md): current derived functional specification.
 - [`docs/nonfunctional-and-constraints-research.md`](./docs/nonfunctional-and-constraints-research.md): current non-functional requirements and external constraints research.
 - [`docs/vscode-hook-inputs-research.md`](./docs/vscode-hook-inputs-research.md): project-focused analysis of the VS Code hook input contract.
+- [`docs/implementation-language-evaluation.md`](./docs/implementation-language-evaluation.md): implementation-language comparison for PowerShell, Python, and C# based on the documented product scope and official platform behavior.
 
 In short, the current product target is a user-level VS Code GitHub Copilot
 hook that attempts Telegram delivery for each completed-turn `Stop` event and

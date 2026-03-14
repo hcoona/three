@@ -43,12 +43,13 @@ reconstructed from derived repository documents.
 The items in this section are derived from the human-authored inputs above,
 from official external documentation, or from both.
 
-| ID    | Document                                                                                   | Kind                                          | Derived from                                                     | Notes                                                                                                                                                                                    |
-| ----- | ------------------------------------------------------------------------------------------ | --------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D-001 | [`functional-requirements.md`](./functional-requirements.md)                               | Derived functional specification              | H-001, H-002, H-003, D-002, and D-003                            | Defines product-facing functional requirements after interpretation and normalization.                                                                                                   |
-| D-002 | [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md) | Derived research and supporting specification | H-001 reference set, H-002, and H-003                            | Grounds research claims in the user-provided references from H-001 while recording later confirmed product decisions from H-002 and H-003.                                               |
-| D-003 | [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)                       | Derived technical research note               | H-001 reference set, H-003, and non-normative repository context | Explains hook input capabilities and the summary-correlation boundary using the VS Code references provided in H-001, including the later clarification on hook-locality interpretation. |
-| D-004 | [`../README.md`](../README.md)                                                             | Derived project overview                      | H-001, H-002, H-003, D-001, and D-002                            | Convenient project entry point, but not the primary provenance ledger.                                                                                                                   |
+| ID    | Document                                                                                   | Kind                                          | Derived from                                                                                                | Notes                                                                                                                                                                                    |
+| ----- | ------------------------------------------------------------------------------------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D-001 | [`functional-requirements.md`](./functional-requirements.md)                               | Derived functional specification              | H-001, H-002, H-003, D-002, and D-003                                                                       | Defines product-facing functional requirements after interpretation and normalization.                                                                                                   |
+| D-002 | [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md) | Derived research and supporting specification | H-001 reference set, H-002, and H-003                                                                       | Grounds research claims in the user-provided references from H-001 while recording later confirmed product decisions from H-002 and H-003.                                               |
+| D-003 | [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)                       | Derived technical research note               | H-001 reference set, H-003, and non-normative repository context                                            | Explains hook input capabilities and the summary-correlation boundary using the VS Code references provided in H-001, including the later clarification on hook-locality interpretation. |
+| D-004 | [`../README.md`](../README.md)                                                             | Derived project overview                      | H-001, H-002, H-003, D-001, D-002, and D-005                                                                | Convenient project entry point, but not the primary provenance ledger.                                                                                                                   |
+| D-005 | [`implementation-language-evaluation.md`](./implementation-language-evaluation.md)         | Derived implementation design research note   | H-001, H-002, H-003, D-002, D-003, and official docs reviewed during the implementation-language evaluation | Compares PowerShell, Python, and C# (including native AOT) for the supported product scope without turning language choice into a product requirement.                                   |
 
 ## Current derivation chain
 
@@ -65,9 +66,12 @@ The current documentation flow is:
    needed.
 5. D-001 derives the functional specification from H-001, H-002, H-003, and
    the research outputs.
-6. D-004 synchronizes the repository overview with the current derived
+6. D-005 records the later implementation-language evaluation using the H-series
+   inputs, the research outputs, and the official documentation reviewed during
+   that evaluation.
+7. D-004 synchronizes the repository overview with the current derived
    specification set.
-7. Future design and architecture documents should cite this file together with
+8. Future design and architecture documents should cite this file together with
    the specific H-series and D-series documents they derive from.
 
 ## Maintenance rules
