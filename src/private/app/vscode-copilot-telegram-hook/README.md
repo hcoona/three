@@ -5,8 +5,10 @@ Telegram notification hooks.
 
 It serves two use cases:
 
-1. The repository-local hook entry in `.github/hooks/telegram-notify.json`, used only for pre-release testing in this repository.
-2. A user-level installation that applies to any workspace in VS Code and represents the formally supported product use case.
+1. The repository-local hook entry in `.github/hooks/telegram-notify.json`,
+   used only for pre-release testing in this repository.
+2. A user-level installation that applies to any workspace in VS Code and
+   represents the formally supported product use case.
 
 The implementation follows the official VS Code Copilot hooks preview behavior:
 
@@ -23,50 +25,77 @@ instructions behavior:
 
 ## Files
 
+- `VSCodeCopilotTelegramHook.csproj`: Native AOT-enabled C# project integrated
+  into the monorepo traversal build.
+- `Program.cs`: Generic Host bootstrap and command-line entry point.
+- `Commands/`: hook lifecycle commands and user-level install/diagnostic
+  commands.
+- `Notifications/`: Telegram message composition and delivery.
+- `State/`: workspace-local `.copilot/*.json` state management.
+- `instructions/copilot-notify-summary.instructions.md`: managed user
+  instruction template for summary handoff.
 - `docs/README.md`: tracks human-authored source inputs and derivation
   relationships for the documentation set in `docs/`.
-- `scripts/copilot-summary-state.ps1`: initializes `.copilot/notify-session.json`
-  and `.copilot/notify-summary.json` for the current workspace.
-- `scripts/telegram-notify.ps1`: sends Telegram notifications for completed
-  Copilot tasks.
-- `Install-UserCopilotHook.ps1`: installs the scripts into the current user's
-  machine-level VS Code Copilot hook configuration.
+
+Legacy PowerShell scripts remain in the directory for historical reference, but
+they are no longer the source of truth for the supported implementation.
 
 ## User-level installation
 
-Run the installer from the repository root:
+Publish a Native AOT binary for the target runtime from the repository root:
 
-```powershell
-pwsh -NoLogo -NoProfile -File ./src/private/app/vscode-copilot-telegram-hook/Install-UserCopilotHook.ps1
+```bash
+app=./src/private/app/vscode-copilot-telegram-hook
+project="$app/VSCodeCopilotTelegramHook.csproj"
+
+dotnet publish "$project" -c Release -r linux-x64
+```
+
+Then install it for the current user:
+
+```bash
+app=./src/private/app/vscode-copilot-telegram-hook
+binary="$app/bin/Release/net10.0/linux-x64/publish/vscode-copilot-telegram-hook"
+
+"$binary" \
+  user install \
+  --binary-path "$binary"
 ```
 
 For headless installation, pass the Telegram values explicitly or through
 environment variables:
 
-```powershell
-pwsh -NoLogo -NoProfile -NonInteractive `
-  -File ./src/private/app/vscode-copilot-telegram-hook/Install-UserCopilotHook.ps1 `
-  -TelegramBotToken '<bot-token>' `
-  -TelegramChatId '<chat-id>' `
-  -SkipSecretPrompt
+```bash
+app=./src/private/app/vscode-copilot-telegram-hook
+binary="$app/bin/Release/net10.0/linux-x64/publish/vscode-copilot-telegram-hook"
+
+"$binary" \
+  user install \
+  --binary-path "$binary" \
+  --telegram-bot-token '<bot-token>' \
+  --telegram-chat-id '<chat-id>' \
+  --skip-secret-prompt
 ```
 
-The installer:
+The installer command:
 
 - prompts for the Telegram bot token and chat ID,
 - accepts `TG_BOT_TOKEN` and `TG_CHAT_ID` as non-interactive input sources,
 - stores them in `gopass`,
-- installs the hook scripts into a user-owned data directory,
+- installs the published Native AOT binary into a user-owned data directory,
 - updates `~/.claude/settings.json` so VS Code loads the hook globally,
 - installs a VS Code GitHub Copilot user instruction file under
   `~/.copilot/instructions` so task summaries are produced in every workspace.
 
-Supported install modes:
+The CLI also provides:
 
-- `Auto`: try copy-on-write first when available, then hardlink, then copy.
-- `Cow`: require a reflink-style copy on Linux or WSL.
-- `Hardlink`: require hardlinks.
-- `Copy`: always create independent copies.
+- `user uninstall`: remove the managed installation.
+- `user health`: validate the current installation and credential resolution.
+- `user diagnose`: print a detailed diagnostic report.
+- `user test-notification`: send a test Telegram message without waiting for a
+  Copilot stop event.
+- `hook session-start` and `hook stop`: internal lifecycle entry points used by
+  VS Code Copilot hooks.
 
 The gopass prefix is fixed at `copilot/vscode-copilot-telegram-hook` so the
 user-level installation and this repository's workspace hook resolve the same
@@ -80,6 +109,23 @@ Copilot-specific `~/.copilot/instructions` location.
 The runtime honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process
 environment as explicit overrides, but `gopass` is the primary mechanism.
 
+## Build and validation
+
+The project is automatically included in the repository traversal build through
+the root `dirs.proj` file because the application lives under `src/` and its
+tests live under `tests/`.
+
+Recommended validation steps:
+
+```bash
+project=./src/private/app/vscode-copilot-telegram-hook/VSCodeCopilotTelegramHook.csproj
+tests=./tests/private/app/vscode-copilot-telegram-hook/Hcoona.VsCodeCopilotTelegramHook.Tests.csproj
+
+dotnet build "$project"
+dotnet test "$tests"
+dotnet publish "$project" -c Release -r linux-x64
+```
+
 ## Requirements and documentation map
 
 This README is a project entry point, not the authoritative requirements
@@ -89,13 +135,22 @@ ledger. The detailed requirement, research, and provenance material lives under
 Use these documents as the authoritative sources:
 
 - [`docs/README.md`](./docs/README.md): provenance ledger and derivation map.
-- [`docs/h-001-original-requirement-brief.md`](./docs/h-001-original-requirement-brief.md): original human-authored requirement brief and reference set.
-- [`docs/h-002-human-confirmation-2026-03-13.md`](./docs/h-002-human-confirmation-2026-03-13.md): later human confirmation of product decisions.
-- [`docs/h-003-human-confirmation-2026-03-13-addendum.md`](./docs/h-003-human-confirmation-2026-03-13-addendum.md): follow-up human clarification on scope, failure handling, and overlength notifications.
-- [`docs/functional-requirements.md`](./docs/functional-requirements.md): current derived functional specification.
-- [`docs/nonfunctional-and-constraints-research.md`](./docs/nonfunctional-and-constraints-research.md): current non-functional requirements and external constraints research.
-- [`docs/vscode-hook-inputs-research.md`](./docs/vscode-hook-inputs-research.md): project-focused analysis of the VS Code hook input contract.
-- [`docs/implementation-language-evaluation.md`](./docs/implementation-language-evaluation.md): implementation-language comparison for PowerShell, Python, and C# based on the documented product scope and official platform behavior.
+- [`docs/h-001-original-requirement-brief.md`](./docs/h-001-original-requirement-brief.md):
+  original human-authored requirement brief and reference set.
+- [`docs/h-002-human-confirmation-2026-03-13.md`](./docs/h-002-human-confirmation-2026-03-13.md):
+  later human confirmation of product decisions.
+- [h-003 addendum](./docs/h-003-human-confirmation-2026-03-13-addendum.md):
+  follow-up human clarification on scope, failure handling, and overlength
+  notifications.
+- [`docs/functional-requirements.md`](./docs/functional-requirements.md):
+  current derived functional specification.
+- [nonfunctional constraints](./docs/nonfunctional-and-constraints-research.md):
+  current non-functional requirements and external constraints research.
+- [`docs/vscode-hook-inputs-research.md`](./docs/vscode-hook-inputs-research.md):
+  project-focused analysis of the VS Code hook input contract.
+- [`docs/implementation-language-evaluation.md`](./docs/implementation-language-evaluation.md):
+  implementation-language comparison for PowerShell, Python, and C# based on
+  the documented product scope and official platform behavior.
 
 In short, the current product target is a user-level VS Code GitHub Copilot
 hook that attempts Telegram delivery for each completed-turn `Stop` event and
