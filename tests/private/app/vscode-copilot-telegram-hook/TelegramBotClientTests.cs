@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Hcoona.VsCodeCopilotTelegramHook.Notifications;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Hcoona.VsCodeCopilotTelegramHook.Tests;
@@ -11,7 +12,9 @@ public sealed class TelegramBotClientTests
     public async Task SendMessagesAsyncUsesTelegramApiBaseAddressWhenBotTokenContainsColon()
     {
         RecordingHttpMessageHandler handler = new();
-        TelegramBotClient client = new(CreateHttpClient(handler));
+        TelegramBotClient client = new(
+            CreateHttpClient(handler),
+            NullLogger<TelegramBotClient>.Instance);
 
         await client.SendMessagesAsync(
             new TelegramCredentials("123456:ABCdef_token", "7713476101", "environment"),
@@ -38,7 +41,9 @@ public sealed class TelegramBotClientTests
                 HttpStatusCode.OK,
                 """{"ok":true}"""),
         ]);
-        TelegramBotClient client = new(CreateHttpClient(handler));
+        TelegramBotClient client = new(
+            CreateHttpClient(handler),
+            NullLogger<TelegramBotClient>.Instance);
 
         await client.SendMessagesAsync(
             new TelegramCredentials("123456:ABCdef_token", "7713476101", "environment"),
@@ -67,7 +72,9 @@ public sealed class TelegramBotClientTests
                 HttpStatusCode.OK,
                 """{"ok":true}"""),
         ]);
-        TelegramBotClient client = new(CreateHttpClient(handler));
+        TelegramBotClient client = new(
+            CreateHttpClient(handler),
+            NullLogger<TelegramBotClient>.Instance);
 
         await client.SendMessagesAsync(
             new TelegramCredentials("123456:ABCdef_token", "7713476101", "environment"),
@@ -88,7 +95,9 @@ public sealed class TelegramBotClientTests
                 {"ok":false,"error_code":400,"description":"chat not found"}
                 """),
         ]);
-        TelegramBotClient client = new(CreateHttpClient(handler));
+        TelegramBotClient client = new(
+            CreateHttpClient(handler),
+            NullLogger<TelegramBotClient>.Instance);
 
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => client.SendMessagesAsync(

@@ -14,6 +14,8 @@ internal static class AppConstants
     public const string TurnFileName = "notify-turn.json";
     public const string SummaryFileName = "notify-summary.json";
     public const string LastSentFileName = "notify-last-sent.json";
+    public const string SessionLogFileName = "hook.log";
+    public const string UserCommandLogFileName = "user-command.log";
 
     public const string ManagedInstructionLogicalName =
         "CopilotNotifySummaryInstruction";
@@ -84,13 +86,15 @@ internal static class AppPaths
         string instructionFilePath = Path.Combine(
             instructionsDirectory,
             AppConstants.ManagedInstructionFileName);
+        string userLogFilePath = GetUserLogPath(installRoot);
 
         return new UserInstallationPaths(
             Path.GetFullPath(installRoot),
             Path.GetFullPath(installedBinaryPath),
             Path.GetFullPath(hookSettingsPath),
             Path.GetFullPath(instructionsDirectory),
-            Path.GetFullPath(instructionFilePath));
+            Path.GetFullPath(instructionFilePath),
+            Path.GetFullPath(userLogFilePath));
     }
 
     public static string GetManagedExecutableName()
@@ -105,6 +109,11 @@ internal static class AppPaths
         => Path.Combine(
             GetWorkspaceCopilotDirectory(workspacePath),
             AppConstants.SessionsDirectoryName);
+
+    public static string GetWorkspaceLogPath(string workspacePath)
+        => Path.Combine(
+            GetWorkspaceCopilotDirectory(Path.GetFullPath(workspacePath)),
+            AppConstants.SessionLogFileName);
 
     public static string GetSessionDirectoryName(string sessionId)
     {
@@ -167,6 +176,22 @@ internal static class AppPaths
         => Path.Combine(
             GetSessionDirectoryPath(workspacePath, sessionId),
             AppConstants.LastSentFileName);
+
+    public static string GetSessionLogPath(string workspacePath, string sessionId)
+        => Path.Combine(
+            GetSessionDirectoryPath(Path.GetFullPath(workspacePath), sessionId),
+            AppConstants.SessionLogFileName);
+
+    public static string GetSessionLogPathPattern(string workspacePath)
+        => Path.Combine(
+            GetWorkspaceSessionsDirectory(Path.GetFullPath(workspacePath)),
+            "<session_id>",
+            AppConstants.SessionLogFileName);
+
+    public static string GetUserLogPath(string installRoot)
+        => Path.Combine(
+            Path.GetFullPath(installRoot),
+            AppConstants.UserCommandLogFileName);
 
     public static string GetRelativeSessionStatePath(string sessionId)
         => GetRelativeSessionFilePath(sessionId, AppConstants.SessionFileName);

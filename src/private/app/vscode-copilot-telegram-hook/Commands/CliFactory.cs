@@ -144,7 +144,7 @@ internal static class CliFactory
             instructionsDirectoryOption,
         };
         uninstallCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
-            UserCommandService.UninstallAsync(
+            userCommandService.UninstallAsync(
                 new UninstallCommandOptions
                 {
                     RemoveSecrets = parseResult.GetValue(removeSecretsOption),
@@ -163,7 +163,7 @@ internal static class CliFactory
             instructionsDirectoryOption,
         };
         healthCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
-            UserCommandService.HealthAsync(
+            userCommandService.HealthAsync(
                 new UserPathOverrides
                 {
                     InstallRoot = parseResult.GetValue(installRootOption),
@@ -181,7 +181,7 @@ internal static class CliFactory
             instructionsDirectoryOption,
         };
         diagnoseCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
-            UserCommandService.DiagnoseAsync(
+            userCommandService.DiagnoseAsync(
                 new UserPathOverrides
                 {
                     InstallRoot = parseResult.GetValue(installRootOption),

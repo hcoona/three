@@ -1,18 +1,25 @@
 using System.Text.Json;
+using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Hcoona.VsCodeCopilotTelegramHook.Notifications;
 using Hcoona.VsCodeCopilotTelegramHook.State;
+using Microsoft.Extensions.Logging;
 
 namespace Hcoona.VsCodeCopilotTelegramHook.Commands;
 
 internal sealed class HookCommandService(
     WorkspaceStateStore workspaceStateStore,
-    TelegramBotClient telegramBotClient)
+    TelegramBotClient telegramBotClient,
+    TelegramCredentialProvider telegramCredentialProvider,
+    GitRepositoryProbe gitRepositoryProbe,
+    SessionLogFileContext sessionLogFileContext,
+    ILogger<HookCommandService> logger)
 {
     public async Task<int> HandleSessionStartAsync(
         Stream standardInput,
         Stream standardOutput,
         CancellationToken cancellationToken)
     {
+        IDisposable? logScope = null;
         try
         {
             SessionStartHookInput? hookInput = await JsonSerializer.DeserializeAsync(
@@ -20,12 +27,23 @@ internal sealed class HookCommandService(
                 AppJsonSerializerContext.Default.SessionStartHookInput,
                 cancellationToken);
 
+            string? workspacePath = GetWorkspacePathOrNull(hookInput?.Cwd);
+            logScope = TryOpenHookLogScope(workspacePath, hookInput?.SessionId);
+
             if (hookInput is null
-                || string.IsNullOrWhiteSpace(hookInput.Cwd)
+                || workspacePath is null
                 || string.IsNullOrWhiteSpace(hookInput.SessionId))
             {
+                string reason = BuildInvalidInputReason(
+                    hookInput,
+                    ("cwd", workspacePath is null),
+                    ("sessionId", string.IsNullOrWhiteSpace(hookInput?.SessionId)));
+                AppLog.IgnoringInvalidHookInput(logger, "SessionStart", reason);
+                await Console.Error.WriteLineAsync($"SessionStart hook warning: {reason}");
                 return 0;
             }
+
+            AppLog.HandlingSessionStart(logger, hookInput.SessionId, workspacePath);
 
             SessionState sessionState = await workspaceStateStore.InitializeSessionAsync(
                 hookInput,
@@ -44,10 +62,16 @@ internal sealed class HookCommandService(
                 response,
                 AppJsonSerializerContext.Default.HookResponse,
                 cancellationToken);
+            AppLog.WroteSessionStartContext(logger, hookInput.SessionId);
         }
         catch (Exception ex)
         {
+            AppLog.SessionStartFailed(logger, ex);
             await Console.Error.WriteLineAsync($"SessionStart hook warning: {ex.Message}");
+        }
+        finally
+        {
+            logScope?.Dispose();
         }
 
         return 0;
@@ -57,6 +81,7 @@ internal sealed class HookCommandService(
         Stream standardInput,
         CancellationToken cancellationToken)
     {
+        IDisposable? logScope = null;
         try
         {
             UserPromptSubmitHookInput? hookInput = await JsonSerializer.DeserializeAsync(
@@ -64,18 +89,37 @@ internal sealed class HookCommandService(
                 AppJsonSerializerContext.Default.UserPromptSubmitHookInput,
                 cancellationToken);
 
+            string? workspacePath = GetWorkspacePathOrNull(hookInput?.Cwd);
+            logScope = TryOpenHookLogScope(workspacePath, hookInput?.SessionId);
+
             if (hookInput is null
-                || string.IsNullOrWhiteSpace(hookInput.Cwd)
+                || workspacePath is null
                 || string.IsNullOrWhiteSpace(hookInput.SessionId))
             {
+                string reason = BuildInvalidInputReason(
+                    hookInput,
+                    ("cwd", workspacePath is null),
+                    ("sessionId", string.IsNullOrWhiteSpace(hookInput?.SessionId)));
+                AppLog.IgnoringInvalidHookInput(logger, "UserPromptSubmit", reason);
+                await Console.Error.WriteLineAsync($"UserPromptSubmit hook warning: {reason}");
                 return 0;
             }
 
+            AppLog.HandlingUserPromptSubmit(
+                logger,
+                hookInput.SessionId,
+                workspacePath,
+                hookInput.Prompt?.Length ?? 0);
             _ = await workspaceStateStore.StartTurnAsync(hookInput, cancellationToken);
         }
         catch (Exception ex)
         {
+            AppLog.UserPromptSubmitFailed(logger, ex);
             await Console.Error.WriteLineAsync($"UserPromptSubmit hook warning: {ex.Message}");
+        }
+        finally
+        {
+            logScope?.Dispose();
         }
 
         return 0;
@@ -85,6 +129,7 @@ internal sealed class HookCommandService(
         Stream standardInput,
         CancellationToken cancellationToken)
     {
+        IDisposable? logScope = null;
         try
         {
             StopHookInput? hookInput = await JsonSerializer.DeserializeAsync(
@@ -92,33 +137,50 @@ internal sealed class HookCommandService(
                 AppJsonSerializerContext.Default.StopHookInput,
                 cancellationToken);
 
+            string? workspacePath = GetWorkspacePathOrNull(hookInput?.Cwd);
+            logScope = TryOpenHookLogScope(workspacePath, hookInput?.SessionId);
+
             if (hookInput is null
-                || string.IsNullOrWhiteSpace(hookInput.Cwd)
+                || workspacePath is null
+                || string.IsNullOrWhiteSpace(hookInput.SessionId)
                 || string.IsNullOrWhiteSpace(hookInput.Timestamp))
             {
+                string reason = BuildInvalidInputReason(
+                    hookInput,
+                    ("cwd", workspacePath is null),
+                    ("sessionId", string.IsNullOrWhiteSpace(hookInput?.SessionId)),
+                    ("timestamp", string.IsNullOrWhiteSpace(hookInput?.Timestamp)));
+                AppLog.IgnoringInvalidHookInput(logger, "Stop", reason);
+                await Console.Error.WriteLineAsync($"Stop hook warning: {reason}");
                 return 0;
             }
 
-            SessionState? sessionState = await WorkspaceStateStore.TryReadSessionAsync(
-                hookInput.Cwd,
+            AppLog.HandlingStopHook(logger, hookInput.SessionId, workspacePath);
+
+            _ = await workspaceStateStore.TryReadSessionAsync(
+                workspacePath,
                 hookInput.SessionId,
                 cancellationToken);
-            TurnState? turnState = await WorkspaceStateStore.TryReadTurnAsync(
-                hookInput.Cwd,
+            TurnState? turnState = await workspaceStateStore.TryReadTurnAsync(
+                workspacePath,
                 hookInput.SessionId,
                 cancellationToken);
-            SummaryRecord? summaryRecord = await WorkspaceStateStore.TryReadSummaryAsync(
-                hookInput.Cwd,
+            SummaryRecord? summaryRecord = await workspaceStateStore.TryReadSummaryAsync(
+                workspacePath,
                 hookInput.SessionId,
                 cancellationToken);
 
-            if (await WorkspaceStateStore.WasStopAlreadySentAsync(
-                hookInput.Cwd,
+            if (await workspaceStateStore.WasStopAlreadySentAsync(
+                workspacePath,
                 hookInput.SessionId,
                 turnState?.TurnId,
                 hookInput.Timestamp,
                 cancellationToken))
             {
+                AppLog.SkippingDuplicateStop(
+                    logger,
+                    hookInput.SessionId,
+                    turnState?.TurnId ?? "<unknown>");
                 return 0;
             }
 
@@ -140,12 +202,12 @@ internal sealed class HookCommandService(
                 ?? summaryRecord?.TurnId
                 ?? CreateStopFallbackTurnId(hookInput.Timestamp);
 
-            GitRepositoryMetadata? repositoryMetadata = await GitRepositoryProbe.TryProbeAsync(
-                hookInput.Cwd,
+            GitRepositoryMetadata? repositoryMetadata = await gitRepositoryProbe.TryProbeAsync(
+                workspacePath,
                 cancellationToken);
 
             TelegramCredentials credentials =
-                await TelegramCredentialProvider.ResolveAsync(cancellationToken);
+                await telegramCredentialProvider.ResolveAsync(cancellationToken);
 
             NotificationContext context = new()
             {
@@ -153,7 +215,7 @@ internal sealed class HookCommandService(
                 TurnId = turnId,
                 StopTimestamp = hookInput.Timestamp,
                 SentAt = workspaceStateStore.GetCurrentUtcTimestamp(),
-                WorkspacePath = Path.GetFullPath(hookInput.Cwd),
+                WorkspacePath = workspacePath,
                 HostName = Environment.MachineName,
                 ExecutionEnvironment = AppPaths.GetExecutionEnvironmentDisplay(),
                 RepositoryName = repositoryMetadata?.RepositoryName,
@@ -165,16 +227,27 @@ internal sealed class HookCommandService(
             IReadOnlyList<string> messages = NotificationComposer.Compose(
                 context,
                 summaryRecord);
+            AppLog.SendingStopNotification(
+                logger,
+                messages.Count,
+                context.SessionId,
+                context.TurnId);
             await telegramBotClient.SendMessagesAsync(credentials, messages, cancellationToken);
             await WorkspaceStateStore.RecordNotificationAsync(
                 hookInput,
                 context,
                 summaryRecord,
                 cancellationToken);
+            AppLog.RecordedStopNotification(logger, context.SessionId, context.TurnId);
         }
         catch (Exception ex)
         {
+            AppLog.StopHookFailed(logger, ex);
             await Console.Error.WriteLineAsync($"Stop hook warning: {ex.Message}");
+        }
+        finally
+        {
+            logScope?.Dispose();
         }
 
         return 0;
@@ -214,5 +287,41 @@ internal sealed class HookCommandService(
         }
 
         return commitId.Length <= 12 ? commitId : commitId[..12];
+    }
+
+    private IDisposable? TryOpenHookLogScope(string? workspacePath, string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(workspacePath))
+        {
+            return null;
+        }
+
+        string logFilePath = string.IsNullOrWhiteSpace(sessionId)
+            ? AppPaths.GetWorkspaceLogPath(workspacePath)
+            : AppPaths.GetSessionLogPath(workspacePath, sessionId);
+        return sessionLogFileContext.UseLogFile(logFilePath);
+    }
+
+    private static string? GetWorkspacePathOrNull(string? cwd)
+        => string.IsNullOrWhiteSpace(cwd) ? null : Path.GetFullPath(cwd);
+
+    private static string BuildInvalidInputReason<T>(
+        T? hookInput,
+        params (string FieldName, bool IsMissing)[] fieldChecks)
+        where T : class
+    {
+        if (hookInput is null)
+        {
+            return "payload could not be deserialized.";
+        }
+
+        string[] missingFields = fieldChecks
+            .Where(static fieldCheck => fieldCheck.IsMissing)
+            .Select(static fieldCheck => fieldCheck.FieldName)
+            .ToArray();
+
+        return missingFields.Length == 0
+            ? "payload could not be processed."
+            : $"missing required field(s): {string.Join(", ", missingFields)}.";
     }
 }

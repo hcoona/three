@@ -1,7 +1,10 @@
 using System.Text.Json;
 using Hcoona.VsCodeCopilotTelegramHook.Commands;
+using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Hcoona.VsCodeCopilotTelegramHook.Notifications;
 using Hcoona.VsCodeCopilotTelegramHook.State;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Hcoona.VsCodeCopilotTelegramHook.Tests;
@@ -15,8 +18,12 @@ public sealed class HookCommandServiceTests
 
         try
         {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
             HookCommandService service = CreateHookCommandService(
-                new RecordingHttpMessageHandler());
+                new RecordingHttpMessageHandler(),
+                stateStore: stateStore);
             SessionStartHookInput sessionStartInput = new()
             {
                 Cwd = tempDirectory.FullName,
@@ -55,12 +62,14 @@ public sealed class HookCommandServiceTests
                 additionalContext,
                 StringComparison.Ordinal);
 
-            SessionState? sessionState = await WorkspaceStateStore.TryReadSessionAsync(
+            SessionState? sessionState = await stateStore.TryReadSessionAsync(
                 tempDirectory.FullName,
                 "session-123",
                 CancellationToken.None);
             Assert.NotNull(sessionState);
             Assert.Equal("/tmp/transcript.json", sessionState!.TranscriptPath);
+            FileAssertions.AssertOwnerOnlyFileMode(
+                AppPaths.GetSessionStatePath(tempDirectory.FullName, "session-123"));
         }
         finally
         {
@@ -75,8 +84,12 @@ public sealed class HookCommandServiceTests
 
         try
         {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
             HookCommandService service = CreateHookCommandService(
-                new RecordingHttpMessageHandler());
+                new RecordingHttpMessageHandler(),
+                stateStore: stateStore);
             UserPromptSubmitHookInput promptInput = new()
             {
                 Cwd = tempDirectory.FullName,
@@ -94,11 +107,11 @@ public sealed class HookCommandServiceTests
 
             Assert.Equal(0, exitCode);
 
-            TurnState? turnState = await WorkspaceStateStore.TryReadTurnAsync(
+            TurnState? turnState = await stateStore.TryReadTurnAsync(
                 tempDirectory.FullName,
                 "session-123",
                 CancellationToken.None);
-            SummaryRecord? summaryRecord = await WorkspaceStateStore.TryReadSummaryAsync(
+            SummaryRecord? summaryRecord = await stateStore.TryReadSummaryAsync(
                 tempDirectory.FullName,
                 "session-123",
                 CancellationToken.None);
@@ -107,6 +120,61 @@ public sealed class HookCommandServiceTests
             Assert.NotNull(summaryRecord);
             Assert.Equal("session-123", turnState!.SessionId);
             Assert.Equal(turnState.TurnId, summaryRecord!.TurnId);
+            FileAssertions.AssertOwnerOnlyFileMode(
+                AppPaths.GetTurnStatePath(tempDirectory.FullName, "session-123"));
+            FileAssertions.AssertOwnerOnlyFileMode(
+                AppPaths.GetSummaryStatePath(tempDirectory.FullName, "session-123"));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandleUserPromptSubmitAsyncWritesSessionLogFile()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            SessionLogFileContext logContext = new();
+            using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.ClearProviders();
+                builder.SetMinimumLevel(LogLevel.Debug);
+                builder.AddProvider(new SessionFileLoggerProvider(logContext));
+            });
+
+            HookCommandService service = CreateHookCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: loggerFactory,
+                logContext: logContext);
+            UserPromptSubmitHookInput promptInput = new()
+            {
+                Cwd = tempDirectory.FullName,
+                SessionId = "session-123",
+                Timestamp = "2026-03-14T15:51:50.783Z",
+                TranscriptPath = "/tmp/transcript.json",
+                Prompt = "Summarize the task.",
+            };
+
+            int exitCode = await service.HandleUserPromptSubmitAsync(
+                CreateJsonStream(
+                    promptInput,
+                    AppJsonSerializerContext.Default.UserPromptSubmitHookInput),
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+
+            string logPath = AppPaths.GetSessionLogPath(tempDirectory.FullName, "session-123");
+            Assert.True(File.Exists(logPath));
+
+            string logContent = await File.ReadAllTextAsync(logPath, CancellationToken.None);
+            Assert.Contains("Handling UserPromptSubmit hook", logContent, StringComparison.Ordinal);
+            Assert.Contains("session-123", logContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("| SessionId=", logContent, StringComparison.Ordinal);
+            FileAssertions.AssertOwnerOnlyFileMode(logPath);
         }
         finally
         {
@@ -133,7 +201,10 @@ public sealed class HookCommandServiceTests
                 "7713476101");
 
             RecordingHttpMessageHandler handler = new();
-            HookCommandService service = CreateHookCommandService(handler);
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            HookCommandService service = CreateHookCommandService(handler, stateStore: stateStore);
             StopHookInput stopInput = new()
             {
                 Cwd = tempDirectory.FullName,
@@ -156,12 +227,14 @@ public sealed class HookCommandServiceTests
                 payload.Text,
                 StringComparison.Ordinal);
 
-            LastSentState? lastSentState = await WorkspaceStateStore.TryReadLastSentAsync(
+            LastSentState? lastSentState = await stateStore.TryReadLastSentAsync(
                 tempDirectory.FullName,
                 "session-123",
                 CancellationToken.None);
             Assert.NotNull(lastSentState);
             Assert.Equal("stop-20260314t155150783z", lastSentState!.TurnId);
+            FileAssertions.AssertOwnerOnlyFileMode(
+                AppPaths.GetLastSentStatePath(tempDirectory.FullName, "session-123"));
         }
         finally
         {
@@ -193,7 +266,9 @@ public sealed class HookCommandServiceTests
                 AppConstants.TelegramChatIdEnvironmentVariable,
                 "7713476101");
 
-            WorkspaceStateStore stateStore = new(TimeProvider.System);
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
             TurnState turnState = await stateStore.StartTurnAsync(
                 new UserPromptSubmitHookInput
                 {
@@ -267,7 +342,9 @@ public sealed class HookCommandServiceTests
                 AppConstants.TelegramChatIdEnvironmentVariable,
                 "7713476101");
 
-            WorkspaceStateStore stateStore = new(TimeProvider.System);
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
             TurnState turnState = await stateStore.StartTurnAsync(
                 new UserPromptSubmitHookInput
                 {
@@ -312,7 +389,7 @@ public sealed class HookCommandServiceTests
                 Assert.Single(handler.Requests));
             Assert.Contains("摘要：本轮工作已完成。", payload.Text, StringComparison.Ordinal);
 
-            LastSentState? lastSentState = await WorkspaceStateStore.TryReadLastSentAsync(
+            LastSentState? lastSentState = await stateStore.TryReadLastSentAsync(
                 tempDirectory.FullName,
                 "session-123",
                 CancellationToken.None);
@@ -332,18 +409,88 @@ public sealed class HookCommandServiceTests
         }
     }
 
+    [Fact]
+    public async Task HandleStopAsyncWithoutSessionIdWritesWorkspaceFallbackLog()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            SessionLogFileContext logContext = new();
+            using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.ClearProviders();
+                builder.SetMinimumLevel(LogLevel.Debug);
+                builder.AddProvider(new SessionFileLoggerProvider(logContext));
+            });
+
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(
+                handler,
+                loggerFactory: loggerFactory,
+                logContext: logContext);
+            StopHookInput stopInput = new()
+            {
+                Cwd = tempDirectory.FullName,
+                SessionId = string.Empty,
+                Timestamp = "2026-03-14T15:51:50.783Z",
+            };
+
+            int exitCode = await service.HandleStopAsync(
+                CreateJsonStream(stopInput, AppJsonSerializerContext.Default.StopHookInput),
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+            Assert.Empty(handler.Requests);
+
+            string workspaceLogPath = AppPaths.GetWorkspaceLogPath(tempDirectory.FullName);
+            Assert.True(File.Exists(workspaceLogPath));
+
+            string logContent = await File.ReadAllTextAsync(
+                workspaceLogPath,
+                CancellationToken.None);
+            Assert.Contains(
+                "Ignoring invalid Stop hook input",
+                logContent,
+                StringComparison.Ordinal);
+            Assert.Contains("sessionId", logContent, StringComparison.Ordinal);
+            FileAssertions.AssertOwnerOnlyFileMode(workspaceLogPath);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
     private static HookCommandService CreateHookCommandService(
         RecordingHttpMessageHandler handler,
-        WorkspaceStateStore? stateStore = null)
+        WorkspaceStateStore? stateStore = null,
+        ILoggerFactory? loggerFactory = null,
+        SessionLogFileContext? logContext = null)
     {
         HttpClient httpClient = new(handler)
         {
             BaseAddress = new Uri("https://api.telegram.org/"),
         };
 
+        SessionLogFileContext context = logContext ?? new SessionLogFileContext();
+        ProcessRunner processRunner = new(CreateLogger<ProcessRunner>(loggerFactory));
+        TelegramCredentialProvider credentialProvider = new(
+            processRunner,
+            CreateLogger<TelegramCredentialProvider>(loggerFactory));
+        GitRepositoryProbe gitRepositoryProbe = new(
+            processRunner,
+            CreateLogger<GitRepositoryProbe>(loggerFactory));
+
         return new HookCommandService(
-            stateStore ?? new WorkspaceStateStore(TimeProvider.System),
-            new TelegramBotClient(httpClient));
+            stateStore ?? new WorkspaceStateStore(
+                TimeProvider.System,
+                CreateLogger<WorkspaceStateStore>(loggerFactory)),
+            new TelegramBotClient(httpClient, CreateLogger<TelegramBotClient>(loggerFactory)),
+            credentialProvider,
+            gitRepositoryProbe,
+            context,
+            CreateLogger<HookCommandService>(loggerFactory));
     }
 
     private static MemoryStream CreateJsonStream<T>(
@@ -377,4 +524,7 @@ public sealed class HookCommandServiceTests
             AppJsonSerializerContext.Default.SummaryRecord,
             cancellationToken);
     }
+
+    private static ILogger<T> CreateLogger<T>(ILoggerFactory? loggerFactory)
+        => loggerFactory?.CreateLogger<T>() ?? NullLogger<T>.Instance;
 }

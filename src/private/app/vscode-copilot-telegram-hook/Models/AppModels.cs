@@ -280,7 +280,8 @@ internal sealed record UserInstallationPaths(
     string InstalledBinaryPath,
     string HookSettingsPath,
     string InstructionsDirectory,
-    string InstructionFilePath);
+    string InstructionFilePath,
+    string UserLogFilePath);
 
 internal sealed record TelegramCredentials(string BotToken, string ChatId, string Source);
 
@@ -322,6 +323,11 @@ internal sealed record ProcessExecutionResult(
 {
     public bool Succeeded => ExitCode == 0;
 }
+
+internal sealed record ProcessLogOptions(
+    bool IncludeArgumentsInLogs = true,
+    bool IncludeWorkingDirectoryInLogs = true,
+    bool IncludeStandardErrorInLogs = true);
 
 internal sealed record ConfigurationApplyResult(
     bool Applied,

@@ -1,10 +1,29 @@
 using System.Text;
+using Hcoona.VsCodeCopilotTelegramHook.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Hcoona.VsCodeCopilotTelegramHook;
 
-internal static class TelegramCredentialProvider
+internal sealed class TelegramCredentialProvider(
+    ProcessRunner processRunner,
+    ILogger<TelegramCredentialProvider> logger)
 {
-    public static async Task<TelegramCredentials> ResolveAsync(CancellationToken cancellationToken)
+    private static readonly ProcessLogOptions SensitiveProcessLogOptions = new(
+        IncludeArgumentsInLogs: false,
+        IncludeWorkingDirectoryInLogs: false,
+        IncludeStandardErrorInLogs: false);
+
+    public async Task<TelegramCredentials> ResolveAsync(CancellationToken cancellationToken)
+        => await ResolveCoreAsync(logMissingCredentials: true, cancellationToken)
+            ?? throw new InvalidOperationException(
+                "Telegram credential resolution unexpectedly returned null.");
+
+    public Task<TelegramCredentials?> TryResolveAsync(CancellationToken cancellationToken)
+        => ResolveCoreAsync(logMissingCredentials: false, cancellationToken);
+
+    private async Task<TelegramCredentials?> ResolveCoreAsync(
+        bool logMissingCredentials,
+        CancellationToken cancellationToken)
     {
         string? botToken = NullIfWhitespace(
             Environment.GetEnvironmentVariable(AppConstants.TelegramBotTokenEnvironmentVariable));
@@ -27,9 +46,15 @@ internal static class TelegramCredentialProvider
 
         if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(chatId))
         {
-            throw new InvalidOperationException(
-                "Telegram credentials are missing. Set TG_BOT_TOKEN and TG_CHAT_ID or store "
-                + "them with the user install command.");
+            if (logMissingCredentials)
+            {
+                AppLog.MissingTelegramCredentials(logger);
+                throw new InvalidOperationException(
+                    "Telegram credentials are missing. Set TG_BOT_TOKEN and TG_CHAT_ID or store "
+                    + "them with the user install command.");
+            }
+
+            return null;
         }
 
         bool hasEnvironmentOverride =
@@ -41,30 +66,34 @@ internal static class TelegramCredentialProvider
         string source = hasEnvironmentOverride
             ? "environment"
             : "gopass";
+        AppLog.ResolvedTelegramCredentials(logger, source);
 
         return new TelegramCredentials(botToken, chatId, source);
     }
 
-    public static async Task<bool> IsSecretStoreAvailableAsync(CancellationToken cancellationToken)
+    public async Task<bool> IsSecretStoreAvailableAsync(CancellationToken cancellationToken)
     {
         try
         {
-            ProcessExecutionResult result = await ProcessRunner.RunAsync(
+            ProcessExecutionResult result = await processRunner.RunAsync(
                 "gopass",
                 ["version"],
                 workingDirectory: null,
                 standardInput: null,
+                logOptions: null,
                 cancellationToken);
 
+            AppLog.GopassAvailabilityChecked(logger, result.ExitCode);
             return result.Succeeded;
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
+            AppLog.GopassUnavailable(logger, ex);
             return false;
         }
     }
 
-    public static async Task StoreAsync(
+    public async Task StoreAsync(
         string? botTokenOption,
         string? chatIdOption,
         bool skipPrompt,
@@ -93,6 +122,7 @@ internal static class TelegramCredentialProvider
 
         if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(chatId))
         {
+            AppLog.MissingCredentialInput(logger);
             throw new InvalidOperationException(
                 "Both the Telegram bot token and chat id are required. Pass them explicitly, "
                 + "set TG_BOT_TOKEN and TG_CHAT_ID, or allow interactive prompts.");
@@ -112,74 +142,89 @@ internal static class TelegramCredentialProvider
             AppPaths.GetTelegramChatIdSecretPath(),
             chatId,
             cancellationToken);
+        AppLog.StoredTelegramCredentials(logger);
     }
 
-    public static async Task RemoveStoredSecretsAsync(CancellationToken cancellationToken)
+    public async Task RemoveStoredSecretsAsync(CancellationToken cancellationToken)
     {
         if (!await IsSecretStoreAvailableAsync(cancellationToken))
         {
+            AppLog.SkippingSecretRemoval(logger);
             return;
         }
 
         await TryRemoveSecretAsync(AppPaths.GetTelegramBotTokenSecretPath(), cancellationToken);
         await TryRemoveSecretAsync(AppPaths.GetTelegramChatIdSecretPath(), cancellationToken);
+        AppLog.RemovedTelegramCredentials(logger);
     }
 
-    private static async Task<string?> TryReadSecretAsync(
+    private async Task<string?> TryReadSecretAsync(
         string secretPath,
         CancellationToken cancellationToken)
     {
         try
         {
-            ProcessExecutionResult result = await ProcessRunner.RunAsync(
+            ProcessExecutionResult result = await processRunner.RunAsync(
                 "gopass",
                 ["show", secretPath],
                 workingDirectory: null,
                 standardInput: null,
+                SensitiveProcessLogOptions,
                 cancellationToken);
+
+            if (!result.Succeeded)
+            {
+                AppLog.MissingSecretValue(logger, secretPath);
+            }
 
             return result.Succeeded ? NullIfWhitespace(result.StandardOutput.Trim()) : null;
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
+            AppLog.ReadSecretFailed(logger, ex, secretPath);
             return null;
         }
     }
 
-    private static async Task StoreSecretAsync(
+    private async Task StoreSecretAsync(
         string secretPath,
         string value,
         CancellationToken cancellationToken)
     {
-        ProcessExecutionResult result = await ProcessRunner.RunAsync(
+        ProcessExecutionResult result = await processRunner.RunAsync(
             "gopass",
             ["insert", "-f", "-m", secretPath],
             workingDirectory: null,
             standardInput: value + Environment.NewLine,
+            SensitiveProcessLogOptions,
             cancellationToken);
 
         if (!result.Succeeded)
         {
+            AppLog.StoreSecretFailed(logger, secretPath, result.StandardError.Trim());
             throw new InvalidOperationException(
                 $"Failed to store secret '{secretPath}': {result.StandardError.Trim()}");
         }
     }
 
-    private static async Task TryRemoveSecretAsync(
+    private async Task TryRemoveSecretAsync(
         string secretPath,
         CancellationToken cancellationToken)
     {
         try
         {
-            await ProcessRunner.RunAsync(
+            ProcessExecutionResult result = await processRunner.RunAsync(
                 "gopass",
                 ["rm", "-f", secretPath],
                 workingDirectory: null,
                 standardInput: null,
+                SensitiveProcessLogOptions,
                 cancellationToken);
+            AppLog.SecretRemovalCompleted(logger, secretPath, result.ExitCode);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
+            AppLog.RemoveSecretFailed(logger, ex, secretPath);
         }
     }
 

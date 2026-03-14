@@ -1,11 +1,16 @@
+using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Hcoona.VsCodeCopilotTelegramHook.Notifications;
+using Microsoft.Extensions.Logging;
 
 namespace Hcoona.VsCodeCopilotTelegramHook.Commands;
 
 internal sealed class UserCommandService(
     InstructionTemplateProvider instructionTemplateProvider,
     TelegramBotClient telegramBotClient,
-    TimeProvider timeProvider)
+    TelegramCredentialProvider telegramCredentialProvider,
+    SessionLogFileContext sessionLogFileContext,
+    TimeProvider timeProvider,
+    ILogger<UserCommandService> logger)
 {
     public async Task<int> InstallAsync(
         InstallCommandOptions options,
@@ -13,11 +18,14 @@ internal sealed class UserCommandService(
     {
         try
         {
-            string sourceBinaryPath = ResolveInstallableBinaryPath(options.BinaryPath);
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            using IDisposable logScope = sessionLogFileContext.UseLogFile(
+                userPaths.UserLogFilePath);
+            AppLog.StartingUserInstall(logger);
+            string sourceBinaryPath = ResolveInstallableBinaryPath(options.BinaryPath);
             string currentTimestamp = GetCurrentUtcTimestamp();
 
-            await TelegramCredentialProvider.StoreAsync(
+            await telegramCredentialProvider.StoreAsync(
                 options.TelegramBotToken,
                 options.TelegramChatId,
                 options.SkipSecretPrompt,
@@ -60,22 +68,28 @@ internal sealed class UserCommandService(
                     $"Instruction candidate file: {instructionResult.CandidatePath}");
             }
 
-            return hooksResult.Applied && instructionResult.Applied ? 0 : 1;
+            bool succeeded = hooksResult.Applied && instructionResult.Applied;
+            AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded);
+            return succeeded ? 0 : 1;
         }
         catch (Exception ex)
         {
+            AppLog.UserInstallFailed(logger, ex);
             await Console.Error.WriteLineAsync($"Install failed: {ex.Message}");
             return 1;
         }
     }
 
-    public static async Task<int> UninstallAsync(
+    public async Task<int> UninstallAsync(
         UninstallCommandOptions options,
         CancellationToken cancellationToken)
     {
         try
         {
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            using IDisposable logScope = sessionLogFileContext.UseLogFile(
+                userPaths.UserLogFilePath);
+            AppLog.StartingUserUninstall(logger);
 
             ConfigurationApplyResult hooksResult =
                 UserHookConfigurationManager.UninstallHooks(userPaths.HookSettingsPath);
@@ -86,7 +100,7 @@ internal sealed class UserCommandService(
 
             if (options.RemoveSecrets)
             {
-                await TelegramCredentialProvider.RemoveStoredSecretsAsync(cancellationToken);
+                await telegramCredentialProvider.RemoveStoredSecretsAsync(cancellationToken);
             }
 
             await Console.Out.WriteLineAsync(hooksResult.Message);
@@ -100,24 +114,30 @@ internal sealed class UserCommandService(
                     "Removed stored Telegram secrets from gopass when present.");
             }
 
-            return hooksResult.Applied && instructionResult.Applied ? 0 : 1;
+            bool succeeded = hooksResult.Applied && instructionResult.Applied;
+            AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded);
+            return succeeded ? 0 : 1;
         }
         catch (Exception ex)
         {
+            AppLog.UserUninstallFailed(logger, ex);
             await Console.Error.WriteLineAsync($"Uninstall failed: {ex.Message}");
             return 1;
         }
     }
 
-    public static async Task<int> HealthAsync(
+    public async Task<int> HealthAsync(
         UserPathOverrides options,
         CancellationToken cancellationToken)
     {
         try
         {
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            using IDisposable logScope = sessionLogFileContext.UseLogFile(
+                userPaths.UserLogFilePath);
+            AppLog.StartingUserHealth(logger);
             bool secretStoreAvailable =
-                await TelegramCredentialProvider.IsSecretStoreAvailableAsync(cancellationToken);
+                await telegramCredentialProvider.IsSecretStoreAvailableAsync(cancellationToken);
             bool credentialsAvailable = await TryResolveCredentialsAsync(cancellationToken);
             bool binaryInstalled = File.Exists(userPaths.InstalledBinaryPath);
             bool hooksInstalled =
@@ -142,40 +162,48 @@ internal sealed class UserCommandService(
                     credentialsAvailable,
                     secretStoreAvailable ? "environment or gopass" : "environment only"));
 
-            return binaryInstalled
+            bool isHealthy = binaryInstalled
                 && hooksInstalled
                 && instructionInstalled
-                && credentialsAvailable
-                ? 0
-                : 1;
+                && credentialsAvailable;
+            AppLog.CompletedUserHealth(logger, userPaths.InstallRoot, isHealthy);
+            return isHealthy ? 0 : 1;
         }
         catch (Exception ex)
         {
+            AppLog.UserHealthFailed(logger, ex);
             await Console.Error.WriteLineAsync($"Health check failed: {ex.Message}");
             return 1;
         }
     }
 
-    public static async Task<int> DiagnoseAsync(
+    public async Task<int> DiagnoseAsync(
         UserPathOverrides options,
         CancellationToken cancellationToken)
     {
         try
         {
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            using IDisposable logScope = sessionLogFileContext.UseLogFile(
+                userPaths.UserLogFilePath);
+            AppLog.StartingUserDiagnose(logger);
             string currentProcessPath = Environment.ProcessPath ?? "<unavailable>";
             bool currentBinaryLooksAot = LooksLikeNativeAotBinary(currentProcessPath);
             bool installedBinaryLooksAot = File.Exists(userPaths.InstalledBinaryPath)
                 && LooksLikeNativeAotBinary(userPaths.InstalledBinaryPath);
 
             bool secretStoreAvailable =
-                await TelegramCredentialProvider.IsSecretStoreAvailableAsync(cancellationToken);
+                await telegramCredentialProvider.IsSecretStoreAvailableAsync(cancellationToken);
             bool credentialsAvailable = await TryResolveCredentialsAsync(cancellationToken);
             bool managedHooksInstalled = UserHookConfigurationManager.IsHookInstalled(
                 userPaths.HookSettingsPath);
             bool managedInstructionInstalled =
                 UserHookConfigurationManager.IsInstructionInstalled(userPaths.InstructionFilePath);
             string executionEnvironment = AppPaths.GetExecutionEnvironmentDisplay();
+            string workspaceLogPathPattern = AppPaths.GetSessionLogPathPattern(
+                Environment.CurrentDirectory);
+            string workspaceFallbackLogPath = AppPaths.GetWorkspaceLogPath(
+                Environment.CurrentDirectory);
 
             await Console.Out.WriteLineAsync($"Current executable : {currentProcessPath}");
             await Console.Out.WriteLineAsync(
@@ -199,11 +227,19 @@ internal sealed class UserCommandService(
                 $"Telegram credentials resolvable : {credentialsAvailable}");
             await Console.Out.WriteLineAsync(
                 $"Execution environment : {executionEnvironment}");
+            await Console.Out.WriteLineAsync(
+                $"User command log file : {userPaths.UserLogFilePath}");
+            await Console.Out.WriteLineAsync(
+                $"Workspace session log pattern : {workspaceLogPathPattern}");
+            await Console.Out.WriteLineAsync(
+                $"Workspace fallback hook log : {workspaceFallbackLogPath}");
 
+            AppLog.CompletedUserDiagnose(logger, userPaths.InstallRoot);
             return 0;
         }
         catch (Exception ex)
         {
+            AppLog.UserDiagnoseFailed(logger, ex);
             await Console.Error.WriteLineAsync($"Diagnose failed: {ex.Message}");
             return 1;
         }
@@ -215,8 +251,12 @@ internal sealed class UserCommandService(
     {
         try
         {
+            UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            using IDisposable logScope = sessionLogFileContext.UseLogFile(
+                userPaths.UserLogFilePath);
+            AppLog.StartingTestNotification(logger);
             TelegramCredentials credentials =
-                await TelegramCredentialProvider.ResolveAsync(cancellationToken);
+                await telegramCredentialProvider.ResolveAsync(cancellationToken);
             string now = GetCurrentUtcTimestamp();
             NotificationContext context = new()
             {
@@ -246,10 +286,12 @@ internal sealed class UserCommandService(
             IReadOnlyList<string> messages = NotificationComposer.Compose(context, summaryRecord);
             await telegramBotClient.SendMessagesAsync(credentials, messages, cancellationToken);
             await Console.Out.WriteLineAsync("Sent a test Telegram notification successfully.");
+            AppLog.CompletedTestNotification(logger);
             return 0;
         }
         catch (Exception ex)
         {
+            AppLog.TestNotificationFailed(logger, ex);
             await Console.Error.WriteLineAsync($"Test notification failed: {ex.Message}");
             return 1;
         }
@@ -364,18 +406,8 @@ internal sealed class UserCommandService(
     private static string FormatCheck(string label, bool isSuccess, string details)
         => $"{(isSuccess ? "[OK]" : "[FAIL]")} {label}: {details}";
 
-    private static async Task<bool> TryResolveCredentialsAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            _ = await TelegramCredentialProvider.ResolveAsync(cancellationToken);
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-    }
+    private async Task<bool> TryResolveCredentialsAsync(CancellationToken cancellationToken)
+        => await telegramCredentialProvider.TryResolveAsync(cancellationToken) is not null;
 
     private string GetCurrentUtcTimestamp()
         => timeProvider

@@ -98,6 +98,31 @@ The CLI also provides:
 - `hook session-start`, `hook user-prompt-submit`, and `hook stop`: internal
   lifecycle entry points used by VS Code Copilot hooks.
 
+## Logging and troubleshooting
+
+The runtime now writes owner-only diagnostic logs where the operating system
+supports Unix file modes:
+
+- Hook logs for valid session-scoped events:
+  `.copilot/sessions/<session_id>/hook.log`
+- Fallback hook log for malformed hook payloads before a session context is
+  usable: `.copilot/hook.log`
+- User command log for `user install`, `user uninstall`, `user health`,
+  `user diagnose`, and `user test-notification`:
+  `<install-root>/user-command.log`
+
+The session-scoped hook log keeps its diagnostics next to the corresponding
+session metadata. The log captures hook lifecycle activity, state-file
+operations, Telegram send attempts and retries, credential-resolution outcomes,
+git probing, and related operational failures. The logger intentionally records
+only this application's categories, so external HTTP/resilience components do
+not write their request URIs into these files. Secrets such as the Telegram bot
+token are intentionally redacted from the log.
+
+Use `user diagnose` to print the current user-command log path, workspace
+session log path pattern, and workspace fallback hook log path for the
+directory where you run the command.
+
 During runtime, the hook maintains session-scoped state under
 `.copilot/sessions/<session_id>/`, including:
 
@@ -107,6 +132,10 @@ During runtime, the hook maintains session-scoped state under
 - `notify-summary.json`: the current turn's summary handoff file.
 - `notify-last-sent.json`: best-effort duplicate-suppression state for the
   current session.
+- `hook.log`: always-on diagnostic log for the current Copilot session.
+
+These `.copilot/sessions/` files are runtime state and should remain ignored in
+git.
 
 The gopass prefix is fixed at `copilot/vscode-copilot-telegram-hook` so the
 user-level installation and this repository's workspace hook resolve the same
