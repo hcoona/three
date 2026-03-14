@@ -174,20 +174,6 @@ internal sealed class HookCommandService(
                 hookInput.SessionId,
                 cancellationToken);
 
-            if (await workspaceStateStore.WasStopAlreadySentAsync(
-                workspacePath,
-                hookInput.SessionId,
-                turnState?.TurnId,
-                hookInput.Timestamp,
-                cancellationToken))
-            {
-                AppLog.SkippingDuplicateStop(
-                    logger,
-                    hookInput.SessionId,
-                    turnState?.TurnId ?? "<unknown>");
-                return 0;
-            }
-
             if (summaryRecord is not null
                 && (!string.Equals(
                         summaryRecord.SessionId,
@@ -205,6 +191,20 @@ internal sealed class HookCommandService(
             string turnId = turnState?.TurnId
                 ?? summaryRecord?.TurnId
                 ?? CreateStopFallbackTurnId(hookInput.Timestamp);
+
+            if (await workspaceStateStore.WasStopAlreadySentAsync(
+                workspacePath,
+                hookInput.SessionId,
+                turnId,
+                hookInput.Timestamp,
+                cancellationToken))
+            {
+                AppLog.SkippingDuplicateStop(
+                    logger,
+                    hookInput.SessionId,
+                    turnId);
+                return 0;
+            }
 
             GitRepositoryMetadata? repositoryMetadata = await gitRepositoryProbe.TryProbeAsync(
                 workspacePath,

@@ -299,6 +299,68 @@ public sealed class HookCommandServiceTests
     }
 
     [Fact]
+    public async Task HandleStopAsyncSuppressesDuplicateStopWhenTurnStateIsMissing()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        string? originalBotToken = Environment.GetEnvironmentVariable(
+            AppConstants.TelegramBotTokenEnvironmentVariable);
+        string? originalChatId = Environment.GetEnvironmentVariable(
+            AppConstants.TelegramChatIdEnvironmentVariable);
+
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                AppConstants.TelegramBotTokenEnvironmentVariable,
+                "123456:ABCdef_token");
+            Environment.SetEnvironmentVariable(
+                AppConstants.TelegramChatIdEnvironmentVariable,
+                "7713476101");
+
+            RecordingHttpMessageHandler handler = new();
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            HookCommandService service = CreateHookCommandService(handler, stateStore: stateStore);
+            StopHookInput stopInput = new()
+            {
+                Cwd = tempDirectory.FullName,
+                SessionId = "session-123",
+                Timestamp = "2026-03-14T15:51:50.783Z",
+                TranscriptPath = "/tmp/transcript.json",
+            };
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(stopInput, AppJsonSerializerContext.Default.StopHookInput),
+                CancellationToken.None);
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(stopInput, AppJsonSerializerContext.Default.StopHookInput),
+                CancellationToken.None);
+
+            TelegramSendMessageRequest payload = DeserializeTelegramPayload(
+                Assert.Single(handler.Requests));
+            Assert.Contains("摘要：当前轮未生成摘要。", payload.Text, StringComparison.Ordinal);
+
+            LastSentState? lastSentState = await stateStore.TryReadLastSentAsync(
+                tempDirectory.FullName,
+                "session-123",
+                CancellationToken.None);
+            Assert.NotNull(lastSentState);
+            Assert.Equal("stop-20260314t155150783z", lastSentState!.TurnId);
+            Assert.Equal(stopInput.Timestamp, lastSentState.StopTimestamp);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                AppConstants.TelegramBotTokenEnvironmentVariable,
+                originalBotToken);
+            Environment.SetEnvironmentVariable(
+                AppConstants.TelegramChatIdEnvironmentVariable,
+                originalChatId);
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task HandleStopAsyncIgnoresSummaryForDifferentTurn()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();

@@ -1,7 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using Hcoona.VsCodeCopilotTelegramHook.Notifications;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 using Xunit;
 
 namespace Hcoona.VsCodeCopilotTelegramHook.Tests;
@@ -12,9 +13,8 @@ public sealed class TelegramBotClientTests
     public async Task SendMessagesAsyncUsesTelegramApiBaseAddressWhenBotTokenContainsColon()
     {
         RecordingHttpMessageHandler handler = new();
-        TelegramBotClient client = new(
-            CreateHttpClient(handler),
-            NullLogger<TelegramBotClient>.Instance);
+        using ServiceProvider services = CreateServices(handler);
+        TelegramBotClient client = services.GetRequiredService<TelegramBotClient>();
 
         await client.SendMessagesAsync(
             new TelegramCredentials("123456:ABCdef_token", "7713476101", "environment"),
@@ -28,7 +28,7 @@ public sealed class TelegramBotClientTests
     }
 
     [Fact]
-    public async Task SendMessagesAsyncRetriesTooManyRequestsAndUsesHtmlPayload()
+    public async Task SendMessagesAsyncRetriesTooManyRequestsViaResilienceAndUsesHtmlPayload()
     {
         RecordingHttpMessageHandler handler = new(
         [
@@ -41,9 +41,8 @@ public sealed class TelegramBotClientTests
                 HttpStatusCode.OK,
                 """{"ok":true}"""),
         ]);
-        TelegramBotClient client = new(
-            CreateHttpClient(handler),
-            NullLogger<TelegramBotClient>.Instance);
+        using ServiceProvider services = CreateServices(handler);
+        TelegramBotClient client = services.GetRequiredService<TelegramBotClient>();
 
         await client.SendMessagesAsync(
             new TelegramCredentials("123456:ABCdef_token", "7713476101", "environment"),
@@ -59,7 +58,7 @@ public sealed class TelegramBotClientTests
     }
 
     [Fact]
-    public async Task SendMessagesAsyncRetriesServerErrorsUntilSuccess()
+    public async Task SendMessagesAsyncRetriesServerErrorsViaResilienceUntilSuccess()
     {
         RecordingHttpMessageHandler handler = new(
         [
@@ -72,9 +71,8 @@ public sealed class TelegramBotClientTests
                 HttpStatusCode.OK,
                 """{"ok":true}"""),
         ]);
-        TelegramBotClient client = new(
-            CreateHttpClient(handler),
-            NullLogger<TelegramBotClient>.Instance);
+        using ServiceProvider services = CreateServices(handler);
+        TelegramBotClient client = services.GetRequiredService<TelegramBotClient>();
 
         await client.SendMessagesAsync(
             new TelegramCredentials("123456:ABCdef_token", "7713476101", "environment"),
@@ -95,9 +93,8 @@ public sealed class TelegramBotClientTests
                 {"ok":false,"error_code":400,"description":"chat not found"}
                 """),
         ]);
-        TelegramBotClient client = new(
-            CreateHttpClient(handler),
-            NullLogger<TelegramBotClient>.Instance);
+        using ServiceProvider services = CreateServices(handler);
+        TelegramBotClient client = services.GetRequiredService<TelegramBotClient>();
 
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => client.SendMessagesAsync(
@@ -109,12 +106,23 @@ public sealed class TelegramBotClientTests
         Assert.Single(handler.Requests);
     }
 
-    private static HttpClient CreateHttpClient(HttpMessageHandler handler)
+    private static ServiceProvider CreateServices(HttpMessageHandler handler)
     {
-        return new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://api.telegram.org/"),
-        };
+        ServiceCollection services = [];
+        services.AddLogging();
+        services
+            .AddHttpClient<TelegramBotClient>(static client =>
+            {
+                client.BaseAddress = new Uri("https://api.telegram.org/");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => handler)
+            .AddStandardResilienceHandler(static options =>
+            {
+                options.Retry.MaxRetryAttempts = 2;
+                options.Retry.Delay = TimeSpan.FromMilliseconds(1);
+            });
+
+        return services.BuildServiceProvider();
     }
 
     private static TelegramSendMessageRequest DeserializePayload(CapturedHttpRequest request)
