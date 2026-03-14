@@ -457,7 +457,7 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
-      "Hcoona.VsCodeCopilotTelegramHook": {
+      "vscode-copilot-telegram-hook": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Hosting": "[9.0.13, )",

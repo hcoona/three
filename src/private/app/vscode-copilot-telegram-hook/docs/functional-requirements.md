@@ -7,6 +7,7 @@
     - [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)
     - [`h-002-human-confirmation-2026-03-13.md`](./h-002-human-confirmation-2026-03-13.md)
     - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
+    - [`h-004-human-confirmation-2026-03-14.md`](./h-004-human-confirmation-2026-03-14.md)
     - [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md)
     - [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)
 - Purpose: translate the human-authored source inputs and supporting research
@@ -33,7 +34,7 @@ name, or external summary-file schema.
 
 ## Functional Scope
 
-The solution shall provide a formally supported user-level capability for VS Code GitHub Copilot that sends Telegram notifications to one configured Telegram destination per user installation for each `Stop` event that ends the current chat turn and includes a concise Chinese task summary when available, or an explicit indication that the summary is missing, plus relevant execution context when available.
+The solution shall provide a formally supported user-level capability for VS Code GitHub Copilot that sends Telegram notifications to one configured Telegram destination per user installation for each `Stop` event that ends the current chat turn and includes a concise task summary when available, preferably in Chinese on a best-effort basis, or an explicit indication that the summary is missing, plus relevant execution context when available.
 
 ## Functional Requirements
 
@@ -88,9 +89,9 @@ The solution shall provide a way for Copilot to update the summary content befor
 
 Notification delivery shall not depend on the presence of a stable externally supported summary schema or a structured status field.
 
-### FR-010 Summary language requirements
+### FR-010 Summary language preference
 
-The summary content included in the notification shall be human-readable Chinese text. Any additional structure beyond that text is implementation-defined.
+The solution shall treat Chinese as the preferred notification-summary language on a best-effort basis. Notification delivery shall not depend on the available summary being Chinese text, and any additional structure beyond the human-readable summary text is implementation-defined.
 
 ### FR-011 Turn completion detection
 
@@ -191,7 +192,7 @@ can coordinate without requiring in-memory state to survive across hook invocati
 
 The summary handoff data shall allow Copilot to communicate, for the current tracked result, at minimum:
 
-- a concise Chinese description of what happened when such a description is available, or
+- a concise human-readable description of what happened when such a description is available, with Chinese preferred on a best-effort basis, or
 - an explicit indication that the summary is missing.
 
 Any additional structure, field names, changed-file lists, outcome labels, or next-step lists are implementation-defined rather than part of the product contract.

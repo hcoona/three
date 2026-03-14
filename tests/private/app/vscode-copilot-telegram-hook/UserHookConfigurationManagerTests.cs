@@ -36,6 +36,7 @@ public sealed class UserHookConfigurationManagerTests
             ConfigurationApplyResult installResult = UserHookConfigurationManager.InstallHooks(
                 settingsPath,
                 "managed session-start",
+                "managed user-prompt-submit",
                 "managed stop",
                 "2026-03-13T12:34:56.789Z");
 
@@ -45,6 +46,7 @@ public sealed class UserHookConfigurationManagerTests
             UserHookSettingsDocument installedSettings = ReadSettings(settingsPath);
             Assert.Equal("gpt-5.4", installedSettings.AdditionalProperties?["model"].GetString());
             Assert.Single(installedSettings.Hooks["SessionStart"]);
+            Assert.Single(installedSettings.Hooks["UserPromptSubmit"]);
             Assert.Equal(2, installedSettings.Hooks["Stop"].Count);
             Assert.Contains(
                 installedSettings.Hooks["Stop"],
@@ -64,6 +66,7 @@ public sealed class UserHookConfigurationManagerTests
 
             UserHookSettingsDocument uninstalledSettings = ReadSettings(settingsPath);
             Assert.False(uninstalledSettings.Hooks.ContainsKey("SessionStart"));
+            Assert.False(uninstalledSettings.Hooks.ContainsKey("UserPromptSubmit"));
             Assert.Single(uninstalledSettings.Hooks["Stop"]);
             Assert.Equal(
                 "echo custom-stop",

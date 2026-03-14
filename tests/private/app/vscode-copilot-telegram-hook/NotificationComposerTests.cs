@@ -14,6 +14,7 @@ public sealed class NotificationComposerTests
 
         string message = Assert.Single(messages);
         Assert.Contains("<b>✅ Copilot 当前轮已完成</b>", message, StringComparison.Ordinal);
+        Assert.Contains("<b>轮次 ID：</b><code>turn-789</code>", message, StringComparison.Ordinal);
         Assert.Contains("摘要：当前轮未生成摘要。", message, StringComparison.Ordinal);
     }
 
@@ -45,8 +46,8 @@ public sealed class NotificationComposerTests
     {
         return new NotificationContext
         {
-            RunId = "run-123",
             SessionId = "session-456",
+            TurnId = "turn-789",
             StopTimestamp = "2026-03-13T12:34:56.789Z",
             SentAt = "2026-03-13T12:34:57.000Z",
             WorkspacePath = "/tmp/workspace",

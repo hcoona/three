@@ -26,10 +26,13 @@ internal sealed class UserCommandService(
             CopyBinary(sourceBinaryPath, userPaths.InstalledBinaryPath);
 
             string sessionStartCommand = $"\"{userPaths.InstalledBinaryPath}\" hook session-start";
+            string userPromptSubmitCommand =
+                $"\"{userPaths.InstalledBinaryPath}\" hook user-prompt-submit";
             string stopCommand = $"\"{userPaths.InstalledBinaryPath}\" hook stop";
             ConfigurationApplyResult hooksResult = UserHookConfigurationManager.InstallHooks(
                 userPaths.HookSettingsPath,
                 sessionStartCommand,
+                userPromptSubmitCommand,
                 stopCommand,
                 currentTimestamp);
 
@@ -217,8 +220,8 @@ internal sealed class UserCommandService(
             string now = GetCurrentUtcTimestamp();
             NotificationContext context = new()
             {
-                RunId = $"test-{Guid.NewGuid():n}",
-                SessionId = "test",
+                SessionId = "test-session",
+                TurnId = $"test-turn-{Guid.NewGuid():n}",
                 StopTimestamp = now,
                 SentAt = now,
                 WorkspacePath = Environment.CurrentDirectory,
@@ -232,7 +235,8 @@ internal sealed class UserCommandService(
 
             SummaryRecord summaryRecord = new()
             {
-                RunId = context.RunId,
+                SessionId = context.SessionId,
+                TurnId = context.TurnId,
                 UpdatedAt = now,
                 Summary = string.IsNullOrWhiteSpace(options.Message)
                     ? "这是一条来自 VS Code Copilot Telegram Hook 的测试通知。"

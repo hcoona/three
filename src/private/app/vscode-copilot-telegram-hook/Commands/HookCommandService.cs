@@ -53,6 +53,34 @@ internal sealed class HookCommandService(
         return 0;
     }
 
+    public async Task<int> HandleUserPromptSubmitAsync(
+        Stream standardInput,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            UserPromptSubmitHookInput? hookInput = await JsonSerializer.DeserializeAsync(
+                standardInput,
+                AppJsonSerializerContext.Default.UserPromptSubmitHookInput,
+                cancellationToken);
+
+            if (hookInput is null
+                || string.IsNullOrWhiteSpace(hookInput.Cwd)
+                || string.IsNullOrWhiteSpace(hookInput.SessionId))
+            {
+                return 0;
+            }
+
+            _ = await workspaceStateStore.StartTurnAsync(hookInput, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await Console.Error.WriteLineAsync($"UserPromptSubmit hook warning: {ex.Message}");
+        }
+
+        return 0;
+    }
+
     public async Task<int> HandleStopAsync(
         Stream standardInput,
         CancellationToken cancellationToken)
@@ -71,31 +99,46 @@ internal sealed class HookCommandService(
                 return 0;
             }
 
-            if (await WorkspaceStateStore.WasStopAlreadySentAsync(hookInput, cancellationToken))
+            SessionState? sessionState = await WorkspaceStateStore.TryReadSessionAsync(
+                hookInput.Cwd,
+                hookInput.SessionId,
+                cancellationToken);
+            TurnState? turnState = await WorkspaceStateStore.TryReadTurnAsync(
+                hookInput.Cwd,
+                hookInput.SessionId,
+                cancellationToken);
+            SummaryRecord? summaryRecord = await WorkspaceStateStore.TryReadSummaryAsync(
+                hookInput.Cwd,
+                hookInput.SessionId,
+                cancellationToken);
+
+            if (await WorkspaceStateStore.WasStopAlreadySentAsync(
+                hookInput.Cwd,
+                hookInput.SessionId,
+                turnState?.TurnId,
+                hookInput.Timestamp,
+                cancellationToken))
             {
                 return 0;
             }
 
-            SessionState? sessionState = await WorkspaceStateStore.TryReadSessionAsync(
-                hookInput.Cwd,
-                cancellationToken);
-            SummaryRecord? summaryRecord = await WorkspaceStateStore.TryReadSummaryAsync(
-                hookInput.Cwd,
-                cancellationToken);
-
-            if (sessionState is not null
-                && summaryRecord is not null
-                && !string.Equals(
-                    summaryRecord.RunId,
-                    sessionState.RunId,
-                    StringComparison.Ordinal))
+            if (summaryRecord is not null
+                && (!string.Equals(
+                        summaryRecord.SessionId,
+                        hookInput.SessionId,
+                        StringComparison.Ordinal)
+                    || turnState is null
+                    || !string.Equals(
+                        summaryRecord.TurnId,
+                        turnState.TurnId,
+                        StringComparison.Ordinal)))
             {
                 summaryRecord = null;
             }
 
-            string runId = sessionState?.RunId
-                ?? summaryRecord?.RunId
-                ?? hookInput.SessionId;
+            string turnId = turnState?.TurnId
+                ?? summaryRecord?.TurnId
+                ?? CreateStopFallbackTurnId(hookInput.Timestamp);
 
             GitRepositoryMetadata? repositoryMetadata = await GitRepositoryProbe.TryProbeAsync(
                 hookInput.Cwd,
@@ -106,8 +149,8 @@ internal sealed class HookCommandService(
 
             NotificationContext context = new()
             {
-                RunId = runId,
                 SessionId = hookInput.SessionId,
+                TurnId = turnId,
                 StopTimestamp = hookInput.Timestamp,
                 SentAt = workspaceStateStore.GetCurrentUtcTimestamp(),
                 WorkspacePath = Path.GetFullPath(hookInput.Cwd),
@@ -139,15 +182,28 @@ internal sealed class HookCommandService(
 
     private static string BuildAdditionalContext(SessionState sessionState)
     {
+        string turnStatePath = AppPaths.GetRelativeTurnStatePath(sessionState.SessionId);
+        string summaryStatePath = AppPaths.GetRelativeSummaryStatePath(sessionState.SessionId);
+
         return string.Join(
             " ",
             [
                 "Notification summary handoff is enabled for this workspace.",
-                "Before you finish the current task, overwrite .copilot/notify-summary.json",
-                "with valid JSON,",
-                $"copy run_id {sessionState.RunId} from .copilot/notify-session.json,",
-                "and write the summary field in concise Chinese.",
+                $"Your session_id is {sessionState.SessionId}.",
+                $"Before you finish each task, read {turnStatePath}",
+                $"and overwrite {summaryStatePath} with valid JSON.",
+                "Copy session_id and turn_id from the turn state file,",
+                "and write the summary field as concise human-readable text,",
+                "preferably in Chinese on a best-effort basis.",
             ]);
+    }
+
+    private static string CreateStopFallbackTurnId(string timestamp)
+    {
+        string normalized = new(timestamp.Where(char.IsLetterOrDigit).ToArray());
+        return string.IsNullOrWhiteSpace(normalized)
+            ? $"stop-{Guid.NewGuid():n}"
+            : $"stop-{normalized.ToLowerInvariant()}";
     }
 
     private static string? ShortCommit(string? commitId)

@@ -29,6 +29,7 @@ This research focuses on the hook events and input fields that are directly rele
 
 - common hook input fields,
 - `SessionStart` input,
+- `UserPromptSubmit` input,
 - `Stop` input,
 - what hook input already gives us for correlation,
 - what the custom instructions documentation does and does not document,
@@ -55,8 +56,8 @@ in [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md
 
 ### Repository context reviewed (non-normative)
 
-- [`../scripts/copilot-summary-state.ps1`](../scripts/copilot-summary-state.ps1)
-- [`../scripts/telegram-notify.ps1`](../scripts/telegram-notify.ps1)
+- [`../Commands/HookCommandService.cs`](../Commands/HookCommandService.cs)
+- [`../State/WorkspaceStateStore.cs`](../State/WorkspaceStateStore.cs)
 - [`../instructions/copilot-notify-summary.instructions.md`](../instructions/copilot-notify-summary.instructions.md)
 
 ## Documented Common Hook Input Fields
@@ -95,6 +96,23 @@ The official hooks documentation also states that `SessionStart` output can inje
 
 That means `SessionStart` is not only a place where a hook can observe the session start; it is also a documented place where a hook can hand information to the model.
 
+### `UserPromptSubmit`
+
+The VS Code hooks documentation states that `UserPromptSubmit` receives the
+common fields plus:
+
+| Field    | Meaning                                  |
+| -------- | ---------------------------------------- |
+| `prompt` | The text the user submitted for the turn |
+
+#### Project relevance
+
+For this project, `UserPromptSubmit` is the documented hook event that fires
+for each user prompt and therefore marks the start of a new chat turn.
+
+That makes it the most natural documented place to advance any internal
+turn-scoped state such as a repository-defined `turn_id`.
+
 ### `Stop`
 
 The VS Code hooks documentation states that `Stop` receives the common fields plus:
@@ -120,9 +138,10 @@ Based on the official hook input contract, the hook runtime already has document
 
 1. identify the current workspace (`cwd`),
 2. identify the current Copilot session (`sessionId`),
-3. tell which lifecycle event is running (`hookEventName`),
-4. record when the event happened (`timestamp`), and
-5. reference the transcript (`transcript_path`).
+3. observe when a new user prompt starts a turn (`UserPromptSubmit`),
+4. tell which lifecycle event is running (`hookEventName`),
+5. record when the event happened (`timestamp`), and
+6. reference the transcript (`transcript_path`).
 
 ## Locality and execution-model clarification
 
@@ -204,9 +223,9 @@ That is a valid design, but it is only **one possible design**, not a fact impos
 
 ### Conclusion 3: repository-defined correlation identifiers are optional
 
-The official hook input contract documents `sessionId`, not any repository-defined `run_id` field.
+The official hook input contract documents `sessionId`, not any repository-defined `turn_id` field.
 
-So a repository-defined correlation identifier can still be useful, but it should be described as an implementation choice or an internal protocol unless the project explicitly decides to make it part of the product contract.
+So a repository-defined turn identifier can still be useful, but it should be described as an implementation choice or an internal protocol unless the project explicitly decides to make it part of the product contract.
 
 ## What This Means for the Functional Requirements
 

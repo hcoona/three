@@ -9,15 +9,33 @@ internal sealed class WorkspaceStateStore(TimeProvider timeProvider)
         SessionStartHookInput input,
         CancellationToken cancellationToken)
     {
-        string workspacePath = Path.GetFullPath(input.Cwd);
-        string copilotDirectory = AppPaths.GetWorkspaceCopilotDirectory(workspacePath);
-        Directory.CreateDirectory(copilotDirectory);
-
         string now = GetCurrentUtcTimestamp();
-        SessionState sessionState = new()
+        return await EnsureSessionAsync(
+            Path.GetFullPath(input.Cwd),
+            input.SessionId,
+            input.TranscriptPath,
+            now,
+            cancellationToken);
+    }
+
+    public async Task<TurnState> StartTurnAsync(
+        UserPromptSubmitHookInput input,
+        CancellationToken cancellationToken)
+    {
+        string workspacePath = Path.GetFullPath(input.Cwd);
+        string now = GetCurrentUtcTimestamp();
+
+        _ = await EnsureSessionAsync(
+            workspacePath,
+            input.SessionId,
+            input.TranscriptPath,
+            now,
+            cancellationToken);
+
+        TurnState turnState = new()
         {
-            RunId = Guid.NewGuid().ToString("n"),
             SessionId = input.SessionId,
+            TurnId = Guid.NewGuid().ToString("n"),
             WorkspacePath = workspacePath,
             CreatedAt = now,
             UpdatedAt = now,
@@ -26,7 +44,8 @@ internal sealed class WorkspaceStateStore(TimeProvider timeProvider)
 
         SummaryRecord placeholderSummary = new()
         {
-            RunId = sessionState.RunId,
+            SessionId = turnState.SessionId,
+            TurnId = turnState.TurnId,
             UpdatedAt = now,
             Details = [],
             ChangedFiles = [],
@@ -34,49 +53,72 @@ internal sealed class WorkspaceStateStore(TimeProvider timeProvider)
         };
 
         await WriteJsonAsync(
-            AppPaths.GetSessionStatePath(workspacePath),
-            sessionState,
-            AppJsonSerializerContext.Default.SessionState,
+            AppPaths.GetTurnStatePath(workspacePath, input.SessionId),
+            turnState,
+            AppJsonSerializerContext.Default.TurnState,
             cancellationToken);
 
         await WriteJsonAsync(
-            AppPaths.GetSummaryStatePath(workspacePath),
+            AppPaths.GetSummaryStatePath(workspacePath, input.SessionId),
             placeholderSummary,
             AppJsonSerializerContext.Default.SummaryRecord,
             cancellationToken);
 
-        return sessionState;
+        return turnState;
     }
 
     public static Task<SessionState?> TryReadSessionAsync(
         string workspacePath,
+        string sessionId,
         CancellationToken cancellationToken)
         => ReadJsonAsync(
-            AppPaths.GetSessionStatePath(Path.GetFullPath(workspacePath)),
+            AppPaths.GetSessionStatePath(Path.GetFullPath(workspacePath), sessionId),
             AppJsonSerializerContext.Default.SessionState,
+            cancellationToken);
+
+    public static Task<TurnState?> TryReadTurnAsync(
+        string workspacePath,
+        string sessionId,
+        CancellationToken cancellationToken)
+        => ReadJsonAsync(
+            AppPaths.GetTurnStatePath(Path.GetFullPath(workspacePath), sessionId),
+            AppJsonSerializerContext.Default.TurnState,
             cancellationToken);
 
     public static Task<SummaryRecord?> TryReadSummaryAsync(
         string workspacePath,
+        string sessionId,
         CancellationToken cancellationToken)
         => ReadJsonAsync(
-            AppPaths.GetSummaryStatePath(Path.GetFullPath(workspacePath)),
+            AppPaths.GetSummaryStatePath(Path.GetFullPath(workspacePath), sessionId),
             AppJsonSerializerContext.Default.SummaryRecord,
             cancellationToken);
 
     public static Task<LastSentState?> TryReadLastSentAsync(
         string workspacePath,
+        string sessionId,
         CancellationToken cancellationToken)
         => ReadJsonAsync(
-            AppPaths.GetLastSentStatePath(Path.GetFullPath(workspacePath)),
+            AppPaths.GetLastSentStatePath(Path.GetFullPath(workspacePath), sessionId),
             AppJsonSerializerContext.Default.LastSentState,
             cancellationToken);
 
     public static async Task<bool> WasStopAlreadySentAsync(
-        StopHookInput input,
+        string workspacePath,
+        string sessionId,
+        string? turnId,
+        string stopTimestamp,
         CancellationToken cancellationToken)
     {
-        LastSentState? lastSentState = await TryReadLastSentAsync(input.Cwd, cancellationToken);
+        if (string.IsNullOrWhiteSpace(turnId))
+        {
+            return false;
+        }
+
+        LastSentState? lastSentState = await TryReadLastSentAsync(
+            workspacePath,
+            sessionId,
+            cancellationToken);
         if (lastSentState is null)
         {
             return false;
@@ -84,12 +126,13 @@ internal sealed class WorkspaceStateStore(TimeProvider timeProvider)
 
         return string.Equals(
             lastSentState.WorkspacePath,
-            Path.GetFullPath(input.Cwd),
+            Path.GetFullPath(workspacePath),
             StringComparison.Ordinal)
-            && string.Equals(lastSentState.SessionId, input.SessionId, StringComparison.Ordinal)
+            && string.Equals(lastSentState.SessionId, sessionId, StringComparison.Ordinal)
+            && string.Equals(lastSentState.TurnId, turnId, StringComparison.Ordinal)
             && string.Equals(
                 lastSentState.StopTimestamp,
-                input.Timestamp,
+                stopTimestamp,
                 StringComparison.Ordinal);
     }
 
@@ -101,8 +144,8 @@ internal sealed class WorkspaceStateStore(TimeProvider timeProvider)
     {
         LastSentState lastSentState = new()
         {
-            RunId = context.RunId,
             SessionId = input.SessionId,
+            TurnId = context.TurnId,
             WorkspacePath = Path.GetFullPath(input.Cwd),
             StopTimestamp = input.Timestamp,
             SentAt = context.SentAt,
@@ -110,7 +153,7 @@ internal sealed class WorkspaceStateStore(TimeProvider timeProvider)
         };
 
         return WriteJsonAsync(
-            AppPaths.GetLastSentStatePath(Path.GetFullPath(input.Cwd)),
+            AppPaths.GetLastSentStatePath(Path.GetFullPath(input.Cwd), input.SessionId),
             lastSentState,
             AppJsonSerializerContext.Default.LastSentState,
             cancellationToken);
@@ -122,6 +165,40 @@ internal sealed class WorkspaceStateStore(TimeProvider timeProvider)
             .GetUtcNow()
             .UtcDateTime
             .ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'");
+    }
+
+    private static async Task<SessionState> EnsureSessionAsync(
+        string workspacePath,
+        string sessionId,
+        string? transcriptPath,
+        string now,
+        CancellationToken cancellationToken)
+    {
+        SessionState sessionState = await TryReadSessionAsync(
+                workspacePath,
+                sessionId,
+                cancellationToken)
+            ?? new SessionState
+            {
+                SessionId = sessionId,
+                WorkspacePath = workspacePath,
+                CreatedAt = now,
+            };
+
+        sessionState.WorkspacePath = workspacePath;
+        sessionState.UpdatedAt = now;
+        if (!string.IsNullOrWhiteSpace(transcriptPath))
+        {
+            sessionState.TranscriptPath = transcriptPath;
+        }
+
+        await WriteJsonAsync(
+            AppPaths.GetSessionStatePath(workspacePath, sessionId),
+            sessionState,
+            AppJsonSerializerContext.Default.SessionState,
+            cancellationToken);
+
+        return sessionState;
     }
 
     private static async Task<T?> ReadJsonAsync<T>(

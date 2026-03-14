@@ -29,6 +29,14 @@ internal static class CliFactory
                 Console.OpenStandardOutput(),
                 cancellationToken));
 
+        Command userPromptSubmitCommand = new(
+            "user-prompt-submit",
+            "Handle the VS Code UserPromptSubmit hook event.");
+        userPromptSubmitCommand.SetAction((ParseResult _, CancellationToken cancellationToken) =>
+            hookCommandService.HandleUserPromptSubmitAsync(
+                Console.OpenStandardInput(),
+                cancellationToken));
+
         Command stopCommand = new(
             "stop",
             "Handle the VS Code Stop hook event.");
@@ -36,6 +44,7 @@ internal static class CliFactory
             hookCommandService.HandleStopAsync(Console.OpenStandardInput(), cancellationToken));
 
         hookCommand.Subcommands.Add(sessionStartCommand);
+        hookCommand.Subcommands.Add(userPromptSubmitCommand);
         hookCommand.Subcommands.Add(stopCommand);
         return hookCommand;
     }

@@ -16,11 +16,13 @@ internal static class UserHookConfigurationManager
     public static ConfigurationApplyResult InstallHooks(
         string settingsPath,
         string sessionStartCommand,
+        string userPromptSubmitCommand,
         string stopCommand,
         string timestamp)
     {
         UserHookSettingsDocument desiredDocument = CreateManagedHooksDocument(
             sessionStartCommand,
+            userPromptSubmitCommand,
             stopCommand);
         UserHookSettingsDocument rootDocument;
 
@@ -73,6 +75,19 @@ internal static class UserHookConfigurationManager
 
         conflict = UpsertHookEntry(
             rootDocument.Hooks,
+            eventName: "UserPromptSubmit",
+            entry: CreateManagedHookEntry(
+                userPromptSubmitCommand,
+                "UserPromptSubmit",
+                timeoutSeconds: 10));
+
+        if (conflict is not null)
+        {
+            return conflict;
+        }
+
+        conflict = UpsertHookEntry(
+            rootDocument.Hooks,
             eventName: "Stop",
             entry: CreateManagedHookEntry(
                 stopCommand,
@@ -114,6 +129,7 @@ internal static class UserHookConfigurationManager
         }
 
         RemoveManagedEntries(rootDocument.Hooks, "SessionStart");
+    RemoveManagedEntries(rootDocument.Hooks, "UserPromptSubmit");
         RemoveManagedEntries(rootDocument.Hooks, "Stop");
 
         File.WriteAllText(settingsPath, SerializeSettings(rootDocument));
@@ -131,6 +147,7 @@ internal static class UserHookConfigurationManager
         }
 
         return HasManagedEntry(rootDocument.Hooks, "SessionStart")
+            && HasManagedEntry(rootDocument.Hooks, "UserPromptSubmit")
             && HasManagedEntry(rootDocument.Hooks, "Stop");
     }
 
@@ -230,6 +247,7 @@ internal static class UserHookConfigurationManager
 
     private static UserHookSettingsDocument CreateManagedHooksDocument(
         string sessionStartCommand,
+        string userPromptSubmitCommand,
         string stopCommand)
     {
         return new UserHookSettingsDocument
@@ -238,6 +256,12 @@ internal static class UserHookConfigurationManager
             {
                 ["SessionStart"] = [
                     CreateManagedHookEntry(sessionStartCommand, "SessionStart", 10)
+                ],
+                ["UserPromptSubmit"] = [
+                    CreateManagedHookEntry(
+                        userPromptSubmitCommand,
+                        "UserPromptSubmit",
+                        10)
                 ],
                 ["Stop"] = [CreateManagedHookEntry(stopCommand, "Stop", 20)],
             },

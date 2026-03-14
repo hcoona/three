@@ -31,14 +31,15 @@ instructions behavior:
 - `Commands/`: hook lifecycle commands and user-level install/diagnostic
   commands.
 - `Notifications/`: Telegram message composition and delivery.
-- `State/`: workspace-local `.copilot/*.json` state management.
+- `State/`: session-scoped `.copilot/sessions/<session_id>/*.json` state
+  management.
 - `instructions/copilot-notify-summary.instructions.md`: managed user
   instruction template for summary handoff.
 - `docs/README.md`: tracks human-authored source inputs and derivation
   relationships for the documentation set in `docs/`.
 
-Legacy PowerShell scripts remain in the directory for historical reference, but
-they are no longer the source of truth for the supported implementation.
+Only the C# implementation and its managed instruction assets are shipped in
+this directory.
 
 ## User-level installation
 
@@ -94,8 +95,18 @@ The CLI also provides:
 - `user diagnose`: print a detailed diagnostic report.
 - `user test-notification`: send a test Telegram message without waiting for a
   Copilot stop event.
-- `hook session-start` and `hook stop`: internal lifecycle entry points used by
-  VS Code Copilot hooks.
+- `hook session-start`, `hook user-prompt-submit`, and `hook stop`: internal
+  lifecycle entry points used by VS Code Copilot hooks.
+
+During runtime, the hook maintains session-scoped state under
+`.copilot/sessions/<session_id>/`, including:
+
+- `notify-session.json`: session metadata for the current Copilot session.
+- `notify-turn.json`: the current turn identifier generated at
+  `UserPromptSubmit`.
+- `notify-summary.json`: the current turn's summary handoff file.
+- `notify-last-sent.json`: best-effort duplicate-suppression state for the
+  current session.
 
 The gopass prefix is fixed at `copilot/vscode-copilot-telegram-hook` so the
 user-level installation and this repository's workspace hook resolve the same
@@ -107,7 +118,8 @@ GitHub Copilot.
 The user-level instruction file, however, is installed in the GitHub
 Copilot-specific `~/.copilot/instructions` location.
 The runtime honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process
-environment as explicit overrides, but `gopass` is the primary mechanism.
+environment as explicit overrides, but `gopass` is the primary persisted
+mechanism for the managed user-level installation.
 
 ## Build and validation
 
@@ -142,6 +154,9 @@ Use these documents as the authoritative sources:
 - [h-003 addendum](./docs/h-003-human-confirmation-2026-03-13-addendum.md):
   follow-up human clarification on scope, failure handling, and overlength
   notifications.
+- [`docs/h-004-human-confirmation-2026-03-14.md`](./docs/h-004-human-confirmation-2026-03-14.md):
+  later clarification that Chinese summaries are best-effort and that runtime
+  environment-variable credential overrides are acceptable.
 - [`docs/functional-requirements.md`](./docs/functional-requirements.md):
   current derived functional specification.
 - [nonfunctional constraints](./docs/nonfunctional-and-constraints-research.md):
@@ -154,5 +169,6 @@ Use these documents as the authoritative sources:
 
 In short, the current product target is a user-level VS Code GitHub Copilot
 hook that attempts Telegram delivery for each completed-turn `Stop` event and
-includes a concise Chinese summary when available, continuing across multiple
-Telegram messages when needed to stay within Telegram limits.
+includes a concise task summary when available, preferring Chinese on a
+best-effort basis, continuing across multiple Telegram messages when needed to
+stay within Telegram limits.

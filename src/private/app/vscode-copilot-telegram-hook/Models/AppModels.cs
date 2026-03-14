@@ -25,6 +25,27 @@ internal sealed class SessionStartHookInput
     public string? Source { get; set; }
 }
 
+internal sealed class UserPromptSubmitHookInput
+{
+    [JsonPropertyName("timestamp")]
+    public string Timestamp { get; set; } = string.Empty;
+
+    [JsonPropertyName("cwd")]
+    public string Cwd { get; set; } = string.Empty;
+
+    [JsonPropertyName("sessionId")]
+    public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("hookEventName")]
+    public string HookEventName { get; set; } = string.Empty;
+
+    [JsonPropertyName("transcript_path")]
+    public string? TranscriptPath { get; set; }
+
+    [JsonPropertyName("prompt")]
+    public string? Prompt { get; set; }
+}
+
 internal sealed class StopHookInput
 {
     [JsonPropertyName("timestamp")]
@@ -71,11 +92,31 @@ internal sealed class SessionState
 {
     public int Version { get; set; } = AppConstants.SchemaVersion;
 
-    [JsonPropertyName("run_id")]
-    public string RunId { get; set; } = string.Empty;
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("workspace_path")]
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    [JsonPropertyName("created_at")]
+    public string CreatedAt { get; set; } = string.Empty;
+
+    [JsonPropertyName("updated_at")]
+    public string UpdatedAt { get; set; } = string.Empty;
+
+    [JsonPropertyName("transcript_path")]
+    public string? TranscriptPath { get; set; }
+}
+
+internal sealed class TurnState
+{
+    public int Version { get; set; } = AppConstants.SchemaVersion;
 
     [JsonPropertyName("session_id")]
     public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("turn_id")]
+    public string TurnId { get; set; } = string.Empty;
 
     [JsonPropertyName("workspace_path")]
     public string WorkspacePath { get; set; } = string.Empty;
@@ -94,8 +135,11 @@ internal sealed class SummaryRecord
 {
     public int Version { get; set; } = AppConstants.SchemaVersion;
 
-    [JsonPropertyName("run_id")]
-    public string? RunId { get; set; }
+    [JsonPropertyName("session_id")]
+    public string? SessionId { get; set; }
+
+    [JsonPropertyName("turn_id")]
+    public string? TurnId { get; set; }
 
     [JsonPropertyName("updated_at")]
     public string? UpdatedAt { get; set; }
@@ -120,11 +164,11 @@ internal sealed class LastSentState
 {
     public int Version { get; set; } = AppConstants.SchemaVersion;
 
-    [JsonPropertyName("run_id")]
-    public string RunId { get; set; } = string.Empty;
-
     [JsonPropertyName("session_id")]
     public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("turn_id")]
+    public string TurnId { get; set; } = string.Empty;
 
     [JsonPropertyName("workspace_path")]
     public string WorkspacePath { get; set; } = string.Empty;
@@ -248,9 +292,9 @@ internal sealed record GitRepositoryMetadata(
 
 internal sealed class NotificationContext
 {
-    public string RunId { get; init; } = string.Empty;
-
     public string SessionId { get; init; } = string.Empty;
+
+    public string TurnId { get; init; } = string.Empty;
 
     public string StopTimestamp { get; init; } = string.Empty;
 

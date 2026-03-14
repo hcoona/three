@@ -40,8 +40,8 @@ internal static class NotificationComposer
         List<string> lines =
         [
             FormatCodeLine("发送时间", context.SentAt),
-            FormatCodeLine("运行 ID", context.RunId),
             FormatCodeLine("会话 ID", context.SessionId),
+            FormatCodeLine("轮次 ID", context.TurnId),
             FormatCodeLine("Stop 时间", context.StopTimestamp),
             FormatCodeLine("工作区", context.WorkspacePath),
             FormatCodeLine("主机", context.HostName),

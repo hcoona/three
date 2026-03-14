@@ -8,9 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <AssemblyName>Hcoona.VsCodeCopilotTelegramHook</AssemblyName>
+    <AssemblyName>vscode-copilot-telegram-hook</AssemblyName>
     <RootNamespace>Hcoona.VsCodeCopilotTelegramHook</RootNamespace>
-    <TargetName>vscode-copilot-telegram-hook</TargetName>
 
     <PublishAot>true</PublishAot>
   </PropertyGroup>
