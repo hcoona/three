@@ -42,7 +42,31 @@ public sealed class NotificationComposerTests
         }
     }
 
-    private static NotificationContext CreateContext()
+    [Fact]
+    public void ComposeTruncatesLongHeaderFieldsToKeepMessagesWithinTelegramLimit()
+    {
+        NotificationContext context = CreateContext(
+            workspacePath: "/very-long/" + new string('w', 6000),
+            transcriptPath: "/very-long/" + new string('t', 6000));
+        SummaryRecord summaryRecord = new()
+        {
+            Summary = "Short summary that must remain visible.",
+        };
+
+        string message = Assert.Single(NotificationComposer.Compose(context, summaryRecord));
+
+        Assert.True(message.Length <= AppConstants.MaxTelegramHtmlMessageLength);
+        Assert.Contains(
+            "摘要：Short summary that must remain visible.",
+            message,
+            StringComparison.Ordinal);
+        Assert.Contains("<b>工作区：</b><code>", message, StringComparison.Ordinal);
+        Assert.Contains("...", message, StringComparison.Ordinal);
+    }
+
+    private static NotificationContext CreateContext(
+        string? workspacePath = null,
+        string? transcriptPath = null)
     {
         return new NotificationContext
         {
@@ -50,13 +74,13 @@ public sealed class NotificationComposerTests
             TurnId = "turn-789",
             StopTimestamp = "2026-03-13T12:34:56.789Z",
             SentAt = "2026-03-13T12:34:57.000Z",
-            WorkspacePath = "/tmp/workspace",
+            WorkspacePath = workspacePath ?? "/tmp/workspace",
             HostName = "builder-host",
             ExecutionEnvironment = "Linux | X64",
             RepositoryName = "three",
             BranchName = "main",
             CommitId = "abcdef123456",
-            TranscriptPath = "/tmp/workspace/.copilot/transcript.json",
+            TranscriptPath = transcriptPath ?? "/tmp/workspace/.copilot/transcript.json",
         };
     }
 }

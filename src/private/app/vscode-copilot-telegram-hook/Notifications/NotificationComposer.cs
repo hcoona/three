@@ -5,14 +5,28 @@ namespace Hcoona.VsCodeCopilotTelegramHook.Notifications;
 
 internal static class NotificationComposer
 {
+    private const int PreferredBodyLength = 256;
+    private const int ReservedHeadingAndSeparatorLength = 64;
+    private const string TruncationMarker = "...";
+
     public static IReadOnlyList<string> Compose(NotificationContext context, SummaryRecord? summary)
     {
-        string headerHtml = BuildHeaderHtml(context);
         string bodyText = BuildBodyText(summary);
+        int desiredBodyLength = Math.Min(
+            PreferredBodyLength,
+            WebUtility.HtmlEncode(bodyText).Length);
+        int maxHeaderLength = Math.Max(
+            0,
+            AppConstants.MaxTelegramHtmlMessageLength
+                - ReservedHeadingAndSeparatorLength
+                - desiredBodyLength);
+        string headerHtml = BuildHeaderHtml(context, maxHeaderLength);
 
         int availableBodyLength = Math.Max(
-            256,
-            AppConstants.MaxTelegramHtmlMessageLength - headerHtml.Length - 64);
+            1,
+            AppConstants.MaxTelegramHtmlMessageLength
+                - headerHtml.Length
+                - ReservedHeadingAndSeparatorLength);
         List<string> bodyChunks = SplitPlainText(bodyText, availableBodyLength);
         int messageCount = Math.Max(1, bodyChunks.Count);
 
@@ -35,37 +49,60 @@ internal static class NotificationComposer
         return messages;
     }
 
-    private static string BuildHeaderHtml(NotificationContext context)
+    private static string BuildHeaderHtml(NotificationContext context, int maxLength)
     {
-        List<string> lines =
+        if (maxLength <= 0)
+        {
+            return string.Empty;
+        }
+
+        List<HeaderField> fields =
         [
-            FormatCodeLine("发送时间", context.SentAt),
-            FormatCodeLine("会话 ID", context.SessionId),
-            FormatCodeLine("轮次 ID", context.TurnId),
-            FormatCodeLine("Stop 时间", context.StopTimestamp),
-            FormatCodeLine("工作区", context.WorkspacePath),
-            FormatCodeLine("主机", context.HostName),
-            FormatCodeLine("环境", context.ExecutionEnvironment),
+            new("发送时间", context.SentAt, Optional: false),
+            new("会话 ID", context.SessionId, Optional: false),
+            new("轮次 ID", context.TurnId, Optional: false),
+            new("Stop 时间", context.StopTimestamp, Optional: false),
+            new("工作区", context.WorkspacePath, Optional: false),
+            new("主机", context.HostName, Optional: false),
+            new("环境", context.ExecutionEnvironment, Optional: false),
+            new("仓库", context.RepositoryName, Optional: true),
+            new("分支", context.BranchName, Optional: true),
+            new("提交", context.CommitId, Optional: true),
+            new("转录文件", context.TranscriptPath, Optional: true),
         ];
 
-        if (!string.IsNullOrWhiteSpace(context.RepositoryName))
-        {
-            lines.Add(FormatCodeLine("仓库", context.RepositoryName));
-        }
+        List<string> lines = [];
+        int remainingLength = maxLength;
 
-        if (!string.IsNullOrWhiteSpace(context.BranchName))
+        foreach (HeaderField field in fields)
         {
-            lines.Add(FormatCodeLine("分支", context.BranchName));
-        }
+            if (string.IsNullOrWhiteSpace(field.Value))
+            {
+                continue;
+            }
 
-        if (!string.IsNullOrWhiteSpace(context.CommitId))
-        {
-            lines.Add(FormatCodeLine("提交", context.CommitId));
-        }
+            string value = field.Value;
 
-        if (!string.IsNullOrWhiteSpace(context.TranscriptPath))
-        {
-            lines.Add(FormatCodeLine("转录文件", context.TranscriptPath));
+            int separatorLength = lines.Count == 0 ? 0 : 1;
+            int lineBudget = remainingLength - separatorLength;
+            if (lineBudget <= 0)
+            {
+                break;
+            }
+
+            string line = TryFormatCodeLine(field.Label, value, lineBudget);
+            if (string.IsNullOrEmpty(line))
+            {
+                if (field.Optional)
+                {
+                    continue;
+                }
+
+                break;
+            }
+
+            lines.Add(line);
+            remainingLength -= line.Length + separatorLength;
         }
 
         return string.Join("\n", lines);
@@ -129,7 +166,7 @@ internal static class NotificationComposer
 
     private static List<string> SplitPlainText(string text, int maxEncodedLength)
     {
-        if (string.IsNullOrEmpty(text))
+        if (string.IsNullOrEmpty(text) || maxEncodedLength <= 0)
         {
             return [];
         }
@@ -185,6 +222,75 @@ internal static class NotificationComposer
     }
 
     private static string FormatCodeLine(string label, string value)
-        => $"<b>{WebUtility.HtmlEncode(label)}：</b>"
-            + $"<code>{WebUtility.HtmlEncode(value)}</code>";
+        => GetCodeLinePrefix(label)
+            + $"{WebUtility.HtmlEncode(value)}</code>";
+
+    private static string TryFormatCodeLine(string label, string value, int maxLength)
+    {
+        string line = FormatCodeLine(label, value);
+        if (line.Length <= maxLength)
+        {
+            return line;
+        }
+
+        string prefix = GetCodeLinePrefix(label);
+        const string suffix = "</code>";
+        int maxEncodedValueLength = maxLength - prefix.Length - suffix.Length;
+        if (maxEncodedValueLength <= 0)
+        {
+            return string.Empty;
+        }
+
+        string truncatedValue = TruncateToEncodedLength(value, maxEncodedValueLength);
+        if (string.IsNullOrEmpty(truncatedValue))
+        {
+            return string.Empty;
+        }
+
+        return prefix + WebUtility.HtmlEncode(truncatedValue) + suffix;
+    }
+
+    private static string TruncateToEncodedLength(string value, int maxEncodedLength)
+    {
+        string encodedValue = WebUtility.HtmlEncode(value);
+        if (encodedValue.Length <= maxEncodedLength)
+        {
+            return value;
+        }
+
+        if (maxEncodedLength <= TruncationMarker.Length)
+        {
+            return TruncationMarker[..maxEncodedLength];
+        }
+
+        int prefixBudget = maxEncodedLength - TruncationMarker.Length;
+        int end = FindEncodedPrefixEnd(value, prefixBudget);
+        if (end <= 0)
+        {
+            return TruncationMarker;
+        }
+
+        string trimmedPrefix = value[..end].TrimEnd();
+        return string.IsNullOrEmpty(trimmedPrefix)
+            ? TruncationMarker
+            : trimmedPrefix + TruncationMarker;
+    }
+
+    private static int FindEncodedPrefixEnd(string value, int maxEncodedLength)
+    {
+        for (int index = 1; index <= value.Length; index++)
+        {
+            if (WebUtility.HtmlEncode(value[..index]).Length > maxEncodedLength)
+            {
+                return index - 1;
+            }
+        }
+
+        return value.Length;
+    }
+
+    private static string GetCodeLinePrefix(string label)
+        => $"<b>{WebUtility.HtmlEncode(label)}：</b><code>";
+
+    private sealed record HeaderField(string Label, string? Value, bool Optional);
 }
