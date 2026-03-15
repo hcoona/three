@@ -13,7 +13,8 @@ It serves two use cases:
 The implementation follows the official VS Code Copilot hooks preview behavior:
 
 - Workspace hooks are loaded from `.github/hooks/*.json`.
-- User hooks are loaded from `~/.claude/settings.json` by default.
+- The official VS Code hooks docs currently list `~/.claude/settings.json` as
+  a default user hook location.
 - Workspace hooks take precedence over user hooks for the same event.
 
 The implementation also follows the official VS Code GitHub Copilot custom
@@ -85,9 +86,23 @@ The installer command:
 - stores missing values in `gopass`,
 - asks before overwriting existing stored secrets and defaults to keeping them,
 - installs the published Native AOT binary into a user-owned data directory,
-- updates `~/.claude/settings.json` so VS Code loads the hook globally,
+- currently updates `~/.claude/settings.json` as the managed hook settings
+  target,
 - installs a VS Code GitHub Copilot user instruction file under
   `~/.copilot/instructions` so task summaries are produced in every workspace.
+
+Known gap: manual verification recorded in
+[`docs/h-006-human-confirmation-2026-03-14-user-hook-location.md`](./docs/h-006-human-confirmation-2026-03-14-user-hook-location.md)
+found that, in the current observed VS Code environment, user-level hooks from
+`~/.claude/settings.json` do not take effect when `chat.useClaudeHooks` is not
+enabled, even when `chat.hookFilesLocations` relies on its default enabled
+value or explicitly sets `"~/.claude/settings.json": true`. The same manual
+verification also showed that `~/.claude/settings.json` hooks do work when
+`"chat.useClaudeHooks": true` is configured. Even so, the installer does not
+yet manage an explicit alternative hook location through
+`chat.hookFilesLocations`, and the current product direction is to prefer a
+separate dedicated hook JSON path over relying on Claude-compatibility
+behavior.
 
 If you need to inspect or update stored Telegram secrets after installation,
 use the dedicated secret-management command:
@@ -153,9 +168,17 @@ git.
 The gopass prefix is fixed at `copilot/vscode-copilot-telegram-hook` so the
 user-level installation and this repository's workspace hook resolve the same
 secrets.
-As of the current official VS Code docs, the user-level hook file location is
-still `~/.claude/settings.json`, even when the feature is used from VS Code
-GitHub Copilot.
+As of the current official VS Code docs, the documented default user-level hook
+file location is still `~/.claude/settings.json`, even when the feature is used
+from VS Code GitHub Copilot. However, manual verification recorded in
+[`docs/h-006-human-confirmation-2026-03-14-user-hook-location.md`](./docs/h-006-human-confirmation-2026-03-14-user-hook-location.md)
+found that this path only acts as an effective user-level hook source in the
+observed environment when `"chat.useClaudeHooks": true` is enabled; leaving the
+path enabled in `chat.hookFilesLocations` or explicitly setting it to `true` is
+not sufficient by itself. This repository therefore treats the current
+`.claude`-based install target as a known gap and prefers a future managed
+installation that writes to another explicit hook JSON path rather than relying
+on Claude settings compatibility.
 
 The user-level instruction file, however, is installed in the GitHub
 Copilot-specific `~/.copilot/instructions` location.
@@ -199,6 +222,11 @@ Use these documents as the authoritative sources:
 - [`docs/h-004-human-confirmation-2026-03-14.md`](./docs/h-004-human-confirmation-2026-03-14.md):
   later clarification that Chinese summaries are best-effort and that runtime
   environment-variable credential overrides are acceptable.
+- [`docs/h-006-human-confirmation-2026-03-14-user-hook-location.md`](./docs/h-006-human-confirmation-2026-03-14-user-hook-location.md):
+  later manual confirmation that `~/.claude/settings.json` is only effective in
+  the observed environment when `"chat.useClaudeHooks": true` is enabled, and
+  that managed installation should still prefer an explicitly specified
+  separate hook JSON path.
 - [`docs/functional-requirements.md`](./docs/functional-requirements.md):
   current derived functional specification.
 - [nonfunctional constraints](./docs/nonfunctional-and-constraints-research.md):
