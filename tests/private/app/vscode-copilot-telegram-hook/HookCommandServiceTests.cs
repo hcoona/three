@@ -144,19 +144,19 @@ public sealed class HookCommandServiceTests
             HookCommandService service = CreateHookCommandService(
                 new RecordingHttpMessageHandler(),
                 stateStore: stateStore);
-            string payload = $$"""
+            using MemoryStream payload = CreateJsonStream(
+                new Dictionary<string, object?>
                 {
-                    "cwd": "{{tempDirectory.FullName}}",
-                    "session_id": "session-123",
-                    "timestamp": "2026-03-14T15:51:50.783Z",
-                    "hook_event_name": "UserPromptSubmit",
-                    "transcript_path": "/tmp/transcript.json",
-                    "prompt": "Summarize the task."
-                }
-                """;
+                    ["cwd"] = tempDirectory.FullName,
+                    ["session_id"] = "session-123",
+                    ["timestamp"] = "2026-03-14T15:51:50.783Z",
+                    ["hook_event_name"] = "UserPromptSubmit",
+                    ["transcript_path"] = "/tmp/transcript.json",
+                    ["prompt"] = "Summarize the task.",
+                });
 
             int exitCode = await service.HandleUserPromptSubmitAsync(
-                new MemoryStream(System.Text.Encoding.UTF8.GetBytes(payload)),
+                payload,
                 CancellationToken.None);
 
             Assert.Equal(0, exitCode);
@@ -594,17 +594,17 @@ public sealed class HookCommandServiceTests
                 handler,
                 loggerFactory: loggerFactory,
                 logContext: logContext);
-            string payload = $$"""
+            using MemoryStream payload = CreateJsonStream(
+                new Dictionary<string, object?>
                 {
-                    "cwd": "{{tempDirectory.FullName}}",
-                    "sessionId": "session-123",
-                    "hookEventName": "Stop",
-                    "timestamp": "2026-03-14T15:51:50.783Z"
-                }
-                """;
+                    ["cwd"] = tempDirectory.FullName,
+                    ["sessionId"] = "session-123",
+                    ["hookEventName"] = "Stop",
+                    ["timestamp"] = "2026-03-14T15:51:50.783Z",
+                });
 
             int exitCode = await service.HandleStopAsync(
-                new MemoryStream(System.Text.Encoding.UTF8.GetBytes(payload)),
+                payload,
                 CancellationToken.None);
 
             Assert.Equal(0, exitCode);
@@ -669,6 +669,12 @@ public sealed class HookCommandServiceTests
         System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo)
     {
         return new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(value, jsonTypeInfo));
+    }
+
+    private static MemoryStream CreateJsonStream(
+        IReadOnlyDictionary<string, object?> properties)
+    {
+        return new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(properties));
     }
 
     private static TelegramSendMessageRequest DeserializeTelegramPayload(

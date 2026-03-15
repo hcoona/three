@@ -10,21 +10,20 @@ internal interface ITextFileWriter
 internal static class AtomicTextFileWriter
 {
     private static readonly ITextFileWriter DefaultWriter = new DefaultAtomicTextFileWriter();
-
-    private static ITextFileWriter currentWriter = DefaultWriter;
+    private static readonly AsyncLocal<ITextFileWriter?> TestWriter = new();
 
     public static void WriteAllText(string path, string content)
-        => currentWriter.WriteAllText(path, content);
+        => (TestWriter.Value ?? DefaultWriter).WriteAllText(path, content);
 
     internal static IDisposable UseWriterForTesting(ITextFileWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        ITextFileWriter previousWriter = currentWriter;
-        currentWriter = writer;
+        ITextFileWriter? previousWriter = TestWriter.Value;
+        TestWriter.Value = writer;
         return new RestoreWriterScope(previousWriter);
     }
 
-    private sealed class RestoreWriterScope(ITextFileWriter previousWriter) : IDisposable
+    private sealed class RestoreWriterScope(ITextFileWriter? previousWriter) : IDisposable
     {
         private bool disposed;
 
@@ -35,7 +34,7 @@ internal static class AtomicTextFileWriter
                 return;
             }
 
-            currentWriter = previousWriter;
+            TestWriter.Value = previousWriter;
             disposed = true;
         }
     }

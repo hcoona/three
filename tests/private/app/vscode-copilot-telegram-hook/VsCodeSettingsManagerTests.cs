@@ -263,13 +263,14 @@ public sealed class VsCodeSettingsManagerTests
 
             File.WriteAllText(
                 settingsPath,
-                $$"""
-                {
-                    "{{AppConstants.ChatHookFilesLocationsSettingName}}": {
-                        "{{legacyAbsoluteHookFileLocation}}": true
-                    }
-                }
-                """);
+                JsonSerializer.Serialize(
+                    new Dictionary<string, Dictionary<string, bool>>
+                    {
+                        [AppConstants.ChatHookFilesLocationsSettingName] = new()
+                        {
+                            [legacyAbsoluteHookFileLocation] = true,
+                        },
+                    }));
 
             ConfigurationApplyResult result = VsCodeSettingsManager.RegisterHookFile(
                 settingsPath,
