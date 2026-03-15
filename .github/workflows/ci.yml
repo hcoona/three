@@ -46,7 +46,7 @@ jobs:
           java-version: '25'
 
       - name: Set up PNPM
-        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
           version: 10
 
@@ -63,7 +63,7 @@ jobs:
           python-version: '3.14'
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@6ca151fd1bfcfd6fe0c4eb6837eb0584d0134a0c # v1
+        uses: ruby/setup-ruby@dffb23f65a78bba8db45d387d5ea1bbd6be3ef18 # v1
         with:
           ruby-version: '3.3'
           bundler-cache: true
@@ -176,7 +176,7 @@ jobs:
           global-json-file: global.json
 
       - name: Set up PNPM
-        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
           version: 10
 
@@ -225,7 +225,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7
+        uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache-dependency-glob: 'uv.lock'
@@ -253,7 +253,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Ruby
-        uses: ruby/setup-ruby@6ca151fd1bfcfd6fe0c4eb6837eb0584d0134a0c # v1
+        uses: ruby/setup-ruby@dffb23f65a78bba8db45d387d5ea1bbd6be3ef18 # v1
         with:
           ruby-version: '3.3'
 
