@@ -6,15 +6,17 @@ namespace Hcoona.VsCodeCopilotTelegramHook.Tests;
 public sealed class UserHookConfigurationManagerTests
 {
     [Fact]
-    public void InstallHooksPreservesUnmanagedEntriesAndUninstallRemovesOnlyManagedOnes()
+    public void InstallManagedHookFilePreservesUnmanagedEntriesAndUninstallRemovesOnlyManagedOnes()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
 
         try
         {
-            string settingsPath = Path.Combine(tempDirectory.FullName, "settings.json");
+            string hookFilePath = Path.Combine(
+                tempDirectory.FullName,
+                AppConstants.ManagedHookFileName);
             File.WriteAllText(
-                settingsPath,
+                hookFilePath,
                 """
                 {
                                         "model": "gpt-5.4",
@@ -33,17 +35,18 @@ public sealed class UserHookConfigurationManagerTests
                 }
                 """);
 
-            ConfigurationApplyResult installResult = UserHookConfigurationManager.InstallHooks(
-                settingsPath,
+            ConfigurationApplyResult installResult =
+                UserHookConfigurationManager.InstallManagedHookFile(
+                hookFilePath,
                 "managed session-start",
                 "managed user-prompt-submit",
                 "managed stop",
                 "2026-03-13T12:34:56.789Z");
 
             Assert.True(installResult.Applied);
-            Assert.True(UserHookConfigurationManager.IsHookInstalled(settingsPath));
+            Assert.True(UserHookConfigurationManager.IsManagedHookFileInstalled(hookFilePath));
 
-            UserHookSettingsDocument installedSettings = ReadSettings(settingsPath);
+            UserHookSettingsDocument installedSettings = ReadSettings(hookFilePath);
             Assert.Equal("gpt-5.4", installedSettings.AdditionalProperties?["model"].GetString());
             Assert.Single(installedSettings.Hooks["SessionStart"]);
             Assert.Single(installedSettings.Hooks["UserPromptSubmit"]);
@@ -59,18 +62,50 @@ public sealed class UserHookConfigurationManagerTests
                 static entry => entry.Env.ContainsKey(AppConstants.ManagedHookEnvironmentVariable));
 
             ConfigurationApplyResult uninstallResult =
-                UserHookConfigurationManager.UninstallHooks(settingsPath);
+                UserHookConfigurationManager.UninstallManagedHookFile(hookFilePath);
 
             Assert.True(uninstallResult.Applied);
-            Assert.False(UserHookConfigurationManager.IsHookInstalled(settingsPath));
+            Assert.False(UserHookConfigurationManager.IsManagedHookFileInstalled(hookFilePath));
 
-            UserHookSettingsDocument uninstalledSettings = ReadSettings(settingsPath);
+            UserHookSettingsDocument uninstalledSettings = ReadSettings(hookFilePath);
             Assert.False(uninstalledSettings.Hooks.ContainsKey("SessionStart"));
             Assert.False(uninstalledSettings.Hooks.ContainsKey("UserPromptSubmit"));
             Assert.Single(uninstalledSettings.Hooks["Stop"]);
             Assert.Equal(
                 "echo custom-stop",
                 uninstalledSettings.Hooks["Stop"][0].Command);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void UninstallManagedHookFileDeletesToolOwnedHookFileWhenOnlyManagedEntriesExist()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            string hookFilePath = Path.Combine(
+                tempDirectory.FullName,
+                AppConstants.ManagedHookFileName);
+
+            ConfigurationApplyResult installResult =
+                UserHookConfigurationManager.InstallManagedHookFile(
+                    hookFilePath,
+                    "managed session-start",
+                    "managed user-prompt-submit",
+                    "managed stop",
+                    "2026-03-13T12:34:56.789Z");
+
+            ConfigurationApplyResult uninstallResult =
+                UserHookConfigurationManager.UninstallManagedHookFile(hookFilePath);
+
+            Assert.True(installResult.Applied);
+            Assert.True(uninstallResult.Applied);
+            Assert.False(File.Exists(hookFilePath));
         }
         finally
         {

@@ -38,22 +38,16 @@ internal sealed class UserCommandService(
             string userPromptSubmitCommand =
                 $"\"{userPaths.InstalledBinaryPath}\" hook user-prompt-submit";
             string stopCommand = $"\"{userPaths.InstalledBinaryPath}\" hook stop";
-            ConfigurationApplyResult hooksResult = UserHookConfigurationManager.InstallHooks(
-                userPaths.HookSettingsPath,
-                sessionStartCommand,
-                userPromptSubmitCommand,
-                stopCommand,
-                currentTimestamp);
-
-            ConfigurationApplyResult instructionResult =
-                UserHookConfigurationManager.InstallInstruction(
-                userPaths.InstructionFilePath,
-                instructionTemplateProvider.GetTemplate(),
-                currentTimestamp);
+            ConfigurationApplyResult hookFileResult =
+                UserHookConfigurationManager.InstallManagedHookFile(
+                    userPaths.ManagedHookFilePath,
+                    sessionStartCommand,
+                    userPromptSubmitCommand,
+                    stopCommand,
+                    currentTimestamp);
 
             await Console.Out.WriteLineAsync($"Installed binary: {userPaths.InstalledBinaryPath}");
-            await Console.Out.WriteLineAsync(hooksResult.Message);
-            await Console.Out.WriteLineAsync(instructionResult.Message);
+            await Console.Out.WriteLineAsync(hookFileResult.Message);
 
             foreach (string secretMessage in secretMessages)
             {
@@ -63,11 +57,51 @@ internal sealed class UserCommandService(
             await Console.Out.WriteLineAsync(
                 $"Telegram credentials are ready in gopass under '{AppConstants.SecretPrefix}'.");
 
-            if (hooksResult.CandidatePath is not null)
+            if (hookFileResult.CandidatePath is not null)
             {
                 await Console.Error.WriteLineAsync(
-                    $"Hook settings candidate file: {hooksResult.CandidatePath}");
+                    $"Managed hook file candidate: {hookFileResult.CandidatePath}");
             }
+
+            if (!hookFileResult.Applied)
+            {
+                await Console.Out.WriteLineAsync(
+                    "Skipped VS Code settings registration because the managed hook file "
+                    + "was not updated.");
+                await Console.Out.WriteLineAsync(
+                    "Skipped user instruction installation because the managed hook file "
+                    + "was not updated.");
+                AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded: false);
+                return 1;
+            }
+
+            ConfigurationApplyResult registrationResult = VsCodeSettingsManager.RegisterHookFile(
+                userPaths.VsCodeSettingsPath,
+                userPaths.ManagedHookFilePath,
+                currentTimestamp);
+            await Console.Out.WriteLineAsync(registrationResult.Message);
+
+            if (registrationResult.CandidatePath is not null)
+            {
+                await Console.Error.WriteLineAsync(
+                    $"VS Code settings candidate file: {registrationResult.CandidatePath}");
+            }
+
+            if (!registrationResult.Applied)
+            {
+                await Console.Out.WriteLineAsync(
+                    "Skipped user instruction installation because the VS Code settings "
+                    + "registration was not updated.");
+                AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded: false);
+                return 1;
+            }
+
+            ConfigurationApplyResult instructionResult =
+                UserHookConfigurationManager.InstallInstruction(
+                userPaths.InstructionFilePath,
+                instructionTemplateProvider.GetTemplate(),
+                currentTimestamp);
+            await Console.Out.WriteLineAsync(instructionResult.Message);
 
             if (instructionResult.CandidatePath is not null)
             {
@@ -75,9 +109,11 @@ internal sealed class UserCommandService(
                     $"Instruction candidate file: {instructionResult.CandidatePath}");
             }
 
-            bool succeeded = hooksResult.Applied && instructionResult.Applied;
-            AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded);
-            return succeeded ? 0 : 1;
+            AppLog.CompletedUserInstall(
+                logger,
+                userPaths.InstallRoot,
+                succeeded: instructionResult.Applied);
+            return instructionResult.Applied ? 0 : 1;
         }
         catch (Exception ex)
         {
@@ -98,8 +134,13 @@ internal sealed class UserCommandService(
                 userPaths.UserLogFilePath);
             AppLog.StartingUserUninstall(logger);
 
-            ConfigurationApplyResult hooksResult =
-                UserHookConfigurationManager.UninstallHooks(userPaths.HookSettingsPath);
+            ConfigurationApplyResult registrationResult = VsCodeSettingsManager.UnregisterHookFile(
+                userPaths.VsCodeSettingsPath,
+                userPaths.ManagedHookFilePath,
+                GetCurrentUtcTimestamp());
+            ConfigurationApplyResult hookFileResult =
+                UserHookConfigurationManager.UninstallManagedHookFile(
+                    userPaths.ManagedHookFilePath);
             ConfigurationApplyResult instructionResult =
                 UserHookConfigurationManager.UninstallInstruction(userPaths.InstructionFilePath);
 
@@ -110,7 +151,8 @@ internal sealed class UserCommandService(
                 await telegramCredentialProvider.RemoveStoredSecretsAsync(cancellationToken);
             }
 
-            await Console.Out.WriteLineAsync(hooksResult.Message);
+            await Console.Out.WriteLineAsync(registrationResult.Message);
+            await Console.Out.WriteLineAsync(hookFileResult.Message);
             await Console.Out.WriteLineAsync(instructionResult.Message);
             await Console.Out.WriteLineAsync(
                 $"Removed installed binary if it existed: {userPaths.InstalledBinaryPath}");
@@ -121,7 +163,9 @@ internal sealed class UserCommandService(
                     "Removed stored Telegram secrets from gopass when present.");
             }
 
-            bool succeeded = hooksResult.Applied && instructionResult.Applied;
+            bool succeeded = registrationResult.Applied
+                && hookFileResult.Applied
+                && instructionResult.Applied;
             AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded);
             return succeeded ? 0 : 1;
         }
@@ -147,15 +191,27 @@ internal sealed class UserCommandService(
                 await telegramCredentialProvider.IsSecretStoreAvailableAsync(cancellationToken);
             bool credentialsAvailable = await TryResolveCredentialsAsync(cancellationToken);
             bool binaryInstalled = File.Exists(userPaths.InstalledBinaryPath);
-            bool hooksInstalled =
-                UserHookConfigurationManager.IsHookInstalled(userPaths.HookSettingsPath);
+            bool managedHookFileInstalled =
+                UserHookConfigurationManager.IsManagedHookFileInstalled(
+                    userPaths.ManagedHookFilePath);
+            bool hookRegistrationInstalled = VsCodeSettingsManager.IsHookFileRegistered(
+                userPaths.VsCodeSettingsPath,
+                userPaths.ManagedHookFilePath);
             bool instructionInstalled =
                 UserHookConfigurationManager.IsInstructionInstalled(userPaths.InstructionFilePath);
 
             await Console.Out.WriteLineAsync(
                 FormatCheck("Installed binary", binaryInstalled, userPaths.InstalledBinaryPath));
             await Console.Out.WriteLineAsync(
-                FormatCheck("User hook settings", hooksInstalled, userPaths.HookSettingsPath));
+                FormatCheck(
+                    "Managed hook file",
+                    managedHookFileInstalled,
+                    userPaths.ManagedHookFilePath));
+            await Console.Out.WriteLineAsync(
+                FormatCheck(
+                    "VS Code hook registration",
+                    hookRegistrationInstalled,
+                    userPaths.VsCodeSettingsPath));
             await Console.Out.WriteLineAsync(
                 FormatCheck(
                     "User instructions",
@@ -170,7 +226,8 @@ internal sealed class UserCommandService(
                     secretStoreAvailable ? "environment or gopass" : "environment only"));
 
             bool isHealthy = binaryInstalled
-                && hooksInstalled
+                && managedHookFileInstalled
+                && hookRegistrationInstalled
                 && instructionInstalled
                 && credentialsAvailable;
             AppLog.CompletedUserHealth(logger, userPaths.InstallRoot, isHealthy);
@@ -202,8 +259,12 @@ internal sealed class UserCommandService(
             bool secretStoreAvailable =
                 await telegramCredentialProvider.IsSecretStoreAvailableAsync(cancellationToken);
             bool credentialsAvailable = await TryResolveCredentialsAsync(cancellationToken);
-            bool managedHooksInstalled = UserHookConfigurationManager.IsHookInstalled(
-                userPaths.HookSettingsPath);
+            bool managedHookFileInstalled =
+                UserHookConfigurationManager.IsManagedHookFileInstalled(
+                    userPaths.ManagedHookFilePath);
+            bool hookRegistrationInstalled = VsCodeSettingsManager.IsHookFileRegistered(
+                userPaths.VsCodeSettingsPath,
+                userPaths.ManagedHookFilePath);
             bool managedInstructionInstalled =
                 UserHookConfigurationManager.IsInstructionInstalled(userPaths.InstructionFilePath);
             string executionEnvironment = AppPaths.GetExecutionEnvironmentDisplay();
@@ -219,14 +280,20 @@ internal sealed class UserCommandService(
             await Console.Out.WriteLineAsync($"Installed binary : {userPaths.InstalledBinaryPath}");
             await Console.Out.WriteLineAsync(
                 $"Installed binary looks Native AOT : {installedBinaryLooksAot}");
-            await Console.Out.WriteLineAsync($"Hook settings path : {userPaths.HookSettingsPath}");
+            await Console.Out.WriteLineAsync(
+                $"Managed hook file path : {userPaths.ManagedHookFilePath}");
+            await Console.Out.WriteLineAsync(
+                $"VS Code user settings path : {userPaths.VsCodeSettingsPath}");
             await Console.Out.WriteLineAsync(
                 $"Instructions directory : {userPaths.InstructionsDirectory}");
             await Console.Out.WriteLineAsync(
                 $"Managed instruction file : {userPaths.InstructionFilePath}");
             await Console.Out.WriteLineAsync(
-                $"Managed hook entries installed : "
-                + $"{managedHooksInstalled}");
+                $"Managed hook file installed : "
+                + $"{managedHookFileInstalled}");
+            await Console.Out.WriteLineAsync(
+                $"Hook file registered in VS Code settings : "
+                + $"{hookRegistrationInstalled}");
             await Console.Out.WriteLineAsync(
                 $"Managed instruction installed : {managedInstructionInstalled}");
             await Console.Out.WriteLineAsync($"gopass available : {secretStoreAvailable}");

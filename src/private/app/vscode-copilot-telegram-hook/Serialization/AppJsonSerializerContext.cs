@@ -17,6 +17,7 @@ namespace Hcoona.VsCodeCopilotTelegramHook;
 [JsonSerializable(typeof(TelegramSendMessageRequest))]
 [JsonSerializable(typeof(TelegramApiResponse))]
 [JsonSerializable(typeof(UserHookSettingsDocument))]
+[JsonSerializable(typeof(VsCodeUserSettingsDocument))]
 [JsonSerializable(typeof(UserHookEntry))]
 internal sealed partial class AppJsonSerializerContext : JsonSerializerContext
 {

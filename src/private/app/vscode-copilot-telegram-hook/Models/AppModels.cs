@@ -226,6 +226,15 @@ internal sealed class UserHookSettingsDocument
     public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 }
 
+internal sealed class VsCodeUserSettingsDocument
+{
+    [JsonPropertyName("chat.hookFilesLocations")]
+    public Dictionary<string, bool>? ChatHookFilesLocations { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
+}
+
 internal sealed class UserHookEntry
 {
     [JsonPropertyName("type")]
@@ -249,7 +258,9 @@ internal class UserPathOverrides
 {
     public DirectoryInfo? InstallRoot { get; init; }
 
-    public FileInfo? HookSettingsPath { get; init; }
+    public FileInfo? ManagedHookFilePath { get; init; }
+
+    public FileInfo? VsCodeSettingsPath { get; init; }
 
     public DirectoryInfo? InstructionsDirectory { get; init; }
 }
@@ -287,7 +298,8 @@ internal sealed class SecretCommandOptions : UserPathOverrides
 internal sealed record UserInstallationPaths(
     string InstallRoot,
     string InstalledBinaryPath,
-    string HookSettingsPath,
+    string ManagedHookFilePath,
+    string VsCodeSettingsPath,
     string InstructionsDirectory,
     string InstructionFilePath,
     string UserLogFilePath);

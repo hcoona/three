@@ -101,9 +101,16 @@ internal static class CliFactory
             Description = "Override the user-level installation root directory.",
         };
 
-        Option<FileInfo?> hookSettingsPathOption = new("--hook-settings-path")
+        Option<FileInfo?> hookFilePathOption = new("--hook-file-path")
         {
-            Description = "Override the user hook settings file path.",
+            Description = "Override the managed hook JSON file path.",
+        };
+
+        Option<FileInfo?> vsCodeSettingsPathOption = new("--vscode-settings-path")
+        {
+            Description =
+                "Override the VS Code user settings.json path used for "
+                + "chat.hookFilesLocations registration.",
         };
 
         Option<DirectoryInfo?> instructionsDirectoryOption = new("--instructions-dir")
@@ -130,7 +137,8 @@ internal static class CliFactory
             telegramChatIdOption,
             skipSecretPromptOption,
             installRootOption,
-            hookSettingsPathOption,
+            hookFilePathOption,
+            vsCodeSettingsPathOption,
             instructionsDirectoryOption,
         };
         installCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -142,7 +150,8 @@ internal static class CliFactory
                     TelegramChatId = parseResult.GetValue(telegramChatIdOption),
                     SkipSecretPrompt = parseResult.GetValue(skipSecretPromptOption),
                     InstallRoot = parseResult.GetValue(installRootOption),
-                    HookSettingsPath = parseResult.GetValue(hookSettingsPathOption),
+                    ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
+                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));
@@ -153,7 +162,8 @@ internal static class CliFactory
         {
             removeSecretsOption,
             installRootOption,
-            hookSettingsPathOption,
+            hookFilePathOption,
+            vsCodeSettingsPathOption,
             instructionsDirectoryOption,
         };
         uninstallCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -162,7 +172,8 @@ internal static class CliFactory
                 {
                     RemoveSecrets = parseResult.GetValue(removeSecretsOption),
                     InstallRoot = parseResult.GetValue(installRootOption),
-                    HookSettingsPath = parseResult.GetValue(hookSettingsPathOption),
+                    ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
+                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));
@@ -172,7 +183,8 @@ internal static class CliFactory
             "Validate the current user-level installation and secret resolution.")
         {
             installRootOption,
-            hookSettingsPathOption,
+            hookFilePathOption,
+            vsCodeSettingsPathOption,
             instructionsDirectoryOption,
         };
         healthCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -180,7 +192,8 @@ internal static class CliFactory
                 new UserPathOverrides
                 {
                     InstallRoot = parseResult.GetValue(installRootOption),
-                    HookSettingsPath = parseResult.GetValue(hookSettingsPathOption),
+                    ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
+                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));
@@ -190,7 +203,8 @@ internal static class CliFactory
             "Print a detailed diagnostic report for the current user-level installation.")
         {
             installRootOption,
-            hookSettingsPathOption,
+            hookFilePathOption,
+            vsCodeSettingsPathOption,
             instructionsDirectoryOption,
         };
         diagnoseCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -198,7 +212,8 @@ internal static class CliFactory
                 new UserPathOverrides
                 {
                     InstallRoot = parseResult.GetValue(installRootOption),
-                    HookSettingsPath = parseResult.GetValue(hookSettingsPathOption),
+                    ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
+                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));
@@ -229,7 +244,8 @@ internal static class CliFactory
         {
             messageOption,
             installRootOption,
-            hookSettingsPathOption,
+            hookFilePathOption,
+            vsCodeSettingsPathOption,
             instructionsDirectoryOption,
         };
         testNotificationCommand.SetAction(
@@ -239,7 +255,8 @@ internal static class CliFactory
                 {
                     Message = parseResult.GetValue(messageOption),
                     InstallRoot = parseResult.GetValue(installRootOption),
-                    HookSettingsPath = parseResult.GetValue(hookSettingsPathOption),
+                    ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
+                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));

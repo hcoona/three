@@ -86,23 +86,19 @@ The installer command:
 - stores missing values in `gopass`,
 - asks before overwriting existing stored secrets and defaults to keeping them,
 - installs the published Native AOT binary into a user-owned data directory,
-- currently updates `~/.claude/settings.json` as the managed hook settings
-  target,
+- writes a dedicated managed hook JSON file under the install root,
+- registers that managed hook file in VS Code user `settings.json` through
+  `chat.hookFilesLocations`,
 - installs a VS Code GitHub Copilot user instruction file under
   `~/.copilot/instructions` so task summaries are produced in every workspace.
 
-Known gap: manual verification recorded in
+This design follows the manual verification recorded in
 [`docs/h-006-human-confirmation-2026-03-14-user-hook-location.md`](./docs/h-006-human-confirmation-2026-03-14-user-hook-location.md)
-found that, in the current observed VS Code environment, user-level hooks from
-`~/.claude/settings.json` do not take effect when `chat.useClaudeHooks` is not
-enabled, even when `chat.hookFilesLocations` relies on its default enabled
-value or explicitly sets `"~/.claude/settings.json": true`. The same manual
-verification also showed that `~/.claude/settings.json` hooks do work when
-`"chat.useClaudeHooks": true` is configured. Even so, the installer does not
-yet manage an explicit alternative hook location through
-`chat.hookFilesLocations`, and the current product direction is to prefer a
-separate dedicated hook JSON path over relying on Claude-compatibility
-behavior.
+and intentionally avoids treating `~/.claude/settings.json` as the managed
+steady-state install target. By default, the managed hook file lives under the
+install root as `vscode-copilot-telegram-hook.hooks.json`, and the installer
+updates the user's VS Code `settings.json` to enable that exact file path in
+`chat.hookFilesLocations`.
 
 If you need to inspect or update stored Telegram secrets after installation,
 use the dedicated secret-management command:
@@ -148,8 +144,9 @@ not write their request URIs into these files. Secrets such as the Telegram bot
 token are intentionally redacted from the log.
 
 Use `user diagnose` to print the current user-command log path, workspace
-session log path pattern, and workspace fallback hook log path for the
-directory where you run the command.
+session log path pattern, workspace fallback hook log path, managed hook file
+path, and VS Code user settings path for the directory where you run the
+command.
 
 During runtime, the hook maintains session-scoped state under
 `.copilot/sessions/<session_id>/`, including:
@@ -175,10 +172,9 @@ from VS Code GitHub Copilot. However, manual verification recorded in
 found that this path only acts as an effective user-level hook source in the
 observed environment when `"chat.useClaudeHooks": true` is enabled; leaving the
 path enabled in `chat.hookFilesLocations` or explicitly setting it to `true` is
-not sufficient by itself. This repository therefore treats the current
-`.claude`-based install target as a known gap and prefers a future managed
-installation that writes to another explicit hook JSON path rather than relying
-on Claude settings compatibility.
+not sufficient by itself. This repository therefore installs a dedicated
+managed hook JSON file and registers that explicit file path in VS Code user
+settings instead of relying on Claude settings compatibility.
 
 The user-level instruction file, however, is installed in the GitHub
 Copilot-specific `~/.copilot/instructions` location.

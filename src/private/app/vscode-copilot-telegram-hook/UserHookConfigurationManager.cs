@@ -13,8 +13,8 @@ internal static class UserHookConfigurationManager
     private static readonly AppJsonSerializerContext WriteIndentedContext =
         new(WriteIndentedOptions);
 
-    public static ConfigurationApplyResult InstallHooks(
-        string settingsPath,
+    public static ConfigurationApplyResult InstallManagedHookFile(
+        string hookFilePath,
         string sessionStartCommand,
         string userPromptSubmitCommand,
         string stopCommand,
@@ -26,28 +26,28 @@ internal static class UserHookConfigurationManager
             stopCommand);
         UserHookSettingsDocument rootDocument;
 
-        if (File.Exists(settingsPath))
+        if (File.Exists(hookFilePath))
         {
             try
             {
                 rootDocument = JsonSerializer.Deserialize(
-                        File.ReadAllText(settingsPath),
+                        File.ReadAllText(hookFilePath),
                         AppJsonSerializerContext.Default.UserHookSettingsDocument)
                     ?? throw new InvalidOperationException(
-                        "The user hook settings file must contain a JSON object.");
+                        "The managed hook file must contain a JSON object.");
             }
             catch (Exception ex) when (
                 ex is IOException or JsonException or InvalidOperationException
                     or UnauthorizedAccessException or NotSupportedException)
             {
                 string candidatePath = WriteCandidateFile(
-                    settingsPath,
+                    hookFilePath,
                     SerializeSettings(desiredDocument),
                     timestamp);
                 return new ConfigurationApplyResult(
                     Applied: false,
                     Message:
-                        $"The existing hook settings file could not be updated automatically: "
+                        $"The existing managed hook file could not be updated automatically: "
                         + ex.Message,
                     CandidatePath: candidatePath);
             }
@@ -99,27 +99,27 @@ internal static class UserHookConfigurationManager
             return conflict;
         }
 
-        EnsureParentDirectory(settingsPath);
-        File.WriteAllText(settingsPath, SerializeSettings(rootDocument));
+        EnsureParentDirectory(hookFilePath);
+        File.WriteAllText(hookFilePath, SerializeSettings(rootDocument));
 
-        return new ConfigurationApplyResult(true, $"Updated user hook settings: {settingsPath}");
+        return new ConfigurationApplyResult(true, $"Updated managed hook file: {hookFilePath}");
     }
 
-    public static ConfigurationApplyResult UninstallHooks(string settingsPath)
+    public static ConfigurationApplyResult UninstallManagedHookFile(string hookFilePath)
     {
-        if (!File.Exists(settingsPath))
+        if (!File.Exists(hookFilePath))
         {
             return new ConfigurationApplyResult(
                 true,
-                "The user hook settings file is already absent.");
+                "The managed hook file is already absent.");
         }
 
-        UserHookSettingsDocument? rootDocument = TryParseSettings(settingsPath);
+        UserHookSettingsDocument? rootDocument = TryParseSettings(hookFilePath);
         if (rootDocument is null)
         {
             return new ConfigurationApplyResult(
                 false,
-                "The user hook settings file could not be parsed. Remove the managed "
+                "The managed hook file could not be parsed. Remove the managed "
                 + "entries manually.");
         }
 
@@ -129,18 +129,26 @@ internal static class UserHookConfigurationManager
         }
 
         RemoveManagedEntries(rootDocument.Hooks, "SessionStart");
-    RemoveManagedEntries(rootDocument.Hooks, "UserPromptSubmit");
+        RemoveManagedEntries(rootDocument.Hooks, "UserPromptSubmit");
         RemoveManagedEntries(rootDocument.Hooks, "Stop");
 
-        File.WriteAllText(settingsPath, SerializeSettings(rootDocument));
+        if (CanDeleteManagedHookFile(rootDocument))
+        {
+            File.Delete(hookFilePath);
+            return new ConfigurationApplyResult(
+                true,
+                $"Removed managed hook file: {hookFilePath}");
+        }
+
+        File.WriteAllText(hookFilePath, SerializeSettings(rootDocument));
         return new ConfigurationApplyResult(
             true,
-            $"Removed managed hook entries from: {settingsPath}");
+            $"Removed managed hook entries from managed hook file: {hookFilePath}");
     }
 
-    public static bool IsHookInstalled(string settingsPath)
+    public static bool IsManagedHookFileInstalled(string hookFilePath)
     {
-        UserHookSettingsDocument? rootDocument = TryParseSettings(settingsPath);
+        UserHookSettingsDocument? rootDocument = TryParseSettings(hookFilePath);
         if (rootDocument is null)
         {
             return false;
@@ -338,6 +346,12 @@ internal static class UserHookConfigurationManager
                 managedValue,
                 AppConstants.ManagedHookEnvironmentValue,
                 StringComparison.Ordinal);
+    }
+
+    private static bool CanDeleteManagedHookFile(UserHookSettingsDocument document)
+    {
+        bool hasAdditionalProperties = document.AdditionalProperties is { Count: > 0 };
+        return document.Hooks.Count == 0 && !hasAdditionalProperties;
     }
 
     private static UserHookSettingsDocument? TryParseSettings(string path)

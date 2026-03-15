@@ -43,4 +43,28 @@ public sealed class AppPathsTests
                 AppConstants.UserCommandLogFileName),
             userLogPath);
     }
+
+    [Fact]
+    public void ResolveUserPathsUsesManagedHookFileAndVsCodeSettingsPaths()
+    {
+        string installRoot = Path.Combine(Path.GetTempPath(), "install-root");
+        string instructionsDirectory = Path.Combine(Path.GetTempPath(), "instructions-root");
+        string vsCodeSettingsPath = Path.Combine(
+            Path.GetTempPath(),
+            "vscode-user",
+            "settings.json");
+
+        UserInstallationPaths resolvedPaths = AppPaths.ResolveUserPaths(
+            new UserPathOverrides
+            {
+                InstallRoot = new DirectoryInfo(installRoot),
+                InstructionsDirectory = new DirectoryInfo(instructionsDirectory),
+                VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+            });
+
+        Assert.Equal(
+            Path.Combine(Path.GetFullPath(installRoot), AppConstants.ManagedHookFileName),
+            resolvedPaths.ManagedHookFilePath);
+        Assert.Equal(Path.GetFullPath(vsCodeSettingsPath), resolvedPaths.VsCodeSettingsPath);
+    }
 }
