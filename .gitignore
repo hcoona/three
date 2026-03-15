@@ -905,3 +905,4 @@ _version.py
 /.copilot/notify-session.json
 /.copilot/notify-summary.json
 /.copilot/notify-last-sent.json
+/.copilot/sessions/

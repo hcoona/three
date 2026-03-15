@@ -2,10 +2,12 @@
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
     <ProjectReference Include="OneDotNet\dirs.proj" />
     <ProjectReference Include="src\**\*.*proj" />
+    <ProjectReference Include="tests\**\*.*proj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
     <ProjectReference Include="OneDotNet\dirs.proj" />
     <ProjectReference Include="src\**\*.*proj" Exclude="src\public\app\ImageOcclusionEditor\ImageOcclusionEditorWinUI3\ImageOcclusionEditorWinUI3.csproj" />
+    <ProjectReference Include="tests\**\*.*proj" />
   </ItemGroup>
 </Project>
