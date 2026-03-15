@@ -10,9 +10,10 @@
     - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
     - [`h-004-human-confirmation-2026-03-14.md`](./h-004-human-confirmation-2026-03-14.md)
     - [`h-006-human-confirmation-2026-03-14-user-hook-location.md`](./h-006-human-confirmation-2026-03-14-user-hook-location.md)
+    - [`h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
 - Purpose: ground non-functional conclusions and external constraints in the
   user-provided references from H-001 while recording later confirmed product
-  decisions from H-002, H-003, H-004, and H-006.
+  decisions from H-002, H-003, H-004, H-006, and H-007.
 
 This document captures the items that are intentionally kept separate from
 [`functional-requirements.md`](./functional-requirements.md):
@@ -34,6 +35,7 @@ they are explicitly standardized elsewhere.
 - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
 - [`h-004-human-confirmation-2026-03-14.md`](./h-004-human-confirmation-2026-03-14.md)
 - [`h-006-human-confirmation-2026-03-14-user-hook-location.md`](./h-006-human-confirmation-2026-03-14-user-hook-location.md)
+- [`h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
 
 ### External platform and API sources inherited from H-001
 
@@ -124,6 +126,14 @@ These decisions were explicitly confirmed after the initial research pass and sh
   `~/.claude/settings.json` plus `chat.useClaudeHooks` as the preferred steady-
   state target and should move to another explicitly registered user-level hook
   JSON path instead.
+- For managed installation purposes, the host-local desktop VS Code settings
+  target and the VS Code Server Machine settings target are same-host entry
+  points rather than a client-machine versus remote-machine split.
+- Managed installation may register the dedicated managed hook JSON file in
+  both same-host settings targets by default when both runtime styles matter on
+  the same host.
+- Any managed `chat.hookFilesLocations` registration must use a supported
+  relative or `~/` path form rather than an absolute path.
 - For this personal-use tool, no additional privacy-policy scope is currently
   introduced beyond the accepted credential-handling prerequisite.
 - Workspace overrides or disabled hook/instruction loading are accepted platform limitations.
@@ -151,6 +161,7 @@ imposed by the current platform, external APIs, or ecosystem behavior.
 | IC-006 | Official VS Code docs describe hooks as working across local agents, background agents, and cloud agents, and OS-specific hook commands are selected based on the extension host platform, which may differ from the local machine in remote scenarios.                                                     | Hook behavior should not be documented as a purely local execution model; runtime command selection must tolerate broader platform behavior even if the current product support target remains narrower. | [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks).                                                                                                                            |
 | IC-007 | The `Stop` hook corresponds to the point where the agent session is attempting to stop, but the session may continue afterward.                                                                                                                                                                             | This lifecycle semantic shapes how turn completion can be interpreted.                                                                                                                                   | [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks).                                                                                                                            |
 | IC-008 | In the current observed VS Code environment for this project, `~/.claude/settings.json` becomes an effective user-level hook source only when `"chat.useClaudeHooks": true` is enabled; `chat.hookFilesLocations` leaving that path enabled or explicitly setting it to `true` is not sufficient by itself. | This is a measured platform condition that limits which user-level hook locations can be treated as reliable installation targets without extra compatibility settings.                                  | [`h-006-human-confirmation-2026-03-14-user-hook-location.md`](./h-006-human-confirmation-2026-03-14-user-hook-location.md).                                                                                               |
+| IC-009 | `chat.hookFilesLocations` only supports relative paths or paths that start with `~/`; absolute paths and `\` separators are not supported.                                                                                                                                                                  | Managed installation cannot rely on raw absolute filesystem paths when it registers a dedicated hook JSON file in VS Code settings.                                                                      | [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks).                                                                                                                            |
 
 ### Telegram Bot API constraints
 

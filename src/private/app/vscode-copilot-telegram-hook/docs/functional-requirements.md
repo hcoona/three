@@ -8,6 +8,7 @@
     - [`h-002-human-confirmation-2026-03-13.md`](./h-002-human-confirmation-2026-03-13.md)
     - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
     - [`h-004-human-confirmation-2026-03-14.md`](./h-004-human-confirmation-2026-03-14.md)
+    - [`h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
     - [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md)
     - [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)
 - Purpose: translate the human-authored source inputs and supporting research
@@ -51,6 +52,14 @@ The installation flow shall install or configure all user-level artifacts and de
 3. Telegram notification delivery.
 
 This includes the Telegram bot token and target chat identifier required for notification authentication and routing.
+
+For the supported same-host runtime styles, the installation flow shall also
+register the managed user-level hook file in each VS Code settings target
+required for user-level hook discovery on that host. For the current product
+direction, this includes the host-local desktop VS Code settings target and the
+VS Code Server Machine settings target on Linux hosts that may be used for the
+same user's desktop and server-backed VS Code sessions, even when the server
+settings file is not already present.
 
 ### FR-003 Correlation capability
 

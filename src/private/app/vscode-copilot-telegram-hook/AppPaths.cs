@@ -83,6 +83,37 @@ internal static class AppPaths
         return Path.Combine(applicationDataPath, "Code", "User", "settings.json");
     }
 
+    public static string GetDefaultVsCodeServerSettingsPath()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".vscode-server",
+            "data",
+            "Machine",
+            "settings.json");
+    }
+
+    public static IReadOnlyList<VsCodeSettingsTarget> GetDefaultVsCodeSettingsTargets()
+    {
+        bool serverTargetApplicable = IsDefaultVsCodeServerSettingsApplicable();
+        return GetDistinctSettingsTargets(
+            [
+                new VsCodeSettingsTarget(
+                    GetDefaultVsCodeSettingsPath(),
+                    IsApplicable: true,
+                    DisplayName: "VS Code desktop user settings"),
+                new VsCodeSettingsTarget(
+                    GetDefaultVsCodeServerSettingsPath(),
+                    IsApplicable: serverTargetApplicable,
+                    DisplayName: "VS Code Server Machine settings",
+                    InapplicableReason: serverTargetApplicable
+                        ? null
+                        :
+                        "No same-host VS Code Server installation was detected under "
+                        + "'~/.vscode-server'."),
+            ]);
+    }
+
     public static string GetDefaultInstructionsDirectory()
     {
         return Path.Combine(
@@ -97,8 +128,18 @@ internal static class AppPaths
         string managedHookFilePath =
             overrides.ManagedHookFilePath?.FullName
             ?? GetDefaultManagedHookFilePath(installRoot);
-        string vsCodeSettingsPath =
-            overrides.VsCodeSettingsPath?.FullName ?? GetDefaultVsCodeSettingsPath();
+        IReadOnlyList<VsCodeSettingsTarget> vsCodeSettingsTargets =
+            overrides.VsCodeSettingsTargets is { Count: > 0 }
+                ? GetDistinctSettingsTargets(overrides.VsCodeSettingsTargets)
+                : overrides.VsCodeSettingsPaths is { Count: > 0 }
+                    ? GetDistinctSettingsTargets(
+                        overrides.VsCodeSettingsPaths.Select(
+                            static fileInfo =>
+                                new VsCodeSettingsTarget(
+                                    fileInfo.FullName,
+                                    IsApplicable: true,
+                                    DisplayName: "VS Code settings override")))
+                    : GetDefaultVsCodeSettingsTargets();
         string instructionsDirectory =
             overrides.InstructionsDirectory?.FullName
             ?? GetDefaultInstructionsDirectory();
@@ -112,7 +153,7 @@ internal static class AppPaths
             Path.GetFullPath(installRoot),
             Path.GetFullPath(installedBinaryPath),
             Path.GetFullPath(managedHookFilePath),
-            Path.GetFullPath(vsCodeSettingsPath),
+            vsCodeSettingsTargets,
             Path.GetFullPath(instructionsDirectory),
             Path.GetFullPath(instructionFilePath),
             Path.GetFullPath(userLogFilePath));
@@ -250,5 +291,29 @@ internal static class AppPaths
         return string.IsNullOrWhiteSpace(wslDistribution)
             ? $"{os} | {architecture}"
             : $"WSL {wslDistribution} | {os} | {architecture}";
+    }
+
+    internal static bool IsDefaultVsCodeServerSettingsApplicable()
+        => OperatingSystem.IsLinux();
+
+    private static List<VsCodeSettingsTarget> GetDistinctSettingsTargets(
+        IEnumerable<VsCodeSettingsTarget> targets)
+    {
+        HashSet<string> seenPaths = new(
+            OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal);
+        List<VsCodeSettingsTarget> distinctTargets = [];
+
+        foreach (VsCodeSettingsTarget target in targets)
+        {
+            string fullPath = Path.GetFullPath(target.SettingsPath);
+            if (seenPaths.Add(fullPath))
+            {
+                distinctTargets.Add(target with { SettingsPath = fullPath });
+            }
+        }
+
+        return distinctTargets;
     }
 }

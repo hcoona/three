@@ -8,7 +8,7 @@ public sealed class VsCodeSettingsManagerTests
     [Fact]
     public void RegisterHookFilePreservesUnrelatedSettingsAndUnregisterRemovesOnlyManagedEntry()
     {
-        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
 
         try
         {
@@ -16,7 +16,9 @@ public sealed class VsCodeSettingsManagerTests
             string managedHookFilePath = Path.Combine(
                 tempDirectory.FullName,
                 AppConstants.ManagedHookFileName);
-            string unrelatedHookFilePath = Path.Combine(tempDirectory.FullName, "other-hook.json");
+            string managedHookFileLocation =
+                VsCodeSettingsManager.GetSupportedHookFileLocation(managedHookFilePath);
+            string unrelatedHookFileLocation = "~/other-hook.json";
 
             File.WriteAllText(
                 settingsPath,
@@ -24,7 +26,7 @@ public sealed class VsCodeSettingsManagerTests
                 {
                     "editor.fontSize": 14,
                     "{{AppConstants.ChatHookFilesLocationsSettingName}}": {
-                        "{{unrelatedHookFilePath}}": false
+                        "{{unrelatedHookFileLocation}}": false
                     }
                 }
                 """);
@@ -43,8 +45,8 @@ public sealed class VsCodeSettingsManagerTests
             VsCodeUserSettingsDocument installedSettings = ReadSettings(settingsPath);
             Assert.Equal(14, installedSettings.AdditionalProperties?["editor.fontSize"].GetInt32());
             Assert.NotNull(installedSettings.ChatHookFilesLocations);
-            Assert.True(installedSettings.ChatHookFilesLocations![managedHookFilePath]);
-            Assert.False(installedSettings.ChatHookFilesLocations[unrelatedHookFilePath]);
+            Assert.True(installedSettings.ChatHookFilesLocations![managedHookFileLocation]);
+            Assert.False(installedSettings.ChatHookFilesLocations[unrelatedHookFileLocation]);
 
             ConfigurationApplyResult uninstallResult = VsCodeSettingsManager.UnregisterHookFile(
                 settingsPath,
@@ -60,8 +62,8 @@ public sealed class VsCodeSettingsManagerTests
             VsCodeUserSettingsDocument uninstalledSettings = ReadSettings(settingsPath);
             Assert.NotNull(uninstalledSettings.ChatHookFilesLocations);
             Assert.False(
-                uninstalledSettings.ChatHookFilesLocations!.ContainsKey(managedHookFilePath));
-            Assert.False(uninstalledSettings.ChatHookFilesLocations[unrelatedHookFilePath]);
+                uninstalledSettings.ChatHookFilesLocations!.ContainsKey(managedHookFileLocation));
+            Assert.False(uninstalledSettings.ChatHookFilesLocations[unrelatedHookFileLocation]);
         }
         finally
         {
@@ -72,7 +74,7 @@ public sealed class VsCodeSettingsManagerTests
     [Fact]
     public void RegisterHookFileSupportsJsoncSettingsFiles()
     {
-        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
 
         try
         {
@@ -80,7 +82,9 @@ public sealed class VsCodeSettingsManagerTests
             string managedHookFilePath = Path.Combine(
                 tempDirectory.FullName,
                 AppConstants.ManagedHookFileName);
-            string unrelatedHookFilePath = Path.Combine(tempDirectory.FullName, "other-hook.json");
+            string managedHookFileLocation =
+                VsCodeSettingsManager.GetSupportedHookFileLocation(managedHookFilePath);
+            string unrelatedHookFileLocation = "~/other-hook.json";
 
             File.WriteAllText(
                 settingsPath,
@@ -89,7 +93,7 @@ public sealed class VsCodeSettingsManagerTests
                     // VS Code stores settings in JSONC.
                     "editor.fontSize": 14,
                     "{{AppConstants.ChatHookFilesLocationsSettingName}}": {
-                        "{{unrelatedHookFilePath}}": false,
+                        "{{unrelatedHookFileLocation}}": false,
                     },
                 }
                 """);
@@ -119,7 +123,8 @@ public sealed class VsCodeSettingsManagerTests
             VsCodeUserSettingsDocument settings = ReadSettings(settingsPath);
             Assert.Equal(14, settings.AdditionalProperties?["editor.fontSize"].GetInt32());
             Assert.NotNull(settings.ChatHookFilesLocations);
-            Assert.False(settings.ChatHookFilesLocations![unrelatedHookFilePath]);
+            Assert.False(settings.ChatHookFilesLocations!.ContainsKey(managedHookFileLocation));
+            Assert.False(settings.ChatHookFilesLocations[unrelatedHookFileLocation]);
         }
         finally
         {
@@ -130,7 +135,7 @@ public sealed class VsCodeSettingsManagerTests
     [Fact]
     public void RegisterHookFileCreatesCandidateWhenExistingSettingsFileIsInvalid()
     {
-        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
 
         try
         {
@@ -138,6 +143,8 @@ public sealed class VsCodeSettingsManagerTests
             string managedHookFilePath = Path.Combine(
                 tempDirectory.FullName,
                 AppConstants.ManagedHookFileName);
+            string managedHookFileLocation =
+                VsCodeSettingsManager.GetSupportedHookFileLocation(managedHookFilePath);
             File.WriteAllText(settingsPath, "{ invalid json");
 
             ConfigurationApplyResult result = VsCodeSettingsManager.RegisterHookFile(
@@ -151,7 +158,7 @@ public sealed class VsCodeSettingsManagerTests
 
             VsCodeUserSettingsDocument candidateSettings = ReadSettings(result.CandidatePath);
             Assert.NotNull(candidateSettings.ChatHookFilesLocations);
-            Assert.True(candidateSettings.ChatHookFilesLocations![managedHookFilePath]);
+            Assert.True(candidateSettings.ChatHookFilesLocations![managedHookFileLocation]);
         }
         finally
         {
@@ -162,7 +169,7 @@ public sealed class VsCodeSettingsManagerTests
     [Fact]
     public void RegisterHookFilePreservesOriginalSettingsWhenWriteFails()
     {
-        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
 
         try
         {
@@ -170,6 +177,8 @@ public sealed class VsCodeSettingsManagerTests
             string managedHookFilePath = Path.Combine(
                 tempDirectory.FullName,
                 AppConstants.ManagedHookFileName);
+            string managedHookFileLocation =
+                VsCodeSettingsManager.GetSupportedHookFileLocation(managedHookFilePath);
             File.WriteAllText(settingsPath, """{ "editor.fontSize": 14 }""");
             string originalContent = File.ReadAllText(settingsPath);
 
@@ -187,7 +196,223 @@ public sealed class VsCodeSettingsManagerTests
 
             VsCodeUserSettingsDocument candidateSettings = ReadSettings(result.CandidatePath!);
             Assert.NotNull(candidateSettings.ChatHookFilesLocations);
-            Assert.True(candidateSettings.ChatHookFilesLocations![managedHookFilePath]);
+            Assert.True(candidateSettings.ChatHookFilesLocations![managedHookFileLocation]);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyWritePlanFailsWhenSettingsFileChangesAfterPlanning()
+    {
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
+
+        try
+        {
+            string settingsPath = Path.Combine(tempDirectory.FullName, "settings.json");
+            string managedHookFilePath = Path.Combine(
+                tempDirectory.FullName,
+                AppConstants.ManagedHookFileName);
+            string managedHookFileLocation =
+                VsCodeSettingsManager.GetSupportedHookFileLocation(managedHookFilePath);
+            File.WriteAllText(settingsPath, """{ "editor.fontSize": 14 }""");
+
+            ConfigurationPlanResult plan = VsCodeSettingsManager.PlanRegisterHookFile(
+                settingsPath,
+                managedHookFilePath,
+                "2026-03-15T04:40:00.000Z");
+
+            VsCodeSettingsWritePlan writePlan =
+                Assert.IsType<VsCodeSettingsWritePlan>(plan.WritePlan);
+            File.WriteAllText(settingsPath, """{ "editor.fontSize": 16 }""");
+
+            ConfigurationApplyResult result = VsCodeSettingsManager.ApplyWritePlan(
+                writePlan,
+                "2026-03-15T04:40:01.000Z");
+
+            Assert.False(result.Applied);
+            Assert.NotNull(result.CandidatePath);
+            Assert.Equal("""{ "editor.fontSize": 16 }""", File.ReadAllText(settingsPath));
+
+            VsCodeUserSettingsDocument candidateSettings = ReadSettings(result.CandidatePath!);
+            Assert.NotNull(candidateSettings.ChatHookFilesLocations);
+            Assert.True(candidateSettings.ChatHookFilesLocations![managedHookFileLocation]);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RegisterHookFileReplacesLegacyAbsoluteLocationWithSupportedHomeRelativeLocation()
+    {
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
+
+        try
+        {
+            string settingsPath = Path.Combine(tempDirectory.FullName, "settings.json");
+            string managedHookFilePath = Path.Combine(
+                tempDirectory.FullName,
+                AppConstants.ManagedHookFileName);
+            string managedHookFileLocation =
+                VsCodeSettingsManager.GetSupportedHookFileLocation(managedHookFilePath);
+            string legacyAbsoluteHookFileLocation = Path.GetFullPath(managedHookFilePath);
+
+            File.WriteAllText(
+                settingsPath,
+                $$"""
+                {
+                    "{{AppConstants.ChatHookFilesLocationsSettingName}}": {
+                        "{{legacyAbsoluteHookFileLocation}}": true
+                    }
+                }
+                """);
+
+            ConfigurationApplyResult result = VsCodeSettingsManager.RegisterHookFile(
+                settingsPath,
+                managedHookFilePath,
+                "2026-03-13T12:34:56.789Z");
+
+            Assert.True(result.Applied);
+
+            VsCodeUserSettingsDocument settings = ReadSettings(settingsPath);
+            Assert.NotNull(settings.ChatHookFilesLocations);
+            Assert.False(
+                settings.ChatHookFilesLocations!.ContainsKey(legacyAbsoluteHookFileLocation));
+            Assert.True(settings.ChatHookFilesLocations[managedHookFileLocation]);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PlanRegisterHookFileRejectsManagedHookPathOutsideHomeDirectory()
+    {
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
+        string outsideHomeHookFilePath = CreatePathOutsideHomeDirectory();
+
+        try
+        {
+            string settingsPath = Path.Combine(tempDirectory.FullName, "settings.json");
+
+            ConfigurationPlanResult result = VsCodeSettingsManager.PlanRegisterHookFile(
+                settingsPath,
+                outsideHomeHookFilePath,
+                "2026-03-13T12:34:56.789Z");
+
+            Assert.False(result.Applied);
+            Assert.Null(result.WritePlan);
+            Assert.Contains("outside the current user's home directory", result.Message);
+            Assert.False(File.Exists(settingsPath));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyWritePlanAndRollbackRestoreAbsentSettingsFile()
+    {
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
+
+        try
+        {
+            string settingsPath = Path.Combine(tempDirectory.FullName, "settings.json");
+            string managedHookFilePath = Path.Combine(
+                tempDirectory.FullName,
+                AppConstants.ManagedHookFileName);
+            ConfigurationPlanResult plan = VsCodeSettingsManager.PlanRegisterHookFile(
+                settingsPath,
+                managedHookFilePath,
+                "2026-03-13T12:34:56.789Z");
+
+            Assert.True(plan.Applied);
+            VsCodeSettingsWritePlan writePlan =
+                Assert.IsType<VsCodeSettingsWritePlan>(plan.WritePlan);
+
+            ConfigurationApplyResult applyResult = VsCodeSettingsManager.ApplyWritePlan(
+                writePlan,
+                "2026-03-13T12:34:56.789Z");
+            Assert.True(applyResult.Applied);
+            Assert.True(File.Exists(settingsPath));
+
+            ConfigurationApplyResult rollbackResult = VsCodeSettingsManager.RollbackWritePlan(
+                writePlan);
+            Assert.True(rollbackResult.Applied);
+            Assert.False(File.Exists(settingsPath));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RollbackWritePlanFailsWhenSettingsFileChangesAfterManagedWrite()
+    {
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
+
+        try
+        {
+            string settingsPath = Path.Combine(tempDirectory.FullName, "settings.json");
+            string managedHookFilePath = Path.Combine(
+                tempDirectory.FullName,
+                AppConstants.ManagedHookFileName);
+            File.WriteAllText(settingsPath, """{ "editor.fontSize": 14 }""");
+
+            ConfigurationPlanResult plan = VsCodeSettingsManager.PlanRegisterHookFile(
+                settingsPath,
+                managedHookFilePath,
+                "2026-03-15T04:41:00.000Z");
+
+            VsCodeSettingsWritePlan writePlan =
+                Assert.IsType<VsCodeSettingsWritePlan>(plan.WritePlan);
+            ConfigurationApplyResult applyResult = VsCodeSettingsManager.ApplyWritePlan(
+                writePlan,
+                "2026-03-15T04:41:01.000Z");
+            Assert.True(applyResult.Applied);
+
+            File.WriteAllText(settingsPath, """{ "editor.fontSize": 18 }""");
+
+            ConfigurationApplyResult rollbackResult = VsCodeSettingsManager.RollbackWritePlan(
+                writePlan);
+
+            Assert.False(rollbackResult.Applied);
+            Assert.Equal("""{ "editor.fontSize": 18 }""", File.ReadAllText(settingsPath));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PlanUnregisterHookFileFailsWhenSettingsCannotBeParsed()
+    {
+        DirectoryInfo tempDirectory = CreateHomeScopedTempSubdirectory();
+
+        try
+        {
+            string settingsPath = Path.Combine(tempDirectory.FullName, "settings.json");
+            string managedHookFilePath = Path.Combine(
+                tempDirectory.FullName,
+                AppConstants.ManagedHookFileName);
+            File.WriteAllText(settingsPath, "{ invalid json");
+
+            ConfigurationPlanResult plan = VsCodeSettingsManager.PlanUnregisterHookFile(
+                settingsPath,
+                managedHookFilePath,
+                "2026-03-13T12:34:56.789Z");
+
+            Assert.False(plan.Applied);
+            Assert.Null(plan.WritePlan);
+            Assert.Contains("could not be parsed", plan.Message);
         }
         finally
         {
@@ -201,6 +426,30 @@ public sealed class VsCodeSettingsManagerTests
                 File.ReadAllText(settingsPath),
                 AppJsonSerializerContext.Default.VsCodeUserSettingsDocument)
             ?? throw new InvalidOperationException("Expected a valid VS Code settings document.");
+    }
+
+    private static DirectoryInfo CreateHomeScopedTempSubdirectory()
+    {
+        string path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".tmp",
+            "hcoona-vscode-copilot-telegram-hook-tests",
+            Guid.NewGuid().ToString("n"));
+        return Directory.CreateDirectory(path);
+    }
+
+    private static string CreatePathOutsideHomeDirectory()
+    {
+        string userHomePath = Path.GetFullPath(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        string rootPath = Path.GetPathRoot(userHomePath)
+            ?? throw new InvalidOperationException("Expected a root path.");
+        string outsideHomePath = Path.Combine(
+            rootPath,
+            "hcoona-outside-home",
+            Guid.NewGuid().ToString("n"),
+            AppConstants.ManagedHookFileName);
+        return Path.GetFullPath(outsideHomePath);
     }
 
     private sealed class ThrowingTextFileWriter : ITextFileWriter

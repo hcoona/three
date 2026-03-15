@@ -12,12 +12,12 @@ public sealed class UserCommandServiceTests
     [Fact]
     public async Task DiagnoseAsyncWritesUserCommandLogFile()
     {
-        DirectoryInfo installRoot = Directory.CreateTempSubdirectory();
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
         string managedHookFilePath = Path.Combine(
             installRoot.FullName,
             AppConstants.ManagedHookFileName);
-        string vsCodeSettingsPath = Path.Combine(installRoot.FullName, "vscode-user-settings.json");
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
 
         try
         {
@@ -40,7 +40,7 @@ public sealed class UserCommandServiceTests
                     InstallRoot = installRoot,
                     InstructionsDirectory = instructionsDirectory,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                 },
                 CancellationToken.None);
 
@@ -71,13 +71,13 @@ public sealed class UserCommandServiceTests
     [Fact]
     public async Task InstallAsyncWhenSecretsAlreadyExistAsksBeforeKeepingThem()
     {
-        DirectoryInfo installRoot = Directory.CreateTempSubdirectory();
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
         string managedHookFilePath = Path.Combine(
             installRoot.FullName,
             AppConstants.ManagedHookFileName);
-        string vsCodeSettingsPath = Path.Combine(installRoot.FullName, "vscode-user-settings.json");
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
 
         try
         {
@@ -102,17 +102,19 @@ public sealed class UserCommandServiceTests
                     InstallRoot = installRoot,
                     InstructionsDirectory = instructionsDirectory,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                 },
                 CancellationToken.None);
 
             Assert.Equal(0, exitCode);
             Assert.True(
                 UserHookConfigurationManager.IsManagedHookFileInstalled(managedHookFilePath));
-            Assert.True(
-                VsCodeSettingsManager.IsHookFileRegistered(
-                    vsCodeSettingsPath,
-                    managedHookFilePath));
+            Assert.All(
+                vsCodeSettingsPaths,
+                settingsPath => Assert.True(
+                    VsCodeSettingsManager.IsHookFileRegistered(
+                        settingsPath,
+                        managedHookFilePath)));
             Assert.Equal(
                 "old-token",
                 processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
@@ -134,13 +136,13 @@ public sealed class UserCommandServiceTests
     [Fact]
     public async Task InstallAsyncWhenPromptsAreDisabledKeepsExistingSecrets()
     {
-        DirectoryInfo installRoot = Directory.CreateTempSubdirectory();
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
         string managedHookFilePath = Path.Combine(
             installRoot.FullName,
             AppConstants.ManagedHookFileName);
-        string vsCodeSettingsPath = Path.Combine(installRoot.FullName, "vscode-user-settings.json");
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
 
         try
         {
@@ -165,17 +167,19 @@ public sealed class UserCommandServiceTests
                     InstallRoot = installRoot,
                     InstructionsDirectory = instructionsDirectory,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                 },
                 CancellationToken.None);
 
             Assert.Equal(0, exitCode);
             Assert.True(
                 UserHookConfigurationManager.IsManagedHookFileInstalled(managedHookFilePath));
-            Assert.True(
-                VsCodeSettingsManager.IsHookFileRegistered(
-                    vsCodeSettingsPath,
-                    managedHookFilePath));
+            Assert.All(
+                vsCodeSettingsPaths,
+                settingsPath => Assert.True(
+                    VsCodeSettingsManager.IsHookFileRegistered(
+                        settingsPath,
+                        managedHookFilePath)));
             Assert.Equal(
                 "old-token",
                 processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
@@ -195,21 +199,25 @@ public sealed class UserCommandServiceTests
     [Fact]
     public async Task UninstallAsyncRemovesManagedHookFileAndVsCodeRegistration()
     {
-        DirectoryInfo installRoot = Directory.CreateTempSubdirectory();
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
         string managedHookFilePath = Path.Combine(
             installRoot.FullName,
             AppConstants.ManagedHookFileName);
-        string vsCodeSettingsPath = Path.Combine(installRoot.FullName, "vscode-user-settings.json");
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
 
         try
         {
+            FakeProcessRunner processRunner = new();
+            processRunner.SeedSecret(AppPaths.GetTelegramBotTokenSecretPath(), "bot-token");
+            processRunner.SeedSecret(AppPaths.GetTelegramChatIdSecretPath(), "chat-id");
+
             UserCommandService service = CreateUserCommandService(
                 new RecordingHttpMessageHandler(),
                 loggerFactory: null,
                 new SessionLogFileContext(),
-                processRunner: new FakeProcessRunner(),
+                processRunner,
                 interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
 
             int installExitCode = await service.InstallAsync(
@@ -219,7 +227,7 @@ public sealed class UserCommandServiceTests
                     InstallRoot = installRoot,
                     InstructionsDirectory = instructionsDirectory,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                     SkipSecretPrompt = true,
                 },
                 CancellationToken.None);
@@ -230,17 +238,19 @@ public sealed class UserCommandServiceTests
                     InstallRoot = installRoot,
                     InstructionsDirectory = instructionsDirectory,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                 },
                 CancellationToken.None);
 
             Assert.Equal(0, installExitCode);
             Assert.Equal(0, uninstallExitCode);
             Assert.False(File.Exists(managedHookFilePath));
-            Assert.False(
-                VsCodeSettingsManager.IsHookFileRegistered(
-                    vsCodeSettingsPath,
-                    managedHookFilePath));
+            Assert.All(
+                vsCodeSettingsPaths,
+                settingsPath => Assert.False(
+                    VsCodeSettingsManager.IsHookFileRegistered(
+                        settingsPath,
+                        managedHookFilePath)));
         }
         finally
         {
@@ -253,13 +263,13 @@ public sealed class UserCommandServiceTests
     [Fact]
     public async Task HealthAsyncReportsHealthyWhenManagedHookFileAndRegistrationExist()
     {
-        DirectoryInfo installRoot = Directory.CreateTempSubdirectory();
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
         string managedHookFilePath = Path.Combine(
             installRoot.FullName,
             AppConstants.ManagedHookFileName);
-        string vsCodeSettingsPath = Path.Combine(installRoot.FullName, "vscode-user-settings.json");
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
 
         try
         {
@@ -281,7 +291,7 @@ public sealed class UserCommandServiceTests
                     InstallRoot = installRoot,
                     InstructionsDirectory = instructionsDirectory,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                     SkipSecretPrompt = true,
                 },
                 CancellationToken.None);
@@ -292,7 +302,7 @@ public sealed class UserCommandServiceTests
                     InstallRoot = installRoot,
                     InstructionsDirectory = instructionsDirectory,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                 },
                 CancellationToken.None);
 
@@ -308,15 +318,337 @@ public sealed class UserCommandServiceTests
     }
 
     [Fact]
-    public async Task InstallAsyncDoesNotRegisterVsCodeSettingsWhenManagedHookFileInstallFails()
+    public async Task InstallAsyncRollsBackPriorVsCodeSettingsUpdatesWhenLaterTargetWriteFails()
     {
-        DirectoryInfo installRoot = Directory.CreateTempSubdirectory();
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
         string managedHookFilePath = Path.Combine(
             installRoot.FullName,
             AppConstants.ManagedHookFileName);
-        string vsCodeSettingsPath = Path.Combine(installRoot.FullName, "vscode-user-settings.json");
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+
+        try
+        {
+            File.WriteAllText(vsCodeSettingsPaths[0], """{ "editor.fontSize": 14 }""");
+            File.WriteAllText(vsCodeSettingsPaths[1], """{ "editor.tabSize": 4 }""");
+
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner: new FakeProcessRunner(),
+                interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
+
+            using IDisposable _ = AtomicTextFileWriter.UseWriterForTesting(
+                new FailOnWriteNumbersTextFileWriter(2));
+
+            int exitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, exitCode);
+            Assert.True(File.Exists(vsCodeSettingsPaths[0]));
+            Assert.False(
+                VsCodeSettingsManager.IsHookFileRegistered(
+                    vsCodeSettingsPaths[0],
+                    managedHookFilePath));
+            Assert.True(File.Exists(vsCodeSettingsPaths[1]));
+            Assert.False(File.Exists(managedHookFilePath));
+            Assert.False(
+                File.Exists(
+                    Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName())));
+            Assert.False(
+                File.Exists(
+                    Path.Combine(
+                        instructionsDirectory.FullName,
+                        AppConstants.ManagedInstructionFileName)));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            instructionsDirectory.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsyncAttemptsRemainingRollbacksWhenOneRollbackFails()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string[] vsCodeSettingsPaths =
+        [
+            Path.Combine(installRoot.FullName, "vscode-user-settings.json"),
+            Path.Combine(installRoot.FullName, "vscode-server-machine-settings.json"),
+            Path.Combine(installRoot.FullName, "vscode-third-settings.json"),
+        ];
+
+        try
+        {
+            File.WriteAllText(vsCodeSettingsPaths[0], """{ "editor.fontSize": 14 }""");
+            File.WriteAllText(vsCodeSettingsPaths[1], """{ "editor.tabSize": 4 }""");
+
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner: new FakeProcessRunner(),
+                interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
+
+            using IDisposable _ = AtomicTextFileWriter.UseWriterForTesting(
+                new FailOnWriteNumbersTextFileWriter(3, 4));
+
+            int exitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, exitCode);
+            Assert.False(
+                VsCodeSettingsManager.IsHookFileRegistered(
+                    vsCodeSettingsPaths[0],
+                    managedHookFilePath));
+            Assert.True(
+                VsCodeSettingsManager.IsHookFileRegistered(
+                    vsCodeSettingsPaths[1],
+                    managedHookFilePath));
+            Assert.True(
+                UserHookConfigurationManager.IsManagedHookFileInstalled(managedHookFilePath));
+            Assert.True(
+                File.Exists(
+                    Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName())));
+            Assert.False(
+                File.Exists(
+                    Path.Combine(
+                        instructionsDirectory.FullName,
+                        AppConstants.ManagedInstructionFileName)));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            instructionsDirectory.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsyncPreservesManagedArtifactsWhenInstructionRollbackIsIncomplete()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+        string instructionFilePath = Path.Combine(
+            instructionsDirectory.FullName,
+            AppConstants.ManagedInstructionFileName);
+
+        try
+        {
+            File.WriteAllText(vsCodeSettingsPaths[0], """{ "editor.fontSize": 14 }""");
+            File.WriteAllText(vsCodeSettingsPaths[1], """{ "editor.tabSize": 4 }""");
+            File.WriteAllText(instructionFilePath, "existing unmanaged instruction");
+
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner: new FakeProcessRunner(),
+                interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
+
+            using IDisposable _ = AtomicTextFileWriter.UseWriterForTesting(
+                new FailOnWriteNumbersTextFileWriter(3));
+
+            int exitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, exitCode);
+            Assert.False(
+                VsCodeSettingsManager.IsHookFileRegistered(
+                    vsCodeSettingsPaths[0],
+                    managedHookFilePath));
+            Assert.True(
+                VsCodeSettingsManager.IsHookFileRegistered(
+                    vsCodeSettingsPaths[1],
+                    managedHookFilePath));
+            Assert.True(
+                UserHookConfigurationManager.IsManagedHookFileInstalled(managedHookFilePath));
+            Assert.True(
+                File.Exists(
+                    Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName())));
+            Assert.Equal("existing unmanaged instruction", File.ReadAllText(instructionFilePath));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            instructionsDirectory.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsyncFailsBeforeSideEffectsWhenSettingsRegistrationCannotBePlanned()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+
+        try
+        {
+            File.WriteAllText(vsCodeSettingsPaths[1], "{ invalid json");
+            FakeProcessRunner processRunner = new();
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
+
+            int exitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, exitCode);
+            Assert.False(
+                File.Exists(
+                    Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName())));
+            Assert.False(File.Exists(managedHookFilePath));
+            Assert.False(
+                File.Exists(
+                    Path.Combine(
+                        instructionsDirectory.FullName,
+                        AppConstants.ManagedInstructionFileName)));
+            Assert.Null(processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
+            Assert.Null(processRunner.GetSecret(AppPaths.GetTelegramChatIdSecretPath()));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            instructionsDirectory.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAndHealthAsyncIgnoreNonApplicableVsCodeSettingsTargets()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+        VsCodeSettingsTarget[] settingsTargets = CreateVsCodeSettingsTargets(
+            vsCodeSettingsPaths,
+            serverApplicable: false);
+
+        try
+        {
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner: new FakeProcessRunner(),
+                interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
+
+            int installExitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsTargets = settingsTargets,
+                    SkipSecretPrompt = true,
+                },
+                CancellationToken.None);
+
+            int healthExitCode = await service.HealthAsync(
+                new UserPathOverrides
+                {
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsTargets = settingsTargets,
+                },
+                CancellationToken.None);
+
+            Assert.Equal(0, installExitCode);
+            Assert.Equal(0, healthExitCode);
+            Assert.True(
+                VsCodeSettingsManager.IsHookFileRegistered(
+                    vsCodeSettingsPaths[0],
+                    managedHookFilePath));
+            Assert.False(File.Exists(vsCodeSettingsPaths[1]));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            instructionsDirectory.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsyncDoesNotRegisterVsCodeSettingsWhenManagedHookFileInstallFails()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
 
         try
         {
@@ -338,16 +670,227 @@ public sealed class UserCommandServiceTests
                     InstallRoot = installRoot,
                     InstructionsDirectory = instructionsDirectory,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                 },
                 CancellationToken.None);
 
             Assert.Equal(1, exitCode);
-            Assert.False(File.Exists(vsCodeSettingsPath));
+            Assert.All(
+                vsCodeSettingsPaths,
+                settingsPath => Assert.False(File.Exists(settingsPath)));
+            Assert.All(
+                vsCodeSettingsPaths,
+                settingsPath => Assert.False(
+                    VsCodeSettingsManager.IsHookFileRegistered(
+                        settingsPath,
+                        managedHookFilePath)));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            instructionsDirectory.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsyncFailsBeforeSideEffectsWhenManagedHookPathIsOutsideHome()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string outsideHomeHookFilePath = CreatePathOutsideHomeDirectory();
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner: processRunner,
+                interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
+
+            int exitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(outsideHomeHookFilePath),
+                    SkipSecretPrompt = true,
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, exitCode);
             Assert.False(
+                File.Exists(
+                    Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName())));
+            Assert.False(File.Exists(outsideHomeHookFilePath));
+            Assert.False(
+                File.Exists(
+                    Path.Combine(
+                        instructionsDirectory.FullName,
+                        AppConstants.ManagedInstructionFileName)));
+            Assert.Null(processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
+            Assert.Null(processRunner.GetSecret(AppPaths.GetTelegramChatIdSecretPath()));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            instructionsDirectory.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UninstallAsyncFailsBeforeCleanupWhenSettingsRemovalCannotBePlanned()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
+
+            int installExitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                    SkipSecretPrompt = true,
+                },
+                CancellationToken.None);
+
+            Assert.Equal(0, installExitCode);
+            File.WriteAllText(vsCodeSettingsPaths[1], "{ invalid json");
+
+            int uninstallExitCode = await service.UninstallAsync(
+                new UninstallCommandOptions
+                {
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, uninstallExitCode);
+            Assert.True(
+                File.Exists(
+                    Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName())));
+            Assert.True(File.Exists(managedHookFilePath));
+            Assert.True(
+                File.Exists(
+                    Path.Combine(
+                        instructionsDirectory.FullName,
+                        AppConstants.ManagedInstructionFileName)));
+            Assert.True(
                 VsCodeSettingsManager.IsHookFileRegistered(
-                    vsCodeSettingsPath,
+                    vsCodeSettingsPaths[0],
                     managedHookFilePath));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            instructionsDirectory.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UninstallAsyncDoesNotDeleteManagedArtifactsWhenSettingsRemovalWriteFails()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo instructionsDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
+
+            int installExitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                    SkipSecretPrompt = true,
+                },
+                CancellationToken.None);
+
+            Assert.Equal(0, installExitCode);
+
+            using IDisposable _ = AtomicTextFileWriter.UseWriterForTesting(
+                new FailOnWriteNumbersTextFileWriter(2));
+
+            int uninstallExitCode = await service.UninstallAsync(
+                new UninstallCommandOptions
+                {
+                    InstallRoot = installRoot,
+                    InstructionsDirectory = instructionsDirectory,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                    RemoveSecrets = true,
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, uninstallExitCode);
+            Assert.True(
+                File.Exists(
+                    Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName())));
+            Assert.True(File.Exists(managedHookFilePath));
+            Assert.True(
+                File.Exists(
+                    Path.Combine(
+                        instructionsDirectory.FullName,
+                        AppConstants.ManagedInstructionFileName)));
+            Assert.True(
+                VsCodeSettingsManager.IsHookFileRegistered(
+                    vsCodeSettingsPaths[0],
+                    managedHookFilePath));
+            Assert.True(
+                VsCodeSettingsManager.IsHookFileRegistered(
+                    vsCodeSettingsPaths[1],
+                    managedHookFilePath));
+            Assert.Equal(
+                "bot-token",
+                processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
+            Assert.Equal(
+                "chat-id",
+                processRunner.GetSecret(AppPaths.GetTelegramChatIdSecretPath()));
         }
         finally
         {
@@ -457,6 +1000,62 @@ public sealed class UserCommandServiceTests
         return binaryPath;
     }
 
+    private static DirectoryInfo CreateHomeScopedTempSubdirectory()
+    {
+        string path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".tmp",
+            "hcoona-vscode-copilot-telegram-hook-tests",
+            Guid.NewGuid().ToString("n"));
+        return Directory.CreateDirectory(path);
+    }
+
+    private static string CreatePathOutsideHomeDirectory()
+    {
+        string userHomePath = Path.GetFullPath(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        string rootPath = Path.GetPathRoot(userHomePath)
+            ?? throw new InvalidOperationException("Expected a root path.");
+        return Path.Combine(
+            rootPath,
+            "hcoona-outside-home",
+            Guid.NewGuid().ToString("n"),
+            AppConstants.ManagedHookFileName);
+    }
+
+    private static string[] CreateVsCodeSettingsPaths(DirectoryInfo installRoot)
+    {
+        return
+        [
+            Path.Combine(installRoot.FullName, "vscode-user-settings.json"),
+            Path.Combine(installRoot.FullName, "vscode-server-machine-settings.json"),
+        ];
+    }
+
+    private static FileInfo[] CreateVsCodeSettingsOverrides(IEnumerable<string> settingsPaths)
+        => [.. settingsPaths.Select(static settingsPath => new FileInfo(settingsPath))];
+
+    private static VsCodeSettingsTarget[] CreateVsCodeSettingsTargets(
+        string[] settingsPaths,
+        bool serverApplicable)
+    {
+        return
+        [
+            new VsCodeSettingsTarget(
+                settingsPaths[0],
+                IsApplicable: true,
+                DisplayName: "VS Code desktop user settings"),
+            new VsCodeSettingsTarget(
+                settingsPaths[1],
+                IsApplicable: serverApplicable,
+                DisplayName: "VS Code Server Machine settings",
+                InapplicableReason: serverApplicable
+                    ? null
+                    : "No same-host VS Code Server installation was detected under "
+                    + "'~/.vscode-server'."),
+        ];
+    }
+
     private sealed class FakeProcessRunner : IProcessRunner
     {
         private readonly Dictionary<string, string> secrets = new(StringComparer.Ordinal);
@@ -514,6 +1113,24 @@ public sealed class UserCommandServiceTests
 
         public string? GetSecret(string secretPath)
             => secrets.TryGetValue(secretPath, out string? value) ? value : null;
+    }
+
+    private sealed class FailOnWriteNumbersTextFileWriter(params int[] failureWriteNumbers)
+        : ITextFileWriter
+    {
+        private readonly HashSet<int> failureNumbers = [.. failureWriteNumbers];
+        private int writeCount;
+
+        public void WriteAllText(string path, string content)
+        {
+            writeCount++;
+            if (failureNumbers.Contains(writeCount))
+            {
+                throw new IOException("Simulated write failure.");
+            }
+
+            File.WriteAllText(path, content);
+        }
     }
 
     private sealed class FakeInteractiveConsole(

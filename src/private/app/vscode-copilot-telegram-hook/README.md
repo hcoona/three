@@ -87,18 +87,30 @@ The installer command:
 - asks before overwriting existing stored secrets and defaults to keeping them,
 - installs the published Native AOT binary into a user-owned data directory,
 - writes a dedicated managed hook JSON file under the install root,
-- registers that managed hook file in VS Code user `settings.json` through
-  `chat.hookFilesLocations`,
+- validates before writing side effects that the managed hook file path can be
+  represented in VS Code as a supported `~/...` hook location,
+- registers that managed hook file in the supported same-host VS Code
+  `settings.json` targets through `chat.hookFilesLocations`,
 - installs a VS Code GitHub Copilot user instruction file under
   `~/.copilot/instructions` so task summaries are produced in every workspace.
 
 This design follows the manual verification recorded in
 [`docs/h-006-human-confirmation-2026-03-14-user-hook-location.md`](./docs/h-006-human-confirmation-2026-03-14-user-hook-location.md)
+and the later clarification recorded in
+[`docs/h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./docs/h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
 and intentionally avoids treating `~/.claude/settings.json` as the managed
 steady-state install target. By default, the managed hook file lives under the
-install root as `vscode-copilot-telegram-hook.hooks.json`, and the installer
-updates the user's VS Code `settings.json` to enable that exact file path in
-`chat.hookFilesLocations`.
+install root as `vscode-copilot-telegram-hook.hooks.json`. The installer then
+registers that managed hook file in the same host's relevant VS Code settings
+targets, including the host-local desktop VS Code user settings target and, on
+Linux hosts, the VS Code Server Machine settings target even before that server
+settings file already exists locally. Because VS Code only accepts relative
+paths or `~/...` entries in
+`chat.hookFilesLocations`, the installer writes the managed hook registration in
+supported `~/...` form rather than as an absolute path.
+
+If you need to override the default VS Code settings targets, repeat
+`--vscode-settings-path` once per target file you want the installer to manage.
 
 If you need to inspect or update stored Telegram secrets after installation,
 use the dedicated secret-management command:
@@ -145,8 +157,8 @@ token are intentionally redacted from the log.
 
 Use `user diagnose` to print the current user-command log path, workspace
 session log path pattern, workspace fallback hook log path, managed hook file
-path, and VS Code user settings path for the directory where you run the
-command.
+path, and every targeted VS Code settings path for the directory where you run
+the command.
 
 During runtime, the hook maintains session-scoped state under
 `.copilot/sessions/<session_id>/`, including:
@@ -173,8 +185,11 @@ found that this path only acts as an effective user-level hook source in the
 observed environment when `"chat.useClaudeHooks": true` is enabled; leaving the
 path enabled in `chat.hookFilesLocations` or explicitly setting it to `true` is
 not sufficient by itself. This repository therefore installs a dedicated
-managed hook JSON file and registers that explicit file path in VS Code user
-settings instead of relying on Claude settings compatibility.
+managed hook JSON file and registers that file through VS Code settings instead
+of relying on Claude settings compatibility. The later clarification recorded in
+[`docs/h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./docs/h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
+also confirms that these settings targets should be treated as distinct
+same-host entry points rather than as a cross-machine installation story.
 
 The user-level instruction file, however, is installed in the GitHub
 Copilot-specific `~/.copilot/instructions` location.
@@ -223,6 +238,10 @@ Use these documents as the authoritative sources:
   the observed environment when `"chat.useClaudeHooks": true` is enabled, and
   that managed installation should still prefer an explicitly specified
   separate hook JSON path.
+- [`docs/h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./docs/h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md):
+  later clarification that the host-local desktop VS Code settings target and
+  the VS Code Server Machine settings target belong to the same host for
+  managed-installation purposes, and that default installation may target both.
 - [`docs/functional-requirements.md`](./docs/functional-requirements.md):
   current derived functional specification.
 - [nonfunctional constraints](./docs/nonfunctional-and-constraints-research.md):

@@ -27,16 +27,43 @@ internal static class VsCodeSettingsManager
         string hookFilePath,
         string timestamp)
     {
-        string normalizedHookFilePath = Path.GetFullPath(hookFilePath);
-        VsCodeUserSettingsDocument desiredDocument = CreateDesiredDocument(normalizedHookFilePath);
+        ConfigurationPlanResult plan = PlanRegisterHookFile(settingsPath, hookFilePath, timestamp);
+        if (!plan.Applied || plan.WritePlan is null)
+        {
+            return new ConfigurationApplyResult(plan.Applied, plan.Message, plan.CandidatePath);
+        }
+
+        return ApplyWritePlan(plan.WritePlan, timestamp);
+    }
+
+    public static ConfigurationPlanResult PlanRegisterHookFile(
+        string settingsPath,
+        string hookFilePath,
+        string timestamp)
+    {
+        if (!TryGetSupportedHookFileLocation(
+                hookFilePath,
+                out string supportedHookFileLocation,
+                out string? pathErrorMessage))
+        {
+            return new ConfigurationPlanResult(
+                Applied: false,
+                Message: pathErrorMessage
+                    ?? "The managed hook file path could not be converted into a supported "
+                    + "VS Code hook location entry.");
+        }
+
+        bool originalFileExisted = File.Exists(settingsPath);
+        string? originalContent = null;
         VsCodeUserSettingsDocument rootDocument;
 
-        if (File.Exists(settingsPath))
+        if (originalFileExisted)
         {
             try
             {
+                originalContent = File.ReadAllText(settingsPath);
                 rootDocument = JsonSerializer.Deserialize(
-                        File.ReadAllText(settingsPath),
+                        originalContent,
                         ReadContext.VsCodeUserSettingsDocument)
                     ?? throw new InvalidOperationException(
                         "The VS Code settings file must contain a JSON object.");
@@ -47,9 +74,9 @@ internal static class VsCodeSettingsManager
             {
                 string? candidatePath = TryWriteCandidateFile(
                     settingsPath,
-                    SerializeSettings(desiredDocument),
+                    SerializeSettings(CreateDesiredDocument(supportedHookFileLocation)),
                     timestamp);
-                return new ConfigurationApplyResult(
+                return new ConfigurationPlanResult(
                     Applied: false,
                     Message:
                         $"The existing VS Code settings file could not be updated automatically: "
@@ -64,31 +91,22 @@ internal static class VsCodeSettingsManager
 
         rootDocument.ChatHookFilesLocations ??=
             new Dictionary<string, bool>(StringComparer.Ordinal);
-        rootDocument.ChatHookFilesLocations[normalizedHookFilePath] = true;
+        RemoveLegacyHookFileLocations(
+            rootDocument.ChatHookFilesLocations,
+            hookFilePath,
+            supportedHookFileLocation);
+        rootDocument.ChatHookFilesLocations[supportedHookFileLocation] = true;
 
-        string serializedSettings = SerializeSettings(rootDocument);
-        try
-        {
-            AtomicTextFileWriter.WriteAllText(settingsPath, serializedSettings);
-        }
-        catch (Exception ex) when (
-            ex is IOException or UnauthorizedAccessException or NotSupportedException)
-        {
-            string? candidatePath = TryWriteCandidateFile(
+        return new ConfigurationPlanResult(
+            Applied: true,
+            Message: $"Planned VS Code hook registration settings update: {settingsPath}",
+            WritePlan: new VsCodeSettingsWritePlan(
                 settingsPath,
-                serializedSettings,
-                timestamp);
-            return new ConfigurationApplyResult(
-                Applied: false,
-                Message:
-                    $"The VS Code settings file could not be updated automatically: "
-                    + ex.Message,
-                CandidatePath: candidatePath);
-        }
-
-        return new ConfigurationApplyResult(
-            true,
-            $"Updated VS Code hook registration settings: {settingsPath}");
+                SerializeSettings(rootDocument),
+                originalFileExisted,
+                originalContent,
+                SuccessMessage: $"Updated VS Code hook registration settings: {settingsPath}",
+                FailureMessage: "The VS Code settings file could not be updated automatically: "));
     }
 
     public static ConfigurationApplyResult UnregisterHookFile(
@@ -96,59 +114,161 @@ internal static class VsCodeSettingsManager
         string hookFilePath,
         string timestamp)
     {
+        ConfigurationPlanResult plan = PlanUnregisterHookFile(
+            settingsPath,
+            hookFilePath,
+            timestamp);
+        if (!plan.Applied || plan.WritePlan is null)
+        {
+            return new ConfigurationApplyResult(plan.Applied, plan.Message, plan.CandidatePath);
+        }
+
+        return ApplyWritePlan(plan.WritePlan, timestamp);
+    }
+
+    public static ConfigurationPlanResult PlanUnregisterHookFile(
+        string settingsPath,
+        string hookFilePath,
+        string timestamp)
+    {
         if (!File.Exists(settingsPath))
         {
-            return new ConfigurationApplyResult(
-                true,
-                "The VS Code settings file is already absent.");
+            return new ConfigurationPlanResult(
+                Applied: true,
+                Message: "The VS Code settings file is already absent.");
         }
 
-        VsCodeUserSettingsDocument? rootDocument = TryParseSettings(settingsPath);
-        if (rootDocument is null)
+        string originalContent;
+        VsCodeUserSettingsDocument rootDocument;
+        try
         {
-            return new ConfigurationApplyResult(
-                false,
-                "The VS Code settings file could not be parsed. Remove the managed hook "
-                + "registration manually.");
+            originalContent = File.ReadAllText(settingsPath);
+            rootDocument = JsonSerializer.Deserialize(
+                    originalContent,
+                    ReadContext.VsCodeUserSettingsDocument)
+                ?? throw new InvalidOperationException(
+                    "The VS Code settings file must contain a JSON object.");
         }
-
-        string normalizedHookFilePath = Path.GetFullPath(hookFilePath);
-        if (rootDocument.ChatHookFilesLocations is null
-            || !rootDocument.ChatHookFilesLocations.Remove(normalizedHookFilePath))
+        catch (Exception ex) when (
+            ex is IOException or JsonException or InvalidOperationException
+                or UnauthorizedAccessException or NotSupportedException)
         {
-            return new ConfigurationApplyResult(
-                true,
-                "No managed VS Code hook registration was found.");
+            return new ConfigurationPlanResult(
+                Applied: false,
+                Message: "The VS Code settings file could not be parsed. Remove the managed hook "
+                + $"registration manually. {ex.Message}");
         }
 
-        if (rootDocument.ChatHookFilesLocations.Count == 0)
+        bool removedManagedRegistration = false;
+        if (rootDocument.ChatHookFilesLocations is not null)
+        {
+            if (TryGetSupportedHookFileLocation(
+                    hookFilePath,
+                    out string supportedHookFileLocation,
+                    out _))
+            {
+                removedManagedRegistration = rootDocument.ChatHookFilesLocations.Remove(
+                    supportedHookFileLocation);
+            }
+
+            removedManagedRegistration |= RemoveLegacyHookFileLocations(
+                rootDocument.ChatHookFilesLocations,
+                hookFilePath,
+                exceptLocation: null);
+        }
+
+        if (!removedManagedRegistration)
+        {
+            return new ConfigurationPlanResult(
+                Applied: true,
+                Message: "No managed VS Code hook registration was found.");
+        }
+
+        if (rootDocument.ChatHookFilesLocations is { Count: 0 })
         {
             rootDocument.ChatHookFilesLocations = null;
         }
 
-        string serializedSettings = SerializeSettings(rootDocument);
+        return new ConfigurationPlanResult(
+            Applied: true,
+            Message: $"Planned VS Code hook registration removal: {settingsPath}",
+            WritePlan: new VsCodeSettingsWritePlan(
+                settingsPath,
+                SerializeSettings(rootDocument),
+                OriginalFileExisted: true,
+                OriginalContent: originalContent,
+                SuccessMessage: $"Removed VS Code hook registration from: {settingsPath}",
+                FailureMessage:
+                    "The VS Code settings file could not be updated automatically while "
+                    + "removing the managed hook registration: "));
+    }
+
+    internal static ConfigurationApplyResult ApplyWritePlan(
+        VsCodeSettingsWritePlan writePlan,
+        string timestamp)
+    {
+        ConfigurationApplyResult? freshnessFailure = VerifyPlanSnapshotIsCurrent(
+            writePlan,
+            timestamp);
+        if (freshnessFailure is not null)
+        {
+            return freshnessFailure;
+        }
+
         try
         {
-            AtomicTextFileWriter.WriteAllText(settingsPath, serializedSettings);
+            AtomicTextFileWriter.WriteAllText(writePlan.SettingsPath, writePlan.SerializedSettings);
         }
         catch (Exception ex) when (
             ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             string? candidatePath = TryWriteCandidateFile(
-                settingsPath,
-                serializedSettings,
+                writePlan.SettingsPath,
+                writePlan.SerializedSettings,
                 timestamp);
             return new ConfigurationApplyResult(
                 Applied: false,
-                Message:
-                    "The VS Code settings file could not be updated automatically while "
-                    + $"removing the managed hook registration: {ex.Message}",
+                Message: writePlan.FailureMessage + ex.Message,
                 CandidatePath: candidatePath);
         }
 
+        return new ConfigurationApplyResult(true, writePlan.SuccessMessage);
+    }
+
+    internal static ConfigurationApplyResult RollbackWritePlan(VsCodeSettingsWritePlan writePlan)
+    {
+        ConfigurationApplyResult? freshnessFailure = VerifyRollbackSnapshotIsCurrent(writePlan);
+        if (freshnessFailure is not null)
+        {
+            return freshnessFailure;
+        }
+
+        try
+        {
+            if (writePlan.OriginalFileExisted)
+            {
+                AtomicTextFileWriter.WriteAllText(
+                    writePlan.SettingsPath,
+                    writePlan.OriginalContent ?? string.Empty);
+            }
+            else if (File.Exists(writePlan.SettingsPath))
+            {
+                File.Delete(writePlan.SettingsPath);
+            }
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return new ConfigurationApplyResult(
+                Applied: false,
+                Message:
+                    $"Failed to roll back the VS Code settings file '{writePlan.SettingsPath}': "
+                    + ex.Message);
+        }
+
         return new ConfigurationApplyResult(
-            true,
-            $"Removed VS Code hook registration from: {settingsPath}");
+            Applied: true,
+            Message: $"Rolled back VS Code settings file: {writePlan.SettingsPath}");
     }
 
     public static bool IsHookFileRegistered(string settingsPath, string hookFilePath)
@@ -159,20 +279,83 @@ internal static class VsCodeSettingsManager
             return false;
         }
 
-        string normalizedHookFilePath = Path.GetFullPath(hookFilePath);
+        if (!TryGetSupportedHookFileLocation(
+                hookFilePath,
+            out string supportedHookFileLocation,
+                out _))
+        {
+            return false;
+        }
+
         return rootDocument.ChatHookFilesLocations.TryGetValue(
-                normalizedHookFilePath,
+            supportedHookFileLocation,
                 out bool isEnabled)
             && isEnabled;
     }
 
-    private static VsCodeUserSettingsDocument CreateDesiredDocument(string hookFilePath)
+    internal static bool TryGetSupportedHookFileLocation(
+        string hookFilePath,
+        out string supportedHookFileLocation,
+        out string? errorMessage)
+    {
+        string fullHookFilePath = Path.GetFullPath(hookFilePath);
+        string userHomePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        if (string.IsNullOrWhiteSpace(userHomePath))
+        {
+            supportedHookFileLocation = string.Empty;
+            errorMessage =
+                "The current user's home directory could not be resolved for "
+                + "chat.hookFilesLocations registration.";
+            return false;
+        }
+
+        string fullUserHomePath = Path.GetFullPath(userHomePath);
+        string relativeHookFilePath = Path.GetRelativePath(fullUserHomePath, fullHookFilePath);
+        string normalizedRelativeHookFilePath = NormalizePathSeparators(relativeHookFilePath);
+
+        if (Path.IsPathRooted(relativeHookFilePath)
+            || string.Equals(normalizedRelativeHookFilePath, ".", StringComparison.Ordinal)
+            || string.Equals(normalizedRelativeHookFilePath, "..", StringComparison.Ordinal)
+            || normalizedRelativeHookFilePath.StartsWith("../", StringComparison.Ordinal))
+        {
+            supportedHookFileLocation = string.Empty;
+            errorMessage =
+                $"The managed hook file '{fullHookFilePath}' is outside the current user's "
+                + "home directory. VS Code only supports chat.hookFilesLocations entries "
+                + "that are relative or start with '~/', so choose a hook file path under "
+                + $"'{fullUserHomePath}'.";
+            return false;
+        }
+
+        supportedHookFileLocation = $"~/{normalizedRelativeHookFilePath}";
+        errorMessage = null;
+        return true;
+    }
+
+    internal static string GetSupportedHookFileLocation(string hookFilePath)
+    {
+        if (TryGetSupportedHookFileLocation(
+                hookFilePath,
+                out string supportedHookFileLocation,
+                out string? errorMessage))
+        {
+            return supportedHookFileLocation;
+        }
+
+        throw new InvalidOperationException(
+            errorMessage
+            ?? "The managed hook file path could not be converted into a supported VS "
+            + "Code hook location entry.");
+    }
+
+    private static VsCodeUserSettingsDocument CreateDesiredDocument(string hookFileLocation)
     {
         return new VsCodeUserSettingsDocument
         {
             ChatHookFilesLocations = new Dictionary<string, bool>(StringComparer.Ordinal)
             {
-                [hookFilePath] = true,
+                [hookFileLocation] = true,
             },
         };
     }
@@ -197,6 +380,181 @@ internal static class VsCodeSettingsManager
     {
         return JsonSerializer.Serialize(document, WriteIndentedContext.VsCodeUserSettingsDocument);
     }
+
+    private static ConfigurationApplyResult? VerifyPlanSnapshotIsCurrent(
+        VsCodeSettingsWritePlan writePlan,
+        string timestamp)
+    {
+        try
+        {
+            if (writePlan.OriginalFileExisted)
+            {
+                if (!File.Exists(writePlan.SettingsPath))
+                {
+                    return CreatePlanSnapshotFailure(
+                        writePlan,
+                        timestamp,
+                        "The VS Code settings file changed after the managed update was "
+                        + "planned, so it was not overwritten automatically.");
+                }
+
+                string currentContent = File.ReadAllText(writePlan.SettingsPath);
+                if (!string.Equals(
+                        currentContent,
+                        writePlan.OriginalContent ?? string.Empty,
+                        StringComparison.Ordinal))
+                {
+                    return CreatePlanSnapshotFailure(
+                        writePlan,
+                        timestamp,
+                        "The VS Code settings file changed after the managed update was "
+                        + "planned, so it was not overwritten automatically.");
+                }
+
+                return null;
+            }
+
+            if (File.Exists(writePlan.SettingsPath))
+            {
+                return CreatePlanSnapshotFailure(
+                    writePlan,
+                    timestamp,
+                    "The VS Code settings file was created after the managed update was "
+                    + "planned, so it was not overwritten automatically.");
+            }
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            string? candidatePath = TryWriteCandidateFile(
+                writePlan.SettingsPath,
+                writePlan.SerializedSettings,
+                timestamp);
+            return new ConfigurationApplyResult(
+                Applied: false,
+                Message:
+                    $"The VS Code settings file could not be validated before update: "
+                    + ex.Message,
+                CandidatePath: candidatePath);
+        }
+
+        return null;
+    }
+
+    private static ConfigurationApplyResult CreatePlanSnapshotFailure(
+        VsCodeSettingsWritePlan writePlan,
+        string timestamp,
+        string message)
+    {
+        string? candidatePath = TryWriteCandidateFile(
+            writePlan.SettingsPath,
+            writePlan.SerializedSettings,
+            timestamp);
+        return new ConfigurationApplyResult(
+            Applied: false,
+            Message: message,
+            CandidatePath: candidatePath);
+    }
+
+    private static ConfigurationApplyResult? VerifyRollbackSnapshotIsCurrent(
+        VsCodeSettingsWritePlan writePlan)
+    {
+        try
+        {
+            if (!writePlan.OriginalFileExisted)
+            {
+                if (!File.Exists(writePlan.SettingsPath))
+                {
+                    return null;
+                }
+
+                string currentContent = File.ReadAllText(writePlan.SettingsPath);
+                if (!string.Equals(
+                        currentContent,
+                        writePlan.SerializedSettings,
+                        StringComparison.Ordinal))
+                {
+                    return new ConfigurationApplyResult(
+                        Applied: false,
+                        Message:
+                            $"Failed to roll back the VS Code settings file "
+                            + $"'{writePlan.SettingsPath}' because it changed after the managed "
+                            + "update was written.");
+                }
+
+                return null;
+            }
+
+            if (!File.Exists(writePlan.SettingsPath))
+            {
+                return new ConfigurationApplyResult(
+                    Applied: false,
+                    Message:
+                        $"Failed to roll back the VS Code settings file '{writePlan.SettingsPath}' "
+                        + "because it changed after the managed update was written.");
+            }
+
+            string existingContent = File.ReadAllText(writePlan.SettingsPath);
+            if (!string.Equals(
+                    existingContent,
+                    writePlan.SerializedSettings,
+                    StringComparison.Ordinal))
+            {
+                return new ConfigurationApplyResult(
+                    Applied: false,
+                    Message:
+                        $"Failed to roll back the VS Code settings file '{writePlan.SettingsPath}' "
+                        + "because it changed after the managed update was written.");
+            }
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return new ConfigurationApplyResult(
+                Applied: false,
+                Message:
+                    $"Failed to roll back the VS Code settings file '{writePlan.SettingsPath}': "
+                    + ex.Message);
+        }
+
+        return null;
+    }
+
+    private static bool RemoveLegacyHookFileLocations(
+        Dictionary<string, bool> hookFilesLocations,
+        string hookFilePath,
+        string? exceptLocation)
+    {
+        bool removedAny = false;
+
+        foreach (string legacyHookFileLocation in GetLegacyHookFileLocations(hookFilePath))
+        {
+            if (string.Equals(legacyHookFileLocation, exceptLocation, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            removedAny |= hookFilesLocations.Remove(legacyHookFileLocation);
+        }
+
+        return removedAny;
+    }
+
+    private static IReadOnlyList<string> GetLegacyHookFileLocations(string hookFilePath)
+    {
+        string fullHookFilePath = Path.GetFullPath(hookFilePath);
+        HashSet<string> legacyHookFileLocations = new(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+        {
+            fullHookFilePath,
+            NormalizePathSeparators(fullHookFilePath),
+        };
+
+        return [.. legacyHookFileLocations];
+    }
+
+    private static string NormalizePathSeparators(string path)
+        => path.Replace('\\', '/');
 
     private static string? TryWriteCandidateFile(
         string originalPath,

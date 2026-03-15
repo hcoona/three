@@ -106,12 +106,14 @@ internal static class CliFactory
             Description = "Override the managed hook JSON file path.",
         };
 
-        Option<FileInfo?> vsCodeSettingsPathOption = new("--vscode-settings-path")
+        Option<FileInfo[]> vsCodeSettingsPathsOption = new("--vscode-settings-path")
         {
             Description =
-                "Override the VS Code user settings.json path used for "
-                + "chat.hookFilesLocations registration.",
+            "Override the VS Code settings.json paths used for "
+            + "chat.hookFilesLocations registration. Repeat the option to "
+            + "target multiple files.",
         };
+        vsCodeSettingsPathsOption.AllowMultipleArgumentsPerToken = true;
 
         Option<DirectoryInfo?> instructionsDirectoryOption = new("--instructions-dir")
         {
@@ -138,7 +140,7 @@ internal static class CliFactory
             skipSecretPromptOption,
             installRootOption,
             hookFilePathOption,
-            vsCodeSettingsPathOption,
+            vsCodeSettingsPathsOption,
             instructionsDirectoryOption,
         };
         installCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -151,7 +153,7 @@ internal static class CliFactory
                     SkipSecretPrompt = parseResult.GetValue(skipSecretPromptOption),
                     InstallRoot = parseResult.GetValue(installRootOption),
                     ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
-                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
+                    VsCodeSettingsPaths = parseResult.GetValue(vsCodeSettingsPathsOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));
@@ -163,7 +165,7 @@ internal static class CliFactory
             removeSecretsOption,
             installRootOption,
             hookFilePathOption,
-            vsCodeSettingsPathOption,
+            vsCodeSettingsPathsOption,
             instructionsDirectoryOption,
         };
         uninstallCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -173,7 +175,7 @@ internal static class CliFactory
                     RemoveSecrets = parseResult.GetValue(removeSecretsOption),
                     InstallRoot = parseResult.GetValue(installRootOption),
                     ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
-                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
+                    VsCodeSettingsPaths = parseResult.GetValue(vsCodeSettingsPathsOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));
@@ -184,7 +186,7 @@ internal static class CliFactory
         {
             installRootOption,
             hookFilePathOption,
-            vsCodeSettingsPathOption,
+            vsCodeSettingsPathsOption,
             instructionsDirectoryOption,
         };
         healthCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -193,7 +195,7 @@ internal static class CliFactory
                 {
                     InstallRoot = parseResult.GetValue(installRootOption),
                     ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
-                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
+                    VsCodeSettingsPaths = parseResult.GetValue(vsCodeSettingsPathsOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));
@@ -204,7 +206,7 @@ internal static class CliFactory
         {
             installRootOption,
             hookFilePathOption,
-            vsCodeSettingsPathOption,
+            vsCodeSettingsPathsOption,
             instructionsDirectoryOption,
         };
         diagnoseCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -213,7 +215,7 @@ internal static class CliFactory
                 {
                     InstallRoot = parseResult.GetValue(installRootOption),
                     ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
-                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
+                    VsCodeSettingsPaths = parseResult.GetValue(vsCodeSettingsPathsOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));
@@ -245,7 +247,7 @@ internal static class CliFactory
             messageOption,
             installRootOption,
             hookFilePathOption,
-            vsCodeSettingsPathOption,
+            vsCodeSettingsPathsOption,
             instructionsDirectoryOption,
         };
         testNotificationCommand.SetAction(
@@ -256,7 +258,7 @@ internal static class CliFactory
                     Message = parseResult.GetValue(messageOption),
                     InstallRoot = parseResult.GetValue(installRootOption),
                     ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
-                    VsCodeSettingsPath = parseResult.GetValue(vsCodeSettingsPathOption),
+                    VsCodeSettingsPaths = parseResult.GetValue(vsCodeSettingsPathsOption),
                     InstructionsDirectory = parseResult.GetValue(instructionsDirectoryOption),
                 },
                 cancellationToken));

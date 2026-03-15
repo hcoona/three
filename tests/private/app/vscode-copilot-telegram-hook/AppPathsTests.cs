@@ -45,13 +45,17 @@ public sealed class AppPathsTests
     }
 
     [Fact]
-    public void ResolveUserPathsUsesManagedHookFileAndVsCodeSettingsPaths()
+    public void ResolveUserPathsUsesManagedHookFileAndVsCodeSettingsTargets()
     {
         string installRoot = Path.Combine(Path.GetTempPath(), "install-root");
         string instructionsDirectory = Path.Combine(Path.GetTempPath(), "instructions-root");
-        string vsCodeSettingsPath = Path.Combine(
+        string desktopVsCodeSettingsPath = Path.Combine(
             Path.GetTempPath(),
             "vscode-user",
+            "settings.json");
+        string serverVsCodeSettingsPath = Path.Combine(
+            Path.GetTempPath(),
+            "vscode-server-machine",
             "settings.json");
 
         UserInstallationPaths resolvedPaths = AppPaths.ResolveUserPaths(
@@ -59,12 +63,55 @@ public sealed class AppPathsTests
             {
                 InstallRoot = new DirectoryInfo(installRoot),
                 InstructionsDirectory = new DirectoryInfo(instructionsDirectory),
-                VsCodeSettingsPath = new FileInfo(vsCodeSettingsPath),
+                VsCodeSettingsPaths =
+                [
+                    new FileInfo(desktopVsCodeSettingsPath),
+                    new FileInfo(serverVsCodeSettingsPath),
+                ],
             });
 
         Assert.Equal(
             Path.Combine(Path.GetFullPath(installRoot), AppConstants.ManagedHookFileName),
             resolvedPaths.ManagedHookFilePath);
-        Assert.Equal(Path.GetFullPath(vsCodeSettingsPath), resolvedPaths.VsCodeSettingsPath);
+        Assert.Collection(
+            resolvedPaths.VsCodeSettingsTargets,
+            target =>
+            {
+                Assert.Equal(Path.GetFullPath(desktopVsCodeSettingsPath), target.SettingsPath);
+                Assert.True(target.IsApplicable);
+            },
+            target =>
+            {
+                Assert.Equal(Path.GetFullPath(serverVsCodeSettingsPath), target.SettingsPath);
+                Assert.True(target.IsApplicable);
+            });
+    }
+
+    [Fact]
+    public void GetDefaultVsCodeSettingsTargetsIncludeDesktopAndServerTargets()
+    {
+        IReadOnlyList<VsCodeSettingsTarget> defaultSettingsTargets =
+            AppPaths.GetDefaultVsCodeSettingsTargets();
+
+        VsCodeSettingsTarget desktopTarget = Assert.Single(
+            defaultSettingsTargets,
+            target => string.Equals(
+                target.SettingsPath,
+                Path.GetFullPath(AppPaths.GetDefaultVsCodeSettingsPath()),
+                StringComparison.Ordinal));
+        Assert.True(desktopTarget.IsApplicable);
+
+        VsCodeSettingsTarget serverTarget = Assert.Single(
+            defaultSettingsTargets,
+            target => string.Equals(
+                target.SettingsPath,
+                Path.GetFullPath(AppPaths.GetDefaultVsCodeServerSettingsPath()),
+                StringComparison.Ordinal));
+        Assert.Equal(OperatingSystem.IsLinux(), serverTarget.IsApplicable);
+        Assert.Equal(
+            OperatingSystem.IsLinux()
+                ? null
+                : "No same-host VS Code Server installation was detected under '~/.vscode-server'.",
+            serverTarget.InapplicableReason);
     }
 }

@@ -254,13 +254,39 @@ internal sealed class UserHookEntry
     public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 }
 
+internal sealed record VsCodeSettingsTarget(
+    string SettingsPath,
+    bool IsApplicable,
+    string DisplayName,
+    string? InapplicableReason = null);
+
+internal sealed record VsCodeSettingsStatus(
+    VsCodeSettingsTarget Target,
+    bool IsRegistered);
+
+internal sealed record VsCodeSettingsWritePlan(
+    string SettingsPath,
+    string SerializedSettings,
+    bool OriginalFileExisted,
+    string? OriginalContent,
+    string SuccessMessage,
+    string FailureMessage);
+
+internal sealed record ConfigurationPlanResult(
+    bool Applied,
+    string Message,
+    VsCodeSettingsWritePlan? WritePlan = null,
+    string? CandidatePath = null);
+
 internal class UserPathOverrides
 {
     public DirectoryInfo? InstallRoot { get; init; }
 
     public FileInfo? ManagedHookFilePath { get; init; }
 
-    public FileInfo? VsCodeSettingsPath { get; init; }
+    public IReadOnlyList<FileInfo>? VsCodeSettingsPaths { get; init; }
+
+    internal IReadOnlyList<VsCodeSettingsTarget>? VsCodeSettingsTargets { get; init; }
 
     public DirectoryInfo? InstructionsDirectory { get; init; }
 }
@@ -299,7 +325,7 @@ internal sealed record UserInstallationPaths(
     string InstallRoot,
     string InstalledBinaryPath,
     string ManagedHookFilePath,
-    string VsCodeSettingsPath,
+    IReadOnlyList<VsCodeSettingsTarget> VsCodeSettingsTargets,
     string InstructionsDirectory,
     string InstructionFilePath,
     string UserLogFilePath);
