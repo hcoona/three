@@ -127,7 +127,7 @@ jobs:
       - name: Create GitHub App token
         id: app-token
         if: steps.metadata.outputs.package-ecosystem == 'nuget'
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.SHUAIZHANG_LOCKFILE_APP_ID }}
           private-key: ${{ secrets.SHUAIZHANG_LOCKFILE_PRIVATE_KEY }}
