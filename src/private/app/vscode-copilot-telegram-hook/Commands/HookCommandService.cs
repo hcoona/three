@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Hcoona.VsCodeCopilotTelegramHook.Logging;
@@ -15,6 +16,8 @@ internal sealed class HookCommandService(
     SessionLogFileContext sessionLogFileContext,
     ILogger<HookCommandService> logger)
 {
+    private const string UtcTimestampFormat = "yyyy-MM-ddTHH:mm:ss.fff'Z'";
+
     public async Task<int> HandleSessionStartAsync(
         Stream standardInput,
         Stream standardOutput,
@@ -50,19 +53,17 @@ internal sealed class HookCommandService(
             SessionState sessionState = await workspaceStateStore.InitializeSessionAsync(
                 hookInput,
                 cancellationToken);
-            HookResponse response = new()
-            {
-                HookSpecificOutput = new HookSpecificOutput
-                {
-                    HookEventName = "SessionStart",
-                    AdditionalContext = BuildAdditionalContext(sessionState),
-                },
-            };
 
-            await JsonSerializer.SerializeAsync(
+            await WriteHookResponseAsync(
                 standardOutput,
-                response,
-                AppJsonSerializerContext.Default.HookResponse,
+                new HookResponse
+                {
+                    HookSpecificOutput = new HookSpecificOutput
+                    {
+                        HookEventName = "SessionStart",
+                        AdditionalContext = BuildAdditionalContext(sessionState),
+                    },
+                },
                 cancellationToken);
             AppLog.WroteSessionStartContext(logger, hookInput.SessionId);
         }
@@ -130,6 +131,7 @@ internal sealed class HookCommandService(
 
     public async Task<int> HandleStopAsync(
         Stream standardInput,
+        Stream standardOutput,
         CancellationToken cancellationToken)
     {
         IDisposable? logScope = null;
@@ -161,36 +163,73 @@ internal sealed class HookCommandService(
 
             AppLog.HandlingStopHook(logger, hookInput.SessionId, workspacePath);
 
-            _ = await workspaceStateStore.TryReadSessionAsync(
-                workspacePath,
-                hookInput.SessionId,
-                cancellationToken);
             TurnState? turnState = await workspaceStateStore.TryReadTurnAsync(
                 workspacePath,
                 hookInput.SessionId,
                 cancellationToken);
-            SummaryRecord? summaryRecord = await workspaceStateStore.TryReadSummaryAsync(
-                workspacePath,
-                hookInput.SessionId,
-                cancellationToken);
-
-            if (summaryRecord is not null
-                && (!string.Equals(
-                        summaryRecord.SessionId,
-                        hookInput.SessionId,
-                        StringComparison.Ordinal)
-                    || turnState is null
-                    || !string.Equals(
-                        summaryRecord.TurnId,
-                        turnState.TurnId,
-                        StringComparison.Ordinal)))
-            {
-                summaryRecord = null;
-            }
 
             string turnId = turnState?.TurnId
-                ?? summaryRecord?.TurnId
                 ?? CreateStopFallbackTurnId(hookInput.Timestamp);
+
+            SummaryValidationResult summaryValidation =
+                await ValidateSummaryAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    turnState,
+                    cancellationToken);
+
+            if (!summaryValidation.IsValid && turnState is not null)
+            {
+                bool incrementFailureCount = ShouldIncrementStopValidationFailureCount(
+                    turnState,
+                    hookInput);
+                TurnState updatedTurnState =
+                    await workspaceStateStore.RecordStopValidationFailureAsync(
+                        workspacePath,
+                        turnState,
+                        hookInput.Timestamp,
+                        summaryValidation.FailureReason!,
+                        incrementFailureCount,
+                        cancellationToken);
+
+                if (updatedTurnState.StopValidationFailureCount
+                    < AppConstants.MaxStopSummaryValidationFailures)
+                {
+                    string blockingReason = BuildStopBlockingReason(
+                        updatedTurnState,
+                        summaryValidation.FailureReason!);
+                    AppLog.BlockingStopForSummaryValidation(
+                        logger,
+                        hookInput.SessionId,
+                        updatedTurnState.TurnId,
+                        updatedTurnState.StopValidationFailureCount,
+                        summaryValidation.FailureReason!);
+                    await WriteHookResponseAsync(
+                        standardOutput,
+                        new HookResponse
+                        {
+                            HookSpecificOutput = new HookSpecificOutput
+                            {
+                                HookEventName = "Stop",
+                                Decision = "block",
+                                Reason = blockingReason,
+                            },
+                        },
+                        cancellationToken);
+                    return 0;
+                }
+
+                AppLog.AllowingStopAfterValidationFailures(
+                    logger,
+                    hookInput.SessionId,
+                    updatedTurnState.TurnId,
+                    summaryValidation.FailureReason!);
+                turnState = updatedTurnState;
+            }
+
+            SummaryRecord? summaryRecord = summaryValidation.IsValid
+                ? summaryValidation.Record
+                : null;
 
             if (await workspaceStateStore.WasStopAlreadySentAsync(
                 workspacePath,
@@ -268,10 +307,12 @@ internal sealed class HookCommandService(
                 "Notification summary handoff is enabled for this workspace.",
                 $"Your session_id is {sessionState.SessionId}.",
                 $"Before you finish each task, read {turnStatePath}",
-                $"and overwrite {summaryStatePath} with valid JSON.",
-                "Copy session_id and turn_id from the turn state file,",
-                "and write the summary field as concise human-readable text,",
-                "preferably in Chinese on a best-effort basis.",
+                $"and overwrite {summaryStatePath} with valid JSON for the current turn.",
+                "Copy session_id and turn_id from the turn-state file.",
+                "updated_at must be a UTC timestamp in yyyy-MM-ddTHH:mm:ss.fffZ format.",
+                "summary must be a concise human-readable sentence,",
+                "preferably Chinese on a best-effort basis.",
+                "details, changed_files, and next_steps must be JSON arrays.",
             ]);
     }
 
@@ -356,6 +397,162 @@ internal sealed class HookCommandService(
         using MemoryStream buffer = new();
         await standardInput.CopyToAsync(buffer, cancellationToken);
         return buffer.ToArray();
+    }
+
+    private static async Task<SummaryValidationResult> ValidateSummaryAsync(
+        string workspacePath,
+        string sessionId,
+        TurnState? turnState,
+        CancellationToken cancellationToken)
+    {
+        if (turnState is null)
+        {
+            return SummaryValidationResult.AllowWithoutValidation();
+        }
+
+        string summaryPath = AppPaths.GetSummaryStatePath(workspacePath, sessionId);
+        string summaryDisplayPath = AppPaths.GetRelativeSummaryStatePath(sessionId);
+        if (!File.Exists(summaryPath))
+        {
+            return SummaryValidationResult.Invalid(
+            $"Summary file is missing at '{summaryDisplayPath}'.");
+        }
+
+        SummaryRecord? summaryRecord;
+        try
+        {
+            await using FileStream stream = File.OpenRead(summaryPath);
+            summaryRecord = await JsonSerializer.DeserializeAsync(
+                stream,
+                AppJsonSerializerContext.Default.SummaryRecord,
+                cancellationToken);
+        }
+        catch (Exception ex) when (
+            ex is IOException or JsonException or UnauthorizedAccessException
+                or NotSupportedException)
+        {
+            return SummaryValidationResult.Invalid(
+                $"Summary file '{summaryDisplayPath}' could not be parsed as JSON: {ex.Message}");
+        }
+
+        if (summaryRecord is null)
+        {
+            return SummaryValidationResult.Invalid(
+                $"Summary file '{summaryDisplayPath}' is empty or does not contain a JSON object.");
+        }
+
+        List<string> failures = [];
+        if (!string.Equals(summaryRecord.SessionId, turnState.SessionId, StringComparison.Ordinal))
+        {
+            failures.Add($"session_id must equal '{turnState.SessionId}'");
+        }
+
+        if (!string.Equals(summaryRecord.TurnId, turnState.TurnId, StringComparison.Ordinal))
+        {
+            failures.Add($"turn_id must equal '{turnState.TurnId}'");
+        }
+
+        if (!IsValidUtcTimestamp(summaryRecord.UpdatedAt))
+        {
+            failures.Add(
+                "updated_at must be a UTC timestamp in yyyy-MM-ddTHH:mm:ss.fffZ format");
+        }
+
+        if (string.IsNullOrWhiteSpace(summaryRecord.Summary))
+        {
+            failures.Add("summary must be a non-empty human-readable sentence");
+        }
+
+        if (failures.Count > 0)
+        {
+            return SummaryValidationResult.Invalid(
+                $"Summary file '{summaryDisplayPath}' is invalid: {string.Join("; ", failures)}.");
+        }
+
+        return SummaryValidationResult.Valid(summaryRecord);
+    }
+
+    private static bool ShouldIncrementStopValidationFailureCount(
+        TurnState turnState,
+        StopHookInput hookInput)
+    {
+        if (turnState.StopValidationFailureCount == 0)
+        {
+            return true;
+        }
+
+        return !string.Equals(
+            turnState.LastStopValidationFailureTimestamp,
+            hookInput.Timestamp,
+            StringComparison.Ordinal);
+    }
+
+    private static string BuildStopBlockingReason(TurnState turnState, string failureReason)
+    {
+        string turnPath = AppPaths.GetRelativeTurnStatePath(turnState.SessionId);
+        string summaryPath = AppPaths.GetRelativeSummaryStatePath(turnState.SessionId);
+        int attempt = turnState.StopValidationFailureCount;
+
+        return string.Join(
+            " ",
+            [
+                $"Summary validation failed for the current turn (attempt {attempt} of "
+                + $"{AppConstants.MaxStopSummaryValidationFailures}).",
+                failureReason,
+                $"Read {turnPath} and overwrite {summaryPath} with valid JSON for this turn.",
+                $"The file must keep session_id='{turnState.SessionId}' and "
+                + $"turn_id='{turnState.TurnId}'.",
+                "updated_at must be a UTC timestamp in yyyy-MM-ddTHH:mm:ss.fffZ format.",
+                "summary must be a concise human-readable sentence, "
+                + "preferably Chinese on a best-effort basis.",
+                "details, changed_files, and next_steps must be JSON arrays.",
+            ]);
+    }
+
+    private static bool IsValidUtcTimestamp(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return DateTimeOffset.TryParseExact(
+                value,
+                UtcTimestampFormat,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out DateTimeOffset parsed)
+            && string.Equals(
+                parsed.ToString(UtcTimestampFormat, CultureInfo.InvariantCulture),
+                value,
+                StringComparison.Ordinal);
+    }
+
+    private static async Task WriteHookResponseAsync(
+        Stream standardOutput,
+        HookResponse response,
+        CancellationToken cancellationToken)
+    {
+        await JsonSerializer.SerializeAsync(
+            standardOutput,
+            response,
+            AppJsonSerializerContext.Default.HookResponse,
+            cancellationToken);
+    }
+
+    private sealed record SummaryValidationResult(
+        bool IsValid,
+        SummaryRecord? Record,
+        string? FailureReason)
+    {
+        public static SummaryValidationResult AllowWithoutValidation()
+            => new(true, null, null);
+
+        public static SummaryValidationResult Valid(SummaryRecord record)
+            => new(true, record, null);
+
+        public static SummaryValidationResult Invalid(string failureReason)
+            => new(false, null, failureReason);
     }
 
     private static string? TryDescribePayloadShape(ReadOnlyMemory<byte> payload)

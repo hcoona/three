@@ -46,6 +46,7 @@ internal sealed class WorkspaceStateStore(
             WorkspacePath = workspacePath,
             CreatedAt = now,
             UpdatedAt = now,
+            StopValidationFailureCount = 0,
             TranscriptPath = input.TranscriptPath,
         };
 
@@ -146,6 +147,32 @@ internal sealed class WorkspaceStateStore(
                 lastSentState.StopTimestamp,
                 stopTimestamp,
                 StringComparison.Ordinal);
+    }
+
+    public async Task<TurnState> RecordStopValidationFailureAsync(
+        string workspacePath,
+        TurnState turnState,
+        string stopTimestamp,
+        string failureReason,
+        bool incrementFailureCount,
+        CancellationToken cancellationToken)
+    {
+        if (incrementFailureCount)
+        {
+            turnState.StopValidationFailureCount++;
+        }
+
+        turnState.LastStopValidationError = failureReason;
+        turnState.LastStopValidationFailureTimestamp = stopTimestamp;
+        turnState.UpdatedAt = GetCurrentUtcTimestamp();
+
+        await WriteJsonAsync(
+            AppPaths.GetTurnStatePath(Path.GetFullPath(workspacePath), turnState.SessionId),
+            turnState,
+            AppJsonSerializerContext.Default.TurnState,
+            cancellationToken);
+
+        return turnState;
     }
 
     public static Task RecordNotificationAsync(

@@ -48,7 +48,6 @@ public sealed class AppPathsTests
     public void ResolveUserPathsUsesManagedHookFileAndVsCodeSettingsTargets()
     {
         string installRoot = Path.Combine(Path.GetTempPath(), "install-root");
-        string instructionsDirectory = Path.Combine(Path.GetTempPath(), "instructions-root");
         string desktopVsCodeSettingsPath = Path.Combine(
             Path.GetTempPath(),
             "vscode-user",
@@ -62,7 +61,6 @@ public sealed class AppPathsTests
             new UserPathOverrides
             {
                 InstallRoot = new DirectoryInfo(installRoot),
-                InstructionsDirectory = new DirectoryInfo(instructionsDirectory),
                 VsCodeSettingsPaths =
                 [
                     new FileInfo(desktopVsCodeSettingsPath),

@@ -25,11 +25,4 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Hcoona.VsCodeCopilotTelegramHook.Tests" />
   </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="instructions/copilot-notify-summary.instructions.md">
-      <LogicalName>CopilotNotifySummaryInstruction</LogicalName>
-    </EmbeddedResource>
-  </ItemGroup>
-
 </Project>

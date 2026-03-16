@@ -31,7 +31,6 @@ internal static class Program
         builder.Services.AddSingleton<TelegramCredentialProvider>();
         builder.Services.AddSingleton<GitRepositoryProbe>();
         builder.Services.AddSingleton<WorkspaceStateStore>();
-        builder.Services.AddSingleton<InstructionTemplateProvider>();
         builder.Services.AddTransient<HookCommandService>();
         builder.Services.AddTransient<UserCommandService>();
 

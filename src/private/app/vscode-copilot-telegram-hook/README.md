@@ -17,13 +17,6 @@ The implementation follows the official VS Code Copilot hooks preview behavior:
   a default user hook location.
 - Workspace hooks take precedence over user hooks for the same event.
 
-The implementation also follows the official VS Code GitHub Copilot custom
-instructions behavior:
-
-- User-level `.instructions.md` files are supported under `~/.copilot/instructions`.
-- These instructions are separate from hooks and are required if you want task
-  summaries, not just raw Telegram notifications.
-
 ## Files
 
 - `VSCodeCopilotTelegramHook.csproj`: Native AOT-enabled C# project integrated
@@ -34,12 +27,10 @@ instructions behavior:
 - `Notifications/`: Telegram message composition and delivery.
 - `State/`: session-scoped `.copilot/sessions/<session_id>/*.json` state
   management.
-- `instructions/copilot-notify-summary.instructions.md`: managed user
-  instruction template for summary handoff.
 - `docs/README.md`: tracks human-authored source inputs and derivation
   relationships for the documentation set in `docs/`.
 
-Only the C# implementation and its managed instruction assets are shipped in
+Only the C# implementation and its managed hook/runtime assets are shipped in
 this directory.
 
 ## User-level installation
@@ -90,9 +81,7 @@ The installer command:
 - validates before writing side effects that the managed hook file path can be
   represented in VS Code as a supported `~/...` hook location,
 - registers that managed hook file in the supported same-host VS Code
-  `settings.json` targets through `chat.hookFilesLocations`,
-- installs a VS Code GitHub Copilot user instruction file under
-  `~/.copilot/instructions` so task summaries are produced in every workspace.
+  `settings.json` targets through `chat.hookFilesLocations`.
 
 This design follows the manual verification recorded in
 [`docs/h-006-human-confirmation-2026-03-14-user-hook-location.md`](./docs/h-006-human-confirmation-2026-03-14-user-hook-location.md)
@@ -166,7 +155,8 @@ During runtime, the hook maintains session-scoped state under
 - `notify-session.json`: session metadata for the current Copilot session.
 - `notify-turn.json`: the current turn identifier generated at
   `UserPromptSubmit`.
-- `notify-summary.json`: the current turn's summary handoff file.
+- `notify-summary.json`: the current turn's summary file validated by the
+  `Stop` hook before final notification delivery.
 - `notify-last-sent.json`: best-effort duplicate-suppression state for the
   current session.
 - `hook.log`: always-on diagnostic log for the current Copilot session.
@@ -190,12 +180,17 @@ of relying on Claude settings compatibility. The later clarification recorded in
 [`docs/h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./docs/h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
 also confirms that these settings targets should be treated as distinct
 same-host entry points rather than as a cross-machine installation story.
-
-The user-level instruction file, however, is installed in the GitHub
-Copilot-specific `~/.copilot/instructions` location.
 The runtime honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process
 environment as explicit overrides, but `gopass` is the primary persisted
 mechanism for the managed user-level installation.
+
+For summary generation, the runtime now relies on the documented `Stop` hook
+blocking flow rather than on a separately installed custom-instruction file.
+If the current turn's `notify-summary.json` file is missing or invalid, the
+`Stop` hook blocks stopping, explains the validation failure, and asks Copilot
+to regenerate the file. The hook stops blocking after three validation
+failures for the same turn and then delivers a fallback missing-summary
+notification.
 
 ## Build and validation
 
@@ -242,6 +237,9 @@ Use these documents as the authoritative sources:
   later clarification that the host-local desktop VS Code settings target and
   the VS Code Server Machine settings target belong to the same host for
   managed-installation purposes, and that default installation may target both.
+- [`docs/h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./docs/h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md):
+  later correction that removes the managed instruction dependency and moves
+  summary recovery into the `Stop` hook with bounded retries.
 - [`docs/functional-requirements.md`](./docs/functional-requirements.md):
   current derived functional specification.
 - [nonfunctional constraints](./docs/nonfunctional-and-constraints-research.md):
