@@ -9,8 +9,9 @@
     - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
     - [`h-004-human-confirmation-2026-03-14.md`](./h-004-human-confirmation-2026-03-14.md)
     - [`h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
-    - [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md)
-    - [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)
+    - [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)
+        - [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md)
+        - [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)
 - Purpose: translate the human-authored source inputs and supporting research
   into product-facing functional requirements.
 
@@ -48,8 +49,7 @@ The solution shall provide a user-level installation flow that makes the notific
 The installation flow shall install or configure all user-level artifacts and delivery inputs required for:
 
 1. hook execution, and
-2. summary generation handoff, and
-3. Telegram notification delivery.
+2. Telegram notification delivery.
 
 This includes the Telegram bot token and target chat identifier required for notification authentication and routing.
 
@@ -80,7 +80,7 @@ The correlation context shall provide, at minimum, enough information to disting
 
 ### FR-006 Summary availability
 
-The solution shall make summary content available for the current tracked result before notification delivery is attempted, or otherwise surface that the summary is missing.
+The solution shall make summary content available for the current tracked result before final notification delivery is attempted, or otherwise surface that the summary is missing.
 
 ### FR-007 Summary handoff minimum capability
 
@@ -94,41 +94,49 @@ The summary handoff for a tracked result shall support, at minimum:
 
 The solution shall provide a way for Copilot to update the summary content before it finishes work for the current chat turn.
 
-### FR-009 Delivery independence from structured summary schema
+### FR-009 Stop-mediated summary recovery
+
+When the current turn's summary record is missing or invalid at `Stop`, the solution shall be able to block stopping, explain the validation failure, and require Copilot to regenerate the summary record.
+
+### FR-010 Bounded stop blocking
+
+The stop-mediated summary-recovery loop shall stop blocking after at most three validation failures for the same tracked result.
+
+### FR-011 Delivery independence from structured summary schema
 
 Notification delivery shall not depend on the presence of a stable externally supported summary schema or a structured status field.
 
-### FR-010 Summary language preference
+### FR-012 Summary language preference
 
 The solution shall treat Chinese as the preferred notification-summary language on a best-effort basis. Notification delivery shall not depend on the available summary being Chinese text, and any additional structure beyond the human-readable summary text is implementation-defined.
 
-### FR-011 Turn completion detection
+### FR-013 Turn completion detection
 
 When Copilot reaches a `Stop` event for the current chat turn, the solution shall attempt Telegram notification delivery for that `Stop` event.
 
-### FR-012 Stop-event interpretation
+### FR-014 Stop-event interpretation
 
 For this solution, the end-of-turn notification trigger shall correspond to the point where Copilot attempts to stop for the current chat turn, even if the overall session may continue with later turns.
 
-### FR-013 Missing-summary fallback
+### FR-015 Missing-summary fallback
 
 If the current `Stop` event does not have usable summary content, the solution shall still send a notification and shall explicitly indicate that the summary is missing.
 
-### FR-014 Telegram delivery target
+### FR-016 Telegram delivery target
 
 The solution shall send notifications to a single Telegram destination per
 user-level installation, identified by a bot token and a target chat
 identifier.
 
-### FR-015 Credential resolution for delivery
+### FR-017 Credential resolution for delivery
 
 Before sending a notification, the solution shall resolve the credentials required to call the Telegram Bot API.
 
-### FR-016 Notification format
+### FR-018 Notification format
 
 The solution shall format the outgoing notification using a Telegram HTML-compatible text representation.
 
-### FR-017 Required notification contents
+### FR-019 Required notification contents
 
 Each notification shall include, at minimum:
 
@@ -142,7 +150,7 @@ Telegram message while remaining valid under Telegram formatting rules, the
 solution shall preserve the heading and identifying context and continue the
 summary across additional Telegram messages.
 
-### FR-018 Context enrichment
+### FR-020 Context enrichment
 
 When available, each notification shall also include relevant execution context such as:
 
@@ -155,39 +163,39 @@ When available, each notification shall also include relevant execution context 
 - commit identifier, and
 - transcript path.
 
-### FR-019 Optional structured summary preview
+### FR-021 Optional structured summary preview
 
 When the implementation makes additional structured summary content available, the notification may include preview entries from that content.
 
-### FR-020 Best-effort duplicate suppression
+### FR-022 Best-effort duplicate suppression
 
 The solution shall prioritize notification delivery and limited retry over perfect duplicate suppression. Any duplicate suppression applied for the same chat turn shall be best-effort only and shall exist to improve user experience rather than to provide a strict correctness guarantee.
 
-### FR-021 Delivery opportunity for later turns
+### FR-023 Delivery opportunity for later turns
 
 Each new `Stop` event shall create a new delivery opportunity, including later turns in the same session.
 
-### FR-022 Workspace isolation
+### FR-024 Workspace isolation
 
 The solution shall keep session correlation data and notification coordination state isolated per workspace.
 
-### FR-023 Repository context probing
+### FR-025 Repository context probing
 
 The solution shall inspect the current workspace to determine repository metadata when such metadata is available.
 
-### FR-024 Operation without full repository metadata
+### FR-026 Operation without full repository metadata
 
 The solution shall still be able to produce a notification when repository metadata is partially unavailable or missing.
 
-### FR-025 Multi-turn session behavior
+### FR-027 Multi-turn session behavior
 
 A single Copilot chat session may produce multiple turn-completion notifications over time, provided that each notification corresponds to a distinct completed turn result.
 
-### FR-026 Latest-result clarity
+### FR-028 Latest-result clarity
 
 The summary handoff mechanism shall make the latest known summary unambiguous when multiple turn results exist for the same tracked context.
 
-### FR-027 Persistent coordination state
+### FR-029 Persistent coordination state
 
 The solution shall preserve sufficient persistent correlation and coordination state across hook invocations so that:
 

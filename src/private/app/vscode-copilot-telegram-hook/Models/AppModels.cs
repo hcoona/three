@@ -127,6 +127,15 @@ internal sealed class TurnState
     [JsonPropertyName("updated_at")]
     public string UpdatedAt { get; set; } = string.Empty;
 
+    [JsonPropertyName("stop_validation_failure_count")]
+    public int StopValidationFailureCount { get; set; }
+
+    [JsonPropertyName("last_stop_validation_error")]
+    public string? LastStopValidationError { get; set; }
+
+    [JsonPropertyName("last_stop_validation_failure_timestamp")]
+    public string? LastStopValidationFailureTimestamp { get; set; }
+
     [JsonPropertyName("transcript_path")]
     public string? TranscriptPath { get; set; }
 }
@@ -287,8 +296,6 @@ internal class UserPathOverrides
     public IReadOnlyList<FileInfo>? VsCodeSettingsPaths { get; init; }
 
     internal IReadOnlyList<VsCodeSettingsTarget>? VsCodeSettingsTargets { get; init; }
-
-    public DirectoryInfo? InstructionsDirectory { get; init; }
 }
 
 internal sealed class InstallCommandOptions : UserPathOverrides
@@ -326,8 +333,6 @@ internal sealed record UserInstallationPaths(
     string InstalledBinaryPath,
     string ManagedHookFilePath,
     IReadOnlyList<VsCodeSettingsTarget> VsCodeSettingsTargets,
-    string InstructionsDirectory,
-    string InstructionFilePath,
     string UserLogFilePath);
 
 internal sealed record TelegramCredentials(string BotToken, string ChatId, string Source);

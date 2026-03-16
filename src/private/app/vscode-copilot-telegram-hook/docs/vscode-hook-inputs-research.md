@@ -8,6 +8,7 @@
       [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)
     - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
     - [`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md)
+    - [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)
     - non-normative repository context reviewed for comparison
 - Scope note: H-002 and H-003 may refine project interpretation, but the
   external research basis for this note is the user-provided VS Code reference
@@ -41,17 +42,16 @@ This research focuses on the hook events and input fields that are directly rele
 ### Human-authored source inputs
 
 - [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md)
-- [`h-002-human-confirmation-2026-03-13.md`](./h-002-human-confirmation-2026-03-13.md)
 
 ### Official VS Code documentation inherited from H-001
 
 - [Agent hooks in Visual Studio Code (Preview)](https://code.visualstudio.com/docs/copilot/customization/hooks)
-- [Use custom instructions in VS Code](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)
 
 ### Later human clarification and verification
 
 - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
 - [`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md)
+- [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)
 
 These VS Code references are part of the user-provided reference set preserved
 in [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md).
@@ -60,7 +60,6 @@ in [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md
 
 - [`../Commands/HookCommandService.cs`](../Commands/HookCommandService.cs)
 - [`../State/WorkspaceStateStore.cs`](../State/WorkspaceStateStore.cs)
-- [`../instructions/copilot-notify-summary.instructions.md`](../instructions/copilot-notify-summary.instructions.md)
 
 ## Documented Common Hook Input Fields
 
@@ -149,6 +148,23 @@ For this project, `Stop` also gets the same common correlation fields, especiall
 
 That means the `Stop` hook already knows which session it belongs to according to the official documentation.
 
+The official hooks documentation also states that `Stop` can return
+`hookSpecificOutput` with:
+
+- `hookEventName: "Stop"`,
+- `decision: "block"`, and
+- a required `reason`.
+
+The same documentation states that `stop_hook_active` becomes `true` when the
+agent is already continuing because of a previous stop hook.
+
+### Practical consequence for this project
+
+This documented `Stop` behavior provides a direct hook-to-model feedback path
+that can be used to validate a summary file at stop time, tell the model what
+is wrong, and require regeneration without relying on a separately installed
+custom-instruction artifact.
+
 ## What the Hook Input Already Gives This Project
 
 Based on the official hook input contract, the hook runtime already has documented access to enough information to do all of the following:
@@ -190,25 +206,22 @@ practical.
 
 The harder part for this project is not merely correlating **hook invocation A** with **hook invocation B**.
 
-The harder part is correlating:
-
-1. information available to hook scripts, with
-2. a summary later written by the Copilot agent under custom instructions.
+The harder part is ensuring that the current turn's summary file exists and is
+valid when the agent tries to stop.
 
 ### Why this matters
 
-A design for this project may ask the agent to maintain a machine-readable summary during the turn and may ask a later `Stop` hook to read it.
-
-However, the custom instructions documentation describes instructions as Markdown guidance that is automatically included in chat requests. The surveyed documentation does **not** document a built-in mechanism by which an instructions file can directly read hook standard input fields such as:
-
-- `sessionId`
-- `timestamp`
-- `transcript_path`
-- `hookEventName`
+The summary still needs correlation data, but the documented `Stop` blocking
+path means the hook can validate the already-materialized file, tell the model
+what is missing or malformed, and ask for regeneration at the exact point where
+the model is trying to finish.
 
 ### Practical implication
 
-Even though the hook runtime itself already has documented session information, the project still appears to need **some explicit handoff or shared-correlation mechanism** if the agent-written summary must be reliably tied to the same session or tracked result.
+Even though the hook runtime itself already has documented session information,
+the design still needs a summary file and validation rules. What changes is
+that the project no longer needs a separate always-on instruction layer to keep
+the summary file up to date throughout the whole conversation.
 
 ## Project-Specific Implications
 
@@ -223,20 +236,19 @@ then the documented fields `sessionId` and `cwd` may already be enough.
 
 In that narrower design, a separate session initialization step is **not obviously required** by the official docs.
 
-### Conclusion 2: a handoff mechanism still seems necessary for agent-authored summaries
+### Conclusion 2: `Stop` blocking can replace the separate instruction dependency
 
 If the design requires:
 
-- the agent to write a summary file during the turn, and
-- the `Stop` hook to send the summary later,
+- the agent to write a summary file for the current turn, and
+- the `Stop` hook to refuse finishing until the file is valid,
 
-then a handoff problem still exists unless the agent is given a stable correlation value through some documented path.
+then the official `Stop` output contract already provides a documented control
+path for that design.
 
-The official docs do document one such path: `SessionStart` can inject `additionalContext` into the conversation. So the handoff does **not** have to be file-based.
-
-One possible design is to seed shared correlation state at `SessionStart` and reuse it later during summary generation and delivery.
-
-That is a valid design, but it is only **one possible design**, not a fact imposed directly by the hook input contract.
+This means the project can move the summary-recovery loop into the `Stop` hook
+itself instead of relying on a separately installed instruction file to keep
+the summary synchronized throughout the whole conversation.
 
 ### Conclusion 3: repository-defined correlation identifiers are optional
 
@@ -274,9 +286,28 @@ A design that writes or seeds correlation state at `SessionStart` is better unde
 
 ## Project Design Options After This Research
 
-Based on the surveyed documentation, this project has at least three plausible directions:
+Based on the surveyed documentation and the later design correction in H-008,
+this project has at least two plausible directions, but one is now clearly the
+preferred direction.
 
-### Option A — Use `SessionStart` to seed explicit correlation state
+### Option A — Use `Stop` blocking as the primary summary-recovery loop
+
+Use the documented `Stop` hook blocking output to validate the current turn's
+summary file, explain validation failures, and require regeneration before the
+agent is allowed to finish.
+
+#### Pros
+
+- directly supported by the official `Stop` output contract,
+- summary instructions are delivered exactly when needed,
+- avoids relying on long-lived instruction persistence across long chats.
+
+#### Cons
+
+- requires bounded retry logic to avoid indefinite continuation,
+- still needs a concrete summary-file schema and validator.
+
+### Option B — Use `SessionStart` to seed explicit correlation state
 
 Use `SessionStart` to create explicit shared correlation state and let the agent reuse that state later.
 
@@ -290,41 +321,18 @@ Use `SessionStart` to create explicit shared correlation state and let the agent
 - more moving parts,
 - may look like implementation detail when written as a product requirement.
 
-### Option B — Keep the capability requirement, but weaken the implementation wording
-
-Keep a functional requirement about correlation, but avoid saying it must happen specifically by session-state initialization.
-
-#### Pros
-
-- cleaner requirements language,
-- still compatible with designs that seed explicit correlation state,
-- leaves room for redesign later.
-
-#### Cons
-
-- less concrete unless accompanied by architecture notes.
-
-### Option C — Redesign around documented hook input only
-
-Attempt a design that uses `sessionId`, `cwd`, and `transcript_path` directly and reduces or removes explicit seeded correlation state, potentially combined with `SessionStart` `additionalContext` for hook-to-model handoff.
-
-#### Pros
-
-- closer to the documented hook contract,
-- potentially simpler hook-to-hook correlation.
-
-#### Cons
-
-- may still leave the agent-summary handoff problem unsolved,
-- would need a different documented way for the agent-written summary to align with the hook runtime.
+This remains viable, but H-008 makes it the less preferred direction for the
+current product.
 
 ## Bottom Line
 
 Based on the official docs surveyed here:
 
 1. **Yes**, VS Code hook input already includes enough documented information to identify the current session inside hook scripts.
-2. **No**, that does **not automatically prove** that this project can remove all explicit correlation handoff.
-3. The remaining uncertainty is not about hook input between hooks; it is about the boundary between **hook runtime data** and **agent-authored summary data**.
-4. Therefore, the safe functional requirement is:
-    - the system must be able to correlate summary data with the correct session and Telegram notification;
-    - the specific `SessionStart` initialization mechanism should not be treated as the only valid product requirement unless the project chooses to standardize it.
+2. **Yes**, the official `Stop` output contract provides a documented way to block stopping, explain validation failures, and ask the model to continue.
+3. The remaining design problem is therefore not whether the platform can support summary recovery, but how to define a concrete summary-file validator and how to bound retries safely.
+4. Therefore, the current preferred project direction is:
+
+- maintain per-turn summary state in workspace runtime files;
+- validate that file at `Stop` time;
+- block stopping with a regeneration reason until validation passes or the bounded retry limit is reached.

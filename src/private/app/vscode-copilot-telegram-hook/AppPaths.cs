@@ -16,12 +16,6 @@ internal static class AppConstants
     public const string LastSentFileName = "notify-last-sent.json";
     public const string SessionLogFileName = "hook.log";
     public const string UserCommandLogFileName = "user-command.log";
-
-    public const string ManagedInstructionLogicalName =
-        "CopilotNotifySummaryInstruction";
-    public const string ManagedInstructionFileName = "copilot-notify-summary.instructions.md";
-    public const string ManagedInstructionMarker =
-        "<!-- managed-by: hcoona-vscode-copilot-telegram-hook -->";
     public const string ManagedHookFileName = "vscode-copilot-telegram-hook.hooks.json";
     public const string ChatHookFilesLocationsSettingName = "chat.hookFilesLocations";
 
@@ -38,6 +32,7 @@ internal static class AppConstants
     public const string TelegramChatIdSecretName = "telegram-chat-id";
 
     public const int MaxTelegramHtmlMessageLength = 3900;
+    public const int MaxStopSummaryValidationFailures = 3;
 }
 
 internal static class AppPaths
@@ -114,14 +109,6 @@ internal static class AppPaths
             ]);
     }
 
-    public static string GetDefaultInstructionsDirectory()
-    {
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".copilot",
-            "instructions");
-    }
-
     public static UserInstallationPaths ResolveUserPaths(UserPathOverrides overrides)
     {
         string installRoot = overrides.InstallRoot?.FullName ?? GetDefaultInstallRoot();
@@ -140,13 +127,7 @@ internal static class AppPaths
                                     IsApplicable: true,
                                     DisplayName: "VS Code settings override")))
                     : GetDefaultVsCodeSettingsTargets();
-        string instructionsDirectory =
-            overrides.InstructionsDirectory?.FullName
-            ?? GetDefaultInstructionsDirectory();
         string installedBinaryPath = Path.Combine(installRoot, GetManagedExecutableName());
-        string instructionFilePath = Path.Combine(
-            instructionsDirectory,
-            AppConstants.ManagedInstructionFileName);
         string userLogFilePath = GetUserLogPath(installRoot);
 
         return new UserInstallationPaths(
@@ -154,8 +135,6 @@ internal static class AppPaths
             Path.GetFullPath(installedBinaryPath),
             Path.GetFullPath(managedHookFilePath),
             vsCodeSettingsTargets,
-            Path.GetFullPath(instructionsDirectory),
-            Path.GetFullPath(instructionFilePath),
             Path.GetFullPath(userLogFilePath));
     }
 
