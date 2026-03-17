@@ -85,15 +85,13 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          mise link dotnet@10 "$(which dotnet)"
+          mise link core:dotnet@10 "$(which dotnet)"
           mise link go@1 "$(which go)"
           mise link java@25 "$(which java)"
           mise link node@24 "$(which node)"
           mise link pwsh@7 "$(which pwsh)"
           mise link python@3.14 "$(which python3)"
           mise link ruby@3.3 "$(which ruby)"
-
-          mise plugins install dotnet https://github.com/version-fox/vfox-dotnet -f
 
           mise install
           mise bootstrap

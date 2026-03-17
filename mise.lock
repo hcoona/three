@@ -25,29 +25,8 @@ checksum = "sha256:771214659b86d2de5c8c5214e6d59484ceb0de8a87037d488ce37d6ca6f6c
 url = "https://github.com/dotenv-linter/dotenv-linter/releases/download/v4.0.0/dotenv-linter-win-x64.zip"
 
 [[tools.dotnet]]
-version = "10.0.4"
-backend = "asdf:dotnet"
-
-[tools.dotnet."platforms.linux-arm64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.200/dotnet-sdk-10.0.200-linux-arm64.tar.gz"
-
-[tools.dotnet."platforms.linux-arm64-musl"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.200/dotnet-sdk-10.0.200-linux-arm64.tar.gz"
-
-[tools.dotnet."platforms.linux-x64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.200/dotnet-sdk-10.0.200-linux-x64.tar.gz"
-
-[tools.dotnet."platforms.linux-x64-musl"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.200/dotnet-sdk-10.0.200-linux-x64.tar.gz"
-
-[tools.dotnet."platforms.macos-arm64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.200/dotnet-sdk-10.0.200-osx-arm64.tar.gz"
-
-[tools.dotnet."platforms.macos-x64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.200/dotnet-sdk-10.0.200-osx-x64.tar.gz"
-
-[tools.dotnet."platforms.windows-x64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.200/dotnet-sdk-10.0.200-win-x64.zip"
+version = "10.0.201"
+backend = "core:dotnet"
 
 [[tools.fd]]
 version = "10.4.2"
