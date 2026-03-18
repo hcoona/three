@@ -5,6 +5,10 @@ For AI agents editing workflow design docs.
 ## Do not reintroduce these old patterns
 
 - blanket `secrets: inherit` for publish flows
+- long-lived NuGet fallback secrets named `NUGET_API_KEY`; reserve `NUGET_API_KEY` for the short-lived `NuGet/login@v1` step output and use `NUGET_FALLBACK_API_KEY` for the protected-environment fallback secret
+- npm trusted-publisher wording that treats the provider UI's workflow filename selector as identical to the repository's internal repo-relative `workflowPath`; keep the repo-relative audit value and document the filename-only provider mapping explicitly
+- `confirm-publish-state` same-step worker designs that omit explicit startup/liveness proof or skip the executable periodic self-test for the reviewed parallel worker model
+- scoped npm official publish designs that silently rely on registry-side access defaults instead of resolving access before publish or requiring an explicit checked-in/access-derived hint
 - OIDC `job_workflow_ref` assumptions that collapse direct entry-workflow identities and reusable-workflow identities into a single `official.yml` anchor
 - pre-checkout selection of `semver2` vs `pep440` validators
 - silent filtering of unknown `release.json` targets
@@ -23,35 +27,68 @@ For AI agents editing workflow design docs.
 - `confirm-publish-state` timeout cleanup wording that treats a recorded worker PID as the only authoritative kill handle when a whole process group may have been launched; same-step supervisors should keep process-group-capable cleanup data, with PID retained only for diagnostics
 - `CONTROL_PLANE_ENVIRONMENT_ROLE` closed sets that omit `publish-pypi-testpypi`; the dedicated buddy TestPyPI environment uses that exact role value
 - buddy TestPyPI designs that treat `buddy-testpypi-<project-name>` as optional or unmonitored; the environment must exist before first use and be covered by the same drift-monitor contract that validates its exact branch policy and role
+- publish-trust inventory schemas that exclude `pypi:testpypi` even though the design treats TestPyPI trusted-publisher selector state and audience-discovery state as drift-monitored trust-bearing control-plane data
 - `confirm-publish-state` npm dist-tag wording that implies exact equality against the version's entire registry tag set; the design's confirmation semantic is requested-tag subset inclusion in the ordered `npm-dist-tags` array
 - `confirm-publish-state` checkpoint designs that imply worker-time writes to `$GITHUB_STEP_SUMMARY` or checkpoint artifacts; incremental checkpointing is allowed only inside the single reducer execution
 - `confirm-publish-state` wording that promises realtime per-target checkpoint visibility in the current single-job reducer-only architecture; reducer checkpoints are batch-visible only after worker collection unless the design explicitly changes to a different multi-step/polling model
+- `publish-npm-official` wording that collapses the full pre-publish package-access chain into the narrower post-publish confirmation read path; the production publish contract must keep registry `access` -> tarball `publishConfig.access` -> validated `release.json` `npmAccessHint` -> explicit unscoped fallback, and only the pre-publish path may rely on the checked-in hint
 - Section 6 contract tables that use `.github/actions/collect-gate-input` in examples but omit its required inputs `jobs-json` and `include-jobs`, required output `gate-input-json`, or the compact-JSON projection constraints
 - `confirm-publish-state` `github:official` verification paths that re-download the CI artifact as the digest source instead of using `artifact-evidence-url` plus Git Blobs API and remote `SHA256SUMS`
 - dispatcher allowlists that treat `.github/official-dispatch-authorizers.json` `appIds` entries as GitHub App IDs instead of the runtime GitHub account IDs for the corresponding app bot users
 - rerun re-authorization wording that trusts only `github.actor`; reviewed GitHub semantics require `github.triggering_actor` when the rerun initiator differs from the original actor
 - dispatcher allowlists that assume `appIds` alone are sufficient for GitHub App self-reruns; rerun authorization is login-based, so approved bot rerun identities must also appear in `users`
+- dispatcher allowlists or CI validators that permit a GitHub App bot to appear in only one of `users` or `appIds`; approved app bots are dual-registered by design and CI must reject one-sided registration
+- dispatcher allowlist schemas that keep reviewed app-bot evidence outside `.github/official-dispatch-authorizers.json`; the current design uses `schemaVersion: 3` plus same-file `appIdBindings` keyed by bot-user account ID with exact `login` and `evidence`
 - PyPI/TestPyPI finalize examples that omit `if: ${{ always() }}` and therefore skip normalization after an upstream publish failure or cancellation
 - `finalize-pypi-official` contracts that leave the publish-plan/outcome mapping implicit instead of treating every non-success publish-required combination as `failure`
 - language-expansion checklists that rely only on human diligence instead of generator-backed or CI-enforced synchronization across the N-by-M update surface
 - npm dist-tag rules that mention a "same deterministic tag family" without defining the exact family boundaries
 - recovery wording that leaves `indeterminateTargets` open-ended instead of forcing resolution or escalation on a bounded clock
+- `preflight-check` wording that leaves `jit-membership-stale` as monitoring-only governance without a technical admission gate; official release admission must hard-fail on missing, stale, `failed`, or `unknown` emergency-cleanup JIT reconciliation status
+- snapshot-dependent preflight gates that leave the JIT reconciliation snapshot or NuGet trusted-publisher readiness snapshot without an exact storage contract, artifact name, JSON file name, schema fragment, freshness rule, reader protocol, and fail-closed semantics
+- buddy TestPyPI wording that treats `CONTROL_PLANE_EXPECTED_REPOSITORY` as an independent repository-identity proof; in the current design it is only an environment self-check for auto-created or miswired environments, while real identity still comes from the provider-side selector
+- target-removal guidance that forgets to delete `buddy-testpypi-<project-name>` plus the provider-side TestPyPI trusted-publisher entry when `pypi:testpypi` is removed, or drift-monitor wording that ignores orphan buddy TestPyPI state
+- buddy npm wording that allows `applied-dist-tags = []` on `no-op`; both `new-publish` and `no-op` must emit the full validated tag array
+- ruleset-auditor token wording that allows execution of anything beyond reviewed `mise` toolchain binaries and `.ctrl-main/eng/scripts/**`, or that lets `.release-src/**` be treated as executable instead of data-only
+- `confirm-publish-state` self-test wording that omits the reference architecture of two synthetic workers, scratch markers, same-step supervisor collection, reducer-only output emission, and audit-ledger evidence
+- `indeterminateTargets` escalation wording that waits until 48 hours to do anything visible; the current design opens or updates tracked follow-up immediately, raises `high-nonpage` at 24 hours, and escalates to `page` at 48 hours before the 72-hour disposition ceiling
+- `confirm-publish-state` self-test freshness wording that allows the reviewed worker-model evidence to age for 90 days; the current design requires at least 30-day freshness and fresh evidence in the same change set for any worker-model or timeout redesign
+- recovery-ledger wording that treats `delistedTargets` as silently portable beyond NuGet; the current schema reserves it for NuGet-only until an explicit schema+runbook update broadens it
 - npm withdrawal guidance that says only "currently documented supported window" instead of naming npm's reviewed policy conditions
 - RubyGems confirmation wording that ignores explicit `yanked: true` responses for the exact version identity
 - RubyGems provider-contract gaps that are monitored indefinitely without a bounded transition policy once the provider publishes a stable audience contract
 - `confirm-publish-state` npm-native-provenance checks that talk about package-access facts without naming an allowed source of truth such as npm registry metadata `access` or the packed `package.json` `publishConfig.access`
 - npm-native-provenance package-access rules that omit the fallback when both reviewed sources are absent; the current design defaults unscoped packages to `public` and hard-fails scoped packages as indeterminate instead of silently treating them as private
 - npm-native-provenance classification sets that include `intentionally-disabled` without an explicit operator-controlled trigger; the current design uses the validated `official.yml` input `npm-native-provenance-intent = auto | disabled` and allows `intentionally-disabled` only for otherwise eligible public-repo/public-package runs
+- `confirm-publish-state` npm-native-provenance wording that re-derives package access after publish instead of consuming `publish-npm-official.outputs.resolved-package-access` as the authoritative same-run fact
 - `confirm-publish-state` NuGet symbol-package checks that guess `.snupkg` expectation instead of deriving it from durable evidence via `artifact-evidence-url` and `artifactManifestBlobApiUrl`
 - NuGet fallback readiness models that rely on a permanently open or permanently pre-approved PR per project
 - static-analysis requirements that claim `hk.pkl` can hard-fail transitive worker-helper writes to workflow-command files; only direct writes are statically enforced, while transitive containment comes from `CODEOWNERS` review plus launcher-time environment sanitization
 - NuGet fallback readiness models that omit the 7-day CI-validated control-plane snapshot and recorded readiness state
+- document versions that leave the title on an older revision while body text uses forward-looking phrasing like `As of v2.15`; keep the document version and normative statements aligned, and prefer present-tense rules for the current revision
+- `prepare-pypi-official` wording that requires `build-verification-input.json` on the buddy/TestPyPI path; the official-only cross-check runs only when that file exists, while buddy/TestPyPI validates the manifest against the build-emitted digest and does not require the absent file
+- NuGet fallback criterion `(2)` wording that leaves the monorepo failure-evidence scope ambiguous; count repository-wide `nuget:official` OIDC / `NuGet/login@v1` failures only when they share the same reviewed platform-signature evidence, and exclude project-local misconfiguration from that counter
+- `confirm-publish-state` wording that implies reducer `if: always()` survives a job-level timeout; a hard job timeout is an infrastructure failure that prevents reducer execution and must be recovered through the explicit recovery path
+- `require-provenance` recovery wording that sends every post-evidence anchor-tag failure straight to emergency cleanup; anchor-only drift has a lighter reviewed reconciliation path and escalates only when durable-evidence integrity is in doubt
+- anchor-reconciliation wording that lets the lighter post-evidence helper path use bypass authority implicitly; that path is non-bypass-only under the ordinary release-evidence writer authority, and any destructive or bypass-requiring repair still needs the emergency-cleanup dual-control path
+- `preflight-check` sequences that mint monitoring audit tokens before local `project-name` / language-target / official-target validation completes
+- npm-native-provenance rules that let later jobs re-derive repository visibility instead of consuming `resolve-context.outputs.repository-visibility` as the authoritative same-run fact
+- buddy npm tag rules that forbid the normal forward move of `buddy` to a newly published version; only same-version conflicting `buddy` ownership is a hard failure
+- Windows-capable GitHub Release build paths that leave GNU `SHA256SUMS` generation implicit; the design now requires a locked GNU-compatible emitter or reviewed Ubuntu normalization before artifact upload
+- alert-routing wording that treats `high-nonpage -> page` promotion as a second parallel incident instead of superseding the same tracked incident
+- descriptions of `.github/workflows/control-plane-post-tag-failure.yml` that make it sound like an authoritative escalator; it is correlation-only and `official-run-health-monitor.yml` owns classification and escalation
+- NuGet idempotency rules that handle missing `.snupkg` after `.nupkg` but omit the reverse inconsistent state where `.snupkg` exists and `.nupkg` does not
+- maintenance-branch onboarding / retirement text that gives the order but not the reason for the asymmetry; onboarding updates monitoring first to fail closed, while retirement lands the `main` caller-ref removal first only after all live runs are drained
 - emergency-cleanup dual-control rules that have no time-bounded P0/P1 escalation path when a second approver is unavailable
 - buddy TestPyPI trusted-publishing jobs that request `id-token: write` without a dedicated environment-role check and selector self-check for repository/workflow/environment identity
 - unquantified `require-provenance` retry budgets for evidence-branch append and evidence-anchor compare-and-swap
 - `require-provenance` failure handling that collapses verifier transport or dependency outages into the same bucket as signer/claim/digest mismatches; the design now preserves a distinct `attestation-infrastructure-unavailable` classification
 - leaving `rubygems:official` `providerContractStatus = audience-undocumented` without an automated freshness probe in `governance-and-runbook-freshness.yml`
 - `detect-changes.infra` inventories that duplicate C#-ecosystem-local root/tooling files and therefore spuriously trigger all-language suites
+- recovery wording that treats GitHub's 30-day approval ceiling as the normal wait budget instead of enforcing the design's 8-hour approval-wait bound plus stale-JIT auto-cancellation
+- recovery-ledger wording that allows fresh same-project official redispatch while an open incident still carries non-empty `indeterminateTargets`
+- Section 6 or official publish-job contracts that omit `publish-npm-official` output `resolved-package-access`
+- npm prerelease-tag wording that fails to reserve the confusing `rv*` prefix family
 
 ## March 2026 external confirmation for the current design-fix pass
 
@@ -152,9 +189,20 @@ For AI agents editing workflow design docs.
 
 #### Remaining assumptions
 
-- although GitHub run status exposes `waiting`, provider APIs do not publicly guarantee a distinct machine-readable reason that always separates wait-timer delay from reviewer-pending delay for every environment-gated job state transition
-- RubyGems may or may not permit same-version republish after `gem yank` in some operational edge cases, but because that behavior is not a documented contract, this design should continue to treat it as unsupported
-- GitHub's documented artifact-retention behavior is clear, but a separate universally documented artifact-based recovery contract beyond the 30-day rerun limit was not found in public docs; design recovery should therefore rely on durable repository-controlled evidence rather than on artifact reavailability assumptions
+
+## March 2026 independent external confirmation for the TestPyPI trust-inventory remediation
+
+### Confirmed facts
+
+- GitHub documents that referencing a missing environment name auto-creates that environment without the expected protection rules or secrets, so buddy TestPyPI must rely on explicit in-job fail-closed checks rather than assuming a missing environment stops safely on its own
+- GitHub documents that environment deployment branch and tag policies are matched against `GITHUB_REF` while the job is pending; removing branch and tag restrictions entirely is therefore the only steady-state way for `buddy-testpypi-<project-name>` to remain branch-agnostic
+- PyPI/TestPyPI trusted publishing still uses audience discovery from the reviewed `/_/oidc/audience` endpoint, and the reviewed `pypa/gh-action-pypi-publish` action continues to publish to TestPyPI through `repository-url: https://test.pypi.org/legacy/`
+- GitHub documents that each `run` step executes in its own process and that `GITHUB_ENV`, `GITHUB_OUTPUT`, and `GITHUB_STEP_SUMMARY` are unique per step, which supports a same-step `confirm-publish-state` self-test but does not document cross-step detached-worker survival
+
+### Remaining assumptions
+
+- GitHub does not document a trusted runtime context that exposes the current environment name back to the job, so the design uses environment-scoped variables such as `CONTROL_PLANE_EXPECTED_REPOSITORY` and `CONTROL_PLANE_ENVIRONMENT_NAME` as the reviewed self-check source for buddy TestPyPI before OIDC is requested
+- keeping `entryWorkflowPath = .github/workflows/official.yml` as the single top-level inventory anchor while also recording buddy `pypi:testpypi` under per-target `publishExecutionPath` is a repository schema choice; provider docs do not define an equivalent inventory format
 
 ### March 2026 external-system follow-up assumptions for v2.7 remediation
 
@@ -347,7 +395,7 @@ For AI agents editing workflow design docs.
 - `preflight-check` uses `permissions: { contents: read }` on the job because it performs repository checkout before any privileged environment reads, still performs a frozen `main` checkout plus a separate dispatch-ref data checkout, and mints dedicated just-in-time audit App installation tokens from secrets stored only in the matching `control-plane-monitoring-<project-name>` environment
 - `preflight-check` also validates that `control-plane-monitoring-<project-name>` exposes the exact protected caller-ref subset frozen from `main` for the selected project, so onboarding or retirement mismatch holds only that project's official release path
 - the environment-reader App requires `actions: read` plus the minimum documented read scope GitHub requires for environment, deployment-policy, and repository Actions settings reads; the separate ruleset-auditor App needs the minimum GitHub App permission set that exposes `bypass_actors`, and this design does not rely on job-level `GITHUB_TOKEN` environment or ruleset reads
-- while the ruleset-auditor token is live in `preflight-check`, `.release-src/**` stays data-only and may be read but not executed; the allowlist during that window is GitHub API reads, read-only inspection of `.release-src/**` and `.ctrl-main/.github/**`, execution of reviewed `.ctrl-main/eng/scripts/**` normalization/validation helpers, local `jq`/Python processing over already checked-out data, and token masking/revocation helpers
+- while the ruleset-auditor token is live in `preflight-check`, `.release-src/**` and `.ctrl-main/.github/**` stay data-only and may not be executed, sourced, imported as code, or used as package-manager roots; the executable allowlist during that window is limited to already-installed reviewed `mise` toolchain binaries plus reviewed `.ctrl-main/eng/scripts/**` normalization/validation helpers, alongside GitHub API reads, local data processing, and token masking/revocation helpers
 - missing GitHub Environments auto-create without protection if first referenced by workflow YAML, so `preflight-check` must treat environment existence and required-reviewer policy as explicit invariants rather than assuming absent environments fail closed
 - GitHub App installation tokens minted at runtime are masked before first use, and App private keys rotate at least every 90 days and immediately on suspected compromise
 - `preflight-check` must hard-fail on GitHub API errors outside explicitly handled cases
@@ -376,7 +424,7 @@ For AI agents editing workflow design docs.
 - approval-age monitoring must classify `open-before-publish` versus `open-partial-publish` from live per-target publish state, because target-specific publish environments approve and unblock jobs independently
 - no portable wildcard future-branch trust is assumed; branch-set changes are therefore managed as bounded control-plane transitions through exact deployment-branch-policy entries plus reviewed `main` updates to `.github/official-caller-refs.json` and `.github/publish-trust-inventory.json`, while only repository-identity changes, auth-mode changes, selector-workflow changes, fixed-audience changes, or audience-discovery-endpoint changes require registry-side auth updates
 - the authoritative repository-side source of active official caller refs is `.github/official-caller-refs.json` on `refs/heads/main`; official runs from maintenance branches freeze and consult `main`'s copy, and each inventory `allowedCallerRefs` entry must mirror the project-scoped subset derived from that file as `refs/heads/main` plus only the maintenance refs that match the current project name
-- the publish trust inventory has `schemaVersion: 3`, records `entryWorkflowPath`, project-scoped `currentMainReleaseLine` and `allowedCallerRefs`, and per-target `publishExecutionPath`, `environment`, `authMechanism`, optional `trustedPublisherSelector`, optional `documentedOidcAudience`, and optional `oidcAudienceEndpoint` fields for official targets; `authMechanism` is closed to `{trusted-publisher, api-key-secret, github-token}`, with `api-key-secret` legal only for `nuget:official`; buddy targets are intentionally excluded because they do not rely on external registry-side trust state
+- the publish trust inventory has `schemaVersion: 4`, records `entryWorkflowPath`, project-scoped `currentMainReleaseLine` and `allowedCallerRefs`, and per-target `publishExecutionPath`, `environment`, `authMechanism`, optional `trustedPublisherSelector`, optional `documentedOidcAudience`, optional `oidcAudienceEndpoint`, and optional `providerContractStatus` fields for every trust-bearing target; `authMechanism` is closed to `{trusted-publisher, api-key-secret, github-token}`, with `api-key-secret` legal only for `nuget:official`; the trust-bearing target set is every official target plus buddy `pypi:testpypi`, while buddy GitHub Packages targets remain excluded because they do not rely on external registry-side trusted-publisher state
 - publish trust inventory validation is strict and equivalent to `additionalProperties: false` at the top level
 - official `resolve-context` performs a publish trust inventory preflight against the checked-in inventory frozen from `refs/heads/main` after official target resolution and before any publish job becomes eligible
 - CI includes an explicit `trusted-release-inventory` job that checks out the PR merge commit as candidate data and a separate frozen `main` snapshot as the trusted validator source, executes validators only from the frozen `main` checkout, and validates `entryWorkflowPath`, `currentMainReleaseLine`, the project-scoped `allowedCallerRefs` subset derived from the candidate `.github/official-caller-refs.json`, and the per-target `publishExecutionPath`, `environment`, `authMechanism`, optional `trustedPublisherSelector`, optional `documentedOidcAudience`, and optional `oidcAudienceEndpoint` fields against the candidate `.github/publish-trust-inventory.json`; CI fails on any mismatch whether or not the inventory file itself changed
@@ -395,7 +443,7 @@ For AI agents editing workflow design docs.
 - official GitHub Release idempotency also requires matching remote asset identity
 - read-only checkouts in resolve/static-analysis jobs use `persist-credentials: false`
 - every workflow job must declare `timeout-minutes`; omission is a lint failure enforced through `hk`/`actionlint`
-- timeout defaults are explicit: `preflight-check`/resolve/static-analysis `15`, Ubuntu builds `30`, Windows builds `45` because hosted Windows runners have higher startup and restore/test overhead, isolated attestation jobs `15`, `require-provenance` `45`, publish jobs `25` except `publish-pypi-official` `35`, `confirm-publish-state` `45`, tag-management jobs `10`, and `ci-passed`/`release-complete` `10`
+- timeout defaults are explicit: `preflight-check`/resolve/static-analysis `15`, Ubuntu builds `30`, Windows builds `45` because hosted Windows runners have higher startup and restore/test overhead, isolated attestation jobs `15`, `require-provenance` `45`, publish jobs `25` except `publish-pypi-official` `35`, `confirm-publish-state` `45`, tag-management jobs `10`, and `ci-passed`/`release-complete` `15`
 - reusable workflow `permissions:` prohibition is also lint-enforced through a custom `hk` check because `actionlint` does not cover it directly
 - official `resolve-context` depends explicitly on `preflight-check`
 - official static-analysis evaluates the dispatch-selected source ref directly, the same payload that will be built and released by that run
@@ -534,6 +582,19 @@ For AI agents editing workflow design docs.
 - keeping all attestation-job `permissions` declarations on the top-level caller jobs in `official.yml`, while requiring the reusable attestation workflows to inherit those grants and declare no `permissions:` block themselves, is a repository design rule layered on top of GitHub's documented required scopes
 - requiring evidence-backed validation for any new or changed `.github/official-dispatch-authorizers.json` `appIds` entry is repository governance policy layered on top of GitHub's documented account-ID semantics; GitHub documents the ID fields, but does not prescribe this repository-specific review gate
 
+## March 2026 independent external confirmation for the DESIGN.v2 review-fix completion pass
+
+### Confirmed facts
+
+- GitHub's REST Git refs API documents read/create/update/delete operations and a `force` flag, but does not document any native expected-old-SHA compare-and-swap parameter for ref updates
+- GitHub's REST API documentation for workflows, workflow runs, environments, and deployment-branch-policy reads requires repository Actions read access, so `preflight-check` cannot rely on `contents: read` alone for live `official.yml` run enumeration
+- npm's `npm publish` documentation says `access` defaults to `public` for new packages and does not change current access for existing packages when omitted, so repository design must resolve package-access state before publish instead of discovering ambiguity only during post-publish confirmation
+
+### Remaining assumptions
+
+- treating a scoped npm package with neither registry `access` metadata nor tarball `publishConfig.access` as a hard failure before publish is a repository policy stricter than npm's documented defaults; the design keeps that rule to avoid relying on registry-side defaulting during production publication
+- same-step background-worker supervision in `confirm-publish-state` relies on ordinary shell process control inside one step plus GitHub's documented per-step isolation, not on a separately documented GitHub promise about long-lived background-worker lifecycle semantics
+
 ## March 2026 independent external confirmation for GitHub-hosted runner step/process behavior
 
 ### Confirmed facts
@@ -562,6 +623,38 @@ For AI agents editing workflow design docs.
 - the bounded repository-wide GitHub Release title scan cap used in this design is a repository control-plane budget chosen on top of GitHub's documented pagination model; GitHub does not prescribe a specific cap for this use case
 - no reviewed public NuGet trusted-publishing document in this pass described a portable, non-mutating readiness probe for the production trusted-publisher path, so the design's sandbox canary and freshness-gate model remains repository policy rather than a provider-documented health-check contract
 - treating repeated PyPI `oidcAudienceEndpoint` probe failure as a control-plane freshness incident is repository monitoring policy layered on top of the documented audience-discovery endpoint, not a provider-published SLA
+
+## March 2026 independent external confirmation for the DESIGN.v2 review-remediation cleanup
+
+### Confirmed facts
+
+- npm's `publish` docs say `access` defaults to `public` only for new packages, and omitting `--access` for an existing package does not change its current access level
+- GitHub's Actions docs say each `run` step executes in its own process/shell, and `GITHUB_ENV`, `GITHUB_OUTPUT`, plus `GITHUB_STEP_SUMMARY` are unique to the current step
+- Bash job-control docs describe jobs/pipelines in terms of process groups rather than single PIDs, so cleanup semantics are process-group-oriented when worker launchers create separate groups
+- reviewed Linux/Bash semantics support isolating a worker in its own session/process group and then targeting that worker group during timeout cleanup instead of relying on only the leader PID
+
+### Remaining assumptions
+
+- requiring each `confirm-publish-state` worker to start in a new session/process group via `setsid` or an equivalent launcher is repository design guidance built on Linux/POSIX semantics; GitHub does not prescribe one mandatory launcher shape
+- raising `ci-passed` and `release-complete` from a 10-minute to a 15-minute timeout is a repository budget choice; no reviewed first-party documentation promises that a cold `mise install` will always fit inside the shorter budget
+- validating that every signer-map `workflowPath` exists in the candidate PR tree is repository control-plane policy rather than a provider-documented external contract
+
+## March 2026 independent external confirmation for the current DESIGN.v2 cleanup consistency pass
+
+### Confirmed facts
+
+- `NuGet/login@v1` exposes the short-lived credential through the step output name `NUGET_API_KEY`, so using the same name for a long-lived fallback secret creates a real ambiguity hazard
+- npm trusted-publisher setup remains provider-UI oriented around the workflow filename, while the repository can still keep a repo-relative workflow path as its internal audit record
+- npm's `publish` documentation says `access` defaults to `public` only for new packages and does not change the current access of existing packages when omitted
+- GitHub Actions concurrency groups remain case-insensitive and allow at most one running run plus one pending run per group, replacing older pending runs with the newest queued run in that group
+- GitHub still does not provide native team-membership TTL or auto-expiry for organization teams, so any <=2 hour emergency-cleanup expiry guarantee must come from external grant state plus reconciliation/removal automation
+- GitHub's documented step model still gives each `run` step its own process and step-unique workflow-command files, but does not document detached cross-step worker survival as a supported contract
+
+### Remaining assumptions
+
+- recording repo-relative `workflowPath` in `.github/publish-trust-inventory.json` while translating that value to the filename-only npm trusted-publisher UI is a repository audit design choice layered on top of provider docs
+- the checked-in `npmAccessHint` and the fail-closed treatment for scoped packages with no registry or manifest access signal are repository policies stricter than npm's documented defaults, chosen to avoid ambiguous production publishes
+- requiring startup markers, liveness proof, and an executable periodic self-test for the same-step `confirm-publish-state` worker model is repository reliability policy rather than a GitHub-documented feature contract
 
 ## Maintenance and future edits
 
