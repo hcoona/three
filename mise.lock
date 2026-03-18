@@ -25,61 +25,8 @@ checksum = "sha256:771214659b86d2de5c8c5214e6d59484ceb0de8a87037d488ce37d6ca6f6c
 url = "https://github.com/dotenv-linter/dotenv-linter/releases/download/v4.0.0/dotenv-linter-win-x64.zip"
 
 [[tools.dotnet]]
-version = "10.0.3"
+version = "10.0.201"
 backend = "asdf:dotnet"
-
-[tools.dotnet."platforms.linux-arm64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-linux-arm64.tar.gz"
-
-[tools.dotnet."platforms.linux-arm64-musl"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-linux-arm64.tar.gz"
-
-[tools.dotnet."platforms.linux-x64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-linux-x64.tar.gz"
-
-[tools.dotnet."platforms.linux-x64-musl"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-linux-x64.tar.gz"
-
-[tools.dotnet."platforms.macos-arm64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-osx-arm64.tar.gz"
-
-[tools.dotnet."platforms.macos-x64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-osx-x64.tar.gz"
-
-[tools.dotnet."platforms.windows-x64"]
-url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.103/dotnet-sdk-10.0.103-win-x64.zip"
-
-[[tools.fd]]
-version = "10.3.0"
-backend = "aqua:sharkdp/fd"
-
-[tools.fd."platforms.linux-arm64"]
-checksum = "sha256:996b9b1366433b211cb3bbedba91c9dbce2431842144d925428ead0adf32020b"
-url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-aarch64-unknown-linux-musl.tar.gz"
-
-[tools.fd."platforms.linux-arm64-musl"]
-checksum = "sha256:996b9b1366433b211cb3bbedba91c9dbce2431842144d925428ead0adf32020b"
-url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-aarch64-unknown-linux-musl.tar.gz"
-
-[tools.fd."platforms.linux-x64"]
-checksum = "sha256:2b6bfaae8c48f12050813c2ffe1884c61ea26e750d803df9c9114550a314cd14"
-url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.fd."platforms.linux-x64-musl"]
-checksum = "sha256:2b6bfaae8c48f12050813c2ffe1884c61ea26e750d803df9c9114550a314cd14"
-url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.fd."platforms.macos-arm64"]
-checksum = "sha256:0570263812089120bc2a5d84f9e65cd0c25e4a4d724c80075c357239c74ae904"
-url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-aarch64-apple-darwin.tar.gz"
-
-[tools.fd."platforms.macos-x64"]
-checksum = "sha256:50d30f13fe3d5914b14c4fff5abcbd4d0cdab4b855970a6956f4f006c17117a3"
-url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-apple-darwin.tar.gz"
-
-[tools.fd."platforms.windows-x64"]
-checksum = "sha256:318aa2a6fa664325933e81fda60d523fff29444129e91ebf0726b5b3bcd8b059"
-url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-pc-windows-msvc.zip"
 
 [[tools.fd]]
 version = "10.4.2"
@@ -108,38 +55,6 @@ url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-aarch6
 [tools.fd."platforms.windows-x64"]
 checksum = "sha256:b2816e506390a89941c63c9187d58a3cc10e9a55f2ef0685f9ea0eccaf7c98c8"
 url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip"
-
-[[tools.github-cli]]
-version = "2.86.0"
-backend = "aqua:cli/cli"
-
-[tools.github-cli."platforms.linux-arm64"]
-checksum = "sha256:83cf7a7962ea9dfcc2c123666695792916a87af32cba5f1f6e585db08fa57547"
-url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_linux_arm64.tar.gz"
-
-[tools.github-cli."platforms.linux-arm64-musl"]
-checksum = "sha256:83cf7a7962ea9dfcc2c123666695792916a87af32cba5f1f6e585db08fa57547"
-url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_linux_arm64.tar.gz"
-
-[tools.github-cli."platforms.linux-x64"]
-checksum = "sha256:f3b08bd6a28420cc2229b0a1a687fa25f2b838d3f04b297414c1041ca68103c7"
-url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_linux_amd64.tar.gz"
-
-[tools.github-cli."platforms.linux-x64-musl"]
-checksum = "sha256:f3b08bd6a28420cc2229b0a1a687fa25f2b838d3f04b297414c1041ca68103c7"
-url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_linux_amd64.tar.gz"
-
-[tools.github-cli."platforms.macos-arm64"]
-checksum = "sha256:bde753978a352c5ae6c4abec47334d516e82807af20c9dbbd45507a5a0aedaaa"
-url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_macOS_arm64.zip"
-
-[tools.github-cli."platforms.macos-x64"]
-checksum = "sha256:ced7094d05702eb54a63542abd8a1dc570b7e5ae94951844eb1626ba74bc2c60"
-url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_macOS_amd64.zip"
-
-[tools.github-cli."platforms.windows-x64"]
-checksum = "sha256:983c74a8c594366b198485187cd6d4d07638f0bf9a9948d51a2a81a5164d8bfd"
-url = "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_windows_amd64.zip"
 
 [[tools.github-cli]]
 version = "2.88.0"
@@ -252,38 +167,6 @@ url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellche
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
 
 [[tools.go]]
-version = "1.25.6"
-backend = "core:go"
-
-[tools.go."platforms.linux-arm64"]
-checksum = "sha256:738ef87d79c34272424ccdf83302b7b0300b8b096ed443896089306117943dd5"
-url = "https://dl.google.com/go/go1.25.6.linux-arm64.tar.gz"
-
-[tools.go."platforms.linux-arm64-musl"]
-checksum = "sha256:738ef87d79c34272424ccdf83302b7b0300b8b096ed443896089306117943dd5"
-url = "https://dl.google.com/go/go1.25.6.linux-arm64.tar.gz"
-
-[tools.go."platforms.linux-x64"]
-checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
-url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
-
-[tools.go."platforms.linux-x64-musl"]
-checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
-url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
-
-[tools.go."platforms.macos-arm64"]
-checksum = "sha256:984521ae978a5377c7d782fd2dd953291840d7d3d0bd95781a1f32f16d94a006"
-url = "https://dl.google.com/go/go1.25.6.darwin-arm64.tar.gz"
-
-[tools.go."platforms.macos-x64"]
-checksum = "sha256:e2b5b237f5c262931b8e280ac4b8363f156e19bfad5270c099998932819670b7"
-url = "https://dl.google.com/go/go1.25.6.darwin-amd64.tar.gz"
-
-[tools.go."platforms.windows-x64"]
-checksum = "sha256:19b4733b727ba5c611b5656187f3ac367d278d64c3d4199a845e39c0fdac5335"
-url = "https://dl.google.com/go/go1.25.6.windows-amd64.zip"
-
-[[tools.go]]
 version = "1.26.1"
 backend = "core:go"
 
@@ -324,48 +207,12 @@ version = "3.6.1"
 backend = "go:github.com/editorconfig-checker/editorconfig-checker/v3/cmd/editorconfig-checker"
 
 [[tools."go:github.com/rhysd/actionlint/cmd/actionlint"]]
-version = "1.7.10"
-backend = "go:github.com/rhysd/actionlint/cmd/actionlint"
-
-[[tools."go:github.com/rhysd/actionlint/cmd/actionlint"]]
 version = "1.7.11"
 backend = "go:github.com/rhysd/actionlint/cmd/actionlint"
 
 [[tools."go:mvdan.cc/sh/v3/cmd/shfmt"]]
-version = "3.12.0"
-backend = "go:mvdan.cc/sh/v3/cmd/shfmt"
-
-[[tools."go:mvdan.cc/sh/v3/cmd/shfmt"]]
 version = "3.13.0"
 backend = "go:mvdan.cc/sh/v3/cmd/shfmt"
-
-[[tools.hk]]
-version = "1.36.0"
-backend = "aqua:jdx/hk"
-
-[tools.hk."platforms.linux-arm64"]
-checksum = "sha256:51cf51e2035038ee64d772e71f8daf4978380ef82faffee2b12c413f009341ab"
-url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-aarch64-unknown-linux-gnu.tar.gz"
-
-[tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:51cf51e2035038ee64d772e71f8daf4978380ef82faffee2b12c413f009341ab"
-url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-aarch64-unknown-linux-gnu.tar.gz"
-
-[tools.hk."platforms.linux-x64"]
-checksum = "sha256:d20fa0be3f1135abc74471670306ae0353ad2336804595362293f0c8460952e7"
-url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-unknown-linux-gnu.tar.gz"
-
-[tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:d20fa0be3f1135abc74471670306ae0353ad2336804595362293f0c8460952e7"
-url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-unknown-linux-gnu.tar.gz"
-
-[tools.hk."platforms.macos-arm64"]
-checksum = "sha256:553ff3c7c18d91f1c1dcdbae44315db0324b52336b5a02ed5b9c382f08499b3b"
-url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-aarch64-apple-darwin.tar.gz"
-
-[tools.hk."platforms.windows-x64"]
-checksum = "sha256:1f12218ccad806a3f49bcf521f86b6825fbd89486e830c1c04f72e3796f84589"
-url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-pc-windows-msvc.zip"
 
 [[tools.hk]]
 version = "1.38.0"
@@ -438,10 +285,6 @@ url = "https://nodejs.org/dist/v24.13.0/node-v24.13.0-darwin-x64.tar.gz"
 [tools.node."platforms.windows-x64"]
 checksum = "sha256:ca2742695be8de44027d71b3f53a4bdb36009b95575fe1ae6f7f0b5ce091cb88"
 url = "https://nodejs.org/dist/v24.13.0/node-v24.13.0-win-x64.zip"
-
-[[tools."pipx:prek"]]
-version = "0.2.25"
-backend = "pipx:prek"
 
 [[tools."pipx:prek"]]
 version = "0.3.5"
@@ -671,38 +514,6 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-x8
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
 
 [[tools.typos]]
-version = "1.42.3"
-backend = "aqua:crate-ci/typos"
-
-[tools.typos."platforms.linux-arm64"]
-checksum = "sha256:b3c5d7d7ef1e32145a8f060f8c1f145f91acd076c298031cbb318bd11de1cc68"
-url = "https://github.com/crate-ci/typos/releases/download/v1.42.3/typos-v1.42.3-aarch64-unknown-linux-musl.tar.gz"
-
-[tools.typos."platforms.linux-arm64-musl"]
-checksum = "sha256:b3c5d7d7ef1e32145a8f060f8c1f145f91acd076c298031cbb318bd11de1cc68"
-url = "https://github.com/crate-ci/typos/releases/download/v1.42.3/typos-v1.42.3-aarch64-unknown-linux-musl.tar.gz"
-
-[tools.typos."platforms.linux-x64"]
-checksum = "sha256:e083bf917d840563e77b35b64f43924d98fcb77acb69691455099d39e347d67d"
-url = "https://github.com/crate-ci/typos/releases/download/v1.42.3/typos-v1.42.3-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.typos."platforms.linux-x64-musl"]
-checksum = "sha256:e083bf917d840563e77b35b64f43924d98fcb77acb69691455099d39e347d67d"
-url = "https://github.com/crate-ci/typos/releases/download/v1.42.3/typos-v1.42.3-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.typos."platforms.macos-arm64"]
-checksum = "sha256:9df9ff62fbcc4d60d9fbea6425a18870a794b93dcf179b4a6c5fa80237feef3f"
-url = "https://github.com/crate-ci/typos/releases/download/v1.42.3/typos-v1.42.3-aarch64-apple-darwin.tar.gz"
-
-[tools.typos."platforms.macos-x64"]
-checksum = "sha256:88f59e57bd38f9d71ea201462ddb5d800b5c4022ca90cf17c5f0d71cb966568c"
-url = "https://github.com/crate-ci/typos/releases/download/v1.42.3/typos-v1.42.3-x86_64-apple-darwin.tar.gz"
-
-[tools.typos."platforms.windows-x64"]
-checksum = "sha256:7a6a1172465f6678286ea131add992e1b4d43c9244e933344dd22832cf12482f"
-url = "https://github.com/crate-ci/typos/releases/download/v1.42.3/typos-v1.42.3-x86_64-pc-windows-msvc.zip"
-
-[[tools.typos]]
 version = "1.44.0"
 backend = "aqua:crate-ci/typos"
 
@@ -733,38 +544,6 @@ url = "https://github.com/crate-ci/typos/releases/download/v1.44.0/typos-v1.44.0
 [tools.typos."platforms.windows-x64"]
 checksum = "sha256:afd85c8f3c5c925ee7452389acdf70b048d8c6eae5e52a581e63a7d1b7655f17"
 url = "https://github.com/crate-ci/typos/releases/download/v1.44.0/typos-v1.44.0-x86_64-pc-windows-msvc.zip"
-
-[[tools.uv]]
-version = "0.9.28"
-backend = "aqua:astral-sh/uv"
-
-[tools.uv."platforms.linux-arm64"]
-checksum = "sha256:eec3249254efac972d2555ff858f8ed20f05b40fbb38ac83b15cf0a2ccc86749"
-url = "https://github.com/astral-sh/uv/releases/download/0.9.28/uv-aarch64-unknown-linux-musl.tar.gz"
-
-[tools.uv."platforms.linux-arm64-musl"]
-checksum = "sha256:eec3249254efac972d2555ff858f8ed20f05b40fbb38ac83b15cf0a2ccc86749"
-url = "https://github.com/astral-sh/uv/releases/download/0.9.28/uv-aarch64-unknown-linux-musl.tar.gz"
-
-[tools.uv."platforms.linux-x64"]
-checksum = "sha256:83cd032167b6b97ac94830608efe11159b3d485654e39fdb0bf84718ef236afe"
-url = "https://github.com/astral-sh/uv/releases/download/0.9.28/uv-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.uv."platforms.linux-x64-musl"]
-checksum = "sha256:83cd032167b6b97ac94830608efe11159b3d485654e39fdb0bf84718ef236afe"
-url = "https://github.com/astral-sh/uv/releases/download/0.9.28/uv-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.uv."platforms.macos-arm64"]
-checksum = "sha256:12163fe09eb292d3ad1ea0f132a84485c902e2ff360d57562bf676e6615fcba0"
-url = "https://github.com/astral-sh/uv/releases/download/0.9.28/uv-aarch64-apple-darwin.tar.gz"
-
-[tools.uv."platforms.macos-x64"]
-checksum = "sha256:3a8030881d13b824e5168f5e4d060e715e40753249766bda3d52d6771d93b169"
-url = "https://github.com/astral-sh/uv/releases/download/0.9.28/uv-x86_64-apple-darwin.tar.gz"
-
-[tools.uv."platforms.windows-x64"]
-checksum = "sha256:9cb567fcd92f31431220ce620787043b946c30b9bb46ca213780e5ef471453be"
-url = "https://github.com/astral-sh/uv/releases/download/0.9.28/uv-x86_64-pc-windows-msvc.zip"
 
 [[tools.uv]]
 version = "0.10.9"
