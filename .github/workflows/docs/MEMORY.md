@@ -19,13 +19,26 @@ For AI agents editing workflow design docs.
 - a single `publish-nuget-official` job that statically keeps `id-token: write` even when the reviewed `api-key-secret` fallback path is selected
 - `confirm-publish-state` worker models that rely only on convention instead of explicitly unsetting `GITHUB_OUTPUT`, `GITHUB_ENV`, and `GITHUB_STEP_SUMMARY` for each worker
 - `confirm-publish-state` fan-out designs that let worker failure short-circuit the reducer or that let parallel workers write job outputs or step-summary checkpoints directly
-- `confirm-publish-state` cross-step worker joins that rely on shell `wait` or on PID-only `kill -0` polling; the authoritative completion signal must be a per-target scratch completion marker, with PID data used only for bounded cleanup after the deadline
+- cross-step `confirm-publish-state` worker architectures that rely on detached background-process survival across GitHub Actions step boundaries; launch, supervision, timeout handling, and collection must stay inside one reviewed parent step, and later steps may consume only normalized scratch results
+- `confirm-publish-state` timeout cleanup wording that treats a recorded worker PID as the only authoritative kill handle when a whole process group may have been launched; same-step supervisors should keep process-group-capable cleanup data, with PID retained only for diagnostics
 - `CONTROL_PLANE_ENVIRONMENT_ROLE` closed sets that omit `publish-pypi-testpypi`; the dedicated buddy TestPyPI environment uses that exact role value
+- buddy TestPyPI designs that treat `buddy-testpypi-<project-name>` as optional or unmonitored; the environment must exist before first use and be covered by the same drift-monitor contract that validates its exact branch policy and role
 - `confirm-publish-state` npm dist-tag wording that implies exact equality against the version's entire registry tag set; the design's confirmation semantic is requested-tag subset inclusion in the ordered `npm-dist-tags` array
 - `confirm-publish-state` checkpoint designs that imply worker-time writes to `$GITHUB_STEP_SUMMARY` or checkpoint artifacts; incremental checkpointing is allowed only inside the single reducer execution
 - `confirm-publish-state` wording that promises realtime per-target checkpoint visibility in the current single-job reducer-only architecture; reducer checkpoints are batch-visible only after worker collection unless the design explicitly changes to a different multi-step/polling model
 - Section 6 contract tables that use `.github/actions/collect-gate-input` in examples but omit its required inputs `jobs-json` and `include-jobs`, required output `gate-input-json`, or the compact-JSON projection constraints
 - `confirm-publish-state` `github:official` verification paths that re-download the CI artifact as the digest source instead of using `artifact-evidence-url` plus Git Blobs API and remote `SHA256SUMS`
+- dispatcher allowlists that treat `.github/official-dispatch-authorizers.json` `appIds` entries as GitHub App IDs instead of the runtime GitHub account IDs for the corresponding app bot users
+- rerun re-authorization wording that trusts only `github.actor`; reviewed GitHub semantics require `github.triggering_actor` when the rerun initiator differs from the original actor
+- dispatcher allowlists that assume `appIds` alone are sufficient for GitHub App self-reruns; rerun authorization is login-based, so approved bot rerun identities must also appear in `users`
+- PyPI/TestPyPI finalize examples that omit `if: ${{ always() }}` and therefore skip normalization after an upstream publish failure or cancellation
+- `finalize-pypi-official` contracts that leave the publish-plan/outcome mapping implicit instead of treating every non-success publish-required combination as `failure`
+- language-expansion checklists that rely only on human diligence instead of generator-backed or CI-enforced synchronization across the N-by-M update surface
+- npm dist-tag rules that mention a "same deterministic tag family" without defining the exact family boundaries
+- recovery wording that leaves `indeterminateTargets` open-ended instead of forcing resolution or escalation on a bounded clock
+- npm withdrawal guidance that says only "currently documented supported window" instead of naming npm's reviewed policy conditions
+- RubyGems confirmation wording that ignores explicit `yanked: true` responses for the exact version identity
+- RubyGems provider-contract gaps that are monitored indefinitely without a bounded transition policy once the provider publishes a stable audience contract
 - `confirm-publish-state` npm-native-provenance checks that talk about package-access facts without naming an allowed source of truth such as npm registry metadata `access` or the packed `package.json` `publishConfig.access`
 - npm-native-provenance package-access rules that omit the fallback when both reviewed sources are absent; the current design defaults unscoped packages to `public` and hard-fails scoped packages as indeterminate instead of silently treating them as private
 - npm-native-provenance classification sets that include `intentionally-disabled` without an explicit operator-controlled trigger; the current design uses the validated `official.yml` input `npm-native-provenance-intent = auto | disabled` and allows `intentionally-disabled` only for otherwise eligible public-repo/public-package runs
@@ -36,6 +49,7 @@ For AI agents editing workflow design docs.
 - emergency-cleanup dual-control rules that have no time-bounded P0/P1 escalation path when a second approver is unavailable
 - buddy TestPyPI trusted-publishing jobs that request `id-token: write` without a dedicated environment-role check and selector self-check for repository/workflow/environment identity
 - unquantified `require-provenance` retry budgets for evidence-branch append and evidence-anchor compare-and-swap
+- `require-provenance` failure handling that collapses verifier transport or dependency outages into the same bucket as signer/claim/digest mismatches; the design now preserves a distinct `attestation-infrastructure-unavailable` classification
 - leaving `rubygems:official` `providerContractStatus = audience-undocumented` without an automated freshness probe in `governance-and-runbook-freshness.yml`
 - `detect-changes.infra` inventories that duplicate C#-ecosystem-local root/tooling files and therefore spuriously trigger all-language suites
 
@@ -45,18 +59,24 @@ For AI agents editing workflow design docs.
 
 - npm trusted-publishing docs say automatic npm-native provenance is generated only when trusted publishing is used for a public package from a public repository; private repositories are explicitly ineligible even when publishing a public package
 - npm trusted-publishing docs continue to require GitHub-hosted runners and document the GitHub Actions selector as workflow filename plus optional environment
+- npm unpublish docs say packages may be unpublished within 72 hours when the package has no dependents, and npm policy docs say later unpublish requests are allowed only when the documented criteria still hold, including no dependents, fewer than 300 downloads in the last week, and only one owner/maintainer
+- npm docs say an unpublished `name@version` tuple can never be reused and that removing all versions of a package name imposes a 24-hour package-name publish block
 - `NuGet/login@v1` documents a required `user` input and exposes the temporary credential as the step output `NUGET_API_KEY`
 - the `NuGet/login@v1` output name `NUGET_API_KEY` is the same string commonly used for a long-lived fallback secret, so output-vs-secret ambiguity is a real design hazard rather than a hypothetical one
 - GitHub does not provide a platform guarantee that parallel subprocesses inside one job are isolated from workflow-command files, so worker isolation must be created explicitly by environment sanitization plus repository policy
 - `pypa/gh-action-pypi-publish` is GNU/Linux-only, documents the GitHub-provided Ubuntu VM as its expected environment, and says `ubuntu-latest` is smoke-tested in CI
 - `pypa/gh-action-pypi-publish` continues to document trusted publishing in reusable workflows as unsupported, composite-action invocation as unsupported, and TestPyPI publishing through `repository-url: https://test.pypi.org/legacy/`
 - RubyGems public trusted-publishing docs still do not publish a fixed required audience value, so `audience-undocumented` needs an explicit freshness probe rather than indefinite trust
+- RubyGems docs expose the versions API for exact gem/version queries, and `gem yank` docs describe yank as removing a pushed gem from the server index rather than as a documented same-version republish workflow
+- a live March 2026 spot-check against the public RubyGems versions API returned sampled non-yanked versions without a `yanked` field rather than with an explicit `false` value
 
 ### Remaining assumptions
 
 - remapping the temporary `NuGet/login@v1` output to a repository-local variable such as `NUGET_OIDC_API_KEY` is repository design guidance to avoid collisions; upstream docs require using the step output but do not mandate a specific local variable name
 - npm docs describe when automatic provenance is eligible, but they do not define one single stable machine-readable confirmation surface for every post-publish state; `confirm-publish-state` still needs repository-owned logic to decide how long to wait and what to treat as sufficiently confirmed when classification is `expected`
 - package-public/private classification for npm may depend on reviewed local package metadata plus registry response shape, so the exact runtime source of truth for `not-applicable-private-package` remains an implementation choice rather than a provider-documented field contract
+- the RubyGems versions API may omit `yanked` for healthy versions, but reviewed public docs do not yet state whether omission is guaranteed to mean "not yanked"; the design should therefore fail on explicit `yanked: true` and treat omission as non-authoritative-but-not-yanked unless provider docs later tighten the contract
+- the 30-day transition budget after RubyGems publishes a fixed audience contract is a repository control-plane policy, not a provider-published SLA
 
 ## March 2026 external-system research
 
@@ -280,7 +300,7 @@ For AI agents editing workflow design docs.
 ### Remaining assumptions
 
 - mapping npm's documented “calling workflow name” behavior precisely onto GitHub's `workflow_ref` claim is still a design inference built from npm's wording plus GitHub's OIDC claim model, because npm's docs do not name the JWT claim explicitly
-- same-project cross-ref run detection via workflow-run enumeration is only an advisory admission lock, because GitHub does not document an atomic repository-wide run reservation primitive for this case
+- same-project cross-ref run detection via workflow-run enumeration is only an advisory admission lock, because GitHub does not document an atomic repository-wide run reservation primitive for this case; any overlap discovered after enumeration, while a run is waiting for approval, or before confirmation closes must therefore be treated as a control-plane incident and one run must be cancelled before a second approval proceeds
 - the `CONTROL_PLANE_ENVIRONMENT_ROLE` variable remains a fail-closed misconfiguration guard rather than a complete live-environment integrity proof, because GitHub does not document any stronger environment-side self-attestation primitive that the workflow can verify in-job
 
 ## Current assumptions
@@ -400,8 +420,9 @@ For AI agents editing workflow design docs.
 - the direct `publish-npm-official` path derives caller ref from runtime `github.ref` rather than a caller input, and it emits the exact validated dist-tags via `applied-dist-tags`, which official `release-complete` compares to the deterministic tag array derived in `resolve-context`
 - recovery-ledger incident disposition includes `open-before-publish`, `open-partial-publish`, `abandoned-before-publish`, and `abandoned-after-partial-publish`, and every incident record carries a stable UUID `incidentId`
 - build artifacts include a manifest of published files and SHA-256 digests; publish workflows verify that manifest before upload, the manifest file name is fixed as `artifact-manifest.json`, it is internal metadata rather than a GitHub Release asset, it uses a fixed schema with `schemaVersion: 1` plus a non-empty `files` array of `{path, sha256, publishRoles}` objects with strict key whitelists and exact 64-character lowercase SHA-256 digests, and deterministic rerun uploads use `overwrite: true` for both build and provenance artifacts
+- the reserved manifest path `SHA256SUMS` is release-asset-only in this design: when any non-`SHA256SUMS` entry carries `github-release-asset`, exactly one `SHA256SUMS` entry with `publishRoles = ["github-release-asset"]` must also be present, and that reserved entry may never carry `package`
 - official build workflows with `require-provenance: true` emit verifier input material rather than final durable evidence: the build side produces deterministic `build-verification-input.json` inside the main build artifact, the isolated attestation job generates `attestation-manifest.json` plus the attestation bundle set in the provenance sidecar artifact, and `require-provenance` verifies those materials, writes the repository-controlled `artifact-evidence.json` to the protected `release-evidence` branch, and records recovery against the durable blob permalink rather than an expiring CI artifact URL; same-path overwrites are disallowed
-- `.github/provenance-signer-map.json` is a reviewed control-plane contract with `schemaVersion: 2` that maps each supported language to its language-specific reusable attestation workflow path plus the corresponding top-level attestation caller job; `require-provenance` must validate signer expectations from that checked-in mapping rather than from ad hoc hard-coded language logic
+- `.github/provenance-signer-map.json` is a reviewed control-plane contract with `schemaVersion: 2` that maps each supported language to its language-specific reusable attestation workflow path plus the corresponding top-level attestation caller job; every `jobWorkflowRefTemplate` must contain exactly one literal `{ref}` placeholder, and `require-provenance` must bind that placeholder from the trusted runtime caller ref of the current `official.yml` run rather than from build-supplied data or reverse-parsed verifier output
 - the authoritative durable-evidence link is `artifact-evidence-url`, and the recovery ledger field is `artifactEvidenceUrl`; future edits must not reintroduce the old `artifact-manifest-evidence-url` or `artifactManifestEvidenceUrl` names
 - `artifact-evidence.json` is strict rather than open-ended and records exact attestation verification outputs including workflow run attempt, verified repository, ref, source SHA, `job_workflow_ref`, workflow SHA, repository owner identity, verifier tool, and optional verified environment
 - every `artifact-manifest.json` entry path must be a flat top-level file name with no `/` or `\`, must not equal `.` or `..`, and must contain no ASCII control characters, and every publish workflow rejects nested, dot-segment, or control-character paths during manifest validation
@@ -409,8 +430,8 @@ For AI agents editing workflow design docs.
 - NuGet build artifacts may also include matching `.snupkg` symbol packages, which should be pushed alongside the corresponding `.nupkg` when the target supports them
 - build workflows must produce reproducible package outputs for the same source commit and locked toolchain so rerun idempotency remains valid
 - the direct `publish-npm-official` path must use an explicit dist-tag on every publish, separate tarball idempotency from dist-tag idempotency, allow missing tags to be attached to the same version, and never move `latest`, prerelease channel tags, or maintenance-line tags backward
-- `confirm-publish-state` is an in-job parallel fan-out with a strict launcher/waiter/reducer pattern; the reducer is the only writer of outputs/checkpoints and is the always-success boundary for semantic states `{complete, partial-timeout, partial-upstream-failure}`
-- `confirm-publish-state` workers may span multiple steps only through detached launch plus scratch-recorded PID/deadline and completion-marker metadata; later steps must use the per-target completion marker as the authoritative completion signal rather than shell `wait` or PID-only `kill -0` polling, because they are not the workers' parent process
+- `confirm-publish-state` is an in-job parallel fan-out with a reviewed preparation step, one same-step supervisor that launches and waits for all bounded worker subprocesses, and one reducer step; the reducer is the only writer of outputs/checkpoints and is the always-success boundary for semantic states `{complete, partial-timeout, partial-upstream-failure}`
+- `confirm-publish-state` workers must not span step boundaries; launch, supervision, timeout handling, and collection stay inside the same parent step, which keeps process-group-capable cleanup data and writes only normalized per-target scratch results for the later reducer
 - `github:official` confirmation derives expected digests from `artifact-evidence-url` and the linked durable `artifactManifestBlobApiUrl`, then cross-checks the remote `SHA256SUMS` asset; it does not re-download the CI artifact as a second truth source
 - reusable workflow JSON-array outputs such as resolved targets, npm dist-tags, applied dist-tags, and confirmed publish-state target lists use compact canonical JSON serialization rather than pretty-printed or order-unstable JSON
 - GitHub Packages versions are treated as immutable within workflow execution even though GitHub supports delete/restore with elevated package-admin privileges; the workflow design does not request delete/admin permissions and does not support delete-and-republish recovery
@@ -430,13 +451,13 @@ For AI agents editing workflow design docs.
 - recovery guidance includes the case where a draft or published stable GitHub Release with deterministic title blocks a new official run and must be resolved explicitly rather than bypassed by renaming
 - if official artifacts expire and the protected branch has moved, the previous partially released identity is treated as burned and recovery proceeds with the next version
 - burned, partially published, partially withdrawn, delisted, and fully withdrawn official identities, plus required periodic tag audits, are recorded in `.github/release-recovery-ledger.jsonl` using `recordType` values `{incident, audit}` under `CODEOWNERS` review, with a P0/P1 break-glass path for minimal emergency ledger updates followed by a reviewed cleanup PR; incident records now include `incidentId`, monotonic `revision`, required `releaseLine`, `selectedTargets`, `unpublishedTargets`, strict key whitelists, and hold-window evidence fields for destructive stable-release recovery, while audit records carry their own `auditId` plus monotonic `revision`
-- incident and audit ledger records both include `schemaVersion` and `recordType`; `disposition`, `publishedTargets`, `unpublishedTargets`, `deprecatedTargets`, `delistedTargets`, `removedTargets`, `retainedTargets`, `tagState`, `githubReleaseState`, `audit.scope`, and `audit.result` all use closed schemas or enums, `closedAt` is absent rather than null while an incident remains open, terminal published incident states require exhaustive target accounting across `retainedTargets ∪ deprecatedTargets ∪ delistedTargets ∪ removedTargets`, `partially-withdrawn` and `fully-withdrawn` are terminal incident dispositions, and audit records require `closedAt` for both `followUpStatus = resolved` and `followUpStatus = not-required`; `automationId` and `scriptVersion` are an all-or-nothing pair for automated audit records
+- incident and audit ledger records both include `schemaVersion` and `recordType`; `disposition`, `publishedTargets`, `unpublishedTargets`, `deprecatedTargets`, `delistedTargets`, `removedTargets`, `retainedTargets`, `tagState`, `githubReleaseState`, `audit.scope`, and `audit.result` all use closed schemas or enums, `closedAt` is absent rather than null while an incident remains open, terminal published incident states require exhaustive target accounting across `retainedTargets ∪ deprecatedTargets ∪ delistedTargets ∪ removedTargets`, `partially-withdrawn` and `fully-withdrawn` are terminal incident dispositions, `delistedTargets` is reserved for already-published `nuget:official`, `npm:official` may use only `deprecatedTargets` for warning state and `removedTargets` for withdrawal state, and audit records require `closedAt` for both `followUpStatus = resolved` and `followUpStatus = not-required`; `automationId` and `scriptVersion` are an all-or-nothing pair for automated audit records
 - `mise.lock` is mandatory repository state, regenerated with `mise lock`, and enforced by `hk check --all`
 - the checked-in publish trust inventory is drift detection and audit trail only, not an independent cryptographic backstop
 - reusable publish workflows must write `publish-result` to both workflow outputs and `$GITHUB_STEP_SUMMARY`, and `release-complete` both validates selected-target `publish-result` values and aggregates them into its own summary
 - official production release is machine-gated by a `require-provenance` job between build and tag reservation; `create-release-tag` and official publish jobs are ineligible until that gate succeeds
 - build reusable workflows default `checkout-ref` to the caller job's `github.sha` when the input is omitted
-- maintenance branch onboarding is a bounded control-plane transition and project-local official-release hold in this design: create and protect the branch first, update GitHub-side deployment-branch policy and any required registry-side selector or secret change next, then land the reviewed `main` control-plane change, and lift the hold only after GitHub-side and checked-in state converge; the drift monitor opens `high-nonpage` immediately and pages only after prolonged mismatch or overlap with any active official run for that same project
+- maintenance branch onboarding is a bounded control-plane transition and project-local official-release hold in this design: create and protect the branch first, update the project-scoped `control-plane-monitoring-<project-name>` environment so the hold fails closed for the new branch, then land the reviewed `main` control-plane change, then update the publish/tag/evidence environments plus any required registry-side selector or secret change, and lift the hold only after GitHub-side and checked-in state converge; the drift monitor opens `high-nonpage` immediately and pages only after prolonged mismatch or overlap with any active official run for that same project
 - maintenance branch retirement is also a bounded control-plane transition and project-local official-release hold: first drain or settle queued and in-progress official runs for that branch, then land the reviewed `main` removal of that caller ref from `.github/official-caller-refs.json` and from the matching project's `allowedCallerRefs` in `.github/publish-trust-inventory.json` while preserving the rest of the project entry, then remove the branch from the protected environments, and page only if the resulting mismatch persists too long or overlaps any active official run for that same project; if retirement cannot finish in one operator session, the supported alternatives are to finish it immediately or restore the pre-retirement state
 
 ## March 2026 independent external confirmation for the DESIGN.v2 review remediation follow-up
@@ -483,6 +504,64 @@ For AI agents editing workflow design docs.
 - `holdStartedAt`, `eligibleDeleteAt`, and `consumerImpactEvidenceUrl` are required only for destructive stable-release recovery when the 48-hour hold actually applies and must be absent otherwise; there is no shorter same-identity hold-waiver path in the current design
 - break-glass ledger bypass may touch only `.github/release-recovery-ledger.jsonl`, and automation alerts if the required reviewed cleanup PR is not merged by the next business day
 - gate jobs such as `ci-passed` and `release-complete` obtain `jq` through the repository-managed `mise` toolchain rather than from the runner image
+
+## March 2026 independent external confirmation for the current review-follow-up remediation
+
+### Confirmed facts
+
+- GitHub documents `github.actor`, `github.actor_id`, and `github.triggering_actor`; reruns keep the original actor and actor ID while exposing the rerun initiator separately as `github.triggering_actor`
+- GitHub REST docs distinguish GitHub App IDs from GitHub account IDs; the reviewed `GET /users/<app-slug>[bot]` path returns the bot-user account `id`, which is the runtime identifier that matches `github.actor_id` for app-triggered runs
+- GitHub documents that referencing a missing environment name auto-creates that environment without the expected protection rules or secrets, so the buddy TestPyPI environment must exist and be audited explicitly rather than assumed to fail closed
+- reviewed Linux `setsid(2)` and `kill(2)` semantics confirm that a supervisor can launch a worker in its own session/process group when reviewed helper code needs process-group cleanup, and that `kill` with a negative PID targets that process group rather than only the leader PID
+- reviewed `gh attestation verify` documentation confirms trusted signer-workflow verification through verifier-checked output, but does not publish a stable exit-code contract that cleanly separates integrity failures from transparency-log or attestation-fetch outages
+
+### Remaining assumptions
+
+- storing approved dispatch actors in a checked-in `.github/official-dispatch-authorizers.json` file remains a repository control-plane design layered on top of GitHub's documented actor contexts; GitHub still does not provide a native workflow-file-level dispatch allowlist
+- classifying verifier dependency outages as `attestation-infrastructure-unavailable` requires a repository-reviewed classifier over documented verifier output shapes, because the reviewed public docs do not promise a portable machine-readable outage taxonomy
+- treating a quiet PyPI confirmation window of up to roughly 20 minutes as expected operator behavior is an operational design budget informed by provider behavior, not a provider-published SLA
+
+## March 2026 external confirmation for the current DESIGN.v2 remediation pass
+
+### Confirmed facts
+
+- GitHub's artifact-attestation docs say the workflow that generates build attestations needs `permissions: { contents: read, id-token: write, attestations: write }`
+- GitHub's Actions contexts docs define `github.actor` as the username that triggered the initial run, `github.actor_id` as the account ID of the person or app that triggered the initial run, and `github.triggering_actor` as the rerun initiator username when a rerun happens
+- GitHub's REST users docs expose durable user-account IDs as `id` on both `GET /users/{username}` and `GET /user/{account_id}` responses, which is the same identifier class used by `github.actor_id`
+
+### Remaining assumptions
+
+- keeping all attestation-job `permissions` declarations on the top-level caller jobs in `official.yml`, while requiring the reusable attestation workflows to inherit those grants and declare no `permissions:` block themselves, is a repository design rule layered on top of GitHub's documented required scopes
+- requiring evidence-backed validation for any new or changed `.github/official-dispatch-authorizers.json` `appIds` entry is repository governance policy layered on top of GitHub's documented account-ID semantics; GitHub documents the ID fields, but does not prescribe this repository-specific review gate
+
+## March 2026 independent external confirmation for GitHub-hosted runner step/process behavior
+
+### Confirmed facts
+
+- GitHub documents that each `run` step executes in its own process in the runner environment, and reviewed workflow-syntax docs also describe each `run` step as a new process and shell
+- GitHub documents that `GITHUB_ENV`, `GITHUB_OUTPUT`, and `GITHUB_STEP_SUMMARY` point to temporary files that are unique to the current step and change for each step in a job
+- GitHub documents GitHub-hosted runners as fresh virtual machines for each job
+- the reviewed GitHub documentation did not publish a positive guarantee that a detached `nohup`/`setsid` background process launched in one step will survive and remain joinable from a later step on a GitHub-hosted runner
+
+### Remaining assumptions
+
+- any design that launches detached confirmation workers in one step and expects a later step to join or clean them up would depend on undocumented runner behavior, so the reviewed design should keep worker launch, supervision, timeout handling, and collection inside the same parent step and use later steps only for normalized scratch-result reduction
+
+## March 2026 external confirmation for the design-only remediation retry
+
+### Confirmed facts
+
+- GitHub's REST API documents `GET /repos/{owner}/{repo}/releases/tags/{tag}` for exact release lookup by tag name
+- GitHub's REST API documents `GET /repos/{owner}/{repo}/releases` pagination with `per_page` up to 100 results and `Link` headers for additional pages
+- PyPI trusted-publishing docs and the reviewed `pypa/gh-action-pypi-publish` docs continue to discover the OIDC audience from `https://{repository_domain}/_/oidc/audience`, and TestPyPI publishing stays on the same action path through `repository-url: https://test.pypi.org/legacy/`
+- PyPI trusted-publishing troubleshooting still says reusable workflows are unsupported because the trusted publisher binds to the workflow identity present in the OIDC token
+- Microsoft Learn and NuGet trusted-publishing docs continue to describe `NuGet/login@v1` with a required `user` input, one OIDC token exchange producing one temporary API key, and current temporary-key lifetime of 1 hour
+
+### Remaining assumptions
+
+- the bounded repository-wide GitHub Release title scan cap used in this design is a repository control-plane budget chosen on top of GitHub's documented pagination model; GitHub does not prescribe a specific cap for this use case
+- no reviewed public NuGet trusted-publishing document in this pass described a portable, non-mutating readiness probe for the production trusted-publisher path, so the design's sandbox canary and freshness-gate model remains repository policy rather than a provider-documented health-check contract
+- treating repeated PyPI `oidcAudienceEndpoint` probe failure as a control-plane freshness incident is repository monitoring policy layered on top of the documented audience-discovery endpoint, not a provider-published SLA
 
 ## Maintenance and future edits
 
