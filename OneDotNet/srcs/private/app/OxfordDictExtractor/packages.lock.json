@@ -47,9 +47,9 @@
       },
       "WebMarkupMin.Core": {
         "type": "Direct",
-        "requested": "[2.20.2, )",
-        "resolved": "2.20.2",
-        "contentHash": "VkOtB5hZDmXtcZpyQQIYrW8Wf948HafneTHi2B2Frwm/H0GAeNK2o9lTuVU+rwmxHx62pSbsbpheFW3KoUmNSw==",
+        "requested": "[2.21.0, )",
+        "resolved": "2.21.0",
+        "contentHash": "/8zGdjDObXPadupzjV0iixXWgFTvh17n78ZFsWmnLy5us3i3ZaE5HD7P2HJFOe9ZiaWVxZOVQ3gDNvzMmG1VPQ==",
         "dependencies": {
           "AdvancedStringBuilder": "0.2.0"
         }
