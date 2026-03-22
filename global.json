@@ -4,7 +4,7 @@
     "rollForward": "latestMinor"
   },
   "msbuild-sdks": {
-    "DotNet.ReproducibleBuilds.Isolated": "1.2.39",
+    "DotNet.ReproducibleBuilds.Isolated": "2.0.2",
     "Microsoft.Build.Artifacts": "6.1.63",
     "Microsoft.Build.CopyOnWrite": "1.0.334",
     "Microsoft.Build.NoTargets": "3.7.134",
