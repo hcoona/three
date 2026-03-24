@@ -33,6 +33,10 @@ importers:
         specifier: 3.8.1
         version: 3.8.1
 
+  src/private/app/im-acp-gateway/poc/telegram-bot-verifier: {}
+
+  src/private/app/im-acp-gateway/poc/wechat-ilink-verifier: {}
+
   src/public/lib/hexo-renderer-asciidoc:
     dependencies:
       asciidoctor:
