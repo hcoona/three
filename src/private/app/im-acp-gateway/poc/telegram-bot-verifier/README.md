@@ -12,7 +12,8 @@ It focuses on validating the real Telegram bot path by exercising:
   `message_id`, and reply targets,
 - message editing,
 - chat-action progress signals,
-- inline-button and callback-query handling.
+- inline-button and callback-query handling,
+- a thin Telegram-to-Copilot-ACP bridge.
 
 ## Why this POC exists
 
@@ -95,6 +96,19 @@ Show the current saved state without printing the full token:
 pnpm run start -- show-state
 ```
 
+Run the thin Telegram-to-Copilot bridge:
+
+```bash
+pnpm run start -- bridge --cwd /absolute/path/to/your/workspace
+```
+
+In bridge mode:
+
+- a normal text message is routed to Copilot ACP,
+- the final Copilot text is sent back to Telegram,
+- `/new` resets the active Copilot session for the chat,
+- `/stop` cancels the active Copilot turn.
+
 ## Local state
 
 By default the CLI stores state in:
@@ -108,6 +122,7 @@ The state file stores:
 - the Telegram `botToken`,
 - the effective `apiBaseUrl`,
 - an optional default chat id,
+- the last observed ACP session identifier and stop reason,
 - the last observed `update_id`,
 - the latest observed chat and callback metadata,
 - timestamps useful for restart validation.
@@ -127,6 +142,12 @@ Use the POC to validate the Telegram track:
    `callback_query` handling works.
 7. Run `send-action` and confirm the activity indicator is useful.
 8. Run `edit` and confirm bot-authored message updates work.
+9. Run `bridge`, send a normal Telegram text message, and confirm Copilot's
+   reply comes back to Telegram.
+10. Reply to a Copilot-generated bot message and confirm the same logical bridge
+    session continues.
+11. Run `/stop` during a long-running Copilot turn if you want to validate
+    Telegram-to-ACP cancellation behavior.
 
 ## Limitations
 
@@ -136,5 +157,5 @@ Use the POC to validate the Telegram track:
   dedicated state directory and treat it as sensitive.
 - Webhooks are not implemented in this first cut; the POC uses `getUpdates`
   because it is the simplest local validation path.
-- Copilot CLI ACP is not wired into this verifier yet; use this package to
-  validate the Telegram side first.
+- The bridge currently auto-cancels ACP permission requests instead of surfacing
+  a full Telegram approval workflow for real tool permissions.

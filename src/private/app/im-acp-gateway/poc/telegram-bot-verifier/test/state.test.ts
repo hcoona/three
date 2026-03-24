@@ -18,6 +18,8 @@ test('writeState and readState round-trip persisted bot state', async () => {
       apiBaseUrl: 'https://api.telegram.org',
       botToken: '123456:secret',
       defaultChatId: '123456789',
+      lastAcpSessionId: 'session-123',
+      lastAcpStopReason: 'end_turn',
       lastUpdateId: 42,
       configuredAt: '2026-03-24T00:00:00.000Z',
       lastPollAt: '2026-03-24T00:01:00.000Z',

@@ -44,6 +44,30 @@ It can strengthen the general feasibility case and can satisfy the substance of
 the thin end-to-end spike goal, but it does **not** replace the separate need to
 validate the Personal WeChat path.
 
+## Current status after the 2026-03-24 Telegram runs
+
+The Telegram verification track now has direct runtime evidence for the first
+three discovery items:
+
+- Item 1 is validated for the intended private-chat setup:
+  real inbound and outbound private-chat traffic, reply metadata,
+  `editMessageText`, and `sendChatAction` were all observed successfully.
+- Item 2 is materially validated:
+  inline buttons, `callback_query`, message editing after a decision, and text
+  fallback commands were all exercised on the real Telegram stack.
+- Item 3 is now validated as a thin feasibility spike:
+  a Telegram message was routed to Copilot CLI through ACP, the Copilot result
+  came back to Telegram, and reply-based continuation was exercised over the
+  live bridge.
+
+The main Telegram-specific discovery gaps that remain are narrower:
+
+- the current bridge auto-cancels ACP permission requests instead of surfacing a
+  full Telegram approval UX for real tool permissions,
+- the `/stop` path is wired and was exercised, but a deliberately long-running
+  ACP turn was not held open to produce stronger mid-turn cancellation evidence,
+- Telegram group behavior remains a separate scope question and is still open.
+
 ## Remaining early research verification items
 
 ## 1. Validate the real Telegram bot path on the intended setup
@@ -159,6 +183,10 @@ One thin scenario succeeds:
 3. the user replies to the bot message to continue the same conversation,
 4. an approval or stop interaction is surfaced over Telegram,
 5. the conversation continues on the intended session after that interaction.
+
+The first thin spike now demonstrates items 1 through 3 directly. The remaining
+follow-up here is mostly about deepening confidence in permission and
+cancellation behavior rather than re-proving basic feasibility.
 
 ## 4. Validate Telegram group behavior only if groups are near-term scope
 

@@ -59,6 +59,14 @@ export async function readState(
       state.defaultChatId = parsed.defaultChatId;
     }
 
+    if (typeof parsed.lastAcpSessionId === 'string') {
+      state.lastAcpSessionId = parsed.lastAcpSessionId;
+    }
+
+    if (typeof parsed.lastAcpStopReason === 'string') {
+      state.lastAcpStopReason = parsed.lastAcpStopReason;
+    }
+
     if (typeof parsed.lastUpdateId === 'number') {
       state.lastUpdateId = parsed.lastUpdateId;
     }

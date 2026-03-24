@@ -24,7 +24,8 @@ items and their overlap with thin-spike preparation:
 - outbound text delivery,
 - reply-correlation metadata on real Telegram traffic,
 - Telegram approval and callback primitives,
-- status-oriented features such as chat actions and message updates.
+- status-oriented features such as chat actions and message updates,
+- the first thin Telegram-to-Copilot-ACP bridge run.
 
 It is not the place for gateway design decisions or broader product planning.
 
@@ -129,12 +130,98 @@ next thin slice on top of it:
 3. preserve the reply-to-message correlation for session continuation,
 4. surface one real approval or stop interaction while ACP is involved.
 
+### Run 2 — 2026-03-24
+
+#### Goal
+
+Run the thinnest real Telegram-to-Copilot-ACP slice and verify that reply-based
+session continuation works on the intended setup.
+
+#### Process
+
+1. the Telegram verifier POC was extended with a `bridge` command and a thin
+   ACP client that:
+   - starts `copilot --acp --stdio`,
+   - creates one active Copilot session per Telegram chat,
+   - routes a normal Telegram text message into `session/prompt`,
+   - returns the final Copilot text response to Telegram,
+   - supports `/new` for session reset and `/stop` for turn cancellation,
+   - auto-cancels ACP permission requests in this first cut,
+2. the updated POC passed local `typecheck`, `test`, and `lint`,
+3. a local ACP smoke test was run directly against Copilot CLI:
+   - `initialize`,
+   - `session/new`,
+   - `session/prompt`,
+   - and a no-tools prompt completed with `stopReason = end_turn`,
+4. the live `bridge` command was started against the repository workspace,
+5. the bot sent an operator message asking the user to:
+   - send a fresh message,
+   - reply to a Copilot-generated bot message,
+   - optionally try `/stop`,
+6. the user sent `Hello`,
+7. the user then replied `What can you do?` to bot message `332`,
+8. the user then replied `Summarize current repo` to bot message `334`,
+9. the user then sent `/stop` replying to bot message `337`,
+10. the bridge process logged each inbound update summary while the local state
+    file recorded the latest ACP session identifier and stop reason.
+
+#### Observed result
+
+- the thin end-to-end path worked on the real stack:
+  Telegram private chat -> verifier bridge -> Copilot ACP -> Telegram private
+  chat,
+- the first user message arrived as a normal Telegram `message` update without a
+  reply target, which is the expected shape for starting a new logical session,
+- reply-based continuation worked in practice:
+  - inbound message `333` carried `reply_to_message.message_id = 332`,
+  - inbound message `335` carried `reply_to_message.message_id = 334`,
+  - both replies were directed at earlier bridge-generated bot messages,
+- the bridge persisted ACP-side continuity data:
+  - the saved local state now includes `lastAcpSessionId`,
+  - the latest completed prompt recorded `lastAcpStopReason = end_turn`,
+- the `/stop` command path was exercised from Telegram text input and reached the
+  bridge successfully,
+- the user confirmed the visible behavior looked correct.
+
+#### Still unverified after this run
+
+- webhook-mode intake on the intended deployment setup,
+- Telegram group behavior and privacy-mode implications in practice,
+- richer streaming behavior such as `sendMessageDraft`,
+- full ACP permission mediation over Telegram instead of the current
+  auto-cancel behavior,
+- forced cancellation of a visibly long-running in-progress ACP turn; this run
+  exercised the `/stop` command path, but did not intentionally hold a long
+  turn open to observe mid-turn interruption.
+
+#### Current conclusion
+
+This run satisfies the main thin-spike question for the Telegram track.
+
+The project now has direct runtime evidence that:
+
+- a Telegram private-chat message can be routed into Copilot CLI through ACP,
+- the Copilot result can be sent back to Telegram,
+- a user can reply to a bridge-generated bot message and continue the same
+  logical conversation shape,
+- the bridge can persist minimal ACP session continuity data alongside Telegram
+  intake state.
+
+The remaining uncertainty has shifted away from basic feasibility and toward
+follow-up UX depth:
+
+- richer permission mediation,
+- stronger in-flight cancellation proof,
+- and whether group or webhook behavior matters for near-term scope.
+
 ## Open status summary
 
 As of this document revision:
 
-- one live Telegram validation run has been completed,
+- two live Telegram validation runs have been completed,
 - private-chat transport has been validated successfully,
 - reply-correlation metadata has been observed successfully,
 - inline-button callback handling has been observed successfully,
-- Telegram-to-ACP end-to-end validation remains open.
+- Telegram-to-ACP thin-spike validation has been observed successfully,
+- ACP permission mediation over Telegram remains intentionally thin,
+- group behavior remains open.

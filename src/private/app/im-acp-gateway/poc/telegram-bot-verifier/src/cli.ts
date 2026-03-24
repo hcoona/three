@@ -4,6 +4,7 @@ import process from 'node:process';
 
 import {
   runApprovalDemoCommand,
+  runBridgeCommand,
   runEditCommand,
   runMonitorCommand,
   runSendChatActionCommand,
@@ -28,13 +29,16 @@ interface CliArgs {
   'chat-id'?: string;
   force?: string;
   'message-id'?: string;
+  model?: string;
   'no-answer-callbacks'?: string;
   'no-reply'?: string;
   once?: string;
+  'copilot-path'?: string;
   'reply-prefix'?: string;
   'state-dir'?: string;
   text?: string;
   'timeout-seconds'?: string;
+  cwd?: string;
   [key: string]: string | undefined;
 }
 
@@ -122,6 +126,24 @@ async function main(): Promise<void> {
         text:
           args.text ??
           'Telegram approval demo. Use the buttons below to validate callback handling.',
+      });
+      break;
+    }
+
+    case 'bridge': {
+      const args = parseArgs(restArguments);
+      await runBridgeCommand({
+        bridge: {
+          copilotPath: args['copilot-path'] ?? 'copilot',
+          cwd: requireStringArg(args.cwd, 'cwd'),
+          timeoutSeconds: parseIntegerArg(
+            args['timeout-seconds'],
+            DEFAULT_MONITOR_OPTIONS.timeoutSeconds,
+            'timeout-seconds',
+          ),
+          ...(args.model ? { model: args.model } : {}),
+        },
+        stateDirectory: args['state-dir'],
       });
       break;
     }
@@ -238,18 +260,21 @@ function printHelp(): void {
     'Commands:',
     '  setup --bot-token TOKEN [--chat-id ID] [--api-base-url URL] [--state-dir PATH] [--force]',
     '  monitor [--state-dir PATH] [--reply-prefix "Echo: "] [--no-reply] [--no-answer-callbacks] [--timeout-seconds 30] [--once]',
-    '  send --text TEXT [--chat-id ID] [--message-id REPLY_TO] [--state-dir PATH]',
-    '  edit --message-id ID --text TEXT [--chat-id ID] [--state-dir PATH]',
-    '  send-action --action typing [--chat-id ID] [--state-dir PATH]',
-    '  approval-demo [--chat-id ID] [--text TEXT] [--state-dir PATH]',
-    '  show-state [--state-dir PATH]',
-    '',
-    'Notes:',
-    '  - The setup command validates the token via getMe and persists it locally.',
-    '  - The monitor command logs raw updates so you can inspect reply metadata, callback_query payloads, and topic fields.',
-    '  - Auto-reply is enabled by default during monitor; use --no-reply to inspect only.',
-    '  - If no --chat-id is passed to send/edit/send-action/approval-demo, the CLI falls back to the saved default chat id or the most recently observed chat id.',
-  ];
+     '  send --text TEXT [--chat-id ID] [--message-id REPLY_TO] [--state-dir PATH]',
+      '  edit --message-id ID --text TEXT [--chat-id ID] [--state-dir PATH]',
+      '  send-action --action typing [--chat-id ID] [--state-dir PATH]',
+      '  approval-demo [--chat-id ID] [--text TEXT] [--state-dir PATH]',
+      '  bridge --cwd ABSOLUTE_PATH [--copilot-path copilot] [--model MODEL] [--timeout-seconds 30] [--state-dir PATH]',
+      '  show-state [--state-dir PATH]',
+      '',
+      'Notes:',
+      '  - The setup command validates the token via getMe and persists it locally.',
+      '  - The monitor command logs raw updates so you can inspect reply metadata, callback_query payloads, and topic fields.',
+      '  - The bridge command routes plain Telegram messages to Copilot ACP and replies with the final text response.',
+      '  - In bridge mode, /new resets the active Copilot session for the chat and /stop cancels the active turn.',
+      '  - Auto-reply is enabled by default during monitor; use --no-reply to inspect only.',
+      '  - If no --chat-id is passed to send/edit/send-action/approval-demo, the CLI falls back to the saved default chat id or the most recently observed chat id.',
+    ];
 
   process.stdout.write(`${lines.join('\n')}\n`);
 }

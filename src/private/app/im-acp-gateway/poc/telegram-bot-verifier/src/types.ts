@@ -117,6 +117,8 @@ export interface PersistedState {
   apiBaseUrl: string;
   botToken: string;
   defaultChatId?: string;
+  lastAcpSessionId?: string;
+  lastAcpStopReason?: string;
   lastUpdateId?: number;
   configuredAt?: string;
   lastPollAt?: string;
@@ -138,6 +140,13 @@ export interface MonitorOptions {
   sendReplies: boolean;
   replyPrefix: string;
   answerCallbacks: boolean;
+  timeoutSeconds: number;
+}
+
+export interface BridgeOptions {
+  copilotPath: string;
+  cwd: string;
+  model?: string;
   timeoutSeconds: number;
 }
 
@@ -166,4 +175,51 @@ export interface UpdateSummary {
 export interface ParsedDemoCallback {
   action: 'approve' | 'deny' | 'stop';
   nonce: string;
+}
+
+export interface AcpInitializeResult {
+  protocolVersion: number;
+  agentCapabilities?: {
+    loadSession?: boolean;
+    sessionCapabilities?: {
+      list?: Record<string, never>;
+    };
+  };
+  agentInfo?: {
+    name?: string;
+    title?: string;
+    version?: string;
+  };
+}
+
+export interface AcpSessionResult {
+  sessionId: string;
+}
+
+export interface AcpPromptResult {
+  stopReason: string;
+}
+
+export interface AcpTextContent {
+  type: 'text';
+  text: string;
+}
+
+export interface AcpAgentMessageChunkUpdate {
+  sessionUpdate: 'agent_message_chunk';
+  content: AcpTextContent;
+}
+
+export interface AcpPermissionRequestParams {
+  sessionId: string;
+  toolCallId?: string;
+  title?: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface AcpPermissionResponse {
+  outcome: {
+    outcome: 'cancelled';
+  };
 }
