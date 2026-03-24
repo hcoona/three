@@ -174,6 +174,22 @@
 - Reconciling a pre-existing live lock to “another legitimate in-flight run” depends on the repository’s own reviewed lock payload format and runbook logic, not on one authoritative GitHub API verdict.
 - Requiring OIDC fields such as `providerAudience`, `providerConfigReviewedAt`, and `providerConfigReviewRef` to be non-empty strings is a deliberate repository contract choice for audit quality; external providers do not uniformly enforce every such field for us.
 
+## External-system confirmation for the current review-summary cleanup pass
+
+### FACT
+
+- GitHub documents `GET /repos/{owner}/{repo}/actions/runs/{run_id}/approvals` and `GET /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments` as the relevant workflow-run review surfaces, and the documented minimum token permission for both endpoints is `actions: read`.
+- The approvals API is not a reliable source of one authoritative approval-grant timestamp; the documented response centers on review state, comment, environments, and user rather than a canonical `approved_at` field. The pending-deployments API is for the still-pending state and is not the authoritative historical approval record after approval completes.
+- Tag protection for this design must use tag-targeted repository rulesets because branch protection does not apply to tag namespaces.
+- `GITHUB_STEP_SUMMARY` renders GitHub Flavored Markdown, auto-masks secrets, and isolates each step's summary from the others. Treating rendered summary content as active Markdown is therefore the conservative external-system fact for design purposes.
+- Because step summaries are rendered Markdown, requiring Markdown escaping or code-fencing for dynamic values is a reasonable repository-owned defensive rule to prevent untrusted text from changing headings, tables, task lists, links, images, or raw-HTML rendering.
+
+### ASSUMPTION / UNCERTAINTY
+
+- Repository-ruleset availability has changed over time and can differ by repository visibility and plan tier. For this design, the conservative readiness assumption is that tag-targeted rulesets require GitHub Team or GitHub Enterprise Cloud unless the target repository's exact plan/visibility combination is re-confirmed separately.
+- While `actions: read` is the documented minimum for the approvals and pending-deployments APIs, a concrete implementation of `baseline-approval-and-audit` may still need additional least-privilege permissions such as `contents: read` if that job also checks out or reads repository contents.
+- GitHub documentation does not prescribe one exact escaping recipe for `GITHUB_STEP_SUMMARY`; requiring inline-code or fenced-code rendering for dynamic values remains a repository-owned defensive design choice built on top of the fact that Markdown rendering is active there.
+
 ## External-system confirmation for the external-backend and diagnostics follow-up
 
 ### FACT
@@ -470,3 +486,32 @@
 - NuGet audience choice remains evidence-bound per target. Day 0 enablement still needs a fresh first-party review, and when first-party sources conflict without one reviewed conclusion plus rehearsal proof, `nuget:official` must remain disabled rather than guessing.
 - GitHub secondary-throttle thresholds, abuse-protection behavior, and the practical distribution of `Retry-After` values may evolve. The design should continue to budget only around documented observable signals, not around one assumed platform threshold.
 - The design now chooses Azure Blob as the suspension-record backend, but the exact account topology, replication mode, backup/export tooling, and incident-routing implementation remain repository / organization control-plane work that still needs Day 0 execution details.
+
+## External-system confirmation for the v2.50 design-only review fixes
+
+### FACT
+
+- Current repository evidence still supports the NuGet split recorded above: NuGet.org trusted publishing exists, but this repository does not yet carry one approved closed audience value that resolves the `nuget` versus `https://www.nuget.org` conflict. Treating `nuget:official` as blocked pending provider review is therefore safer than pretending the audience question is already closed.
+- Azure Blob Storage remains the currently reviewed backend fit in repository memory for the control-plane suspension record because the design needs primary-endpoint strong consistency plus optimistic-concurrency writes on the current record.
+- GitHub Actions `pull_request_target` remains a metadata-only exception path in the design; the current checked-in `dependabot-auto-merge.yml` uses `pull_request`, not `pull_request_target`, and does not check out PR code.
+- The design’s external monitor already polls on a bounded cadence (`at least every 5 minutes` for active release-state monitoring), so any approval-timeout value equal to the baseline wait timer would leave no guaranteed operator window beyond that poll granularity.
+
+### ASSUMPTION / UNCERTAINTY
+
+- Requiring `approvalWaitMaxSeconds >= baselineWaitTimerMinutes * 60 + 300` and recommending a larger `+1800` buffer is a repository safety margin derived from the monitor cadence, not a native GitHub guarantee about approval UX timing.
+- Requiring a `99.5%` monthly availability objective for singleton broker or monitor deployments is a repository design baseline for `standard` projects, not a platform SLA promised by GitHub or any cloud provider.
+- Treating Azure Blob as v1-only rather than permanent is a repository design choice. A later revision could approve another backend, but only after reviewed evidence shows equivalent durability, immutable-history, and compare-and-swap semantics.
+
+## External-system confirmation for the v2.51 second-round design fixes
+
+### FACT
+
+- A `ci.yml` run executes against one branch snapshot. Current repository design notes do not provide any repository-native GitHub Actions mechanism by which that one run could authoritatively enforce a cross-branch “all protected branches are already on the same migration/schema epoch” invariant. A repository-wide no-mixed-state guarantee therefore has to come from an explicit migration coordinator / freeze procedure, not from pretending one branch-local CI run can prove global branch convergence.
+- Current repository memory still supports Azure Blob Storage as the reviewed fit for repository-owned durable control-plane state because the design needs strong primary-endpoint reads plus compare-and-swap writes on the current record. That is enough to justify Azure Blob as the v1 backend class, but by itself it does **not** already prove one concrete DR topology that meets `RPO <= 15 minutes` and `RTO <= 60 minutes`.
+- Current repository design notes already distinguish singleton vs redundant deployment expectations for external control-plane services on the broker side (`standard` may use a singleton with documented availability/objectives; `high-assurance` requires active-standby or equivalent redundancy). Reusing the same assurance-sensitive shape for the external release monitor is consistent with the repository’s existing control-plane posture instead of inventing a one-off monitor standard.
+
+### ASSUMPTION / UNCERTAINTY
+
+- The exact form of the migration coordinator remains repository policy rather than a GitHub platform primitive. The design can require a reviewed repository-owned coordinator record and release freeze, but the specific file shape, PR flow, or dashboard used to track branch-by-branch migration completion is still Day 0 repository work.
+- Hitting `RPO <= 15 minutes` and `RTO <= 60 minutes` for Azure-backed durable state is not something current repository evidence proves from Azure semantics alone. The design therefore needs to treat geo-redundancy / second-copy placement, export cadence, failover authority, and restore drills as repository-selected operational requirements rather than as guarantees that “Azure Blob” automatically provides.
+- Requiring a singleton monitor for `standard` only when it has durable state, named on-call ownership, and a documented monthly availability objective of at least `99.5%`, while requiring two failure-independent monitor executors for `high-assurance`, is a repository design baseline. It is not a directly documented GitHub or cloud-provider requirement, and the exact active-standby / active-active implementation remains organization-specific control-plane work.
