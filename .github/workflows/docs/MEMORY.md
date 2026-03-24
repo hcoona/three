@@ -207,7 +207,7 @@
 - I did not independently confirm a stable documented maximum length for GitHub Deployment `description`. Keeping it below roughly 100 characters remains a conservative repository design choice rather than a quoted platform guarantee.
 - GitHub deployment `payload` is treated as serialized JSON metadata in current guidance; exact transport/field-shape details should still be re-checked at implementation time.
 - GitHub Artifact Attestations are the strongest currently confirmed design fit here, but exact verification mechanics, attestation storage APIs, and trust-root operational details still need implementation-time confirmation against then-current GitHub docs.
-- Independent research confirmed that NuGet trusted publishing uses GitHub OIDC, but I saw conflicting secondary references for the exact audience string. This design revision records `api://NuGet` as the reviewed checked-in default from the review summary, and Day 0 implementation must re-confirm the then-current official NuGet documentation before enablement.
+- Independent research confirmed that NuGet trusted publishing uses GitHub OIDC, but later first-party review found conflicting documented audience values. The older repository note that treated `api://NuGet` as a reviewed checked-in default is superseded by the v2.46 section below.
 - I did not independently confirm provider-side exact-ref claim enforcement for RubyGems trusted publishing, so the design keeps the conservative `workflow-only` default until a reviewed provider check says otherwise.
 
 ## External-system confirmation for the v2.34 design-only review fixes
@@ -217,12 +217,12 @@
 - In GitHub reusable-workflow scenarios, the effective workflow identity exposed to OIDC-backed trusted-publishing systems is the called workflow, not the original caller workflow. Keeping official publish jobs as direct jobs in `.github/workflows/official.yml` therefore preserves the intended workflow identity boundary.
 - GitHub Environments on GitHub.com provide a single approval from the configured reviewer list; they are not a native “two-of-two” approval primitive. Any true break-glass dual control must therefore come from an additional split-control mechanism outside the environment approval rule itself.
 - GitHub Actions concurrency still keeps at most one running run and one pending run per concurrency group, and a newer queued run can replace an older pending run. Pending-slot delay and supersession are therefore platform facts that monitoring and runbooks must treat explicitly.
-- The reviewed checked-in audience constants already evidenced for registry trusted publishing in this repository are: npm uses `npm:registry.npmjs.org`, RubyGems uses `rubygems.org`, and NuGet uses `api://NuGet`.
+- The reviewed checked-in audience constants already evidenced for registry trusted publishing in this repository are: npm uses `npm:registry.npmjs.org` and RubyGems uses `rubygems.org`. NuGet no longer has one repository-approved closed default audience value; see the v2.46 section below.
 - The conservative cleanup-capability baseline supported by prior reviewed external research remains: `github:release` and buddy GitHub Packages targets are delete-capable; `nuget:official` is unlist-capable; `pypi:official` and `rubygems:official` are yank-capable; `npm:official` is deprecate-only.
 
 ### ASSUMPTION / UNCERTAINTY
 
-- The design now records `providerAudience = pypi` as the reviewed checked-in PyPI baseline so the schema is fully specified, but that exact string still needs Day 0 re-confirmation against then-current PyPI trusted-publishing documentation before `pypi:official` is enabled.
+- The design now records `providerAudience = pypi` as the reviewed checked-in PyPI baseline. Later first-party PyPI documentation explicitly confirmed that value for PyPI (with `testpypi` for TestPyPI), but Day 0 implementation should still re-confirm the then-current docs before `pypi:official` is enabled.
 - GitHub’s platform semantics for environment approvals and concurrency are stable enough for the current design revision, but exact operational APIs and UI fields for supersession evidence, approval timestamps, and queue diagnostics may still evolve and must be rechecked at implementation time.
 - The cleanup-capability matrix above is a conservative repository baseline, not a timeless provider guarantee. Provider-side deletion, yank, unlist, and deprecation behavior can still change over time, so the checked-in runbooks must remain reviewed operational evidence rather than frozen assumptions.
 
@@ -314,6 +314,7 @@
 
 - GitHub Actions still evaluates workflow-level `concurrency.group` before any job executes. Caller-validation jobs therefore cannot retroactively protect a shared release slot; empty or malformed inputs must be isolated in the workflow-level key itself, and durable supersession evidence must come from some surviving or external actor rather than from a cancelled pending run.
 - GitHub Actions concurrency still keeps at most one running item plus one pending item per group, and a newer queued item can replace the older pending one. The design may treat this as a stable platform constraint for release-slot serialization, supersession diagnostics, and monitor-owned backfill.
+
 - GitHub tag protection/rulesets can be applied to separate ref namespaces. Commit-marker refs for OCI / GitHub Packages durable-store markers can therefore remain protected independently from official release-tag and live-lock namespaces and can use a dedicated marker-writer actor class.
 - GitHub Environments remain ref-scoped credential gates rather than native workflow-file allowlists. They do not by themselves prove that only one reviewed workflow path may mint a target credential, so `workflow-only` trusted-publishing targets still require repository-owned reviewed contracts, evidence, and monitoring as compensating controls.
 - Provider-side trusted-publishing capabilities remain uneven across npm, PyPI, RubyGems, NuGet, and GitHub Packages / OCI-style backends: exact provider-enforced `ref` matching and documented read-only trust-configuration inspection are not uniformly available. A target with `providerSupportsReadOnlyInspection = false` therefore cannot rely on native runtime drift detection and must use repository-reviewed evidence plus best-effort external probing instead.
@@ -358,3 +359,114 @@
 - Providers currently modeled with `providerSupportsReadOnlyInspection = false` may later expose new documented inspection or stronger exact-ref enforcement surfaces. The design therefore treats today's hourly-or-daily drift-probe cadence and `workflow-only` compensating controls as current-platform accommodations, not as timeless provider facts.
 - The exact orphan-upload reconciliation procedure for OCI / GitHub Packages backends — including listing primitive, grace period, cleanup cadence, and delete/unlist/burn mechanics — remains a repository-owned operational design layered on top of backend-visible uploads plus commit-marker tags rather than a guarantee supplied by the backend itself.
 - The concrete organization-managed monitor and broker platform still has to prove at Day 0 that it can satisfy the documented heartbeat, cancellation, and credential-isolation requirements. Those guarantees come from repository-owned operational architecture, not from GitHub's platform alone.
+
+## External-system confirmation for the v2.43 design-only fixes
+
+### FACT
+
+- GitHub Actions concurrency still allows at most one running run plus one pending run per concurrency group, and a newer queued run can replace the older pending run. A cancelled pending run therefore still cannot be the authoritative writer of supersession state.
+- GitHub does not provide a native durable supersession ledger for replaced pending runs. If the design wants durable supersession evidence, some repository-owned external monitor plus durable sink is required.
+- GitHub does not provide a native repository-integrated credential broker or release-monitor integrity attestation surface. Any cryptographic commitment for those external trust roots must therefore be a repository-owned control layered on top of GitHub.
+- Provider review timestamps and provider review evidence references are repository-controlled metadata, not GitHub-enforced runtime guarantees. Treating them as freshness evidence rather than immutable release identity is a repository design choice.
+- The official tag annotation already carries repository-defined release-identity fields such as `artifactLocator`, `attestationRef`, and exact subject filename/digest bindings, so it is a viable repository-owned fallback identity source when the durable store read path is unavailable.
+
+### ASSUMPTION / UNCERTAINTY
+
+- A signed runtime commitment digest for the external broker and monitor is a repository-owned compensating control, not a first-party GitHub primitive. Day 0 implementation must still choose the concrete attestation endpoint, signature format, and verifier-key distribution model.
+- Broker redundancy, idempotency semantics, latency budgets, and overload responses are repository-defined operational contracts. GitHub does not impose one canonical SLA for those external components.
+- Using the official tag annotation as read-only fallback identity evidence is safe only because this design keeps that annotation as a reviewed canonical release-identity anchor. It is not a universal GitHub guarantee for unrelated repositories.
+
+## External-system confirmation for the v2.44 design-only fixes
+
+### FACT
+
+- GitHub's documented refs/tags APIs do not provide an explicit linearizability or strong-consistency guarantee for create-then-immediate-read behavior. Repository designs must therefore treat repeated matching read-back as a compensating control rather than as a platform-guaranteed transaction boundary.
+- GitHub REST APIs document primary rate-limit headers such as `x-ratelimit-limit`, `x-ratelimit-remaining`, and `x-ratelimit-reset`, and GitHub may also apply secondary throttling or abuse protection using `403`/`429` plus `Retry-After`. A lock protocol must therefore treat throttling as uncertainty, not as evidence that a ref is absent.
+- Azure Blob Storage documents strong consistency on the primary endpoint, while RA-GRS or other secondary reads are eventually consistent replica views. Conditional create semantics such as `If-None-Match: *` are therefore safe as an authoritative create-if-absent basis only on the primary endpoint.
+- Azure Blob block uploads can leave uncommitted or abandoned staged blocks until they expire or are cleaned up. Those staged blocks are not an authoritative committed blob, but they do matter operationally for orphan cleanup and reconciliation.
+- A GitHub App private key is long-lived bootstrap credential material, while GitHub App installation tokens are short-lived derived credentials. Placing the long-lived private key directly in a buddy environment would widen the compromise surface and bypass broker-side issuance controls and audit.
+
+### ASSUMPTION / UNCERTAINTY
+
+- I did not independently confirm one official GitHub statement that refs/tags reads are strongly consistent after writes; the reviewed design therefore continues to treat that guarantee as absent unless Day 0 documentation later says otherwise.
+- GitHub's exact secondary-throttle thresholds, queueing behavior, and abuse-protection heuristics may evolve. The design should rely only on the documented observable signals (`Retry-After`, reset headers, explicit throttle responses), not on one guessed threshold.
+- Azure's exact operational timing for stale-secondary visibility, uncommitted-block expiry, and failover edge cases may vary by replication mode and service evolution. The design therefore treats the primary endpoint as the only authoritative path and keeps cleanup timing as a repository-owned operational contract.
+
+## External-system confirmation for the v2.45 review-summary design fixes
+
+### FACT
+
+- GitHub documents distinct credential models for GitHub Actions release work: `GITHUB_TOKEN`, GitHub App installation tokens, and other GitHub App token forms are not one interchangeable credential surface. GitHub App private keys are long-lived bootstrap credentials, while installation tokens are short-lived derived credentials.
+- GitHub's documented refs/tags APIs do not promise a linearizable or strongly consistent create-then-immediate-read boundary. GitHub does document primary and secondary throttling signals such as `x-ratelimit-*`, `403`/`429`, and `Retry-After`, so any ref/tag stabilization protocol must treat throttling as uncertainty rather than as proof of absence.
+- Azure Blob Storage documents strong consistency on the primary endpoint, while RA-GRS / RA-GZRS secondary reads are eventually consistent replica views. `If-None-Match: *` is therefore safe as an authoritative create-if-absent basis only on the primary endpoint.
+- Azure Blob `Put Blob` supports block, append, and page blob types. For this design, block blobs are the reviewed fit because they align with immutable bundle blobs plus commit-marker blobs, while append/page blobs would add different write semantics that the design does not need.
+- GitHub Environments are ref-scoped approval and credential gates, not native workflow-file allowlists. Workflow-path trust therefore has to come from reviewed OIDC claim handling and provider-side claim matching rather than from the environment name alone.
+- Provider-side trust inspection and monitor redundancy remain shared-responsibility or repository-owned concerns rather than a fully guaranteed first-party platform primitive. Repository-owned monitor commitments are therefore a compensating control, not a duplicate of one existing GitHub/Azure guarantee.
+
+### ASSUMPTION / UNCERTAINTY
+
+- I did not independently confirm one first-party GitHub statement that two release paths can safely share one GitHub App identity while relying on different broker, environment, and key-custody controls. Treating buddy and official `github:release` as separate GitHub App identities is therefore a deliberate blast-radius and governance choice in this design.
+- Azure documentation does not literally phrase the rule as "`If-None-Match: *` is atomic only on the primary endpoint"; that is the design conclusion drawn from documented primary strong consistency plus asynchronous secondary replication.
+- I did not independently confirm one first-party GitHub statement that environments can enforce workflow-path exclusivity by themselves. The design therefore continues to treat environment-only isolation as insufficient unless a provider-specific claim model proves otherwise.
+
+## External-system confirmation for the v2.46 review-summary design fixes
+
+### FACT
+
+- NuGet.org trusted publishing exists for GitHub Actions and uses GitHub OIDC rather than long-lived registry credentials.
+- Current first-party NuGet material does **not** provide one stable exact audience constant: the accepted NuGet technical specification describes the `aud` claim as `nuget`, while the official `NuGet/login` action currently documents its default audience input as `https://www.nuget.org`.
+- No reviewed first-party NuGet source in this round confirmed `api://NuGet` as the audience value.
+- PyPI first-party documentation explicitly documents the GitHub OIDC audience `pypi` for PyPI and `testpypi` for TestPyPI.
+- GitHub documents that `GITHUB_STEP_SUMMARY` renders GitHub Flavored Markdown, auto-masks secrets, and isolates each step's summary so malformed Markdown from one step cannot break later steps' summaries.
+
+### ASSUMPTION / UNCERTAINTY
+
+- Because current first-party NuGet sources conflict between `nuget` and `https://www.nuget.org`, this design revision treats NuGet audience selection as evidence-bound per reviewed target configuration rather than as a closed schema default. The older repository-specific assumption that `api://NuGet` was the default is superseded.
+- GitHub's documentation does not explicitly prescribe Markdown escaping or sanitization rules for `GITHUB_STEP_SUMMARY`. Requiring Markdown escaping / code-fencing for rendered values is therefore a repository-owned defensive design choice to prevent untrusted or package-derived text from altering the presentation of a step summary.
+
+## External-system confirmation for the v2.47 review-summary recheck
+
+### FACT
+
+- The repository's current design state already reflects the review-summary fixes for external-system-sensitive items: NuGet no longer has a closed default audience, PyPI records `pypi` as the checked-in baseline with Day 0 re-confirmation, approval-related `GITHUB_STEP_SUMMARY` output is constrained to validated frozen data with Markdown escaping/code-fencing, and degraded monitor handling explicitly requires cancellation of already-waiting baseline-approval runs so they do not hold `release/<project-key>` indefinitely.
+- GitHub Actions concurrency and environment approval remain separate platform behaviors in the current repository notes: workflow-level concurrency can hold the shared `release/<project-key>` slot across the run, while environment approval is the human/credential gate that may leave a run waiting in that slot until some cancellation mechanism intervenes.
+- The current repository notes still support treating NuGet audience choice as evidence-bound per reviewed target configuration, not as one repository-wide constant, because no reviewed first-party source in this repository state confirms `api://NuGet`.
+
+### ASSUMPTION / UNCERTAINTY
+
+- I still do not have one independently confirmed first-party GitHub statement, captured in this repository, that a waiting environment-approval job's configured `timeout-minutes` alone is a sufficient monitor-independent guarantee for timely slot release. The design therefore continues to rely on the explicit degraded-mode cancellation procedure instead of assuming that job timeout semantics by themselves solve approval-slot abandonment.
+- Even though current repository notes treat PyPI `pypi` as first-party confirmed and NuGet as evidence-bound, Day 0 enablement should still re-check the then-current upstream documentation for both providers before enabling those official targets.
+
+## External-system confirmation for the v2.48 design-review fixes
+
+### FACT
+
+- The design now treats the control-plane suspension record as a repository protocol instead of an implied monitor side effect: it is stored at a repository-owned durable locator, has a closed schema, has explicit reader/writer roles, and binds break-glass exceptions to both `runId` and `planDigest`.
+- The design still does **not** assume one closed NuGet audience default. `nuget:official` remains evidence-bound per target, and the reviewed evidence must name the exact first-party source, the review timestamp, and the resulting audience conclusion.
+- `providerConfigReviewRef` remains intentionally excluded from the bootstrap hash, so the design's integrity story for that field now depends on compensating controls: evidence-locator reachability checks, `evidenceSha256` verification, and external monitor alerting.
+- GitHub deployment-branch restrictions for official and buddy environments remain repository-external control-plane state, so the design now treats them as drift-audited policy surfaces rather than pretending they are bootstrap-authenticated files.
+- The monitor degraded-mode timing remains bounded and explicit: heartbeat page at 10 minutes, suspension decision at 15 minutes, acknowledged degraded-mode re-check before 45 minutes, and management-visible escalation if suspension remains active for 24 hours.
+
+### ASSUMPTION / UNCERTAINTY
+
+- The durable backend behind `artifact://control-plane/suspension/...` is still a repository design choice rather than a confirmed platform primitive; the design now fixes the protocol and locator shape, but the eventual implementation backend still needs Day 0 selection.
+- Current repository notes still do not independently prove one timeless first-party NuGet audience value. The design therefore keeps NuGet audience selection tied to review evidence instead of treating any one value as permanently safe by default.
+- Because `providerConfigReviewRef` is not bootstrap-authenticated, the design assumes the reviewed evidence surfaces used by `ci.yml`, `preflight-validate`, and the external monitor will remain readable enough to perform locator/hash verification. If those surfaces are unavailable, the design must fail closed rather than infer trust.
+- GitHub environment-policy inspection remains an external-platform dependency. The design now requires drift auditing and fail-closed behavior when the policy cannot be confirmed for the current run, but the exact Day 0 implementation path still depends on the then-current GitHub inspection surface.
+- The monitor heartbeat / suspension SLA is now explicit in the design, but the exact paging and incident-routing tooling remains organization-specific control-plane implementation work outside this repository.
+
+## External-system confirmation for the v2.49 review-summary design fixes
+
+### FACT
+
+- Current first-party NuGet documentation confirms that nuget.org trusted publishing for GitHub Actions exists, uses GitHub OIDC to obtain a short-lived publish credential, and lets the provider policy bind at least repository, workflow file, and optional environment. The reviewed setup documentation asks for the workflow **file name only** plus an optional environment value.
+- Current first-party NuGet documentation in this repository state still does **not** close the audience question to one timeless constant. The trusted-publishing docs explain the OIDC exchange flow but do not provide one stable exact audience value that supersedes the existing `nuget` versus `https://www.nuget.org` conflict already recorded in repository memory.
+- Current repository notes still support the GitHub-side facts used by this revision: GitHub exposes throttling signals such as `Retry-After` / rate-limit metadata, but does not document a linearizable create/read guarantee for refs or tags, and GitHub Environments still do not by themselves prove workflow-path exclusivity.
+- Azure Blob Storage primary-endpoint strong consistency and optimistic-concurrency semantics remain the reviewed fit for the control-plane suspension record. This revision therefore moves that record from an abstract repository protocol to a design-selected Azure Blob-backed control-plane state surface.
+
+### ASSUMPTION / UNCERTAINTY
+
+- Even after tightening the design, `workflow-only` trusted-publishing targets with `providerSupportsReadOnlyInspection = false` still rely on compensating controls: reviewed evidence freshness, branch-scoped environments, and external drift probes. Those controls reduce the blind window; they do **not** convert the provider into a native exact-ref enforcement system.
+- NuGet audience choice remains evidence-bound per target. Day 0 enablement still needs a fresh first-party review, and when first-party sources conflict without one reviewed conclusion plus rehearsal proof, `nuget:official` must remain disabled rather than guessing.
+- GitHub secondary-throttle thresholds, abuse-protection behavior, and the practical distribution of `Retry-After` values may evolve. The design should continue to budget only around documented observable signals, not around one assumed platform threshold.
+- The design now chooses Azure Blob as the suspension-record backend, but the exact account topology, replication mode, backup/export tooling, and incident-routing implementation remain repository / organization control-plane work that still needs Day 0 execution details.
