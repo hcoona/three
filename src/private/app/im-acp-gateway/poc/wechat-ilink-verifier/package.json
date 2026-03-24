@@ -1,0 +1,21 @@
+{
+  "name": "@hcoona/wechat-ilink-verifier-poc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "POC for validating the Personal WeChat iLink path used by IM-ACP Gateway research.",
+  "type": "module",
+  "bin": {
+    "wechat-ilink-verifier": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "pnpm --dir ../../../../../public/lib/hexo-renderer-asciidoc exec tsgo --project ../../../private/app/im-acp-gateway/poc/wechat-ilink-verifier/tsconfig.build.json",
+    "lint": "pnpm --dir ../../../../../public/lib/hexo-renderer-asciidoc exec biome lint --reporter summary ../../../private/app/im-acp-gateway/poc/wechat-ilink-verifier",
+    "format": "pnpm --dir ../../../../../public/lib/hexo-renderer-asciidoc exec biome format --write ../../../private/app/im-acp-gateway/poc/wechat-ilink-verifier",
+    "start": "node --experimental-strip-types src/cli.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "pnpm --dir ../../../../../public/lib/hexo-renderer-asciidoc exec tsgo --noEmit --project ../../../private/app/im-acp-gateway/poc/wechat-ilink-verifier/tsconfig.json"
+  }
+}

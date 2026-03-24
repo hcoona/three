@@ -59,6 +59,16 @@ At least one real conversation loop is observed end to end:
 3. a reply is sent back successfully, and
 4. a real WeChat reply action can be inspected for usable correlation metadata.
 
+### Validation run log
+
+Detailed attempt-by-attempt results for this item are tracked separately in:
+
+- `src/private/app/im-acp-gateway/docs/PersonalWeChatVerificationLog.md`
+
+That log should be extended for second, third, and later verification rounds so
+this document can remain focused on the research-stage questions and exit
+criteria.
+
 ## 2. Validate actual Copilot CLI ACP behavior beyond `initialize`
 
 ### Goal
