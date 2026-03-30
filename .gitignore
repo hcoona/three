@@ -906,3 +906,7 @@ _version.py
 /.copilot/notify-summary.json
 /.copilot/notify-last-sent.json
 /.copilot/sessions/
+
+# Qidian novel downloader PoC artifacts
+.browser-profile/
+novel_output.md
