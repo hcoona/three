@@ -8,6 +8,7 @@ internal static class AppConstants
     public const string ConfigFileName = "config.json";
     public const string BrowserProfileDirectoryName = "browser-profile";
     public const string CacheDirectoryName = "cache";
+    public const string CatalogsDirectoryName = "catalogs";
     public const string LogsDirectoryName = "logs";
     public const string OutputDirectoryName = "output";
     public const string CatalogCacheFileName = "catalog.json";
@@ -98,10 +99,18 @@ internal static class AppPaths
     public static string GetBookCacheDirectory(string cacheRoot, string bookId)
         => Path.Combine(cacheRoot, bookId);
 
-    public static string GetCatalogCachePath(string cacheRoot, string bookId)
+    public static string GetCatalogCacheDirectory(string cacheRoot, string bookId)
         => Path.Combine(
             GetBookCacheDirectory(cacheRoot, bookId),
-            AppConstants.CatalogCacheFileName);
+            AppConstants.CatalogsDirectoryName);
+
+    public static string GetCatalogCachePath(
+        string cacheRoot,
+        string bookId,
+        CatalogCacheScope scope)
+        => Path.Combine(
+            GetCatalogCacheDirectory(cacheRoot, bookId),
+            scope.GetCacheFileName());
 
     public static string GetChapterCacheDirectory(string cacheRoot, string bookId)
         => Path.Combine(

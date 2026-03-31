@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace Hcoona.QidianNovelDownloader;
@@ -147,29 +149,102 @@ internal sealed record BookReference(string RawValue, string BookId);
 
 internal sealed record BookMetadata(string BookId, string Title, string Author, int? EstimatedWordCount);
 
+[JsonConverter(typeof(JsonStringEnumConverter<CatalogChapterAccessState>))]
+internal enum CatalogChapterAccessState
+{
+    Unknown,
+    Accessible,
+    PurchaseRequired,
+}
+
 internal sealed record ChapterDescriptor(
     string ChapterId,
     string Title,
     string Url,
     bool IsVip,
-    int? CatalogWordCount);
+    int? CatalogWordCount,
+    CatalogChapterAccessState CatalogAccessState);
 
 internal sealed record VolumeDescriptor(
     string Title,
     bool IsVip,
     IReadOnlyList<ChapterDescriptor> Chapters);
 
-internal sealed record CatalogSnapshot(
-    string BookId,
-    BookMetadata Metadata,
-    IReadOnlyList<VolumeDescriptor> Volumes,
-    DateTimeOffset FetchedAtUtc);
+[JsonConverter(typeof(JsonStringEnumConverter<CatalogCacheScopeKind>))]
+internal enum CatalogCacheScopeKind
+{
+    Anonymous,
+    ValidatedUser,
+}
+
+internal sealed record CatalogCacheScope(CatalogCacheScopeKind Kind, string? UserName = null)
+{
+    public static CatalogCacheScope Anonymous { get; } = new(CatalogCacheScopeKind.Anonymous);
+
+    public static CatalogCacheScope ForValidatedUser(string userName)
+    {
+        string normalizedUserName = LoginState.NormalizeUserName(userName)
+            ?? throw new ArgumentException(
+                "Validated catalog cache scope requires a normalized user name.",
+                nameof(userName));
+        return new CatalogCacheScope(CatalogCacheScopeKind.ValidatedUser, normalizedUserName);
+    }
+
+    public bool IsUsable
+        => Kind switch
+        {
+            CatalogCacheScopeKind.Anonymous => UserName is null,
+            CatalogCacheScopeKind.ValidatedUser => LoginState.NormalizeUserName(UserName) is { } normalizedUserName
+                && string.Equals(normalizedUserName, UserName, StringComparison.Ordinal),
+            _ => false,
+        };
+
+    public string GetCacheFileName()
+        => Kind switch
+        {
+            CatalogCacheScopeKind.Anonymous => AppConstants.CatalogCacheFileName,
+            CatalogCacheScopeKind.ValidatedUser => "catalog.user."
+                + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(UserName!)))
+                    .ToLowerInvariant()
+                + ".json",
+            _ => throw new InvalidOperationException($"Unsupported catalog cache scope '{Kind}'."),
+        };
+}
+
+internal sealed record CatalogSnapshot
+{
+    [JsonConstructor]
+    public CatalogSnapshot(
+        string BookId,
+        BookMetadata Metadata,
+        IReadOnlyList<VolumeDescriptor> Volumes,
+        DateTimeOffset FetchedAtUtc,
+        CatalogCacheScope? CacheScope = null)
+    {
+        this.BookId = BookId;
+        this.Metadata = Metadata;
+        this.Volumes = Volumes;
+        this.FetchedAtUtc = FetchedAtUtc;
+        this.CacheScope = CacheScope ?? CatalogCacheScope.Anonymous;
+    }
+
+    public string BookId { get; init; }
+
+    public BookMetadata Metadata { get; init; }
+
+    public IReadOnlyList<VolumeDescriptor> Volumes { get; init; }
+
+    public DateTimeOffset FetchedAtUtc { get; init; }
+
+    public CatalogCacheScope CacheScope { get; init; }
+}
 
 internal sealed record ChapterCacheEntry(
     string ChapterId,
     IReadOnlyList<string> Paragraphs,
     bool IsPreview,
     int? CatalogWordCount,
+    CatalogChapterAccessState CatalogAccessState = CatalogChapterAccessState.Unknown,
     string? VisibleToUserName = null,
     VipFullContentCacheProvenance? VipFullContentProvenance = null)
 {
@@ -182,6 +257,7 @@ internal sealed record ChapterCacheProbe(
     ParagraphsProbe? Paragraphs,
     bool IsPreview,
     int? CatalogWordCount,
+    CatalogChapterAccessState CatalogAccessState = CatalogChapterAccessState.Unknown,
     string? VisibleToUserName = null,
     VipFullContentCacheProvenance? VipFullContentProvenance = null);
 

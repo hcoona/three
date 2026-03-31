@@ -8,9 +8,10 @@ internal static class CacheStore
     public static async Task<CatalogSnapshot?> GetCatalogAsync(
         string cacheRoot,
         string bookId,
+        CatalogCacheScope scope,
         CancellationToken cancellationToken)
     {
-        string cachePath = AppPaths.GetCatalogCachePath(cacheRoot, bookId);
+        string cachePath = AppPaths.GetCatalogCachePath(cacheRoot, bookId, scope);
         if (!File.Exists(cachePath))
         {
             return null;
@@ -23,7 +24,7 @@ internal static class CacheStore
                 stream,
                 AppJsonSerializerContext.Default.CatalogSnapshot,
                 cancellationToken);
-            return IsUsableCatalog(catalog) ? catalog : null;
+            return IsUsableCatalog(catalog, scope) ? catalog : null;
         }
         catch (JsonException)
         {
@@ -36,7 +37,10 @@ internal static class CacheStore
         CatalogSnapshot catalog,
         CancellationToken cancellationToken)
     {
-        string cachePath = AppPaths.GetCatalogCachePath(cacheRoot, catalog.BookId);
+        string cachePath = AppPaths.GetCatalogCachePath(
+            cacheRoot,
+            catalog.BookId,
+            catalog.CacheScope);
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
 
         await using FileStream stream = File.Create(cachePath);
@@ -146,8 +150,8 @@ internal static class CacheStore
 
         if (catalogOnly)
         {
-            string catalogPath = AppPaths.GetCatalogCachePath(cacheRoot, bookId);
-            return DeleteFileIfExists(catalogPath);
+            string catalogDirectory = AppPaths.GetCatalogCacheDirectory(cacheRoot, bookId);
+            return DeleteDirectory(catalogDirectory);
         }
 
         string bookDirectory = AppPaths.GetBookCacheDirectory(cacheRoot, bookId);
@@ -157,12 +161,12 @@ internal static class CacheStore
     private static int ClearAllCatalogs(string cacheRoot)
     {
         int removed = 0;
-        foreach (string catalogPath in Directory.EnumerateFiles(
+        foreach (string catalogDirectory in Directory.EnumerateDirectories(
                      cacheRoot,
-                     AppConstants.CatalogCacheFileName,
-                     SearchOption.AllDirectories))
+                     AppConstants.CatalogsDirectoryName,
+                     SearchOption.AllDirectories).ToArray())
         {
-            removed += DeleteFileIfExists(catalogPath);
+            removed += DeleteDirectory(catalogDirectory);
         }
 
         return removed;
@@ -191,10 +195,11 @@ internal static class CacheStore
         return 1;
     }
 
-    private static bool IsUsableCatalog(CatalogSnapshot? catalog)
+    private static bool IsUsableCatalog(CatalogSnapshot? catalog, CatalogCacheScope expectedScope)
         => catalog is
         {
             BookId.Length: > 0,
+            CacheScope: not null,
             Metadata:
             {
                 BookId.Length: > 0,
@@ -203,6 +208,8 @@ internal static class CacheStore
             },
             Volumes: not null,
         }
+        && catalog.CacheScope.IsUsable
+        && catalog.CacheScope == expectedScope
         && catalog.Volumes.All(
             volume => volume is
             {

@@ -259,7 +259,11 @@ internal sealed class QidianBrowserSession(
                         chapterElement.GetProperty("title").GetString() ?? string.Empty,
                         chapterElement.GetProperty("url").GetString() ?? string.Empty,
                         chapterElement.GetProperty("isVip").GetBoolean(),
-                        ReadNullableInt(chapterElement, "catalogWordCount")));
+                        ReadNullableInt(chapterElement, "catalogWordCount"),
+                        ReadEnum(
+                            chapterElement,
+                            "catalogAccessState",
+                            CatalogChapterAccessState.Unknown)));
             }
 
             volumes.Add(
@@ -421,4 +425,31 @@ internal sealed class QidianBrowserSession(
             && property.ValueKind == JsonValueKind.Number
                 ? property.GetInt32()
                 : null;
+
+    private static TEnum ReadEnum<TEnum>(
+        JsonElement element,
+        string propertyName,
+        TEnum defaultValue)
+        where TEnum : struct, Enum
+    {
+        if (!element.TryGetProperty(propertyName, out JsonElement property))
+        {
+            return defaultValue;
+        }
+
+        if (property.ValueKind == JsonValueKind.String
+            && Enum.TryParse(property.GetString(), ignoreCase: true, out TEnum parsedFromString))
+        {
+            return parsedFromString;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number
+            && property.TryGetInt32(out int parsedFromNumber)
+            && Enum.IsDefined(typeof(TEnum), parsedFromNumber))
+        {
+            return (TEnum)Enum.ToObject(typeof(TEnum), parsedFromNumber);
+        }
+
+        return defaultValue;
+    }
 }

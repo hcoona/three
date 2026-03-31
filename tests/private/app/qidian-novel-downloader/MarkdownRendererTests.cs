@@ -16,7 +16,13 @@ public sealed class MarkdownRendererTests
                     "Volume One",
                     IsVip: false,
                     [
-                        new ChapterDescriptor("1", "Chapter One", "https://example.com/1", false, 1000),
+                        new ChapterDescriptor(
+                            "1",
+                            "Chapter One",
+                            "https://example.com/1",
+                            false,
+                            1000,
+                            CatalogChapterAccessState.Accessible),
                     ]),
             ],
             DateTimeOffset.UtcNow);
@@ -46,7 +52,13 @@ public sealed class MarkdownRendererTests
                     "Volume One",
                     IsVip: false,
                     [
-                        new ChapterDescriptor("1", "Chapter One", "https://example.com/1", false, 1000),
+                        new ChapterDescriptor(
+                            "1",
+                            "Chapter One",
+                            "https://example.com/1",
+                            false,
+                            1000,
+                            CatalogChapterAccessState.Accessible),
                     ]),
             ],
             DateTimeOffset.UtcNow);

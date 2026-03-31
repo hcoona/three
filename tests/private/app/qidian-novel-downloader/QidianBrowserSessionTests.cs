@@ -82,6 +82,51 @@ public sealed class QidianBrowserSessionTests
         Assert.Equal(2, page.WaitForTimeoutCalls);
     }
 
+    [Fact]
+    public async Task FetchCatalogAsyncParsesCatalogChapterAccessState()
+    {
+        FakePage page = new(
+            catalogJson:
+            """
+            {
+              "title": "Book Title",
+              "author": "Author",
+              "estimatedWordCount": 123,
+              "volumes": [
+                {
+                  "title": "VIP Volume",
+                  "isVip": true,
+                  "chapters": [
+                    {
+                      "chapterId": "1",
+                      "title": "Purchase Required Chapter",
+                      "url": "https://www.qidian.com/chapter/100/1/",
+                      "isVip": true,
+                      "catalogWordCount": 100,
+                      "catalogAccessState": "PurchaseRequired"
+                    },
+                    {
+                      "chapterId": "2",
+                      "title": "Accessible Chapter",
+                      "url": "https://www.qidian.com/chapter/100/2/",
+                      "isVip": true,
+                      "catalogWordCount": 101,
+                      "catalogAccessState": "Accessible"
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        CatalogSnapshot catalog = await session.FetchCatalogAsync("100", CancellationToken.None);
+
+        Assert.Equal("Book Title", catalog.Metadata.Title);
+        Assert.Equal(CatalogChapterAccessState.PurchaseRequired, catalog.Volumes[0].Chapters[0].CatalogAccessState);
+        Assert.Equal(CatalogChapterAccessState.Accessible, catalog.Volumes[0].Chapters[1].CatalogAccessState);
+    }
+
     private static QidianBrowserSession CreateSession(IPage page)
         => new(
             NullLogger.Instance,
@@ -113,6 +158,7 @@ public sealed class QidianBrowserSessionTests
     private sealed class FakePage
     {
         private readonly Queue<LoginState> loginStates;
+        private readonly string? catalogJson;
         private LoginState latestState;
 
         public int EvaluateLoginStateCalls { get; private set; }
@@ -122,8 +168,14 @@ public sealed class QidianBrowserSessionTests
         public string? LastNavigatedUrl { get; private set; }
 
         public FakePage(params LoginState[] initialStates)
+            : this(catalogJson: null, initialStates)
+        {
+        }
+
+        public FakePage(string? catalogJson, params LoginState[] initialStates)
         {
             loginStates = new Queue<LoginState>(initialStates);
+            this.catalogJson = catalogJson;
             latestState = initialStates.Length > 0
                 ? initialStates[0].WithNormalizedUserName()
                 : new LoginState(false, null);
@@ -137,7 +189,7 @@ public sealed class QidianBrowserSessionTests
             {
                 nameof(IPage.GotoAsync) => HandleGoto(arguments),
                 nameof(IPage.WaitForTimeoutAsync) => HandleWaitForTimeout(),
-                nameof(IPage.EvaluateAsync) => HandleEvaluate(method),
+                nameof(IPage.EvaluateAsync) => HandleEvaluate(method, arguments),
                 "get_IsClosed" => false,
                 _ => throw new NotSupportedException($"Unexpected IPage call: {method.Name}"),
             };
@@ -154,18 +206,25 @@ public sealed class QidianBrowserSessionTests
             return Task.CompletedTask;
         }
 
-        private Task<string> HandleEvaluate(MethodInfo method)
+        private Task<string> HandleEvaluate(MethodInfo method, object?[]? arguments)
         {
-            EvaluateLoginStateCalls++;
+            if (!method.IsGenericMethod || method.GetGenericArguments()[0] != typeof(string))
+            {
+                throw new NotSupportedException($"Unexpected EvaluateAsync signature: {method}");
+            }
+
+            string? script = arguments is [string value, ..] ? value : null;
+            if (string.Equals(script, PageScripts.CatalogJson, StringComparison.Ordinal))
+            {
+                return Task.FromResult(catalogJson ?? throw new NotSupportedException("CatalogJson was not configured."));
+            }
+
             if (loginStates.TryDequeue(out LoginState? loginState))
             {
                 latestState = loginState.WithNormalizedUserName();
             }
 
-            if (!method.IsGenericMethod || method.GetGenericArguments()[0] != typeof(string))
-            {
-                throw new NotSupportedException($"Unexpected EvaluateAsync signature: {method}");
-            }
+            EvaluateLoginStateCalls++;
 
             string json = JsonSerializer.Serialize(new
             {

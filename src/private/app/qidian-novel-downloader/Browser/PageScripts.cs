@@ -30,6 +30,32 @@ internal static class PageScripts
                 }
                 return null;
             };
+            const getCatalogChapterAccessState = (link, section) => {
+                const findChapterRow = () => {
+                    let fallback = link.parentElement ?? section;
+                    for (let element = link.parentElement; element; element = element.parentElement) {
+                        const chapterLinkCount = element.querySelectorAll('a[href*="/chapter/"]').length;
+                        if (chapterLinkCount === 1) {
+                            fallback = element;
+                            if (element.querySelector('em.iconfont')) {
+                                return element;
+                            }
+                        }
+
+                        if (element === section) {
+                            break;
+                        }
+                    }
+
+                    return fallback;
+                };
+
+                const chapterRow = findChapterRow();
+                const hasPurchaseRequiredSignal = !!chapterRow
+                    && [...chapterRow.querySelectorAll('em.iconfont')]
+                        .some((icon) => normalizeText(icon.textContent) === '');
+                return hasPurchaseRequiredSignal ? 'PurchaseRequired' : 'Accessible';
+            };
 
             const bodyText = document.body ? document.body.innerText : '';
             const estimatedWordCountMatch = bodyText.match(/(?:总字数|字数)\s*([0-9,]+)/);
@@ -93,6 +119,7 @@ internal static class PageScripts
                             catalogWordCount: wordCountMatch
                                 ? Number.parseInt(wordCountMatch[1].replaceAll(',', ''), 10)
                                 : null,
+                            catalogAccessState: getCatalogChapterAccessState(link, sibling),
                         });
                     }
 
