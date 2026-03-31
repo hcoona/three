@@ -284,7 +284,10 @@ internal sealed class AppCommandService(
                                     paragraphs,
                                     chapterResult.IsPreview,
                                     plan.Chapter.CatalogWordCount,
-                                    plan.Chapter.CatalogAccessState,
+                                    GetCachedCatalogAccessState(
+                                        plan.Chapter,
+                                        chapterResult,
+                                        currentLoginState),
                                     GetVisibleToUserName(plan.Chapter, chapterResult, currentLoginState),
                                     GetVipFullContentCacheProvenance(
                                         plan.Chapter,
@@ -766,6 +769,16 @@ internal sealed class AppCommandService(
             && validatedLoginState is { IsValidated: true, UserName: { Length: > 0 } userName }
             ? userName
             : null;
+
+    private static CatalogChapterAccessState GetCachedCatalogAccessState(
+        ChapterDescriptor chapter,
+        ChapterFetchResult chapterResult,
+        LoginState? validatedLoginState)
+        => chapter.IsVip
+            && !chapterResult.IsPreview
+            && validatedLoginState is { IsValidated: true, UserName: { Length: > 0 } }
+            ? CatalogChapterAccessState.Accessible
+            : chapter.CatalogAccessState;
 
     private static VipFullContentCacheProvenance? GetVipFullContentCacheProvenance(
         ChapterDescriptor chapter,
