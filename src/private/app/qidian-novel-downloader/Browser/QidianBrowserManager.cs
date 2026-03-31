@@ -337,10 +337,29 @@ internal sealed class QidianBrowserSession(
         while (!primaryPage.IsClosed)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            LoginState state = await EvaluateLoginStateAsync(cancellationToken);
-            if (requireValidatedIdentity ? state.IsValidated : state.IsLoggedIn)
+            try
             {
-                return state;
+                LoginState state = await EvaluateLoginStateAsync(cancellationToken);
+                if (requireValidatedIdentity ? state.IsValidated : state.IsLoggedIn)
+                {
+                    return state;
+                }
+            }
+            catch (PlaywrightException) when (!primaryPage.IsClosed)
+            {
+                // The execution context can be destroyed when the user navigates
+                // (e.g., clicking sign-in). Wait for the new page to settle before
+                // retrying the login-state probe.
+                try
+                {
+                    await primaryPage.WaitForLoadStateAsync(
+                        LoadState.DOMContentLoaded,
+                        new PageWaitForLoadStateOptions { Timeout = 10_000 });
+                }
+                catch (PlaywrightException)
+                {
+                    // Ignore timeout or further navigation; the outer loop will retry.
+                }
             }
 
             await primaryPage.WaitForTimeoutAsync(1000);
