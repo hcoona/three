@@ -451,6 +451,10 @@ internal sealed class AppCommandService(
             Console.Error.WriteLine(exception.Message);
             return Task.FromResult(ExitCodes.UsageFailure);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception exception)
         {
             LogMessages.CacheClearFailed(logger, exception);

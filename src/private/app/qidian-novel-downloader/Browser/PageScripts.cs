@@ -172,15 +172,19 @@ internal static class PageScripts
                 pushParagraphs(contentSpans, false);
             }
             else {
-                const candidates = [
-                    ...document.querySelectorAll('main p'),
-                    ...document.querySelectorAll('.read-content p'),
-                    ...document.querySelectorAll('.chapter-content p'),
-                    ...document.querySelectorAll('#j_chapterContent p'),
+                const fallbackSelectors = [
+                    'main p',
+                    '.read-content p',
+                    '.chapter-content p',
+                    '#j_chapterContent p',
                 ];
 
-                if (candidates.length > 0) {
-                    pushParagraphs(candidates, true);
+                for (const selector of fallbackSelectors) {
+                    const nodes = document.querySelectorAll(selector);
+                    if (nodes.length > 0) {
+                        pushParagraphs(nodes, true);
+                        break;
+                    }
                 }
             }
 

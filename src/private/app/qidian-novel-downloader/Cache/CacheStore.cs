@@ -184,17 +184,6 @@ internal static class CacheStore
         return removed;
     }
 
-    private static int DeleteFileIfExists(string path)
-    {
-        if (!File.Exists(path))
-        {
-            return 0;
-        }
-
-        File.Delete(path);
-        return 1;
-    }
-
     private static bool IsUsableCatalog(CatalogSnapshot? catalog, CatalogCacheScope expectedScope)
         => catalog is
         {

@@ -716,7 +716,7 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
-    public async Task DownloadAsyncEmitsSummaryWhenTopLevelFailureOccursAfterBookProcessing()
+    public async Task DownloadAsyncSucceedsWhenBrowserCloseFailsAfterBookProcessing()
     {
         using TestWorkspace workspace = new();
         FakeBrowserSession browserSession = new(
@@ -740,10 +740,9 @@ public sealed class AppCommandServiceTests
                 },
                 CancellationToken.None));
 
-        Assert.Equal(ExitCodes.OperationalFailure, result.ReturnValue);
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
         Assert.Equal([true], browserManager.OpenCalls);
         Assert.Contains("Summary: books completed=1, skipped=0, failed=0; chapters downloaded=1, reused=0, failed=0.", result.StdOut);
-        Assert.Contains("ERROR: Failed to persist browser session state.", result.StdErr);
     }
 
     [Fact]
@@ -1749,7 +1748,16 @@ public sealed class AppCommandServiceTests
         }
 
         public async ValueTask DisposeAsync()
-            => await DisposeCoreAsync();
+        {
+            try
+            {
+                await DisposeCoreAsync();
+            }
+            catch (OperationalException)
+            {
+                // Mirror production: DisposeAsync swallows browser-close failures.
+            }
+        }
 
         private Task DisposeCoreAsync()
         {

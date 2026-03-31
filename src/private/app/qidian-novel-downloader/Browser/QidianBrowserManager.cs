@@ -301,7 +301,16 @@ internal sealed class QidianBrowserSession(
                 WaitUntil = WaitUntilState.DOMContentLoaded,
                 Timeout = 60_000,
             });
-        await primaryPage.WaitForTimeoutAsync(1500);
+        try
+        {
+            await primaryPage.WaitForSelectorAsync(
+                "span.content-text, main p, .read-content p, .chapter-content p, #j_chapterContent p",
+                new PageWaitForSelectorOptions { Timeout = 10_000 });
+        }
+        catch (TimeoutException)
+        {
+            // Content selectors did not appear; proceed with best-effort extraction.
+        }
 
         using JsonDocument document = await EvaluateJsonDocumentAsync(
             PageScripts.ChapterContentJson,
