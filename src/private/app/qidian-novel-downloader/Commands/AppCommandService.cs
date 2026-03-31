@@ -39,7 +39,7 @@ internal sealed class AppCommandService(
 
         try
         {
-            ResolvedAppSettings settings = Validate(ResolvedAppSettings.Merge(settingsOptions.Value, options));
+            ResolvedAppSettings settings = ValidateDownload(ResolvedAppSettings.Merge(settingsOptions.Value, options));
             AppStoragePaths paths = EnsureStorage(settings);
             List<BookReference> targets = DownloadTargetResolver.Resolve(
                 options.BookReferences,
@@ -76,22 +76,54 @@ internal sealed class AppCommandService(
                 Task<IQidianBrowserSession> GetBrowserAsync()
                     => OpenBrowserAsync(browser is null ? true : browserHeadless);
 
-                async Task<LoginState> GetCurrentLoginStateAsync(bool forceRefresh = false)
+                async Task<LoginState> GetCurrentLoginStateAsync(
+                    bool forceRefresh = false,
+                    LoginStateProbeMode probeMode = LoginStateProbeMode.WaitForValidatedIdentity)
                 {
-                    if (forceRefresh || loginState is null)
+                    if (forceRefresh
+                        || loginState is null
+                        || (probeMode == LoginStateProbeMode.WaitForValidatedIdentity
+                            && !loginState.IsValidated))
                     {
                         loginState = await (await GetBrowserAsync()).GetLoginStateAsync(
                             AppConstants.QidianBaseUrl,
-                            cancellationToken);
+                            cancellationToken,
+                            probeMode: probeMode);
                     }
 
                     return loginState;
                 }
 
+                async Task<LoginState?> TryGetCurrentLoginStateAsync(
+                    Action<ILogger, Exception?> logFailure,
+                    LoginStateProbeMode probeMode = LoginStateProbeMode.WaitForValidatedIdentity)
+                {
+                    try
+                    {
+                        return await GetCurrentLoginStateAsync(forceRefresh: true, probeMode: probeMode);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception exception)
+                    {
+                        logFailure(logger, exception);
+                        return null;
+                    }
+                }
+
                 async Task<LoginState> EnsureValidatedLoginStateAsync(LoginState? currentState = null)
                 {
-                    currentState ??= await GetCurrentLoginStateAsync(forceRefresh: true);
-                    if (currentState.IsLoggedIn)
+                    currentState = currentState switch
+                    {
+                        null => await GetCurrentLoginStateAsync(forceRefresh: true),
+                        { IsValidated: false } => await GetCurrentLoginStateAsync(
+                            forceRefresh: true,
+                            probeMode: LoginStateProbeMode.WaitForValidatedIdentity),
+                        _ => currentState,
+                    };
+                    if (currentState.IsValidated)
                     {
                         return currentState;
                     }
@@ -99,14 +131,10 @@ internal sealed class AppCommandService(
                     Console.WriteLine(
                         "Authentication is required. Opening a visible browser window for manual sign-in.");
                     await OpenBrowserAsync(headless: false);
-                    await browser!.WaitForManualLoginAsync(cancellationToken);
-                    LoginState validatedState = await GetCurrentLoginStateAsync(forceRefresh: true);
-                    if (!validatedState.IsLoggedIn)
-                    {
-                        throw new OperationalException(
-                            "Manual login completed, but the session could not be validated.");
-                    }
-
+                    LoginState validatedState = await browser!.WaitForManualLoginAsync(
+                        cancellationToken,
+                        requireValidatedIdentity: true);
+                    loginState = validatedState;
                     Console.WriteLine("Login confirmed. Continuing with the validated session.");
                     return validatedState;
                 }
@@ -145,17 +173,22 @@ internal sealed class AppCommandService(
                         LoginState? currentLoginState = null;
                         if (RequiresAuthenticatedCacheReuseEvaluation(plans))
                         {
-                            currentLoginState = await GetCurrentLoginStateAsync(forceRefresh: true);
-                            if (!currentLoginState.IsLoggedIn)
+                            currentLoginState = await TryGetCurrentLoginStateAsync(
+                                LogMessages.IgnoreAuthenticatedCacheReuseProbeFailure,
+                                LoginStateProbeMode.CurrentStateOnly);
+                            if (currentLoginState is not null && !currentLoginState.IsValidated)
                             {
                                 currentLoginState = await EnsureValidatedLoginStateAsync(currentLoginState);
                             }
 
-                            plans = await BuildChapterPlansAsync(
-                                catalog,
-                                paths.CacheRoot,
-                                currentLoginState,
-                                cancellationToken);
+                            if (currentLoginState is not null)
+                            {
+                                plans = await BuildChapterPlansAsync(
+                                    catalog,
+                                    paths.CacheRoot,
+                                    currentLoginState,
+                                    cancellationToken);
+                            }
                         }
 
                         if (options.DryRun)
@@ -199,11 +232,8 @@ internal sealed class AppCommandService(
                             if (plan.Status == ChapterPlanStatus.Cached && plan.CachedEntry is not null)
                             {
                                 renderedChapters[plan.Chapter.ChapterId] = new RenderedChapter(
-                                    plan.Chapter.ChapterId,
                                     plan.Chapter.Title,
-                                    plan.CachedEntry.Paragraphs,
-                                    FromCache: true,
-                                    Failed: false);
+                                    plan.CachedEntry.Paragraphs);
                                 reusedChapters++;
                                 continue;
                             }
@@ -217,43 +247,39 @@ internal sealed class AppCommandService(
                             if (chapterResult is null)
                             {
                                 renderedChapters[plan.Chapter.ChapterId] = new RenderedChapter(
-                                    plan.Chapter.ChapterId,
                                     plan.Chapter.Title,
-                                    [AppConstants.FailedChapterPlaceholder],
-                                    FromCache: false,
-                                    Failed: true);
+                                    [AppConstants.FailedChapterPlaceholder]);
                                 failedChapters++;
                             }
                             else
                             {
                                 IReadOnlyList<string> paragraphs = NormalizeFetchedParagraphs(chapterResult);
                                 if (plan.Chapter.IsVip
-                                    && !chapterResult.IsPreview
-                                    && currentLoginState is null)
+                                    && !chapterResult.IsPreview)
                                 {
-                                    currentLoginState = await GetCurrentLoginStateAsync(forceRefresh: true);
+                                    currentLoginState ??= await TryGetCurrentLoginStateAsync(
+                                        LogMessages.IgnoreVipFullContentClassificationProbeFailure,
+                                        LoginStateProbeMode.WaitForValidatedIdentity);
                                 }
 
                                 ChapterCacheEntry cacheEntry = new(
                                     plan.Chapter.ChapterId,
-                                    plan.Chapter.Title,
                                     paragraphs,
                                     chapterResult.IsPreview,
                                     plan.Chapter.CatalogWordCount,
-                                    timeProvider.GetUtcNow(),
-                                    AppPaths.ComputeContentHash(paragraphs),
-                                    GetVisibleToUserName(plan.Chapter, chapterResult, currentLoginState));
+                                    GetVisibleToUserName(plan.Chapter, chapterResult, currentLoginState),
+                                    GetVipFullContentCacheProvenance(
+                                        plan.Chapter,
+                                        chapterResult,
+                                        currentLoginState));
                                 await CacheStore.SaveChapterAsync(
                                     paths.CacheRoot,
                                     catalog.Metadata.BookId,
                                     cacheEntry,
                                     cancellationToken);
                                 renderedChapters[plan.Chapter.ChapterId] = new RenderedChapter(
-                                    plan.Chapter.ChapterId,
                                     plan.Chapter.Title,
-                                    paragraphs,
-                                    FromCache: false,
-                                    Failed: false);
+                                    paragraphs);
                                 downloadedChapters++;
                             }
 
@@ -326,7 +352,7 @@ internal sealed class AppCommandService(
     {
         try
         {
-            ResolvedAppSettings settings = Validate(ResolvedAppSettings.Merge(settingsOptions.Value, options));
+            ResolvedAppSettings settings = ValidateLogin(ResolvedAppSettings.Merge(settingsOptions.Value, options));
             AppStoragePaths paths = EnsureStorage(settings);
 
             IQidianBrowserSession? browser = await browserManager.OpenAsync(
@@ -416,22 +442,25 @@ internal sealed class AppCommandService(
         InfoCommandOptions options,
         CancellationToken cancellationToken)
     {
+        IQidianBrowserSession? browser = null;
         try
         {
-            ResolvedAppSettings settings = Validate(ResolvedAppSettings.Merge(settingsOptions.Value, options));
+            ResolvedAppSettings settings = ValidateInfo(ResolvedAppSettings.Merge(settingsOptions.Value, options));
             AppStoragePaths paths = EnsureStorage(settings);
-
-            await using IQidianBrowserSession browser = await browserManager.OpenAsync(
-                settings,
-                paths,
-                headless: true,
-                cancellationToken);
             BookReference target = BookReferenceParser.Parse(options.BookReference);
+
+            async Task<IQidianBrowserSession> GetBrowserAsync()
+                => browser ??= await browserManager.OpenAsync(
+                    settings,
+                    paths,
+                    headless: true,
+                    cancellationToken);
+
             CatalogSnapshot catalog = await GetCatalogAsync(
                 target.BookId,
                 settings,
                 paths,
-                () => Task.FromResult(browser),
+                GetBrowserAsync,
                 forceRefresh: false,
                 cancellationToken);
 
@@ -472,6 +501,13 @@ internal sealed class AppCommandService(
             Console.Error.WriteLine($"ERROR: {exception.Message}");
             Console.WriteLine(new CommandSummary(0, 0, 0, 1));
             return ExitCodes.OperationalFailure;
+        }
+        finally
+        {
+            if (browser is not null)
+            {
+                await browser.DisposeAsync();
+            }
         }
     }
 
@@ -514,30 +550,43 @@ internal sealed class AppCommandService(
         List<ChapterPlan> plans = [];
         foreach (ChapterDescriptor chapter in catalog.Volumes.SelectMany(volume => volume.Chapters))
         {
-            ChapterCacheEntry? cachedEntry = await CacheStore.GetChapterAsync(
+            ChapterCacheProbe? cachedProbe = await CacheStore.GetChapterProbeAsync(
                 cacheRoot,
                 catalog.BookId,
                 chapter.ChapterId,
                 cancellationToken);
+            ChapterCacheEntry? cachedEntry = null;
             ChapterPlanStatus status;
-            if (cachedEntry is null)
+            if (cachedProbe is null)
             {
                 status = ChapterPlanStatus.FetchRequired;
             }
-            else if (cachedEntry.CatalogWordCount != chapter.CatalogWordCount)
+            else if (cachedProbe.CatalogWordCount != chapter.CatalogWordCount)
             {
                 status = ChapterPlanStatus.Changed;
             }
-            else if (CanReuseCachedChapter(chapter, cachedEntry, validatedLoginState))
+            else if (CanReuseCachedChapter(
+                         chapter,
+                         cachedProbe.IsPreview,
+                         cachedProbe.VisibleToUserName,
+                         cachedProbe.VipFullContentProvenance,
+                         validatedLoginState))
             {
-                status = ChapterPlanStatus.Cached;
+                cachedEntry = await CacheStore.GetChapterAsync(
+                    cacheRoot,
+                    catalog.BookId,
+                    chapter.ChapterId,
+                    cancellationToken);
+                status = cachedEntry is null
+                    ? ChapterPlanStatus.FetchRequired
+                    : ChapterPlanStatus.Cached;
             }
             else
             {
                 status = ChapterPlanStatus.FetchRequired;
             }
 
-            plans.Add(new ChapterPlan(chapter, status, cachedEntry));
+            plans.Add(new ChapterPlan(chapter, status, cachedProbe, cachedEntry));
         }
 
         return plans;
@@ -599,11 +648,13 @@ internal sealed class AppCommandService(
         => plans.Any(
             plan => plan.Chapter.IsVip
                 && plan.Status == ChapterPlanStatus.FetchRequired
-                && plan.CachedEntry is { IsPreview: false });
+                && plan.CachedProbe is { IsPreview: false });
 
     private static bool CanReuseCachedChapter(
         ChapterDescriptor chapter,
-        ChapterCacheEntry cachedEntry,
+        bool isPreview,
+        string? visibleToUserName,
+        VipFullContentCacheProvenance? vipFullContentProvenance,
         LoginState? validatedLoginState)
     {
         if (!chapter.IsVip)
@@ -611,18 +662,32 @@ internal sealed class AppCommandService(
             return true;
         }
 
-        if (validatedLoginState is not { IsLoggedIn: true, UserName: { Length: > 0 } userName })
+        if (validatedLoginState is not { IsValidated: true, UserName: { Length: > 0 } userName })
         {
-            return cachedEntry.IsPreview;
+            return isPreview
+                || vipFullContentProvenance == VipFullContentCacheProvenance.Public;
         }
 
-        if (cachedEntry.IsPreview)
+        if (isPreview)
         {
             return false;
         }
 
+        if (vipFullContentProvenance == VipFullContentCacheProvenance.Public)
+        {
+            return true;
+        }
+
+        if (vipFullContentProvenance == VipFullContentCacheProvenance.ValidatedUser)
+        {
+            return string.Equals(
+                visibleToUserName,
+                userName,
+                StringComparison.Ordinal);
+        }
+
         return string.Equals(
-            cachedEntry.VisibleToUserName,
+            LoginState.NormalizeUserName(visibleToUserName),
             userName,
             StringComparison.Ordinal);
     }
@@ -631,11 +696,30 @@ internal sealed class AppCommandService(
         ChapterDescriptor chapter,
         ChapterFetchResult chapterResult,
         LoginState? validatedLoginState)
-        => chapter.IsVip && !chapterResult.IsPreview && validatedLoginState?.IsLoggedIn == true
-            ? validatedLoginState.UserName
+        => chapter.IsVip
+            && !chapterResult.IsPreview
+            && validatedLoginState is { IsValidated: true, UserName: { Length: > 0 } userName }
+            ? userName
             : null;
 
-    private static ResolvedAppSettings Validate(ResolvedAppSettings settings)
+    private static VipFullContentCacheProvenance? GetVipFullContentCacheProvenance(
+        ChapterDescriptor chapter,
+        ChapterFetchResult chapterResult,
+        LoginState? validatedLoginState)
+    {
+        if (!chapter.IsVip || chapterResult.IsPreview)
+        {
+            return null;
+        }
+
+        return validatedLoginState is { IsValidated: true, UserName: { Length: > 0 } }
+            ? VipFullContentCacheProvenance.ValidatedUser
+            : validatedLoginState is { IsLoggedIn: false }
+                ? VipFullContentCacheProvenance.Public
+                : null;
+    }
+
+    private static ResolvedAppSettings ValidateDownload(ResolvedAppSettings settings)
     {
         if (settings.ReadingSpeed <= 0)
         {
@@ -658,12 +742,25 @@ internal sealed class AppCommandService(
             throw new CliInputException("Retry count cannot be negative.");
         }
 
+        ValidateCatalogCacheTtl(settings);
+        return settings;
+    }
+
+    private static ResolvedAppSettings ValidateLogin(ResolvedAppSettings settings)
+        => settings;
+
+    private static ResolvedAppSettings ValidateInfo(ResolvedAppSettings settings)
+    {
+        ValidateCatalogCacheTtl(settings);
+        return settings;
+    }
+
+    private static void ValidateCatalogCacheTtl(ResolvedAppSettings settings)
+    {
         if (settings.CatalogCacheTtlHours <= 0)
         {
             throw new CliInputException("Catalog cache TTL must be greater than zero.");
         }
-
-        return settings;
     }
 
     private AppStoragePaths EnsureStorage(ResolvedAppSettings settings)

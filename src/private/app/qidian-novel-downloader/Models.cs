@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 
 namespace Hcoona.QidianNovelDownloader;
@@ -165,17 +167,93 @@ internal sealed record CatalogSnapshot(
 
 internal sealed record ChapterCacheEntry(
     string ChapterId,
-    string Title,
     IReadOnlyList<string> Paragraphs,
     bool IsPreview,
     int? CatalogWordCount,
-    DateTimeOffset FetchedAtUtc,
-    string ContentHash,
-    string? VisibleToUserName = null);
+    string? VisibleToUserName = null,
+    VipFullContentCacheProvenance? VipFullContentProvenance = null)
+{
+    [JsonPropertyOrder(-1)]
+    public int ParagraphCount => Paragraphs.Count;
+}
+
+internal sealed record ChapterCacheProbe(
+    string ChapterId,
+    ParagraphsProbe? Paragraphs,
+    bool IsPreview,
+    int? CatalogWordCount,
+    string? VisibleToUserName = null,
+    VipFullContentCacheProvenance? VipFullContentProvenance = null);
+
+internal enum VipFullContentCacheProvenance
+{
+    Public,
+    ValidatedUser,
+}
+
+[JsonConverter(typeof(ParagraphsProbeJsonConverter))]
+internal sealed class ParagraphsProbe;
+
+internal sealed class ParagraphsProbeJsonConverter : JsonConverter<ParagraphsProbe?>
+{
+    public override ParagraphsProbe? Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        if (reader.TokenType != JsonTokenType.StartArray)
+        {
+            throw new JsonException();
+        }
+
+        while (reader.Read())
+        {
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.EndArray:
+                    return new ParagraphsProbe();
+                case JsonTokenType.Null:
+                case JsonTokenType.String:
+                    break;
+                default:
+                    throw new JsonException();
+            }
+        }
+
+        throw new JsonException();
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        ParagraphsProbe? value,
+        JsonSerializerOptions options)
+        => throw new NotSupportedException();
+}
 
 internal sealed record ChapterFetchResult(IReadOnlyList<string> Paragraphs, bool IsPreview);
 
-internal sealed record LoginState(bool IsLoggedIn, string? UserName);
+internal sealed record LoginState(bool IsLoggedIn, string? UserName)
+{
+    public bool HasUsableUserName => NormalizeUserName(UserName) is { Length: > 0 };
+
+    public bool IsValidated => IsLoggedIn && HasUsableUserName;
+
+    public LoginState WithNormalizedUserName()
+        => this with
+        {
+            UserName = NormalizeUserName(UserName),
+        };
+
+    public static string? NormalizeUserName(string? userName)
+        => string.IsNullOrWhiteSpace(userName) || string.Equals(userName, "用户名", StringComparison.Ordinal)
+            ? null
+            : userName;
+}
 
 internal sealed record BrowserLaunchPlan(
     BrowserRuntimeKind RuntimeKind,
@@ -201,14 +279,12 @@ internal enum ChapterPlanStatus
 internal sealed record ChapterPlan(
     ChapterDescriptor Chapter,
     ChapterPlanStatus Status,
+    ChapterCacheProbe? CachedProbe,
     ChapterCacheEntry? CachedEntry);
 
 internal sealed record RenderedChapter(
-    string ChapterId,
     string Title,
-    IReadOnlyList<string> Paragraphs,
-    bool FromCache,
-    bool Failed);
+    IReadOnlyList<string> Paragraphs);
 
 internal sealed record CommandSummary(
     int Completed,
@@ -297,4 +373,16 @@ internal static class LogMessages
             LogLevel.Debug,
             new EventId(1007, nameof(IgnoreBrowserCloseFailure)),
             "Ignoring browser context close failure.");
+
+    public static readonly Action<ILogger, Exception?> IgnoreAuthenticatedCacheReuseProbeFailure =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(1009, nameof(IgnoreAuthenticatedCacheReuseProbeFailure)),
+            "Failed to probe current login state for authenticated VIP cache reuse. Falling back to anonymous plan.");
+
+    public static readonly Action<ILogger, Exception?> IgnoreVipFullContentClassificationProbeFailure =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(1010, nameof(IgnoreVipFullContentClassificationProbeFailure)),
+            "Failed to probe current login state for VIP full-content classification. Saving content without upgrading cache visibility metadata.");
 }

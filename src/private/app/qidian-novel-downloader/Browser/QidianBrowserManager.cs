@@ -18,7 +18,8 @@ internal interface IQidianBrowserSession : IAsyncDisposable
     Task<LoginState> GetLoginStateAsync(
         string? url,
         CancellationToken cancellationToken,
-        bool navigate = true);
+        bool navigate = true,
+        LoginStateProbeMode probeMode = LoginStateProbeMode.WaitForValidatedIdentity);
 
     Task<CatalogSnapshot> FetchCatalogAsync(string bookId, CancellationToken cancellationToken);
 
@@ -27,9 +28,17 @@ internal interface IQidianBrowserSession : IAsyncDisposable
         ChapterDescriptor chapter,
         CancellationToken cancellationToken);
 
-    Task WaitForManualLoginAsync(CancellationToken cancellationToken);
+    Task<LoginState> WaitForManualLoginAsync(
+        CancellationToken cancellationToken,
+        bool requireValidatedIdentity = false);
 
     Task PersistSessionStateAsync();
+}
+
+internal enum LoginStateProbeMode
+{
+    CurrentStateOnly,
+    WaitForValidatedIdentity,
 }
 
 internal sealed class QidianBrowserManager(ILogger<QidianBrowserManager> logger) : IQidianBrowserManager
@@ -158,6 +167,8 @@ internal sealed class QidianBrowserSession(
     IPage primaryPage,
     BrowserLaunchPlan launchPlan) : IQidianBrowserSession
 {
+    internal const int LoginStateProbeAttempts = 11;
+    internal const int LoginStateProbeDelayMilliseconds = 1000;
     private bool disposed;
 
     public BrowserLaunchPlan LaunchPlan => launchPlan;
@@ -167,7 +178,8 @@ internal sealed class QidianBrowserSession(
     public async Task<LoginState> GetLoginStateAsync(
         string? url,
         CancellationToken cancellationToken,
-        bool navigate = true)
+        bool navigate = true,
+        LoginStateProbeMode probeMode = LoginStateProbeMode.WaitForValidatedIdentity)
     {
         if (navigate && url is not null)
         {
@@ -181,19 +193,29 @@ internal sealed class QidianBrowserSession(
                 });
         }
 
-        LoginState latestState = new(false, null);
-        for (int attempt = 0; attempt < 10; attempt++)
+        cancellationToken.ThrowIfCancellationRequested();
+        if (primaryPage.IsClosed)
+        {
+            return new LoginState(false, null);
+        }
+
+        LoginState latestState = await EvaluateLoginStateAsync(cancellationToken);
+        if (probeMode == LoginStateProbeMode.CurrentStateOnly || latestState.IsValidated)
+        {
+            return latestState;
+        }
+
+        for (int attempt = 1; attempt < LoginStateProbeAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await primaryPage.WaitForTimeoutAsync(1000);
-
             if (primaryPage.IsClosed)
             {
                 return latestState;
             }
 
+            await primaryPage.WaitForTimeoutAsync(LoginStateProbeDelayMilliseconds);
             latestState = await EvaluateLoginStateAsync(cancellationToken);
-            if (latestState.IsLoggedIn)
+            if (latestState.IsValidated)
             {
                 return latestState;
             }
@@ -296,7 +318,9 @@ internal sealed class QidianBrowserSession(
             root.GetProperty("isPreview").GetBoolean());
     }
 
-    public async Task WaitForManualLoginAsync(CancellationToken cancellationToken)
+    public async Task<LoginState> WaitForManualLoginAsync(
+        CancellationToken cancellationToken,
+        bool requireValidatedIdentity = false)
     {
         await primaryPage.GotoAsync(
             AppConstants.QidianBaseUrl,
@@ -310,16 +334,18 @@ internal sealed class QidianBrowserSession(
         {
             cancellationToken.ThrowIfCancellationRequested();
             LoginState state = await EvaluateLoginStateAsync(cancellationToken);
-            if (state.IsLoggedIn)
+            if (requireValidatedIdentity ? state.IsValidated : state.IsLoggedIn)
             {
-                return;
+                return state;
             }
 
             await primaryPage.WaitForTimeoutAsync(1000);
         }
 
         throw new OperationalException(
-            "The login browser window was closed before a valid session was established.");
+            requireValidatedIdentity
+                ? "The login browser window was closed before a validated account identity was established."
+                : "The login browser window was closed before an authenticated session was established.");
     }
 
     public Task PersistSessionStateAsync() => DisposeCoreAsync(swallowBrowserCloseFailure: false);
@@ -372,7 +398,7 @@ internal sealed class QidianBrowserSession(
         JsonElement root = document.RootElement;
         return new LoginState(
             root.GetProperty("isLoggedIn").GetBoolean(),
-            ReadString(root, "userName"));
+            ReadString(root, "userName")).WithNormalizedUserName();
     }
 
     private async Task<JsonDocument> EvaluateJsonDocumentAsync(

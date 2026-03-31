@@ -36,4 +36,95 @@ public sealed class CacheStoreTests
         Assert.Equal(0, removed);
         Assert.False(Directory.Exists(root));
     }
+
+    [Fact]
+    public async Task GetChapterAsyncReturnsNullForInvalidJson()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(cachePath, "{ invalid json");
+
+        ChapterCacheEntry? chapter = await CacheStore.GetChapterAsync(
+            root,
+            "1045928363",
+            "1",
+            CancellationToken.None);
+
+        Assert.Null(chapter);
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Theory]
+    [InlineData("{ invalid json")]
+    [InlineData("{\"bookId\":\"1045928363\"")]
+    [InlineData("{\"bookId\":\"1045928363\",\"metadata\":null,\"volumes\":[],\"fetchedAtUtc\":\"2024-01-01T00:00:00+00:00\"}")]
+    public async Task GetCatalogAsyncReturnsNullForInvalidOrUnusablePayload(string payload)
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string cachePath = AppPaths.GetCatalogCachePath(root, "1045928363");
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(cachePath, payload);
+
+        CatalogSnapshot? catalog = await CacheStore.GetCatalogAsync(
+            root,
+            "1045928363",
+            CancellationToken.None);
+
+        Assert.Null(catalog);
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public async Task GetChapterAsyncReturnsNullForNullParagraphPayload()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            """
+            {
+              "chapterId": "1",
+              "paragraphs": null,
+              "isPreview": false,
+              "catalogWordCount": 100
+            }
+            """);
+
+        ChapterCacheEntry? chapter = await CacheStore.GetChapterAsync(
+            root,
+            "1045928363",
+            "1",
+            CancellationToken.None);
+
+        Assert.Null(chapter);
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public async Task GetChapterAsyncReturnsNullForMissingParagraphPayload()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            """
+            {
+              "chapterId": "1",
+              "isPreview": false,
+              "catalogWordCount": 100
+            }
+            """);
+
+        ChapterCacheEntry? chapter = await CacheStore.GetChapterAsync(
+            root,
+            "1045928363",
+            "1",
+            CancellationToken.None);
+
+        Assert.Null(chapter);
+        Directory.Delete(root, recursive: true);
+    }
 }

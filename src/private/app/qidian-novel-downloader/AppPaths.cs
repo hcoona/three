@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace Hcoona.QidianNovelDownloader;
@@ -53,6 +52,8 @@ internal sealed class AppStorageService : IAppStorageService
 
 internal static class AppPaths
 {
+    private const string InvalidFileNameCharacters = "<>:\"/\\|?*";
+
     public static string GetDefaultStateRoot()
     {
         if (OperatingSystem.IsWindows())
@@ -135,27 +136,17 @@ internal static class AppPaths
             return "unknown";
         }
 
-        char[] invalidCharacters = Path.GetInvalidFileNameChars();
         StringBuilder builder = new(value.Length);
         foreach (char character in value.Trim())
         {
             builder.Append(
-                character == Path.DirectorySeparatorChar
-                || character == Path.AltDirectorySeparatorChar
-                || Array.IndexOf(invalidCharacters, character) >= 0
-                || char.IsControl(character)
+                InvalidFileNameCharacters.Contains(character) || char.IsControl(character)
                     ? '_'
                     : character);
         }
 
         string sanitized = builder.ToString().Trim().Trim('.');
         return string.IsNullOrWhiteSpace(sanitized) ? "unknown" : sanitized;
-    }
-
-    public static string ComputeContentHash(IEnumerable<string> paragraphs)
-    {
-        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', paragraphs)));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     public static string GetExecutionEnvironmentDisplay()

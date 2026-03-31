@@ -23,11 +23,8 @@ public sealed class MarkdownRendererTests
         Dictionary<string, RenderedChapter> renderedChapters = new(StringComparer.Ordinal)
         {
             ["1"] = new RenderedChapter(
-                "1",
                 "Chapter One",
-                ["First paragraph。31", "Second paragraph。"],
-                FromCache: false,
-                Failed: false),
+                ["First paragraph。31", "Second paragraph。"]),
         };
 
         string markdown = MarkdownRenderer.Render(catalog, renderedChapters);
@@ -56,11 +53,8 @@ public sealed class MarkdownRendererTests
         Dictionary<string, RenderedChapter> renderedChapters = new(StringComparer.Ordinal)
         {
             ["1"] = new RenderedChapter(
-                "1",
                 "Chapter One",
-                ["31", "Second paragraph。"],
-                FromCache: false,
-                Failed: false),
+                ["31", "Second paragraph。"]),
         };
 
         string markdown = MarkdownRenderer.Render(catalog, renderedChapters);

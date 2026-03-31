@@ -106,7 +106,7 @@ internal static class CliFactory
             "--browser-profile-dir",
             "Override the browser profile directory for this invocation.");
 
-        Command command = new("login", "Open a visible browser window and persist a validated session.")
+        Command command = new("login", "Open a visible browser window and persist an authenticated session.")
         {
             browserPathOption,
             browserProfileDirOption,

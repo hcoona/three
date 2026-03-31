@@ -16,11 +16,19 @@ internal static class CacheStore
             return null;
         }
 
-        await using FileStream stream = File.OpenRead(cachePath);
-        return await JsonSerializer.DeserializeAsync(
-            stream,
-            AppJsonSerializerContext.Default.CatalogSnapshot,
-            cancellationToken);
+        try
+        {
+            await using FileStream stream = File.OpenRead(cachePath);
+            CatalogSnapshot? catalog = await JsonSerializer.DeserializeAsync(
+                stream,
+                AppJsonSerializerContext.Default.CatalogSnapshot,
+                cancellationToken);
+            return IsUsableCatalog(catalog) ? catalog : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     public static async Task SaveCatalogAsync(
@@ -51,11 +59,46 @@ internal static class CacheStore
             return null;
         }
 
-        await using FileStream stream = File.OpenRead(cachePath);
-        return await JsonSerializer.DeserializeAsync(
-            stream,
-            AppJsonSerializerContext.Default.ChapterCacheEntry,
-            cancellationToken);
+        try
+        {
+            await using FileStream stream = File.OpenRead(cachePath);
+            ChapterCacheEntry? chapter = await JsonSerializer.DeserializeAsync(
+                stream,
+                AppJsonSerializerContext.Default.ChapterCacheEntry,
+                cancellationToken);
+            return chapter is { Paragraphs: not null } ? chapter : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static async Task<ChapterCacheProbe?> GetChapterProbeAsync(
+        string cacheRoot,
+        string bookId,
+        string chapterId,
+        CancellationToken cancellationToken)
+    {
+        string cachePath = AppPaths.GetChapterCachePath(cacheRoot, bookId, chapterId);
+        if (!File.Exists(cachePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            await using FileStream stream = File.OpenRead(cachePath);
+            ChapterCacheProbe? chapter = await JsonSerializer.DeserializeAsync(
+                stream,
+                AppJsonSerializerContext.Default.ChapterCacheProbe,
+                cancellationToken);
+            return chapter is { Paragraphs: not null } ? chapter : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     public static async Task SaveChapterAsync(
@@ -147,4 +190,30 @@ internal static class CacheStore
         File.Delete(path);
         return 1;
     }
+
+    private static bool IsUsableCatalog(CatalogSnapshot? catalog)
+        => catalog is
+        {
+            BookId.Length: > 0,
+            Metadata:
+            {
+                BookId.Length: > 0,
+                Title: not null,
+                Author: not null,
+            },
+            Volumes: not null,
+        }
+        && catalog.Volumes.All(
+            volume => volume is
+            {
+                Title: not null,
+                Chapters: not null,
+            }
+            && volume.Chapters.All(
+                chapter => chapter is
+                {
+                    ChapterId.Length: > 0,
+                    Title: not null,
+                    Url: not null,
+                }));
 }
