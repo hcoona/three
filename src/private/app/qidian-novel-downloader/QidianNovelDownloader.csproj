@@ -7,6 +7,8 @@
     <Nullable>enable</Nullable>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
 
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+
     <AssemblyName>qidian-novel-downloader</AssemblyName>
     <RootNamespace>Hcoona.QidianNovelDownloader</RootNamespace>
   </PropertyGroup>
