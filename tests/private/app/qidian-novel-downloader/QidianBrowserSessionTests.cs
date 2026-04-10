@@ -89,33 +89,33 @@ public sealed class QidianBrowserSessionTests
             catalogJson:
             """
             {
-              "title": "Book Title",
-              "author": "Author",
-              "estimatedWordCount": 123,
-              "volumes": [
-                {
-                  "title": "VIP Volume",
-                  "isVip": true,
-                  "chapters": [
+                "title": "Book Title",
+                "author": "Author",
+                "estimatedWordCount": 123,
+                "volumes": [
                     {
-                      "chapterId": "1",
-                      "title": "Purchase Required Chapter",
-                      "url": "https://www.qidian.com/chapter/100/1/",
-                      "isVip": true,
-                      "catalogWordCount": 100,
-                      "catalogAccessState": "PurchaseRequired"
-                    },
-                    {
-                      "chapterId": "2",
-                      "title": "Accessible Chapter",
-                      "url": "https://www.qidian.com/chapter/100/2/",
-                      "isVip": true,
-                      "catalogWordCount": 101,
-                      "catalogAccessState": "Accessible"
+                        "title": "VIP Volume",
+                        "isVip": true,
+                        "chapters": [
+                            {
+                                "chapterId": "1",
+                                "title": "Purchase Required Chapter",
+                                "url": "https://www.qidian.com/chapter/100/1/",
+                                "isVip": true,
+                                "catalogWordCount": 100,
+                                "catalogAccessState": "PurchaseRequired"
+                            },
+                            {
+                                "chapterId": "2",
+                                "title": "Accessible Chapter",
+                                "url": "https://www.qidian.com/chapter/100/2/",
+                                "isVip": true,
+                                "catalogWordCount": 101,
+                                "catalogAccessState": "Accessible"
+                            }
+                        ]
                     }
-                  ]
-                }
-              ]
+                ]
             }
             """);
         QidianBrowserSession session = CreateSession(page.Page);
@@ -123,8 +123,12 @@ public sealed class QidianBrowserSessionTests
         CatalogSnapshot catalog = await session.FetchCatalogAsync("100", CancellationToken.None);
 
         Assert.Equal("Book Title", catalog.Metadata.Title);
-        Assert.Equal(CatalogChapterAccessState.PurchaseRequired, catalog.Volumes[0].Chapters[0].CatalogAccessState);
-        Assert.Equal(CatalogChapterAccessState.Accessible, catalog.Volumes[0].Chapters[1].CatalogAccessState);
+        Assert.Equal(
+            CatalogChapterAccessState.PurchaseRequired,
+            catalog.Volumes[0].Chapters[0].CatalogAccessState);
+        Assert.Equal(
+            CatalogChapterAccessState.Accessible,
+            catalog.Volumes[0].Chapters[1].CatalogAccessState);
     }
 
     private static QidianBrowserSession CreateSession(IPage page)
@@ -138,7 +142,8 @@ public sealed class QidianBrowserSessionTests
             CreateProxy<IBrowserContext>((method, arguments) => method.Name switch
             {
                 nameof(IBrowserContext.CloseAsync) => Task.CompletedTask,
-                _ => throw new NotSupportedException($"Unexpected IBrowserContext call: {method.Name}"),
+                _ => throw new NotSupportedException(
+                    $"Unexpected IBrowserContext call: {method.Name}"),
             }),
             page,
             new BrowserLaunchPlan(
@@ -216,7 +221,9 @@ public sealed class QidianBrowserSessionTests
             string? script = arguments is [string value, ..] ? value : null;
             if (string.Equals(script, PageScripts.CatalogJson, StringComparison.Ordinal))
             {
-                return Task.FromResult(catalogJson ?? throw new NotSupportedException("CatalogJson was not configured."));
+                return Task.FromResult(
+                    catalogJson
+                    ?? throw new NotSupportedException("CatalogJson was not configured."));
             }
 
             if (loginStates.TryDequeue(out LoginState? loginState))
@@ -242,7 +249,8 @@ public sealed class QidianBrowserSessionTests
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
             => Handler?.Invoke(
-                targetMethod ?? throw new InvalidOperationException("Target method was not provided."),
+                targetMethod
+                ?? throw new InvalidOperationException("Target method was not provided."),
                 args);
     }
 #pragma warning restore CA1852

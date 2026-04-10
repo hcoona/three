@@ -2,10 +2,6 @@ import "@hk/Config.pkl"
 
 typos = new Config.Step {
   batch = true
-  check =
-    "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-    + "-Tool typos -ToolArgument '-c','.typos.toml' -Path {{files}}"
-  fix =
-    "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-    + "-Tool typos -ToolArgument '-c','.typos.toml','-w' -Path {{files}}"
+  check = "typos -c .typos.toml {{files}}"
+  fix = "typos -c .typos.toml -w {{files}}"
 }

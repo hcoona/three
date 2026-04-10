@@ -38,7 +38,10 @@ public sealed class MarkdownRendererTests
         Assert.Contains("# Volume One", markdown);
         Assert.Contains("## Chapter One", markdown);
         Assert.Contains("First paragraph。31", markdown);
-        Assert.Contains($"First paragraph。31{Environment.NewLine}{Environment.NewLine}Second paragraph。", markdown);
+        Assert.Contains(
+            $"First paragraph。31{Environment.NewLine}{Environment.NewLine}"
+            + "Second paragraph。",
+            markdown);
     }
 
     [Fact]

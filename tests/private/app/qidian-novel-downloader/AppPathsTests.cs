@@ -13,7 +13,10 @@ public sealed class AppPathsTests
             "Title:Name",
             "Author/Name");
 
-        Assert.EndsWith("1045928363_Title_Name_Author_Name.md", outputPath, StringComparison.Ordinal);
+        Assert.EndsWith(
+            "1045928363_Title_Name_Author_Name.md",
+            outputPath,
+            StringComparison.Ordinal);
     }
 
     [Fact]

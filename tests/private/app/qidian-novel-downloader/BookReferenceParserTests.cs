@@ -25,6 +25,7 @@ public sealed class BookReferenceParserTests
     [Fact]
     public void ParseRejectsUnsupportedReference()
     {
-        Assert.Throws<CliInputException>(() => BookReferenceParser.Parse("https://book.qidian.com/info/1045928363"));
+        Assert.Throws<CliInputException>(
+            () => BookReferenceParser.Parse("https://book.qidian.com/info/1045928363"));
     }
 }

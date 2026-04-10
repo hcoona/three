@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""
-PoC 2: Qidian Novel Downloader — Playwright Persistent Context (real profile).
+# ruff: noqa: D103, E501, T201
+"""PoC 2: Qidian Novel Downloader — Playwright Persistent Context (real profile).
 
 Uses `launch_persistent_context` with the system Edge + real user profile
 directory.  This keeps the user's login session (cookies are DPAPI-encrypted
 and cannot be copied to a different location).
 
 Limitation:
-  - Requires ALL Edge instances to be closed first (Chromium `SingletonLock`
-    is at the User Data directory level, not per-profile).
-  - If any Edge profile is running, the launch will crash (exit code 21).
+    - Requires ALL Edge instances to be closed first (Chromium `SingletonLock`
+        is at the User Data directory level, not per-profile).
+    - If any Edge profile is running, the launch will crash (exit code 21).
 
 Usage:
     # Close ALL Edge windows first, then:
@@ -31,10 +31,10 @@ PROFILE_NAME = "Profile 5"
 
 BOOK_ID = "1045928363"
 TEST_CHAPTERS = [
-    ("Free #1  (第1章 龙女)",       "853782267"),
-    ("Free #2  (第2章 小混蛋)",     "856055438"),
-    ("VIP purchased (第80章)",      "864173613"),
-    ("VIP unpurchased (第121章)",   "866955906"),
+    ("Free #1  (第1章 龙女)", "853782267"),
+    ("Free #2  (第2章 小混蛋)", "856055438"),
+    ("VIP purchased (第80章)", "864173613"),
+    ("VIP unpurchased (第121章)", "866955906"),
 ]
 
 CHAPTER_CONTENT_JS = """
@@ -60,8 +60,9 @@ CHAPTER_CONTENT_JS = """
     if (mainPs.length > 0) {
         for (const p of mainPs) {
             const clone = p.cloneNode(true);
-            clone.querySelectorAll('.review, .review-count, .review-icon')
-                 .forEach(el => el.remove());
+            clone
+                .querySelectorAll('.review, .review-count, .review-icon')
+                .forEach(el => el.remove());
             const t = clone.textContent.trim();
             if (t && !/^\\d+$/.test(t)) results.push(t);
         }
@@ -100,10 +101,10 @@ async def main() -> None:
 
         for label, chapter_id in TEST_CHAPTERS:
             url = f"https://www.qidian.com/chapter/{BOOK_ID}/{chapter_id}/"
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"  {label}")
             print(f"  {url}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
 
             await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
             await page.wait_for_timeout(3000)
@@ -130,9 +131,9 @@ async def main() -> None:
 
         await context.close()
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("All 4 test chapters processed.")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

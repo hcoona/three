@@ -11,7 +11,8 @@ internal static class MarkdownRenderer
 
         foreach (VolumeDescriptor volume in catalog.Volumes)
         {
-            bool hasAnyChapter = volume.Chapters.Any(chapter => renderedChapters.ContainsKey(chapter.ChapterId));
+            bool hasAnyChapter = volume.Chapters.Any(
+                chapter => renderedChapters.ContainsKey(chapter.ChapterId));
             if (!hasAnyChapter)
             {
                 continue;
@@ -20,7 +21,9 @@ internal static class MarkdownRenderer
             builder.Append("# ").AppendLine(volume.Title).AppendLine();
             foreach (ChapterDescriptor chapter in volume.Chapters)
             {
-                if (!renderedChapters.TryGetValue(chapter.ChapterId, out RenderedChapter? renderedChapter))
+                if (!renderedChapters.TryGetValue(
+                    chapter.ChapterId,
+                    out RenderedChapter? renderedChapter))
                 {
                     continue;
                 }

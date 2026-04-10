@@ -99,10 +99,10 @@ No public distribution is currently planned.
   catalog, regardless of VIP status.
 - **FR-DL-003** The downloader shall save only content that is visible to the
   current user session:
-  - Free chapters: save the full visible chapter text
-  - Purchased or otherwise entitled VIP chapters: save the full visible chapter
-    text
-  - Unpurchased VIP chapters: save only the public preview text
+    - Free chapters: save the full visible chapter text
+    - Purchased or otherwise entitled VIP chapters: save the full visible chapter
+      text
+    - Unpurchased VIP chapters: save only the public preview text
 - **FR-DL-004** **[Stakeholder-confirmed detail]** For preview-only chapters,
   the generated Markdown shall append the marker
   `……（本章内容未完，需订阅后阅读全文）` after the visible excerpt.
@@ -224,7 +224,7 @@ No public distribution is currently planned.
 - **FR-CACHE-002** **[Stakeholder-confirmed detail]** `cache-clear <book-id>`
   shall remove cached catalog and chapter data only for the specified book.
 - **FR-CACHE-003** **[Stakeholder-confirmed detail]** `cache-clear
-  --catalog-only` shall remove catalog cache data while preserving cached
+--catalog-only` shall remove catalog cache data while preserving cached
   chapter content. The command shall support both global catalog-only clearing
   and catalog-only clearing scoped to a specified book.
 - **FR-CACHE-004** **[Stakeholder-confirmed detail]** If the requested cache
@@ -238,14 +238,14 @@ No public distribution is currently planned.
 - **FR-INFO-001** **[Stakeholder-confirmed detail]** `info <book-id>` shall
   display book metadata without writing a Markdown output file.
 - **FR-INFO-002** The displayed metadata shall include:
-  - book title
-  - author
-  - volume list with chapter counts and VIP/free status
-  - total chapter count
-  - **[Stakeholder-confirmed detail]** estimated word count derived from the
-    catalog page when available
-  - **[Stakeholder-confirmed detail]** a cache coverage summary for the book
-    that includes, at minimum, cached chapters versus total chapters
+    - book title
+    - author
+    - volume list with chapter counts and VIP/free status
+    - total chapter count
+    - **[Stakeholder-confirmed detail]** estimated word count derived from the
+      catalog page when available
+    - **[Stakeholder-confirmed detail]** a cache coverage summary for the book
+      that includes, at minimum, cached chapters versus total chapters
 
 ---
 
@@ -260,15 +260,15 @@ No public distribution is currently planned.
   configuration file shall not prevent the tool from running.
 - **FR-CONFIG-003** The configuration file shall support, at minimum, these
   user-facing settings:
-  - browser executable path override
-  - browser profile directory override
-  - output directory
-  - reading speed
-  - minimum and maximum request delay
-  - retry count
-  - catalog cache TTL
-  - log level
-  - default book list for batch downloads
+    - browser executable path override
+    - browser profile directory override
+    - output directory
+    - reading speed
+    - minimum and maximum request delay
+    - retry count
+    - catalog cache TTL
+    - log level
+    - default book list for batch downloads
 - **FR-CONFIG-004** **[Stakeholder-confirmed detail]** The configuration format
   for the default book list shall not define per-book output filenames; the
   standard output filename rule shall apply uniformly.
@@ -282,13 +282,13 @@ No public distribution is currently planned.
   setting shall be used to calculate the base delay between chapter fetches
   during sustained downloads.
 - **FR-CONFIG-008** **[Stakeholder-confirmed detail]** The `minimum and
-  maximum request delay` settings shall define lower and upper bounds for the
+maximum request delay` settings shall define lower and upper bounds for the
   actual delay applied between chapter fetches.
 - **FR-CONFIG-009** **[Stakeholder-confirmed detail]** The `retry count`
   setting shall define the number of additional attempts permitted after the
   initial attempt fails.
 - **FR-CONFIG-010** **[Stakeholder-confirmed detail]** The `catalog cache
-  TTL` setting shall define the maximum age of cached catalog data. When the
+TTL` setting shall define the maximum age of cached catalog data. When the
   TTL has expired, the next access to that book's catalog shall fetch fresh
   catalog data and update the cache.
 - **FR-CONFIG-011** **[Stakeholder-confirmed detail]** The `log level` setting
@@ -303,9 +303,9 @@ No public distribution is currently planned.
   local state under a tool-managed default location. The requirements baseline
   does not constrain the exact filesystem path.
 - **FR-STATE-002** The local state shall include separate areas for:
-  - browser profile data
-  - downloader cache
-  - log files
+    - browser profile data
+    - downloader cache
+    - log files
 
 ---
 

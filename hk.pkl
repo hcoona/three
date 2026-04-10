@@ -42,6 +42,7 @@ local general_linters = new Mapping<String, Step> {
   ["editorconfig-check"] = (Steps.editorconfig_check) {
     profiles = List("medium")
     exclude = general_exclude_list
+    check = "editorconfig-checker {{files}}"
   }
 }
 
@@ -50,30 +51,18 @@ local pipeline_linters = new Mapping<String, Step> {
 }
 
 local markdown_linters = new Mapping<String, Step> {
-  ["markdownlint-cli2"] {
+  ["markdownlint-cli2"] = (Steps.markdownlint_cli2) {
     profiles = List("small")
     exclude = general_exclude_list
-    glob = "*.md"
-    stage = "*.md"
-    check =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-      + "-Tool pnpm -ToolArgument 'exec','--','markdownlint-cli2' -Path {{files}}"
-    fix =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-      + "-Tool pnpm -ToolArgument 'exec','--','markdownlint-cli2','--fix' -Path {{files}}"
+    prefix = "pnpm exec --"
   }
 
-  ["markdown-prettier"] {
+  ["markdown-prettier"] = (Builtins.prettier) {
     profiles = List("small")
     exclude = general_exclude_list
     glob = "*.md"
     stage = "*.md"
-    check =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-      + "-Tool pnpm -ToolArgument 'exec','--','prettier','--check' -Path {{files}}"
-    fix =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-      + "-Tool pnpm -ToolArgument 'exec','--','prettier','--write' -Path {{files}}"
+    prefix = "pnpm exec --"
   }
 }
 
@@ -202,28 +191,18 @@ local python_linters = new Mapping<String, Step> {
   local python_notebook_files = List("*.ipynb")
   local all_python_files = python_files + python_notebook_files
 
-  ["ruff"] {
+  ["ruff"] = (Builtins.ruff) {
     profiles = List("small")
+    prefix = "uv run"
     glob = all_python_files
     stage = all_python_files
-    check =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-      + "-Tool uv -ToolArgument 'run','ruff','check','--force-exclude' -Path {{files}}"
-    fix =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-      + "-Tool uv -ToolArgument 'run','ruff','check','--force-exclude','--fix' -Path {{files}}"
   }
 
-  ["ruff_format"] {
+  ["ruff_format"] = (Builtins.ruff_format) {
     profiles = List("small")
+    prefix = "uv run"
     glob = all_python_files
     stage = all_python_files
-    check =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-      + "-Tool uv -ToolArgument 'run','ruff','format','--quiet','--force-exclude','--check' -Path {{files}}"
-    fix =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
-      + "-Tool uv -ToolArgument 'run','ruff','format','--quiet','--force-exclude' -Path {{files}}"
   }
 
   ["uv-lock"] = (Steps.uv_lock) {

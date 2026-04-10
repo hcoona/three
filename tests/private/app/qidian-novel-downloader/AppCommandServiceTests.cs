@@ -23,7 +23,10 @@ public sealed class AppCommandServiceTests
             [
                 CreateCatalog(
                     "100",
-                    ("VIP Volume", true, [("c1", "VIP One", true, 100), ("c2", "VIP Two", true, 200)])),
+                    (
+                        "VIP Volume",
+                        true,
+                        [("c1", "VIP One", true, 100), ("c2", "VIP Two", true, 200)])),
             ]);
         FakeBrowserManager browserManager = new(initialHeadlessSession);
         AppCommandService service = CreateService(workspace, browserManager);
@@ -53,7 +56,8 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
-    public async Task DownloadAsyncDryRunTriggersManualLoginWhenVipFullCacheReuseRequiresValidation()
+    public async Task
+        DownloadAsyncDryRunTriggersManualLoginWhenVipFullCacheReuseRequiresValidation()
     {
         using TestWorkspace workspace = new();
         await CacheStore.SaveChapterAsync(
@@ -121,7 +125,9 @@ public sealed class AppCommandServiceTests
         Assert.Equal(1, headedSession.WaitForManualLoginCalls);
         Assert.Equal(1, headedSession.PersistSessionStateCalls);
         Assert.Equal(1, resumedHeadlessSession.LoginStateRequests);
-        Assert.Equal([LoginStateProbeMode.WaitForValidatedIdentity], resumedHeadlessSession.LoginStateProbeModes);
+        Assert.Equal(
+            [LoginStateProbeMode.WaitForValidatedIdentity],
+            resumedHeadlessSession.LoginStateProbeModes);
         Assert.Equal(
             [
                 "open:headless",
@@ -142,7 +148,8 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
-    public async Task DownloadAsyncDryRunTriggersManualLoginWhenAuthenticatedSessionIsNotValidatedForVipCacheReuse()
+    public async Task DownloadAsyncDryRunTriggersManualLoginForUnvalidatedVipCacheReuse(
+        )
     {
         using TestWorkspace workspace = new();
         await CacheStore.SaveChapterAsync(
@@ -210,7 +217,9 @@ public sealed class AppCommandServiceTests
         Assert.Equal(1, headedSession.WaitForManualLoginCalls);
         Assert.Equal(1, headedSession.PersistSessionStateCalls);
         Assert.Equal(1, resumedHeadlessSession.LoginStateRequests);
-        Assert.Equal([LoginStateProbeMode.WaitForValidatedIdentity], resumedHeadlessSession.LoginStateProbeModes);
+        Assert.Equal(
+            [LoginStateProbeMode.WaitForValidatedIdentity],
+            resumedHeadlessSession.LoginStateProbeModes);
         Assert.Equal(
             [
                 "open:headless",
@@ -231,7 +240,8 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
-    public async Task DownloadAsyncDryRunRefetchesCatalogAfterValidatedLoginWhenCachedAccessStateChanges()
+    public async Task
+        DownloadAsyncDryRunRefetchesCatalogAfterValidatedLoginWhenCachedAccessStateChanges()
     {
         using TestWorkspace workspace = new();
         await CacheStore.SaveCatalogAsync(
@@ -269,9 +279,17 @@ public sealed class AppCommandServiceTests
             [
                 CreateCatalogWithAccessStates(
                     "100",
-                    ("VIP Volume", true, [("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible)])),
+                    (
+                        "VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                        ])),
             ]);
-        FakeBrowserManager browserManager = new(initialHeadlessSession, headedSession, resumedHeadlessSession);
+        FakeBrowserManager browserManager = new(
+            initialHeadlessSession,
+            headedSession,
+            resumedHeadlessSession);
         AppCommandService service = CreateService(workspace, browserManager);
 
         ConsoleCaptureResult result = await WithConsoleCaptureAsync(
@@ -291,7 +309,9 @@ public sealed class AppCommandServiceTests
             initialHeadlessSession.LoginStateProbeModes);
         Assert.Equal(1, headedSession.PersistSessionStateCalls);
         Assert.Equal(1, resumedHeadlessSession.LoginStateRequests);
-        Assert.Equal([LoginStateProbeMode.WaitForValidatedIdentity], resumedHeadlessSession.LoginStateProbeModes);
+        Assert.Equal(
+            [LoginStateProbeMode.WaitForValidatedIdentity],
+            resumedHeadlessSession.LoginStateProbeModes);
         Assert.Equal(
             [
                 "open:headless",
@@ -373,13 +393,16 @@ public sealed class AppCommandServiceTests
             ],
             browserManager.Events);
         Assert.DoesNotContain("Authentication is required.", result.StdOut);
-        Assert.DoesNotContain("Login confirmed. Continuing with the validated session.", result.StdOut);
+        Assert.DoesNotContain(
+            "Login confirmed. Continuing with the validated session.",
+            result.StdOut);
         Assert.Contains("- VIP One: cached", result.StdOut);
         Assert.Contains("Summary: books completed=1", result.StdOut);
     }
 
     [Fact]
-    public async Task DownloadAsyncReusesFreshValidatedCatalogCacheForLoggedInSessionBeforeSavingChapterCache()
+    public async Task
+        DownloadAsyncReusesFreshValidatedCatalogCacheForLoggedInSessionBeforeSavingChapterCache()
     {
         using TestWorkspace workspace = new();
         await CacheStore.SaveCatalogAsync(
@@ -390,7 +413,12 @@ public sealed class AppCommandServiceTests
             workspace.Paths.CacheRoot,
             CreateCatalogWithAccessStates(
                 "100",
-                ("VIP Volume", true, [("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible)]))
+                (
+                    "VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                    ]))
             with
             {
                 CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
@@ -437,7 +465,8 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
-    public async Task DownloadAsyncMarksVipFullContentAccessibleWhenFetchedFromAnonymousCatalogPlan()
+    public async Task
+        DownloadAsyncMarksVipFullContentAccessibleWhenFetchedFromAnonymousCatalogPlan()
     {
         using TestWorkspace workspace = new();
         await CacheStore.SaveCatalogAsync(
@@ -486,7 +515,12 @@ public sealed class AppCommandServiceTests
         List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
             CreateCatalogWithAccessStates(
                 "100",
-                ("VIP Volume", true, [("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible)])),
+                (
+                    "VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                    ])),
             workspace.Paths.CacheRoot,
             new LoginState(true, "tester"),
             CancellationToken.None);
@@ -496,7 +530,8 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
-    public async Task DownloadAsyncDryRunDoesNotRefetchCatalogForValidatedSessionWhenAnonymousPlanNeedsNoAuthenticatedRefresh()
+    public async Task DownloadAsyncDryRunSkipsValidatedRefetchWhenAnonymousPlanNeedsNoRefresh(
+        )
     {
         using TestWorkspace workspace = new();
         await CacheStore.SaveCatalogAsync(
@@ -546,7 +581,12 @@ public sealed class AppCommandServiceTests
             workspace.Paths.CacheRoot,
             CreateCatalogWithAccessStates(
                 "100",
-                ("VIP Volume", true, [("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible)]))
+                (
+                    "VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                    ]))
             with
             {
                 CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
@@ -621,7 +661,12 @@ public sealed class AppCommandServiceTests
             [
                 CreateCatalogWithAccessStates(
                     "100",
-                    ("VIP Volume", true, [("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible)])),
+                    (
+                        "VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                        ])),
             ]);
         FakeBrowserManager browserManager = new(headlessSession);
         AppCommandService service = CreateService(workspace, browserManager);
@@ -708,7 +753,8 @@ public sealed class AppCommandServiceTests
     public async Task LoginAsyncFailsWhenPersistingSessionStateFails()
     {
         using TestWorkspace workspace = new();
-        FakeBrowserSession browserSession = new(disposeException: new InvalidOperationException("close failed"));
+        FakeBrowserSession browserSession = new(
+            disposeException: new InvalidOperationException("close failed"));
         FakeBrowserManager browserManager = new(browserSession);
         AppCommandService service = CreateService(workspace, browserManager);
 
@@ -746,7 +792,10 @@ public sealed class AppCommandServiceTests
                 CancellationToken.None));
 
         Assert.Equal(ExitCodes.UsageFailure, result.ReturnValue);
-        Assert.Contains("Summary: books completed=0, skipped=0, failed=1; chapters downloaded=0, reused=0, failed=0.", result.StdOut);
+        Assert.Contains(
+            "Summary: books completed=0, skipped=0, failed=1; "
+            + "chapters downloaded=0, reused=0, failed=0.",
+            result.StdOut);
         Assert.Contains("No book targets were provided", result.StdErr);
     }
 
@@ -777,7 +826,10 @@ public sealed class AppCommandServiceTests
 
         Assert.Equal(ExitCodes.Success, result.ReturnValue);
         Assert.Equal([true], browserManager.OpenCalls);
-        Assert.Contains("Summary: books completed=1, skipped=0, failed=0; chapters downloaded=1, reused=0, failed=0.", result.StdOut);
+        Assert.Contains(
+            "Summary: books completed=1, skipped=0, failed=0; "
+            + "chapters downloaded=1, reused=0, failed=0.",
+            result.StdOut);
     }
 
     [Fact]
@@ -896,7 +948,12 @@ public sealed class AppCommandServiceTests
             [
                 CreateCatalogWithAccessStates(
                     "100",
-                    ("VIP Volume", true, [("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible)])),
+                    (
+                        "VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                        ])),
             ]);
         FakeBrowserManager browserManager = new(headlessSession);
         AppCommandService service = CreateService(workspace, browserManager);
@@ -981,7 +1038,8 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
-    public async Task DownloadAsyncDryRunRefreshesCatalogAnonymouslyWithoutLoginWhenAnonymousPlanIsReusable()
+    public async Task
+        DownloadAsyncDryRunRefreshesCatalogAnonymouslyWithoutLoginWhenAnonymousPlanIsReusable()
     {
         using TestWorkspace workspace = new();
         await CacheStore.SaveChapterAsync(
@@ -1142,7 +1200,8 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
-    public async Task DownloadAsyncKeepsAuthenticatedUnvalidatedSessionForVipFullContentAttribution()
+    public async Task
+        DownloadAsyncKeepsAuthenticatedUnvalidatedSessionForVipFullContentAttribution()
     {
         using TestWorkspace workspace = new();
         FakeBrowserSession headlessSession = new(
@@ -1190,7 +1249,9 @@ public sealed class AppCommandServiceTests
             ],
             browserManager.Events);
         Assert.DoesNotContain("Authentication is required.", result.StdOut);
-        Assert.DoesNotContain("Login confirmed. Continuing with the validated session.", result.StdOut);
+        Assert.DoesNotContain(
+            "Login confirmed. Continuing with the validated session.",
+            result.StdOut);
         ChapterCacheEntry? cacheEntry = await CacheStore.GetChapterAsync(
             workspace.Paths.CacheRoot,
             "100",
@@ -1253,7 +1314,8 @@ public sealed class AppCommandServiceTests
         Assert.Contains("- VIP One: fetch", result.StdOut);
         Assert.Contains(
             logger.Entries,
-            entry => entry.EventId.Name == nameof(LogMessages.IgnoreAuthenticatedCacheReuseProbeFailure)
+            entry => entry.EventId.Name
+                    == nameof(LogMessages.IgnoreAuthenticatedCacheReuseProbeFailure)
                 && entry.Level == LogLevel.Warning
                 && entry.Exception?.Message == "probe failed");
     }
@@ -1311,7 +1373,8 @@ public sealed class AppCommandServiceTests
         Assert.Null(cacheEntry.VipFullContentProvenance);
         Assert.Contains(
             logger.Entries,
-            entry => entry.EventId.Name == nameof(LogMessages.IgnoreVipFullContentClassificationProbeFailure)
+            entry => entry.EventId.Name
+                    == nameof(LogMessages.IgnoreVipFullContentClassificationProbeFailure)
                 && entry.Level == LogLevel.Warning
                 && entry.Exception?.Message == "probe failed");
     }
@@ -1362,7 +1425,8 @@ public sealed class AppCommandServiceTests
         AppCommandService service = CreateService(
             workspace,
             new FakeBrowserManager(),
-            storageService: new ThrowingStorageService(new InvalidOperationException("resolve failed")));
+            storageService: new ThrowingStorageService(
+                new InvalidOperationException("resolve failed")));
 
         ConsoleCaptureResult result = await WithConsoleCaptureAsync(
             () => service.CacheClearAsync(
@@ -1517,15 +1581,18 @@ public sealed class AppCommandServiceTests
     public async Task BuildChapterPlansAsyncTreatsCacheEntryWithoutParagraphsAsFetchRequired()
     {
         using TestWorkspace workspace = new();
-        string cachePath = AppPaths.GetChapterCachePath(workspace.Paths.CacheRoot, "100", "c1");
+        string cachePath = AppPaths.GetChapterCachePath(
+            workspace.Paths.CacheRoot,
+            "100",
+            "c1");
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
         await File.WriteAllTextAsync(
             cachePath,
             """
             {
-              "chapterId": "c1",
-              "isPreview": false,
-              "catalogWordCount": 100
+                "chapterId": "c1",
+                "isPreview": false,
+                "catalogWordCount": 100
             }
             """);
 
@@ -1554,23 +1621,29 @@ public sealed class AppCommandServiceTests
                 100,
                 CatalogChapterAccessState.Accessible),
             CancellationToken.None);
-        string changedCachePath = AppPaths.GetChapterCachePath(workspace.Paths.CacheRoot, "100", "c2");
+        string changedCachePath = AppPaths.GetChapterCachePath(
+            workspace.Paths.CacheRoot,
+            "100",
+            "c2");
         Directory.CreateDirectory(Path.GetDirectoryName(changedCachePath)!);
         await File.WriteAllTextAsync(
             changedCachePath,
             """
             {
-              "chapterId": "c2",
-              "paragraphs": [null],
-              "isPreview": false,
-              "catalogWordCount": 200
+                "chapterId": "c2",
+                "paragraphs": [null],
+                "isPreview": false,
+                "catalogWordCount": 200
             }
             """);
 
         List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
             CreateCatalog(
                 "100",
-                ("Volume", false, [("c1", "Chapter 1", false, 100), ("c2", "Chapter 2", false, 201)])),
+                (
+                    "Volume",
+                    false,
+                    [("c1", "Chapter 1", false, 100), ("c2", "Chapter 2", false, 201)])),
             workspace.Paths.CacheRoot,
             validatedLoginState: null,
             CancellationToken.None);
@@ -1626,7 +1699,17 @@ public sealed class AppCommandServiceTests
         List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
             CreateCatalogWithAccessStates(
                 "100",
-                ("VIP Volume", true, [("c1", "VIP Chapter", true, 100, CatalogChapterAccessState.Accessible)])),
+                (
+                    "VIP Volume",
+                    true,
+                    [
+                        (
+                            "c1",
+                            "VIP Chapter",
+                            true,
+                            100,
+                            CatalogChapterAccessState.Accessible),
+                    ])),
             workspace.Paths.CacheRoot,
             validatedLoginState: null,
             CancellationToken.None);
@@ -1652,7 +1735,10 @@ public sealed class AppCommandServiceTests
 
     private static CatalogSnapshot CreateCatalog(
         string bookId,
-        params (string VolumeTitle, bool IsVip, (string ChapterId, string Title, bool IsVip, int? WordCount)[] Chapters)[] volumes)
+        params (
+            string VolumeTitle,
+            bool IsVip,
+            (string ChapterId, string Title, bool IsVip, int? WordCount)[] Chapters)[] volumes)
         => new(
             bookId,
             new BookMetadata(bookId, $"Book {bookId}", "Author", null),
@@ -1672,7 +1758,15 @@ public sealed class AppCommandServiceTests
 
     private static CatalogSnapshot CreateCatalogWithAccessStates(
         string bookId,
-        params (string VolumeTitle, bool IsVip, (string ChapterId, string Title, bool IsVip, int? WordCount, CatalogChapterAccessState AccessState)[] Chapters)[] volumes)
+        params (
+            string VolumeTitle,
+            bool IsVip,
+            (
+                string ChapterId,
+                string Title,
+                bool IsVip,
+                int? WordCount,
+                CatalogChapterAccessState AccessState)[] Chapters)[] volumes)
         => new(
             bookId,
             new BookMetadata(bookId, $"Book {bookId}", "Author", null),
@@ -1800,7 +1894,8 @@ public sealed class AppCommandServiceTests
     {
         private readonly Queue<LoginState> loginStates = new(loginStates ?? []);
         private readonly Queue<CatalogSnapshot> catalogs = new(catalogs ?? []);
-        private readonly Queue<ChapterFetchResult> chapterFetchResults = new(chapterFetchResults ?? []);
+        private readonly Queue<ChapterFetchResult> chapterFetchResults =
+            new(chapterFetchResults ?? []);
         private readonly Exception? loginStateException = loginStateException;
         private readonly Exception? disposeException = disposeException;
         private LoginState? lastLoginState;
@@ -1881,7 +1976,9 @@ public sealed class AppCommandServiceTests
             return Task.FromResult(lastLoginState ?? new LoginState(false, null));
         }
 
-        public Task<CatalogSnapshot> FetchCatalogAsync(string bookId, CancellationToken cancellationToken)
+        public Task<CatalogSnapshot> FetchCatalogAsync(
+            string bookId,
+            CancellationToken cancellationToken)
         {
             Manager!.Events.Add($"fetch-catalog:{SessionKind}:{bookId}");
             if (!catalogs.TryDequeue(out CatalogSnapshot? catalog))

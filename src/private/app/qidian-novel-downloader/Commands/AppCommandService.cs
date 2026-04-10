@@ -39,7 +39,8 @@ internal sealed class AppCommandService(
 
         try
         {
-            ResolvedAppSettings settings = ValidateDownload(ResolvedAppSettings.Merge(settingsOptions.Value, options));
+            ResolvedAppSettings settings = ValidateDownload(
+                ResolvedAppSettings.Merge(settingsOptions.Value, options));
             AppStoragePaths paths = EnsureStorage(settings);
             List<BookReference> targets = DownloadTargetResolver.Resolve(
                 options.BookReferences,
@@ -100,7 +101,9 @@ internal sealed class AppCommandService(
                 {
                     try
                     {
-                        return await GetCurrentLoginStateAsync(forceRefresh: true, probeMode: probeMode);
+                        return await GetCurrentLoginStateAsync(
+                            forceRefresh: true,
+                            probeMode: probeMode);
                     }
                     catch (OperationCanceledException)
                     {
@@ -113,7 +116,8 @@ internal sealed class AppCommandService(
                     }
                 }
 
-                async Task<LoginState> EnsureValidatedLoginStateAsync(LoginState? currentState = null)
+                async Task<LoginState> EnsureValidatedLoginStateAsync(
+                    LoginState? currentState = null)
                 {
                     currentState = currentState switch
                     {
@@ -129,7 +133,8 @@ internal sealed class AppCommandService(
                     }
 
                     Console.WriteLine(
-                        "Authentication is required. Opening a visible browser window for manual sign-in.");
+                        "Authentication is required. Opening a visible browser "
+                        + "window for manual sign-in.");
                     await OpenBrowserAsync(headless: false);
                     await browser!.WaitForManualLoginAsync(
                         cancellationToken,
@@ -174,14 +179,17 @@ internal sealed class AppCommandService(
                                 && currentLoginState is not null
                                 && !currentLoginState.IsValidated)
                             {
-                                currentLoginState = await EnsureValidatedLoginStateAsync(currentLoginState);
+                                currentLoginState = await EnsureValidatedLoginStateAsync(
+                                    currentLoginState);
                             }
 
-                            LoginState? validatedLoginState = GetValidatedLoginState(currentLoginState);
+                            LoginState? validatedLoginState = GetValidatedLoginState(
+                                currentLoginState);
                             if (validatedLoginState is not null)
                             {
-                                CatalogCacheScope validatedScope = CatalogCacheScope.ForValidatedUser(
-                                    validatedLoginState.UserName!);
+                                CatalogCacheScope validatedScope =
+                                    CatalogCacheScope.ForValidatedUser(
+                                        validatedLoginState.UserName!);
                                 catalog = await TryGetFreshCatalogAsync(
                                     target.BookId,
                                     settings,
@@ -214,7 +222,8 @@ internal sealed class AppCommandService(
                         {
                             PrintDryRun(catalog, plans);
                             completedBooks++;
-                            reusedChapters += plans.Count(plan => plan.Status == ChapterPlanStatus.Cached);
+                            reusedChapters += plans.Count(
+                                plan => plan.Status == ChapterPlanStatus.Cached);
                             continue;
                         }
 
@@ -238,17 +247,26 @@ internal sealed class AppCommandService(
                             }
                         }
 
-                        Dictionary<string, RenderedChapter> renderedChapters = new(StringComparer.Ordinal);
+                        Dictionary<string, RenderedChapter> renderedChapters =
+                            new(StringComparer.Ordinal);
                         List<ChapterPlan> orderedPlans = plans;
-                        for (int chapterIndex = 0; chapterIndex < orderedPlans.Count; chapterIndex++)
+                        for (
+                            int chapterIndex = 0;
+                            chapterIndex < orderedPlans.Count;
+                            chapterIndex++)
                         {
                             ChapterPlan plan = orderedPlans[chapterIndex];
+                            string chapterAction = plan.Status == ChapterPlanStatus.Cached
+                                ? "Reusing"
+                                : "Fetching";
                             Console.WriteLine(
                                 $"  [{chapterIndex + 1}/{orderedPlans.Count}] "
-                                + $"{(plan.Status == ChapterPlanStatus.Cached ? "Reusing" : "Fetching")} "
+                                + $"{chapterAction} "
                                 + $"{plan.Chapter.Title}");
 
-                            if (plan.Status == ChapterPlanStatus.Cached && plan.CachedEntry is not null)
+                            if (
+                                plan.Status == ChapterPlanStatus.Cached
+                                && plan.CachedEntry is not null)
                             {
                                 renderedChapters[plan.Chapter.ChapterId] = new RenderedChapter(
                                     plan.Chapter.Title,
@@ -272,7 +290,8 @@ internal sealed class AppCommandService(
                             }
                             else
                             {
-                                IReadOnlyList<string> paragraphs = NormalizeFetchedParagraphs(chapterResult);
+                                IReadOnlyList<string> paragraphs =
+                                    NormalizeFetchedParagraphs(chapterResult);
                                 if (plan.Chapter.IsVip
                                     && !chapterResult.IsPreview)
                                 {
@@ -290,7 +309,10 @@ internal sealed class AppCommandService(
                                         plan.Chapter,
                                         chapterResult,
                                         currentLoginState),
-                                    GetVisibleToUserName(plan.Chapter, chapterResult, currentLoginState),
+                                    GetVisibleToUserName(
+                                        plan.Chapter,
+                                        chapterResult,
+                                        currentLoginState),
                                     GetVipFullContentCacheProvenance(
                                         plan.Chapter,
                                         chapterResult,
@@ -375,7 +397,8 @@ internal sealed class AppCommandService(
     {
         try
         {
-            ResolvedAppSettings settings = ValidateLogin(ResolvedAppSettings.Merge(settingsOptions.Value, options));
+            ResolvedAppSettings settings = ValidateLogin(
+                ResolvedAppSettings.Merge(settingsOptions.Value, options));
             AppStoragePaths paths = EnsureStorage(settings);
 
             IQidianBrowserSession? browser = await browserManager.OpenAsync(
@@ -385,7 +408,8 @@ internal sealed class AppCommandService(
                 cancellationToken);
             try
             {
-                Console.WriteLine("A visible browser window has been opened. Complete sign-in manually.");
+                Console.WriteLine(
+                    "A visible browser window has been opened. Complete sign-in manually.");
                 await browser.WaitForManualLoginAsync(cancellationToken);
                 await browser.PersistSessionStateAsync();
                 browser = null;
@@ -474,7 +498,8 @@ internal sealed class AppCommandService(
         IQidianBrowserSession? browser = null;
         try
         {
-            ResolvedAppSettings settings = ValidateInfo(ResolvedAppSettings.Merge(settingsOptions.Value, options));
+            ResolvedAppSettings settings = ValidateInfo(
+                ResolvedAppSettings.Merge(settingsOptions.Value, options));
             AppStoragePaths paths = EnsureStorage(settings);
             BookReference target = BookReferenceParser.Parse(options.BookReference);
 
@@ -502,7 +527,8 @@ internal sealed class AppCommandService(
             Console.WriteLine($"Author: {catalog.Metadata.Author}");
             Console.WriteLine($"Total chapters: {totalChapters}");
             Console.WriteLine(
-                $"Estimated word count: {(catalog.Metadata.EstimatedWordCount?.ToString() ?? "n/a")}");
+                "Estimated word count: "
+                + (catalog.Metadata.EstimatedWordCount?.ToString() ?? "n/a"));
             Console.WriteLine($"Cache coverage: {cachedChapters}/{totalChapters} chapter(s)");
             Console.WriteLine("Volumes:");
             foreach (VolumeDescriptor volume in catalog.Volumes)
@@ -591,10 +617,10 @@ internal sealed class AppCommandService(
             scope,
             cancellationToken);
         return cachedCatalog is not null
-               && CacheStore.IsCatalogFresh(
-                   cachedCatalog,
-                   settings.CatalogCacheTtlHours,
-                   timeProvider)
+            && CacheStore.IsCatalogFresh(
+                cachedCatalog,
+                settings.CatalogCacheTtlHours,
+                timeProvider)
             ? cachedCatalog
             : null;
     }
@@ -628,17 +654,18 @@ internal sealed class AppCommandService(
             {
                 status = ChapterPlanStatus.FetchRequired;
             }
-            else if (cachedProbe.CatalogWordCount != chapter.CatalogWordCount
-                     || cachedProbe.CatalogAccessState != chapter.CatalogAccessState)
+            else if (
+                cachedProbe.CatalogWordCount != chapter.CatalogWordCount
+                || cachedProbe.CatalogAccessState != chapter.CatalogAccessState)
             {
                 status = ChapterPlanStatus.Changed;
             }
             else if (CanReuseCachedChapter(
-                         chapter,
-                         cachedProbe.IsPreview,
-                         cachedProbe.VisibleToUserName,
-                         cachedProbe.VipFullContentProvenance,
-                         validatedLoginState))
+                chapter,
+                cachedProbe.IsPreview,
+                cachedProbe.VisibleToUserName,
+                cachedProbe.VipFullContentProvenance,
+                validatedLoginState))
             {
                 cachedEntry = await CacheStore.GetChapterAsync(
                     cacheRoot,
@@ -724,7 +751,8 @@ internal sealed class AppCommandService(
                 && plan.CachedProbe is { IsPreview: false }
                 && (plan.Status == ChapterPlanStatus.FetchRequired
                     || (plan.Status == ChapterPlanStatus.Changed
-                        && plan.CachedProbe.CatalogAccessState != plan.Chapter.CatalogAccessState)));
+                        && plan.CachedProbe.CatalogAccessState
+                            != plan.Chapter.CatalogAccessState)));
 
     private static bool CanReuseCachedChapter(
         ChapterDescriptor chapter,
@@ -870,6 +898,7 @@ internal sealed class AppCommandService(
             "Dry-run summary: "
             + $"cached={plans.Count(plan => plan.Status == ChapterPlanStatus.Cached)}, "
             + $"changed={plans.Count(plan => plan.Status == ChapterPlanStatus.Changed)}, "
-            + $"fetch-required={plans.Count(plan => plan.Status == ChapterPlanStatus.FetchRequired)}.");
+            + "fetch-required="
+            + $"{plans.Count(plan => plan.Status == ChapterPlanStatus.FetchRequired)}.");
     }
 }

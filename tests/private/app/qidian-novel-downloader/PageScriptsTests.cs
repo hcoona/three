@@ -8,7 +8,10 @@ public sealed class PageScriptsTests
     [Fact]
     public void ChapterContentJsonDoesNotFilterNumericOnlyParagraphs()
     {
-        Assert.DoesNotContain("/^\\d+$/.test(text)", PageScripts.ChapterContentJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "/^\\d+$/.test(text)",
+            PageScripts.ChapterContentJson,
+            StringComparison.Ordinal);
     }
 
     [Fact]

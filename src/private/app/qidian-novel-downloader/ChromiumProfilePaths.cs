@@ -33,7 +33,10 @@ internal static class ChromiumProfilePathResolver
         }
 
         string fullPath = Path.GetFullPath(configuredPath);
-        if (TryResolveProfileDirectory(fullPath, out string userDataDir, out string profileDirectory))
+        if (TryResolveProfileDirectory(
+            fullPath,
+            out string userDataDir,
+            out string profileDirectory))
         {
             return new ChromiumProfilePaths(
                 userDataDir,
@@ -47,7 +50,9 @@ internal static class ChromiumProfilePathResolver
             IsOverride: true);
     }
 
-    public static string[] BuildLaunchArguments(IEnumerable<string> baseArguments, string? profileDirectory)
+    public static string[] BuildLaunchArguments(
+        IEnumerable<string> baseArguments,
+        string? profileDirectory)
     {
         List<string> arguments = [.. baseArguments];
         if (!string.IsNullOrWhiteSpace(profileDirectory))

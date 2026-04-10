@@ -41,24 +41,22 @@ Example `config.json`:
 
 ```json
 {
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information"
+    "Logging": {
+        "LogLevel": {
+            "Default": "Information"
+        }
+    },
+    "Qidian": {
+        "browserPath": null,
+        "browserProfileDir": null,
+        "outputDir": null,
+        "readingSpeed": 5000,
+        "minimumRequestDelaySeconds": 5,
+        "maximumRequestDelaySeconds": 12,
+        "retryCount": 3,
+        "catalogCacheTtlHours": 24,
+        "defaultBooks": ["1045928363"]
     }
-  },
-  "Qidian": {
-    "browserPath": null,
-    "browserProfileDir": null,
-    "outputDir": null,
-    "readingSpeed": 5000,
-    "minimumRequestDelaySeconds": 5,
-    "maximumRequestDelaySeconds": 12,
-    "retryCount": 3,
-    "catalogCacheTtlHours": 24,
-    "defaultBooks": [
-      "1045928363"
-    ]
-  }
 }
 ```
 

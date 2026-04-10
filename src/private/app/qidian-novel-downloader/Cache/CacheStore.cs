@@ -180,7 +180,11 @@ internal static class CacheStore
     {
         string chaptersDirectory = AppPaths.GetChapterCacheDirectory(cacheRoot, bookId);
         return Directory.Exists(chaptersDirectory)
-            ? Directory.EnumerateFiles(chaptersDirectory, "*.json", SearchOption.TopDirectoryOnly).Count()
+            ? Directory.EnumerateFiles(
+                chaptersDirectory,
+                "*.json",
+                SearchOption.TopDirectoryOnly)
+                .Count()
             : 0;
     }
 
@@ -209,10 +213,12 @@ internal static class CacheStore
     private static int ClearAllCatalogs(string cacheRoot)
     {
         int removed = 0;
-        foreach (string catalogDirectory in Directory.EnumerateDirectories(
-                     cacheRoot,
-                     AppConstants.CatalogsDirectoryName,
-                     SearchOption.AllDirectories).ToArray())
+        foreach (string catalogDirectory in Directory
+            .EnumerateDirectories(
+                cacheRoot,
+                AppConstants.CatalogsDirectoryName,
+                SearchOption.AllDirectories)
+            .ToArray())
         {
             removed += DeleteDirectory(catalogDirectory);
         }

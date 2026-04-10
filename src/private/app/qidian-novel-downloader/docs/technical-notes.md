@@ -59,22 +59,22 @@ project requirements and technology choices:
 - Candidate target framework: `net10.0` (subject to design-phase confirmation)
 - Candidate publish style: single-file publish per supported RID
 - Early publish examples included:
-  - `dotnet publish -r win-x64 -c Release`
-  - `dotnet publish -r linux-x64 -c Release`
-  - `dotnet publish -r osx-arm64 -c Release`
+    - `dotnet publish -r win-x64 -c Release`
+    - `dotnet publish -r linux-x64 -c Release`
+    - `dotnet publish -r osx-arm64 -c Release`
 - Repository package management is expected to follow the monorepo's central
   package management conventions, historically via
   `Directory.Packages.props`
 
 ### 2.3 Candidate Dependencies
 
-| Package | Candidate purpose |
-|---------|-------------------|
-| Microsoft.Playwright | Browser automation |
-| System.CommandLine | CLI argument parsing |
-| YamlDotNet | YAML configuration |
-| Spectre.Console | Progress bars and rich console output |
-| Microsoft.Extensions.Logging | Structured logging |
+| Package                      | Candidate purpose                     |
+| ---------------------------- | ------------------------------------- |
+| Microsoft.Playwright         | Browser automation                    |
+| System.CommandLine           | CLI argument parsing                  |
+| YamlDotNet                   | YAML configuration                    |
+| Spectre.Console              | Progress bars and rich console output |
+| Microsoft.Extensions.Logging | Structured logging                    |
 
 ### 2.4 Candidate Project Structure
 
@@ -167,18 +167,18 @@ implementation input.
 The lab folder currently contains three relevant PoC directions:
 
 1. **Playwright MCP extension bridge**
-   - Works with a running Edge instance plus the bridge extension
-   - Uses the real browser session and extensions
-   - Demonstrated catalog extraction, chapter download, caching, pacing, retry,
-     and Markdown generation in Python
+    - Works with a running Edge instance plus the bridge extension
+    - Uses the real browser session and extensions
+    - Demonstrated catalog extraction, chapter download, caching, pacing, retry,
+      and Markdown generation in Python
 2. **Persistent context against a real Edge user-data directory**
-   - Works only when all Edge instances are closed first
-   - Conflicts with Chromium's `SingletonLock` behavior
+    - Works only when all Edge instances are closed first
+    - Conflicts with Chromium's `SingletonLock` behavior
 3. **Headless download with headed login fallback**
-   - Uses a dedicated browser profile directory
-   - Avoids lock conflicts with the user's live browser session
-   - Persists cookies across runs
-   - Was marked as the recommended production direction in the lab README
+    - Uses a dedicated browser profile directory
+    - Avoids lock conflicts with the user's live browser session
+    - Persists cookies across runs
+    - Was marked as the recommended production direction in the lab README
 
 ### 4.2 Browser Selection and Overrides
 
@@ -321,11 +321,11 @@ a confirmed product rule during prior requirements review.
 
 Observed DOM variants from early investigation:
 
-| Scenario | Candidate selector | Note |
-|---------|--------------------|------|
-| Free chapter | `span.content-text` | Avoids paragraph-comment noise |
-| Purchased VIP chapter | `main p` | Plain paragraph extraction |
-| Unpurchased VIP chapter | `main p` + paywall detection | Save preview only |
+| Scenario                | Candidate selector           | Note                           |
+| ----------------------- | ---------------------------- | ------------------------------ |
+| Free chapter            | `span.content-text`          | Avoids paragraph-comment noise |
+| Purchased VIP chapter   | `main p`                     | Plain paragraph extraction     |
+| Unpurchased VIP chapter | `main p` + paywall detection | Save preview only              |
 
 Explored paywall checks included:
 
@@ -343,8 +343,8 @@ One observed DOM example was:
 
 ```html
 <p>
-  <span class="content-text" data-count="31">text</span>
-  <span class="review"><span class="review-count">31</span></span>
+    <span class="content-text" data-count="31">text</span>
+    <span class="review"><span class="review-count">31</span></span>
 </p>
 ```
 

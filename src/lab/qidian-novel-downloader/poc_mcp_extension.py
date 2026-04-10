@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
-"""
-PoC 1: Qidian Novel Downloader — Playwright MCP Extension Mode.
+# ruff: noqa: ANN001, ANN204, BLE001, C901, D101, D102, D103, D107, E501, EM102, PLR0912, PLR0915, RUF001, S311, SIM117, TRY003, TRY300, TRY301, TRY400
+"""PoC 1: Qidian Novel Downloader — Playwright MCP Extension Mode.
 
 Connects to a running Edge browser via the Playwright MCP Bridge extension
 to download novel content.  This leverages the real browser session (cookies,
 extensions, fingerprint) and naturally bypasses anti-bot detection.
 
 Prerequisites:
-  1. Install "Playwright MCP Bridge" extension in Edge from Chrome Web Store.
-  2. npm install -g @playwright/mcp  (or use npx)
-  3. pip install mcp
+    1. Install "Playwright MCP Bridge" extension in Edge from Chrome Web Store.
+    2. npm install -g @playwright/mcp  (or use npx)
+    3. pip install mcp
 
 Usage:
     python poc_mcp_extension.py [--book-id BOOK_ID] [--output OUTPUT]
                                 [--cache-dir CACHE_DIR] [--free-only]
 
 Features:
-  - Connects to running Edge via Playwright MCP Bridge extension
-  - File-based caching (catalog + per-chapter JSON)
-  - Conservative rate limiting (random 5-12s delays between chapters)
-  - Exponential backoff retry (up to 3 retries per chapter)
-  - Handles free, VIP purchased, and VIP unpurchased chapters
-  - Strips paragraph comment counts (段评) from extracted text
+    - Connects to running Edge via Playwright MCP Bridge extension
+    - File-based caching (catalog + per-chapter JSON)
+    - Conservative rate limiting (random 5-12s delays between chapters)
+    - Exponential backoff retry (up to 3 retries per chapter)
+    - Handles free, VIP purchased, and VIP unpurchased chapters
+    - Strips paragraph comment counts (段评) from extracted text
 """
 
 from __future__ import annotations
@@ -292,8 +292,9 @@ CHAPTER_CONTENT_JS = """
     if (mainPs.length > 0) {
         for (const p of mainPs) {
             const clone = p.cloneNode(true);
-            clone.querySelectorAll('.review, .review-count, .review-icon')
-                 .forEach(el => el.remove());
+            clone
+                .querySelectorAll('.review, .review-count, .review-icon')
+                .forEach(el => el.remove());
             const t = clone.textContent.trim();
             if (t && !/^\\d+$/.test(t)) results.push(t);
         }
@@ -310,8 +311,9 @@ CHAPTER_CONTENT_JS = """
         if (ps.length > 0) {
             for (const p of ps) {
                 const clone = p.cloneNode(true);
-                clone.querySelectorAll('.review, .review-count, .review-icon')
-                     .forEach(el => el.remove());
+                clone
+                    .querySelectorAll('.review, .review-count, .review-icon')
+                    .forEach(el => el.remove());
                 const t = clone.textContent.trim();
                 if (t && !/^\\d+$/.test(t)) results.push(t);
             }
@@ -378,8 +380,12 @@ async def fetch_catalog(session: ClientSession, book_id: str) -> list[Volume]:
         sum(len(v.chapters) for v in volumes),
     )
     for v in volumes:
-        log.info("  %s: %d chapters (%s)", v.title, len(v.chapters),
-                 "VIP" if v.is_vip else "Free")
+        log.info(
+            "  %s: %d chapters (%s)",
+            v.title,
+            len(v.chapters),
+            "VIP" if v.is_vip else "Free",
+        )
     return volumes
 
 
@@ -397,8 +403,12 @@ async def fetch_chapter_content(
     if not url.startswith("http"):
         url = QIDIAN_BASE + url
 
-    log.info("Fetching chapter: %s (%s) [attempt %d]",
-             chapter.title, chapter.chapter_id, attempt + 1)
+    log.info(
+        "Fetching chapter: %s (%s) [attempt %d]",
+        chapter.title,
+        chapter.chapter_id,
+        attempt + 1,
+    )
 
     try:
         await mcp_navigate(session, url)
@@ -423,29 +433,45 @@ async def fetch_chapter_content(
             vip_raw = await mcp_evaluate(session, CHAPTER_VIP_CHECK_JS)
             vip_val = _extract_evaluate_value(vip_raw)
             if "true" in str(vip_val).lower():
-                log.warning("Chapter %s is VIP-locked with no preview, skipping",
-                            chapter.title)
+                log.warning(
+                    "Chapter %s is VIP-locked with no preview, skipping",
+                    chapter.title,
+                )
                 return []
             raise RuntimeError(f"No content found for {chapter.title}")
 
         if is_partial:
             paragraphs.append("……（本章内容未完，需订阅后阅读全文）")
-            log.info("  Got %d preview paragraphs (%d chars) [PARTIAL]",
-                     len(paragraphs) - 1, sum(len(p) for p in paragraphs))
+            log.info(
+                "  Got %d preview paragraphs (%d chars) [PARTIAL]",
+                len(paragraphs) - 1,
+                sum(len(p) for p in paragraphs),
+            )
         else:
-            log.info("  Got %d paragraphs (%d chars)",
-                     len(paragraphs), sum(len(p) for p in paragraphs))
+            log.info(
+                "  Got %d paragraphs (%d chars)",
+                len(paragraphs),
+                sum(len(p) for p in paragraphs),
+            )
         return paragraphs
 
     except Exception as e:
         if attempt < MAX_RETRIES - 1:
             delay = RETRY_BASE_DELAY * (2**attempt)
-            log.warning("Failed to fetch %s: %s. Retrying in %.0fs...",
-                        chapter.title, e, delay)
+            log.warning(
+                "Failed to fetch %s: %s. Retrying in %.0fs...",
+                chapter.title,
+                e,
+                delay,
+            )
             await asyncio.sleep(delay)
             return await fetch_chapter_content(session, chapter, attempt + 1)
-        log.error("Failed to fetch %s after %d attempts: %s",
-                  chapter.title, MAX_RETRIES, e)
+        log.error(
+            "Failed to fetch %s after %d attempts: %s",
+            chapter.title,
+            MAX_RETRIES,
+            e,
+        )
         return []
 
 
@@ -462,7 +488,9 @@ def generate_markdown(
     trailing_count = re.compile(r"(?<=[。！？」…\u3000])(\d+)$")
 
     for vol in volumes:
-        has_content = any(ch.chapter_id in chapter_contents for ch in vol.chapters)
+        has_content = any(
+            ch.chapter_id in chapter_contents for ch in vol.chapters
+        )
         if not has_content:
             continue
         lines.append(f"# {vol.title}")
@@ -494,8 +522,10 @@ def load_catalog_from_cache(cache: CacheManager) -> list[Volume] | None:
             is_vip=vd.get("is_vip", False),
             chapters=[
                 Chapter(
-                    title=c["title"], url=c["url"],
-                    chapter_id=c["chapter_id"], is_vip=c.get("is_vip", False),
+                    title=c["title"],
+                    url=c["url"],
+                    chapter_id=c["chapter_id"],
+                    is_vip=c.get("is_vip", False),
                 )
                 for c in vd.get("chapters", [])
             ],
@@ -510,7 +540,9 @@ def load_catalog_from_cache(cache: CacheManager) -> list[Volume] | None:
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Qidian Novel Downloader PoC (MCP Extension)")
+    parser = argparse.ArgumentParser(
+        description="Qidian Novel Downloader PoC (MCP Extension)"
+    )
     parser.add_argument("--book-id", default=DEFAULT_BOOK_ID)
     parser.add_argument("--output", "-o", default=DEFAULT_OUTPUT)
     parser.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR)
@@ -561,12 +593,21 @@ async def main() -> None:
                         continue
                     tasks.append((vol, ch))
 
-            log.info("Download plan: %d to download, %d cached, %d VIP skipped",
-                     len(tasks), cached_count, skipped_vip)
+            log.info(
+                "Download plan: %d to download, %d cached, %d VIP skipped",
+                len(tasks),
+                cached_count,
+                skipped_vip,
+            )
 
             for i, (vol, ch) in enumerate(tasks):
-                log.info("[%d/%d] Downloading: %s > %s",
-                         i + 1, len(tasks), vol.title, ch.title)
+                log.info(
+                    "[%d/%d] Downloading: %s > %s",
+                    i + 1,
+                    len(tasks),
+                    vol.title,
+                    ch.title,
+                )
                 paragraphs = await fetch_chapter_content(session, ch)
                 if paragraphs:
                     cache.save_chapter(ch.chapter_id, ch.title, paragraphs)
@@ -585,8 +626,12 @@ async def main() -> None:
     markdown = generate_markdown(volumes, chapter_contents)
     output_path = Path(args.output)
     output_path.write_text(markdown, encoding="utf-8")
-    log.info("Written %d characters to %s (%d chapters)",
-             len(markdown), output_path, len(chapter_contents))
+    log.info(
+        "Written %d characters to %s (%d chapters)",
+        len(markdown),
+        output_path,
+        len(chapter_contents),
+    )
 
 
 if __name__ == "__main__":

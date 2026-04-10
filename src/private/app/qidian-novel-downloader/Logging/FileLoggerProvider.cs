@@ -6,14 +6,18 @@ namespace Hcoona.QidianNovelDownloader.Logging;
 
 internal sealed class FileLoggerProvider(TimeProvider timeProvider) : ILoggerProvider
 {
-    private readonly ConcurrentDictionary<string, FileLogger> _loggers = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, FileLogger> _loggers =
+        new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
     private readonly string _logDirectory = Path.Combine(
         AppPaths.GetDefaultStateRoot(),
         AppConstants.LogsDirectoryName);
 
     public ILogger CreateLogger(string categoryName)
-        => _loggers.GetOrAdd(categoryName, static (name, provider) => new FileLogger(name, provider), this);
+        => _loggers.GetOrAdd(
+            categoryName,
+            static (name, provider) => new FileLogger(name, provider),
+            this);
 
     public void Dispose()
     {

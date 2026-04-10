@@ -41,7 +41,8 @@ internal static class CliFactory
             "Override the output directory for this invocation.");
         Option<bool> dryRunOption = new("--dry-run")
         {
-            Description = "Inspect catalog and cache reuse status without downloading chapter bodies.",
+            Description = "Inspect catalog and cache reuse status without downloading "
+                + "chapter bodies.",
         };
         Option<bool> overwriteOption = new("--overwrite")
         {
@@ -106,7 +107,9 @@ internal static class CliFactory
             "--browser-profile-dir",
             "Override the browser profile directory for this invocation.");
 
-        Command command = new("login", "Open a visible browser window and persist an authenticated session.")
+        Command command = new(
+            "login",
+            "Open a visible browser window and persist an authenticated session.")
         {
             browserPathOption,
             browserProfileDirOption,

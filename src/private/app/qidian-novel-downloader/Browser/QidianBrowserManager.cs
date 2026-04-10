@@ -41,7 +41,8 @@ internal enum LoginStateProbeMode
     WaitForValidatedIdentity,
 }
 
-internal sealed class QidianBrowserManager(ILogger<QidianBrowserManager> logger) : IQidianBrowserManager
+internal sealed class QidianBrowserManager(
+    ILogger<QidianBrowserManager> logger) : IQidianBrowserManager
 {
     private static readonly string[] LaunchArgs =
     [
@@ -102,7 +103,9 @@ internal sealed class QidianBrowserManager(ILogger<QidianBrowserManager> logger)
             }
             catch (Exception exception)
             {
-                if (browserProfile.IsOverride && ChromiumProfilePathResolver.IsLikelyLockConflict(exception))
+                if (
+                    browserProfile.IsOverride
+                    && ChromiumProfilePathResolver.IsLikelyLockConflict(exception))
                 {
                     if (playwright is not null)
                     {
@@ -110,10 +113,13 @@ internal sealed class QidianBrowserManager(ILogger<QidianBrowserManager> logger)
                     }
 
                     throw new OperationalException(
-                        "The configured browser profile is currently locked by another Chromium browser process "
+                        "The configured browser profile is currently locked by another "
+                        + "Chromium browser process "
                         + $"and cannot be opened: '{browserProfile.EffectiveProfilePath}'. "
-                        + "Close all Microsoft Edge/Google Chrome windows that are using this profile and try again, "
-                        + "or remove the browserProfileDir override to use the downloader's dedicated profile.",
+                        + "Close all Microsoft Edge/Google Chrome windows that are using this "
+                        + "profile and try again, "
+                        + "or remove the browserProfileDir override "
+                        + "to use the downloader's dedicated profile.",
                         exception);
                 }
 
@@ -252,7 +258,9 @@ internal sealed class QidianBrowserSession(
         foreach (JsonElement volumeElement in root.GetProperty("volumes").EnumerateArray())
         {
             List<ChapterDescriptor> chapters = [];
-            foreach (JsonElement chapterElement in volumeElement.GetProperty("chapters").EnumerateArray())
+            foreach (JsonElement chapterElement in volumeElement
+                .GetProperty("chapters")
+                .EnumerateArray())
             {
                 chapters.Add(
                     new ChapterDescriptor(
@@ -305,7 +313,8 @@ internal sealed class QidianBrowserSession(
         try
         {
             await primaryPage.WaitForSelectorAsync(
-                "span.content-text, main p, .read-content p, .chapter-content p, #j_chapterContent p",
+                "span.content-text, main p, .read-content p, "
+                + ".chapter-content p, #j_chapterContent p",
                 new PageWaitForSelectorOptions { Timeout = 10_000 });
         }
         catch (TimeoutException)
@@ -377,8 +386,10 @@ internal sealed class QidianBrowserSession(
 
         throw new OperationalException(
             requireValidatedIdentity
-                ? "The login browser window was closed before a validated account identity was established."
-                : "The login browser window was closed before an authenticated session was established.");
+                ? "The login browser window was closed before "
+                    + "a validated account identity was established."
+                : "The login browser window was closed before "
+                    + "an authenticated session was established.");
     }
 
     public Task PersistSessionStateAsync() => DisposeCoreAsync(swallowBrowserCloseFailure: false);

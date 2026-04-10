@@ -6,7 +6,9 @@ internal static class PageScripts
         () => {
             const signInElement = document.getElementById('sign-in');
             const userNameElement = document.getElementById('user-name');
-            const isSignInHidden = signInElement ? signInElement.classList.contains('hidden') : true;
+            const isSignInHidden = signInElement
+                ? signInElement.classList.contains('hidden')
+                : true;
             const userName = userNameElement ? userNameElement.textContent.trim() : null;
             const isLoggedIn = (!!signInElement && !isSignInHidden)
                 || (!!userName && userName !== '用户名');
@@ -33,8 +35,14 @@ internal static class PageScripts
             const getCatalogChapterAccessState = (link, section) => {
                 const findChapterRow = () => {
                     let fallback = link.parentElement ?? section;
-                    for (let element = link.parentElement; element; element = element.parentElement) {
-                        const chapterLinkCount = element.querySelectorAll('a[href*="/chapter/"]').length;
+                    for (
+                        let element = link.parentElement;
+                        element;
+                        element = element.parentElement
+                    ) {
+                        const chapterLinkCount = element
+                            .querySelectorAll('a[href*="/chapter/"]')
+                            .length;
                         if (chapterLinkCount === 1) {
                             fallback = element;
                             if (element.querySelector('em.iconfont')) {

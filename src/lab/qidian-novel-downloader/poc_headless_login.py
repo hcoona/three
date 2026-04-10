@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""
-PoC 3: Qidian Novel Downloader — Headless-first with headed login fallback.
+# ruff: noqa: ANN001, BLE001, D103, E501, S110, S311, SIM105, T201
+"""PoC 3: Qidian Novel Downloader — Headless-first with headed login fallback.
 
 Uses a dedicated browser profile directory (.browser-profile/) so there are
 no lock conflicts with running Edge instances.  Cookies persist across runs,
 so manual login is only required once.
 
 Flow:
-  1. Launch headless → navigate to Qidian → check login status.
-  2. If not logged in, close headless → open headed → let user log in.
-  3. Launch headless again → scrape test chapters.
+    1. Launch headless → navigate to Qidian → check login status.
+    2. If not logged in, close headless → open headed → let user log in.
+    3. Launch headless again → scrape test chapters.
 
 This is the RECOMMENDED approach for the production C# implementation.
 
@@ -32,10 +32,10 @@ BROWSER_PROFILE_DIR = str(Path(__file__).parent / ".browser-profile")
 
 BOOK_ID = "1045928363"
 TEST_CHAPTERS = [
-    ("Free #1  (第1章 龙女)",       "853782267"),
-    ("Free #2  (第2章 小混蛋)",     "856055438"),
-    ("VIP purchased (第80章)",      "864173613"),
-    ("VIP unpurchased (第121章)",   "866955906"),
+    ("Free #1  (第1章 龙女)", "853782267"),
+    ("Free #2  (第2章 小混蛋)", "856055438"),
+    ("VIP purchased (第80章)", "864173613"),
+    ("VIP unpurchased (第121章)", "866955906"),
 ]
 
 # ── JS: detect login status ─────────────────────────────────────────────
@@ -51,8 +51,14 @@ CHECK_LOGIN_JS = """
     const logged_in = !!signInEl && !signInHidden;
     const userName = document.getElementById('user-name');
     const userText = userName ? userName.textContent.trim() : null;
-    return { logged_in, sign_in_hidden: signInHidden, has_sign_out: !!signOutEl,
-             user_name: userText, body_len: bodyLen, title };
+    return {
+        logged_in,
+        sign_in_hidden: signInHidden,
+        has_sign_out: !!signOutEl,
+        user_name: userText,
+        body_len: bodyLen,
+        title,
+    };
 }
 """
 
@@ -80,8 +86,9 @@ CHAPTER_CONTENT_JS = """
     if (mainPs.length > 0) {
         for (const p of mainPs) {
             const clone = p.cloneNode(true);
-            clone.querySelectorAll('.review, .review-count, .review-icon')
-                 .forEach(el => el.remove());
+            clone
+                .querySelectorAll('.review, .review-count, .review-icon')
+                .forEach(el => el.remove());
             const t = clone.textContent.trim();
             if (t && !/^\\d+$/.test(t)) results.push(t);
         }
@@ -141,8 +148,9 @@ async def interactive_login(pw) -> bool:
 
     ctx = await launch_context(pw, headless=False)
     page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-    await page.goto("https://www.qidian.com/", wait_until="domcontentloaded",
-                    timeout=60_000)
+    await page.goto(
+        "https://www.qidian.com/", wait_until="domcontentloaded", timeout=60_000
+    )
 
     await asyncio.get_event_loop().run_in_executor(
         None, input, "Press Enter after logging in... "
@@ -169,10 +177,10 @@ async def scrape_chapters(pw) -> None:
 
     for label, chapter_id in TEST_CHAPTERS:
         url = f"https://www.qidian.com/chapter/{BOOK_ID}/{chapter_id}/"
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  {label}")
         print(f"  {url}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         await page.goto(url, wait_until="networkidle", timeout=60_000)
         await page.wait_for_timeout(2000)
@@ -186,7 +194,7 @@ async def scrape_chapters(pw) -> None:
                 data = await page.evaluate(CHAPTER_CONTENT_JS)
                 break
             except Exception as e:
-                print(f"  Evaluate attempt {attempt+1} failed: {e}")
+                print(f"  Evaluate attempt {attempt + 1} failed: {e}")
                 await page.wait_for_timeout(2000)
         if data is None:
             print("  [EVALUATE FAILED]")
@@ -209,9 +217,9 @@ async def scrape_chapters(pw) -> None:
         await asyncio.sleep(random.uniform(3, 6))
 
     await ctx.close()
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Done — all 4 test chapters processed.")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 async def main() -> None:

@@ -65,10 +65,12 @@ public sealed class CacheStoreTests
         Directory.Delete(root, recursive: true);
     }
 
-    [Theory]
-    [InlineData("{ invalid json")]
-    [InlineData("{\"bookId\":\"1045928363\"")]
-    [InlineData("{\"bookId\":\"1045928363\",\"metadata\":null,\"volumes\":[],\"fetchedAtUtc\":\"2024-01-01T00:00:00+00:00\"}")]
+[Theory]
+[InlineData("{ invalid json")]
+[InlineData("{\"bookId\":\"1045928363\"")]
+[InlineData(
+    "{\"bookId\":\"1045928363\",\"metadata\":null,\"volumes\":[],"
+    + "\"fetchedAtUtc\":\"2024-01-01T00:00:00+00:00\"}")]
     public async Task GetCatalogAsyncReturnsNullForInvalidOrUnusablePayload(string payload)
     {
         string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -102,22 +104,26 @@ public sealed class CacheStoreTests
             cachePath,
             """
             {
-              "bookId": "1045928363",
-              "metadata": {
                 "bookId": "1045928363",
-                "title": "Title",
-                "author": "Author",
-                "estimatedWordCount": 123456
-              },
-              "volumes": [],
-              "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
-              "cacheScope": {
-                "kind": "Anonymous"
-              }
+                "metadata": {
+                    "bookId": "1045928363",
+                    "title": "Title",
+                    "author": "Author",
+                    "estimatedWordCount": 123456
+                },
+                "volumes": [],
+                "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
+                "cacheScope": {
+                    "kind": "Anonymous"
+                }
             }
             """);
 
-        using FileStream lockedStream = new(cachePath, FileMode.Open, FileAccess.Read, FileShare.None);
+        using FileStream lockedStream = new(
+            cachePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.None);
         CatalogSnapshot? catalog = await CacheStore.GetCatalogAsync(
             root,
             "1045928363",
@@ -139,10 +145,10 @@ public sealed class CacheStoreTests
             cachePath,
             """
             {
-              "chapterId": "1",
-              "paragraphs": null,
-              "isPreview": false,
-              "catalogWordCount": 100
+                "chapterId": "1",
+                "paragraphs": null,
+                "isPreview": false,
+                "catalogWordCount": 100
             }
             """);
 
@@ -166,9 +172,9 @@ public sealed class CacheStoreTests
             cachePath,
             """
             {
-              "chapterId": "1",
-              "isPreview": false,
-              "catalogWordCount": 100
+                "chapterId": "1",
+                "isPreview": false,
+                "catalogWordCount": 100
             }
             """);
 
@@ -192,14 +198,18 @@ public sealed class CacheStoreTests
             cachePath,
             """
             {
-              "chapterId": "1",
-              "paragraphs": ["Paragraph 1"],
-              "isPreview": false,
-              "catalogWordCount": 100
+                "chapterId": "1",
+                "paragraphs": ["Paragraph 1"],
+                "isPreview": false,
+                "catalogWordCount": 100
             }
             """);
 
-        using FileStream lockedStream = new(cachePath, FileMode.Open, FileAccess.Read, FileShare.None);
+        using FileStream lockedStream = new(
+            cachePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.None);
         ChapterCacheEntry? chapter = await CacheStore.GetChapterAsync(
             root,
             "1045928363",
@@ -286,19 +296,19 @@ public sealed class CacheStoreTests
             cachePath,
             """
             {
-              "bookId": "1045928363",
-              "metadata": {
                 "bookId": "1045928363",
-                "title": "Title",
-                "author": "Author",
-                "estimatedWordCount": 123456
-              },
-              "volumes": [],
-              "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
-              "cacheScope": {
-                "kind": "ValidatedUser",
-                "userName": "tester"
-              }
+                "metadata": {
+                    "bookId": "1045928363",
+                    "title": "Title",
+                    "author": "Author",
+                    "estimatedWordCount": 123456
+                },
+                "volumes": [],
+                "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
+                "cacheScope": {
+                    "kind": "ValidatedUser",
+                    "userName": "tester"
+                }
             }
             """);
 

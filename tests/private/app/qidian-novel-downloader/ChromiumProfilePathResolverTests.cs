@@ -78,13 +78,17 @@ public sealed class ChromiumProfilePathResolverTests : IDisposable
     [InlineData("Browser closed unexpectedly (exit code: 21)")]
     public void IsLikelyLockConflictRecognizesChromiumProfileLockFailures(string message)
     {
-        Assert.True(ChromiumProfilePathResolver.IsLikelyLockConflict(new InvalidOperationException(message)));
+        Assert.True(
+            ChromiumProfilePathResolver.IsLikelyLockConflict(
+                new InvalidOperationException(message)));
     }
 
     [Fact]
     public void IsLikelyLockConflictIgnoresUnrelatedFailures()
     {
-        Assert.False(ChromiumProfilePathResolver.IsLikelyLockConflict(new InvalidOperationException("Browser executable not found.")));
+        Assert.False(
+            ChromiumProfilePathResolver.IsLikelyLockConflict(
+                new InvalidOperationException("Browser executable not found.")));
     }
 
     public void Dispose()
