@@ -8,7 +8,7 @@ config_roots = ["src/private/app/factorio-cycle-calculator"]
 
 [tools]
 # Runtimes
-dotnet = "10"
+"core:dotnet" = "10"
 go = "latest"
 java = "lts"
 node = "24"
