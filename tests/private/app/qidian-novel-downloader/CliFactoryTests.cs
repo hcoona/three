@@ -1,3 +1,4 @@
+using System.Reflection;
 using Hcoona.QidianNovelDownloader.Browser;
 using Hcoona.QidianNovelDownloader.Commands;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,6 +27,23 @@ public sealed class CliFactoryTests
             ["--config", "Q:\\does-not-exist\\config.json", "login"]);
 
         Assert.Empty(parseResult.Errors);
+    }
+
+    [Theory]
+    [InlineData(new[] { "--config", "Q:\\temp\\config.json" }, "Q:\\temp\\config.json")]
+    [InlineData(new[] { "--config=Q:\\temp\\config.json" }, "Q:\\temp\\config.json")]
+    [InlineData(new[] { "--config", "--browser-path" }, null)]
+    [InlineData(new[] { "--config=" }, null)]
+    [InlineData(new[] { "--config", "   " }, null)]
+    public void TryGetConfigPathOverrideValidatesValue(string[] args, string? expected)
+    {
+        MethodInfo method = typeof(AppSettings).Assembly
+            .GetType("Hcoona.QidianNovelDownloader.Program")!
+            .GetMethod("TryGetConfigPathOverride", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        string? actual = (string?)method.Invoke(null, [args]);
+
+        Assert.Equal(expected, actual);
     }
 
     private sealed class AcceptAllConsole : IInteractiveConsole

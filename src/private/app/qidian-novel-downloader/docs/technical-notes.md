@@ -18,31 +18,40 @@ requirements.
 
 ## 2. Classification of Inputs
 
-### 2.1 Decisions Already Reflected in `requirements.md`
+### 2.1 Historical Inputs Considered During Requirements Analysis
 
-The following items were either supported by the lab PoCs or explicitly
-confirmed during prior Copilot CLI review sessions, and are therefore treated
-as normative requirements rather than mere technical options:
+The following items were discussed during early investigation and requirements
+analysis. They are preserved here for historical context, but `requirements.md`
+and the current implementation remain the authoritative sources for the present
+project requirements and technology choices:
 
-- `download --dry-run` is in scope as a formal feature
-- `login`, `cache-clear`, and `info` are formal CLI commands
-- a YAML configuration file and its user-facing settings are formal interface
-  requirements
-- exit code classification and supported-platform scope are formal requirements
-- support for canonical Qidian book URLs is a formal input requirement
-- `info` includes VIP/free status in its output
-- `download` processes catalog chapters regardless of VIP status, while still
-  saving only content legitimately visible to the current session
-- chapter failures are skipped and reported rather than silently counted as
-  success
-- empty content follows the general retry policy
-- catalog word count versus cached word count is the retained chapter
-  change-detection rule
-- normal downloads default to headless operation with interactive headed login
-  when needed
-- browser runtime selection falls back in the order system-installed Microsoft
-  Edge, system-installed Google Chrome, then Playwright-provided Chromium
-- users can explicitly override the browser executable path
+- `download --dry-run` was identified early as an in-scope feature candidate
+- `login`, `cache-clear`, and `info` were identified early as CLI command
+  candidates
+- configuration file format and user-facing settings were explored during early
+  investigation; see `requirements.md` and the implementation for the current
+  authoritative JSON format
+- exit code classification and supported-platform scope were early requirement
+  candidates
+- support for canonical Qidian book URLs was identified early as an input
+  requirement candidate
+- `info` including VIP/free status was an early output requirement candidate
+- `download` processing catalog chapters regardless of VIP status, while still
+  saving only content legitimately visible to the current session, was an early
+  behavioral requirement candidate
+- chapter failures being skipped and reported rather than silently counted as
+  success was an early error-handling requirement candidate
+- empty content following the general retry policy was an early retry-policy
+  candidate
+- catalog word count versus cached word count as the retained chapter
+  change-detection rule was an early design candidate
+- normal downloads defaulting to headless operation with interactive headed
+  login when needed was an early UX/runtime candidate
+- browser runtime selection falling back in the order system-installed
+  Microsoft Edge, system-installed Google Chrome, then Playwright-provided
+  Chromium was an early runtime candidate
+- users explicitly overriding the browser executable path was an early
+  configurability candidate
 
 ### 2.2 Candidate Runtime and Packaging
 
@@ -103,7 +112,7 @@ src/private/app/qidian-novel-downloader/
 
 ### 2.5 Candidate Test Focus
 
-- Candidate test framework: MSTest
+- Current test framework in this repository: xUnit
 - Candidate test project location:
   `tests/private/app/qidian-novel-downloader/`
 - Markdown generation from parsed book data

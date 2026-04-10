@@ -45,16 +45,26 @@ internal static class Program
         {
             if (string.Equals(args[index], "--config", StringComparison.Ordinal))
             {
-                return index + 1 < args.Length ? args[index + 1] : null;
+                if (index + 1 < args.Length && IsValidConfigPathOverride(args[index + 1]))
+                {
+                    return args[index + 1];
+                }
+
+                return null;
             }
 
             const string configPrefix = "--config=";
             if (args[index].StartsWith(configPrefix, StringComparison.Ordinal))
             {
-                return args[index][configPrefix.Length..];
+                string configPath = args[index][configPrefix.Length..];
+                return IsValidConfigPathOverride(configPath) ? configPath : null;
             }
         }
 
         return null;
     }
+
+    private static bool IsValidConfigPathOverride(string value)
+        => !string.IsNullOrWhiteSpace(value)
+            && !value.StartsWith('-');
 }

@@ -30,6 +30,22 @@ internal static class CacheStore
         {
             return null;
         }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     public static async Task SaveCatalogAsync(
@@ -76,6 +92,22 @@ internal static class CacheStore
         {
             return null;
         }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     public static async Task<ChapterCacheProbe?> GetChapterProbeAsync(
@@ -100,6 +132,22 @@ internal static class CacheStore
             return chapter is { Paragraphs: not null } ? chapter : null;
         }
         catch (JsonException)
+        {
+            return null;
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
         {
             return null;
         }

@@ -17,8 +17,9 @@ internal static class DownloadTargetResolver
         if (targets.Count == 0)
         {
             throw new CliInputException(
-                "No book targets were provided. Supply book ids on the command line or configure "
-                + "default books in the tool-managed config file.");
+                "No book targets were provided. Supply numeric book ids or canonical Qidian "
+                + "book URLs (https://www.qidian.com/book/{bookId}) on the command line, or "
+                + "configure default books in the tool-managed config file.");
         }
 
         return targets;

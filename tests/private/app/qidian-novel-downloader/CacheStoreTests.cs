@@ -90,6 +90,46 @@ public sealed class CacheStoreTests
     }
 
     [Fact]
+    public async Task GetCatalogAsyncReturnsNullWhenCacheFileIsLocked()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string cachePath = AppPaths.GetCatalogCachePath(
+            root,
+            "1045928363",
+            CatalogCacheScope.Anonymous);
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            """
+            {
+              "bookId": "1045928363",
+              "metadata": {
+                "bookId": "1045928363",
+                "title": "Title",
+                "author": "Author",
+                "estimatedWordCount": 123456
+              },
+              "volumes": [],
+              "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
+              "cacheScope": {
+                "kind": "Anonymous"
+              }
+            }
+            """);
+
+        using FileStream lockedStream = new(cachePath, FileMode.Open, FileAccess.Read, FileShare.None);
+        CatalogSnapshot? catalog = await CacheStore.GetCatalogAsync(
+            root,
+            "1045928363",
+            CatalogCacheScope.Anonymous,
+            CancellationToken.None);
+
+        Assert.Null(catalog);
+        lockedStream.Dispose();
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
     public async Task GetChapterAsyncReturnsNullForNullParagraphPayload()
     {
         string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -139,6 +179,35 @@ public sealed class CacheStoreTests
             CancellationToken.None);
 
         Assert.Null(chapter);
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public async Task GetChapterAsyncReturnsNullWhenCacheFileIsLocked()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            """
+            {
+              "chapterId": "1",
+              "paragraphs": ["Paragraph 1"],
+              "isPreview": false,
+              "catalogWordCount": 100
+            }
+            """);
+
+        using FileStream lockedStream = new(cachePath, FileMode.Open, FileAccess.Read, FileShare.None);
+        ChapterCacheEntry? chapter = await CacheStore.GetChapterAsync(
+            root,
+            "1045928363",
+            "1",
+            CancellationToken.None);
+
+        Assert.Null(chapter);
+        lockedStream.Dispose();
         Directory.Delete(root, recursive: true);
     }
 

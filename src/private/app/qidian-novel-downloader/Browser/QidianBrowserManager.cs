@@ -59,7 +59,8 @@ internal sealed class QidianBrowserManager(ILogger<QidianBrowserManager> logger)
 
         if (settings.BrowserPath is { Length: > 0 } && !File.Exists(settings.BrowserPath))
         {
-            throw new CliInputException("The specified browser executable does not exist.");
+            throw new CliInputException(
+                $"The specified browser executable does not exist: '{settings.BrowserPath}'.");
         }
 
         ChromiumProfilePaths browserProfile = ChromiumProfilePathResolver.Resolve(
