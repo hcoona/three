@@ -147,7 +147,11 @@ internal sealed record ResolvedAppSettings(
 
 internal sealed record BookReference(string RawValue, string BookId);
 
-internal sealed record BookMetadata(string BookId, string Title, string Author, int? EstimatedWordCount);
+internal sealed record BookMetadata(
+    string BookId,
+    string Title,
+    string Author,
+    int? EstimatedWordCount);
 
 [JsonConverter(typeof(JsonStringEnumConverter<CatalogChapterAccessState>))]
 internal enum CatalogChapterAccessState
@@ -194,7 +198,8 @@ internal sealed record CatalogCacheScope(CatalogCacheScopeKind Kind, string? Use
         => Kind switch
         {
             CatalogCacheScopeKind.Anonymous => UserName is null,
-            CatalogCacheScopeKind.ValidatedUser => LoginState.NormalizeUserName(UserName) is { } normalizedUserName
+            CatalogCacheScopeKind.ValidatedUser
+                => LoginState.NormalizeUserName(UserName) is { } normalizedUserName
                 && string.Equals(normalizedUserName, UserName, StringComparison.Ordinal),
             _ => false,
         };
@@ -326,7 +331,8 @@ internal sealed record LoginState(bool IsLoggedIn, string? UserName)
         };
 
     public static string? NormalizeUserName(string? userName)
-        => string.IsNullOrWhiteSpace(userName) || string.Equals(userName, "用户名", StringComparison.Ordinal)
+        => string.IsNullOrWhiteSpace(userName)
+            || string.Equals(userName, "用户名", StringComparison.Ordinal)
             ? null
             : userName;
 }
@@ -385,7 +391,8 @@ internal sealed record DownloadCommandSummary(
     public override string ToString()
         => "Summary: "
         + $"books completed={CompletedBooks}, skipped={SkippedBooks}, failed={FailedBooks}; "
-        + $"chapters downloaded={DownloadedChapters}, reused={ReusedChapters}, failed={FailedChapters}.";
+        + $"chapters downloaded={DownloadedChapters}, reused={ReusedChapters}, "
+        + $"failed={FailedChapters}.";
 }
 
 internal static class ExitCodes
@@ -454,11 +461,14 @@ internal static class LogMessages
         LoggerMessage.Define(
             LogLevel.Warning,
             new EventId(1009, nameof(IgnoreAuthenticatedCacheReuseProbeFailure)),
-            "Failed to probe current login state for authenticated VIP cache reuse. Falling back to anonymous plan.");
+            "Failed to probe current login state for authenticated VIP cache reuse. "
+            + "Falling back to anonymous plan.");
 
-    public static readonly Action<ILogger, Exception?> IgnoreVipFullContentClassificationProbeFailure =
+    public static readonly Action<ILogger, Exception?>
+        IgnoreVipFullContentClassificationProbeFailure =
         LoggerMessage.Define(
             LogLevel.Warning,
             new EventId(1010, nameof(IgnoreVipFullContentClassificationProbeFailure)),
-            "Failed to probe current login state for VIP full-content classification. Saving content without upgrading cache visibility metadata.");
+            "Failed to probe current login state for VIP full-content classification. "
+            + "Saving content without upgrading cache visibility metadata.");
 }

@@ -31,7 +31,9 @@ internal static class Program
         builder.Services.AddSingleton<ILoggerProvider, FileLoggerProvider>();
         builder.Services.AddSingleton<IInteractiveConsole, SystemInteractiveConsole>();
         builder.Services.AddSingleton<IAppStorageService, AppStorageService>();
-        builder.Services.AddSingleton<Browser.IQidianBrowserManager, Browser.QidianBrowserManager>();
+        builder.Services.AddSingleton<
+            Browser.IQidianBrowserManager,
+            Browser.QidianBrowserManager>();
         builder.Services.AddTransient<AppCommandService>();
 
         using IHost host = builder.Build();

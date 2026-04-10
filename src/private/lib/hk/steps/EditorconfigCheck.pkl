@@ -3,7 +3,11 @@ import "@hk/Config.pkl"
 editorconfig_check = new Config.Step {
   batch = true
   check = new Config.Script {
-    linux = "ec {{files}}"
-    windows = "ec-windows-amd64.exe {{files}}"
+    linux =
+      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
+      + "-Tool ec -Path {{files}}"
+    windows =
+      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-NativeFileBatchWrapper.ps1 "
+      + "-Tool ec-windows-amd64.exe -Path {{files}}"
   }
 }
