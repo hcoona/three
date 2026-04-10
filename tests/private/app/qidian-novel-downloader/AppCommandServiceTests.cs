@@ -14,7 +14,7 @@ public sealed class AppCommandServiceTests
     public async Task DownloadAsyncDryRunAllowsAnonymousVipPreviewPlanningWithoutLogin()
     {
         using TestWorkspace workspace = new();
-        FakeBrowserSession headlessSession = new(
+        FakeBrowserSession initialHeadlessSession = new(
             loginStates:
             [
                 new LoginState(false, null),
@@ -25,7 +25,7 @@ public sealed class AppCommandServiceTests
                     "100",
                     ("VIP Volume", true, [("c1", "VIP One", true, 100), ("c2", "VIP Two", true, 200)])),
             ]);
-        FakeBrowserManager browserManager = new(headlessSession);
+        FakeBrowserManager browserManager = new(initialHeadlessSession);
         AppCommandService service = CreateService(workspace, browserManager);
 
         ConsoleCaptureResult result = await WithConsoleCaptureAsync(
@@ -39,7 +39,7 @@ public sealed class AppCommandServiceTests
 
         Assert.Equal(ExitCodes.Success, result.ReturnValue);
         Assert.Equal([true], browserManager.OpenCalls);
-        Assert.Equal(1, headlessSession.LoginStateRequests);
+        Assert.Equal(1, initialHeadlessSession.LoginStateRequests);
         Assert.Equal(
             [
                 "open:headless",
@@ -75,7 +75,7 @@ public sealed class AppCommandServiceTests
                 CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
             },
             CancellationToken.None);
-        FakeBrowserSession headlessSession = new(
+        FakeBrowserSession initialHeadlessSession = new(
             loginStates:
             [
                 new LoginState(false, null),
@@ -91,9 +91,15 @@ public sealed class AppCommandServiceTests
             [
                 new LoginState(true, "tester"),
             ]);
+        FakeBrowserSession resumedHeadlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ]);
         FakeBrowserManager browserManager = new(
-            headlessSession,
-            headedSession);
+            initialHeadlessSession,
+            headedSession,
+            resumedHeadlessSession);
         AppCommandService service = CreateService(workspace, browserManager);
 
         ConsoleCaptureResult result = await WithConsoleCaptureAsync(
@@ -106,13 +112,16 @@ public sealed class AppCommandServiceTests
                 CancellationToken.None));
 
         Assert.Equal(ExitCodes.Success, result.ReturnValue);
-        Assert.Equal([true, false], browserManager.OpenCalls);
-        Assert.Equal(2, headlessSession.LoginStateRequests);
+        Assert.Equal([true, false, true], browserManager.OpenCalls);
+        Assert.Equal(2, initialHeadlessSession.LoginStateRequests);
         Assert.Equal(
             [LoginStateProbeMode.CurrentStateOnly, LoginStateProbeMode.WaitForValidatedIdentity],
-            headlessSession.LoginStateProbeModes);
+            initialHeadlessSession.LoginStateProbeModes);
         Assert.Equal(0, headedSession.LoginStateRequests);
         Assert.Equal(1, headedSession.WaitForManualLoginCalls);
+        Assert.Equal(1, headedSession.PersistSessionStateCalls);
+        Assert.Equal(1, resumedHeadlessSession.LoginStateRequests);
+        Assert.Equal([LoginStateProbeMode.WaitForValidatedIdentity], resumedHeadlessSession.LoginStateProbeModes);
         Assert.Equal(
             [
                 "open:headless",
@@ -121,6 +130,9 @@ public sealed class AppCommandServiceTests
                 "login-state:headless",
                 "open:headed",
                 "wait-for-login:headed",
+                "persist-session:headed",
+                "open:headless",
+                "login-state:headless",
             ],
             browserManager.Events);
         Assert.Contains("Authentication is required.", result.StdOut);
@@ -152,7 +164,7 @@ public sealed class AppCommandServiceTests
                 CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
             },
             CancellationToken.None);
-        FakeBrowserSession headlessSession = new(
+        FakeBrowserSession initialHeadlessSession = new(
             loginStates:
             [
                 new LoginState(true, null),
@@ -168,9 +180,15 @@ public sealed class AppCommandServiceTests
             [
                 new LoginState(true, "tester"),
             ]);
+        FakeBrowserSession resumedHeadlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ]);
         FakeBrowserManager browserManager = new(
-            headlessSession,
-            headedSession);
+            initialHeadlessSession,
+            headedSession,
+            resumedHeadlessSession);
         AppCommandService service = CreateService(workspace, browserManager);
 
         ConsoleCaptureResult result = await WithConsoleCaptureAsync(
@@ -183,13 +201,16 @@ public sealed class AppCommandServiceTests
                 CancellationToken.None));
 
         Assert.Equal(ExitCodes.Success, result.ReturnValue);
-        Assert.Equal([true, false], browserManager.OpenCalls);
-        Assert.Equal(2, headlessSession.LoginStateRequests);
+        Assert.Equal([true, false, true], browserManager.OpenCalls);
+        Assert.Equal(2, initialHeadlessSession.LoginStateRequests);
         Assert.Equal(
             [LoginStateProbeMode.CurrentStateOnly, LoginStateProbeMode.WaitForValidatedIdentity],
-            headlessSession.LoginStateProbeModes);
+            initialHeadlessSession.LoginStateProbeModes);
         Assert.Equal(0, headedSession.LoginStateRequests);
         Assert.Equal(1, headedSession.WaitForManualLoginCalls);
+        Assert.Equal(1, headedSession.PersistSessionStateCalls);
+        Assert.Equal(1, resumedHeadlessSession.LoginStateRequests);
+        Assert.Equal([LoginStateProbeMode.WaitForValidatedIdentity], resumedHeadlessSession.LoginStateProbeModes);
         Assert.Equal(
             [
                 "open:headless",
@@ -198,6 +219,9 @@ public sealed class AppCommandServiceTests
                 "login-state:headless",
                 "open:headed",
                 "wait-for-login:headed",
+                "persist-session:headed",
+                "open:headless",
+                "login-state:headless",
             ],
             browserManager.Events);
         Assert.Contains("Authentication is required.", result.StdOut);
@@ -225,13 +249,18 @@ public sealed class AppCommandServiceTests
                 CatalogChapterAccessState.Accessible,
                 VisibleToUserName: "tester"),
             CancellationToken.None);
-        FakeBrowserSession headlessSession = new(
+        FakeBrowserSession initialHeadlessSession = new(
             loginStates:
             [
                 new LoginState(false, null),
                 new LoginState(false, null),
             ]);
         FakeBrowserSession headedSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ]);
+        FakeBrowserSession resumedHeadlessSession = new(
             loginStates:
             [
                 new LoginState(true, "tester"),
@@ -242,7 +271,7 @@ public sealed class AppCommandServiceTests
                     "100",
                     ("VIP Volume", true, [("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible)])),
             ]);
-        FakeBrowserManager browserManager = new(headlessSession, headedSession);
+        FakeBrowserManager browserManager = new(initialHeadlessSession, headedSession, resumedHeadlessSession);
         AppCommandService service = CreateService(workspace, browserManager);
 
         ConsoleCaptureResult result = await WithConsoleCaptureAsync(
@@ -255,11 +284,14 @@ public sealed class AppCommandServiceTests
                 CancellationToken.None));
 
         Assert.Equal(ExitCodes.Success, result.ReturnValue);
-        Assert.Equal([true, false], browserManager.OpenCalls);
-        Assert.Equal(2, headlessSession.LoginStateRequests);
+        Assert.Equal([true, false, true], browserManager.OpenCalls);
+        Assert.Equal(2, initialHeadlessSession.LoginStateRequests);
         Assert.Equal(
             [LoginStateProbeMode.CurrentStateOnly, LoginStateProbeMode.WaitForValidatedIdentity],
-            headlessSession.LoginStateProbeModes);
+            initialHeadlessSession.LoginStateProbeModes);
+        Assert.Equal(1, headedSession.PersistSessionStateCalls);
+        Assert.Equal(1, resumedHeadlessSession.LoginStateRequests);
+        Assert.Equal([LoginStateProbeMode.WaitForValidatedIdentity], resumedHeadlessSession.LoginStateProbeModes);
         Assert.Equal(
             [
                 "open:headless",
@@ -267,7 +299,10 @@ public sealed class AppCommandServiceTests
                 "login-state:headless",
                 "open:headed",
                 "wait-for-login:headed",
-                "fetch-catalog:headed:100",
+                "persist-session:headed",
+                "open:headless",
+                "login-state:headless",
+                "fetch-catalog:headless:100",
             ],
             browserManager.Events);
         Assert.Contains("Authentication is required.", result.StdOut);
@@ -1301,6 +1336,44 @@ public sealed class AppCommandServiceTests
         Assert.Contains("Summary: completed=1, reused=0, skipped=0, failed=0.", result.StdOut);
     }
 
+    [Fact]
+    public async Task CacheClearAsyncEmitsFailedSummaryWhenInputValidationFails()
+    {
+        using TestWorkspace workspace = new();
+        AppCommandService service = CreateService(workspace, new FakeBrowserManager());
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.CacheClearAsync(
+                new CacheClearCommandOptions
+                {
+                    BookReference = "https://book.qidian.com/info/1045928363",
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.UsageFailure, result.ReturnValue);
+        Assert.Contains("Summary: completed=0, reused=0, skipped=0, failed=1.", result.StdOut);
+        Assert.Contains("Unsupported book reference", result.StdErr);
+    }
+
+    [Fact]
+    public async Task CacheClearAsyncEmitsFailedSummaryWhenOperationFails()
+    {
+        using TestWorkspace workspace = new();
+        AppCommandService service = CreateService(
+            workspace,
+            new FakeBrowserManager(),
+            storageService: new ThrowingStorageService(new InvalidOperationException("resolve failed")));
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.CacheClearAsync(
+                new CacheClearCommandOptions(),
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.OperationalFailure, result.ReturnValue);
+        Assert.Contains("Summary: completed=0, reused=0, skipped=0, failed=1.", result.StdOut);
+        Assert.Contains("ERROR: resolve failed", result.StdErr);
+    }
+
     [Theory]
     [InlineData(null, 100)]
     [InlineData(100, null)]
@@ -1566,7 +1639,7 @@ public sealed class AppCommandServiceTests
     private static AppCommandService CreateService(
         TestWorkspace workspace,
         FakeBrowserManager browserManager,
-        FakeStorageService? storageService = null,
+        IAppStorageService? storageService = null,
         ILogger<AppCommandService>? logger = null,
         AppSettings? appSettings = null)
         => new(
@@ -1665,6 +1738,13 @@ public sealed class AppCommandServiceTests
             Directory.CreateDirectory(paths.OutputRoot);
             return paths;
         }
+    }
+
+    private sealed class ThrowingStorageService(Exception exception) : IAppStorageService
+    {
+        public AppStoragePaths Resolve(AppSettings settings) => throw exception;
+
+        public AppStoragePaths EnsureStorage(AppSettings settings) => throw exception;
     }
 
     private sealed class FakeBrowserManager : IQidianBrowserManager

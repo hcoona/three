@@ -131,10 +131,12 @@ internal sealed class AppCommandService(
                     Console.WriteLine(
                         "Authentication is required. Opening a visible browser window for manual sign-in.");
                     await OpenBrowserAsync(headless: false);
-                    LoginState validatedState = await browser!.WaitForManualLoginAsync(
+                    await browser!.WaitForManualLoginAsync(
                         cancellationToken,
                         requireValidatedIdentity: true);
-                    loginState = validatedState;
+                    await browser.PersistSessionStateAsync();
+                    browser = null;
+                    LoginState validatedState = await GetCurrentLoginStateAsync(forceRefresh: true);
                     Console.WriteLine("Login confirmed. Continuing with the validated session.");
                     return validatedState;
                 }
@@ -449,6 +451,7 @@ internal sealed class AppCommandService(
         catch (CliInputException exception)
         {
             Console.Error.WriteLine(exception.Message);
+            Console.WriteLine(new CommandSummary(0, 0, 0, 1));
             return Task.FromResult(ExitCodes.UsageFailure);
         }
         catch (OperationCanceledException)
@@ -459,6 +462,7 @@ internal sealed class AppCommandService(
         {
             LogMessages.CacheClearFailed(logger, exception);
             Console.Error.WriteLine($"ERROR: {exception.Message}");
+            Console.WriteLine(new CommandSummary(0, 0, 0, 1));
             return Task.FromResult(ExitCodes.OperationalFailure);
         }
     }
