@@ -83,7 +83,7 @@ jobs:
           python-version: ${{ inputs.python_version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
         with:
           python-version: ${{ inputs.python_version }}
           cache-dependency-glob: 'uv.lock'
@@ -94,7 +94,7 @@ jobs:
           dotnet tool restore
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
           version: ${{ inputs.pnpm_version }}
           run_install: false

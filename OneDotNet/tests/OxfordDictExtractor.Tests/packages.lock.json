@@ -4,9 +4,9 @@
     "net10.0": {
       "DotNet.ReproducibleBuilds": {
         "type": "Direct",
-        "requested": "[1.2.39, )",
-        "resolved": "1.2.39",
-        "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
+        "requested": "[2.0.2, )",
+        "resolved": "2.0.2",
+        "contentHash": "VaHoEN6YHp0jXucxm67vfuRy8zo9ufiKSuaZ4ZudRi8xmWcEFMKxfCsg2nvYNvdISFTURDu+IHqADGh53+Bamw=="
       },
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
@@ -199,7 +199,7 @@
         "dependencies": {
           "HtmlAgilityPack": "[1.12.4, )",
           "Nito.Guids": "[1.1.1, )",
-          "WebMarkupMin.Core": "[2.20.2, )"
+          "WebMarkupMin.Core": "[2.21.0, )"
         }
       },
       "HtmlAgilityPack": {
@@ -216,9 +216,9 @@
       },
       "WebMarkupMin.Core": {
         "type": "CentralTransitive",
-        "requested": "[2.20.2, )",
-        "resolved": "2.20.2",
-        "contentHash": "VkOtB5hZDmXtcZpyQQIYrW8Wf948HafneTHi2B2Frwm/H0GAeNK2o9lTuVU+rwmxHx62pSbsbpheFW3KoUmNSw==",
+        "requested": "[2.21.0, )",
+        "resolved": "2.21.0",
+        "contentHash": "/8zGdjDObXPadupzjV0iixXWgFTvh17n78ZFsWmnLy5us3i3ZaE5HD7P2HJFOe9ZiaWVxZOVQ3gDNvzMmG1VPQ==",
         "dependencies": {
           "AdvancedStringBuilder": "0.2.0"
         }

@@ -3,19 +3,40 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./.github/hooks/scripts/copilot-summary-state.ps1",
-        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\.github\\hooks\\scripts\\copilot-summary-state.ps1",
+        "command": "dotnet run --project ./src/private/app/vscode-copilot-telegram-hook/VSCodeCopilotTelegramHook.csproj -- hook session-start",
+        "windows": "dotnet run --project .\\src\\private\\app\\vscode-copilot-telegram-hook\\VSCodeCopilotTelegramHook.csproj -- hook session-start",
         "cwd": ".",
-        "timeout": 10
+        "env": {
+          "COPILOT_TELEGRAM_HOOK_ID": "hcoona.vscode-copilot-telegram-hook",
+          "COPILOT_TELEGRAM_GOPASS_PREFIX": "copilot/vscode-copilot-telegram-hook"
+        },
+        "timeout": 30
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "dotnet run --project ./src/private/app/vscode-copilot-telegram-hook/VSCodeCopilotTelegramHook.csproj -- hook user-prompt-submit",
+        "windows": "dotnet run --project .\\src\\private\\app\\vscode-copilot-telegram-hook\\VSCodeCopilotTelegramHook.csproj -- hook user-prompt-submit",
+        "cwd": ".",
+        "env": {
+          "COPILOT_TELEGRAM_HOOK_ID": "hcoona.vscode-copilot-telegram-hook",
+          "COPILOT_TELEGRAM_GOPASS_PREFIX": "copilot/vscode-copilot-telegram-hook"
+        },
+        "timeout": 30
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "pwsh -NoLogo -NoProfile -NonInteractive -File ./.github/hooks/scripts/telegram-notify.ps1",
-        "windows": "pwsh -NoLogo -NoProfile -NonInteractive -File .\\.github\\hooks\\scripts\\telegram-notify.ps1",
+        "command": "dotnet run --project ./src/private/app/vscode-copilot-telegram-hook/VSCodeCopilotTelegramHook.csproj -- hook stop",
+        "windows": "dotnet run --project .\\src\\private\\app\\vscode-copilot-telegram-hook\\VSCodeCopilotTelegramHook.csproj -- hook stop",
         "cwd": ".",
-        "timeout": 10
+        "env": {
+          "COPILOT_TELEGRAM_HOOK_ID": "hcoona.vscode-copilot-telegram-hook",
+          "COPILOT_TELEGRAM_GOPASS_PREFIX": "copilot/vscode-copilot-telegram-hook"
+        },
+        "timeout": 30
       }
     ]
   }
