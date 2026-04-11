@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ruff: noqa: ANN001, ANN204, BLE001, C901, D101, D102, D103, D107, E501, EM102, PLR0912, PLR0915, RUF001, S311, SIM117, TRY003, TRY300, TRY301, TRY400
 """PoC 1: Qidian Novel Downloader — Playwright MCP Extension Mode.
 

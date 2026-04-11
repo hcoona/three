@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ruff: noqa: ANN001, BLE001, D103, E501, S110, S311, SIM105, T201
 """PoC 3: Qidian Novel Downloader — Headless-first with headed login fallback.
 

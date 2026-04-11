@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ruff: noqa: D103, E501, T201
 """PoC 2: Qidian Novel Downloader — Playwright Persistent Context (real profile).
 
