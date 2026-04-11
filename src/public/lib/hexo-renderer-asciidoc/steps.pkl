@@ -18,13 +18,22 @@ nwa = new Config.Step {
       ".mise.lock",
     )
   check = "nwa config -c check"
-  fix = "nwa config -c add 2>/dev/null"
+  fix = new Config.Script {
+    linux = "nwa config -c add 2>/dev/null"
+    windows = "nwa config -c add 2>NUL"
+  }
+}
+
+pkl_eval = new Config.Step {
+  batch = true
+  glob = "*.pkl"
+  check = "python eng/scripts/hk_pkl_eval.py {{files}}"
 }
 
 pklFormat = new Config.Step {
   glob = "*.pkl"
-  check = "pkl format -s {{files}}"
-  fix = "pkl format -w {{files}}"
+  check = "python eng/scripts/hk_exec.py pkl format --silent -- {{files}}"
+  fix = "python eng/scripts/hk_exec.py pkl format --silent --write -- {{files}}"
   stage = "*.pkl"
   batch = true
 }
@@ -33,12 +42,12 @@ markdownlint_cli2 = new Config.Step {
   batch = true
   glob = markdown_globs
   stage = markdown_globs
-  check = "markdownlint-cli2 {{files}}"
-  fix = "markdownlint-cli2 --fix {{files}}"
+  check = "python eng/scripts/hk_exec.py markdownlint-cli2 -- {{files}}"
+  fix = "python eng/scripts/hk_exec.py markdownlint-cli2 --fix -- {{files}}"
 }
 
 typos = new Config.Step {
   batch = true
-  check = "typos -c .typos.toml {{files}}"
-  fix = "typos -c .typos.toml -w {{files}}"
+  check = "python eng/scripts/hk_exec.py typos -c .typos.toml --force-exclude -- {{files}}"
+  fix = "python eng/scripts/hk_exec.py typos -c .typos.toml --force-exclude -w -- {{files}}"
 }

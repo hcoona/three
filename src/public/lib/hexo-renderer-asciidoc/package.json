@@ -62,21 +62,21 @@
   "dependencies": {
     "asciidoctor": "3.0.4",
     "cheerio": "^1.2.0",
-    "entities": "^7.0.1",
+    "entities": "^8.0.0",
     "hexo-util": "^4.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.6",
+    "@biomejs/biome": "2.4.11",
     "@types/node": "^22.10.2",
     "@typescript/native-preview": "^7.0.0-dev.20260314.1",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/coverage-v8": "^4.1.4",
     "hexo": "8.1.1",
-    "markdownlint-cli2": "0.21.0",
+    "markdownlint-cli2": "0.22.0",
     "nerdbank-gitversioning": "^3.7.91",
-    "prettier": "3.8.1",
-    "tsdown": "^0.21.0",
+    "prettier": "3.8.2",
+    "tsdown": "^0.21.7",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.4"
   },
   "exports": {
     ".": {
