@@ -62,11 +62,13 @@ def build_actionlint_command(
     shellcheck = os.getenv("HK_ACTIONLINT_SHELLCHECK", "").strip()
     pyflakes = os.getenv("HK_ACTIONLINT_PYFLAKES", "").strip()
 
-    command = [
-        "actionlint",
-        f"-shellcheck={shellcheck}",
-        f"-pyflakes={pyflakes}",
-    ]
+    command = ["actionlint"]
+
+    if shellcheck:
+        command.append(f"-shellcheck={shellcheck}")
+
+    if pyflakes:
+        command.append(f"-pyflakes={pyflakes}")
 
     if path is not None:
         command.append(path)

@@ -9,28 +9,27 @@ _MIN_QUOTED_LEN = 2
 
 
 def normalize_path(value: str) -> str:
-    """Strip surrounding double-quotes from a path."""
-    stripped = value.strip()
-    if (
-        len(stripped) >= _MIN_QUOTED_LEN
-        and stripped[0] == '"'
-        and stripped[-1] == '"'
+    """Strip surrounding quotes and whitespace from a file path."""
+    normalized = value.strip().replace('\\"', '"')
+
+    while len(normalized) >= _MIN_QUOTED_LEN and (
+        (normalized[0] == '"' and normalized[-1] == '"')
+        or (normalized[0] == "'" and normalized[-1] == "'")
     ):
-        return stripped[1:-1]
-    return stripped
+        normalized = normalized[1:-1].strip()
+
+    return normalized
 
 
 def collect_paths(argv: list[str]) -> list[str]:
-    """Gather file paths from argv or stdin."""
-    candidates = argv[1:]
-    if candidates:
-        return [normalize_path(p) for p in candidates if normalize_path(p)]
-
-    return [
-        normalize_path(line)
-        for line in sys.stdin.read().splitlines()
-        if normalize_path(line)
-    ]
+    """Collect file paths from argv or stdin with normalization."""
+    candidates = argv[1:] if argv[1:] else sys.stdin.read().splitlines()
+    paths: list[str] = []
+    for candidate in candidates:
+        normalized = normalize_path(candidate)
+        if normalized:
+            paths.append(normalized)
+    return paths
 
 
 def main() -> int:
