@@ -8,7 +8,8 @@ public sealed class CacheStoreTests
     [Fact]
     public void ClearCatalogOnlyRemovesCatalogAndKeepsChapterCache()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         string bookId = "1045928363";
         string catalogPath = AppPaths.GetCatalogCachePath(
             root,
@@ -32,13 +33,13 @@ public sealed class CacheStoreTests
         Assert.False(File.Exists(catalogPath));
         Assert.False(File.Exists(validatedCatalogPath));
         Assert.True(File.Exists(chapterPath));
-        Directory.Delete(root, recursive: true);
     }
 
     [Fact]
     public void ClearGlobalReturnsZeroForEmptyDirectory()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         Directory.CreateDirectory(root);
 
         int removed = CacheStore.Clear(root, bookId: null, catalogOnly: false);
@@ -50,7 +51,8 @@ public sealed class CacheStoreTests
     [Fact]
     public async Task GetChapterAsyncReturnsNullForInvalidJson()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
         await File.WriteAllTextAsync(cachePath, "{ invalid json");
@@ -62,7 +64,6 @@ public sealed class CacheStoreTests
             CancellationToken.None);
 
         Assert.Null(chapter);
-        Directory.Delete(root, recursive: true);
     }
 
     [Theory]
@@ -73,7 +74,8 @@ public sealed class CacheStoreTests
         + "\"fetchedAtUtc\":\"2024-01-01T00:00:00+00:00\"}")]
     public async Task GetCatalogAsyncReturnsNullForInvalidOrUnusablePayload(string payload)
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         string cachePath = AppPaths.GetCatalogCachePath(
             root,
             "1045928363",
@@ -88,13 +90,13 @@ public sealed class CacheStoreTests
             CancellationToken.None);
 
         Assert.Null(catalog);
-        Directory.Delete(root, recursive: true);
     }
 
     [Fact]
     public async Task GetCatalogAsyncReturnsNullWhenCacheFileIsLocked()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         string cachePath = AppPaths.GetCatalogCachePath(
             root,
             "1045928363",
@@ -119,7 +121,7 @@ public sealed class CacheStoreTests
             }
             """);
 
-        using FileStream lockedStream = new(
+        using FileStream _ = new(
             cachePath,
             FileMode.Open,
             FileAccess.Read,
@@ -131,14 +133,13 @@ public sealed class CacheStoreTests
             CancellationToken.None);
 
         Assert.Null(catalog);
-        lockedStream.Dispose();
-        Directory.Delete(root, recursive: true);
     }
 
     [Fact]
     public async Task GetChapterAsyncReturnsNullForNullParagraphPayload()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
         await File.WriteAllTextAsync(
@@ -159,13 +160,13 @@ public sealed class CacheStoreTests
             CancellationToken.None);
 
         Assert.Null(chapter);
-        Directory.Delete(root, recursive: true);
     }
 
     [Fact]
     public async Task GetChapterAsyncReturnsNullForMissingParagraphPayload()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
         await File.WriteAllTextAsync(
@@ -185,13 +186,13 @@ public sealed class CacheStoreTests
             CancellationToken.None);
 
         Assert.Null(chapter);
-        Directory.Delete(root, recursive: true);
     }
 
     [Fact]
     public async Task GetChapterAsyncReturnsNullWhenCacheFileIsLocked()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
         await File.WriteAllTextAsync(
@@ -205,7 +206,7 @@ public sealed class CacheStoreTests
             }
             """);
 
-        using FileStream lockedStream = new(
+        using FileStream _ = new(
             cachePath,
             FileMode.Open,
             FileAccess.Read,
@@ -217,14 +218,13 @@ public sealed class CacheStoreTests
             CancellationToken.None);
 
         Assert.Null(chapter);
-        lockedStream.Dispose();
-        Directory.Delete(root, recursive: true);
     }
 
     [Fact]
     public async Task SaveCatalogAsyncPersistsCatalogChapterAccessState()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         CatalogSnapshot catalog = new(
             "1045928363",
             new BookMetadata("1045928363", "Title", "Author", 123456),
@@ -256,13 +256,13 @@ public sealed class CacheStoreTests
             CatalogChapterAccessState.PurchaseRequired,
             roundTripped.Volumes[0].Chapters[0].CatalogAccessState);
         Assert.Equal(CatalogCacheScope.Anonymous, roundTripped.CacheScope);
-        Directory.Delete(root, recursive: true);
     }
 
     [Fact]
     public async Task SaveCatalogAsyncPersistsCatalogCacheScope()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         CatalogCacheScope scope = CatalogCacheScope.ForValidatedUser("tester");
         CatalogSnapshot catalog = new(
             "1045928363",
@@ -280,13 +280,13 @@ public sealed class CacheStoreTests
 
         Assert.NotNull(roundTripped);
         Assert.Equal(scope, roundTripped.CacheScope);
-        Directory.Delete(root, recursive: true);
     }
 
     [Fact]
     public async Task GetCatalogAsyncRejectsCatalogWhenStoredScopeDoesNotMatchRequestedScope()
     {
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
         string cachePath = AppPaths.GetCatalogCachePath(
             root,
             "1045928363",
@@ -319,6 +319,20 @@ public sealed class CacheStoreTests
             CancellationToken.None);
 
         Assert.Null(catalog);
-        Directory.Delete(root, recursive: true);
+    }
+
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        public string FullPath { get; } = Path.Combine(
+            Path.GetTempPath(),
+            Guid.NewGuid().ToString("N"));
+
+        public void Dispose()
+        {
+            if (Directory.Exists(FullPath))
+            {
+                Directory.Delete(FullPath, recursive: true);
+            }
+        }
     }
 }

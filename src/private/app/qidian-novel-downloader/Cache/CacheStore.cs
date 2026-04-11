@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Hcoona.QidianNovelDownloader.Serialization;
 
 namespace Hcoona.QidianNovelDownloader.Cache;
@@ -17,35 +18,11 @@ internal static class CacheStore
             return null;
         }
 
-        try
-        {
-            await using FileStream stream = File.OpenRead(cachePath);
-            CatalogSnapshot? catalog = await JsonSerializer.DeserializeAsync(
-                stream,
-                AppJsonSerializerContext.Default.CatalogSnapshot,
-                cancellationToken);
-            return IsUsableCatalog(catalog, scope) ? catalog : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-        catch (FileNotFoundException)
-        {
-            return null;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
-        }
+        return await ReadCacheAsync(
+            cachePath,
+            AppJsonSerializerContext.Default.CatalogSnapshot,
+            catalog => IsUsableCatalog(catalog, scope),
+            cancellationToken);
     }
 
     public static async Task SaveCatalogAsync(
@@ -79,35 +56,11 @@ internal static class CacheStore
             return null;
         }
 
-        try
-        {
-            await using FileStream stream = File.OpenRead(cachePath);
-            ChapterCacheEntry? chapter = await JsonSerializer.DeserializeAsync(
-                stream,
-                AppJsonSerializerContext.Default.ChapterCacheEntry,
-                cancellationToken);
-            return chapter is { Paragraphs: not null } ? chapter : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-        catch (FileNotFoundException)
-        {
-            return null;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
-        }
+        return await ReadCacheAsync(
+            cachePath,
+            AppJsonSerializerContext.Default.ChapterCacheEntry,
+            chapter => chapter is { Paragraphs: not null },
+            cancellationToken);
     }
 
     public static async Task<ChapterCacheProbe?> GetChapterProbeAsync(
@@ -122,35 +75,11 @@ internal static class CacheStore
             return null;
         }
 
-        try
-        {
-            await using FileStream stream = File.OpenRead(cachePath);
-            ChapterCacheProbe? chapter = await JsonSerializer.DeserializeAsync(
-                stream,
-                AppJsonSerializerContext.Default.ChapterCacheProbe,
-                cancellationToken);
-            return chapter is { Paragraphs: not null } ? chapter : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-        catch (FileNotFoundException)
-        {
-            return null;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
-        }
+        return await ReadCacheAsync(
+            cachePath,
+            AppJsonSerializerContext.Default.ChapterCacheProbe,
+            chapter => chapter is { Paragraphs: not null },
+            cancellationToken);
     }
 
     public static async Task SaveChapterAsync(
@@ -237,6 +166,35 @@ internal static class CacheStore
         Directory.Delete(path, recursive: true);
         return removed;
     }
+
+    private static async Task<T?> ReadCacheAsync<T>(
+        string cachePath,
+        JsonTypeInfo<T> typeInfo,
+        Func<T?, bool> isUsable,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            await using FileStream stream = File.OpenRead(cachePath);
+            T? value = await JsonSerializer.DeserializeAsync(
+                stream,
+                typeInfo,
+                cancellationToken);
+            return isUsable(value) ? value : null;
+        }
+        catch (Exception ex) when (IsCacheMissException(ex))
+        {
+            return null;
+        }
+    }
+
+    private static bool IsCacheMissException(Exception ex)
+        => ex is JsonException
+            or FileNotFoundException
+            or DirectoryNotFoundException
+            or IOException
+            or UnauthorizedAccessException;
 
     private static bool IsUsableCatalog(CatalogSnapshot? catalog, CatalogCacheScope expectedScope)
         => catalog is

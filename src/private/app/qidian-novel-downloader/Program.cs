@@ -46,21 +46,13 @@ internal static class Program
     {
         for (int index = 0; index < args.Length; index++)
         {
-            if (string.Equals(args[index], "--config", StringComparison.Ordinal))
+            if (TryParseConfigPathOverrideArgument(
+                args,
+                index,
+                out string? configPath,
+                out _))
             {
-                if (index + 1 < args.Length && IsValidConfigPathOverride(args[index + 1]))
-                {
-                    return args[index + 1];
-                }
-
-                return null;
-            }
-
-            const string configPrefix = "--config=";
-            if (args[index].StartsWith(configPrefix, StringComparison.Ordinal))
-            {
-                string configPath = args[index][configPrefix.Length..];
-                return IsValidConfigPathOverride(configPath) ? configPath : null;
+                return configPath;
             }
         }
 
@@ -76,27 +68,22 @@ internal static class Program
         List<string> normalizedArgs = [];
         for (int index = 0; index < args.Length; index++)
         {
-            if (string.Equals(args[index], "--config", StringComparison.Ordinal))
+            if (TryParseConfigPathOverrideArgument(
+                args,
+                index,
+                out string? configPath,
+                out int consumedArgCount))
             {
-                if (index + 1 < args.Length && IsValidConfigPathOverride(args[index + 1]))
+                if (configPath is not null)
                 {
                     normalizedArgs.Add(args[index]);
-                    normalizedArgs.Add(args[index + 1]);
-                    index++;
+                    if (consumedArgCount == 2)
+                    {
+                        normalizedArgs.Add(args[index + 1]);
+                    }
                 }
 
-                continue;
-            }
-
-            const string configPrefix = "--config=";
-            if (args[index].StartsWith(configPrefix, StringComparison.Ordinal))
-            {
-                string configPath = args[index][configPrefix.Length..];
-                if (IsValidConfigPathOverride(configPath))
-                {
-                    normalizedArgs.Add(args[index]);
-                }
-
+                index += consumedArgCount - 1;
                 continue;
             }
 
@@ -104,5 +91,38 @@ internal static class Program
         }
 
         return [.. normalizedArgs];
+    }
+
+    private static bool TryParseConfigPathOverrideArgument(
+        string[] args,
+        int index,
+        out string? configPath,
+        out int consumedArgCount)
+    {
+        configPath = null;
+        consumedArgCount = 0;
+
+        if (string.Equals(args[index], "--config", StringComparison.Ordinal))
+        {
+            consumedArgCount = 1;
+            if (index + 1 < args.Length && IsValidConfigPathOverride(args[index + 1]))
+            {
+                configPath = args[index + 1];
+                consumedArgCount = 2;
+            }
+
+            return true;
+        }
+
+        const string configPrefix = "--config=";
+        if (!args[index].StartsWith(configPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string candidate = args[index][configPrefix.Length..];
+        configPath = IsValidConfigPathOverride(candidate) ? candidate : null;
+        consumedArgCount = 1;
+        return true;
     }
 }

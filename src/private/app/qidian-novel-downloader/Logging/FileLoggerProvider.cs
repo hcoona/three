@@ -12,6 +12,9 @@ internal sealed class FileLoggerProvider(TimeProvider timeProvider) : ILoggerPro
     private readonly string _logDirectory = Path.Combine(
         AppPaths.GetDefaultStateRoot(),
         AppConstants.LogsDirectoryName);
+    private DateOnly? _currentLogDate;
+    private string? _currentLogPath;
+    private bool _isLogDirectoryReady;
 
     public ILogger CreateLogger(string categoryName)
         => _loggers.GetOrAdd(
@@ -30,12 +33,10 @@ internal sealed class FileLoggerProvider(TimeProvider timeProvider) : ILoggerPro
         string message,
         Exception? exception)
     {
-        Directory.CreateDirectory(_logDirectory);
-        string logPath = Path.Combine(
-            _logDirectory,
-            $"qidian-novel-downloader-{timeProvider.GetLocalNow():yyyyMMdd}.log");
+        DateTimeOffset localNow = timeProvider.GetLocalNow();
+        DateTimeOffset utcNow = timeProvider.GetUtcNow();
         string line =
-            $"[{timeProvider.GetUtcNow():yyyy-MM-ddTHH:mm:ss.fffZ}] "
+            $"[{utcNow:yyyy-MM-ddTHH:mm:ss.fffZ}] "
             + $"{logLevel,-11} {categoryName} [{eventId.Id}] {message}";
 
         if (exception is not null)
@@ -45,8 +46,32 @@ internal sealed class FileLoggerProvider(TimeProvider timeProvider) : ILoggerPro
 
         lock (_lock)
         {
-            File.AppendAllText(logPath, $"{line}{Environment.NewLine}", Encoding.UTF8);
+            EnsureLogFilePath(localNow);
+            File.AppendAllText(
+                _currentLogPath!,
+                $"{line}{Environment.NewLine}",
+                Encoding.UTF8);
         }
+    }
+
+    private void EnsureLogFilePath(DateTimeOffset localNow)
+    {
+        if (!_isLogDirectoryReady)
+        {
+            Directory.CreateDirectory(_logDirectory);
+            _isLogDirectoryReady = true;
+        }
+
+        DateOnly currentDate = DateOnly.FromDateTime(localNow.DateTime);
+        if (_currentLogDate == currentDate && _currentLogPath is not null)
+        {
+            return;
+        }
+
+        _currentLogDate = currentDate;
+        _currentLogPath = Path.Combine(
+            _logDirectory,
+            $"qidian-novel-downloader-{localNow:yyyyMMdd}.log");
     }
 
     private sealed class FileLogger(string categoryName, FileLoggerProvider provider) : ILogger
