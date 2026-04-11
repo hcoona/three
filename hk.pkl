@@ -42,32 +42,41 @@ local general_linters = new Mapping<String, Step> {
   ["editorconfig-check"] = (Steps.editorconfig_check) {
     profiles = List("medium")
     exclude = general_exclude_list
-    check = "editorconfig-checker {{files}}"
+    check = "python eng/scripts/hk_exec.py editorconfig-checker --disable-indent-size -- {{files}}"
   }
 }
 
 local pipeline_linters = new Mapping<String, Step> {
-  ["actionlint"] = Builtins.actionlint
+  ["actionlint"] {
+    profiles = List("small")
+    glob = List("**/.github/workflows/*.yml", "**/.github/workflows/*.yaml")
+    check = "python eng/scripts/hk_actionlint.py {{files}}"
+  }
 }
 
 local markdown_linters = new Mapping<String, Step> {
-  ["markdownlint-cli2"] = (Steps.markdownlint_cli2) {
+  ["markdownlint-cli2"] {
     profiles = List("small")
     exclude = general_exclude_list
-    prefix = "pnpm exec --"
+    batch = true
+    glob = "*.md"
+    stage = "*.md"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 --fix -- {{files}}"
   }
 
-  ["markdown-prettier"] = (Builtins.prettier) {
+  ["markdown-prettier"] {
     profiles = List("small")
     exclude = general_exclude_list
     glob = "*.md"
     stage = "*.md"
-    prefix = "pnpm exec --"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- prettier --write -- {{files}}"
   }
 }
 
 local pkl_linters = new Mapping<String, Step> {
-  ["pkl-eval"] = (Builtins.pkl) {
+  ["pkl-eval"] = (Steps.pkl_eval) {
     profiles = List("small")
   }
 
@@ -77,60 +86,69 @@ local pkl_linters = new Mapping<String, Step> {
 }
 
 local json_linters = new Mapping<String, Step> {
-  ["json-biome"] = (Builtins.biome) {
+  ["json-biome"] {
     profiles = List("small")
     exclude = general_exclude_list
     glob = List("*.json", "*.jsonc")
     stage = List("*.json", "*.jsonc")
-    prefix = "pnpm exec --"
+    check =
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched -- {{files}}"
+    fix =
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --write --no-errors-on-unmatched -- {{files}}"
   }
 }
 
 local yaml_linters = new Mapping<String, Step> {
-  ["yaml-prettier"] = (Builtins.prettier) {
+  ["yaml-prettier"] {
     profiles = List("small")
     exclude = general_exclude_list
     glob = List("*.yml", "*.yaml")
     stage = List("*.yml", "*.yaml")
-    prefix = "pnpm exec --"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- prettier --write -- {{files}}"
   }
 }
 
 local toml_linters = new Mapping<String, Step> {
-  ["toml-taplo-check"] = (Builtins.taplo) {
+  ["toml-taplo-check"] {
     profiles = List("small")
-    prefix = "pnpm exec --"
+    glob = "**/*.toml"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- taplo check -- {{files}}"
   }
 
   ["toml-taplo-format"] {
     profiles = List("small")
-    prefix = "pnpm exec --"
     glob = "**/*.toml"
     stage = "<JOB_FILES>"
-    check = "taplo format --check {{ files }}"
-    check_diff = "taplo format --check --diff {{ files }}"
-    fix = "taplo format {{ files }}"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- taplo format --check -- {{files}}"
+    check_diff =
+      "python eng/scripts/hk_exec.py pnpm exec -- taplo format --check --diff -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- taplo format -- {{files}}"
   }
 }
 
 local docker_linters = new Mapping<String, Step> {
-  ["hadolint"] = (Builtins.hadolint) {
+  ["hadolint"] {
     profiles = List("small")
     glob = List("Dockerfile", "*.Dockerfile", "Dockerfile.*")
+    check = "python eng/scripts/hk_exec.py hadolint -- {{files}}"
   }
 }
 
 local bash_linters = new Mapping<String, Step> {
-  ["shellcheck"] = (Builtins.shellcheck) {
+  ["shellcheck"] {
     profiles = List("small")
     exclude = general_exclude_list
+    glob = List("**/*.sh", "**/*.bash")
+    check = "python eng/scripts/hk_exec.py shellcheck -- {{files}}"
   }
 
-  ["shfmt"] = (Builtins.shfmt) {
+  ["shfmt"] {
     profiles = List("small")
     exclude = general_exclude_list
-    check = "shfmt {{files}}"
-    fix = "shfmt -w {{files}}"
+    glob = List("**/*.sh", "**/*.bash", "**/*.mksh", "**/*.bats", "**/*.zsh")
+    check = "python eng/scripts/hk_exec.py shfmt -d --apply-ignore -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py shfmt -w --apply-ignore -- {{files}}"
   }
 }
 
@@ -143,10 +161,13 @@ local pwsh_linters = new Mapping<String, Step> {
     batch = true
     glob = powershell_files
     stage = powershell_files
+    env {
+      ["HK_EXEC_PER_FILE"] = "0"
+    }
     check =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path -- {{files}}"
     fix =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Fix -Path {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Fix -Path -- {{files}}"
   }
 
   ["pwsh-script-analyzer"] {
@@ -155,10 +176,13 @@ local pwsh_linters = new Mapping<String, Step> {
     batch = true
     glob = powershell_files
     stage = powershell_files
+    env {
+      ["HK_EXEC_PER_FILE"] = "0"
+    }
     check =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path -- {{files}}"
     fix =
-      "pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Fix -Path {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Fix -Path -- {{files}}"
   }
 }
 
@@ -178,11 +202,14 @@ local javascript_typescript_linters = new Mapping<String, Step> {
   local typescript_files = List("*.ts", "*.cts", "*.mts", "*.tsx")
   local javascript_typescript_files = javascript_files + typescript_files
 
-  ["biome"] = (Builtins.biome) {
+  ["biome"] {
     profiles = List("small")
-    prefix = "pnpm exec --"
     glob = javascript_typescript_files
     stage = javascript_typescript_files
+    check =
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched -- {{files}}"
+    fix =
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --write --no-errors-on-unmatched -- {{files}}"
   }
 }
 
@@ -191,18 +218,21 @@ local python_linters = new Mapping<String, Step> {
   local python_notebook_files = List("*.ipynb")
   local all_python_files = python_files + python_notebook_files
 
-  ["ruff"] = (Builtins.ruff) {
+  ["ruff"] {
     profiles = List("small")
-    prefix = "uv run"
     glob = all_python_files
     stage = all_python_files
+    check = "python eng/scripts/hk_exec.py uv run ruff check --force-exclude -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py uv run ruff check --force-exclude --fix -- {{files}}"
   }
 
   ["ruff_format"] = (Builtins.ruff_format) {
     profiles = List("small")
-    prefix = "uv run"
     glob = all_python_files
     stage = all_python_files
+    check =
+      "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --check -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude -- {{files}}"
   }
 
   ["uv-lock"] = (Steps.uv_lock) {
@@ -213,6 +243,8 @@ local python_linters = new Mapping<String, Step> {
 local dotenv_linter = new Mapping<String, Step> {
   ["dotenv-linter"] = (Steps.dotenv_linter) {
     profiles = List("small")
+    check = "python eng/scripts/hk_exec.py dotenv-linter check -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py dotenv-linter fix --no-backup -- {{files}}"
   }
 }
 

@@ -81,7 +81,7 @@ def _run_fd(pattern: str, root: Path) -> list[Path]:
 
     cmd.extend([pattern, str(root)])
 
-    proc = subprocess.run(  # noqa: S603
+    proc = subprocess.run(
         cmd,
         check=False,
         capture_output=True,
