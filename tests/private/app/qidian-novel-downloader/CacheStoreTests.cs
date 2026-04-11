@@ -65,12 +65,12 @@ public sealed class CacheStoreTests
         Directory.Delete(root, recursive: true);
     }
 
-[Theory]
-[InlineData("{ invalid json")]
-[InlineData("{\"bookId\":\"1045928363\"")]
-[InlineData(
-    "{\"bookId\":\"1045928363\",\"metadata\":null,\"volumes\":[],"
-    + "\"fetchedAtUtc\":\"2024-01-01T00:00:00+00:00\"}")]
+    [Theory]
+    [InlineData("{ invalid json")]
+    [InlineData("{\"bookId\":\"1045928363\"")]
+    [InlineData(
+        "{\"bookId\":\"1045928363\",\"metadata\":null,\"volumes\":[],"
+        + "\"fetchedAtUtc\":\"2024-01-01T00:00:00+00:00\"}")]
     public async Task GetCatalogAsyncReturnsNullForInvalidOrUnusablePayload(string payload)
     {
         string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

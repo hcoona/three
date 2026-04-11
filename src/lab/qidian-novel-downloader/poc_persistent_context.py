@@ -19,13 +19,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
 from playwright.async_api import async_playwright
 
 EDGE_EXE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-USER_DATA_DIR = r"C:\Users\zhang\AppData\Local\Microsoft\Edge\User Data"
+USER_DATA_DIR = str(
+    Path(
+        os.environ.get(
+            "LOCALAPPDATA",
+            r"C:\Users\<USER>\AppData\Local",
+        ),
+    )
+    / "Microsoft"
+    / "Edge"
+    / "User Data",
+)
 PROFILE_NAME = "Profile 5"
 
 BOOK_ID = "1045928363"

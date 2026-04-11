@@ -9,10 +9,9 @@ internal static class CliFactory
     {
         AppCommandService commandService = services.GetRequiredService<AppCommandService>();
 
-        Option<FileInfo?> configOption = new("--config")
-        {
-            Description = "Override the tool-managed config file path for this invocation.",
-        };
+        Option<string?> configOption = CreateStringOption(
+            "--config",
+            "Override the tool-managed config file path for this invocation.");
         RootCommand rootCommand = new("Download Qidian novels to Markdown with Playwright.");
         rootCommand.Options.Add(configOption);
         rootCommand.Subcommands.Add(CreateDownloadCommand(commandService));

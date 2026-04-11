@@ -14,6 +14,7 @@ internal static class Program
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
         string configPath = TryGetConfigPathOverride(args) ?? AppPaths.GetDefaultConfigPath();
+        string[] parseArgs = NormalizeArgsForCommandLineParsing(args);
 
         builder.Configuration.AddJsonFile(configPath, optional: true, reloadOnChange: false);
 
@@ -38,7 +39,7 @@ internal static class Program
 
         using IHost host = builder.Build();
         RootCommand rootCommand = CliFactory.CreateRootCommand(host.Services);
-        return await rootCommand.Parse(args).InvokeAsync();
+        return await rootCommand.Parse(parseArgs).InvokeAsync();
     }
 
     private static string? TryGetConfigPathOverride(string[] args)
@@ -69,4 +70,39 @@ internal static class Program
     private static bool IsValidConfigPathOverride(string value)
         => !string.IsNullOrWhiteSpace(value)
             && !value.StartsWith('-');
+
+    private static string[] NormalizeArgsForCommandLineParsing(string[] args)
+    {
+        List<string> normalizedArgs = [];
+        for (int index = 0; index < args.Length; index++)
+        {
+            if (string.Equals(args[index], "--config", StringComparison.Ordinal))
+            {
+                if (index + 1 < args.Length && IsValidConfigPathOverride(args[index + 1]))
+                {
+                    normalizedArgs.Add(args[index]);
+                    normalizedArgs.Add(args[index + 1]);
+                    index++;
+                }
+
+                continue;
+            }
+
+            const string configPrefix = "--config=";
+            if (args[index].StartsWith(configPrefix, StringComparison.Ordinal))
+            {
+                string configPath = args[index][configPrefix.Length..];
+                if (IsValidConfigPathOverride(configPath))
+                {
+                    normalizedArgs.Add(args[index]);
+                }
+
+                continue;
+            }
+
+            normalizedArgs.Add(args[index]);
+        }
+
+        return [.. normalizedArgs];
+    }
 }

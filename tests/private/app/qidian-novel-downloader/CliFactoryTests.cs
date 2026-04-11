@@ -29,6 +29,37 @@ public sealed class CliFactoryTests
         Assert.Empty(parseResult.Errors);
     }
 
+    public static TheoryData<string[]> ConfigOptionWithoutUsableValueArgs =>
+    [
+        ["download", "--config", "--dry-run"],
+        ["--config=", "login"],
+    ];
+
+    [Theory]
+    [MemberData(nameof(ConfigOptionWithoutUsableValueArgs))]
+    public void NormalizeArgsForCommandLineParsingAllowsConfigOptionWithoutUsableValue(string[] args)
+    {
+        AppCommandService commandService = new(
+            Options.Create(new AppSettings()),
+            new QidianBrowserManager(NullLogger<QidianBrowserManager>.Instance),
+            new AcceptAllConsole(),
+            TimeProvider.System,
+            new AppStorageService(),
+            NullLogger<AppCommandService>.Instance);
+        RootCommand rootCommand = CliFactory.CreateRootCommand(
+            new StaticServiceProvider(commandService));
+        MethodInfo method = typeof(AppSettings).Assembly
+            .GetType("Hcoona.QidianNovelDownloader.Program")!
+            .GetMethod(
+                "NormalizeArgsForCommandLineParsing",
+                BindingFlags.NonPublic | BindingFlags.Static)!;
+        string[] parseArgs = (string[])method.Invoke(null, [args])!;
+
+        ParseResult parseResult = rootCommand.Parse(parseArgs);
+
+        Assert.Empty(parseResult.Errors);
+    }
+
     [Theory]
     [InlineData(new[] { "--config", "Q:\\temp\\config.json" }, "Q:\\temp\\config.json")]
     [InlineData(new[] { "--config=Q:\\temp\\config.json" }, "Q:\\temp\\config.json")]
