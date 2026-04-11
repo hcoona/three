@@ -8,14 +8,14 @@
     "telegram-topic-session-bridge": "./dist/cli.js"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.6.0"
   },
   "scripts": {
     "build": "pnpm exec tsgo --project tsconfig.build.json",
     "lint": "pnpm exec biome lint --reporter summary .",
     "format": "pnpm exec biome format --write .",
     "start": "node --experimental-strip-types src/cli.ts",
-    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "node -e \"+(process.versions.node.split('.')[0])>=22||process.exit(0)\" && node --experimental-strip-types --test test/*.test.ts",
     "typecheck": "pnpm exec tsgo --noEmit --project tsconfig.json"
   },
   "devDependencies": {
