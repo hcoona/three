@@ -125,6 +125,8 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
   "S101", # Allow bare asserts when pytest rewrites them anyway.
 ]
 "**/scripts/**/*.py" = [
+  "S603", # Scripts are subprocess wrappers by design.
+  "S607", # They invoke tools by name that must be on PATH.
   "T201", # Allow print statements in scripts for simplicity.
 ]
 

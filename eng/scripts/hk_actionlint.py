@@ -1,17 +1,23 @@
+"""Wrapper script for running actionlint with watchdog timeout."""
+
 from __future__ import annotations
 
-from datetime import datetime
+import contextlib
 import os
 import signal
 import subprocess
 import sys
 import time
+from datetime import datetime
+
+_MIN_QUOTED_LEN = 2
 
 
 def normalize_path(value: str) -> str:
+    """Strip surrounding quotes and escaped quotes from a path."""
     normalized = value.strip().replace('\\"', '"')
 
-    while len(normalized) >= 2 and (
+    while len(normalized) >= _MIN_QUOTED_LEN and (
         (normalized[0] == '"' and normalized[-1] == '"')
         or (normalized[0] == "'" and normalized[-1] == "'")
     ):
@@ -21,14 +27,16 @@ def normalize_path(value: str) -> str:
 
 
 def now_iso() -> str:
+    """Return the current time as an ISO 8601 string."""
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def resolve_timeout_seconds() -> int:
-    raw_value = os.getenv("HK_ACTIONLINT_TIMEOUT_SECONDS", "120").strip()
+    """Read timeout from environment or return the default."""
+    raw = os.getenv("HK_ACTIONLINT_TIMEOUT_SECONDS", "120").strip()
 
     try:
-        timeout_seconds = int(raw_value)
+        timeout_seconds = int(raw)
     except ValueError:
         timeout_seconds = 120
 
@@ -36,24 +44,28 @@ def resolve_timeout_seconds() -> int:
 
 
 def resolve_heartbeat_seconds() -> int:
-    raw_value = os.getenv("HK_ACTIONLINT_HEARTBEAT_SECONDS", "30").strip()
+    """Read heartbeat interval from environment or default."""
+    raw = os.getenv("HK_ACTIONLINT_HEARTBEAT_SECONDS", "30").strip()
 
     try:
-        heartbeat_seconds = int(raw_value)
+        heartbeat_seconds = int(raw)
     except ValueError:
         heartbeat_seconds = 30
 
     return max(5, heartbeat_seconds)
 
 
-def build_actionlint_command(path: str | None = None) -> list[str]:
-    shellcheck_cmd = os.getenv("HK_ACTIONLINT_SHELLCHECK", "").strip()
-    pyflakes_cmd = os.getenv("HK_ACTIONLINT_PYFLAKES", "").strip()
+def build_actionlint_command(
+    path: str | None = None,
+) -> list[str]:
+    """Build the actionlint CLI command list."""
+    shellcheck = os.getenv("HK_ACTIONLINT_SHELLCHECK", "").strip()
+    pyflakes = os.getenv("HK_ACTIONLINT_PYFLAKES", "").strip()
 
     command = [
         "actionlint",
-        f"-shellcheck={shellcheck_cmd}",
-        f"-pyflakes={pyflakes_cmd}",
+        f"-shellcheck={shellcheck}",
+        f"-pyflakes={pyflakes}",
     ]
 
     if path is not None:
@@ -62,13 +74,22 @@ def build_actionlint_command(path: str | None = None) -> list[str]:
     return command
 
 
-def kill_process_tree(process: subprocess.Popen[object]) -> None:
+def kill_process_tree(
+    process: subprocess.Popen[object],
+) -> None:
+    """Terminate a process and its children."""
     if process.poll() is not None:
         return
 
     if os.name == "nt":
         subprocess.run(
-            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+            [
+                "taskkill",
+                "/F",
+                "/T",
+                "/PID",
+                str(process.pid),
+            ],
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -81,7 +102,7 @@ def kill_process_tree(process: subprocess.Popen[object]) -> None:
         return
 
 
-def run_with_watchdog(
+def run_with_watchdog(  # noqa: PLR0913
     command: list[str],
     timeout_seconds: int,
     heartbeat_seconds: int,
@@ -89,6 +110,7 @@ def run_with_watchdog(
     total: int,
     label: str,
 ) -> tuple[int | None, float, bool]:
+    """Run a command with periodic heartbeat and timeout."""
     process = subprocess.Popen(
         command,
         start_new_session=os.name != "nt",
@@ -106,72 +128,74 @@ def run_with_watchdog(
 
         if elapsed >= next_heartbeat:
             print(
-                f"[{now_iso()}] [{index}/{total}] still running elapsed={elapsed:.0f}s: {label}",
+                f"[{now_iso()}] [{index}/{total}]"
+                f" still running"
+                f" elapsed={elapsed:.0f}s:"
+                f" {label}",
                 flush=True,
             )
             next_heartbeat += heartbeat_seconds
 
         if elapsed >= timeout_seconds:
             kill_process_tree(process)
-            try:
+            with contextlib.suppress(
+                subprocess.TimeoutExpired,
+            ):
                 process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
             return None, elapsed, True
 
         time.sleep(1)
 
 
 def main() -> int:
-    paths = [
-        normalize_path(path) for path in sys.argv[1:] if normalize_path(path)
-    ]
-    timeout_seconds = resolve_timeout_seconds()
-    heartbeat_seconds = resolve_heartbeat_seconds()
+    """Run actionlint on each file with a watchdog."""
+    paths = [normalize_path(p) for p in sys.argv[1:] if normalize_path(p)]
+    timeout = resolve_timeout_seconds()
+    heartbeat = resolve_heartbeat_seconds()
 
     if not paths:
-        started_at = now_iso()
+        ts = now_iso()
+        label = "(no explicit files)"
         print(
-            f"[{started_at}] [1/1] actionlint (no explicit files) (timeout={timeout_seconds}s)",
+            f"[{ts}] [1/1] actionlint {label} (timeout={timeout}s)",
             flush=True,
         )
-        returncode, elapsed, timed_out = run_with_watchdog(
+        rc, elapsed, timed_out = run_with_watchdog(
             build_actionlint_command(),
-            timeout_seconds,
-            heartbeat_seconds,
+            timeout,
+            heartbeat,
             1,
             1,
-            "(no explicit files)",
+            label,
         )
         if timed_out:
             print(
-                f"[{now_iso()}] [1/1] timed out after {timeout_seconds}s: (no explicit files)",
+                f"[{now_iso()}] [1/1] timed out after {timeout}s: {label}",
                 file=sys.stderr,
                 flush=True,
             )
             return 1
 
         print(
-            f"[{now_iso()}] [1/1] finished exit={returncode} elapsed={elapsed:.1f}s",
+            f"[{now_iso()}] [1/1] finished exit={rc} elapsed={elapsed:.1f}s",
             flush=True,
         )
-        return 0 if returncode is None else returncode
+        return 0 if rc is None else rc
 
     has_error = False
     total = len(paths)
 
     for index, path in enumerate(paths, start=1):
-        started_at = now_iso()
-        start = time.monotonic()
+        ts = now_iso()
         print(
-            f"[{started_at}] [{index}/{total}] actionlint {path} (timeout={timeout_seconds}s)",
+            f"[{ts}] [{index}/{total}] actionlint {path} (timeout={timeout}s)",
             flush=True,
         )
 
-        returncode, elapsed, timed_out = run_with_watchdog(
+        rc, elapsed, timed_out = run_with_watchdog(
             build_actionlint_command(path),
-            timeout_seconds,
-            heartbeat_seconds,
+            timeout,
+            heartbeat,
             index,
             total,
             path,
@@ -179,7 +203,9 @@ def main() -> int:
 
         if timed_out:
             print(
-                f"[{now_iso()}] [{index}/{total}] timed out after {timeout_seconds}s: {path}",
+                f"[{now_iso()}] [{index}/{total}]"
+                f" timed out after"
+                f" {timeout}s: {path}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -187,10 +213,12 @@ def main() -> int:
             continue
 
         print(
-            f"[{now_iso()}] [{index}/{total}] finished exit={returncode} elapsed={elapsed:.1f}s",
+            f"[{now_iso()}] [{index}/{total}]"
+            f" finished exit={rc}"
+            f" elapsed={elapsed:.1f}s",
             flush=True,
         )
-        has_error = has_error or (returncode is not None and returncode != 0)
+        has_error = has_error or (rc is not None and rc != 0)
 
     return 1 if has_error else 0
 
