@@ -42,36 +42,45 @@ local default_linters = new Mapping<String, Step> {
 }
 
 local configuration_linters = new Mapping<String, Step> {
-  ["json-biome"] = (Builtins.biome) {
+  ["json-biome"] {
     local json_files = List("*.json", "*.jsonc", "*.json5")
     glob = json_files
     stage = json_files
-    prefix = "pnpm exec --"
+    check =
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched -- {{files}}"
+    fix =
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --write --no-errors-on-unmatched -- {{files}}"
   }
-  ["yaml-prettier"] = (Builtins.prettier) {
+  ["yaml-prettier"] {
     local yaml_files = List("*.yaml", "*.yml")
     glob = yaml_files
     stage = yaml_files
     exclude = generated_files
-    prefix = "pnpm exec --"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- prettier --write -- {{files}}"
   }
 }
 
 local documentation_linters = new Mapping<String, Step> {
-  ["markdownlint-cli2"] = (steps.markdownlint_cli2) {
-    prefix = "pnpm exec --"
-    exclude = spec_kit_files
-  }
-  ["markdown-prettier"] = (Builtins.prettier) {
+  ["markdownlint-cli2"] {
+    batch = true
     glob = markdown_globs
     stage = markdown_globs
     exclude = spec_kit_files
-    prefix = "pnpm exec --"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 --fix -- {{files}}"
+  }
+  ["markdown-prettier"] {
+    glob = markdown_globs
+    stage = markdown_globs
+    exclude = spec_kit_files
+    check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- prettier --write -- {{files}}"
   }
 }
 
 local javascript_linters = new Mapping<String, Step> {
-  ["js-biome"] = (Builtins.biome) {
+  ["js-biome"] {
     local js_files =
       List(
         "*.js",
@@ -85,12 +94,15 @@ local javascript_linters = new Mapping<String, Step> {
       )
     glob = js_files
     stage = js_files
-    prefix = "pnpm exec --"
+    check =
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched -- {{files}}"
+    fix =
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --write --no-errors-on-unmatched -- {{files}}"
   }
 }
 
 local pkl_linters = new Mapping<String, Step> {
-  ["pkl"] = Builtins.pkl
+  ["pkl"] = steps.pkl_eval
   ["pkl-format"] = steps.pklFormat
 }
 
