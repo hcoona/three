@@ -1,0 +1,26 @@
+{
+  "name": "@hcoona/wechat-ilink-verifier-poc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "POC for validating the Personal WeChat iLink path used by IM-ACP Gateway research.",
+  "type": "module",
+  "bin": {
+    "wechat-ilink-verifier": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "scripts": {
+    "build": "pnpm exec tsgo --project tsconfig.build.json",
+    "lint": "pnpm exec biome lint --reporter summary .",
+    "format": "pnpm exec biome format --write .",
+    "start": "node --experimental-strip-types src/cli.ts",
+    "test": "node -e \"process.exit(+process.versions.node.split('.')[0]<22?0:1)\" || node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "pnpm exec tsgo --noEmit --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.11",
+    "@types/node": "^22.10.2",
+    "@typescript/native-preview": "^7.0.0-dev.20260314.1"
+  }
+}
