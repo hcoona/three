@@ -336,7 +336,7 @@ Impact:
 
 ## Impact on the current early requirements
 
-### Requirement 1: send instructions from IM to Copilot CLI and return results to IM
+### Requirement 1: send instructions from IM to Copilot CLI and return results
 
 Telegram supports this cleanly.
 
