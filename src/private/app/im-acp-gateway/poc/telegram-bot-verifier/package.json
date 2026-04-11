@@ -15,7 +15,7 @@
     "lint": "pnpm exec biome lint --reporter summary .",
     "format": "pnpm exec biome format --write .",
     "start": "node --experimental-strip-types src/cli.ts",
-    "test": "node -e \"+(process.versions.node.split('.')[0])>=22||process.exit(0)\" && node --experimental-strip-types --test test/*.test.ts",
+    "test": "node -e \"process.exit(+process.versions.node.split('.')[0]<22?0:1)\" || node --experimental-strip-types --test test/*.test.ts",
     "typecheck": "pnpm exec tsgo --noEmit --project tsconfig.json"
   },
   "devDependencies": {
