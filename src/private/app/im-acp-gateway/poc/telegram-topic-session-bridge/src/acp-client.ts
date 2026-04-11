@@ -54,18 +54,26 @@ export class CopilotAcpClient {
 
   static async start(options: {
     copilotPath: string;
+    workingDirectory?: string;
+    allowedDirectories?: readonly string[];
     model?: string;
     onSessionUpdate?: SessionUpdateHandler;
     onPermissionRequest?: PermissionHandler;
   }): Promise<CopilotAcpClient> {
+    const effectiveWorkingDirectory = options.workingDirectory ?? process.cwd();
+    const allowedDirectories = [...new Set(options.allowedDirectories ?? [effectiveWorkingDirectory])];
     const argumentsList = ['--acp', '--stdio'];
 
     if (options.model) {
       argumentsList.push('--model', options.model);
     }
 
+    for (const allowedDirectory of allowedDirectories) {
+      argumentsList.push('--add-dir', allowedDirectory);
+    }
+
     const processHandle = spawn(options.copilotPath, argumentsList, {
-      cwd: process.cwd(),
+      cwd: effectiveWorkingDirectory,
       stdio: ['pipe', 'pipe', 'inherit'],
     });
 

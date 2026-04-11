@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -101,9 +101,8 @@ export async function writeState(stateDirectory: string, state: PersistedState):
   const temporaryFilePath = `${stateFilePath}.tmp`;
   const payload = JSON.stringify(state, null, 2);
 
-  await writeFile(temporaryFilePath, `${payload}\n`, 'utf8');
+  await writeFile(temporaryFilePath, `${payload}\n`, { encoding: 'utf8', mode: 0o600 });
   await rename(temporaryFilePath, stateFilePath);
-  await chmod(stateFilePath, 0o600);
 }
 
 function isFileNotFound(error: unknown): error is Error & { code: string } {
