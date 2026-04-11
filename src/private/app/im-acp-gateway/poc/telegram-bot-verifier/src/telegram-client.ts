@@ -17,8 +17,7 @@ export class TelegramBotClient {
   readonly botToken: string;
 
   constructor(options: { apiBaseUrl?: string | undefined; botToken: string }) {
-    this.apiBaseUrl =
-      options.apiBaseUrl?.trim().replace(/\/+$/, '') ?? DEFAULT_API_BASE_URL;
+    this.apiBaseUrl = options.apiBaseUrl?.trim().replace(/\/+$/, '') ?? DEFAULT_API_BASE_URL;
     this.botToken = options.botToken;
   }
 
@@ -34,9 +33,7 @@ export class TelegramBotClient {
     return this.invoke<TelegramMessage>('sendMessage', request);
   }
 
-  async editMessageText(
-    request: EditMessageTextRequest,
-  ): Promise<TelegramMessage | true> {
+  async editMessageText(request: EditMessageTextRequest): Promise<TelegramMessage | true> {
     return this.invoke<TelegramMessage | true>('editMessageText', request);
   }
 
@@ -44,9 +41,7 @@ export class TelegramBotClient {
     return this.invoke<true>('sendChatAction', request);
   }
 
-  async answerCallbackQuery(
-    request: AnswerCallbackQueryRequest,
-  ): Promise<true> {
+  async answerCallbackQuery(request: AnswerCallbackQueryRequest): Promise<true> {
     return this.invoke<true>('answerCallbackQuery', request);
   }
 
@@ -60,9 +55,7 @@ export class TelegramBotClient {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `${method} failed with HTTP ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`${method} failed with HTTP ${response.status} ${response.statusText}`);
     }
 
     const envelope = (await response.json()) as TelegramApiEnvelope<T>;

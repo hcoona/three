@@ -1,11 +1,11 @@
 import type {
+  MessageSummary,
   ParsedDemoCallback,
   TelegramCallbackQuery,
   TelegramInlineKeyboardMarkup,
   TelegramMessage,
   TelegramUpdate,
   UpdateSummary,
-  MessageSummary,
 } from './types.ts';
 
 export function summarizeMessage(message: TelegramMessage): MessageSummary {
@@ -54,9 +54,7 @@ export function summarizeUpdate(update: TelegramUpdate): UpdateSummary {
   };
 }
 
-export function createApprovalDemoMarkup(
-  nonce: string,
-): TelegramInlineKeyboardMarkup {
+export function createApprovalDemoMarkup(nonce: string): TelegramInlineKeyboardMarkup {
   return {
     inline_keyboard: [
       [
@@ -79,9 +77,7 @@ export function createApprovalDemoMarkup(
   };
 }
 
-export function parseDemoCallbackData(
-  data: string | undefined,
-): ParsedDemoCallback | null {
+export function parseDemoCallbackData(data: string | undefined): ParsedDemoCallback | null {
   if (!data) {
     return null;
   }
@@ -109,10 +105,7 @@ export function parseDemoCallbackData(
   };
 }
 
-function summarizeCallbackQuery(
-  updateId: number,
-  callbackQuery: TelegramCallbackQuery,
-): UpdateSummary {
+function summarizeCallbackQuery(updateId: number, callbackQuery: TelegramCallbackQuery): UpdateSummary {
   return {
     updateId,
     kind: 'callback_query',

@@ -113,13 +113,10 @@ function normalizeBaseUrl(value: string): string {
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
   const rawBody = await response.text();
-  const parsedBody = rawBody.length > 0 ? (JSON.parse(rawBody) as T) : ({} as T);
 
   if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status} ${response.statusText}: ${rawBody || '<empty response body>'}`,
-    );
+    throw new Error(`HTTP ${response.status} ${response.statusText}: ${rawBody || '<empty response body>'}`);
   }
 
-  return parsedBody;
+  return rawBody.length > 0 ? (JSON.parse(rawBody) as T) : ({} as T);
 }

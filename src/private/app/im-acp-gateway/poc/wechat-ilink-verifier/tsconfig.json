@@ -25,7 +25,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "typeRoots": ["../../../../../public/lib/hexo-renderer-asciidoc/node_modules/@types"],
     "types": ["node"],
     "rootDir": ".",
     "noEmit": true

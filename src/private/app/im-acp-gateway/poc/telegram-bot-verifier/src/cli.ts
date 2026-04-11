@@ -43,8 +43,7 @@ interface CliArgs {
 }
 
 async function main(): Promise<void> {
-  const normalizedArguments =
-    process.argv[2] === '--' ? process.argv.slice(3) : process.argv.slice(2);
+  const normalizedArguments = process.argv[2] === '--' ? process.argv.slice(3) : process.argv.slice(2);
   const [command, ...restArguments] = normalizedArguments;
 
   switch (command) {
@@ -69,10 +68,8 @@ async function main(): Promise<void> {
         monitor: {
           once: args.once === 'true',
           sendReplies: args['no-reply'] !== 'true',
-          replyPrefix:
-            args['reply-prefix'] ?? DEFAULT_MONITOR_OPTIONS.replyPrefix,
-          answerCallbacks:
-            args['no-answer-callbacks'] !== 'true',
+          replyPrefix: args['reply-prefix'] ?? DEFAULT_MONITOR_OPTIONS.replyPrefix,
+          answerCallbacks: args['no-answer-callbacks'] !== 'true',
           timeoutSeconds: parseIntegerArg(
             args['timeout-seconds'],
             DEFAULT_MONITOR_OPTIONS.timeoutSeconds,
@@ -87,10 +84,7 @@ async function main(): Promise<void> {
       const args = parseArgs(restArguments);
       await runSendCommand({
         chatId: args['chat-id'],
-        replyToMessageId: parseOptionalIntegerArg(
-          args['message-id'],
-          'message-id',
-        ),
+        replyToMessageId: parseOptionalIntegerArg(args['message-id'], 'message-id'),
         stateDirectory: args['state-dir'],
         text: requireStringArg(args.text, 'text'),
       });
@@ -123,9 +117,7 @@ async function main(): Promise<void> {
       await runApprovalDemoCommand({
         chatId: args['chat-id'],
         stateDirectory: args['state-dir'],
-        text:
-          args.text ??
-          'Telegram approval demo. Use the buttons below to validate callback handling.',
+        text: args.text ?? 'Telegram approval demo. Use the buttons below to validate callback handling.',
       });
       break;
     }
@@ -165,9 +157,7 @@ async function main(): Promise<void> {
     }
 
     default:
-      throw new Error(
-        `Unknown command "${command}". Run with "help" to see the available commands.`,
-      );
+      throw new Error(`Unknown command "${command}". Run with "help" to see the available commands.`);
   }
 }
 
@@ -178,9 +168,7 @@ function parseArgs(argumentsList: string[]): CliArgs {
     const current = argumentsList[index];
 
     if (!current?.startsWith('--')) {
-      throw new Error(
-        `Unexpected argument "${current}". All arguments must use --name or --name value.`,
-      );
+      throw new Error(`Unexpected argument "${current}". All arguments must use --name or --name value.`);
     }
 
     const normalized = current.slice(2);
@@ -207,11 +195,7 @@ function parseArgs(argumentsList: string[]): CliArgs {
   return parsed;
 }
 
-function parseIntegerArg(
-  value: string | undefined,
-  defaultValue: number,
-  name: string,
-): number {
+function parseIntegerArg(value: string | undefined, defaultValue: number, name: string): number {
   if (value === undefined) {
     return defaultValue;
   }
@@ -219,10 +203,7 @@ function parseIntegerArg(
   return requireIntegerArg(value, name);
 }
 
-function parseOptionalIntegerArg(
-  value: string | undefined,
-  name: string,
-): number | undefined {
+function parseOptionalIntegerArg(value: string | undefined, name: string): number | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -260,21 +241,21 @@ function printHelp(): void {
     'Commands:',
     '  setup --bot-token TOKEN [--chat-id ID] [--api-base-url URL] [--state-dir PATH] [--force]',
     '  monitor [--state-dir PATH] [--reply-prefix "Echo: "] [--no-reply] [--no-answer-callbacks] [--timeout-seconds 30] [--once]',
-     '  send --text TEXT [--chat-id ID] [--message-id REPLY_TO] [--state-dir PATH]',
-      '  edit --message-id ID --text TEXT [--chat-id ID] [--state-dir PATH]',
-      '  send-action --action typing [--chat-id ID] [--state-dir PATH]',
-      '  approval-demo [--chat-id ID] [--text TEXT] [--state-dir PATH]',
-      '  bridge --cwd ABSOLUTE_PATH [--copilot-path copilot] [--model MODEL] [--timeout-seconds 30] [--state-dir PATH]',
-      '  show-state [--state-dir PATH]',
-      '',
-      'Notes:',
-      '  - The setup command validates the token via getMe and persists it locally.',
-      '  - The monitor command logs raw updates so you can inspect reply metadata, callback_query payloads, and topic fields.',
-      '  - The bridge command routes plain Telegram messages to Copilot ACP and replies with the final text response.',
-      '  - In bridge mode, /new resets the active Copilot session for the chat and /stop cancels the active turn.',
-      '  - Auto-reply is enabled by default during monitor; use --no-reply to inspect only.',
-      '  - If no --chat-id is passed to send/edit/send-action/approval-demo, the CLI falls back to the saved default chat id or the most recently observed chat id.',
-    ];
+    '  send --text TEXT [--chat-id ID] [--message-id REPLY_TO] [--state-dir PATH]',
+    '  edit --message-id ID --text TEXT [--chat-id ID] [--state-dir PATH]',
+    '  send-action --action typing [--chat-id ID] [--state-dir PATH]',
+    '  approval-demo [--chat-id ID] [--text TEXT] [--state-dir PATH]',
+    '  bridge --cwd ABSOLUTE_PATH [--copilot-path copilot] [--model MODEL] [--timeout-seconds 30] [--state-dir PATH]',
+    '  show-state [--state-dir PATH]',
+    '',
+    'Notes:',
+    '  - The setup command validates the token via getMe and persists it locally.',
+    '  - The monitor command logs raw updates so you can inspect reply metadata, callback_query payloads, and topic fields.',
+    '  - The bridge command routes plain Telegram messages to Copilot ACP and replies with the final text response.',
+    '  - In bridge mode, /new resets the active Copilot session for the chat and /stop cancels the active turn.',
+    '  - Auto-reply is enabled by default during monitor; use --no-reply to inspect only.',
+    '  - If no --chat-id is passed to send/edit/send-action/approval-demo, the CLI falls back to the saved default chat id or the most recently observed chat id.',
+  ];
 
   process.stdout.write(`${lines.join('\n')}\n`);
 }

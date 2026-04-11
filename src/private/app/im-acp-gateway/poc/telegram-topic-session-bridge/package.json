@@ -11,11 +11,16 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "build": "pnpm --dir ../../../../../public/lib/hexo-renderer-asciidoc exec tsgo --project ../../../private/app/im-acp-gateway/poc/telegram-topic-session-bridge/tsconfig.build.json",
-    "lint": "pnpm --dir ../../../../../public/lib/hexo-renderer-asciidoc exec biome lint --reporter summary ../../../private/app/im-acp-gateway/poc/telegram-topic-session-bridge",
-    "format": "pnpm --dir ../../../../../public/lib/hexo-renderer-asciidoc exec biome format --write ../../../private/app/im-acp-gateway/poc/telegram-topic-session-bridge",
+    "build": "pnpm exec tsgo --project tsconfig.build.json",
+    "lint": "pnpm exec biome lint --reporter summary .",
+    "format": "pnpm exec biome format --write .",
     "start": "node --experimental-strip-types src/cli.ts",
     "test": "node --experimental-strip-types --test test/*.test.ts",
-    "typecheck": "pnpm --dir ../../../../../public/lib/hexo-renderer-asciidoc exec tsgo --noEmit --project ../../../private/app/im-acp-gateway/poc/telegram-topic-session-bridge/tsconfig.json"
+    "typecheck": "pnpm exec tsgo --noEmit --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.11",
+    "@types/node": "^22.10.2",
+    "@typescript/native-preview": "^7.0.0-dev.20260314.1"
   }
 }

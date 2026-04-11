@@ -2,12 +2,7 @@ export type TelegramChatId = number | string;
 export type TelegramParseMode = 'MarkdownV2';
 export type PermissionMode = 'manual' | 'allow_all';
 export type SessionStatus = 'connected' | 'killed' | 'topic_closed';
-export type ApprovalStatus =
-  | 'pending'
-  | 'approved'
-  | 'denied'
-  | 'cancelled'
-  | 'stale';
+export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'cancelled' | 'stale';
 
 export interface TelegramUser {
   id: number;
@@ -299,22 +294,9 @@ export interface AcpAgentMessageChunkUpdate {
   content: AcpTextContent;
 }
 
-export type AcpToolCallKind =
-  | 'read'
-  | 'edit'
-  | 'delete'
-  | 'move'
-  | 'search'
-  | 'execute'
-  | 'think'
-  | 'fetch'
-  | 'other';
+export type AcpToolCallKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'other';
 
-export type AcpToolCallStatus =
-  | 'pending'
-  | 'in_progress'
-  | 'completed'
-  | 'failed';
+export type AcpToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 export interface AcpToolCallUpdate {
   sessionUpdate: 'tool_call' | 'tool_call_update';
@@ -327,11 +309,7 @@ export interface AcpToolCallUpdate {
   rawOutput?: Record<string, unknown>;
 }
 
-export type AcpPermissionOptionKind =
-  | 'allow_once'
-  | 'allow_always'
-  | 'reject_once'
-  | 'reject_always';
+export type AcpPermissionOptionKind = 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
 
 export interface AcpPermissionOption {
   optionId: string;

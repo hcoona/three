@@ -2,11 +2,7 @@ import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type {
-  PersistedApproval,
-  PersistedSession,
-  PersistedState,
-} from './types.ts';
+import type { PersistedApproval, PersistedSession, PersistedState } from './types.ts';
 
 export const DEFAULT_STATE_DIR = path.join(
   os.homedir(),
@@ -29,9 +25,7 @@ export function getStateFilePath(stateDirectory: string): string {
   return path.join(stateDirectory, STATE_FILE_NAME);
 }
 
-export async function readState(
-  stateDirectory: string,
-): Promise<PersistedState | null> {
+export async function readState(stateDirectory: string): Promise<PersistedState | null> {
   const stateFilePath = getStateFilePath(stateDirectory);
 
   try {
@@ -39,9 +33,7 @@ export async function readState(
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
 
     if (parsed.version !== 1) {
-      throw new Error(
-        `Unsupported state file version: ${String(parsed.version)}`,
-      );
+      throw new Error(`Unsupported state file version: ${String(parsed.version)}`);
     }
 
     if (
@@ -49,9 +41,7 @@ export async function readState(
       typeof parsed.botToken !== 'string' ||
       typeof parsed.controlChatId !== 'string'
     ) {
-      throw new Error(
-        'State file is missing required Telegram routing configuration fields.',
-      );
+      throw new Error('State file is missing required Telegram routing configuration fields.');
     }
 
     return {
@@ -61,15 +51,9 @@ export async function readState(
       controlChatId: parsed.controlChatId,
       sessions: readSessions(parsed.sessions),
       approvals: readApprovals(parsed.approvals),
-      ...(typeof parsed.configuredAt === 'string'
-        ? { configuredAt: parsed.configuredAt }
-        : {}),
-      ...(typeof parsed.lastPollAt === 'string'
-        ? { lastPollAt: parsed.lastPollAt }
-        : {}),
-      ...(typeof parsed.lastUpdateId === 'number'
-        ? { lastUpdateId: parsed.lastUpdateId }
-        : {}),
+      ...(typeof parsed.configuredAt === 'string' ? { configuredAt: parsed.configuredAt } : {}),
+      ...(typeof parsed.lastPollAt === 'string' ? { lastPollAt: parsed.lastPollAt } : {}),
+      ...(typeof parsed.lastUpdateId === 'number' ? { lastUpdateId: parsed.lastUpdateId } : {}),
     };
   } catch (error) {
     if (isFileNotFound(error)) {
@@ -80,10 +64,7 @@ export async function readState(
   }
 }
 
-export async function writeState(
-  stateDirectory: string,
-  state: PersistedState,
-): Promise<void> {
+export async function writeState(stateDirectory: string, state: PersistedState): Promise<void> {
   await mkdir(stateDirectory, { recursive: true });
 
   const stateFilePath = getStateFilePath(stateDirectory);
@@ -95,30 +76,22 @@ export async function writeState(
   await chmod(stateFilePath, 0o600);
 }
 
-function readSessions(
-  sessions: unknown,
-): Record<string, PersistedSession> {
+function readSessions(sessions: unknown): Record<string, PersistedSession> {
   if (!sessions || typeof sessions !== 'object') {
     return {};
   }
 
   const entries = Object.entries(sessions);
-  return Object.fromEntries(
-    entries.filter(([, value]) => isPersistedSession(value)),
-  );
+  return Object.fromEntries(entries.filter(([, value]) => isPersistedSession(value)));
 }
 
-function readApprovals(
-  approvals: unknown,
-): Record<string, PersistedApproval> {
+function readApprovals(approvals: unknown): Record<string, PersistedApproval> {
   if (!approvals || typeof approvals !== 'object') {
     return {};
   }
 
   const entries = Object.entries(approvals);
-  return Object.fromEntries(
-    entries.filter(([, value]) => isPersistedApproval(value)),
-  );
+  return Object.fromEntries(entries.filter(([, value]) => isPersistedApproval(value)));
 }
 
 function isPersistedSession(value: unknown): value is PersistedSession {

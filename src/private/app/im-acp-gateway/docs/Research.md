@@ -25,10 +25,10 @@
     - [ACP TypeScript SDK](https://agentclientprotocol.com/libraries/typescript)
     - [GitHub blog: ACP support in Copilot CLI public preview](https://github.blog/changelog/2026-01-28-acp-support-in-copilot-cli-is-now-in-public-preview/)
     - public repository artifacts for `@tencent-weixin/openclaw-weixin`:
-      - [package README](https://github.com/hao-ji-xing/openclaw-weixin/tree/main/packages/openclaw-weixin)
-      - [`packages/openclaw-weixin/package.json`](https://github.com/hao-ji-xing/openclaw-weixin/blob/main/packages/openclaw-weixin/package.json)
-      - [`packages/openclaw-weixin/src/api/types.ts`](https://github.com/hao-ji-xing/openclaw-weixin/blob/main/packages/openclaw-weixin/src/api/types.ts)
-      - [`protocol.md`](https://github.com/hao-ji-xing/openclaw-weixin/blob/main/protocol.md)
+        - [package README](https://github.com/hao-ji-xing/openclaw-weixin/tree/main/packages/openclaw-weixin)
+        - [`packages/openclaw-weixin/package.json`](https://github.com/hao-ji-xing/openclaw-weixin/blob/main/packages/openclaw-weixin/package.json)
+        - [`packages/openclaw-weixin/src/api/types.ts`](https://github.com/hao-ji-xing/openclaw-weixin/blob/main/packages/openclaw-weixin/src/api/types.ts)
+        - [`protocol.md`](https://github.com/hao-ji-xing/openclaw-weixin/blob/main/protocol.md)
     - public technical write-up for the WeChat iLink / OpenClaw Weixin path:
       [weixin-bot-api.md](https://github.com/hao-ji-xing/openclaw-weixin/blob/main/weixin-bot-api.md)
     - [OpenClaw WeChat integration guide](https://openclawdoc.com/docs/channels/wechat/)
@@ -155,15 +155,15 @@ documentation is already sufficient to support a structured gateway design.
 
 - Start in stdio mode:
 
-  ```text
-  copilot --acp --stdio
-  ```
+    ```text
+    copilot --acp --stdio
+    ```
 
 - Start in TCP mode:
 
-  ```text
-  copilot --acp --port 3000
-  ```
+    ```text
+    copilot --acp --port 3000
+    ```
 
 - Use cases explicitly include:
     - custom frontends,
@@ -689,6 +689,7 @@ Reason:
 - the gateway needs stable product-level session semantics.
 
 ### Decision 2: Treat OpenClaw Weixin artifacts as transport references, not as
+
 the gateway core
 
 Reason:

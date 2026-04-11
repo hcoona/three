@@ -8,9 +8,7 @@ import { readState, writeState } from '../src/state.ts';
 import type { PersistedState } from '../src/types.ts';
 
 test('writeState and readState round-trip topic bridge state', async () => {
-  const temporaryDirectory = await mkdtemp(
-    path.join(os.tmpdir(), 'telegram-topic-session-bridge-state-'),
-  );
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'telegram-topic-session-bridge-state-'));
 
   try {
     const state: PersistedState = {
@@ -48,11 +46,7 @@ test('writeState and readState round-trip topic bridge state', async () => {
           title: 'Run shell command',
           description: 'pnpm test',
           toolCallId: 'tool-1',
-          contextLines: [
-            'Session: session-1',
-            'ACP session: acp-1',
-            'Working directory: /workspace/repo',
-          ],
+          contextLines: ['Session: session-1', 'ACP session: acp-1', 'Working directory: /workspace/repo'],
           options: [
             {
               optionId: 'allow_once',

@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  createApprovalDemoMarkup,
-  parseDemoCallbackData,
-  summarizeMessage,
-  summarizeUpdate,
-} from '../src/messages.ts';
+import { createApprovalDemoMarkup, parseDemoCallbackData, summarizeMessage, summarizeUpdate } from '../src/messages.ts';
 import type { TelegramMessage, TelegramUpdate } from '../src/types.ts';
 
 test('summarizeMessage extracts reply-correlation fields', () => {

@@ -2,12 +2,7 @@
 
 import process from 'node:process';
 
-import {
-  runBridgeCommand,
-  runMonitorCommand,
-  runSetupCommand,
-  runShowStateCommand,
-} from './commands.ts';
+import { runBridgeCommand, runMonitorCommand, runSetupCommand, runShowStateCommand } from './commands.ts';
 import type { MonitorOptions } from './types.ts';
 
 const DEFAULT_MONITOR_OPTIONS: MonitorOptions = {
@@ -30,8 +25,7 @@ interface CliArgs {
 }
 
 async function main(): Promise<void> {
-  const normalizedArguments =
-    process.argv[2] === '--' ? process.argv.slice(3) : process.argv.slice(2);
+  const normalizedArguments = process.argv[2] === '--' ? process.argv.slice(3) : process.argv.slice(2);
   const [command, ...restArguments] = normalizedArguments;
 
   switch (command) {
@@ -42,9 +36,7 @@ async function main(): Promise<void> {
         setup: {
           botToken: requireStringArg(args['bot-token'], 'bot-token'),
           chatId: requireStringArg(args['chat-id'], 'chat-id'),
-          ...(args['api-base-url']
-            ? { apiBaseUrl: args['api-base-url'] }
-            : {}),
+          ...(args['api-base-url'] ? { apiBaseUrl: args['api-base-url'] } : {}),
         },
         ...(args['state-dir'] ? { stateDirectory: args['state-dir'] } : {}),
       });
@@ -101,9 +93,7 @@ async function main(): Promise<void> {
     }
 
     default:
-      throw new Error(
-        `Unknown command "${command}". Run with "help" to see the available commands.`,
-      );
+      throw new Error(`Unknown command "${command}". Run with "help" to see the available commands.`);
   }
 }
 
@@ -114,9 +104,7 @@ function parseArgs(argumentsList: string[]): CliArgs {
     const current = argumentsList[index];
 
     if (!current?.startsWith('--')) {
-      throw new Error(
-        `Unexpected argument "${current}". All arguments must use --name or --name value.`,
-      );
+      throw new Error(`Unexpected argument "${current}". All arguments must use --name or --name value.`);
     }
 
     const normalized = current.slice(2);
@@ -143,11 +131,7 @@ function parseArgs(argumentsList: string[]): CliArgs {
   return parsed;
 }
 
-function parseIntegerArg(
-  value: string | undefined,
-  defaultValue: number,
-  name: string,
-): number {
+function parseIntegerArg(value: string | undefined, defaultValue: number, name: string): number {
   if (value === undefined) {
     return defaultValue;
   }

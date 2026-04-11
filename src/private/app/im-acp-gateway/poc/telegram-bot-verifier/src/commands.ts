@@ -3,11 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { CopilotAcpClient } from './acp-client.ts';
-import {
-  createApprovalDemoMarkup,
-  parseDemoCallbackData,
-  summarizeUpdate,
-} from './messages.ts';
+import { createApprovalDemoMarkup, parseDemoCallbackData, summarizeUpdate } from './messages.ts';
 import { readState, resolveStateDirectory, writeState } from './state.ts';
 import { TelegramBotClient } from './telegram-client.ts';
 import type {
@@ -35,9 +31,7 @@ export async function runSetupCommand(options: {
   const existingState = await readState(stateDirectory);
 
   if (existingState && !options.force) {
-    warn(
-      `Existing bot state found at ${path.join(stateDirectory, 'state.json')}. Use --force to replace it.`,
-    );
+    warn(`Existing bot state found at ${path.join(stateDirectory, 'state.json')}. Use --force to replace it.`);
     return;
   }
 
@@ -61,9 +55,7 @@ export async function runSetupCommand(options: {
   await writeState(stateDirectory, state);
 
   warn(`Saved Telegram bot state to ${path.join(stateDirectory, 'state.json')}.`);
-  warn(
-    `Validated bot: ${bot.first_name}${bot.username ? ` (@${bot.username})` : ''} [${bot.id}]`,
-  );
+  warn(`Validated bot: ${bot.first_name}${bot.username ? ` (@${bot.username})` : ''} [${bot.id}]`);
 }
 
 export async function runBridgeCommand(options: {
@@ -96,11 +88,7 @@ export async function runBridgeCommand(options: {
       }
     },
     async onPermissionRequest(params) {
-      await notifyPermissionCancellation(
-        telegramClient,
-        activeTurnByChat,
-        params,
-      );
+      await notifyPermissionCancellation(telegramClient, activeTurnByChat, params);
 
       return {
         outcome: {
@@ -110,13 +98,10 @@ export async function runBridgeCommand(options: {
     },
   });
 
-  warn(
-    `Monitoring Telegram updates and routing messages to Copilot ACP in ${options.bridge.cwd}.`,
-  );
+  warn(`Monitoring Telegram updates and routing messages to Copilot ACP in ${options.bridge.cwd}.`);
   warn(`State directory: ${stateDirectory}`);
 
-  let offset =
-    state.lastUpdateId === undefined ? undefined : state.lastUpdateId + 1;
+  let offset = state.lastUpdateId === undefined ? undefined : state.lastUpdateId + 1;
 
   try {
     while (true) {
@@ -127,9 +112,7 @@ export async function runBridgeCommand(options: {
       });
 
       if (updates.length > 0) {
-        const maximumUpdateId = Math.max(
-          ...updates.map((update) => update.update_id),
-        );
+        const maximumUpdateId = Math.max(...updates.map((update) => update.update_id));
         offset = maximumUpdateId + 1;
         state = {
           ...state,
@@ -147,12 +130,7 @@ export async function runBridgeCommand(options: {
         state = await updateObservedState(stateDirectory, state, update);
 
         if (update.callback_query) {
-          await handleBridgeCallbackQuery(
-            telegramClient,
-            acpClient,
-            update.callback_query,
-            activeTurnByChat,
-          );
+          await handleBridgeCallbackQuery(telegramClient, acpClient, update.callback_query, activeTurnByChat);
           continue;
         }
 
@@ -198,8 +176,7 @@ export async function runMonitorCommand(options: {
   warn(`Monitoring Telegram updates from ${client.apiBaseUrl}.`);
   warn(`State directory: ${stateDirectory}`);
 
-  let offset =
-    state.lastUpdateId === undefined ? undefined : state.lastUpdateId + 1;
+  let offset = state.lastUpdateId === undefined ? undefined : state.lastUpdateId + 1;
 
   while (true) {
     const updates = await client.getUpdates({
@@ -296,9 +273,7 @@ export async function runEditCommand(options: {
     text: options.text,
   });
 
-  warn(
-    `Edited message ${options.messageId} in chat ${String(chatId)}.`,
-  );
+  warn(`Edited message ${options.messageId} in chat ${String(chatId)}.`);
   process.stdout.write(`${JSON.stringify(response, null, 2)}\n`);
 }
 
@@ -348,9 +323,7 @@ export async function runApprovalDemoCommand(options: {
   process.stdout.write(`${JSON.stringify(response, null, 2)}\n`);
 }
 
-export async function runShowStateCommand(options: {
-  stateDirectory?: string | undefined;
-}): Promise<void> {
+export async function runShowStateCommand(options: { stateDirectory?: string | undefined }): Promise<void> {
   const stateDirectory = resolveStateDirectory(options.stateDirectory);
   const state = await readState(stateDirectory);
 
@@ -362,9 +335,7 @@ export async function runShowStateCommand(options: {
   process.stdout.write(`${JSON.stringify(sanitizeStateForDisplay(state), null, 2)}\n`);
 }
 
-function sanitizeStateForDisplay(
-  state: PersistedState,
-): Record<string, string | number | undefined> {
+function sanitizeStateForDisplay(state: PersistedState): Record<string, string | number | undefined> {
   return {
     version: String(state.version),
     apiBaseUrl: state.apiBaseUrl,
@@ -405,9 +376,7 @@ async function handleInboundMessage(
         message_id: message.message_id,
         allow_sending_without_reply: true,
       },
-      reply_markup: createApprovalDemoMarkup(
-        crypto.randomUUID().slice(0, 8),
-      ),
+      reply_markup: createApprovalDemoMarkup(crypto.randomUUID().slice(0, 8)),
     });
     return;
   }
@@ -434,14 +403,9 @@ async function handleInboundMessage(
   });
 }
 
-async function handleCallbackQuery(
-  client: TelegramBotClient,
-  callbackQuery: TelegramCallbackQuery,
-): Promise<void> {
+async function handleCallbackQuery(client: TelegramBotClient, callbackQuery: TelegramCallbackQuery): Promise<void> {
   const parsed = parseDemoCallbackData(callbackQuery.data);
-  const feedback = parsed
-    ? `Recorded ${parsed.action}.`
-    : 'Callback received.';
+  const feedback = parsed ? `Recorded ${parsed.action}.` : 'Callback received.';
 
   await client.answerCallbackQuery({
     callback_query_id: callbackQuery.id,
@@ -574,11 +538,8 @@ async function handleBridgeMessage(options: {
 
   const replyToMessageId = options.message.reply_to_message?.message_id;
   let sessionId =
-    resolveSessionIdFromReply(
-      options.message.chat.id,
-      replyToMessageId,
-      options.sessionByBotMessage,
-    ) ?? options.sessionByChat.get(chatKey);
+    resolveSessionIdFromReply(options.message.chat.id, replyToMessageId, options.sessionByBotMessage) ??
+    options.sessionByChat.get(chatKey);
 
   if (!sessionId) {
     const newSessionResult = await options.acpClient.newSession(options.bridge.cwd);
@@ -647,9 +608,7 @@ async function runCopilotTurn(
     }
 
     const replyText =
-      normalizedText.length > 0
-        ? normalizedText
-        : `Copilot finished with stopReason=${promptResult.stopReason}.`;
+      normalizedText.length > 0 ? normalizedText : `Copilot finished with stopReason=${promptResult.stopReason}.`;
 
     const chunks = splitTextForTelegram(replyText);
 
@@ -666,15 +625,11 @@ async function runCopilotTurn(
             : undefined,
       });
 
-      options.sessionByBotMessage.set(
-        createMessageSessionKey(turn.chatId, response.message_id),
-        turn.sessionId,
-      );
+      options.sessionByBotMessage.set(createMessageSessionKey(turn.chatId, response.message_id), turn.sessionId);
       options.sessionByChat.set(turn.chatId, turn.sessionId);
     }
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Unknown Copilot ACP error.';
+    const message = error instanceof Error ? error.message : 'Unknown Copilot ACP error.';
 
     await options.telegramClient.sendMessage({
       chat_id: turn.chatId,
@@ -739,18 +694,13 @@ async function readRequiredState(stateDirectory: string): Promise<PersistedState
   const state = await readState(stateDirectory);
 
   if (!state) {
-    throw new Error(
-      `No bot state found in ${stateDirectory}. Run the setup command first.`,
-    );
+    throw new Error(`No bot state found in ${stateDirectory}. Run the setup command first.`);
   }
 
   return state;
 }
 
-function resolveChatId(
-  explicitChatId: string | undefined,
-  state: PersistedState,
-): TelegramChatId {
+function resolveChatId(explicitChatId: string | undefined, state: PersistedState): TelegramChatId {
   if (explicitChatId && explicitChatId.trim().length > 0) {
     return explicitChatId.trim();
   }
@@ -763,9 +713,7 @@ function resolveChatId(
     return state.lastObservedChatId;
   }
 
-  throw new Error(
-    'No chat id available. Pass --chat-id explicitly or run monitor after sending a message to the bot.',
-  );
+  throw new Error('No chat id available. Pass --chat-id explicitly or run monitor after sending a message to the bot.');
 }
 
 function warn(message: string): void {
@@ -785,17 +733,10 @@ function resolveSessionIdFromReply(
     return null;
   }
 
-  return (
-    sessionByBotMessage.get(
-      createMessageSessionKey(chatId, replyToMessageId),
-    ) ?? null
-  );
+  return sessionByBotMessage.get(createMessageSessionKey(chatId, replyToMessageId)) ?? null;
 }
 
-function findActiveTurnBySessionId(
-  activeTurnByChat: Map<string, ActiveTurn>,
-  sessionId: string,
-): ActiveTurn | null {
+function findActiveTurnBySessionId(activeTurnByChat: Map<string, ActiveTurn>, sessionId: string): ActiveTurn | null {
   for (const activeTurn of activeTurnByChat.values()) {
     if (activeTurn.sessionId === sessionId) {
       return activeTurn;
@@ -827,9 +768,7 @@ async function notifyPermissionCancellation(
   });
 }
 
-function isAcpAgentTextChunkUpdate(
-  update: unknown,
-): update is AcpAgentMessageChunkUpdate {
+function isAcpAgentTextChunkUpdate(update: unknown): update is AcpAgentMessageChunkUpdate {
   if (!update || typeof update !== 'object') {
     return false;
   }
@@ -862,8 +801,7 @@ function splitTextForTelegram(text: string): string[] {
       remaining.lastIndexOf(' ', maximumLength),
     );
 
-    const effectiveIndex =
-      splitIndex > Math.floor(maximumLength / 2) ? splitIndex : maximumLength;
+    const effectiveIndex = splitIndex > Math.floor(maximumLength / 2) ? splitIndex : maximumLength;
     chunks.push(remaining.slice(0, effectiveIndex).trim());
     remaining = remaining.slice(effectiveIndex).trim();
   }

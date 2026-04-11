@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { type ChildProcessByStdio, spawn } from 'node:child_process';
 import process from 'node:process';
 import readline from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
@@ -18,14 +18,9 @@ interface PendingRequest {
   reject: (error: Error) => void;
 }
 
-type SessionUpdateHandler = (
-  sessionId: string,
-  update: unknown,
-) => void | Promise<void>;
+type SessionUpdateHandler = (sessionId: string, update: unknown) => void | Promise<void>;
 
-type PermissionHandler = (
-  params: AcpPermissionRequestParams,
-) => Promise<AcpPermissionResponse>;
+type PermissionHandler = (params: AcpPermissionRequestParams) => Promise<AcpPermissionResponse>;
 
 export class CopilotAcpClient {
   readonly process: ChildProcessByStdio<Writable, Readable, null>;
@@ -37,9 +32,7 @@ export class CopilotAcpClient {
   private sessionUpdateHandler: SessionUpdateHandler | undefined;
   private permissionHandler: PermissionHandler | undefined;
 
-  private constructor(
-    processHandle: ChildProcessByStdio<Writable, Readable, null>,
-  ) {
+  private constructor(processHandle: ChildProcessByStdio<Writable, Readable, null>) {
     this.process = processHandle;
     this.lineReader = readline.createInterface({
       input: processHandle.stdout,
@@ -261,16 +254,10 @@ export class CopilotAcpClient {
     params?: Record<string, unknown>;
   }): Promise<void> {
     if (message.method === 'session/update') {
-      const params = message.params as
-        | { sessionId?: unknown; update?: unknown }
-        | undefined;
+      const params = message.params as { sessionId?: unknown; update?: unknown } | undefined;
       const sessionId = params?.sessionId;
       const update = params?.update;
-      if (
-        typeof sessionId === 'string' &&
-        update !== undefined &&
-        this.sessionUpdateHandler
-      ) {
+      if (typeof sessionId === 'string' && update !== undefined && this.sessionUpdateHandler) {
         await this.sessionUpdateHandler(sessionId, update);
       }
       return;

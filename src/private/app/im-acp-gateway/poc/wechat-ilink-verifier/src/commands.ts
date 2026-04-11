@@ -1,8 +1,7 @@
 import path from 'node:path';
 import process from 'node:process';
-
-import { extractTextContent, summarizeInboundMessage } from './messages.ts';
 import { ILinkClient } from './ilink-client.ts';
+import { extractTextContent, summarizeInboundMessage } from './messages.ts';
 import { saveQrCodeArtifact } from './qr.ts';
 import { clearState, ensureStateDirectory, readState, resolveStateDirectory, writeState } from './state.ts';
 import type { LoginOptions, MonitorOptions, PersistedState, SendTextRequest } from './types.ts';
@@ -21,9 +20,7 @@ export async function runLoginCommand(options: {
     const existingState = await readState(stateDirectory);
 
     if (existingState) {
-      warn(
-        `Existing login state found at ${path.join(stateDirectory, 'state.json')}. Use --force to replace it.`,
-      );
+      warn(`Existing login state found at ${path.join(stateDirectory, 'state.json')}. Use --force to replace it.`);
       return;
     }
   } else {
@@ -41,7 +38,8 @@ export async function runLoginCommand(options: {
   const qrCodeId = qrCodeResponse.qrcode;
 
   if (!qrCodeId) {
-    throw new Error(`Login QR code response did not include a qrcode identifier: ${JSON.stringify(qrCodeResponse)}`);
+    const { qrcode_img_content: _img, ...safeFields } = qrCodeResponse as Record<string, unknown>;
+    throw new Error(`Login QR code response did not include a qrcode identifier: ${JSON.stringify(safeFields)}`);
   }
 
   const qrArtifact = await saveQrCodeArtifact(stateDirectory, qrCodeId, qrCodeResponse.qrcode_img_content);
@@ -72,9 +70,7 @@ export async function runLoginCommand(options: {
 
     if (currentStatus === 'confirmed') {
       if (!statusResponse.bot_token || !statusResponse.baseurl) {
-        throw new Error(
-          `Confirmed QR status did not provide bot_token/baseurl: ${JSON.stringify(statusResponse)}`,
-        );
+        throw new Error(`Confirmed QR status did not provide bot_token/baseurl: ${JSON.stringify(statusResponse)}`);
       }
 
       const state: PersistedState = {
@@ -102,10 +98,7 @@ export async function runLoginCommand(options: {
   throw new Error(`Timed out waiting for QR code confirmation after ${options.login.timeoutSeconds} seconds.`);
 }
 
-export async function runMonitorCommand(options: {
-  stateDirectory?: string;
-  monitor: MonitorOptions;
-}): Promise<void> {
+export async function runMonitorCommand(options: { stateDirectory?: string; monitor: MonitorOptions }): Promise<void> {
   const stateDirectory = resolveStateDirectory(options.stateDirectory);
   const state = await readRequiredState(stateDirectory);
   const client = new ILinkClient({
@@ -185,10 +178,7 @@ export async function runMonitorCommand(options: {
   }
 }
 
-export async function runSendCommand(options: {
-  stateDirectory?: string;
-  request: SendTextRequest;
-}): Promise<void> {
+export async function runSendCommand(options: { stateDirectory?: string; request: SendTextRequest }): Promise<void> {
   const stateDirectory = resolveStateDirectory(options.stateDirectory);
   const state = await readRequiredState(stateDirectory);
   const client = new ILinkClient({
@@ -230,9 +220,7 @@ async function readRequiredState(stateDirectory: string): Promise<PersistedState
   const state = await readState(stateDirectory);
 
   if (!state) {
-    throw new Error(
-      `No login state found in ${stateDirectory}. Run the login command first.`,
-    );
+    throw new Error(`No login state found in ${stateDirectory}. Run the login command first.`);
   }
 
   return state;

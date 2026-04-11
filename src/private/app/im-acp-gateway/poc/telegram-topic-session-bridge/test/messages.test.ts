@@ -111,23 +111,18 @@ test('permission markup and callback parsing use approval ids', () => {
 });
 
 test('general and session commands are parsed from Telegram text', () => {
-  assert.deepStrictEqual(
-    parseGeneralCommand('/new --cwd /workspace/repo summarize current repo'),
-    {
-      command: 'new',
-      workingDirectory: '/workspace/repo',
-      prompt: 'summarize current repo',
-    },
-  );
+  assert.deepStrictEqual(parseGeneralCommand('/new --cwd /workspace/repo summarize current repo'), {
+    command: 'new',
+    workingDirectory: '/workspace/repo',
+    prompt: 'summarize current repo',
+  });
   assert.deepStrictEqual(parseGeneralCommand('/list'), { command: 'list' });
   assert.deepStrictEqual(parseGeneralCommand('/kill session-123'), {
     command: 'kill',
     target: 'session-123',
   });
   assert.deepStrictEqual(
-    parseGeneralCommand(
-      '/takeover --session-id acp-123 --cwd /workspace/repo continue prior work',
-    ),
+    parseGeneralCommand('/takeover --session-id acp-123 --cwd /workspace/repo continue prior work'),
     {
       command: 'takeover',
       acpSessionId: 'acp-123',
@@ -136,14 +131,11 @@ test('general and session commands are parsed from Telegram text', () => {
     },
   );
   assert.equal(parseGeneralCommand('/new summarize without cwd'), null);
-  assert.deepStrictEqual(
-    parseGeneralCommand('/new —cwd /workspace/repo summarize — current repo'),
-    {
-      command: 'new',
-      workingDirectory: '/workspace/repo',
-      prompt: 'summarize — current repo',
-    },
-  );
+  assert.deepStrictEqual(parseGeneralCommand('/new —cwd /workspace/repo summarize — current repo'), {
+    command: 'new',
+    workingDirectory: '/workspace/repo',
+    prompt: 'summarize — current repo',
+  });
 
   assert.deepStrictEqual(parseSessionCommand('/stop'), { command: 'stop' });
   assert.deepStrictEqual(parseSessionCommand('/new'), { command: 'new' });

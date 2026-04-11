@@ -8,9 +8,7 @@ import { readState, writeState } from '../src/state.ts';
 import type { PersistedState } from '../src/types.ts';
 
 test('writeState and readState round-trip persisted bot state', async () => {
-  const temporaryDirectory = await mkdtemp(
-    path.join(os.tmpdir(), 'telegram-bot-verifier-state-'),
-  );
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'telegram-bot-verifier-state-'));
 
   try {
     const state: PersistedState = {

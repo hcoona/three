@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { type ChildProcessByStdio, spawn } from 'node:child_process';
 import readline from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 
@@ -17,14 +17,9 @@ interface PendingRequest {
   reject: (error: Error) => void;
 }
 
-type SessionUpdateHandler = (
-  sessionId: string,
-  update: unknown,
-) => void | Promise<void>;
+type SessionUpdateHandler = (sessionId: string, update: unknown) => void | Promise<void>;
 
-type PermissionHandler = (
-  params: AcpPermissionRequestParams,
-) => Promise<AcpPermissionResponse>;
+type PermissionHandler = (params: AcpPermissionRequestParams) => Promise<AcpPermissionResponse>;
 
 export class CopilotAcpClient {
   readonly process: ChildProcessByStdio<Writable, Readable, null>;
@@ -62,12 +57,7 @@ export class CopilotAcpClient {
     onSessionUpdate?: SessionUpdateHandler;
     onPermissionRequest?: PermissionHandler;
   }): Promise<CopilotAcpClient> {
-    const argumentsList = [
-      '--acp',
-      '--stdio',
-      '--add-dir',
-      options.cwd,
-    ];
+    const argumentsList = ['--acp', '--stdio', '--add-dir', options.cwd];
 
     if (options.model) {
       argumentsList.push('--model', options.model);
@@ -248,9 +238,7 @@ export class CopilotAcpClient {
     method: string;
     params?: Record<string, unknown>;
   }): Promise<void> {
-    const params = message.params as
-      | { sessionId?: unknown; update?: unknown }
-      | undefined;
+    const params = message.params as { sessionId?: unknown; update?: unknown } | undefined;
 
     if (message.method === 'session/update') {
       const sessionId = asString(params?.sessionId);
@@ -260,10 +248,7 @@ export class CopilotAcpClient {
       return;
     }
 
-    if (
-      message.method === 'session/request_permission' &&
-      message.id !== undefined
-    ) {
+    if (message.method === 'session/request_permission' && message.id !== undefined) {
       const fallback: AcpPermissionResponse = {
         outcome: {
           outcome: 'cancelled',
@@ -271,9 +256,7 @@ export class CopilotAcpClient {
       };
 
       const response = this.permissionHandler
-        ? await this.permissionHandler(
-            (message.params ?? {}) as AcpPermissionRequestParams,
-          )
+        ? await this.permissionHandler((message.params ?? {}) as AcpPermissionRequestParams)
         : fallback;
 
       await this.respond(message.id, response);

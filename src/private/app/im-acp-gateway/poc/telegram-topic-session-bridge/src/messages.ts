@@ -12,8 +12,7 @@ import type {
 } from './types.ts';
 
 const TELEGRAM_OPTION_DASH_PATTERN = /^[\u2010-\u2015\u2212\uFF0D]+/u;
-const TELEGRAM_MARKDOWN_SPECIAL_CHARACTERS =
-  /(_|\*|\[|\]|\(|\)|~|`|>|#|\+|-|=|\||\{|\}|\.|!)/gu;
+const TELEGRAM_MARKDOWN_SPECIAL_CHARACTERS = /(_|\*|\[|\]|\(|\)|~|`|>|#|\+|-|=|\||\{|\}|\.|!)/gu;
 const TELEGRAM_FENCED_CODE_BLOCK_PATTERN = /```([A-Za-z0-9_+-]+)?\n([\s\S]*?)```/gu;
 const TELEGRAM_INLINE_MARKDOWN_PATTERN =
   /(?<inlineCode>`[^`\n]+`)|(?<link>\[(?<label>[^\]]+)\]\((?<url>https?:\/\/[^\s)]+)\))|(?<bold>\*\*(?<boldText>[^*\n]+)\*\*)|(?<strike>~~(?<strikeText>[^~\n]+)~~)/gu;
@@ -94,9 +93,7 @@ export function createPermissionMarkup(
   };
 }
 
-export function parsePermissionCallbackData(
-  data: string | undefined,
-): ParsedApprovalCallback | null {
+export function parsePermissionCallbackData(data: string | undefined): ParsedApprovalCallback | null {
   if (!data) {
     return null;
   }
@@ -248,12 +245,7 @@ export function parseSessionCommand(text: string | undefined): SessionCommand | 
     const modeToken = parts[1]?.toLowerCase();
     return {
       command: 'yolo',
-      mode:
-        modeToken === 'off'
-          ? 'disable'
-          : modeToken === 'show'
-            ? 'show'
-            : 'enable',
+      mode: modeToken === 'off' ? 'disable' : modeToken === 'show' ? 'show' : 'enable',
     };
   }
 
@@ -387,8 +379,7 @@ function renderInlineToken(match: RegExpMatchArray): string {
 }
 
 function renderFencedCodeBlock(language: string | undefined, code: string): string {
-  const languageSuffix =
-    language && language.length > 0 ? language.replace(/[^A-Za-z0-9_+-]/gu, '') : '';
+  const languageSuffix = language && language.length > 0 ? language.replace(/[^A-Za-z0-9_+-]/gu, '') : '';
   const normalizedCode = code.replace(/\n$/u, '');
 
   return languageSuffix.length > 0
@@ -397,9 +388,7 @@ function renderFencedCodeBlock(language: string | undefined, code: string): stri
 }
 
 function escapeTelegramMarkdownV2(value: string): string {
-  return value
-    .replace(/\\/gu, '\\\\')
-    .replace(TELEGRAM_MARKDOWN_SPECIAL_CHARACTERS, '\\$1');
+  return value.replace(/\\/gu, '\\\\').replace(TELEGRAM_MARKDOWN_SPECIAL_CHARACTERS, '\\$1');
 }
 
 function escapeTelegramCode(value: string): string {
@@ -419,10 +408,7 @@ function chunkButtons<T>(items: T[], chunkSize: number): T[][] {
   return chunks;
 }
 
-function determineMessageKind(
-  update: TelegramUpdate,
-  message: TelegramMessage,
-): string {
+function determineMessageKind(update: TelegramUpdate, message: TelegramMessage): string {
   if (message.forum_topic_closed === true) {
     return 'forum_topic_closed';
   }
@@ -438,10 +424,7 @@ function determineMessageKind(
   return update.edited_message ? 'edited_message' : 'message';
 }
 
-function summarizeCallbackQuery(
-  updateId: number,
-  callbackQuery: TelegramCallbackQuery,
-): UpdateSummary {
+function summarizeCallbackQuery(updateId: number, callbackQuery: TelegramCallbackQuery): UpdateSummary {
   return {
     updateId,
     kind: 'callback_query',

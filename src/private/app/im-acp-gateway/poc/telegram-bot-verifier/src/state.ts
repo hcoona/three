@@ -4,13 +4,7 @@ import path from 'node:path';
 
 import type { PersistedState } from './types.ts';
 
-export const DEFAULT_STATE_DIR = path.join(
-  os.homedir(),
-  '.local',
-  'share',
-  'im-acp-gateway',
-  'telegram-bot-verifier',
-);
+export const DEFAULT_STATE_DIR = path.join(os.homedir(), '.local', 'share', 'im-acp-gateway', 'telegram-bot-verifier');
 const STATE_FILE_NAME = 'state.json';
 
 export function resolveStateDirectory(input?: string): string {
@@ -25,9 +19,7 @@ export function getStateFilePath(stateDirectory: string): string {
   return path.join(stateDirectory, STATE_FILE_NAME);
 }
 
-export async function readState(
-  stateDirectory: string,
-): Promise<PersistedState | null> {
+export async function readState(stateDirectory: string): Promise<PersistedState | null> {
   const stateFilePath = getStateFilePath(stateDirectory);
 
   try {
@@ -35,18 +27,11 @@ export async function readState(
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
 
     if (parsed.version !== 1) {
-      throw new Error(
-        `Unsupported state file version: ${String(parsed.version)}`,
-      );
+      throw new Error(`Unsupported state file version: ${String(parsed.version)}`);
     }
 
-    if (
-      typeof parsed.apiBaseUrl !== 'string' ||
-      typeof parsed.botToken !== 'string'
-    ) {
-      throw new Error(
-        'State file is missing required apiBaseUrl or botToken fields.',
-      );
+    if (typeof parsed.apiBaseUrl !== 'string' || typeof parsed.botToken !== 'string') {
+      throw new Error('State file is missing required apiBaseUrl or botToken fields.');
     }
 
     const state: PersistedState = {
@@ -109,10 +94,7 @@ export async function readState(
   }
 }
 
-export async function writeState(
-  stateDirectory: string,
-  state: PersistedState,
-): Promise<void> {
+export async function writeState(stateDirectory: string, state: PersistedState): Promise<void> {
   await mkdir(stateDirectory, { recursive: true });
 
   const stateFilePath = getStateFilePath(stateDirectory);

@@ -141,23 +141,23 @@ session continuation works on the intended setup.
 
 1. the Telegram verifier POC was extended with a `bridge` command and a thin
    ACP client that:
-   - starts `copilot --acp --stdio`,
-   - creates one active Copilot session per Telegram chat,
-   - routes a normal Telegram text message into `session/prompt`,
-   - returns the final Copilot text response to Telegram,
-   - supports `/new` for session reset and `/stop` for turn cancellation,
-   - auto-cancels ACP permission requests in this first cut,
+    - starts `copilot --acp --stdio`,
+    - creates one active Copilot session per Telegram chat,
+    - routes a normal Telegram text message into `session/prompt`,
+    - returns the final Copilot text response to Telegram,
+    - supports `/new` for session reset and `/stop` for turn cancellation,
+    - auto-cancels ACP permission requests in this first cut,
 2. the updated POC passed local `typecheck`, `test`, and `lint`,
 3. a local ACP smoke test was run directly against Copilot CLI:
-   - `initialize`,
-   - `session/new`,
-   - `session/prompt`,
-   - and a no-tools prompt completed with `stopReason = end_turn`,
+    - `initialize`,
+    - `session/new`,
+    - `session/prompt`,
+    - and a no-tools prompt completed with `stopReason = end_turn`,
 4. the live `bridge` command was started against the repository workspace,
 5. the bot sent an operator message asking the user to:
-   - send a fresh message,
-   - reply to a Copilot-generated bot message,
-   - optionally try `/stop`,
+    - send a fresh message,
+    - reply to a Copilot-generated bot message,
+    - optionally try `/stop`,
 6. the user sent `Hello`,
 7. the user then replied `What can you do?` to bot message `332`,
 8. the user then replied `Summarize current repo` to bot message `334`,
@@ -173,12 +173,12 @@ session continuation works on the intended setup.
 - the first user message arrived as a normal Telegram `message` update without a
   reply target, which is the expected shape for starting a new logical session,
 - reply-based continuation worked in practice:
-  - inbound message `333` carried `reply_to_message.message_id = 332`,
-  - inbound message `335` carried `reply_to_message.message_id = 334`,
-  - both replies were directed at earlier bridge-generated bot messages,
+    - inbound message `333` carried `reply_to_message.message_id = 332`,
+    - inbound message `335` carried `reply_to_message.message_id = 334`,
+    - both replies were directed at earlier bridge-generated bot messages,
 - the bridge persisted ACP-side continuity data:
-  - the saved local state now includes `lastAcpSessionId`,
-  - the latest completed prompt recorded `lastAcpStopReason = end_turn`,
+    - the saved local state now includes `lastAcpSessionId`,
+    - the latest completed prompt recorded `lastAcpStopReason = end_turn`,
 - the `/stop` command path was exercised from Telegram text input and reached the
   bridge successfully,
 - the user confirmed the visible behavior looked correct.

@@ -20,8 +20,7 @@ export class TelegramBotClient {
   readonly botToken: string;
 
   constructor(options: { apiBaseUrl?: string; botToken: string }) {
-    this.apiBaseUrl =
-      options.apiBaseUrl?.trim().replace(/\/+$/, '') ?? DEFAULT_API_BASE_URL;
+    this.apiBaseUrl = options.apiBaseUrl?.trim().replace(/\/+$/, '') ?? DEFAULT_API_BASE_URL;
     this.botToken = options.botToken;
   }
 
@@ -37,9 +36,7 @@ export class TelegramBotClient {
     return this.invoke<TelegramMessage>('sendMessage', request);
   }
 
-  async editMessageText(
-    request: EditMessageTextRequest,
-  ): Promise<TelegramMessage | true> {
+  async editMessageText(request: EditMessageTextRequest): Promise<TelegramMessage | true> {
     return this.invoke<TelegramMessage | true>('editMessageText', request);
   }
 
@@ -47,9 +44,7 @@ export class TelegramBotClient {
     return this.invoke<true>('sendChatAction', request);
   }
 
-  async answerCallbackQuery(
-    request: AnswerCallbackQueryRequest,
-  ): Promise<true> {
+  async answerCallbackQuery(request: AnswerCallbackQueryRequest): Promise<true> {
     return this.invoke<true>('answerCallbackQuery', request);
   }
 
@@ -76,9 +71,7 @@ export class TelegramBotClient {
           continue;
         }
 
-        throw new Error(
-          formatHttpFailureMessage(method, response.status, response.statusText, envelope),
-        );
+        throw new Error(formatHttpFailureMessage(method, response.status, response.statusText, envelope));
       }
 
       if (!envelope || !envelope.ok || envelope.result === undefined) {
@@ -98,9 +91,7 @@ export class TelegramBotClient {
   }
 }
 
-async function tryParseEnvelope<T>(
-  response: Response,
-): Promise<TelegramApiEnvelope<T> | null> {
+async function tryParseEnvelope<T>(response: Response): Promise<TelegramApiEnvelope<T> | null> {
   try {
     return (await response.json()) as TelegramApiEnvelope<T>;
   } catch {
@@ -108,10 +99,7 @@ async function tryParseEnvelope<T>(
   }
 }
 
-function resolveRetryAfterSeconds(
-  status: number,
-  envelope: TelegramApiEnvelope<unknown> | null,
-): number | null {
+function resolveRetryAfterSeconds(status: number, envelope: TelegramApiEnvelope<unknown> | null): number | null {
   if (status !== 429) {
     return null;
   }

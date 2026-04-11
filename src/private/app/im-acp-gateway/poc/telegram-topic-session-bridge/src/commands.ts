@@ -21,11 +21,11 @@ import type {
   AcpPermissionResponse,
   BridgeOptions,
   MonitorOptions,
+  PermissionMode,
   PersistedApproval,
   PersistedApprovalOption,
   PersistedSession,
   PersistedState,
-  PermissionMode,
   SessionCommand,
   SessionStatus,
   SetupOptions,
@@ -56,9 +56,7 @@ export async function runSetupCommand(options: {
   const existingState = await readState(stateDirectory);
 
   if (existingState && !options.force) {
-    warn(
-      `Existing bot state found at ${path.join(stateDirectory, 'state.json')}. Use --force to replace it.`,
-    );
+    warn(`Existing bot state found at ${path.join(stateDirectory, 'state.json')}. Use --force to replace it.`);
     return;
   }
 
@@ -81,15 +79,10 @@ export async function runSetupCommand(options: {
   await writeState(stateDirectory, state);
 
   warn(`Saved Telegram bot state to ${path.join(stateDirectory, 'state.json')}.`);
-  warn(
-    `Validated bot: ${bot.first_name}${bot.username ? ` (@${bot.username})` : ''} [${bot.id}]`,
-  );
+  warn(`Validated bot: ${bot.first_name}${bot.username ? ` (@${bot.username})` : ''} [${bot.id}]`);
 }
 
-export async function runMonitorCommand(options: {
-  stateDirectory?: string;
-  monitor: MonitorOptions;
-}): Promise<void> {
+export async function runMonitorCommand(options: { stateDirectory?: string; monitor: MonitorOptions }): Promise<void> {
   const stateDirectory = resolveStateDirectory(options.stateDirectory);
   let state = await readRequiredState(stateDirectory);
   const client = new TelegramBotClient({
@@ -100,8 +93,7 @@ export async function runMonitorCommand(options: {
   warn(`Monitoring Telegram updates from ${client.apiBaseUrl}.`);
   warn(`State directory: ${stateDirectory}`);
 
-  let offset =
-    state.lastUpdateId === undefined ? undefined : state.lastUpdateId + 1;
+  let offset = state.lastUpdateId === undefined ? undefined : state.lastUpdateId + 1;
 
   while (true) {
     const updates = await client.getUpdates({
@@ -133,10 +125,7 @@ export async function runMonitorCommand(options: {
   }
 }
 
-export async function runBridgeCommand(options: {
-  bridge: BridgeOptions;
-  stateDirectory?: string;
-}): Promise<void> {
+export async function runBridgeCommand(options: { bridge: BridgeOptions; stateDirectory?: string }): Promise<void> {
   const stateDirectory = resolveStateDirectory(options.stateDirectory);
   let state = await readRequiredState(stateDirectory);
   state = markPendingApprovalsStale(state);
@@ -152,11 +141,7 @@ export async function runBridgeCommand(options: {
   const pendingApprovalResolvers = new Map<string, PendingApprovalResolver>();
   const connectedSessionIdByThreadKey = new Map<string, string>();
 
-  hydrateConnectedSessionIndexes(
-    state,
-    connectedSessionIdByThreadKey,
-    gatewaySessionIdByAcpSessionId,
-  );
+  hydrateConnectedSessionIndexes(state, connectedSessionIdByThreadKey, gatewaySessionIdByAcpSessionId);
 
   const acpClient = await CopilotAcpClient.start({
     copilotPath: options.bridge.copilotPath,
@@ -204,8 +189,7 @@ export async function runBridgeCommand(options: {
   warn('Monitoring Telegram updates for topic-session routing.');
   warn(`State directory: ${stateDirectory}`);
 
-  let offset =
-    state.lastUpdateId === undefined ? undefined : state.lastUpdateId + 1;
+  let offset = state.lastUpdateId === undefined ? undefined : state.lastUpdateId + 1;
 
   try {
     while (true) {
@@ -283,9 +267,7 @@ export async function runBridgeCommand(options: {
   }
 }
 
-export async function runShowStateCommand(options: {
-  stateDirectory?: string;
-}): Promise<void> {
+export async function runShowStateCommand(options: { stateDirectory?: string }): Promise<void> {
   const stateDirectory = resolveStateDirectory(options.stateDirectory);
   const state = await readState(stateDirectory);
 
@@ -442,12 +424,7 @@ async function handleGeneralTopicMessage(options: {
         target: command.target,
         updateState: options.updateState,
       });
-      await replyInGeneralTopic(
-        options.telegramClient,
-        options.getState(),
-        options.message.message_id,
-        result,
-      );
+      await replyInGeneralTopic(options.telegramClient, options.getState(), options.message.message_id, result);
       return;
     }
 
@@ -511,9 +488,7 @@ async function handleGeneralTopicMessage(options: {
             `ACP session: ${session.acpSessionId}`,
             `Working directory: ${session.workingDirectory}`,
             'Bridge permission mode: manual',
-            command.prompt
-              ? `Initial prompt: ${command.prompt}`
-              : 'Send a message in this topic to continue.',
+            command.prompt ? `Initial prompt: ${command.prompt}` : 'Send a message in this topic to continue.',
           ].join('\n'),
         ),
       });
@@ -562,10 +537,7 @@ async function handleGeneralTopicMessage(options: {
       }
 
       const workingDirectory = path.resolve(command.workingDirectory);
-      const existingSession = findSessionByAcpSessionId(
-        options.getState(),
-        command.acpSessionId,
-      );
+      const existingSession = findSessionByAcpSessionId(options.getState(), command.acpSessionId);
       if (existingSession) {
         await replyInGeneralTopic(
           options.telegramClient,
@@ -807,8 +779,7 @@ async function handleSessionCommand(options: {
         return;
       }
 
-      const permissionMode: PermissionMode =
-        options.command.mode === 'disable' ? 'manual' : 'allow_all';
+      const permissionMode: PermissionMode = options.command.mode === 'disable' ? 'manual' : 'allow_all';
       const nextState: PersistedState = {
         ...options.getState(),
         sessions: {
@@ -902,11 +873,7 @@ async function handleSessionCommand(options: {
 
     case 'approve':
     case 'deny': {
-      const approval = findApprovalForSession(
-        options.getState(),
-        options.gatewaySessionId,
-        options.command.approvalId,
-      );
+      const approval = findApprovalForSession(options.getState(), options.gatewaySessionId, options.command.approvalId);
 
       if (!approval) {
         await replyInSessionTopic(
@@ -979,9 +946,7 @@ async function handleBridgeCallbackQuery(options: {
     return;
   }
 
-  const selectedOption = approval.options?.find(
-    (option) => option.optionId === parsed.optionId,
-  );
+  const selectedOption = approval.options?.find((option) => option.optionId === parsed.optionId);
   if (!selectedOption) {
     await options.telegramClient.answerCallbackQuery({
       callback_query_id: options.callbackQuery.id,
@@ -1038,9 +1003,7 @@ async function handlePermissionRequest(options: {
   }
 
   const automaticOption =
-    (session.permissionMode ?? 'manual') === 'allow_all'
-      ? chooseAutomaticApprovalOption(requestOptions)
-      : null;
+    (session.permissionMode ?? 'manual') === 'allow_all' ? chooseAutomaticApprovalOption(requestOptions) : null;
   if (automaticOption) {
     await replyInSessionTopic(
       options.telegramClient,
@@ -1065,12 +1028,8 @@ async function handlePermissionRequest(options: {
     topicThreadId: session.topicThreadId,
     status: 'pending',
     ...(typeof options.params.title === 'string' ? { title: options.params.title } : {}),
-    ...(typeof options.params.description === 'string'
-      ? { description: options.params.description }
-      : {}),
-    ...(typeof options.params.toolCallId === 'string'
-      ? { toolCallId: options.params.toolCallId }
-      : {}),
+    ...(typeof options.params.description === 'string' ? { description: options.params.description } : {}),
+    ...(typeof options.params.toolCallId === 'string' ? { toolCallId: options.params.toolCallId } : {}),
     contextLines: buildPermissionContextLines(options.params, session),
     options: requestOptions,
     createdAt: timestamp,
@@ -1192,10 +1151,7 @@ async function runCopilotTurn(options: {
   updateState: (state: PersistedState) => void;
 }): Promise<void> {
   try {
-    const promptResult = await options.acpClient.prompt(
-      options.turn.acpSessionId,
-      options.promptText,
-    );
+    const promptResult = await options.acpClient.prompt(options.turn.acpSessionId, options.promptText);
     const normalizedText = normalizeCopilotText(options.turn.textChunks.join(''));
     const session = options.getState().sessions[options.turn.gatewaySessionId];
     if (!session) {
@@ -1229,9 +1185,7 @@ async function runCopilotTurn(options: {
     }
 
     const replyText =
-      normalizedText.length > 0
-        ? normalizedText
-        : `Copilot finished with stopReason=${promptResult.stopReason}.`;
+      normalizedText.length > 0 ? normalizedText : `Copilot finished with stopReason=${promptResult.stopReason}.`;
     const chunks = splitTextForTelegram(replyText);
 
     for (const [index, chunk] of chunks.entries()) {
@@ -1354,10 +1308,7 @@ async function disconnectSession(options: {
 
   const nextApprovals = { ...options.getState().approvals };
   for (const approval of Object.values(nextApprovals)) {
-    if (
-      approval.gatewaySessionId === options.gatewaySessionId &&
-      approval.status === 'pending'
-    ) {
+    if (approval.gatewaySessionId === options.gatewaySessionId && approval.status === 'pending') {
       nextApprovals[approval.approvalId] = {
         ...approval,
         status: 'cancelled',
@@ -1384,9 +1335,7 @@ async function disconnectSession(options: {
     approvals: nextApprovals,
   };
   await persistState(options.stateDirectory, nextState, options.updateState);
-  options.connectedSessionIdByThreadKey.delete(
-    createThreadKey(session.chatId, session.topicThreadId),
-  );
+  options.connectedSessionIdByThreadKey.delete(createThreadKey(session.chatId, session.topicThreadId));
 }
 
 async function resolveApproval(options: {
@@ -1438,9 +1387,7 @@ async function resolveApproval(options: {
 }
 
 function formatSessionList(state: PersistedState): string {
-  const sessions = Object.values(state.sessions).sort((left, right) =>
-    left.createdAt.localeCompare(right.createdAt),
-  );
+  const sessions = Object.values(state.sessions).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 
   if (sessions.length === 0) {
     return 'No sessions are recorded yet.';
@@ -1473,9 +1420,7 @@ function sanitizeStateForDisplay(state: PersistedState): Record<string, unknown>
   };
 }
 
-async function validateWorkingDirectory(
-  workingDirectory: string,
-): Promise<string | null> {
+async function validateWorkingDirectory(workingDirectory: string): Promise<string | null> {
   if (!path.isAbsolute(workingDirectory)) {
     return 'workingDirectory must be an absolute path.';
   }
@@ -1494,15 +1439,9 @@ async function validateWorkingDirectory(
   }
 }
 
-function buildTopicName(
-  gatewaySessionId: string,
-  prompt: string | null,
-): string {
+function buildTopicName(gatewaySessionId: string, prompt: string | null): string {
   const snippet = prompt?.replace(/\s+/gu, ' ').trim() ?? '';
-  const base =
-    snippet.length > 0
-      ? `session-${gatewaySessionId} ${snippet}`
-      : `session-${gatewaySessionId}`;
+  const base = snippet.length > 0 ? `session-${gatewaySessionId} ${snippet}` : `session-${gatewaySessionId}`;
   return base.slice(0, 120);
 }
 
@@ -1520,10 +1459,7 @@ function hydrateConnectedSessionIndexes(
       continue;
     }
 
-    connectedSessionIdByThreadKey.set(
-      createThreadKey(session.chatId, session.topicThreadId),
-      session.gatewaySessionId,
-    );
+    connectedSessionIdByThreadKey.set(createThreadKey(session.chatId, session.topicThreadId), session.gatewaySessionId);
     gatewaySessionIdByAcpSessionId.set(session.acpSessionId, session.gatewaySessionId);
   }
 }
@@ -1544,9 +1480,7 @@ async function restoreConnectedSessions(options: {
         loadedAcpSessionIds: options.loadedAcpSessionIds,
         session,
       });
-      warn(
-        `Restored ACP session ${session.acpSessionId} for gateway session ${session.gatewaySessionId}.`,
-      );
+      warn(`Restored ACP session ${session.acpSessionId} for gateway session ${session.gatewaySessionId}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       warn(
@@ -1580,16 +1514,11 @@ async function loadAcpSession(options: {
   }
 
   if (!options.acpClient.supportsLoadSession()) {
-    throw new Error(
-      'This Copilot ACP agent does not support session restoration after restart.',
-    );
+    throw new Error('This Copilot ACP agent does not support session restoration after restart.');
   }
 
   try {
-    await options.acpClient.loadSession(
-      options.acpSessionId,
-      options.workingDirectory,
-    );
+    await options.acpClient.loadSession(options.acpSessionId, options.workingDirectory);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes('not found')) {
@@ -1628,21 +1557,11 @@ function markPendingApprovalsStale(state: PersistedState): PersistedState {
   };
 }
 
-function findSessionByAcpSessionId(
-  state: PersistedState,
-  acpSessionId: string,
-): PersistedSession | null {
-  return (
-    Object.values(state.sessions).find(
-      (session) => session.acpSessionId === acpSessionId,
-    ) ?? null
-  );
+function findSessionByAcpSessionId(state: PersistedState, acpSessionId: string): PersistedSession | null {
+  return Object.values(state.sessions).find((session) => session.acpSessionId === acpSessionId) ?? null;
 }
 
-function findSessionByAnyTarget(
-  state: PersistedState,
-  target: string,
-): PersistedSession | null {
+function findSessionByAnyTarget(state: PersistedState, target: string): PersistedSession | null {
   return (
     Object.values(state.sessions).find(
       (session) =>
@@ -1660,19 +1579,13 @@ function findApprovalForSession(
 ): PersistedApproval | null {
   if (explicitApprovalId) {
     const approval = state.approvals[explicitApprovalId];
-    return approval &&
-      approval.gatewaySessionId === gatewaySessionId &&
-      approval.status === 'pending'
+    return approval && approval.gatewaySessionId === gatewaySessionId && approval.status === 'pending'
       ? approval
       : null;
   }
 
   const pending = Object.values(state.approvals)
-    .filter(
-      (approval) =>
-        approval.gatewaySessionId === gatewaySessionId &&
-        approval.status === 'pending',
-    )
+    .filter((approval) => approval.gatewaySessionId === gatewaySessionId && approval.status === 'pending')
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   return pending.at(-1) ?? null;
 }
@@ -1680,13 +1593,7 @@ function findApprovalForSession(
 function formatPermissionMessage(
   approval: Pick<
     PersistedApproval,
-    | 'approvalId'
-    | 'title'
-    | 'description'
-    | 'toolCallId'
-    | 'contextLines'
-    | 'options'
-    | 'selectedOptionName'
+    'approvalId' | 'title' | 'description' | 'toolCallId' | 'contextLines' | 'options' | 'selectedOptionName'
   >,
   status: PersistedApproval['status'],
 ): string {
@@ -1700,9 +1607,7 @@ function formatPermissionMessage(
     approval.options && approval.options.length > 0
       ? `Options: ${approval.options.map((option) => option.name).join(', ')}`
       : null,
-    approval.selectedOptionName
-      ? `Selected option: ${approval.selectedOptionName}`
-      : null,
+    approval.selectedOptionName ? `Selected option: ${approval.selectedOptionName}` : null,
   ]
     .filter((line): line is string => line !== null)
     .join('\n');
@@ -1743,10 +1648,7 @@ function normalizeCopilotText(value: string): string {
   return value.replace(/\r\n/gu, '\n').trim();
 }
 
-function buildPermissionContextLines(
-  params: AcpPermissionRequestParams,
-  session: PersistedSession,
-): string[] {
+function buildPermissionContextLines(params: AcpPermissionRequestParams, session: PersistedSession): string[] {
   const contextLines = [
     `Session: ${session.gatewaySessionId}`,
     `ACP session: ${session.acpSessionId}`,
@@ -1761,37 +1663,23 @@ function buildPermissionContextLines(
     contextLines.push(`Tool kind: ${params.toolCall.kind}`);
   }
 
-  const toolInputSummary = summarizeToolInput(
-    params.toolCall?.rawInput as Record<string, unknown> | undefined,
-  );
+  const toolInputSummary = summarizeToolInput(params.toolCall?.rawInput as Record<string, unknown> | undefined);
   if (toolInputSummary) {
     contextLines.push(`Tool input: ${toolInputSummary}`);
   }
 
   if (params.options && params.options.length > 0) {
-    contextLines.push(
-      `Selectable options: ${params.options.map((option) => option.name).join(', ')}`,
-    );
+    contextLines.push(`Selectable options: ${params.options.map((option) => option.name).join(', ')}`);
   }
 
   const supplementalEntries = Object.entries(params)
     .filter(
       ([key, value]) =>
-        ![
-          'sessionId',
-          'title',
-          'description',
-          'toolCallId',
-          'toolCall',
-          'options',
-        ].includes(key) &&
+        !['sessionId', 'title', 'description', 'toolCallId', 'toolCall', 'options'].includes(key) &&
         value !== undefined,
     )
     .slice(0, 5)
-    .map(
-      ([key, value]) =>
-        `${humanizePermissionFieldName(key)}: ${summarizePermissionFieldValue(value)}`,
-    );
+    .map(([key, value]) => `${humanizePermissionFieldName(key)}: ${summarizePermissionFieldValue(value)}`);
 
   return [...contextLines, ...supplementalEntries];
 }
@@ -1808,11 +1696,7 @@ function summarizePermissionFieldValue(value: unknown): string {
     return truncateSingleLine(value);
   }
 
-  if (
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    value === null
-  ) {
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
     return String(value);
   }
 
@@ -1825,14 +1709,10 @@ function summarizePermissionFieldValue(value: unknown): string {
 
 function truncateSingleLine(value: string): string {
   const normalized = value.replace(/\s+/gu, ' ').trim();
-  return normalized.length <= 180
-    ? normalized
-    : `${normalized.slice(0, 177)}...`;
+  return normalized.length <= 180 ? normalized : `${normalized.slice(0, 177)}...`;
 }
 
-function normalizeApprovalOptions(
-  options: AcpPermissionOption[] | undefined,
-): PersistedApprovalOption[] {
+function normalizeApprovalOptions(options: AcpPermissionOption[] | undefined): PersistedApprovalOption[] {
   if (!options || options.length === 0) {
     return [];
   }
@@ -1858,10 +1738,7 @@ function chooseManualApprovalOption(
   decision: 'approved' | 'denied',
 ): PersistedApprovalOption | null {
   const options = approval.options ?? [];
-  const preferredKinds =
-    decision === 'approved'
-      ? ['allow_once', 'allow_always']
-      : ['reject_once', 'reject_always'];
+  const preferredKinds = decision === 'approved' ? ['allow_once', 'allow_always'] : ['reject_once', 'reject_always'];
   for (const kind of preferredKinds) {
     const option = options.find((entry) => entry.kind === kind);
     if (option) {
@@ -1872,9 +1749,7 @@ function chooseManualApprovalOption(
   return null;
 }
 
-function chooseAutomaticApprovalOption(
-  options: PersistedApprovalOption[],
-): PersistedApprovalOption | null {
+function chooseAutomaticApprovalOption(options: PersistedApprovalOption[]): PersistedApprovalOption | null {
   return (
     options.find((option) => option.kind === 'allow_always') ??
     options.find((option) => option.kind === 'allow_once') ??
@@ -1882,9 +1757,7 @@ function chooseAutomaticApprovalOption(
   );
 }
 
-function approvalStatusForOption(
-  kind: PersistedApprovalOption['kind'],
-): PersistedApproval['status'] {
+function approvalStatusForOption(kind: PersistedApprovalOption['kind']): PersistedApproval['status'] {
   return kind.startsWith('allow_') ? 'approved' : 'denied';
 }
 
@@ -1924,9 +1797,7 @@ function summarizeToolInput(input: Record<string, unknown> | undefined): string 
   }
 }
 
-function isAcpAgentTextChunkUpdate(
-  value: unknown,
-): value is AcpAgentMessageChunkUpdate {
+function isAcpAgentTextChunkUpdate(value: unknown): value is AcpAgentMessageChunkUpdate {
   if (!value || typeof value !== 'object') {
     return false;
   }
@@ -1986,9 +1857,7 @@ async function readRequiredState(stateDirectory: string): Promise<PersistedState
   const state = await readState(stateDirectory);
 
   if (!state) {
-    throw new Error(
-      `No bot state found in ${stateDirectory}. Run the setup command first.`,
-    );
+    throw new Error(`No bot state found in ${stateDirectory}. Run the setup command first.`);
   }
 
   return state;
