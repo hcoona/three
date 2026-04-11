@@ -37,7 +37,8 @@ public sealed class CliFactoryTests
 
     [Theory]
     [MemberData(nameof(ConfigOptionWithoutUsableValueArgs))]
-    public void NormalizeArgsForCommandLineParsingAllowsConfigOptionWithoutUsableValue(string[] args)
+    public void NormalizeArgsForCommandLineParsingAllowsConfigOptionWithoutUsableValue(
+        string[] args)
     {
         AppCommandService commandService = new(
             Options.Create(new AppSettings()),
