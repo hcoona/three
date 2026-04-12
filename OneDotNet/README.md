@@ -86,10 +86,12 @@ dotnet build ..\src\public\lib\CircularList\CircularList.csproj
 
 #### Running Tests
 
-Run all tests:
+Migrated tests now live under the repository-root `tests/` tree, so `dotnet test`
+from `OneDotNet/` does not run the full test suite. Run the full repo traversal
+from the repository root instead:
 
 ```powershell
-dotnet test
+dotnet test ..\dirs.proj
 ```
 
 Run tests for a specific project:

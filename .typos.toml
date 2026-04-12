@@ -1,8 +1,8 @@
 [files]
 extend-exclude = [
   'packages.lock.json',
-  "OneDotNet/srcs/private/app/OxfordWordlistExtractor/*.html",
-  "OneDotNet/tests/OxfordDictExtractor.Tests/**/*.html",
+  "src/private/app/OxfordWordlistExtractor/*.html",
+  "tests/private/app/OxfordDictExtractor.Tests/**/*.html",
   "**/generated/**/*",
 ]
 
