@@ -39,15 +39,21 @@ namespace IO.Github.Hcoona.Collections
         private int startIndex;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CircularList{T}"/> class with the specified capacity.
+        /// Initializes a new instance of the
+        /// <see cref="CircularList{T}"/> class with the specified capacity.
         /// </summary>
         /// <param name="capacity">The maximum number of items the circular list can hold.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when capacity is negative.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// Thrown when capacity is negative.
+        /// </exception>
         public CircularList(int capacity)
         {
             if (capacity < 0)
             {
-                throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
+                throw new ArgumentOutOfRangeException(
+                    nameof(capacity),
+                    capacity,
+                    "Capacity must be non-negative.");
             }
 
             this.items = new T[capacity];
@@ -108,7 +114,9 @@ namespace IO.Github.Hcoona.Collections
         {
             if (this.Count == this.Capacity)
             {
-                return Array.Exists(this.items, element => EqualityComparer<T>.Default.Equals(element, item));
+                return Array.Exists(
+                    this.items,
+                    element => EqualityComparer<T>.Default.Equals(element, item));
             }
             else
             {
@@ -122,10 +130,13 @@ namespace IO.Github.Hcoona.Collections
         /// </summary>
         /// <param name="item">The item to remove from the circular list.</param>
         /// <returns>This operation is not supported for circular lists.</returns>
-        /// <exception cref="NotSupportedException">Always thrown as removal is not supported.</exception>
+        /// <exception cref="NotSupportedException">
+        /// Always thrown as removal is not supported.
+        /// </exception>
         public bool Remove(T item)
         {
-            throw new NotSupportedException("Remove operation is not supported for circular lists.");
+            throw new NotSupportedException(
+                "Remove operation is not supported for circular lists.");
         }
 
         /// <inheritdoc/>
@@ -173,12 +184,16 @@ namespace IO.Github.Hcoona.Collections
 
             if (arrayIndex < 0)
             {
-                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex, "Array index must be non-negative.");
+                throw new ArgumentOutOfRangeException(
+                    nameof(arrayIndex),
+                    arrayIndex,
+                    "Array index must be non-negative.");
             }
 
             if (arrayIndex + this.Count > array.Length)
             {
-                throw new ArgumentException("Destination array is not large enough to copy all items.");
+                throw new ArgumentException(
+                    "Destination array is not large enough to copy all items.");
             }
 
             for (int i = 0; i < this.Count; i++)
@@ -202,24 +217,34 @@ namespace IO.Github.Hcoona.Collections
         }
 
         /// <summary>
-        /// Inserts an item at the specified index. This operation is not supported for circular lists.
+        /// Inserts an item at the specified index.
+        /// This operation is not supported for circular lists.
         /// </summary>
         /// <param name="index">The zero-based index at which to insert the item.</param>
         /// <param name="item">The item to insert.</param>
-        /// <exception cref="NotSupportedException">Always thrown as insertion at arbitrary positions is not supported.</exception>
+        /// <exception cref="NotSupportedException">
+        /// Always thrown as insertion at arbitrary positions is not supported.
+        /// </exception>
         public void Insert(int index, T item)
         {
-            throw new NotSupportedException("Insert operation is not supported for circular lists. Use Add() to append items.");
+            throw new NotSupportedException(
+                "Insert operation is not supported for circular lists. " +
+                "Use Add() to append items.");
         }
 
         /// <summary>
-        /// Removes the item at the specified index. This operation is not supported for circular lists.
+        /// Removes the item at the specified index.
+        /// This operation is not supported for circular lists.
         /// </summary>
         /// <param name="index">The zero-based index of the item to remove.</param>
-        /// <exception cref="NotSupportedException">Always thrown as removal at arbitrary positions is not supported.</exception>
+        /// <exception cref="NotSupportedException">
+        /// Always thrown as removal at arbitrary positions is not supported.
+        /// </exception>
         public void RemoveAt(int index)
         {
-            throw new NotSupportedException("RemoveAt operation is not supported for circular lists. Use Clear() to reset the list.");
+            throw new NotSupportedException(
+                "RemoveAt operation is not supported for circular lists. " +
+                "Use Clear() to reset the list.");
         }
 
         /// <inheritdoc/>
@@ -242,7 +267,9 @@ namespace IO.Github.Hcoona.Collections
         /// </summary>
         /// <param name="logicalIndex">The logical index in the circular list.</param>
         /// <returns>The corresponding physical index in the underlying array.</returns>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when logical index is out of range.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// Thrown when logical index is out of range.
+        /// </exception>
 #if !NETSTANDARD2_0
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif

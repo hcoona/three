@@ -87,13 +87,22 @@ namespace OxfordLearnersDictionaryProcessor
 
         private static partial class Log
         {
-            [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Downloading raw html for word {Word} (forceRefresh={Force})")]
+            [LoggerMessage(
+                EventId = 1,
+                Level = LogLevel.Information,
+                Message = "Downloading raw html for word {Word} (forceRefresh={Force})")]
             public static partial void Downloading(ILogger logger, string Word, bool Force);
 
-            [LoggerMessage(EventId = 2, Level = LogLevel.Debug, Message = "Cache hit for word {Word}")]
+            [LoggerMessage(
+                EventId = 2,
+                Level = LogLevel.Debug,
+                Message = "Cache hit for word {Word}")]
             public static partial void CacheHit(ILogger logger, string Word);
 
-            [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Stored raw html for {Word} (bytes={Length})")]
+            [LoggerMessage(
+                EventId = 3,
+                Level = LogLevel.Information,
+                Message = "Stored raw html for {Word} (bytes={Length})")]
             public static partial void Stored(ILogger logger, string Word, int Length);
         }
     }

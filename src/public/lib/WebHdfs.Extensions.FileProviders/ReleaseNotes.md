@@ -44,19 +44,19 @@
 - **HDFS Version**: Compatible with Apache Hadoop 2.0+ with WebHDFS enabled
 - **Network Requirements**: HTTP/HTTPS access to HDFS NameNode (default ports 9870/9871)
 - **Dependencies**:
-  - Microsoft.Extensions.FileProviders.Abstractions
-  - System.Text.Json
-  - System.Net.Http
+    - Microsoft.Extensions.FileProviders.Abstractions
+    - System.Text.Json
+    - System.Net.Http
 
 ### Supported Operations
 
-| Operation | Support | Implementation |
-|-----------|---------|----------------|
-| Read Files | ✅ | Full streaming support with efficient memory usage |
-| Get File Info | ✅ | Complete metadata including size, timestamps, and type |
-| Browse Directories | ✅ | Lazy-loaded directory enumeration |
-| Change Monitoring | ✅ | Polling-based with configurable intervals |
-| File Watching | ✅ | Glob pattern support for flexible monitoring |
+| Operation          | Support | Implementation                                         |
+| ------------------ | ------- | ------------------------------------------------------ |
+| Read Files         | ✅      | Full streaming support with efficient memory usage     |
+| Get File Info      | ✅      | Complete metadata including size, timestamps, and type |
+| Browse Directories | ✅      | Lazy-loaded directory enumeration                      |
+| Change Monitoring  | ✅      | Polling-based with configurable intervals              |
+| File Watching      | ✅      | Glob pattern support for flexible monitoring           |
 
 ### Known Limitations
 
