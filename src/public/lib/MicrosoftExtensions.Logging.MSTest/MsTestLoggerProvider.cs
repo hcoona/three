@@ -33,10 +33,14 @@ namespace Microsoft.Extensions.Logging.MSTest
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="categoryName"/> is null.</exception>
         public ILogger CreateLogger(string categoryName)
         {
+#if NET6_0_OR_GREATER
+            ArgumentNullException.ThrowIfNull(categoryName);
+#else
             if (categoryName is null)
             {
                 throw new ArgumentNullException(nameof(categoryName));
             }
+#endif
 
             return new MsTestLogger(categoryName);
         }

@@ -55,10 +55,14 @@ namespace Microsoft.Extensions.Logging.Xunit
         /// </exception>
         public ILogger CreateLogger(string categoryName)
         {
+#if NET6_0_OR_GREATER
+            ArgumentNullException.ThrowIfNull(categoryName);
+#else
             if (categoryName is null)
             {
                 throw new ArgumentNullException(nameof(categoryName));
             }
+#endif
 
             return new XunitLogger(this.testOutputHelper, categoryName);
         }

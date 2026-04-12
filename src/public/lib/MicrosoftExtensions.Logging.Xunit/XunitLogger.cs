@@ -104,10 +104,14 @@ namespace Microsoft.Extensions.Logging.Xunit
             Exception exception,
             Func<TState, Exception, string> formatter)
         {
+#if NET6_0_OR_GREATER
+            ArgumentNullException.ThrowIfNull(formatter);
+#else
             if (formatter == null)
             {
                 throw new ArgumentNullException(nameof(formatter));
             }
+#endif
 
             var message = formatter(state, exception);
 
@@ -129,10 +133,14 @@ namespace Microsoft.Extensions.Logging.Xunit
         public virtual void WriteMessage(
             LogLevel logLevel, string logName, int eventId, string message, Exception exception)
         {
+#if NET6_0_OR_GREATER
+            ArgumentNullException.ThrowIfNull(logName);
+#else
             if (logName == null)
             {
                 throw new ArgumentNullException(nameof(logName));
             }
+#endif
 
             var logBuilder = XunitLogger.logBuilder;
             XunitLogger.logBuilder = null;
