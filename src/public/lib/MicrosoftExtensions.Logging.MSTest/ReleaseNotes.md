@@ -28,8 +28,8 @@
 ### Technical Details
 
 - **Dependencies**:
-  - Microsoft.Extensions.Logging.Abstractions 2.1.0+
-  - MSTest.TestFramework 2.2.1+
+    - Microsoft.Extensions.Logging.Abstractions 2.1.0+
+    - MSTest.TestFramework 2.2.1+
 - **Package ID**: IO.Github.Hcoona.MicrosoftExtensions.Logging.MSTest
 - **License**: GPL-3.0-or-later
 - **Documentation**: Comprehensive README with examples and best practices

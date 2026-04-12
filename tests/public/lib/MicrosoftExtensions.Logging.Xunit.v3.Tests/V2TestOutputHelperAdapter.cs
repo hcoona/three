@@ -21,7 +21,9 @@ using IV3TestOutputHelper = Xunit.ITestOutputHelper;
 
 namespace Microsoft.Extensions.Logging.Xunit.Tests
 {
-    internal sealed class V2TestOutputHelperAdapter(IV3TestOutputHelper v3TestOutputHelper) : IV2TestOutputHelper
+    internal sealed class V2TestOutputHelperAdapter(
+        IV3TestOutputHelper v3TestOutputHelper)
+        : IV2TestOutputHelper
     {
         public void WriteLine(string message)
         {

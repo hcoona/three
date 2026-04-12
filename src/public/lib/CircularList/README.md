@@ -1,4 +1,3 @@
-
 # CircularList
 
 A high-performance, generic circular buffer (circular list) library for .NET, supporting multiple target frameworks. Compatible with .NET Framework 4.6.1+, .NET Core 2.0+, .NET 6/8/9+, and modern .NET platforms.
@@ -60,13 +59,13 @@ list.OnOverflow += (sender, overwritten) =>
 
 ## Multi-target Framework Support
 
-| Target Framework   | Compatible Platforms      | Modern Features      |
-|--------------------|--------------------------|----------------------|
-| netstandard2.0     | .NET Framework 4.6.1+    | Basic functionality  |
-| netstandard2.1     | .NET Core 3.0+/Mono      | Span&lt;T&gt; support      |
-| net462             | .NET Framework 4.6.2+    | Basic functionality  |
-| net8.0             | .NET 8                   | All features         |
-| net9.0             | .NET 9                   | All features         |
+| Target Framework | Compatible Platforms  | Modern Features       |
+| ---------------- | --------------------- | --------------------- |
+| netstandard2.0   | .NET Framework 4.6.1+ | Basic functionality   |
+| netstandard2.1   | .NET Core 3.0+/Mono   | Span&lt;T&gt; support |
+| net462           | .NET Framework 4.6.2+ | Basic functionality   |
+| net8.0           | .NET 8                | All features          |
+| net9.0           | .NET 9                | All features          |
 
 > **Note:** On netstandard2.0, System.Memory is referenced automatically to provide Span&lt;T&gt; compatible APIs.
 

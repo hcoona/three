@@ -31,19 +31,28 @@ namespace Microsoft.Extensions.Logging.Xunit
         /// <summary>
         /// Initializes a new instance of the <see cref="XunitLoggerProvider"/> class.
         /// </summary>
-        /// <param name="testOutputHelper">The xUnit test output helper used to write log messages.</param>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="testOutputHelper"/> is null.</exception>
+        /// <param name="testOutputHelper">
+        /// The xUnit test output helper used to write log messages.
+        /// </param>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="testOutputHelper"/> is null.
+        /// </exception>
         public XunitLoggerProvider(ITestOutputHelper testOutputHelper)
         {
-            this.testOutputHelper = testOutputHelper ?? throw new ArgumentNullException(nameof(testOutputHelper));
+            this.testOutputHelper = testOutputHelper
+                ?? throw new ArgumentNullException(nameof(testOutputHelper));
         }
 
         /// <summary>
         /// Creates a new logger instance for the specified category.
         /// </summary>
-        /// <param name="categoryName">The name of the category for which to create the logger.</param>
+        /// <param name="categoryName">
+        /// The name of the category for which to create the logger.
+        /// </param>
         /// <returns>A new <see cref="XunitLogger"/> instance.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="categoryName"/> is null.</exception>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="categoryName"/> is null.
+        /// </exception>
         public ILogger CreateLogger(string categoryName)
         {
             if (categoryName is null)

@@ -24,7 +24,8 @@ using Xunit.Abstractions;
 namespace Microsoft.Extensions.Logging.Xunit
 {
     /// <summary>
-    /// Logger implementation that forwards log messages to Xunit's ITestOutputHelper for test output visibility.
+    /// Logger implementation that forwards log messages to Xunit's
+    /// ITestOutputHelper for test output visibility.
     /// </summary>
     public class XunitLogger : ILogger
     {
@@ -51,10 +52,13 @@ namespace Microsoft.Extensions.Logging.Xunit
         /// </summary>
         /// <param name="testOutputHelper">The test output helper to write log messages to.</param>
         /// <param name="name">The name of the logger category.</param>
-        /// <exception cref="ArgumentNullException">Thrown when testOutputHelper or name is null.</exception>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when testOutputHelper or name is null.
+        /// </exception>
         public XunitLogger(ITestOutputHelper testOutputHelper, string name)
         {
-            this.testOutputHelper = testOutputHelper ?? throw new ArgumentNullException(nameof(testOutputHelper));
+            this.testOutputHelper = testOutputHelper
+                ?? throw new ArgumentNullException(nameof(testOutputHelper));
             this.Name = name ?? throw new ArgumentNullException(nameof(name));
         }
 
@@ -89,7 +93,9 @@ namespace Microsoft.Extensions.Logging.Xunit
         /// <param name="eventId">Id of the event.</param>
         /// <param name="state">The entry to be written. Can be also an object.</param>
         /// <param name="exception">The exception related to this entry.</param>
-        /// <param name="formatter">Function to create a string message of the state and exception.</param>
+        /// <param name="formatter">
+        /// Function to create a string message of the state and exception.
+        /// </param>
         /// <exception cref="ArgumentNullException">Thrown when formatter is null.</exception>
         public void Log<TState>(
             LogLevel logLevel,
@@ -167,7 +173,10 @@ namespace Microsoft.Extensions.Logging.Xunit
             {
                 logBuilder.Append(MessagePadding);
                 var exceptionString = exception.ToString();
-                logBuilder.AppendLine(exceptionString.Replace(Environment.NewLine, NewLineWithMessagePadding));
+                logBuilder.AppendLine(
+                    exceptionString.Replace(
+                        Environment.NewLine,
+                        NewLineWithMessagePadding));
             }
 
             if (logBuilder.Length > 0)

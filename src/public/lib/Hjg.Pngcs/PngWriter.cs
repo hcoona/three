@@ -116,9 +116,11 @@ namespace Hjg.Pngcs
         private PngIDatChunkOutputStream datStream;
         private AZlibOutputStream datStreamDeflated;
 
-        private int[] histox = new int[256]; // auxiliar buffer, histogram, only used by reportResultsForFilter
+        // Auxiliar buffer histogram, only used by reportResultsForFilter.
+        private int[] histox = new int[256];
 
-        // this only influences the 1-2-4 bitdepth format - and if we pass a ImageLine to writeRow, this is ignored
+        // This only influences the 1-2-4 bitdepth format - and if we pass
+        // an ImageLine to writeRow, this is ignored.
         private bool unpackedMode;
         private bool needsPack; // autocomputed
         private bool disposedValue;
@@ -174,7 +176,11 @@ namespace Hjg.Pngcs
         private void init()
         {
             datStream = new PngIDatChunkOutputStream(this.outputStream, this.IdatMaxSize);
-            datStreamDeflated = ZlibStreamFactory.createZlibOutputStream(datStream, this.CompLevel, this.CompressionStrategy, true);
+            datStreamDeflated = ZlibStreamFactory.createZlibOutputStream(
+                datStream,
+                this.CompLevel,
+                this.CompressionStrategy,
+                true);
             WriteSignatureAndIHDR();
             WriteFirstChunks();
         }
@@ -225,7 +231,8 @@ namespace Hjg.Pngcs
             // should not be unwriten chunks
             List<PngChunk> pending = chunksList.GetQueuedChunks();
             if (pending.Count > 0)
-                throw new PngjOutputException(pending.Count + " chunks were not written! Eg: " + pending[0].ToString());
+                throw new PngjOutputException(
+                    pending.Count + " chunks were not written! Eg: " + pending[0].ToString());
             CurrentChunkGroup = ChunksList.CHUNK_GROUP_6_END;
         }
 
@@ -238,7 +245,9 @@ namespace Hjg.Pngcs
         private void WriteSignatureAndIHDR()
         {
             CurrentChunkGroup = ChunksList.CHUNK_GROUP_0_IDHR;
-            PngHelperInternal.WriteBytes(outputStream, PngHelperInternal.PNG_ID_SIGNATURE); // signature
+            PngHelperInternal.WriteBytes(
+                outputStream,
+                PngHelperInternal.PNG_ID_SIGNATURE); // signature
             PngChunkIHDR ihdr = new PngChunkIHDR(ImgInfo);
             // http://www.libpng.org/pub/png/spec/1.2/PNG-Chunks.html
             ihdr.Cols = ImgInfo.Cols;
@@ -262,7 +271,8 @@ namespace Hjg.Pngcs
         {
             if (row.Length == ImgInfo.SamplesPerRowPacked && !needsPack)
             {
-                // some duplication of code - because this case is typical and it works faster this way
+                // Some duplication of code because this case is typical
+                // and it works faster this way.
                 int j = 1;
                 if (ImgInfo.BitDepth <= 8)
                 {
@@ -309,7 +319,8 @@ namespace Hjg.Pngcs
         {
             if (row.Length == ImgInfo.SamplesPerRowPacked && !needsPack)
             {
-                // some duplication of code - because this case is typical and it works faster this way
+                // Some duplication of code because this case is typical
+                // and it works faster this way.
                 int j = 1;
                 if (ImgInfo.BitDepth <= 8)
                 {
@@ -439,8 +450,12 @@ namespace Hjg.Pngcs
             imax = ImgInfo.BytesPerRow;
             for (j = 1 - ImgInfo.BytesPixel, i = 1; i <= imax; i++, j++)
             {
-                rowbfilter[i] = (byte)(rowb[i] - PngHelperInternal.FilterPaethPredictor(j > 0 ? rowb[j] : (byte)0,
-                        rowbprev[i], j > 0 ? rowbprev[j] : (byte)0));
+                rowbfilter[i] = (byte)(
+                    rowb[i]
+                    - PngHelperInternal.FilterPaethPredictor(
+                        j > 0 ? rowb[j] : (byte)0,
+                        rowbprev[i],
+                        j > 0 ? rowbprev[j] : (byte)0));
             }
         }
 
@@ -486,7 +501,11 @@ namespace Hjg.Pngcs
         private void CopyChunks(PngReader reader, int copy_mask, bool onlyAfterIdat)
         {
             bool idatDone = CurrentChunkGroup >= ChunksList.CHUNK_GROUP_4_IDAT;
-            if (onlyAfterIdat && reader.CurrentChunkGroup < ChunksList.CHUNK_GROUP_6_END) throw new PngjException("tried to copy last chunks but reader has not ended");
+            if (
+                onlyAfterIdat
+                && reader.CurrentChunkGroup < ChunksList.CHUNK_GROUP_6_END)
+                throw new PngjException(
+                    "tried to copy last chunks but reader has not ended");
             foreach (PngChunk chunk in reader.GetChunksList().GetChunks())
             {
                 int group = chunk.ChunkGroup;
@@ -497,9 +516,17 @@ namespace Hjg.Pngcs
                 {
                     if (chunk.Id.Equals(ChunkHelper.PLTE, StringComparison.Ordinal))
                     {
-                        if (ImgInfo.Indexed && ChunkHelper.maskMatch(copy_mask, ChunkCopyBehaviour.COPY_PALETTE))
+                        if (
+                            ImgInfo.Indexed
+                            && ChunkHelper.maskMatch(
+                                copy_mask,
+                                ChunkCopyBehaviour.COPY_PALETTE))
                             copy = true;
-                        if (!ImgInfo.Greyscale && ChunkHelper.maskMatch(copy_mask, ChunkCopyBehaviour.COPY_ALL))
+                        if (
+                            !ImgInfo.Greyscale
+                            && ChunkHelper.maskMatch(
+                                copy_mask,
+                                ChunkCopyBehaviour.COPY_ALL))
                             copy = true;
                     }
                 }
@@ -513,9 +540,15 @@ namespace Hjg.Pngcs
                     if (safe && ChunkHelper.maskMatch(copy_mask, ChunkCopyBehaviour.COPY_ALL_SAFE))
                         copy = true;
                     if (chunk.Id.Equals(ChunkHelper.tRNS, StringComparison.Ordinal)
-                            && ChunkHelper.maskMatch(copy_mask, ChunkCopyBehaviour.COPY_TRANSPARENCY))
+                            && ChunkHelper.maskMatch(
+                                copy_mask,
+                                ChunkCopyBehaviour.COPY_TRANSPARENCY))
                         copy = true;
-                    if (chunk.Id.Equals(ChunkHelper.pHYs, StringComparison.Ordinal) && ChunkHelper.maskMatch(copy_mask, ChunkCopyBehaviour.COPY_PHYS))
+                    if (
+                        chunk.Id.Equals(ChunkHelper.pHYs, StringComparison.Ordinal)
+                        && ChunkHelper.maskMatch(
+                            copy_mask,
+                            ChunkCopyBehaviour.COPY_PHYS))
                         copy = true;
                     if (text && ChunkHelper.maskMatch(copy_mask, ChunkCopyBehaviour.COPY_TEXTUAL))
                         copy = true;
@@ -548,7 +581,9 @@ namespace Hjg.Pngcs
         /// <summary>
         /// Computes compressed size/raw size, approximate
         /// </summary>
-        /// <remarks>Actually: compressed size = total size of IDAT data , raw size = uncompressed pixel bytes = rows * (bytesPerRow + 1)
+        /// <remarks>
+        /// Actually: compressed size = total size of IDAT data, raw size =
+        /// uncompressed pixel bytes = rows * (bytesPerRow + 1)
         /// </remarks>
         /// <returns></returns>
         public double ComputeCompressionRatio()
@@ -682,7 +717,9 @@ namespace Hjg.Pngcs
         ///
         /// Recommended values: DEFAULT (default) or AGGRESIVE
         /// </remarks>
-        /// <param name="filterType">One of the five prediction types or strategy to choose it</param>
+        /// <param name="filterType">
+        /// One of the five prediction types or strategy to choose it
+        /// </param>
         public void SetFilterType(FilterType filterType)
         {
             filterStrat = new FilterWriteStrategy(ImgInfo, filterType);

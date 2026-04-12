@@ -17,9 +17,9 @@
 - **Modern C# Features**: Leveraged nullable annotations for better compile-time safety on supported frameworks
 - **Performance Optimizations**: Improved memory usage patterns with `MemoryExtensions.SequenceEqual` for hash comparison on modern frameworks
 - **Security Enhancements**:
-  - Added proper warning suppression for SYSLIB0011 (BinaryFormatter security warning)
-  - Enabled `EnableUnsafeBinaryFormatterSerialization` for .NET 9.0 with proper safeguards
-  - Enhanced null handling with defensive programming practices
+    - Added proper warning suppression for SYSLIB0011 (BinaryFormatter security warning)
+    - Enabled `EnableUnsafeBinaryFormatterSerialization` for .NET 9.0 with proper safeguards
+    - Enhanced null handling with defensive programming practices
 
 ### Framework Compatibility
 
