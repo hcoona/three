@@ -29,18 +29,14 @@ For more insights on monorepo benefits, see Google's article: [Why Google Stores
 ## Repository Structure
 
 ```text
-OneDotNet/
-├── srcs/                        # Source code projects
-│   ├── public/                  # Public libraries (published to NuGet)
-│   │   ├── CircularList/        # Thread-safe circular list implementation
-│   │   ├── Memoization/         # Memoization utilities
-│   │   ├── PhiFailureDetector/  # Phi accrual failure detector
-│   │   └── ...                  # Other public libraries
-│   └── private/                 # Private tools and utilities
-├── tests/                       # Unit and integration tests
-├── codelab/                     # Experimental projects and prototypes
-├── Directory.Build.props        # Global MSBuild properties
-└── OneDotNet.sln               # Solution file
+repo-root/
+├── src/public/                  # Migrated OneDotNet public libraries and apps
+├── tests/public/                # Matching tests for the migrated public slice
+└── OneDotNet/
+    ├── srcs/private/            # Remaining private tools and utilities
+    ├── tests/                   # Remaining legacy tests that still belong to the subtree
+    ├── codelab/                 # Experimental projects and prototypes
+    └── Directory.Build.props    # Remaining subtree-specific MSBuild properties
 ```
 
 Central package versions are defined at the repository root in `../Directory.Packages.props`.
@@ -64,16 +60,17 @@ Before you begin, ensure you have the following installed:
     cd OneDotNet
     ```
 
-2. **Build all projects:**
+2. **Build the remaining subtree projects:**
 
     ```powershell
     dotnet build dirs.proj
     ```
 
-3. **Run tests:**
+3. **Build or test the migrated public slice from the repository root when needed:**
 
     ```powershell
-    dotnet test
+    dotnet build ..\src\public\lib\CircularList\CircularList.csproj
+    dotnet test ..\tests\public\lib\CircularList.UnitTest\CircularList.UnitTest.csproj
     ```
 
 ### Development Workflow
@@ -83,7 +80,7 @@ Before you begin, ensure you have the following installed:
 To build a specific project:
 
 ```powershell
-dotnet build srcs/public/CircularList/CircularList.csproj
+dotnet build ..\src\public\lib\CircularList\CircularList.csproj
 ```
 
 #### Running Tests
@@ -97,7 +94,7 @@ dotnet test
 Run tests for a specific project:
 
 ```powershell
-dotnet test tests/CircularList.UnitTest/
+dotnet test ..\tests\public\lib\CircularList.UnitTest\CircularList.UnitTest.csproj
 ```
 
 ### Visual Studio Solution Generation

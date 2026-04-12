@@ -18,9 +18,9 @@ The name reflects the repo's original consolidation of **OnePython**, **OneDotNe
 
 The current repository contract is:
 
-- `src/` contains active monorepo projects, organized under `lab/`, `private/`, `public/`, and `sample/`.
-- `tests/` contains matching test projects for code that follows the root monorepo layout.
-- `OneDotNet/` remains a preserved imported subtree with its own `srcs/` and `tests/` layout.
+- `src/` contains active monorepo projects, organized under `lab/`, `private/`, `public/`, and `sample/`. The migrated OneDotNet public C# projects now live under `src/public/`.
+- `tests/` contains matching test projects for code that follows the root monorepo layout, including the migrated OneDotNet public C# tests under `tests/public/`.
+- `OneDotNet/` remains a preserved imported subtree for the remaining private, legacy-test, and codelab slices.
 - There is no top-level `OnePython/` directory in this repository. Python workspace members now live under `src/` and are declared in the root `pyproject.toml`.
 
 ## Projects included
@@ -58,8 +58,8 @@ The root `pyproject.toml` is the source of truth for the repository's Python wor
 
 ## .NET traversal
 
-The root `dirs.proj` treats `src/` and `tests/` as the canonical traversal roots for the main monorepo and references `OneDotNet/dirs.proj` separately so the preserved subtree can keep its internal `srcs/` layout for now.
-The root `Directory.Build.props` now carries the shared C# build defaults for both areas, while `OneDotNet/` keeps only the subtree-specific packaging and analyzer layers that still need to be retired during the later project moves.
+The root `dirs.proj` treats `src/` and `tests/` as the canonical traversal roots for the main monorepo, including the migrated OneDotNet public slice now rooted under `src/public/` and `tests/public/`.
+`OneDotNet/dirs.proj` now traverses only the remaining private, legacy-test, and codelab projects, while the root `Directory.Build.props` continues to carry the shared C# build defaults across both areas.
 
 ## GitHub Copilot Telegram notifications
 

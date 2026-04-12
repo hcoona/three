@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.Build.Traversal">
+  <!-- The imported subtree now retains only the private, legacy-test, and codelab slices. -->
   <ItemGroup>
     <ProjectReference Include="codelab\**\*.*proj" />
-    <ProjectReference Include="srcs\**\*.*proj" />
+    <ProjectReference Include="srcs\private\**\*.*proj" />
     <ProjectReference Include="tests\**\*.csproj" />
   </ItemGroup>
 </Project>
