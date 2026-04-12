@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.Build.Traversal">
+  <!-- The main monorepo uses src/ and tests/; OneDotNet remains a preserved subtree. -->
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
     <ProjectReference Include="OneDotNet\dirs.proj" />
     <ProjectReference Include="src\**\*.*proj" />

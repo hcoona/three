@@ -12,7 +12,16 @@ Maintaining several language stacks across scattered repositories was slowing me
 
 ## What’s with the name?
 
-The first two pillars were **OnePython** and **OneDotNet**. Adding the rest of my “other” projects made it a trio, hence **Three = OnePython + OneDotNet + Others**. In Daoist philosophy, “三生万物” (“Three begets all things”) symbolizes how diversity emerges from a balanced trio—exactly how this monorepo grows.
+The name reflects the repo's original consolidation of **OnePython**, **OneDotNet**, and a growing set of other projects. Those historical roots still explain the branding, but they no longer map 1:1 to today's top-level directories.
+
+## Canonical repository layout
+
+The current repository contract is:
+
+- `src/` contains active monorepo projects, organized under `lab/`, `private/`, `public/`, and `sample/`.
+- `tests/` contains matching test projects for code that follows the root monorepo layout.
+- `OneDotNet/` remains a preserved imported subtree with its own `srcs/` and `tests/` layout.
+- There is no top-level `OnePython/` directory in this repository. Python workspace members now live under `src/` and are declared in the root `pyproject.toml`.
 
 ## Projects included
 
@@ -21,24 +30,35 @@ The first two pillars were **OnePython** and **OneDotNet**. Adding the rest of m
 | Asciidoctor LaTeXMath        | `src/public/lib/asciidoctor-latexmath/`        | [Repo][asciidoctor-upstream] | [514d685][asciidoctor-commit] |
 | ImageOcclusionEditor         | `src/public/app/ImageOcclusionEditor/`         | [Repo][ioe-upstream]         | [e08f834][ioe-commit]         |
 | OneDotNet                    | `OneDotNet/`                                   | [Repo][onedotnet-upstream]   | [17f2224][onedotnet-commit]   |
-| OnePython                    | `OnePython/`                                   | [Repo][onepython-upstream]   | [21ef6d5][onepython-commit]   |
 | Steam Account History to CSV | `src/public/lib/steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
 | Hexo Renderer AsciiDoc       | `src/public/lib/hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
 
 ## JavaScript/pnpm workspace
 
-The `src/public/lib/hexo-renderer-asciidoc/` and `src/public/lib/steam-account-history-to-csv/` folders share a [pnpm workspace](https://pnpm.io/workspaces) that still lives at the repo root even though the projects moved under `src/public/lib/`. The nested layout keeps the repo top level tidy while preserving predictable dependency resolution (`sharedWorkspaceLockfile: true`) and automatic linking between workspace packages (`linkWorkspacePackages: true`). As before, the workspace does not pin a Node version—each package’s own `engines` entry (Hexo still wants Node ≥ 20.19) remains authoritative.
+The root [pnpm workspace](https://pnpm.io/workspaces) currently includes:
+
+- `src/public/lib/hexo-renderer-asciidoc/`
+- `src/public/lib/steam-account-history-to-csv/`
+- `src/private/app/im-acp-gateway/poc/*`
+
+The workspace stays at the repo root so these packages can share one lockfile (`sharedWorkspaceLockfile: true`) and workspace linking (`linkWorkspacePackages: true`) even though they live under different subtrees.
 
 Development flow:
 
-1. Enable Corepack (once per machine) so the `packageManager` setting can download pnpm for you.
+1. Install a compatible Node.js and pnpm toolchain. `mise.toml` is the repo-wide source of tool version intent; otherwise use a local toolchain that satisfies each package's `engines` constraints.
 2. From the repo root, run `pnpm install` to hydrate every workspace project and refresh the single `pnpm-lock.yaml`.
 3. Use the root scripts from `package.json`:
     - `pnpm run build` → runs `build` in every workspace package.
     - `pnpm run test` / `pnpm run lint` / `pnpm run format` → fan out with `--if-present`, so packages missing a script are skipped.
 4. When pnpm warns about blocked install scripts (for example `hexo-util`), review and allow them with `pnpm approve-builds` to stay compliant with pnpm 10’s hardened defaults.
 
-For publishing/versioning, follow pnpm’s [Changesets guide](https://pnpm.io/using-changesets) so both packages can share a single release workflow.
+## Python/uv workspace
+
+The root `pyproject.toml` is the source of truth for the repository's Python workspace membership. The current workspace is rooted under `src/`; there is no separate top-level `OnePython/` tree in this checkout.
+
+## .NET traversal
+
+The root `dirs.proj` treats `src/` and `tests/` as the canonical traversal roots for the main monorepo and references `OneDotNet/dirs.proj` separately so the preserved subtree can keep its internal `srcs/` layout for now.
 
 ## GitHub Copilot Telegram notifications
 
@@ -87,8 +107,6 @@ The runtime still honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process enviro
 [ioe-commit]: https://github.com/hcoona/ImageOcclusionEditor/commit/e08f8348e58b83d04801212e55bace30a9126072
 [onedotnet-upstream]: https://dev.azure.com/zhangshuai89/Public/_git/OneDotNet
 [onedotnet-commit]: https://dev.azure.com/zhangshuai89/Public/_git/OneDotNet/commit/17f2224ab5f25c2149f7d5e9fd184c632afa0c3a
-[onepython-upstream]: https://dev.azure.com/zhangshuai89/Public/_git/OnePython
-[onepython-commit]: https://dev.azure.com/zhangshuai89/Public/_git/OnePython/commit/21ef6d519c5d35ac1c2e0694dd11f3c256c68756
 [steamhist-upstream]: https://github.com/hcoona/steam-account-history-to-csv
 [steamhist-commit]: https://github.com/hcoona/steam-account-history-to-csv/commit/b759a520b2d1edf8560a45cbcb70b403c77cecd1
 [hexo-upstream]: https://github.com/hcoona/hexo-renderer-asciidoc
