@@ -3,7 +3,7 @@
 A high-performance memoization library for .NET that provides automatic function result caching to improve performance by avoiding redundant computations.
 
 [![NuGet](https://img.shields.io/nuget/v/Memoization.Net.svg)](https://www.nuget.org/packages/Memoization.Net/)
-[![License: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception](https://img.shields.io/badge/License-LGPL--3.0--or--later%20WITH%20LGPL--3.0--linking--exception-blue.svg)](https://github.com/hcoona/three/blob/main/LICENSE.LGPLv3-linking-exception.txt)
+[![License: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception](https://img.shields.io/badge/License-LGPL--3.0--or--later%20WITH%20LGPL--3.0--linking--exception-blue.svg)](https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt)
 
 ## Overview
 
@@ -188,7 +188,7 @@ var cachedCompute = Memoization.Create<double[], double>(weights =>
 
 ## License
 
-LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See [LICENSE](https://github.com/hcoona/three/blob/main/LICENSE.LGPLv3-linking-exception.txt) for details.
+LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See [LICENSE](https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt) for details.
 
 ## Related Projects
 

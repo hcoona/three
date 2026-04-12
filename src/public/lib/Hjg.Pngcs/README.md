@@ -53,7 +53,7 @@ See `ChangeLog.md`
 
 This project is licensed under the GNU General Public License v3.0 or later (GPL v3+). See `LICENSE.GPL.txt` for details.
 
-The NuGet package is distributed under the terms of LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See [LICENSE.LGPLv3-linking-exception.txt](https://github.com/hcoona/three/blob/main/LICENSE.LGPLv3-linking-exception.txt) for details.
+The NuGet package is distributed under the terms of LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See [LICENSE.LGPLv3-linking-exception.txt](https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt) for details.
 
 Portions of the code are derived from an open source project originally licensed under the Apache License, Version 2.0 by Hernán J. González. The original copyright and license notice are preserved in accordance with the Apache License.
 

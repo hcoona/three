@@ -501,7 +501,7 @@ If this library doesn't meet your requirements, consider these alternatives:
 
 ## License
 
-LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See the [LICENSE](https://github.com/hcoona/three/blob/main/LICENSE.LGPLv3-linking-exception.txt) file for details.
+LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See the [LICENSE](https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt) file for details.
 
 ## Support
 
