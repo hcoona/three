@@ -892,9 +892,6 @@ _version.py
 # Include C# app.manifest
 !app.manifest
 
-# Include OnePython packages
-!OnePython/packages/*
-
 # Include Ruby lib directories
 !lib/
 

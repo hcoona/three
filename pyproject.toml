@@ -1,11 +1,11 @@
 [project]
-name = "hcoona-one-python"
+name = "hcoona-three-monorepo"
 version = "0.0.0-dev"
-description = "This is the root mono-repository for HCOONa's One Python project."
+description = "Root uv workspace manifest for the Three monorepo."
 authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
 dependencies = []
 readme = "README.md"
-requires-python = ">= 3.12"
+requires-python = ">= 3.13"
 license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 classifiers = ["Private :: Do Not Upload"]
 
@@ -13,6 +13,7 @@ classifiers = ["Private :: Do Not Upload"]
 dev = ["pyrefly>=0.25.0", "pytest>=8.3.4", "ruff>=0.11.8"]
 
 [tool.uv.workspace]
+# The current Python workspace is rooted under src/; legacy OnePython paths are retired.
 members = [
   "src/lab/azure-document-intelligence-lab",
   "src/private/app/factorio-cycle-calculator",
@@ -26,13 +27,13 @@ members = [
   "src/public/app/markdown-hybrid-search-mcp",
   "src/public/lib/nbgv-python",
   "src/sample/nbgv-hatch-demo",
-  "OnePython/packages/*",
 ]
 
 [tool.uv.sources]
 nbgv-python = { workspace = true }
 
 [tool.pyrefly]
+# Keep type-check coverage aligned with the root uv workspace membership.
 project-includes = [
   "src/lab/azure-document-intelligence-lab",
   "src/private/app/factorio-cycle-calculator",
@@ -46,12 +47,11 @@ project-includes = [
   "src/public/app/markdown-hybrid-search-mcp",
   "src/public/lib/nbgv-python",
   "src/sample/nbgv-hatch-demo",
-  "OnePython/packages/*",
 ]
 project-excludes = ['.venv/**', 'dist/**']
 
 [tool.ruff]
-target-version = "py312" # Enforce Python 3.12 syntax/stdlib expectations repository-wide.
+target-version = "py312" # Keep a conservative repo-wide lint target until package-level overrides are needed.
 line-length = 80         # Google Python Style Guide recommends an 80-character maximum line length.
 
 [tool.ruff.format]

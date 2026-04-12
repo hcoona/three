@@ -1,7 +1,7 @@
 {
   "name": "@hcoona/three-monorepo",
   "private": true,
-  "description": "Workspace root for pnpm-managed packages in this repository.",
+  "description": "Workspace root for pnpm-managed packages in the Three monorepo.",
   "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
   "engines": {
     "node": ">=20.19.0"

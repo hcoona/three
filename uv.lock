@@ -7,7 +7,7 @@ members = [
     "azure-document-intelligence-lab",
     "factorio-cycle-calculator",
     "git-commit-heatmap",
-    "hcoona-one-python",
+    "hcoona-three-monorepo",
     "html-sm-processor",
     "llm-text-splitter",
     "markdown-hybrid-search-mcp",
@@ -1035,7 +1035,7 @@ wheels = [
 ]
 
 [[package]]
-name = "hcoona-one-python"
+name = "hcoona-three-monorepo"
 version = "0.0.0.dev0"
 source = { virtual = "." }
 
