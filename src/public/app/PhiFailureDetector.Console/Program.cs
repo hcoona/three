@@ -21,7 +21,7 @@ using System.Text;
 
 namespace PhiFailureDetector.ConsoleApp
 {
-    internal class Program
+    internal static class Program
     {
         private const long ToNano = 1000000L;
         private const long Last = 555 * ToNano;

@@ -177,10 +177,14 @@ namespace IO.Github.Hcoona.Collections
         /// <inheritdoc/>
         public void CopyTo(T[] array, int arrayIndex)
         {
+#if NET6_0_OR_GREATER
+            ArgumentNullException.ThrowIfNull(array);
+#else
             if (array is null)
             {
                 throw new ArgumentNullException(nameof(array));
             }
+#endif
 
             if (arrayIndex < 0)
             {
