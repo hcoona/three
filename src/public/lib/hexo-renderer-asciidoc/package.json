@@ -75,7 +75,7 @@
     "nerdbank-gitversioning": "^3.7.91",
     "prettier": "3.8.2",
     "tsdown": "^0.21.7",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },
   "exports": {
