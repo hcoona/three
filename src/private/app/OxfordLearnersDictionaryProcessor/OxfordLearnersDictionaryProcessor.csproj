@@ -10,7 +10,6 @@
 
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
 
-    <ArtifactsPath>$(BaseArtifactsPath)\$(MSBuildProjectName)</ArtifactsPath>
   </PropertyGroup>
 
   <ItemGroup>

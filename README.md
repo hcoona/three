@@ -20,7 +20,7 @@ The current repository contract is:
 
 - `src/` contains active monorepo projects, organized under `lab/`, `private/`, `public/`, and `sample/`. The migrated OneDotNet public C# projects now live under `src/public/`.
 - `tests/` contains matching test projects for code that follows the root monorepo layout, including the migrated OneDotNet public C# tests under `tests/public/`.
-- `OneDotNet/` remains a preserved imported subtree for the remaining private, legacy-test, and codelab slices.
+- `OneDotNet/` remains a preserved imported subtree for the remaining codelab projects and legacy backup files.
 - There is no top-level `OnePython/` directory in this repository. Python workspace members now live under `src/` and are declared in the root `pyproject.toml`.
 
 ## Projects included
@@ -58,8 +58,8 @@ The root `pyproject.toml` is the source of truth for the repository's Python wor
 
 ## .NET traversal
 
-The root `dirs.proj` treats `src/` and `tests/` as the canonical traversal roots for the main monorepo, including the migrated OneDotNet public slice now rooted under `src/public/` and `tests/public/`.
-`OneDotNet/dirs.proj` now traverses only the remaining private, legacy-test, and codelab projects, while the root `Directory.Build.props` continues to carry the shared C# build defaults across both areas.
+The root `dirs.proj` treats `src/` and `tests/` as the canonical traversal roots for the main monorepo, including the migrated OneDotNet public and private C# slices now rooted under `src/` and `tests/`.
+`OneDotNet/dirs.proj` now traverses only the remaining codelab projects, while the root `Directory.Build.props` continues to carry the shared C# build defaults across both areas.
 
 ## GitHub Copilot Telegram notifications
 

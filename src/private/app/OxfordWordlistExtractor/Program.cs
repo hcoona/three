@@ -70,10 +70,10 @@ using (var fs = File.OpenText("oxford-phrase-list.html"))
 
 var phases = from node in document.DocumentNode.SelectNodes(
                 "//div[@id='wordlistsContentPanel']/ul/li")
-            select new PhaseEntry(
-                WebUtility.HtmlDecode(node.GetDataAttribute("hw").Value),
-                Enum.Parse<CefrLevel>(
-                    node.GetDataAttribute("oxford_phrase_list")?.Value ?? "Unspecified", true));
+             select new PhaseEntry(
+                 WebUtility.HtmlDecode(node.GetDataAttribute("hw").Value),
+                 Enum.Parse<CefrLevel>(
+                     node.GetDataAttribute("oxford_phrase_list")?.Value ?? "Unspecified", true));
 
 foreach (var group in phases
     .GroupBy(entry => entry.Level)

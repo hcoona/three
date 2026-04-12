@@ -8,7 +8,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <ArtifactsPath>$(BaseArtifactsPath)\$(MSBuildProjectName)</ArtifactsPath>
     <DefaultArtifactsFileMatch>$(DefaultArtifactsFileMatch) wordlist.tsv.zip</DefaultArtifactsFileMatch>
   </PropertyGroup>
 

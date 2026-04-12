@@ -31,12 +31,11 @@ For more insights on monorepo benefits, see Google's article: [Why Google Stores
 ```text
 repo-root/
 ├── src/public/                  # Migrated OneDotNet public libraries and apps
+├── src/private/app/             # Migrated OneDotNet private tools and utilities
 ├── tests/public/                # Matching tests for the migrated public slice
+├── tests/private/app/           # Matching tests for the migrated private app slice
 └── OneDotNet/
-    ├── srcs/private/            # Remaining private tools and utilities
-    ├── tests/                   # Remaining legacy tests that still belong to the subtree
-    ├── codelab/                 # Experimental projects and prototypes
-    └── Directory.Build.props    # Remaining subtree-specific MSBuild properties
+    └── codelab/                 # Remaining experimental projects and prototypes
 ```
 
 Central package versions are defined at the repository root in `../Directory.Packages.props`.
@@ -66,11 +65,13 @@ Before you begin, ensure you have the following installed:
     dotnet build dirs.proj
     ```
 
-3. **Build or test the migrated public slice from the repository root when needed:**
+3. **Build or test the migrated root-layout slices from the repository root when needed:**
 
     ```powershell
     dotnet build ..\src\public\lib\CircularList\CircularList.csproj
+    dotnet build ..\src\private\app\OxfordDictExtractor\OxfordDictExtractor.csproj
     dotnet test ..\tests\public\lib\CircularList.UnitTest\CircularList.UnitTest.csproj
+    dotnet test ..\tests\private\app\OxfordDictExtractor.Tests\OxfordDictExtractor.Tests.csproj
     ```
 
 ### Development Workflow
@@ -142,10 +143,10 @@ dotnet pack <project_path> -c Release /p:PublicRelease=true /p:ContinuousIntegra
 
 ### Private Tools
 
-- **DotNetLockFileLister** - Utility for analyzing .NET package lock files
-- **OxfordDictExtractor** - Dictionary data extraction utilities
-- **OxfordLearnersDictionaryProcessor** - Advanced Oxford Learner's Dictionary processing tool with AI integration
-- **OxfordWordlistExtractor** - Specialized tool for extracting word lists from Oxford resources
+- **DotNetLockFileLister** - Utility for analyzing .NET package lock files (migrated to `../src/private/app/DotNetLockFileLister`)
+- **OxfordDictExtractor** - Dictionary data extraction utilities (migrated to `../src/private/app/OxfordDictExtractor`)
+- **OxfordLearnersDictionaryProcessor** - Advanced Oxford Learner's Dictionary processing tool with AI integration (migrated to `../src/private/app/OxfordLearnersDictionaryProcessor`)
+- **OxfordWordlistExtractor** - Specialized tool for extracting word lists from Oxford resources (migrated to `../src/private/app/OxfordWordlistExtractor`)
 
 ## License
 

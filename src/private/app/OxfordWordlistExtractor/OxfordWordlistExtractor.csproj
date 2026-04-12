@@ -10,7 +10,6 @@
 
     <RootNamespace>HCOONa.OxfordWordlistExtractor</RootNamespace>
 
-    <ArtifactsPath>$(BaseArtifactsPath)\$(MSBuildProjectName)</ArtifactsPath>
     <DefaultArtifactsFileMatch>$(DefaultArtifactsFileMatch) *.html *.ps1</DefaultArtifactsFileMatch>
   </PropertyGroup>
 

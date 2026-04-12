@@ -4,10 +4,13 @@
     <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
 
     <IsPackable>false</IsPackable>
+    <CentralPackageVersionOverrideEnabled>true</CentralPackageVersionOverrideEnabled>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="$(EnlistmentRoot)\srcs\private\app\OxfordDictExtractor\OxfordDictExtractor.csproj" />
+    <ProjectReference Include="../../../../src/private/app/OxfordDictExtractor/OxfordDictExtractor.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -76,12 +76,12 @@ foreach (var filename in Directory.EnumerateFiles(
 }
 
 var targetTypeDependencies = (from kvp in database
-                            select new
-                            {
-                                TargetName = kvp.Key.Item1,
-                                kvp.Value.Type,
-                                Dependency = kvp.Value,
-                            }).ToList();
+                              select new
+                              {
+                                  TargetName = kvp.Key.Item1,
+                                  kvp.Value.Type,
+                                  Dependency = kvp.Value,
+                              }).ToList();
 
 XDocument centralPackageVersionsFile;
 using (var reader = XmlReader.Create(
