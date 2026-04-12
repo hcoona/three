@@ -67,7 +67,7 @@ namespace TplLab
         }
 
         // Demonstrates the consumption end of the producer and consumer pattern.
-        private static async Task<int> ConsumeAsync(BufferBlock<byte[]> source)
+        private static async Task<int> ConsumeAsync(ISourceBlock<byte[]> source)
         {
             // Initialize a counter to track the number of bytes that are processed.
             int bytesProcessed = 0;

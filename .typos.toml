@@ -2,6 +2,7 @@
 extend-exclude = [
   'packages.lock.json',
   "src/private/app/OxfordWordlistExtractor/*.html",
+  "src/public/lib/Hjg.Pngcs/**/*.cs",
   "tests/private/app/OxfordDictExtractor.Tests/**/*.html",
   "**/generated/**/*",
 ]
