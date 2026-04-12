@@ -4,6 +4,14 @@
     "(^|/)src/private/app/OxfordWordlistExtractor/[^/]*\\.html$",
     "(^|/)tests/private/app/OxfordDictExtractor\\.Tests/.*\\.html$",
     "(^|/)GlobalSuppressions\\.cs$",
-    "(^|/)LICENSE$"
+    "(^|/)LICENSE$",
+    "(^|/)src/public/lib/Hjg\\.Pngcs/Zlib/(AZlibInputStream|AZlibOutputStream|ZlibStreamFactory)\\.cs$",
+    "(^|/)src/public/lib/Memoization/_Memoization\\.cs$",
+    "(^|/)src/public/lib/Memoization\\.Generators/MemoizationGenerator\\.cs$",
+    "(^|/)src/public/lib/MicrosoftExtensions\\.Logging\\.MSTest/(MsTestLogger|MsTestLoggerProvider)\\.cs$",
+    "(^|/)src/public/lib/MicrosoftExtensions\\.Options\\.DedupChangeExtensions/OptionsDedupChangeExtensions\\.cs$",
+    "(^|/)src/public/lib/PhiFailureDetector/(LongIntervalHistoryCollection|PhiFailureDetector)\\.cs$",
+    "(^|/)src/public/lib/WebHdfs\\.Extensions\\.FileProviders/(EmptyDisposable|WebHdfsDirectoryContents|WebHdfsFileInfo|WebHdfsFileProvider)\\.cs$",
+    "(^|/)src/public/lib/WebHdfs\\.Extensions\\.FileProviders/Models/WebHdfsErrorResponse\\.cs$"
   ]
 }
