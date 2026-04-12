@@ -14,6 +14,11 @@
 
   <ItemGroup>
     <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.9.50" />
+    <GlobalPackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../../stylecop.json" Link="stylecop.json" />
   </ItemGroup>
 
   <PropertyGroup Label="NuPack">
