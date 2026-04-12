@@ -111,11 +111,13 @@ namespace WebHdfs.Extensions.FileProviders.Models
         internal static WebHdfsFileStatus ParseJson(string json)
 #endif
         {
-            var document = JsonDocument.Parse(json);
-            var fileStatusElement = document.RootElement.GetProperty("FileStatus");
-            return JsonSerializer.Deserialize<WebHdfsFileStatus>(
-                fileStatusElement.GetRawText(),
-                JsonSerializerOptions);
+            using (var document = JsonDocument.Parse(json))
+            {
+                var fileStatusElement = document.RootElement.GetProperty("FileStatus");
+                return JsonSerializer.Deserialize<WebHdfsFileStatus>(
+                    fileStatusElement.GetRawText(),
+                    JsonSerializerOptions);
+            }
         }
     }
 }
