@@ -59,6 +59,7 @@ The root `pyproject.toml` is the source of truth for the repository's Python wor
 ## .NET traversal
 
 The root `dirs.proj` treats `src/` and `tests/` as the canonical traversal roots for the main monorepo and references `OneDotNet/dirs.proj` separately so the preserved subtree can keep its internal `srcs/` layout for now.
+The root `Directory.Build.props` now carries the shared C# build defaults for both areas, while `OneDotNet/` keeps only the subtree-specific packaging and analyzer layers that still need to be retired during the later project moves.
 
 ## GitHub Copilot Telegram notifications
 

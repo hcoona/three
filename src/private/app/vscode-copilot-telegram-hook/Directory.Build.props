@@ -1,30 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
   <PropertyGroup>
-    <CurrentTargetFramework>net10.0</CurrentTargetFramework>
-
-    <!--
-      https://learn.microsoft.com/en-us/dotnet/core/runtime-config/globalization#invariant-mode
-    -->
-    <InvariantGlobalization>true</InvariantGlobalization>
-
-    <Deterministic>true</Deterministic>
-
-    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <!-- Pipeline build must follow lock file instead of update them. -->
-    <RestoreLockedMode Condition="'$(TF_BUILD)' == 'true'">true</RestoreLockedMode>
     <RestorePackagesConfig>true</RestorePackagesConfig>
-    <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
-    <RestoreEnablePackagePruning>true</RestoreEnablePackagePruning>
-
-    <!-- https://devblogs.microsoft.com/nuget/introducing-central-package-management/ -->
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
-    <EnablePackageVersionOverride>false</EnablePackageVersionOverride>
-
-    <!-- Workaround: https://github.com/dotnet/sdk/issues/49917 -->
-    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
-
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
 
     <AnalysisLevel>latest</AnalysisLevel>
@@ -32,16 +11,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-  </PropertyGroup>
-
-  <Sdk Name="DotNet.ReproducibleBuilds.Isolated" />
-  <Sdk Name="Microsoft.Build.CopyOnWrite" />
-
-  <PropertyGroup Label="SourceLink">
-    <PackageProjectUrl>https://github.com/hcoona/three</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/hcoona/three.git</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
   <ItemGroup>

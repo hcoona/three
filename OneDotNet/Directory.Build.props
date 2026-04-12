@@ -1,54 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
   <PropertyGroup>
     <EnlistmentRoot>$(MSBuildThisFileDirectory.TrimEnd('\\'))</EnlistmentRoot>
 
-    <CurrentTargetFramework>net10.0</CurrentTargetFramework>
-    <CurrentWpfTargetFramework>net10.0-windows</CurrentWpfTargetFramework>
-
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
-
-    <!-- https://learn.microsoft.com/en-us/dotnet/core/runtime-config/globalization#invariant-mode -->
-    <InvariantGlobalization>true</InvariantGlobalization>
-
-    <ProduceReferenceAssembly Condition="'$(MSBuildProjectExtension)' == '.csproj'">true</ProduceReferenceAssembly>
-
-    <Deterministic>true</Deterministic>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
-    <RestoreEnablePackagePruning>true</RestoreEnablePackagePruning>
-
-    <!-- https://devblogs.microsoft.com/nuget/introducing-central-package-management/ -->
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
-    <CentralPackageVersionOverrideEnabled>false</CentralPackageVersionOverrideEnabled>
-
-    <!-- Workaround: https://github.com/dotnet/sdk/issues/49917 -->
-    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
   </PropertyGroup>
-
-  <Sdk Name="DotNet.ReproducibleBuilds.Isolated" />
-  <Sdk Name="Microsoft.Build.CopyOnWrite" />
 
   <PropertyGroup Label="Nerdbank.GitVersioning">
     <!--
     https://github.com/dotnet/Nerdbank.GitVersioning/blob/v3.5.119/doc/msbuild.md#reducing-getbuildversion-invocations -->
     <GitVersionBaseDirectory>$(MSBuildThisFileDirectory)</GitVersionBaseDirectory>
-  </PropertyGroup>
-
-  <PropertyGroup Label="SourceLink">
-    <ProjectUrl>https://github.com/hcoona/three</ProjectUrl>
-    <PackageProjectUrl>https://github.com/hcoona/three</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/hcoona/three.git</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-  </PropertyGroup>
-
-  <PropertyGroup Label="CI" Condition="'$(ContinuousIntegrationBuild)'=='true'">
-    <!-- Pipeline build must follow lock file instead of update them. -->
-    <RestoreLockedMode>true</RestoreLockedMode>
-    <DeterministicSourcePaths>true</DeterministicSourcePaths>
   </PropertyGroup>
 
   <Import Project="$(EnlistmentRoot)/stylecop.props" />
