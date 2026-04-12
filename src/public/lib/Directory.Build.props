@@ -5,7 +5,7 @@
   <PropertyGroup>
     <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
     <IsPackable>true</IsPackable>
-    <GitVersionBaseDirectory>$([System.IO.Path]::GetDirectoryName($([MSBuild]::GetPathOfFileAbove('version.json', '$(MSBuildThisFileDirectory)'))))</GitVersionBaseDirectory>
+    <GitVersionBaseDirectory>$(MSBuildProjectDirectory)</GitVersionBaseDirectory>
   </PropertyGroup>
 
   <PropertyGroup>
