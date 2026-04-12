@@ -34,7 +34,7 @@
   </ItemGroup>
 
   <ItemGroup Label="SourceGenerator">
-    <ProjectReference Include="../../../../OneDotNet/srcs/private/lib/Memoization.Generators/Memoization.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../Memoization.Generators/Memoization.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
