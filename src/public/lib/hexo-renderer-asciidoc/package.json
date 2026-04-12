@@ -68,7 +68,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.11",
     "@types/node": "^22.10.2",
-    "@typescript/native-preview": "^7.0.0-dev.20260314.1",
+    "@typescript/native-preview": "^7.0.0-dev.20260411.1",
     "@vitest/coverage-v8": "^4.1.4",
     "hexo": "8.1.1",
     "markdownlint-cli2": "0.22.0",
