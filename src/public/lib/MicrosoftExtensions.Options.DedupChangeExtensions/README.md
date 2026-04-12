@@ -199,7 +199,7 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ## License
 
-LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See the [LICENSE](https://dev.azure.com/zhangshuai89/Public/_git/OneDotNet?path=/LICENSE.LGPLv3-linking-exception.txt) for details.
+LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See the [LICENSE](https://github.com/hcoona/three/blob/main/LICENSE.LGPLv3-linking-exception.txt) for details.
 
 ## Related Issues
 

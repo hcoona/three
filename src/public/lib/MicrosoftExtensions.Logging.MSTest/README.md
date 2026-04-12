@@ -174,12 +174,12 @@ fail: Test1[0]
 
 ## Comparison with Other Test Frameworks
 
-| Feature | MSTest | xUnit | NUnit |
-|---------|--------|-------|-------|
-| Test Context | ✅ TestContext | ✅ ITestOutputHelper | ✅ TestContext |
+| Feature              | MSTest          | xUnit                    | NUnit           |
+| -------------------- | --------------- | ------------------------ | --------------- |
+| Test Context         | ✅ TestContext  | ✅ ITestOutputHelper     | ✅ TestContext  |
 | Dependency Injection | ✅ Manual setup | ✅ Constructor injection | ✅ Manual setup |
-| Parallel Tests | ✅ Supported | ✅ Supported | ✅ Supported |
-| .NET Core Support | ✅ Full support | ✅ Full support | ✅ Full support |
+| Parallel Tests       | ✅ Supported    | ✅ Supported             | ✅ Supported    |
+| .NET Core Support    | ✅ Full support | ✅ Full support          | ✅ Full support |
 
 ## Requirements
 
@@ -193,4 +193,4 @@ LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
 
 ---
 
-Feedback and contributions are welcome! Open an issue or PR on [GitHub](https://github.com/hcoona/OneDotNet).
+Feedback and contributions are welcome! Open an issue or PR on [GitHub](https://github.com/hcoona/three).

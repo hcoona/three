@@ -1,6 +1,6 @@
 *.sf2 filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
-OneDotNet/srcs/private/app/OxfordWordlistExtractor/*.html linguist-vendored
-OneDotNet/tests/OxfordDictExtractor.Tests/examples/*.html linguist-vendored
+src/private/app/OxfordWordlistExtractor/*.html linguist-vendored
+tests/private/app/OxfordDictExtractor.Tests/examples/*.html linguist-vendored
 src/private/app/supermemo-mcp/references/*.ahk linguist-vendored
 src/private/app/factorio-cycle-calculator/src/factorio_cycle_calculator/generated/* linguist-generated

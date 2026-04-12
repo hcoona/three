@@ -141,12 +141,12 @@ The implementation provides two distribution models:
 
 ## License
 
-LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See [LICENSE](https://dev.azure.com/zhangshuai89/Public/_git/OneDotNet?path=/LICENSE.LGPLv3-linking-exception.txt) for details.
+LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See [LICENSE](https://github.com/hcoona/three/blob/main/LICENSE.LGPLv3-linking-exception.txt) for details.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request to the [OneDotNet repository](https://github.com/hcoona/OneDotNet).
+Contributions are welcome! Please feel free to submit a Pull Request to the [hcoona/three repository](https://github.com/hcoona/three).
 
 ## Support
 
-If you encounter any issues or have questions, please [open an issue](https://github.com/hcoona/OneDotNet/issues) on GitHub.
+If you encounter any issues or have questions, please [open an issue](https://github.com/hcoona/three/issues) on GitHub.

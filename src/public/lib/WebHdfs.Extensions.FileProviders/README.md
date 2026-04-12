@@ -365,16 +365,16 @@ All methods in this library are thread-safe and can be called concurrently from 
 
 ## Supported Operations
 
-| Operation | Supported | WebHDFS API | Notes |
-|-----------|-----------|-------------|-------|
-| Read Files | ✅ | `OPEN` | Full streaming support, efficient for large files |
-| Get File Info | ✅ | `GETFILESTATUS` | Size, timestamps, permissions, type |
-| Browse Directories | ✅ | `LISTSTATUS` | Recursive directory listing with metadata |
-| Change Monitoring | ✅ | `GETFILESTATUS` | Polling-based with configurable intervals |
-| Write Files | ❌ | N/A | Read-only provider by design |
-| Create Directories | ❌ | N/A | Read-only provider by design |
-| Delete Files | ❌ | N/A | Read-only provider by design |
-| Move/Rename | ❌ | N/A | Read-only provider by design |
+| Operation          | Supported | WebHDFS API     | Notes                                             |
+| ------------------ | --------- | --------------- | ------------------------------------------------- |
+| Read Files         | ✅        | `OPEN`          | Full streaming support, efficient for large files |
+| Get File Info      | ✅        | `GETFILESTATUS` | Size, timestamps, permissions, type               |
+| Browse Directories | ✅        | `LISTSTATUS`    | Recursive directory listing with metadata         |
+| Change Monitoring  | ✅        | `GETFILESTATUS` | Polling-based with configurable intervals         |
+| Write Files        | ❌        | N/A             | Read-only provider by design                      |
+| Create Directories | ❌        | N/A             | Read-only provider by design                      |
+| Delete Files       | ❌        | N/A             | Read-only provider by design                      |
+| Move/Rename        | ❌        | N/A             | Read-only provider by design                      |
 
 ## Troubleshooting
 
@@ -501,8 +501,8 @@ If this library doesn't meet your requirements, consider these alternatives:
 
 ## License
 
-LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See the [LICENSE](https://dev.azure.com/zhangshuai89/Public/_git/OneDotNet?path=/LICENSE.LGPLv3-linking-exception.txt) file for details.
+LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See the [LICENSE](https://github.com/hcoona/three/blob/main/LICENSE.LGPLv3-linking-exception.txt) file for details.
 
 ## Support
 
-For questions, issues, or contributions, please visit the [GitHub repository](https://github.com/zhangshuai89/OneDotNet).
+For questions, issues, or contributions, please visit the [GitHub repository](https://github.com/hcoona/three).
