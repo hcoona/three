@@ -1,7 +1,6 @@
 {
   "Exclude": [
     "(^|/)packages\\.lock\\.json$",
-    "(^|/)OneDotNet/srcs/public/Memoization/Memoization\\.cs$",
     "(^|/)src/private/app/OxfordWordlistExtractor/[^/]*\\.html$",
     "(^|/)tests/private/app/OxfordDictExtractor\\.Tests/.*\\.html$",
     "(^|/)GlobalSuppressions\\.cs$",

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Packages.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.CommandLine" Version="9.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Ini" Version="9.0.14" />
+  </ItemGroup>
+</Project>

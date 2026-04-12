@@ -1,6 +1,0 @@
-<Project Sdk="Microsoft.Build.Traversal">
-  <!-- The imported subtree now retains only the remaining codelab slice and legacy backups. -->
-  <ItemGroup>
-    <ProjectReference Include="codelab\**\*.*proj" />
-  </ItemGroup>
-</Project>

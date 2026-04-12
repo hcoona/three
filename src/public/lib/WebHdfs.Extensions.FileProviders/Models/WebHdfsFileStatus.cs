@@ -53,6 +53,15 @@ namespace WebHdfs.Extensions.FileProviders.Models
     /// </summary>
     internal class WebHdfsFileStatus
     {
+        private static readonly JsonSerializerOptions JsonSerializerOptions =
+            new JsonSerializerOptions
+            {
+                Converters =
+                {
+                    new JsonStringEnumConverter(),
+                },
+            };
+
         /// <summary>
         /// Gets or sets the number of bytes in a file. Zero for directories.
         /// </summary>
@@ -104,7 +113,9 @@ namespace WebHdfs.Extensions.FileProviders.Models
         {
             var document = JsonDocument.Parse(json);
             var fileStatusElement = document.RootElement.GetProperty("FileStatus");
-            return JsonSerializer.Deserialize<WebHdfsFileStatus>(fileStatusElement.GetRawText());
+            return JsonSerializer.Deserialize<WebHdfsFileStatus>(
+                fileStatusElement.GetRawText(),
+                JsonSerializerOptions);
         }
     }
 }

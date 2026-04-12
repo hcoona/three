@@ -1,9 +1,0 @@
-{
-  "Exclude": [
-    "packages.lock.json",
-    "srcs/public/Memoization/Memoization.cs",
-    "tests",
-    "GlobalSuppressions.cs",
-    "LICENSE"
-  ]
-}

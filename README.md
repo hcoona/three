@@ -20,18 +20,18 @@ The current repository contract is:
 
 - `src/` contains active monorepo projects, organized under `lab/`, `private/`, `public/`, and `sample/`. The migrated OneDotNet public C# projects now live under `src/public/`.
 - `tests/` contains matching test projects for code that follows the root monorepo layout, including the migrated OneDotNet public C# tests under `tests/public/`.
-- `OneDotNet/` remains a preserved imported subtree for the remaining codelab projects and legacy backup files.
+- The active C# code migrated out of the historical `OneDotNet/` subtree now lives under the canonical root `src/`, `tests/`, and `src/lab/` layout.
 - There is no top-level `OnePython/` directory in this repository. Python workspace members now live under `src/` and are declared in the root `pyproject.toml`.
 
 ## Projects included
 
-| Project                      | Directory                                      | Upstream                     | Commit                        |
-| ---------------------------- | ---------------------------------------------- | ---------------------------- | ----------------------------- |
-| Asciidoctor LaTeXMath        | `src/public/lib/asciidoctor-latexmath/`        | [Repo][asciidoctor-upstream] | [514d685][asciidoctor-commit] |
-| ImageOcclusionEditor         | `src/public/app/ImageOcclusionEditor/`         | [Repo][ioe-upstream]         | [e08f834][ioe-commit]         |
-| OneDotNet                    | `OneDotNet/`                                   | [Repo][onedotnet-upstream]   | [17f2224][onedotnet-commit]   |
-| Steam Account History to CSV | `src/public/lib/steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
-| Hexo Renderer AsciiDoc       | `src/public/lib/hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
+| Project                       | Directory                                      | Upstream                     | Commit                        |
+| ----------------------------- | ---------------------------------------------- | ---------------------------- | ----------------------------- |
+| Asciidoctor LaTeXMath         | `src/public/lib/asciidoctor-latexmath/`        | [Repo][asciidoctor-upstream] | [514d685][asciidoctor-commit] |
+| ImageOcclusionEditor          | `src/public/app/ImageOcclusionEditor/`         | [Repo][ioe-upstream]         | [e08f834][ioe-commit]         |
+| OneDotNet (historical import) | git history only                               | [Repo][onedotnet-upstream]   | [17f2224][onedotnet-commit]   |
+| Steam Account History to CSV  | `src/public/lib/steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
+| Hexo Renderer AsciiDoc        | `src/public/lib/hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
 
 ## JavaScript/pnpm workspace
 
@@ -58,8 +58,8 @@ The root `pyproject.toml` is the source of truth for the repository's Python wor
 
 ## .NET traversal
 
-The root `dirs.proj` treats `src/` and `tests/` as the canonical traversal roots for the main monorepo, including the migrated OneDotNet public and private C# slices now rooted under `src/` and `tests/`.
-`OneDotNet/dirs.proj` now traverses only the remaining codelab projects, while the root `Directory.Build.props` continues to carry the shared C# build defaults across both areas.
+The root `dirs.proj` is now the only active C# traversal for this repository.
+It treats `src/` and `tests/` as the canonical build roots, including the migrated OneDotNet public, private, and lab C# slices now rooted under `src/`, `src/lab/`, and `tests/`.
 
 ## GitHub Copilot Telegram notifications
 
