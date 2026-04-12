@@ -6,12 +6,6 @@
     <RestorePackagesConfig>true</RestorePackagesConfig>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
 
-    <AnalysisLevel>latest</AnalysisLevel>
-    <AnalysisMode>Recommended</AnalysisMode>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-
     <IsPackable>false</IsPackable>
     <GitVersionBaseDirectory>$(MSBuildProjectDirectory)</GitVersionBaseDirectory>
   </PropertyGroup>

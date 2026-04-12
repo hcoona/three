@@ -3,7 +3,6 @@
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
   <PropertyGroup Label="Code Analysis">
-    <AnalysisLevel>latest</AnalysisLevel>
     <MSTestAnalysisMode>Recommended</MSTestAnalysisMode>
 
     <!-- TODO(shuaizhang): Remove in the future. -->
