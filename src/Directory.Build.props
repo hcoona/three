@@ -3,6 +3,7 @@
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
   <PropertyGroup>
+    <GitVersionBaseDirectory Condition="'$(GitVersionBaseDirectory)' == ''">$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)../'))</GitVersionBaseDirectory>
     <_ProjectDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)'))))</_ProjectDirectory>
     <_PublicAppDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)public/app'))))</_PublicAppDirectory>
     <_PrivateAppDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)private/app'))))</_PrivateAppDirectory>
