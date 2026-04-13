@@ -4,7 +4,6 @@
 
   <PropertyGroup>
     <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
-    <IsPackable>true</IsPackable>
     <GitVersionBaseDirectory>$(MSBuildProjectDirectory)</GitVersionBaseDirectory>
   </PropertyGroup>
 

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <_ProjectDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)'))))</_ProjectDirectory>
+    <_PublicAppDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)public/app'))))</_PublicAppDirectory>
+    <_PrivateAppDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)private/app'))))</_PrivateAppDirectory>
+    <_PublicLibDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)public/lib'))))</_PublicLibDirectory>
+    <_PrivateLibDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)private/lib'))))</_PrivateLibDirectory>
+    <_LabDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)lab'))))</_LabDirectory>
+    <_SampleDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)sample'))))</_SampleDirectory>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_PublicLibDirectory)')) Or $([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_PrivateLibDirectory)'))">
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_PublicAppDirectory)')) Or $([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_PrivateAppDirectory)')) Or $([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_LabDirectory)')) Or $([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_SampleDirectory)'))">
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

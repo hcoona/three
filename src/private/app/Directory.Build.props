@@ -5,8 +5,6 @@
   <PropertyGroup>
     <RestorePackagesConfig>true</RestorePackagesConfig>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
-
-    <IsPackable>false</IsPackable>
     <GitVersionBaseDirectory>$(MSBuildProjectDirectory)</GitVersionBaseDirectory>
   </PropertyGroup>
 
