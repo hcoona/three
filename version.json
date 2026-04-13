@@ -1,6 +1,24 @@
 {
   "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
   "version": "1.0.0-beta.{height}",
+  "pathFilters": [
+    "^src/public/app/PhiFailureDetector\\.Console",
+    "^src/public/lib/CircularList",
+    "^src/public/lib/Hjg\\.Pngcs",
+    "^src/public/lib/Memoization",
+    "^src/public/lib/MicrosoftExtensions\\.Logging\\.MSTest",
+    "^src/public/lib/MicrosoftExtensions\\.Logging\\.Xunit",
+    "^src/public/lib/MicrosoftExtensions\\.Options\\.DedupChangeExtensions",
+    "^src/public/lib/PhiFailureDetector",
+    "^src/public/lib/WebHdfs\\.Extensions\\.FileProviders",
+    "^tests/public/lib/CircularList\\.UnitTest",
+    "^tests/public/lib/Hjg\\.Pngcs\\.ManualTests",
+    "^tests/public/lib/Memoization\\.Tests",
+    "^tests/public/lib/MicrosoftExtensions\\.Logging\\.MSTest\\.Tests",
+    "^tests/public/lib/MicrosoftExtensions\\.Logging\\.Xunit\\.v2\\.Tests",
+    "^tests/public/lib/MicrosoftExtensions\\.Logging\\.Xunit\\.v3\\.Tests",
+    "^tests/public/lib/PhiFailureDetector\\.UnitTest"
+  ],
   "gitCommitIdShortFixedLength": 7,
   "gitCommitIdShortAutoMinimum": 7,
   "nugetPackageVersion": {

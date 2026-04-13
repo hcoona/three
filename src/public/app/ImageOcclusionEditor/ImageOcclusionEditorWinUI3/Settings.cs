@@ -22,7 +22,8 @@ namespace ImageOcclusionEditorWinUI3
 {
     internal static class Settings
     {
-        private static ApplicationDataContainer LocalSettings => ApplicationData.Current.LocalSettings;
+        private static ApplicationDataContainer LocalSettings =>
+            ApplicationData.Current.LocalSettings;
 
         public static bool Maximized
         {
@@ -82,9 +83,10 @@ namespace ImageOcclusionEditorWinUI3
         {
             try
             {
-                if (LocalSettings.Values.ContainsKey(key))
+                if (LocalSettings.Values.TryGetValue(key, out object? value) &&
+                    value is T typedValue)
                 {
-                    return (T)LocalSettings.Values[key];
+                    return typedValue;
                 }
             }
             catch

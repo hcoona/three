@@ -1,13 +1,10 @@
 <Project Sdk="Microsoft.Build.Traversal">
-  <!-- The main monorepo uses src/ and tests/; OneDotNet remains a preserved subtree. -->
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-    <ProjectReference Include="OneDotNet\dirs.proj" />
     <ProjectReference Include="src\**\*.*proj" />
     <ProjectReference Include="tests\**\*.*proj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
-    <ProjectReference Include="OneDotNet\dirs.proj" />
     <ProjectReference Include="src\**\*.*proj" Exclude="src\public\app\ImageOcclusionEditor\ImageOcclusionEditorWinUI3\ImageOcclusionEditorWinUI3.csproj" />
     <ProjectReference Include="tests\**\*.*proj" />
   </ItemGroup>

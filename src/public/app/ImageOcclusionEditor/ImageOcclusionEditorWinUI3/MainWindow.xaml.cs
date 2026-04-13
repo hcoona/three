@@ -31,11 +31,12 @@ namespace ImageOcclusionEditorWinUI3
     /// <summary>
     /// An empty window that can be used on its own or navigated to within a Frame.
     /// </summary>
-    public sealed partial class MainWindow : Window
+    public sealed partial class MainWindow : Window, IDisposable
     {
         private readonly string _occlusionFilePath;
         private readonly string _backgroundFilePath;
         private readonly SvgEditorBridge _svgEditorBridge;
+        private bool _disposed;
 
         public MainWindow(string backgroundFilePath, string occlusionFilePath)
         {
@@ -64,7 +65,10 @@ namespace ImageOcclusionEditorWinUI3
                     "WebView2UserData");
 
                 var (width, height) = OcclusionFileService.GetImageDimensions(_backgroundFilePath);
-                Uri targetUri = SvgEditorNavigationBuilder.Build(_backgroundFilePath, width, height);
+                Uri targetUri = SvgEditorNavigationBuilder.Build(
+                    _backgroundFilePath,
+                    width,
+                    height);
 
                 await _svgEditorBridge.InitializeAsync(userDataFolder, targetUri);
             }
@@ -174,9 +178,25 @@ namespace ImageOcclusionEditorWinUI3
             }
         }
 
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            Closed -= OnWindowClosed;
+            _svgEditorBridge.Ready -= OnSvgEditorReady;
+            _svgEditorBridge.SaveRequested -= OnSaveRequested;
+            _svgEditorBridge.SaveAndExitRequested -= OnSaveAndExitRequested;
+            _svgEditorBridge.CancelRequested -= OnCancelRequested;
+            _svgEditorBridge.Dispose();
+            _disposed = true;
+        }
+
         private void OnWindowClosed(object sender, WindowEventArgs args)
         {
-            _svgEditorBridge.Dispose();
+            Dispose();
         }
     }
 }

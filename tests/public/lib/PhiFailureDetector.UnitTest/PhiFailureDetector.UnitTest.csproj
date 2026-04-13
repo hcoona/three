@@ -1,0 +1,11 @@
+﻿<Project Sdk="MSTest.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../../src/public/lib/PhiFailureDetector/PhiFailureDetector.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup Label="Code Analysis">
+    <MSTestAnalysisMode>Recommended</MSTestAnalysisMode>
+
+    <!-- TODO(shuaizhang): Remove in the future. -->
+    <NoWarn>$(NoWarn);CA1848;CA1707</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Workaround: https://github.com/microsoft/testfx/blob/v3.10.1/src/Package/MSTest.Sdk/README.md -->
+    <CentralPackageVersionOverrideEnabled>true</CentralPackageVersionOverrideEnabled>
+
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+  </PropertyGroup>
+</Project>

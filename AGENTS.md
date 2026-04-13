@@ -6,7 +6,7 @@ This repository is designed to manage polyglot projects in a monorepo structure.
 2. Python: Managed by UV workspaces.
 3. JavaScript/TypeScript: Managed by PNPM workspaces.
 
-The current status of the repository is that most active projects now follow the canonical `src/` and `tests/` monorepo layout. `OneDotNet/` remains a preserved imported subtree with its own `srcs/` and `tests/` structure, and we have not yet set up the release pipelines for each project.
+The current status of the repository is that active projects now follow the canonical root monorepo layout under `src/`, `src/lab/`, and `tests/`. The former `OneDotNet/` subtree has been migrated into those canonical roots, and we have not yet set up the release pipelines for each project.
 
 The versioning of the projects is managed by NBGV (Nerdbank.GitVersioning). We write a hatching plugin (`nbgv-python`) to adapt NBGV for our Python projects.
 

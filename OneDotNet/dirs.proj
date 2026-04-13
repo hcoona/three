@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.Build.Traversal">
-  <ItemGroup>
-    <ProjectReference Include="codelab\**\*.*proj" />
-    <ProjectReference Include="srcs\**\*.*proj" />
-    <ProjectReference Include="tests\**\*.csproj" />
-  </ItemGroup>
-</Project>
