@@ -32,6 +32,12 @@
           "Microsoft.SourceLink.Common": "8.0.0"
         }
       },
+      "Nerdbank.GitVersioning": {
+        "type": "Direct",
+        "requested": "[3.9.50, )",
+        "resolved": "3.9.50",
+        "contentHash": "HtOgGF6jZ+WYbXnCUCYPT8Y2d6mIJo9ozjK/FINTRsXdm4Zgv9GehUMa7EFoGQkqrMcDJNOIDwCmENnvXg4UbA=="
+      },
       "Google.OrTools.runtime.linux-arm64": {
         "type": "Transitive",
         "resolved": "9.15.6755",
