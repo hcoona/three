@@ -4,6 +4,5 @@
 
   <PropertyGroup>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
-    <GitVersionBaseDirectory>$(MSBuildProjectDirectory)</GitVersionBaseDirectory>
   </PropertyGroup>
 </Project>
