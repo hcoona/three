@@ -78,7 +78,7 @@ Latest end-to-end verification on Windows (2026-04-11):
     - Before release hardening, decide whether to re-enable one or both integrations in CI (with timeout safeguards retained).
 
 - `typos`
-    - Current mode uses `--force-exclude` in `src/private/lib/hk/steps/Typos.pkl` and a targeted exclude for `src/public/lib/Hjg.Pngcs/**` in `.typos.toml`.
+    - Current mode uses `--force-exclude` in `src/private/lib/hk/steps/Typos.pkl` and a targeted exclude for `src/public/lib/Hjg.Pngcs/**/*.cs` in `.typos.toml`.
     - If upstream-import exclusions are tightened later, re-run `hk check --all --check --step typos --profile small --no-progress` to verify false positives stay manageable.
 
 ## Notes

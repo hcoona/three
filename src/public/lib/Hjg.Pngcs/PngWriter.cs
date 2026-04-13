@@ -116,7 +116,7 @@ namespace Hjg.Pngcs
         private PngIDatChunkOutputStream datStream;
         private AZlibOutputStream datStreamDeflated;
 
-        // Auxiliar buffer histogram, only used by reportResultsForFilter.
+        // Auxiliary buffer histogram, only used by reportResultsForFilter.
         private int[] histox = new int[256];
 
         // This only influences the 1-2-4 bitdepth format - and if we pass

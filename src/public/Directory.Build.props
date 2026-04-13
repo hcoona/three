@@ -3,6 +3,6 @@
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
   <PropertyGroup>
-    <GitVersionBaseDirectory>$(MSBuildProjectDirectory)</GitVersionBaseDirectory>
+    <GitVersionBaseDirectory Condition="Exists('$(MSBuildProjectDirectory)/version.json')">$(MSBuildProjectDirectory)</GitVersionBaseDirectory>
   </PropertyGroup>
 </Project>

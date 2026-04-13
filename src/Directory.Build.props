@@ -11,13 +11,20 @@
     <_PrivateLibDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)private/lib'))))</_PrivateLibDirectory>
     <_LabDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)lab'))))</_LabDirectory>
     <_SampleDirectory>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)sample'))))</_SampleDirectory>
+    <_ProjectDirectoryLower>$([System.String]::Copy('$(_ProjectDirectory)').ToLowerInvariant())</_ProjectDirectoryLower>
+    <_PublicAppDirectoryLower>$([System.String]::Copy('$(_PublicAppDirectory)').ToLowerInvariant())</_PublicAppDirectoryLower>
+    <_PrivateAppDirectoryLower>$([System.String]::Copy('$(_PrivateAppDirectory)').ToLowerInvariant())</_PrivateAppDirectoryLower>
+    <_PublicLibDirectoryLower>$([System.String]::Copy('$(_PublicLibDirectory)').ToLowerInvariant())</_PublicLibDirectoryLower>
+    <_PrivateLibDirectoryLower>$([System.String]::Copy('$(_PrivateLibDirectory)').ToLowerInvariant())</_PrivateLibDirectoryLower>
+    <_LabDirectoryLower>$([System.String]::Copy('$(_LabDirectory)').ToLowerInvariant())</_LabDirectoryLower>
+    <_SampleDirectoryLower>$([System.String]::Copy('$(_SampleDirectory)').ToLowerInvariant())</_SampleDirectoryLower>
   </PropertyGroup>
 
-  <PropertyGroup Condition="$([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_PublicLibDirectory)')) Or $([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_PrivateLibDirectory)'))">
+  <PropertyGroup Condition="$([System.String]::Copy('$(_ProjectDirectoryLower)').StartsWith('$(_PublicLibDirectoryLower)')) Or $([System.String]::Copy('$(_ProjectDirectoryLower)').StartsWith('$(_PrivateLibDirectoryLower)'))">
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 
-  <PropertyGroup Condition="$([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_PublicAppDirectory)')) Or $([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_PrivateAppDirectory)')) Or $([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_LabDirectory)')) Or $([System.String]::Copy('$(_ProjectDirectory)').StartsWith('$(_SampleDirectory)'))">
+  <PropertyGroup Condition="$([System.String]::Copy('$(_ProjectDirectoryLower)').StartsWith('$(_PublicAppDirectoryLower)')) Or $([System.String]::Copy('$(_ProjectDirectoryLower)').StartsWith('$(_PrivateAppDirectoryLower)')) Or $([System.String]::Copy('$(_ProjectDirectoryLower)').StartsWith('$(_LabDirectoryLower)')) Or $([System.String]::Copy('$(_ProjectDirectoryLower)').StartsWith('$(_SampleDirectoryLower)'))">
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 </Project>
