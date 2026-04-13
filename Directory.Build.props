@@ -42,6 +42,17 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
+  <PropertyGroup Label="NuPack">
+    <Authors>Shuai Zhang</Authors>
+    <Company>Shuai Zhang</Company>
+    <Copyright>Copyright (c) Shuai Zhang 2025</Copyright>
+    <PackageLicenseExpression>LGPL-3.0-or-later WITH LGPL-3.0-linking-exception</PackageLicenseExpression>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <DebugType>portable</DebugType>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
   <PropertyGroup Label="CI" Condition="'$(ContinuousIntegrationBuild)' == 'true' or '$(TF_BUILD)' == 'true'">
     <DeterministicSourcePaths>true</DeterministicSourcePaths>
   </PropertyGroup>
