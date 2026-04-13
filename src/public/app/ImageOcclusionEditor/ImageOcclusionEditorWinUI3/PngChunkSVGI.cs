@@ -25,7 +25,7 @@ using Hjg.Pngcs.Chunks;
 
 namespace ImageOcclusionEditorWinUI3
 {
-    class PngChunkSVGI(ImageInfo info) : PngChunkSingle(ID, info)
+    internal sealed class PngChunkSVGI(ImageInfo info) : PngChunkSingle(ID, info)
     {
         // ID must follow the PNG conventions: four ascii letters,
         // ID[0] : lowercase (ancillary)

@@ -30,13 +30,17 @@ namespace ImageOcclusionEditorWinUI3.Services
 {
     internal sealed class SvgEditorBridge : IDisposable
     {
-        private const string AdditionalBrowserArguments = "--disable-features=msSmartScreenProtection --allow-file-access-from-files";
+        private const string AdditionalBrowserArguments =
+            "--disable-features=msSmartScreenProtection " +
+            "--allow-file-access-from-files";
 
         private const string KeyboardShortcutScript = @"
                 (function() {
                     if (window.imageOcclusionKeyHandler) {
-                        document.removeEventListener('keydown', window.imageOcclusionKeyHandler, true);
-                        document.removeEventListener('keyup', window.imageOcclusionKeyHandler, true);
+                        document.removeEventListener(
+                            'keydown', window.imageOcclusionKeyHandler, true);
+                        document.removeEventListener(
+                            'keyup', window.imageOcclusionKeyHandler, true);
                     }
 
                     window.imageOcclusionHandlerActive = true;
@@ -89,7 +93,11 @@ namespace ImageOcclusionEditorWinUI3.Services
                     console.log('Image Occlusion keyboard shortcuts injected successfully');
 
                     setTimeout(function() {
-                        if (window.imageOcclusionHandlerActive && window.chrome && window.chrome.webview) {
+                        if (
+                            window.imageOcclusionHandlerActive &&
+                            window.chrome &&
+                            window.chrome.webview
+                        ) {
                             console.log('Keyboard shortcut handler still active');
                         }
                     }, 5000);
@@ -117,13 +125,12 @@ namespace ImageOcclusionEditorWinUI3.Services
         {
             if (string.IsNullOrWhiteSpace(userDataFolder))
             {
-                throw new ArgumentException("User data folder cannot be null or whitespace.", nameof(userDataFolder));
+                throw new ArgumentException(
+                    "User data folder cannot be null or whitespace.",
+                    nameof(userDataFolder));
             }
 
-            if (targetUri is null)
-            {
-                throw new ArgumentNullException(nameof(targetUri));
-            }
+            ArgumentNullException.ThrowIfNull(targetUri);
 
             Directory.CreateDirectory(userDataFolder);
 
@@ -150,10 +157,7 @@ namespace ImageOcclusionEditorWinUI3.Services
 
         public async Task SetBackgroundAsync(Uri backgroundImageUri)
         {
-            if (backgroundImageUri is null)
-            {
-                throw new ArgumentNullException(nameof(backgroundImageUri));
-            }
+            ArgumentNullException.ThrowIfNull(backgroundImageUri);
 
             EnsureReady();
             string script = $"svgEditor.setBackground(\"\", \"{backgroundImageUri.AbsoluteUri}\")";
@@ -162,14 +166,14 @@ namespace ImageOcclusionEditorWinUI3.Services
 
         public async Task SetSvgContentAsync(string svg)
         {
-            if (svg is null)
-            {
-                throw new ArgumentNullException(nameof(svg));
-            }
+            ArgumentNullException.ThrowIfNull(svg);
 
             EnsureReady();
 
-            string sanitized = svg.Replace("\r", string.Empty).Replace("\n", string.Empty).Replace("'", "\\'");
+            string sanitized = svg
+                .Replace("\r", string.Empty)
+                .Replace("\n", string.Empty)
+                .Replace("'", "\\'");
             string script = $"svgEditor.loadSvgString('{sanitized}')";
             string result = await _webView.CoreWebView2.ExecuteScriptAsync(script);
 
@@ -182,8 +186,11 @@ namespace ImageOcclusionEditorWinUI3.Services
         public async Task<string> GetSvgContentAsync()
         {
             EnsureReady();
-            string result = await _webView.CoreWebView2.ExecuteScriptAsync("svgEditor.svgCanvas.svgCanvasToString()");
-            return JsonSerializer.Deserialize(result, ImageOcclusionEditorWinUI3.JsonContext.Default.String) ?? string.Empty;
+            string result = await _webView.CoreWebView2.ExecuteScriptAsync(
+                "svgEditor.svgCanvas.svgCanvasToString()");
+            return JsonSerializer.Deserialize(
+                result,
+                ImageOcclusionEditorWinUI3.JsonContext.Default.String) ?? string.Empty;
         }
 
         public void Dispose()
@@ -201,7 +208,9 @@ namespace ImageOcclusionEditorWinUI3.Services
             settings.IsGeneralAutofillEnabled = false;
         }
 
-        private void HandleNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        private void HandleNavigationCompleted(
+            object? sender,
+            CoreWebView2NavigationCompletedEventArgs e)
         {
             if (!e.IsSuccess)
             {
@@ -217,7 +226,9 @@ namespace ImageOcclusionEditorWinUI3.Services
             Ready?.Invoke(this, EventArgs.Empty);
         }
 
-        private void HandleWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        private void HandleWebMessageReceived(
+            object? sender,
+            CoreWebView2WebMessageReceivedEventArgs e)
         {
             string message = e.TryGetWebMessageAsString();
 
