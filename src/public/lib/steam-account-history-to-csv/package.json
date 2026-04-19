@@ -32,7 +32,7 @@
     "@typescript/native-preview": "^7.0.0-dev.20260411.1",
     "@wxt-dev/auto-icons": "^1.1.1",
     "nerdbank-gitversioning": "^3.7.91",
-    "typescript": "^6.0.2",
-    "wxt": "^0.20.20"
+    "typescript": "^6.0.3",
+    "wxt": "^0.20.25"
   }
 }
