@@ -34,6 +34,7 @@ Read it first when deciding which pages to inspect.
 - [hexo-renderer-asciidoc Package Metadata](./sources/2026-04-21-hexo-renderer-asciidoc-package-json.md) | Representative publishable Node.js package metadata. |
 - [steam-account-history-to-csv Package Metadata](./sources/2026-04-21-steam-account-history-to-csv-package-json.md) | Public-path browser-extension project that is still private. |
 - [Workflow Release Requirements Interview](./sources/2026-04-21-workflow-release-requirements-interview.md) | Requirement-phase clarifications from the workflow release discussion. |
+- [GitHub Packages Supported Registries](./sources/2026-04-22-github-packages-supported-registries.md) | Official GitHub capability boundary for npm, RubyGems, and NuGet, and the lack of a PyPI registry. |
 
 ## Concepts
 

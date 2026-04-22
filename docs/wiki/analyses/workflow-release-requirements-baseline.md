@@ -24,6 +24,8 @@ the waterfall process.
 - Every in-scope project must support both `buddy` and `official`.
 - Both profiles must be explicitly declared in the project-owned descriptor.
 - A declared profile may legally have zero publish targets.
+- For the mandatory GitHub Release target, `buddy` always means a pre-release and
+  `official` always means a release.
 
 ## Confirmed Artifact Rules
 
@@ -32,8 +34,11 @@ the waterfall process.
 - The same final target class may still require different packaging pipelines for
   different project kinds.
 - Packaging differences must not lead to divergent binary builds.
-- Binary production should be canonical and unified for the profile or declared
-  binary variant, then reused for target-specific packaging and publication.
+- For a declared binary variant, compilation must stay canonical and unified even
+  when that same build also emits target-ready packages or installers.
+- The business requirement is to avoid recompiling a different binary for the
+  same variant's different publication targets, not to force a separate build
+  stage and packaging stage.
 - Target-specific metadata or identity transforms are allowed when required by a
   target platform's constraints.
 
@@ -41,8 +46,8 @@ the waterfall process.
 
 Examples of acceptable behavior:
 
-- GitHub Release receives a raw binary plus an installer derived from that
-  binary.
+- A canonical build may emit a raw binary plus an installer for that same binary
+  variant in one pass.
 - NuGet.org receives a NuGet package.
 - Both outputs originate from the same underlying build result where that build
   is meant to represent the same shipped binary.
@@ -55,10 +60,12 @@ Examples of acceptable behavior:
 
 Examples of disallowed behavior:
 
-- rebuilding a supposedly identical binary separately for GitHub Release and
-  NuGet publication in ways that can drift;
+- recompiling a supposedly identical binary variant separately for GitHub
+  Release and registry publication in ways that can drift;
 - letting target-specific publication logic silently choose different binary
-  content for the same declared release variant.
+  content for the same declared release variant;
+- forcing a second compilation for a package or installer when that output could
+  have come from the same canonical build for the same variant.
 
 ## Confirmed Security Rule
 
@@ -94,6 +101,8 @@ Examples of disallowed behavior:
 - The first delivery scope does not require single-target retry.
 - Replay concerns should be handled primarily through detection-based skipping
   and idempotent retry behavior.
+- Replay handling should stay automatic; the workflow does not need extra manual
+  replay-choice controls.
 - The first delivery scope must support a dry-run or validation-only mode that
   performs input and descriptor validation without publishing to external
   targets.
@@ -101,8 +110,25 @@ Examples of disallowed behavior:
   in place when one or more targets have already succeeded.
 - The first delivery scope does not require automatic compensation or rollback
   for partial success; manual remediation is acceptable.
-- Lifecycle rules for cancellation, supersession, and tag-driven initiation
-  remain to be defined.
+- The first delivery scope has no exceptional cases that require automatic
+  rollback.
+- The first delivery scope must support manual operator cancellation.
+- A newer release request supersedes and cancels any older unfinished request in
+  the same project and the same profile.
+- `buddy` and `official` do not supersede each other across profiles.
+- When a release is cancelled, whether manually or by supersession, it must stop
+  the remaining unpublished targets while leaving already published results
+  visible for manual follow-up.
+- Superseded releases do not require a distinct business status; ordinary
+  cancelled status is sufficient.
+- `buddy` and `official` use the same visible handling rules for failure,
+  cancellation, and partial success.
+- Manual remediation does not require a separate workflow-level closure or gate;
+  any out-of-band follow-up is outside the workflow's scope.
+- The first delivery scope does not require automatic release triggering from a
+  Git tag.
+- Workflow release should create the required Git tags automatically for both
+  `buddy` and `official` rather than relying on manual tag operations.
 
 ## Confirmed Versioning and Immutability Rule
 
@@ -136,14 +162,40 @@ Examples of disallowed behavior:
   rather than treating "package registry" as one undifferentiated bucket.
 - The first delivery scope includes GitHub Release plus the NuGet, PyPI, npm,
   and RubyGems publication families.
-- For unofficial package publication, `buddy` should use GitHub Packages where
-  that ecosystem is supported there.
-- If GitHub Packages does not support a given ecosystem, `buddy` should fall
-  back to GitHub Release only for that ecosystem rather than selecting another
-  unofficial registry by default.
-- `official` does not use repo-wide default registry mapping; each project's
-  official targets must be explicitly declared in its own release descriptor.
-- The exact target-class list is still to be defined.
+- GitHub Release is mandatory for every in-scope project.
+- Package-registry publication remains descriptor-driven for both `buddy` and
+  `official`; there is no repo-wide default registry mapping.
+- The same project may declare multiple package-registry targets within the same
+  ecosystem and same profile.
+- GitHub Packages may be used as either a `buddy` target or an `official`
+  target when the ecosystem is supported there, but that platform capability
+  does not create a repo default.
+- Python is the known exception for GitHub Packages among the first-delivery
+  ecosystems: GitHub Packages is not available as a Python package target, so
+  Python `buddy` falls back to GitHub Release only, and Python `official`
+  package publication uses PyPI when declared.
+
+## Confirmed Acceptance Rule
+
+- The first delivery scope must be accepted against real projects rather than
+  against workflow skeletons alone.
+- Acceptance coverage must include at least these representative scenarios:
+    - a C# library project;
+    - a C# app published as a host-specific `dotnet publish` binary;
+    - a C# app published through an Inno Setup installer path;
+    - a Python package project;
+    - a Node package project;
+    - a Ruby package project.
+- Acceptance must cover both `buddy` and `official` overall, but not every
+  representative project is required to exercise both profiles if its own
+  descriptor does not declare both as active publication paths.
+- Acceptance must include real publication, not only dry-run or validation-only
+  execution.
+- Acceptance must include at least one real `official` publication.
+- Acceptance must prove one real `buddy` to `official` promotion on the same
+  commit.
+- Acceptance must also prove one real direct `official` publication without a
+  prior `buddy`.
 
 ## Design Implications
 
@@ -155,13 +207,12 @@ The future release descriptor needs to express, at minimum:
 - canonical binary-production variants;
 - target-specific packaging or transformation steps derived from those binaries;
 - project-kind-specific packaging paths even for the same target class;
-- target-specific metadata and identity transforms such as scoped package names;
-- credential or identity expectations where a target requires publication.
+- target-specific metadata and identity transforms such as scoped package names.
 
 ## What Changed in the Existing Analysis
 
 Compared with the earlier repo landscape analysis, the requirements baseline is
-now tighter in seven places:
+now tighter in ten places:
 
 1. OIDC is no longer just a preferred direction; it is the current hard
    requirement for all known in-scope targets.
@@ -180,20 +231,23 @@ now tighter in seven places:
 7. Version identity is commit-based, `official` is the freezing state, and the
    first delivery scope must cover multiple ecosystem-specific target classes
    rather than only one.
+8. GitHub Release is now mandatory for every in-scope project, with fixed
+   `buddy` = pre-release and `official` = release semantics.
+9. Package targets remain explicitly project-declared even when GitHub Packages
+   supports the ecosystem, and Python now has an explicit GitHub Release / PyPI
+   split because GitHub Packages is not a Python target.
+10. The first delivery scope now has concrete acceptance expectations around
+    real-project coverage, real publication, real `official`, promotion, and
+    direct-official validation.
 
-## Still Open for Later Requirement Work
+## Still Open for Design Work
 
 - the final descriptor filename and syntax;
 - the exact schema shape and reuse model;
-- acceptance criteria for the first workflow-release delivery scope;
-- the remaining lifecycle rules beyond initial manual triggering, whole-release
-  rerun, dry run, and partial-success preservation;
-- the exact per-ecosystem target mapping and capability matrix for the first
-  workflow-release delivery scope;
-- the remaining failure-handling details beyond preserving partial success and
-  allowing manual remediation.
+- the exact workflow YAML and job decomposition that implements these rules.
 
 ## Related Pages
 
 - [Workflow Release Requirements Interview](../sources/2026-04-21-workflow-release-requirements-interview.md)
+- [GitHub Packages Supported Registries](../sources/2026-04-22-github-packages-supported-registries.md)
 - [Repository Release Landscape](./repository-release-landscape.md)

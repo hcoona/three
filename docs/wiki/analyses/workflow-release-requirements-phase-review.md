@@ -64,6 +64,8 @@ items well:
     - Target-specific packaging may vary.
     - Binary production must remain canonical and unified to avoid inconsistent
       outputs.
+    - A single canonical build for one binary variant may emit both the binary
+      and its related package or installer outputs.
 5. **Security rule**
     - OIDC or trusted publishing is mandatory where supported.
     - There are currently no known in-scope targets that lack that support.
@@ -73,13 +75,27 @@ items well:
     - `official` self-approval is allowed only for `admin`, not for plain
       `maintain`.
 7. **Initial lifecycle rule**
-    - Phase 1 prioritizes manual `workflow_dispatch` initiation.
-    - Phase 1 requires whole-release rerun.
-    - Phase 1 requires dry-run validation mode.
-    - Phase 1 does not require single-target retry.
+    - The first delivery scope prioritizes manual `workflow_dispatch`
+      initiation.
+    - The first delivery scope requires whole-release rerun.
+    - The first delivery scope requires dry-run validation mode.
+    - The first delivery scope does not require single-target retry.
 8. **Initial failure rule**
-    - Phase 1 may preserve partial success.
-    - Phase 1 allows manual remediation and does not mandate automatic rollback.
+    - The first delivery scope may preserve partial success.
+    - The first delivery scope allows manual remediation and does not mandate
+      automatic rollback.
+9. **Target-scope rule**
+    - GitHub Release is mandatory for every in-scope project.
+    - Package targets remain explicitly project-declared; there is no repo-wide
+      default registry mapping.
+    - GitHub Release semantics are fixed as `buddy` = pre-release and
+      `official` = release.
+10. **Acceptance rule**
+    - The first delivery scope must be accepted against real projects.
+    - Acceptance must include real publication, including at least one real
+      `official` publication.
+    - Acceptance must prove both `buddy` to `official` promotion and direct
+      `official` publication.
 
 These are all proper requirements-phase outcomes because they define business
 constraints and decision rules rather than implementation mechanics.
@@ -113,52 +129,43 @@ space.
 
 ## What Needs To Be Added to the Requirements Phase
 
-Compared with a standard requirements checklist, our current baseline is still
-missing several business-level items.
+Compared with a standard requirements checklist, the remaining unresolved scope
+is now small and mostly design-facing.
 
 ### 1. Release trigger and lifecycle model
 
-We still need to define the remaining business scenarios, for example:
+Replay handling has now been narrowed to automatic skip detection plus
+idempotent retry, without extra operator-choice controls.
 
-- cancellation or supersession rules;
-- tag-driven initiation in a later phase;
-- whether replay detection is purely automatic or may need operator choices in
-  some cases.
+This is no longer a major requirements gap unless new lifecycle scenarios appear.
 
-This is still requirements work because it defines expected user-visible
-behavior.
+### 2. Supported target taxonomy for the first delivery scope
 
-### 2. Supported target taxonomy for milestone 1
+This is no longer an empty gap. The business side has now frozen that:
 
-We know targets are descriptor-driven, but we still need to define which target
-classes the first milestone must support as business scope, for example:
+- GitHub Release is mandatory for every in-scope project;
+- the first delivery scope must cover the GitHub Release, NuGet, PyPI, npm, and
+  RubyGems families;
+- package targets remain project-declared rather than repo-defaulted;
+- GitHub Packages support is only a capability boundary, not a default mapping;
+- Python is the known exception where GitHub Packages does not provide the
+  package target, so Python `buddy` falls back to GitHub Release and Python
+  `official` package publication uses PyPI when declared.
 
-- GitHub Release;
-- GitHub Packages NuGet;
-- NuGet.org;
-- PyPI or TestPyPI;
-- npm or other package registries.
-
-Without that list, milestone scope and acceptance remain ambiguous.
-What is already settled is that the first delivery scope must cover multiple
-target classes rather than shipping as a single-target-only solution.
-It is also settled that those target classes should be modeled by ecosystem
-family, and that even the same target family may involve different packaging
-paths or target-specific name transforms for different project kinds.
+This target-scope area is now effectively closed for requirements purposes.
 
 ### 3. Canonical binary-variant semantics
 
-We have already established that binaries must remain unified, but we still need
-to define what counts as a legitimate variant:
+This is now much narrower than before. We have already frozen that:
 
-- RID or host-target variants;
-- debug versus release exclusion;
-- installer derived from a binary versus a distinct shipped binary;
-- whether one profile may intentionally publish multiple canonical binary
-  variants.
+- binaries for the same declared variant must stay canonical and unified;
+- one canonical build may emit the binary and the related package or installer
+  outputs for that same variant;
+- the requirement is to forbid divergent recompilation per target, not to force
+  a separate build stage and packaging stage.
 
-This is requirement work because it constrains the allowed business meaning of a
-release.
+Any remaining variant-shape questions now belong primarily to descriptor and
+workflow design rather than to missing business intent.
 
 ### 4. Versioning and immutability rules
 
@@ -176,38 +183,37 @@ exceptional overwrite path before a version reaches `official`.
 
 ### 5. Failure, rollback, and partial-success expectations
 
-We still need explicit business decisions for:
+This area has also been narrowed substantially:
 
-- what happens if GitHub Release succeeds but registry publication fails;
-- whether `buddy` and `official` differ in their visible failure states;
-- whether there are any cases where automatic rollback is still required;
-- what operator obligations exist once a release is marked for manual
-  remediation.
+- there are no exceptional cases in the first delivery scope that require
+  automatic rollback;
+- post-run manual remediation does not introduce an extra workflow-level closure
+  or visibility mechanism.
 
-This is a requirement gap today.
+This is no longer a major requirements gap unless compliance needs change later.
 
-### 6. Auditability and observability expectations
+### 6. Auditability expectations
 
-We have not yet frozen what must be observable or traceable, such as:
+This has now been narrowed substantially:
 
-- which inputs produced a given release;
-- which binary variant and packaging transforms were used;
-- which identity published to each target;
-- what audit trail must exist for approvals and final publication.
+- GitHub-native workflow history, approvals, and run records are considered
+  sufficient for the current requirements baseline.
+- The initiative does not currently require an extra repo-owned release-record
+  artifact.
 
-This belongs in requirements because it expresses compliance and operational
-needs.
+This is no longer a major requirement gap unless compliance needs change later.
 
-### 7. Acceptance criteria for the first milestone
+### 7. Acceptance criteria for the first delivery scope
 
-This remains the clearest explicit gap. We still need measurable answers to
-questions like:
+This is no longer a blank gap. The business side has now frozen that acceptance
+must:
 
-- what subset of target types must work in phase 1;
-- what subset of project kinds must work in phase 1;
-- what evidence proves the descriptor-driven model is acceptable;
-- what constitutes sign-off for the end of requirements and for the first
-  implementation increment.
+- use real projects instead of only synthetic workflow tests;
+- cover a C# library, both C# app packaging paths, Python, Node, and Ruby;
+- include real publication rather than only dry-run validation;
+- include at least one real `official` publication;
+- prove both same-commit `buddy` to `official` promotion and direct
+  `official` publication.
 
 ## Summary Judgment
 
@@ -218,15 +224,27 @@ questions like:
 - explicit `buddy` and `official` profiles;
 - target-specific packaging with unified binary production;
 - project-kind-specific packaging variation even within one target family;
+- canonical-build semantics that allow one build to emit both binary and
+  packaging outputs for the same variant;
 - OIDC-only publication posture for currently known targets;
 - role-based approval and initiation rules;
 - first-delivery-scope manual triggering priority;
+- workflow-managed Git tag creation for both `buddy` and `official`;
 - whole-release rerun plus dry run, without mandatory single-target retry;
 - partial-success preservation with manual remediation instead of mandatory
   rollback;
+- manual operator cancellation and same-project same-profile supersession;
+- shared visible handling rules across `buddy` and `official` for failure,
+  cancellation, and partial success;
 - commit-centric version identity and `official` freeze semantics;
 - multi-target-class scope from the start;
-- ecosystem-specific target families instead of a generic registry bucket.
+- ecosystem-specific target families instead of a generic registry bucket;
+- mandatory GitHub Release for every project, with fixed `buddy` / `official`
+  release semantics;
+- project-declared registry targets with no repo-wide default mapping;
+- acceptance based on real projects and real publication rather than on dry-run
+  evidence alone;
+- GitHub-native audit history as the current sufficient audit baseline.
 
 ### Should be deferred to design phase
 
@@ -237,15 +255,9 @@ questions like:
 
 ### Must be added before requirements sign-off
 
-- release trigger and lifecycle scenarios;
-- first-delivery-scope supported target taxonomy;
-- canonical binary-variant semantics;
-- per-target transformation and packaging constraints that still need explicit
-  cataloging;
-- remaining versioning and immutability rules;
-- remaining failure and rollback expectations;
-- auditability expectations;
-- acceptance criteria.
+No major unresolved requirement gaps remain at the moment. The remaining work is
+primarily design: descriptor syntax, schema shape, workflow structure, and the
+mechanics that realize the already-frozen business rules.
 
 ## Related Pages
 

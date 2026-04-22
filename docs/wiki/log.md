@@ -41,20 +41,21 @@ This file is the append-only chronological record of wiki activity.
 - Recorded the role-based approval model for `buddy` and `official`.
 - Captured the self-approval exception for `admin` on `official`.
 - Updated the requirements baseline to prioritize manual `workflow_dispatch`
-  initiation for phase 1.
+  initiation for the first delivery scope.
 
 ## [2026-04-21] query | Freeze rerun and dry-run rules
 
-- Recorded whole-release rerun as a phase-1 business requirement.
-- Explicitly left single-target retry out of phase 1 and tied replay handling to
-  skip detection plus idempotent behavior.
-- Added dry-run or validation-only execution as a phase-1 requirement.
+- Recorded whole-release rerun as a first-delivery-scope business requirement.
+- Explicitly left single-target retry out of the first delivery scope and tied
+  replay handling to skip detection plus idempotent behavior.
+- Added dry-run or validation-only execution as a first-delivery-scope
+  requirement.
 
 ## [2026-04-21] query | Freeze partial-success handling
 
-- Allowed phase-1 releases to preserve partial success instead of forcing
-  transactional rollback.
-- Recorded manual remediation as acceptable for the first milestone.
+- Allowed first-delivery-scope releases to preserve partial success instead of
+  forcing transactional rollback.
+- Recorded manual remediation as acceptable for the first delivery scope.
 - Narrowed the remaining failure-policy gaps to cancellation, supersession, and
   any exceptional rollback cases.
 
@@ -75,3 +76,26 @@ This file is the append-only chronological record of wiki activity.
   packaging paths for different project kinds.
 - Added target-specific transformation examples such as GitHub Packages scope
   changes versus npmjs canonical package names.
+
+## [2026-04-22] query | Freeze target semantics and acceptance baseline
+
+- Recorded GitHub Release as mandatory for every in-scope project, with fixed
+  `buddy` = pre-release and `official` = release semantics.
+- Clarified that package targets remain project-declared even when GitHub
+  Packages supports the ecosystem, and captured the Python exception because
+  GitHub Packages does not expose a PyPI registry.
+- Tightened canonical-build semantics so one build may emit binary and
+  package/installer outputs for the same variant without target-by-target
+  recompilation.
+- Added real-project acceptance requirements, including real `official`,
+  promotion, and direct-`official` proof.
+- Added lifecycle rules for manual cancellation, same-project same-profile
+  supersession, and shared visible handling across `buddy` and `official`.
+- Excluded extra manual-remediation closure mechanics from workflow scope and
+  kept release initiation manual while assigning Git tag creation to the
+  workflow itself.
+- Froze replay handling as automatic-only and confirmed there are no exceptional
+  first-delivery cases that require automatic rollback.
+- Froze the descriptor business-field set and confirmed that the first delivery
+  scope will not add target families beyond GitHub Release, NuGet, PyPI, npm,
+  and RubyGems.

@@ -17,35 +17,39 @@ supporting assets in `../raw/`.
   expectations, and the current OIDC-only publication posture.
 - A dedicated review now distinguishes requirement-phase scope from design-phase
   concerns and lists the remaining requirement gaps.
-- The baseline now also records role-based approval rules and phase-1 manual
-  initiation.
+- The baseline now also records role-based approval rules and first-delivery
+  manual initiation.
 - The lifecycle baseline now includes whole-release rerun and dry-run support,
-  while leaving single-target retry out of phase 1.
+  while leaving single-target retry out of the first delivery scope.
 - The failure baseline now allows partial success to remain visible and be
-  repaired manually in phase 1.
+  repaired manually in the first delivery scope.
 - The versioning baseline now treats commit identity as the primary version
   source, treats `official` as the freezing state, and requires multiple target
   classes in the first delivery scope.
 - The target baseline now recognizes ecosystem-specific target families and
   project-kind-specific packaging differences even when the final target type is
   the same.
-- The structure is ready for follow-up work on release metadata and workflows.
+- The target baseline now also requires GitHub Release for every in-scope
+  project, keeps package targets project-declared, and fixes `buddy` as
+  pre-release plus `official` as release for GitHub Release.
+- The artifact baseline now allows one canonical build to emit both the binary
+  and related packages or installers for the same binary variant, as long as it
+  does not recompile divergent binaries per target.
+- The acceptance baseline now requires real-project, real-publication proof
+  across the representative library, app, Python, Node, and Ruby scenarios.
+- GitHub-native workflow and approval history is currently considered
+  sufficient audit evidence; no extra repo-owned release-record artifact is
+  required.
+- The structure is ready for follow-up work on the remaining lifecycle rules and
+  then workflow design.
 
 ## Open Questions
 
 - Which file should become the source of truth for per-project release targets?
 - Which private projects deserve recurring buddy or official releases?
 - Which metadata-private projects under `src/public/` should stay private?
-- What approval and acceptance rules should gate the first workflow-release
-  milestone?
-- Which trigger, rollback, and audit requirements should be frozen before design
-  starts?
-- Which partial-failure, cancellation, and supersession lifecycle rules belong
-  in phase 1?
-- Do `buddy` and `official` need different visible failure-state rules?
-- Which exact target classes belong in the first delivery scope?
-- Which exact per-ecosystem target mappings and capability assumptions should be
-  frozen next?
+- Which design should express the already-frozen descriptor business fields,
+  target declarations, and canonical-build rules?
 
 ## Related Pages
 
