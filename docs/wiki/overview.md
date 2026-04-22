@@ -26,6 +26,9 @@ supporting assets in `../raw/`.
 - The versioning baseline now treats commit identity as the primary version
   source, treats `official` as the freezing state, and requires multiple target
   classes in the first delivery scope.
+- The target baseline now recognizes ecosystem-specific target families and
+  project-kind-specific packaging differences even when the final target type is
+  the same.
 - The structure is ready for follow-up work on release metadata and workflows.
 
 ## Open Questions
@@ -41,6 +44,8 @@ supporting assets in `../raw/`.
   in phase 1?
 - Do `buddy` and `official` need different visible failure-state rules?
 - Which exact target classes belong in the first delivery scope?
+- Which exact per-ecosystem target mappings and capability assumptions should be
+  frozen next?
 
 ## Related Pages
 

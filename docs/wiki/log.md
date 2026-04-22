@@ -66,3 +66,12 @@ This file is the append-only chronological record of wiki activity.
   constraints authoritative.
 - Recorded that the first delivery scope must cover multiple target classes from
   the start.
+
+## [2026-04-21] query | Freeze target-family and transform rules
+
+- Distinguished ecosystem-specific target families instead of using the generic
+  term package registry.
+- Recorded that the same final target family may still require different
+  packaging paths for different project kinds.
+- Added target-specific transformation examples such as GitHub Packages scope
+  changes versus npmjs canonical package names.

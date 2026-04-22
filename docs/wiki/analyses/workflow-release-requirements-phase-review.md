@@ -142,6 +142,9 @@ classes the first milestone must support as business scope, for example:
 Without that list, milestone scope and acceptance remain ambiguous.
 What is already settled is that the first delivery scope must cover multiple
 target classes rather than shipping as a single-target-only solution.
+It is also settled that those target classes should be modeled by ecosystem
+family, and that even the same target family may involve different packaging
+paths or target-specific name transforms for different project kinds.
 
 ### 3. Canonical binary-variant semantics
 
@@ -214,6 +217,7 @@ questions like:
 - descriptor-gated participation;
 - explicit `buddy` and `official` profiles;
 - target-specific packaging with unified binary production;
+- project-kind-specific packaging variation even within one target family;
 - OIDC-only publication posture for currently known targets;
 - role-based approval and initiation rules;
 - first-delivery-scope manual triggering priority;
@@ -221,7 +225,8 @@ questions like:
 - partial-success preservation with manual remediation instead of mandatory
   rollback;
 - commit-centric version identity and `official` freeze semantics;
-- multi-target-class scope from the start.
+- multi-target-class scope from the start;
+- ecosystem-specific target families instead of a generic registry bucket.
 
 ### Should be deferred to design phase
 
@@ -235,6 +240,8 @@ questions like:
 - release trigger and lifecycle scenarios;
 - first-delivery-scope supported target taxonomy;
 - canonical binary-variant semantics;
+- per-target transformation and packaging constraints that still need explicit
+  cataloging;
 - remaining versioning and immutability rules;
 - remaining failure and rollback expectations;
 - auditability expectations;

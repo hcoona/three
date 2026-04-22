@@ -29,9 +29,13 @@ the waterfall process.
 
 - A single profile may publish to multiple targets.
 - Different targets may use different packaging forms.
+- The same final target class may still require different packaging pipelines for
+  different project kinds.
 - Packaging differences must not lead to divergent binary builds.
 - Binary production should be canonical and unified for the profile or declared
   binary variant, then reused for target-specific packaging and publication.
+- Target-specific metadata or identity transforms are allowed when required by a
+  target platform's constraints.
 
 ### Practical Meaning
 
@@ -42,6 +46,12 @@ Examples of acceptable behavior:
 - NuGet.org receives a NuGet package.
 - Both outputs originate from the same underlying build result where that build
   is meant to represent the same shipped binary.
+- A library project may publish both its original package assets and a NuGet
+  package to GitHub Release.
+- An app project may publish either an Inno Setup installer or a host-specific
+  `dotnet publish` binary, depending on the project's declared packaging path.
+- A Node package may add a scope when targeting GitHub Packages while preserving
+  its established community package name when targeting npmjs.
 
 Examples of disallowed behavior:
 
@@ -122,6 +132,17 @@ Examples of disallowed behavior:
 - The first delivery scope must cover multiple target classes from the start.
 - The first delivery scope is not allowed to ship with support for only one
   target class.
+- The target model must distinguish ecosystem-specific publication families
+  rather than treating "package registry" as one undifferentiated bucket.
+- The first delivery scope includes GitHub Release plus the NuGet, PyPI, npm,
+  and RubyGems publication families.
+- For unofficial package publication, `buddy` should use GitHub Packages where
+  that ecosystem is supported there.
+- If GitHub Packages does not support a given ecosystem, `buddy` should fall
+  back to GitHub Release only for that ecosystem rather than selecting another
+  unofficial registry by default.
+- `official` does not use repo-wide default registry mapping; each project's
+  official targets must be explicitly declared in its own release descriptor.
 - The exact target-class list is still to be defined.
 
 ## Design Implications
@@ -133,6 +154,8 @@ The future release descriptor needs to express, at minimum:
 - publish targets per profile;
 - canonical binary-production variants;
 - target-specific packaging or transformation steps derived from those binaries;
+- project-kind-specific packaging paths even for the same target class;
+- target-specific metadata and identity transforms such as scoped package names;
 - credential or identity expectations where a target requires publication.
 
 ## What Changed in the Existing Analysis
@@ -142,8 +165,9 @@ now tighter in seven places:
 
 1. OIDC is no longer just a preferred direction; it is the current hard
    requirement for all known in-scope targets.
-2. Target-specific packaging flexibility is allowed, but binary generation must
-   remain unified to avoid inconsistent outputs.
+2. Target-specific packaging flexibility is allowed, including project-kind-
+   specific pipelines and target-specific identity transforms, but binary
+   generation must remain unified to avoid inconsistent outputs.
 3. Approval authority is now role-based: `buddy` is `write+` without extra
    approval, while `official` is `maintain+` plus an approval gate.
 4. The first delivery scope now prioritizes manual `workflow_dispatch`
@@ -154,7 +178,8 @@ now tighter in seven places:
 6. The first delivery scope may preserve partial success and rely on manual
    remediation instead of mandatory automatic rollback.
 7. Version identity is commit-based, `official` is the freezing state, and the
-   first delivery scope must cover multiple target classes rather than only one.
+   first delivery scope must cover multiple ecosystem-specific target classes
+   rather than only one.
 
 ## Still Open for Later Requirement Work
 
@@ -163,8 +188,8 @@ now tighter in seven places:
 - acceptance criteria for the first workflow-release delivery scope;
 - the remaining lifecycle rules beyond initial manual triggering, whole-release
   rerun, dry run, and partial-success preservation;
-- the exact supported target-class list for the first workflow-release delivery
-  scope;
+- the exact per-ecosystem target mapping and capability matrix for the first
+  workflow-release delivery scope;
 - the remaining failure-handling details beyond preserving partial success and
   allowing manual remediation.
 

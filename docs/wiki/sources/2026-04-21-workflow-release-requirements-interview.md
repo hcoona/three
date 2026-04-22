@@ -45,6 +45,20 @@ waterfall-model requirements phase for repository-wide workflow release support.
   the same commit is allowed.
 - The first delivery scope must support multiple target classes rather than only
   one.
+- The first delivery scope treats GitHub Release, NuGet, PyPI, npm, and
+  RubyGems as explicit target families rather than one generic package-registry
+  bucket.
+- Even when the final target is the same, different project kinds may require
+  different packaging paths.
+- For GitHub Release, a library may need original package assets plus a NuGet
+  package, while an app may need an Inno Setup installer or a host-specific
+  published binary.
+- Target-specific transforms are allowed, such as adding a scope for GitHub
+  Packages while preserving the established package name for npmjs.
+- For `buddy`, unofficial package publication depends on whether GitHub Packages
+  supports the ecosystem; otherwise the fallback is GitHub Release only.
+- For `official`, formal targets are not repo-defaulted and must be declared by
+  each project.
 
 ## Important Claims
 
@@ -62,6 +76,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 - The first milestone should optimize for traceable, replayable, manually
   recoverable releases rather than transactional rollback across all targets.
 - Version identity should be commit-centric rather than profile-centric.
+- The business meaning of a target includes both its ecosystem family and any
+  target-specific transformation constraints.
 
 ## Related Pages
 
@@ -74,8 +90,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
   starts?
 - Which cancellation and supersession rules belong in the first accepted
   milestone?
-- Which target classes must be included in the first workflow-release delivery
-  scope?
+- Which exact per-ecosystem target mappings and capability assumptions must be
+  frozen for the first workflow-release delivery scope?
 
 ## Source Location
 
