@@ -35,3 +35,10 @@ This file is the append-only chronological record of wiki activity.
   requirements.
 - Added a gap review listing the missing requirement items that should be
   settled before requirements sign-off.
+
+## [2026-04-21] query | Freeze approval and initiation rules
+
+- Recorded the role-based approval model for `buddy` and `official`.
+- Captured the self-approval exception for `admin` on `official`.
+- Updated the requirements baseline to prioritize manual `workflow_dispatch`
+  initiation for phase 1.

@@ -17,6 +17,8 @@ supporting assets in `../raw/`.
   expectations, and the current OIDC-only publication posture.
 - A dedicated review now distinguishes requirement-phase scope from design-phase
   concerns and lists the remaining requirement gaps.
+- The baseline now also records role-based approval rules and phase-1 manual
+  initiation.
 - The structure is ready for follow-up work on release metadata and workflows.
 
 ## Open Questions
@@ -28,6 +30,7 @@ supporting assets in `../raw/`.
   milestone?
 - Which trigger, rollback, and audit requirements should be frozen before design
   starts?
+- Which lifecycle rules beyond initial manual triggering belong in phase 1?
 
 ## Related Pages
 

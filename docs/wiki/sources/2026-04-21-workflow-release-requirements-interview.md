@@ -17,6 +17,12 @@ waterfall-model requirements phase for repository-wide workflow release support.
   binary should remain unified to avoid inconsistencies.
 - OIDC or trusted publishing is a hard requirement wherever supported, and
   there are currently no known target platforms that lack OIDC support.
+- `buddy` is a day-to-day delivery action triggered by `write+` without extra
+  approval.
+- `official` is a `maintain+` action that requires an additional approval; any
+  `maintain+` user may approve it, but self-approval is only allowed for
+  `admin`.
+- Phase 1 should prioritize manual `workflow_dispatch` initiation.
 
 ## Important Claims
 
@@ -26,6 +32,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
   than by rebuilding divergent binaries per target.
 - The current requirements baseline does not assume any known secret-based
   exceptions for registry publishing.
+- Release authority should be expressed in repository-role terms rather than in
+  a bespoke actor model.
 
 ## Related Pages
 
@@ -36,8 +44,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 
 - What business fields must the release descriptor carry before schema design
   starts?
-- Which approval, trigger, and rollback rules belong in the first accepted
-  milestone?
+- Which retry, rollback, dry-run, and partial-failure rules belong in the first
+  accepted milestone?
 
 ## Source Location
 

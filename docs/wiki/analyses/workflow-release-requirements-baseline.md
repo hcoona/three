@@ -59,6 +59,26 @@ Examples of disallowed behavior:
 - At the moment, there are no known target platforms in scope that lack OIDC or
   trusted publishing support.
 
+## Confirmed Approval Rule
+
+- `buddy` is treated as a day-to-day delivery action.
+- `buddy` may be triggered by repository users with `write` permission or higher.
+- `buddy` does not require additional approval.
+- `official` is treated as a repository-maintenance action.
+- `official` may be triggered by repository users with `maintain` permission or
+  higher.
+- `official` requires an additional approval before publication.
+- Any repository user with `maintain` permission or higher may approve an
+  `official` release.
+- If the initiator is `admin`, self-approval is allowed.
+- If the initiator is `maintain` but not `admin`, self-approval is not allowed.
+
+## Confirmed Lifecycle Rule
+
+- Phase 1 should prioritize manual `workflow_dispatch` initiation.
+- Other lifecycle scenarios such as retry, rerun, dry run, cancellation, or
+  tag-driven initiation remain to be defined.
+
 ## Design Implications
 
 The future release descriptor needs to express, at minimum:
@@ -73,19 +93,22 @@ The future release descriptor needs to express, at minimum:
 ## What Changed in the Existing Analysis
 
 Compared with the earlier repo landscape analysis, the requirements baseline is
-now tighter in two places:
+now tighter in four places:
 
 1. OIDC is no longer just a preferred direction; it is the current hard
    requirement for all known in-scope targets.
 2. Target-specific packaging flexibility is allowed, but binary generation must
    remain unified to avoid inconsistent outputs.
+3. Approval authority is now role-based: `buddy` is `write+` without extra
+   approval, while `official` is `maintain+` plus an approval gate.
+4. Phase 1 now prioritizes manual `workflow_dispatch` initiation.
 
 ## Still Open for Later Requirement Work
 
 - the final descriptor filename and syntax;
 - the exact schema shape and reuse model;
-- approval gates and who can trigger which profile;
 - acceptance criteria for the first workflow-release milestone;
+- the detailed lifecycle rules beyond initial manual triggering;
 - failure-handling and rollback expectations.
 
 ## Related Pages

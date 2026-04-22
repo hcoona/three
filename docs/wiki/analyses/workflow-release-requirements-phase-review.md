@@ -67,6 +67,13 @@ items well:
 5. **Security rule**
     - OIDC or trusted publishing is mandatory where supported.
     - There are currently no known in-scope targets that lack that support.
+6. **Approval rule**
+    - `buddy` is `write+` without extra approval.
+    - `official` is `maintain+` with a second approval step.
+    - `official` self-approval is allowed only for `admin`, not for plain
+      `maintain`.
+7. **Initial lifecycle rule**
+    - Phase 1 prioritizes manual `workflow_dispatch` initiation.
 
 These are all proper requirements-phase outcomes because they define business
 constraints and decision rules rather than implementation mechanics.
@@ -103,23 +110,10 @@ space.
 Compared with a standard requirements checklist, our current baseline is still
 missing several business-level items.
 
-### 1. Stakeholders and approval model
-
-We still need to define:
-
-- who is allowed to trigger `buddy`;
-- who is allowed to trigger `official`;
-- whether project owners, repo maintainers, or a release manager must approve;
-- whether public and private projects follow the same approval model.
-
-This belongs in requirements because it defines authority and control, not
-implementation.
-
-### 2. Release trigger and lifecycle model
+### 1. Release trigger and lifecycle model
 
 We still need to define the required business scenarios, for example:
 
-- manual release versus tag-driven release;
 - rerun of a failed release;
 - retry of only one target;
 - dry run or validation-only execution;
@@ -128,7 +122,7 @@ We still need to define the required business scenarios, for example:
 This is still requirements work because it defines expected user-visible
 behavior.
 
-### 3. Supported target taxonomy for milestone 1
+### 2. Supported target taxonomy for milestone 1
 
 We know targets are descriptor-driven, but we still need to define which target
 classes the first milestone must support as business scope, for example:
@@ -141,7 +135,7 @@ classes the first milestone must support as business scope, for example:
 
 Without that list, milestone scope and acceptance remain ambiguous.
 
-### 4. Canonical binary-variant semantics
+### 3. Canonical binary-variant semantics
 
 We have already established that binaries must remain unified, but we still need
 to define what counts as a legitimate variant:
@@ -155,7 +149,7 @@ to define what counts as a legitimate variant:
 This is requirement work because it constrains the allowed business meaning of a
 release.
 
-### 5. Versioning and immutability rules
+### 4. Versioning and immutability rules
 
 The release process needs business rules for:
 
@@ -166,7 +160,7 @@ The release process needs business rules for:
 
 These are release-policy requirements, not mere implementation details.
 
-### 6. Failure, rollback, and partial-success expectations
+### 5. Failure, rollback, and partial-success expectations
 
 We still need explicit business decisions for:
 
@@ -178,7 +172,7 @@ We still need explicit business decisions for:
 
 This is a requirement gap today.
 
-### 7. Auditability and observability expectations
+### 6. Auditability and observability expectations
 
 We have not yet frozen what must be observable or traceable, such as:
 
@@ -190,7 +184,7 @@ We have not yet frozen what must be observable or traceable, such as:
 This belongs in requirements because it expresses compliance and operational
 needs.
 
-### 8. Acceptance criteria for the first milestone
+### 7. Acceptance criteria for the first milestone
 
 This remains the clearest explicit gap. We still need measurable answers to
 questions like:
@@ -209,7 +203,9 @@ questions like:
 - descriptor-gated participation;
 - explicit `buddy` and `official` profiles;
 - target-specific packaging with unified binary production;
-- OIDC-only publication posture for currently known targets.
+- OIDC-only publication posture for currently known targets;
+- role-based approval and initiation rules;
+- phase-1 manual triggering priority.
 
 ### Should be deferred to design phase
 
@@ -220,7 +216,6 @@ questions like:
 
 ### Must be added before requirements sign-off
 
-- stakeholder and approval model;
 - release trigger and lifecycle scenarios;
 - milestone-1 supported target taxonomy;
 - canonical binary-variant semantics;
