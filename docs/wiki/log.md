@@ -42,3 +42,10 @@ This file is the append-only chronological record of wiki activity.
 - Captured the self-approval exception for `admin` on `official`.
 - Updated the requirements baseline to prioritize manual `workflow_dispatch`
   initiation for phase 1.
+
+## [2026-04-21] query | Freeze rerun and dry-run rules
+
+- Recorded whole-release rerun as a phase-1 business requirement.
+- Explicitly left single-target retry out of phase 1 and tied replay handling to
+  skip detection plus idempotent behavior.
+- Added dry-run or validation-only execution as a phase-1 requirement.

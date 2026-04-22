@@ -23,6 +23,10 @@ waterfall-model requirements phase for repository-wide workflow release support.
   `maintain+` user may approve it, but self-approval is only allowed for
   `admin`.
 - Phase 1 should prioritize manual `workflow_dispatch` initiation.
+- Phase 1 must support rerunning the full release against the same input.
+- Phase 1 does not require single-target retry; replay concerns should instead
+  be handled through detection-based skipping and idempotent retry behavior.
+- Phase 1 must support dry run or validation-only execution.
 
 ## Important Claims
 
@@ -34,6 +38,9 @@ waterfall-model requirements phase for repository-wide workflow release support.
   exceptions for registry publishing.
 - Release authority should be expressed in repository-role terms rather than in
   a bespoke actor model.
+- If whole-release rerun later turns out to be technically infeasible, that
+  downgrade requires a new user confirmation rather than an implementation-side
+  assumption.
 
 ## Related Pages
 
@@ -44,8 +51,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 
 - What business fields must the release descriptor carry before schema design
   starts?
-- Which retry, rollback, dry-run, and partial-failure rules belong in the first
-  accepted milestone?
+- Which rollback, partial-failure, cancellation, and supersession rules belong
+  in the first accepted milestone?
 
 ## Source Location
 

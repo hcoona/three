@@ -19,6 +19,8 @@ supporting assets in `../raw/`.
   concerns and lists the remaining requirement gaps.
 - The baseline now also records role-based approval rules and phase-1 manual
   initiation.
+- The lifecycle baseline now includes whole-release rerun and dry-run support,
+  while leaving single-target retry out of phase 1.
 - The structure is ready for follow-up work on release metadata and workflows.
 
 ## Open Questions
@@ -30,7 +32,8 @@ supporting assets in `../raw/`.
   milestone?
 - Which trigger, rollback, and audit requirements should be frozen before design
   starts?
-- Which lifecycle rules beyond initial manual triggering belong in phase 1?
+- Which partial-failure, cancellation, and supersession lifecycle rules belong
+  in phase 1?
 
 ## Related Pages
 

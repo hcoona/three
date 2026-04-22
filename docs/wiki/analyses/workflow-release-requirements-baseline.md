@@ -76,8 +76,16 @@ Examples of disallowed behavior:
 ## Confirmed Lifecycle Rule
 
 - Phase 1 should prioritize manual `workflow_dispatch` initiation.
-- Other lifecycle scenarios such as retry, rerun, dry run, cancellation, or
-  tag-driven initiation remain to be defined.
+- Phase 1 must support rerunning the entire release against the same input.
+- If whole-release rerun is later proven technically infeasible, that reduction
+  must be re-confirmed with the user instead of being assumed by the team.
+- Phase 1 does not require single-target retry.
+- Replay concerns should be handled primarily through detection-based skipping
+  and idempotent retry behavior.
+- Phase 1 must support a dry-run or validation-only mode that performs input and
+  descriptor validation without publishing to external targets.
+- Lifecycle rules for cancellation, supersession, and tag-driven initiation
+  remain to be defined.
 
 ## Design Implications
 
@@ -93,7 +101,7 @@ The future release descriptor needs to express, at minimum:
 ## What Changed in the Existing Analysis
 
 Compared with the earlier repo landscape analysis, the requirements baseline is
-now tighter in four places:
+now tighter in five places:
 
 1. OIDC is no longer just a preferred direction; it is the current hard
    requirement for all known in-scope targets.
@@ -102,13 +110,17 @@ now tighter in four places:
 3. Approval authority is now role-based: `buddy` is `write+` without extra
    approval, while `official` is `maintain+` plus an approval gate.
 4. Phase 1 now prioritizes manual `workflow_dispatch` initiation.
+5. Phase 1 must support whole-release rerun and dry run, while replay concerns
+   should be addressed with skip detection and idempotent behavior rather than
+   mandatory single-target retry.
 
 ## Still Open for Later Requirement Work
 
 - the final descriptor filename and syntax;
 - the exact schema shape and reuse model;
 - acceptance criteria for the first workflow-release milestone;
-- the detailed lifecycle rules beyond initial manual triggering;
+- the remaining lifecycle rules beyond initial manual triggering, whole-release
+  rerun, and dry run;
 - failure-handling and rollback expectations.
 
 ## Related Pages

@@ -74,6 +74,9 @@ items well:
       `maintain`.
 7. **Initial lifecycle rule**
     - Phase 1 prioritizes manual `workflow_dispatch` initiation.
+    - Phase 1 requires whole-release rerun.
+    - Phase 1 requires dry-run validation mode.
+    - Phase 1 does not require single-target retry.
 
 These are all proper requirements-phase outcomes because they define business
 constraints and decision rules rather than implementation mechanics.
@@ -112,12 +115,13 @@ missing several business-level items.
 
 ### 1. Release trigger and lifecycle model
 
-We still need to define the required business scenarios, for example:
+We still need to define the remaining business scenarios, for example:
 
-- rerun of a failed release;
-- retry of only one target;
-- dry run or validation-only execution;
-- cancellation or supersession rules.
+- cancellation or supersession rules;
+- tag-driven initiation in a later phase;
+- whether partial-success states can remain visible pending repair;
+- whether replay detection is purely automatic or may need operator choices in
+  some cases.
 
 This is still requirements work because it defines expected user-visible
 behavior.
@@ -205,7 +209,8 @@ questions like:
 - target-specific packaging with unified binary production;
 - OIDC-only publication posture for currently known targets;
 - role-based approval and initiation rules;
-- phase-1 manual triggering priority.
+- phase-1 manual triggering priority;
+- whole-release rerun plus dry run, without mandatory single-target retry.
 
 ### Should be deferred to design phase
 
