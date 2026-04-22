@@ -60,6 +60,8 @@ items well:
     - Every in-scope project supports both `buddy` and `official`.
     - Both profiles must be explicit.
     - A profile may legitimately have zero publish targets.
+    - If a profile has any non-GitHub-Release target, it must also include
+      GitHub Release in that same profile.
 4. **Artifact rule**
     - Target-specific packaging may vary.
     - Binary production must remain canonical and unified to avoid inconsistent
@@ -85,11 +87,14 @@ items well:
     - The first delivery scope allows manual remediation and does not mandate
       automatic rollback.
 9. **Target-scope rule**
-    - GitHub Release is mandatory for every in-scope project.
+    - GitHub Release is mandatory for any non-zero-target profile, while a
+      zero-target profile may omit it.
     - Package targets remain explicitly project-declared; there is no repo-wide
       default registry mapping.
     - GitHub Release semantics are fixed as `buddy` = pre-release and
       `official` = release.
+    - `buddy` and `official` must not share the same package registry under the
+      same published package name.
 10. **Acceptance rule**
     - The first delivery scope must be accepted against real projects.
     - Acceptance must include real publication, including at least one real
@@ -143,7 +148,8 @@ This is no longer a major requirements gap unless new lifecycle scenarios appear
 
 This is no longer an empty gap. The business side has now frozen that:
 
-- GitHub Release is mandatory for every in-scope project;
+- GitHub Release is mandatory for any non-zero-target profile, while a
+  zero-target profile may omit it;
 - the first delivery scope must cover the GitHub Release, NuGet, PyPI, npm, and
   RubyGems families;
 - package targets remain project-declared rather than repo-defaulted;
@@ -151,6 +157,8 @@ This is no longer an empty gap. The business side has now frozen that:
 - Python is the known exception where GitHub Packages does not provide the
   package target, so Python `buddy` falls back to GitHub Release and Python
   `official` package publication uses PyPI when declared.
+- immutable registries may not be shared across profiles under the same
+  published package name.
 
 This target-scope area is now effectively closed for requirements purposes.
 
@@ -239,9 +247,10 @@ must:
 - commit-centric version identity and `official` freeze semantics;
 - multi-target-class scope from the start;
 - ecosystem-specific target families instead of a generic registry bucket;
-- mandatory GitHub Release for every project, with fixed `buddy` / `official`
-  release semantics;
+- conditionally mandatory GitHub Release for every non-zero-target profile, with
+  fixed `buddy` / `official` release semantics;
 - project-declared registry targets with no repo-wide default mapping;
+- immutable registries excluded from same-name cross-profile promotion;
 - acceptance based on real projects and real publication rather than on dry-run
   evidence alone;
 - GitHub-native audit history as the current sufficient audit baseline.

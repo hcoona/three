@@ -79,11 +79,14 @@ This file is the append-only chronological record of wiki activity.
 
 ## [2026-04-22] query | Freeze target semantics and acceptance baseline
 
-- Recorded GitHub Release as mandatory for every in-scope project, with fixed
-  `buddy` = pre-release and `official` = release semantics.
+- Recorded GitHub Release as mandatory for any non-zero-target profile, while
+  leaving zero-target profiles legal, with fixed `buddy` = pre-release and
+  `official` = release semantics when GitHub Release is declared.
 - Clarified that package targets remain project-declared even when GitHub
   Packages supports the ecosystem, and captured the Python exception because
   GitHub Packages does not expose a PyPI registry.
+- Clarified that `buddy` and `official` may not share the same package registry
+  under the same published package name.
 - Tightened canonical-build semantics so one build may emit binary and
   package/installer outputs for the same variant without target-by-target
   recompilation.

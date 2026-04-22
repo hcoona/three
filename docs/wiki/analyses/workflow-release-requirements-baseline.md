@@ -24,7 +24,10 @@ the waterfall process.
 - Every in-scope project must support both `buddy` and `official`.
 - Both profiles must be explicitly declared in the project-owned descriptor.
 - A declared profile may legally have zero publish targets.
-- For the mandatory GitHub Release target, `buddy` always means a pre-release and
+- If a profile declares any target other than GitHub Release, that same profile
+  must also declare GitHub Release.
+- A zero-target profile may omit GitHub Release and remain valid.
+- When GitHub Release is declared, `buddy` always means a pre-release and
   `official` always means a release.
 
 ## Confirmed Artifact Rules
@@ -145,6 +148,10 @@ Examples of disallowed behavior:
   and the same version identity.
 - Promotion does not require reusing the exact same built artifact; rebuilding is
   allowed when `buddy` and `official` build configurations differ.
+- Package-registry promotion on the same registry and the same published package
+  name is prohibited.
+- `buddy` and `official` may share a registry only when the published package
+  names differ because the descriptor declares different target-side identities.
 - `official` does not require a prior `buddy`; it may also be published directly
   from the same commit.
 - `official` is the higher-status state for a version.
@@ -162,11 +169,14 @@ Examples of disallowed behavior:
   rather than treating "package registry" as one undifferentiated bucket.
 - The first delivery scope includes GitHub Release plus the NuGet, PyPI, npm,
   and RubyGems publication families.
-- GitHub Release is mandatory for every in-scope project.
+- GitHub Release is mandatory for any non-zero-target profile, but a zero-target
+  profile may omit it.
 - Package-registry publication remains descriptor-driven for both `buddy` and
   `official`; there is no repo-wide default registry mapping.
 - The same project may declare multiple package-registry targets within the same
   ecosystem and same profile.
+- `buddy` and `official` must not publish to the same package registry under the
+  same published package name.
 - GitHub Packages may be used as either a `buddy` target or an `official`
   target when the ecosystem is supported there, but that platform capability
   does not create a repo default.
@@ -194,6 +204,8 @@ Examples of disallowed behavior:
 - Acceptance must include at least one real `official` publication.
 - Acceptance must prove one real `buddy` to `official` promotion on the same
   commit.
+- Acceptance must respect immutable-registry constraints and must not rely on
+  publishing the same package name to the same registry from both profiles.
 - Acceptance must also prove one real direct `official` publication without a
   prior `buddy`.
 
@@ -231,11 +243,14 @@ now tighter in ten places:
 7. Version identity is commit-based, `official` is the freezing state, and the
    first delivery scope must cover multiple ecosystem-specific target classes
    rather than only one.
-8. GitHub Release is now mandatory for every in-scope project, with fixed
-   `buddy` = pre-release and `official` = release semantics.
+8. GitHub Release is now conditionally mandatory for every non-zero-target
+   profile, with fixed `buddy` = pre-release and `official` = release semantics
+   whenever it is declared.
 9. Package targets remain explicitly project-declared even when GitHub Packages
-   supports the ecosystem, and Python now has an explicit GitHub Release / PyPI
-   split because GitHub Packages is not a Python target.
+   supports the ecosystem, Python now has an explicit GitHub Release / PyPI
+   split because GitHub Packages is not a Python target, and immutable
+   registries may not be shared across profiles under the same published package
+   name.
 10. The first delivery scope now has concrete acceptance expectations around
     real-project coverage, real publication, real `official`, promotion, and
     direct-official validation.

@@ -13,6 +13,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
   release descriptor file.
 - Both `buddy` and `official` profiles must be explicitly declared.
 - A declared profile may legitimately have no publish targets.
+- If a profile declares any target other than GitHub Release, that same profile
+  must also declare GitHub Release.
 - Different targets may require different packaging forms, but the produced
   binary should remain unified to avoid inconsistencies.
 - OIDC or trusted publishing is a hard requirement wherever supported, and
@@ -62,6 +64,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 - `buddy` to `official` promotion is in scope and must stay on the same commit
   and version identity, but it may rebuild because `buddy` and `official`
   configurations can differ.
+- Package-registry promotion on the same registry and the same published package
+  name is prohibited.
 - `official` does not require a prior `buddy`; direct official publication from
   the same commit is allowed.
 - The first delivery scope must support multiple target classes rather than only
@@ -69,7 +73,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 - The first delivery scope treats GitHub Release, NuGet, PyPI, npm, and
   RubyGems as explicit target families rather than one generic package-registry
   bucket.
-- GitHub Release is mandatory for every in-scope project.
+- GitHub Release is mandatory for any non-zero-target profile, while a
+  zero-target profile may omit it.
 - For GitHub Release, `buddy` always means pre-release and `official` always
   means release.
 - Package-registry targets remain project-declared for both `buddy` and
@@ -77,6 +82,9 @@ waterfall-model requirements phase for repository-wide workflow release support.
   mapping.
 - A single project may publish to multiple package registries within the same
   ecosystem and the same profile.
+- `buddy` and `official` must not publish to the same package registry under the
+  same published package name, unless the descriptor intentionally gives them
+  different target-side package identities.
 - `official` may use GitHub Packages when the ecosystem is supported there.
 - Even when the final target is the same, different project kinds may require
   different packaging paths.
@@ -120,6 +128,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 - Version identity should be commit-centric rather than profile-centric.
 - The business meaning of a target includes both its ecosystem family and any
   target-specific transformation constraints.
+- Promotion is a workflow-level business rule, not permission to reuse the same
+  immutable registry and package name across profiles.
 - GitHub's native audit and workflow history are sufficient for the current
   requirements baseline; no separate release-record artifact is required.
 - Release triggering should stay manual even though the workflow itself owns Git

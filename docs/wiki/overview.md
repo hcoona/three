@@ -16,7 +16,7 @@ supporting assets in `../raw/`.
 - The requirements-phase baseline now records descriptor gating, unified binary
   expectations, and the current OIDC-only publication posture.
 - A dedicated review now distinguishes requirement-phase scope from design-phase
-  concerns and lists the remaining requirement gaps.
+  concerns and confirms that the remaining work is primarily design-oriented.
 - The baseline now also records role-based approval rules and first-delivery
   manual initiation.
 - The lifecycle baseline now includes whole-release rerun and dry-run support,
@@ -29,8 +29,9 @@ supporting assets in `../raw/`.
 - The target baseline now recognizes ecosystem-specific target families and
   project-kind-specific packaging differences even when the final target type is
   the same.
-- The target baseline now also requires GitHub Release for every in-scope
-  project, keeps package targets project-declared, and fixes `buddy` as
+- The target baseline now also requires GitHub Release for any non-zero-target
+  profile, keeps package targets project-declared, forbids same-name
+  cross-profile publication to the same package registry, and fixes `buddy` as
   pre-release plus `official` as release for GitHub Release.
 - The artifact baseline now allows one canonical build to emit both the binary
   and related packages or installers for the same binary variant, as long as it
@@ -40,8 +41,8 @@ supporting assets in `../raw/`.
 - GitHub-native workflow and approval history is currently considered
   sufficient audit evidence; no extra repo-owned release-record artifact is
   required.
-- The structure is ready for follow-up work on the remaining lifecycle rules and
-  then workflow design.
+- The structure is now ready for workflow design based on the frozen
+  requirements baseline.
 
 ## Open Questions
 
