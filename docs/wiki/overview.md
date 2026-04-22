@@ -13,6 +13,8 @@ supporting assets in `../raw/`.
 - The first release-focused source digests and analysis pages now exist.
 - The current repository has release policy fragments and package metadata, but
   not yet a complete workflow layer.
+- The requirements phase is signed off, and the wiki has now entered the design
+  phase for workflow-based release.
 - The requirements-phase baseline now records descriptor gating, unified binary
   expectations, and the current secretless publication posture.
 - A dedicated review now distinguishes requirement-phase scope from design-phase
@@ -54,15 +56,15 @@ supporting assets in `../raw/`.
 - GitHub-native workflow and approval history is currently considered
   sufficient audit evidence; no extra repo-owned release-record artifact is
   required.
-- The structure is now ready for workflow design based on the frozen
-  requirements baseline.
+- A first design-direction page now frames the top-level architecture choice
+  before descriptor syntax or workflow internals are designed.
 
 ## Open Questions
 
-- Which descriptor format and schema should carry the already-frozen project
-  scope, profile declarations, target declarations, and canonical-build rules?
-- Which workflow structure should best express the already-frozen release
-  policies, approval model, target constraints, and tagging behavior?
+- Should the system use a planner-centric architecture with thin workflow entry
+  points, or should the workflow YAML remain the primary orchestration layer?
+- Once that top-level direction is fixed, which descriptor format and schema
+  should carry the already-frozen business fields?
 
 ## Related Pages
 
@@ -71,3 +73,4 @@ supporting assets in `../raw/`.
 - [Repository Release Landscape](./analyses/repository-release-landscape.md)
 - [Workflow Release Requirements Baseline](./analyses/workflow-release-requirements-baseline.md)
 - [Workflow Release Requirements-Phase Review](./analyses/workflow-release-requirements-phase-review.md)
+- [Workflow Release Design Direction](./analyses/workflow-release-design-direction.md)

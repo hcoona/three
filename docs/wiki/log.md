@@ -126,3 +126,13 @@ This file is the append-only chronological record of wiki activity.
   cancellation, rerun, approval-boundary, and immutable-target replay evidence.
 - Froze that one workflow-dispatch run may target multiple projects, while
   `buddy` and `official` remain separate workflow entry points.
+
+## [2026-04-22] design | Enter workflow design phase
+
+- Marked the requirements phase as signed off and the initiative as formally
+  entering design.
+- Added a top-level design-direction page instead of jumping straight into
+  descriptor syntax or workflow internals.
+- Framed the first architecture-level discussion around whether the system
+  should be planner-centric or workflow-centric, with lower-level design
+  deliberately deferred until that direction is agreed.
