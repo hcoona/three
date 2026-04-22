@@ -16,7 +16,23 @@ Read it first when deciding which pages to inspect.
 
 ## Source Digests
 
-No source digests yet.
+- [README Monorepo Layout](./sources/2026-04-21-readme-monorepo-layout.md) | Root repo layout, workspace membership, and monorepo contract. |
+- [C# Packability Rules](./sources/2026-04-21-src-directory-build-props-packability.md) | Path-driven `IsPackable` policy for C# projects. |
+- [Root Python Workspace](./sources/2026-04-21-root-pyproject-python-workspace.md) | uv workspace membership and Python publishability signals. |
+- [Root pnpm Workspace](./sources/2026-04-21-root-package-json-pnpm-workspace.md) | Root JS workspace scripts and the lack of release orchestration. |
+- [mise Tooling Profile](./sources/2026-04-21-mise-tooling-profile.md) | Shared toolchain contract and current HK profile settings. |
+- [HK Hook Profiles](./sources/2026-04-21-hk-hook-profiles.md) | Current validation gate profile model. |
+- [Release Publish-Target Policy Script](./sources/2026-04-21-release-policy-publish-targets-script.md) | Existing buddy/official policy logic for non-C# languages. |
+- [RubyGems Trusted Publishing Script](./sources/2026-04-21-publish-rubygems-script.md) | Existing OIDC-oriented publish pattern. |
+- [ImageOcclusionEditor WinUI3 Project](./sources/2026-04-21-image-occlusion-editor-winui3-csproj.md) | Public WinUI app configured for self-contained RID publish. |
+- [ImageOcclusionEditor dotnet publish Script](./sources/2026-04-21-image-occlusion-editor-dotnet-publish-script.md) | Current explicit `dotnet publish` binary workflow. |
+- [ImageOcclusionEditor Inno Installer Script](./sources/2026-04-21-image-occlusion-editor-inno-installer-script.md) | Current second-stage Windows installer workflow. |
+- [PhiFailureDetector Console App](./sources/2026-04-21-phi-failure-detector-console-csproj.md) | Public app still using the Artifacts SDK pattern. |
+- [Hjg.Pngcs C# Package Metadata](./sources/2026-04-21-hjg-pngcs-csproj.md) | Representative public NuGet package metadata and compatibility signals. |
+- [nbgv-python Metadata](./sources/2026-04-21-nbgv-python-pyproject.md) | Representative public Python package metadata. |
+- [markdown-hybrid-search-mcp Metadata](./sources/2026-04-21-markdown-hybrid-search-mcp-pyproject.md) | Public-path Python app that is still metadata-private. |
+- [hexo-renderer-asciidoc Package Metadata](./sources/2026-04-21-hexo-renderer-asciidoc-package-json.md) | Representative publishable Node.js package metadata. |
+- [steam-account-history-to-csv Package Metadata](./sources/2026-04-21-steam-account-history-to-csv-package-json.md) | Public-path browser-extension project that is still private. |
 
 ## Concepts
 
@@ -28,4 +44,4 @@ No entity pages yet.
 
 ## Analyses
 
-No analysis pages yet.
+- [Repository Release Landscape](./analyses/repository-release-landscape.md) | Repo-wide release inventory, current implementation signals, and gaps to the desired buddy/official model. |

@@ -8,3 +8,12 @@ This file is the append-only chronological record of wiki activity.
 - Added the agent contract, wiki index, overview page, and category guides.
 - Reserved `docs/sources/` for immutable sources and `docs/raw/` for immutable
   supporting assets.
+
+## [2026-04-21] query | Audit repository release landscape
+
+- Surveyed the monorepo's C#, Python, and JS/TS projects for release intent and
+  publishability signals.
+- Added source digests for the root workspace manifests, release-policy
+  scripts, representative package manifests, and current C# app publish flows.
+- Wrote a repository-wide release analysis covering buddy and official profile
+  gaps, OIDC direction, and C# app migration targets.

@@ -10,16 +10,19 @@ supporting assets in `../raw/`.
 ## Current State
 
 - The wiki scaffold is in place.
-- No sources have been ingested yet.
-- The structure is ready for incremental updates and cross-linking.
+- The first release-focused source digests and analysis pages now exist.
+- The current repository has release policy fragments and package metadata, but
+  not yet a complete workflow layer.
+- The structure is ready for follow-up work on release metadata and workflows.
 
 ## Open Questions
 
-- What domain or project area will the first sources cover?
-- Which recurring concepts or entities will deserve durable pages first?
-- Which query outputs should become permanent analysis pages?
+- Which file should become the source of truth for per-project release targets?
+- Which private projects deserve recurring buddy or official releases?
+- Which metadata-private projects under `src/public/` should stay private?
 
 ## Related Pages
 
 - [Wiki Index](./index.md)
 - [Wiki Log](./log.md)
+- [Repository Release Landscape](./analyses/repository-release-landscape.md)
