@@ -70,7 +70,8 @@ items well:
       and its related package or installer outputs.
 5. **Security rule**
     - OIDC or trusted publishing is mandatory where supported.
-    - There are currently no known in-scope targets that lack that support.
+    - GitHub Packages is the known in-scope secretless exception path that uses
+      `GITHUB_TOKEN` rather than OIDC.
 6. **Approval rule**
     - `buddy` is `write+` without extra approval.
     - `official` is `maintain+` with a second approval step.
@@ -79,9 +80,17 @@ items well:
 7. **Initial lifecycle rule**
     - The first delivery scope prioritizes manual `workflow_dispatch`
       initiation.
+    - One workflow-dispatch run may target one or more projects selected by
+      input parameters.
+    - `buddy` and `official` are separate workflow entry points.
     - The first delivery scope requires whole-release rerun.
     - The first delivery scope requires dry-run validation mode.
     - The first delivery scope does not require single-target retry.
+    - The first delivery scope does not require a repo-defined supersession
+      model across release requests.
+    - If optional native duplicate-run cancellation is used, duplicate means the
+      same workflow entry point and the same commit, regardless of project
+      subset selection or other inputs.
 8. **Initial failure rule**
     - The first delivery scope may preserve partial success.
     - The first delivery scope allows manual remediation and does not mandate
@@ -140,7 +149,9 @@ is now small and mostly design-facing.
 ### 1. Release trigger and lifecycle model
 
 Replay handling has now been narrowed to automatic skip detection plus
-idempotent retry, without extra operator-choice controls.
+idempotent retry, without extra operator-choice controls. The release-request
+scope is also now frozen as multi-project workflow dispatch within one profile
+entry point at a time.
 
 This is no longer a major requirements gap unless new lifecycle scenarios appear.
 
@@ -154,6 +165,8 @@ This is no longer an empty gap. The business side has now frozen that:
   RubyGems families;
 - package targets remain project-declared rather than repo-defaulted;
 - GitHub Packages support is only a capability boundary, not a default mapping;
+- GitHub Packages publication is authenticated through `GITHUB_TOKEN` rather
+  than through OIDC trusted publishing;
 - Python is the known exception where GitHub Packages does not provide the
   package target, so Python `buddy` falls back to GitHub Release and Python
   `official` package publication uses PyPI when declared.
@@ -177,17 +190,17 @@ workflow design rather than to missing business intent.
 
 ### 4. Versioning and immutability rules
 
-The release process needs business rules for:
+This area is also largely closed at the requirements level. The business side
+has now frozen that:
 
-- whether both profiles publish the same version identity;
-- whether buddy may publish preview or prerelease versions only;
-- whether reruns must be idempotent;
-- whether published artifacts are immutable once visible externally.
+- version identity is commit-centric rather than profile-centric;
+- `official` is the higher-status freezing state;
+- `buddy FORCE` is an explicit but exceptional overwrite path before a version
+  reaches `official`;
+- same-registry same-name cross-profile package promotion is prohibited.
 
-These are release-policy requirements, not mere implementation details.
-Part of this is now settled: version identity is commit-centric, `official` is
-the higher-status freezing state, and `buddy FORCE` is an explicit but
-exceptional overwrite path before a version reaches `official`.
+Any remaining work here is primarily design: how to encode these already-frozen
+rules in the descriptor and workflow logic.
 
 ### 5. Failure, rollback, and partial-success expectations
 
@@ -221,7 +234,17 @@ must:
 - include real publication rather than only dry-run validation;
 - include at least one real `official` publication;
 - prove both same-commit `buddy` to `official` promotion and direct
-  `official` publication.
+  `official` publication;
+- explicitly prove multi-project `workflow_dispatch` scope;
+- explicitly prove dry-run or validation-only behavior;
+- explicitly prove whole-release rerun behavior against the same input,
+  including rerun after partial success on immutable targets;
+- explicitly prove manual cancellation behavior;
+- explicitly prove the approval boundary between `buddy` and `official`,
+  including `admin` self-approval and the prohibition on plain `maintain`
+  self-approval;
+- include at least one real GitHub Packages publication if that target is
+  declared by a representative first-delivery project.
 
 ## Summary Judgment
 
@@ -234,14 +257,17 @@ must:
 - project-kind-specific packaging variation even within one target family;
 - canonical-build semantics that allow one build to emit both binary and
   packaging outputs for the same variant;
-- OIDC-only publication posture for currently known targets;
+- secretless publication posture for currently known targets, including
+  `GITHUB_TOKEN` for GitHub Packages;
 - role-based approval and initiation rules;
 - first-delivery-scope manual triggering priority;
+- multi-project workflow-dispatch scope within one profile entry point;
 - workflow-managed Git tag creation for both `buddy` and `official`;
 - whole-release rerun plus dry run, without mandatory single-target retry;
 - partial-success preservation with manual remediation instead of mandatory
   rollback;
-- manual operator cancellation and same-project same-profile supersession;
+- manual operator cancellation, without a mandatory repo-defined supersession
+  model;
 - shared visible handling rules across `buddy` and `official` for failure,
   cancellation, and partial success;
 - commit-centric version identity and `official` freeze semantics;
@@ -253,6 +279,8 @@ must:
 - immutable registries excluded from same-name cross-profile promotion;
 - acceptance based on real projects and real publication rather than on dry-run
   evidence alone;
+- explicit acceptance proof for multi-project dispatch, dry-run, rerun,
+  cancellation, approval boundaries, and GitHub Packages when in scope;
 - GitHub-native audit history as the current sufficient audit baseline.
 
 ### Should be deferred to design phase

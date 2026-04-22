@@ -18,7 +18,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 - Different targets may require different packaging forms, but the produced
   binary should remain unified to avoid inconsistencies.
 - OIDC or trusted publishing is a hard requirement wherever supported, and
-  there are currently no known target platforms that lack OIDC support.
+  GitHub Packages is accepted as a secretless `GITHUB_TOKEN` path rather than
+  as an OIDC path.
 - `buddy` is a day-to-day delivery action triggered by `write+` without extra
   approval.
 - `official` is a `maintain+` action that requires an additional approval; any
@@ -26,8 +27,14 @@ waterfall-model requirements phase for repository-wide workflow release support.
   `admin`.
 - The first delivery scope should prioritize manual `workflow_dispatch`
   initiation.
+- One workflow-dispatch run may target one or more projects selected by input
+  parameters.
+- `buddy` and `official` are separate workflow entry points rather than a
+  runtime profile switch inside one entry.
 - The first delivery scope must support rerunning the full release against the
   same input.
+- For rerun purposes, "the same input" includes the same workflow entry point
+  and the same selected project scope.
 - The first delivery scope does not require single-target retry; replay concerns
   should instead be handled through detection-based skipping and idempotent
   retry behavior.
@@ -39,14 +46,19 @@ waterfall-model requirements phase for repository-wide workflow release support.
 - The first delivery scope has no exceptional cases that require automatic
   rollback.
 - The first delivery scope must support manual operator cancellation.
-- A newer release request supersedes and cancels any older unfinished request in
-  the same project and same profile.
-- `buddy` and `official` do not supersede each other across profiles.
-- When a release is cancelled, whether manually or by supersession, it should
-  stop the remaining unpublished targets while leaving already published results
-  visible for manual follow-up.
-- Superseded releases do not need a distinct business status; ordinary
-  cancelled status is sufficient.
+- The first delivery scope does not require a repo-defined supersession model
+  across release requests.
+- If GitHub Actions native concurrency controls conveniently support canceling
+  an older in-progress run for the same workflow entry point and the same
+  commit, the workflow may adopt that behavior.
+- For this optional native-cancellation rule, duplicate means the same workflow
+  entry point and the same commit, regardless of project subset selection or
+  other release inputs.
+- When a release is cancelled, whether manually or by native duplicate-run
+  cancellation, it should stop the remaining unpublished targets while leaving
+  already published results visible for manual follow-up.
+- If native duplicate-run cancellation is used, ordinary cancelled status is
+  sufficient; no distinct superseded status is required.
 - `buddy` and `official` use the same visible handling rules for failure,
   cancellation, and partial success.
 - Manual remediation does not require a separate workflow-level closure or gate;
@@ -104,11 +116,21 @@ waterfall-model requirements phase for repository-wide workflow release support.
   baseline.
 - The first delivery scope must be accepted with real projects, real
   publication, and overall coverage of both profiles.
+- Acceptance does not require every representative project to publish through
+  both profiles when one of its profiles intentionally has zero targets.
 - Acceptance must cover a C# library, a C# app `dotnet publish` path, a C# app
   Inno Setup path, a Python package, a Node package, and a Ruby package.
 - Acceptance must include at least one real `official` publication.
 - Acceptance must prove both a real same-commit `buddy` to `official`
   promotion and a real direct `official` publication.
+- Acceptance must also explicitly prove multi-project `workflow_dispatch`,
+  dry-run or validation-only behavior, whole-release rerun including rerun
+  after partial success on immutable targets, manual cancellation, and the
+  approval boundary between `buddy` and `official`, including `admin`
+  self-approval and the prohibition on plain `maintain` self-approval.
+- If a representative first-delivery project declares GitHub Packages as a
+  target, acceptance must include at least one real GitHub Packages
+  publication.
 
 ## Important Claims
 
@@ -118,6 +140,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
   variant, but they must not come from divergent recompilation per target.
 - The current requirements baseline does not assume any known secret-based
   exceptions for registry publishing.
+- GitHub Packages is the known in-scope non-OIDC path and is still accepted
+  because it publishes through the built-in `GITHUB_TOKEN`.
 - Release authority should be expressed in repository-role terms rather than in
   a bespoke actor model.
 - If whole-release rerun later turns out to be technically infeasible, that
@@ -125,6 +149,11 @@ waterfall-model requirements phase for repository-wide workflow release support.
   assumption.
 - The first delivery scope should optimize for traceable, replayable, manually
   recoverable releases rather than transactional rollback across all targets.
+- Duplicate-run cancellation is an optional use of GitHub Actions native
+  concurrency controls rather than a repo-defined business supersession model.
+- When that optional native cancellation is used, duplicate is defined only by
+  workflow entry point plus commit, not by selected project subset or other
+  release inputs.
 - Version identity should be commit-centric rather than profile-centric.
 - The business meaning of a target includes both its ecosystem family and any
   target-specific transformation constraints.

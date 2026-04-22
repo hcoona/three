@@ -19,11 +19,14 @@ The clearest current patterns are:
 
 This analysis assumes the intended future release shape is:
 
-- most public projects should be releasable;
-- some private projects also need release automation;
+- all public projects are in scope for descriptor-gated release automation;
+- the only currently in-scope private apps are
+  `src/private/app/qidian-novel-downloader/` and
+  `src/private/app/vscode-copilot-telegram-hook/`;
 - releases should support `buddy` and `official` profiles;
-- OIDC or other passwordless flows should be required wherever registries
-  support them; no unsupported target platform is currently known;
+- secretless publication should be required wherever the target platform
+  supports it, with GitHub Packages treated as a `GITHUB_TOKEN`-based non-OIDC
+  path;
 - C# apps should publish binaries through explicit `dotnet publish` steps rather
   than through the current Artifacts SDK pattern;
 - some C# apps also need a second-stage Inno Setup packaging step;
@@ -93,7 +96,7 @@ This analysis assumes the intended future release shape is:
 
 ## Important Tensions and Migration Targets
 
-### 1. Public path does not always mean publishable artifact
+### 1. Public path does not always map directly to publish target shape
 
 The repo currently mixes path-based intent and per-project metadata:
 
@@ -102,8 +105,9 @@ The repo currently mixes path-based intent and per-project metadata:
 - browser extension and MCP-server style apps blur the boundary between
   "public", "publishable package", and "public binary/tool".
 
-This means the eventual release system should store an explicit publishability
-matrix instead of guessing from the path alone.
+This means the eventual release system should store an explicit descriptor-owned
+target matrix instead of guessing target shape from the path alone. The current
+requirements baseline already freezes the in-scope set separately.
 
 ### 2. C# apps are split between the future model and the old model
 
@@ -117,7 +121,7 @@ matrix instead of guessing from the path alone.
 `Microsoft.Build.Artifacts`, which conflicts with the intended future direction.
 These projects are the obvious first migration candidates.
 
-### 3. OIDC should be the baseline release posture
+### 3. Secretless publication should be the baseline release posture
 
 The Ruby publishing script already documents the pattern the repo should prefer:
 
@@ -132,8 +136,10 @@ The same design should be replicated for:
 - PyPI or TestPyPI if Python packages are published there.
 
 Under the current requirements discussion, this is stronger than a preference:
-no known target platform currently lacks OIDC or trusted publishing support, so
-the baseline assumption should be passwordless publication.
+no known in-scope target currently requires repository-stored static publishing
+credentials, so the baseline assumption should be secretless publication.
+GitHub Packages is the known non-OIDC path and should be treated as a
+`GITHUB_TOKEN`-based secretless flow.
 
 ### 4. Packaging can diverge, but binaries should not
 
@@ -161,8 +167,9 @@ This implies the future release descriptor should distinguish:
 ## Practical Implications for Future Workflows
 
 1. **C# libraries**
-    - `buddy`: GitHub pre-release + GitHub Packages NuGet.
-    - `official`: GitHub release + NuGet.org.
+    - One plausible first representative path is GitHub Release plus a package
+      registry split across `buddy` and `official`, but the exact targets remain
+      project-declared rather than repo-defaulted.
     - Needed next: add C# branches to the publish-target policy script and define
       pack/push steps that use passwordless auth where supported.
 2. **C# apps**
@@ -176,21 +183,19 @@ This implies the future release descriptor should distinguish:
       model.
 3. **Python**
     - Start with `nbgv-python`.
-    - Decide whether buddy uses TestPyPI, GitHub Release only, or a GitHub-hosted
-      package story.
+    - Freeze Python `buddy` to GitHub Release only, because GitHub Packages does
+      not provide a Python package target and TestPyPI is not part of the current
+      baseline.
 4. **JS/TS**
     - Start with `hexo-renderer-asciidoc`.
-    - Treat WXT/browser-extension outputs separately from npm publication.
+    - Treat WXT/browser-extension outputs separately from npm publication, with
+      final targets still declared per project instead of inferred from this
+      example.
 
 ## Open Decisions
 
-- Which private apps deserve recurring binary releases?
-- Should public-path but metadata-private projects stay private, or should their
-  metadata be updated to match the directory contract?
 - What file should become the repo-wide source of truth for per-project release
   targets and profiles?
-- Should buddy releases for Python use TestPyPI, or skip registry publication
-  initially?
 
 ## Source Pages
 

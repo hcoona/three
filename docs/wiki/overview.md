@@ -14,15 +14,24 @@ supporting assets in `../raw/`.
 - The current repository has release policy fragments and package metadata, but
   not yet a complete workflow layer.
 - The requirements-phase baseline now records descriptor gating, unified binary
-  expectations, and the current OIDC-only publication posture.
+  expectations, and the current secretless publication posture.
 - A dedicated review now distinguishes requirement-phase scope from design-phase
   concerns and confirms that the remaining work is primarily design-oriented.
 - The baseline now also records role-based approval rules and first-delivery
   manual initiation.
 - The lifecycle baseline now includes whole-release rerun and dry-run support,
   while leaving single-target retry out of the first delivery scope.
+- The request-scope baseline now treats one `workflow_dispatch` run as targeting
+  one or more selected projects within a single profile-specific workflow
+  entry point.
 - The failure baseline now allows partial success to remain visible and be
   repaired manually in the first delivery scope.
+- The lifecycle baseline now treats duplicate-run cancellation as an optional
+  native GitHub Actions concurrency behavior rather than as a repo-defined
+  supersession rule.
+- When that optional native cancellation is used, duplicate is defined by the
+  same workflow entry point and the same commit, regardless of project subset
+  or other inputs.
 - The versioning baseline now treats commit identity as the primary version
   source, treats `official` as the freezing state, and requires multiple target
   classes in the first delivery scope.
@@ -38,6 +47,10 @@ supporting assets in `../raw/`.
   does not recompile divergent binaries per target.
 - The acceptance baseline now requires real-project, real-publication proof
   across the representative library, app, Python, Node, and Ruby scenarios.
+- The acceptance baseline now also requires explicit proof for multi-project
+  dispatch, dry-run, rerun including immutable-target partial-success replay,
+  cancellation, approval boundaries, and GitHub Packages publication when that
+  target is in scope.
 - GitHub-native workflow and approval history is currently considered
   sufficient audit evidence; no extra repo-owned release-record artifact is
   required.
@@ -46,11 +59,10 @@ supporting assets in `../raw/`.
 
 ## Open Questions
 
-- Which file should become the source of truth for per-project release targets?
-- Which private projects deserve recurring buddy or official releases?
-- Which metadata-private projects under `src/public/` should stay private?
-- Which design should express the already-frozen descriptor business fields,
-  target declarations, and canonical-build rules?
+- Which descriptor format and schema should carry the already-frozen project
+  scope, profile declarations, target declarations, and canonical-build rules?
+- Which workflow structure should best express the already-frozen release
+  policies, approval model, target constraints, and tagging behavior?
 
 ## Related Pages
 

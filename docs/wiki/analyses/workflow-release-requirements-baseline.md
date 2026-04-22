@@ -76,8 +76,11 @@ Examples of disallowed behavior:
   use a passwordless or secretless flow.
 - Static credentials are only acceptable when the target platform lacks that
   capability.
-- At the moment, there are no known target platforms in scope that lack OIDC or
-  trusted publishing support.
+- At the moment, there are no known in-scope targets that require repository-
+  stored static publishing credentials.
+- GitHub Packages is the known non-OIDC path in scope: workflow publication uses
+  the built-in `GITHUB_TOKEN`, which is still accepted as a secretless flow for
+  this requirements baseline.
 
 ## Confirmed Approval Rule
 
@@ -97,8 +100,14 @@ Examples of disallowed behavior:
 
 - The first delivery scope should prioritize manual `workflow_dispatch`
   initiation.
+- Each workflow-dispatch run may target one or more projects selected by input
+  parameters.
+- `buddy` and `official` are separate workflow entry points rather than a shared
+  profile selector inside one workflow entry.
 - The first delivery scope must support rerunning the entire release against the
   same input.
+- For rerun purposes, "the same input" means the same workflow entry point, the
+  same selected project scope, and the same release inputs.
 - If whole-release rerun is later proven technically infeasible, that reduction
   must be re-confirmed with the user instead of being assumed by the team.
 - The first delivery scope does not require single-target retry.
@@ -116,14 +125,19 @@ Examples of disallowed behavior:
 - The first delivery scope has no exceptional cases that require automatic
   rollback.
 - The first delivery scope must support manual operator cancellation.
-- A newer release request supersedes and cancels any older unfinished request in
-  the same project and the same profile.
-- `buddy` and `official` do not supersede each other across profiles.
-- When a release is cancelled, whether manually or by supersession, it must stop
-  the remaining unpublished targets while leaving already published results
-  visible for manual follow-up.
-- Superseded releases do not require a distinct business status; ordinary
-  cancelled status is sufficient.
+- The first delivery scope does not require a repo-defined supersession model
+  across release requests.
+- If GitHub Actions native concurrency controls conveniently support canceling
+  an older in-progress run for the same workflow entry point and the same
+  commit, the workflow may adopt that behavior.
+- For this optional native-cancellation rule, duplicate means the same workflow
+  entry point and the same commit, regardless of project subset selection or
+  other release inputs.
+- If native duplicate-run cancellation is used, ordinary cancelled status is
+  sufficient; no distinct superseded status is required.
+- When a release is cancelled, whether manually or by native duplicate-run
+  cancellation, it must stop the remaining unpublished targets while leaving
+  already published results visible for manual follow-up.
 - `buddy` and `official` use the same visible handling rules for failure,
   cancellation, and partial success.
 - Manual remediation does not require a separate workflow-level closure or gate;
@@ -197,8 +211,8 @@ Examples of disallowed behavior:
     - a Node package project;
     - a Ruby package project.
 - Acceptance must cover both `buddy` and `official` overall, but not every
-  representative project is required to exercise both profiles if its own
-  descriptor does not declare both as active publication paths.
+  representative project is required to publish through both profiles if one of
+  its profiles intentionally has zero targets.
 - Acceptance must include real publication, not only dry-run or validation-only
   execution.
 - Acceptance must include at least one real `official` publication.
@@ -208,6 +222,18 @@ Examples of disallowed behavior:
   publishing the same package name to the same registry from both profiles.
 - Acceptance must also prove one real direct `official` publication without a
   prior `buddy`.
+- Acceptance must explicitly prove multi-project `workflow_dispatch` scope in at
+  least one real run.
+- Acceptance must explicitly prove dry-run or validation-only behavior.
+- Acceptance must explicitly prove whole-release rerun behavior against the same
+  input, including rerun after partial success on immutable targets.
+- Acceptance must explicitly prove manual cancellation behavior.
+- Acceptance must explicitly prove the approval boundary between `buddy` and
+  `official`, including `admin` self-approval and the prohibition on plain
+  `maintain` self-approval.
+- If any representative project declares a GitHub Packages target in the first
+  delivery scope, acceptance must include at least one real GitHub Packages
+  publication.
 
 ## Design Implications
 
@@ -226,8 +252,9 @@ The future release descriptor needs to express, at minimum:
 Compared with the earlier repo landscape analysis, the requirements baseline is
 now tighter in ten places:
 
-1. OIDC is no longer just a preferred direction; it is the current hard
-   requirement for all known in-scope targets.
+1. Secretless publication is no longer just a preferred direction; it is the
+   current hard requirement for all known in-scope targets, with GitHub
+   Packages explicitly handled through `GITHUB_TOKEN`.
 2. Target-specific packaging flexibility is allowed, including project-kind-
    specific pipelines and target-specific identity transforms, but binary
    generation must remain unified to avoid inconsistent outputs.
@@ -252,8 +279,10 @@ now tighter in ten places:
    registries may not be shared across profiles under the same published package
    name.
 10. The first delivery scope now has concrete acceptance expectations around
-    real-project coverage, real publication, real `official`, promotion, and
-    direct-official validation.
+    real-project coverage, real publication, real `official`, promotion,
+    direct-official validation, multi-project dispatch, dry-run, rerun,
+    cancellation, approval boundaries, and GitHub Packages coverage when that
+    target is exercised.
 
 ## Still Open for Design Work
 
