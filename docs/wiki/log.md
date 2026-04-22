@@ -26,3 +26,12 @@ This file is the append-only chronological record of wiki activity.
   supported targets.
 - Added a dedicated requirements baseline analysis documenting descriptor
   gating, explicit profiles, unified binaries, and target-specific packaging.
+
+## [2026-04-21] query | Review requirements-phase boundary
+
+- Compared the workflow-release initiative against a standard
+  requirements-analysis checklist.
+- Identified which current discussion items belong to design rather than
+  requirements.
+- Added a gap review listing the missing requirement items that should be
+  settled before requirements sign-off.

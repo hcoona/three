@@ -15,6 +15,8 @@ supporting assets in `../raw/`.
   not yet a complete workflow layer.
 - The requirements-phase baseline now records descriptor gating, unified binary
   expectations, and the current OIDC-only publication posture.
+- A dedicated review now distinguishes requirement-phase scope from design-phase
+  concerns and lists the remaining requirement gaps.
 - The structure is ready for follow-up work on release metadata and workflows.
 
 ## Open Questions
@@ -24,6 +26,8 @@ supporting assets in `../raw/`.
 - Which metadata-private projects under `src/public/` should stay private?
 - What approval and acceptance rules should gate the first workflow-release
   milestone?
+- Which trigger, rollback, and audit requirements should be frozen before design
+  starts?
 
 ## Related Pages
 
@@ -31,3 +35,4 @@ supporting assets in `../raw/`.
 - [Wiki Log](./log.md)
 - [Repository Release Landscape](./analyses/repository-release-landscape.md)
 - [Workflow Release Requirements Baseline](./analyses/workflow-release-requirements-baseline.md)
+- [Workflow Release Requirements-Phase Review](./analyses/workflow-release-requirements-phase-review.md)
