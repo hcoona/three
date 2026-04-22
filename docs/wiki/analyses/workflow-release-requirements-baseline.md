@@ -75,21 +75,54 @@ Examples of disallowed behavior:
 
 ## Confirmed Lifecycle Rule
 
-- Phase 1 should prioritize manual `workflow_dispatch` initiation.
-- Phase 1 must support rerunning the entire release against the same input.
+- The first delivery scope should prioritize manual `workflow_dispatch`
+  initiation.
+- The first delivery scope must support rerunning the entire release against the
+  same input.
 - If whole-release rerun is later proven technically infeasible, that reduction
   must be re-confirmed with the user instead of being assumed by the team.
-- Phase 1 does not require single-target retry.
+- The first delivery scope does not require single-target retry.
 - Replay concerns should be handled primarily through detection-based skipping
   and idempotent retry behavior.
-- Phase 1 must support a dry-run or validation-only mode that performs input and
-  descriptor validation without publishing to external targets.
-- Phase 1 may leave externally visible partial-success results in place when one
-  or more targets have already succeeded.
-- Phase 1 does not require automatic compensation or rollback for partial
-  success; manual remediation is acceptable.
+- The first delivery scope must support a dry-run or validation-only mode that
+  performs input and descriptor validation without publishing to external
+  targets.
+- The first delivery scope may leave externally visible partial-success results
+  in place when one or more targets have already succeeded.
+- The first delivery scope does not require automatic compensation or rollback
+  for partial success; manual remediation is acceptable.
 - Lifecycle rules for cancellation, supersession, and tag-driven initiation
   remain to be defined.
+
+## Confirmed Versioning and Immutability Rule
+
+- Version identity is determined primarily by the Git commit being built.
+- Outputs built from the same commit should share the same version identity.
+- Outputs built from different commits should not share the same version
+  identity.
+- Overwrite should generally be avoided.
+- `official` does not allow overwrite.
+- `buddy` overwrite is allowed only as an exceptional explicit `FORCE` action.
+- Target-platform constraints always take precedence over any business desire to
+  overwrite.
+- `buddy` to `official` promotion is in scope and must stay on the same commit
+  and the same version identity.
+- Promotion does not require reusing the exact same built artifact; rebuilding is
+  allowed when `buddy` and `official` build configurations differ.
+- `official` does not require a prior `buddy`; it may also be published directly
+  from the same commit.
+- `official` is the higher-status state for a version.
+- Once a version enters `official`, that version is considered formally frozen
+  and may no longer be force-overwritten through `buddy`.
+- `buddy FORCE` keeps the same authorization boundary as ordinary `buddy`:
+  `write+`, no extra approval, and no required reason field.
+
+## Confirmed Delivery-Scope Rule
+
+- The first delivery scope must cover multiple target classes from the start.
+- The first delivery scope is not allowed to ship with support for only one
+  target class.
+- The exact target-class list is still to be defined.
 
 ## Design Implications
 
@@ -105,7 +138,7 @@ The future release descriptor needs to express, at minimum:
 ## What Changed in the Existing Analysis
 
 Compared with the earlier repo landscape analysis, the requirements baseline is
-now tighter in five places:
+now tighter in seven places:
 
 1. OIDC is no longer just a preferred direction; it is the current hard
    requirement for all known in-scope targets.
@@ -113,20 +146,25 @@ now tighter in five places:
    remain unified to avoid inconsistent outputs.
 3. Approval authority is now role-based: `buddy` is `write+` without extra
    approval, while `official` is `maintain+` plus an approval gate.
-4. Phase 1 now prioritizes manual `workflow_dispatch` initiation.
-5. Phase 1 must support whole-release rerun and dry run, while replay concerns
-   should be addressed with skip detection and idempotent behavior rather than
-   mandatory single-target retry.
-6. Phase 1 may preserve partial success and rely on manual remediation instead
-   of mandatory automatic rollback.
+4. The first delivery scope now prioritizes manual `workflow_dispatch`
+   initiation.
+5. The first delivery scope must support whole-release rerun and dry run, while
+   replay concerns should be addressed with skip detection and idempotent
+   behavior rather than mandatory single-target retry.
+6. The first delivery scope may preserve partial success and rely on manual
+   remediation instead of mandatory automatic rollback.
+7. Version identity is commit-based, `official` is the freezing state, and the
+   first delivery scope must cover multiple target classes rather than only one.
 
 ## Still Open for Later Requirement Work
 
 - the final descriptor filename and syntax;
 - the exact schema shape and reuse model;
-- acceptance criteria for the first workflow-release milestone;
+- acceptance criteria for the first workflow-release delivery scope;
 - the remaining lifecycle rules beyond initial manual triggering, whole-release
-  rerun, and dry run;
+  rerun, dry run, and partial-success preservation;
+- the exact supported target-class list for the first workflow-release delivery
+  scope;
 - the remaining failure-handling details beyond preserving partial success and
   allowing manual remediation.
 

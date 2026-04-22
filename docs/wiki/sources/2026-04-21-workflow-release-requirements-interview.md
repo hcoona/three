@@ -22,13 +22,29 @@ waterfall-model requirements phase for repository-wide workflow release support.
 - `official` is a `maintain+` action that requires an additional approval; any
   `maintain+` user may approve it, but self-approval is only allowed for
   `admin`.
-- Phase 1 should prioritize manual `workflow_dispatch` initiation.
-- Phase 1 must support rerunning the full release against the same input.
-- Phase 1 does not require single-target retry; replay concerns should instead
-  be handled through detection-based skipping and idempotent retry behavior.
-- Phase 1 must support dry run or validation-only execution.
-- Phase 1 may preserve partial success and treat the release as awaiting manual
-  remediation rather than forcing automatic rollback.
+- The first delivery scope should prioritize manual `workflow_dispatch`
+  initiation.
+- The first delivery scope must support rerunning the full release against the
+  same input.
+- The first delivery scope does not require single-target retry; replay concerns
+  should instead be handled through detection-based skipping and idempotent
+  retry behavior.
+- The first delivery scope must support dry run or validation-only execution.
+- The first delivery scope may preserve partial success and treat the release as
+  awaiting manual remediation rather than forcing automatic rollback.
+- Version identity is determined primarily by the Git commit being built.
+- The same commit should map to one version identity; different commits should
+  not share a version identity.
+- `official` is non-overwritable and is the higher-status state for a version.
+- `buddy` overwrite is supported only as an exceptional explicit `FORCE` action,
+  still under the normal `write+` buddy permission model.
+- `buddy` to `official` promotion is in scope and must stay on the same commit
+  and version identity, but it may rebuild because `buddy` and `official`
+  configurations can differ.
+- `official` does not require a prior `buddy`; direct official publication from
+  the same commit is allowed.
+- The first delivery scope must support multiple target classes rather than only
+  one.
 
 ## Important Claims
 
@@ -45,6 +61,7 @@ waterfall-model requirements phase for repository-wide workflow release support.
   assumption.
 - The first milestone should optimize for traceable, replayable, manually
   recoverable releases rather than transactional rollback across all targets.
+- Version identity should be commit-centric rather than profile-centric.
 
 ## Related Pages
 
@@ -57,6 +74,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
   starts?
 - Which cancellation and supersession rules belong in the first accepted
   milestone?
+- Which target classes must be included in the first workflow-release delivery
+  scope?
 
 ## Source Location
 

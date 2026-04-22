@@ -140,6 +140,8 @@ classes the first milestone must support as business scope, for example:
 - npm or other package registries.
 
 Without that list, milestone scope and acceptance remain ambiguous.
+What is already settled is that the first delivery scope must cover multiple
+target classes rather than shipping as a single-target-only solution.
 
 ### 3. Canonical binary-variant semantics
 
@@ -165,6 +167,9 @@ The release process needs business rules for:
 - whether published artifacts are immutable once visible externally.
 
 These are release-policy requirements, not mere implementation details.
+Part of this is now settled: version identity is commit-centric, `official` is
+the higher-status freezing state, and `buddy FORCE` is an explicit but
+exceptional overwrite path before a version reaches `official`.
 
 ### 5. Failure, rollback, and partial-success expectations
 
@@ -211,10 +216,12 @@ questions like:
 - target-specific packaging with unified binary production;
 - OIDC-only publication posture for currently known targets;
 - role-based approval and initiation rules;
-- phase-1 manual triggering priority;
+- first-delivery-scope manual triggering priority;
 - whole-release rerun plus dry run, without mandatory single-target retry;
 - partial-success preservation with manual remediation instead of mandatory
-  rollback.
+  rollback;
+- commit-centric version identity and `official` freeze semantics;
+- multi-target-class scope from the start.
 
 ### Should be deferred to design phase
 
@@ -226,9 +233,9 @@ questions like:
 ### Must be added before requirements sign-off
 
 - release trigger and lifecycle scenarios;
-- milestone-1 supported target taxonomy;
+- first-delivery-scope supported target taxonomy;
 - canonical binary-variant semantics;
-- versioning and immutability rules;
+- remaining versioning and immutability rules;
 - remaining failure and rollback expectations;
 - auditability expectations;
 - acceptance criteria.

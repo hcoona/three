@@ -23,6 +23,9 @@ supporting assets in `../raw/`.
   while leaving single-target retry out of phase 1.
 - The failure baseline now allows partial success to remain visible and be
   repaired manually in phase 1.
+- The versioning baseline now treats commit identity as the primary version
+  source, treats `official` as the freezing state, and requires multiple target
+  classes in the first delivery scope.
 - The structure is ready for follow-up work on release metadata and workflows.
 
 ## Open Questions
@@ -37,6 +40,7 @@ supporting assets in `../raw/`.
 - Which partial-failure, cancellation, and supersession lifecycle rules belong
   in phase 1?
 - Do `buddy` and `official` need different visible failure-state rules?
+- Which exact target classes belong in the first delivery scope?
 
 ## Related Pages
 

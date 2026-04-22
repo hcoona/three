@@ -57,3 +57,12 @@ This file is the append-only chronological record of wiki activity.
 - Recorded manual remediation as acceptable for the first milestone.
 - Narrowed the remaining failure-policy gaps to cancellation, supersession, and
   any exceptional rollback cases.
+
+## [2026-04-21] query | Freeze version identity and target-scope principles
+
+- Recorded commit-centric version identity and the rule that `official` is the
+  freezing state for a version.
+- Allowed explicit `buddy FORCE` before `official`, while keeping target-platform
+  constraints authoritative.
+- Recorded that the first delivery scope must cover multiple target classes from
+  the start.
