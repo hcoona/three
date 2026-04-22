@@ -33,6 +33,7 @@ Read it first when deciding which pages to inspect.
 - [markdown-hybrid-search-mcp Metadata](./sources/2026-04-21-markdown-hybrid-search-mcp-pyproject.md) | Public-path Python app that is still metadata-private. |
 - [hexo-renderer-asciidoc Package Metadata](./sources/2026-04-21-hexo-renderer-asciidoc-package-json.md) | Representative publishable Node.js package metadata. |
 - [steam-account-history-to-csv Package Metadata](./sources/2026-04-21-steam-account-history-to-csv-package-json.md) | Public-path browser-extension project that is still private. |
+- [Workflow Release Requirements Interview](./sources/2026-04-21-workflow-release-requirements-interview.md) | Requirement-phase clarifications from the workflow release discussion. |
 
 ## Concepts
 
@@ -45,3 +46,4 @@ No entity pages yet.
 ## Analyses
 
 - [Repository Release Landscape](./analyses/repository-release-landscape.md) | Repo-wide release inventory, current implementation signals, and gaps to the desired buddy/official model. |
+- [Workflow Release Requirements Baseline](./analyses/workflow-release-requirements-baseline.md) | Confirmed requirement-phase rules for descriptor-driven release workflows. |

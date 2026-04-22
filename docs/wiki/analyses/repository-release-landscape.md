@@ -22,11 +22,13 @@ This analysis assumes the intended future release shape is:
 - most public projects should be releasable;
 - some private projects also need release automation;
 - releases should support `buddy` and `official` profiles;
-- OIDC or other passwordless flows should be preferred wherever registries
-  support them;
+- OIDC or other passwordless flows should be required wherever registries
+  support them; no unsupported target platform is currently known;
 - C# apps should publish binaries through explicit `dotnet publish` steps rather
   than through the current Artifacts SDK pattern;
-- some C# apps also need a second-stage Inno Setup packaging step.
+- some C# apps also need a second-stage Inno Setup packaging step;
+- target-specific packaging may vary, but the produced binary should stay
+  unified across targets to avoid inconsistent outputs.
 
 ## Repository Inventory
 
@@ -115,7 +117,7 @@ matrix instead of guessing from the path alone.
 `Microsoft.Build.Artifacts`, which conflicts with the intended future direction.
 These projects are the obvious first migration candidates.
 
-### 3. OIDC should be the default release posture
+### 3. OIDC should be the baseline release posture
 
 The Ruby publishing script already documents the pattern the repo should prefer:
 
@@ -128,6 +130,23 @@ The same design should be replicated for:
 - NuGet.org;
 - GitHub Packages for NuGet or npm;
 - PyPI or TestPyPI if Python packages are published there.
+
+Under the current requirements discussion, this is stronger than a preference:
+no known target platform currently lacks OIDC or trusted publishing support, so
+the baseline assumption should be passwordless publication.
+
+### 4. Packaging can diverge, but binaries should not
+
+The current requirements baseline allows target-specific packaging differences,
+such as attaching a raw binary to GitHub Release while pushing a package format
+to a registry. However, those targets should be fed from the same canonical
+binary output for the profile rather than from independently rebuilt binaries.
+
+This implies the future release descriptor should distinguish:
+
+- canonical binary production;
+- optional post-build packaging transforms;
+- target-specific distribution choices.
 
 ## Recommended Release Taxonomy
 
@@ -149,6 +168,8 @@ The same design should be replicated for:
 2. **C# apps**
     - Build binaries with explicit `dotnet publish`, probably in a matrix by RID
       or host target.
+    - Keep the binary build canonical per declared variant, then derive any
+      target-specific packaging from that shared output.
     - Package installers only for projects that declare the need, such as
       `ImageOcclusionEditor`.
     - Migrate remaining `Microsoft.Build.Artifacts` app projects to the same
@@ -190,3 +211,4 @@ The same design should be replicated for:
 - [markdown-hybrid-search-mcp Metadata](../sources/2026-04-21-markdown-hybrid-search-mcp-pyproject.md)
 - [hexo-renderer-asciidoc Package Metadata](../sources/2026-04-21-hexo-renderer-asciidoc-package-json.md)
 - [steam-account-history-to-csv Package Metadata](../sources/2026-04-21-steam-account-history-to-csv-package-json.md)
+- [Workflow Release Requirements Interview](../sources/2026-04-21-workflow-release-requirements-interview.md)
