@@ -21,6 +21,8 @@ supporting assets in `../raw/`.
   initiation.
 - The lifecycle baseline now includes whole-release rerun and dry-run support,
   while leaving single-target retry out of phase 1.
+- The failure baseline now allows partial success to remain visible and be
+  repaired manually in phase 1.
 - The structure is ready for follow-up work on release metadata and workflows.
 
 ## Open Questions
@@ -34,6 +36,7 @@ supporting assets in `../raw/`.
   starts?
 - Which partial-failure, cancellation, and supersession lifecycle rules belong
   in phase 1?
+- Do `buddy` and `official` need different visible failure-state rules?
 
 ## Related Pages
 

@@ -77,6 +77,9 @@ items well:
     - Phase 1 requires whole-release rerun.
     - Phase 1 requires dry-run validation mode.
     - Phase 1 does not require single-target retry.
+8. **Initial failure rule**
+    - Phase 1 may preserve partial success.
+    - Phase 1 allows manual remediation and does not mandate automatic rollback.
 
 These are all proper requirements-phase outcomes because they define business
 constraints and decision rules rather than implementation mechanics.
@@ -119,7 +122,6 @@ We still need to define the remaining business scenarios, for example:
 
 - cancellation or supersession rules;
 - tag-driven initiation in a later phase;
-- whether partial-success states can remain visible pending repair;
 - whether replay detection is purely automatic or may need operator choices in
   some cases.
 
@@ -169,10 +171,10 @@ These are release-policy requirements, not mere implementation details.
 We still need explicit business decisions for:
 
 - what happens if GitHub Release succeeds but registry publication fails;
-- whether partial success is acceptable for `buddy`;
-- whether `official` requires all targets to succeed atomically from a business
-  perspective;
-- what rollback, compensation, or manual intervention expectations exist.
+- whether `buddy` and `official` differ in their visible failure states;
+- whether there are any cases where automatic rollback is still required;
+- what operator obligations exist once a release is marked for manual
+  remediation.
 
 This is a requirement gap today.
 
@@ -210,7 +212,9 @@ questions like:
 - OIDC-only publication posture for currently known targets;
 - role-based approval and initiation rules;
 - phase-1 manual triggering priority;
-- whole-release rerun plus dry run, without mandatory single-target retry.
+- whole-release rerun plus dry run, without mandatory single-target retry;
+- partial-success preservation with manual remediation instead of mandatory
+  rollback.
 
 ### Should be deferred to design phase
 
@@ -225,7 +229,7 @@ questions like:
 - milestone-1 supported target taxonomy;
 - canonical binary-variant semantics;
 - versioning and immutability rules;
-- failure and rollback expectations;
+- remaining failure and rollback expectations;
 - auditability expectations;
 - acceptance criteria.
 

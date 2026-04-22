@@ -49,3 +49,11 @@ This file is the append-only chronological record of wiki activity.
 - Explicitly left single-target retry out of phase 1 and tied replay handling to
   skip detection plus idempotent behavior.
 - Added dry-run or validation-only execution as a phase-1 requirement.
+
+## [2026-04-21] query | Freeze partial-success handling
+
+- Allowed phase-1 releases to preserve partial success instead of forcing
+  transactional rollback.
+- Recorded manual remediation as acceptable for the first milestone.
+- Narrowed the remaining failure-policy gaps to cancellation, supersession, and
+  any exceptional rollback cases.

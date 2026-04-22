@@ -27,6 +27,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 - Phase 1 does not require single-target retry; replay concerns should instead
   be handled through detection-based skipping and idempotent retry behavior.
 - Phase 1 must support dry run or validation-only execution.
+- Phase 1 may preserve partial success and treat the release as awaiting manual
+  remediation rather than forcing automatic rollback.
 
 ## Important Claims
 
@@ -41,6 +43,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 - If whole-release rerun later turns out to be technically infeasible, that
   downgrade requires a new user confirmation rather than an implementation-side
   assumption.
+- The first milestone should optimize for traceable, replayable, manually
+  recoverable releases rather than transactional rollback across all targets.
 
 ## Related Pages
 
@@ -51,8 +55,8 @@ waterfall-model requirements phase for repository-wide workflow release support.
 
 - What business fields must the release descriptor carry before schema design
   starts?
-- Which rollback, partial-failure, cancellation, and supersession rules belong
-  in the first accepted milestone?
+- Which cancellation and supersession rules belong in the first accepted
+  milestone?
 
 ## Source Location
 

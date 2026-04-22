@@ -84,6 +84,10 @@ Examples of disallowed behavior:
   and idempotent retry behavior.
 - Phase 1 must support a dry-run or validation-only mode that performs input and
   descriptor validation without publishing to external targets.
+- Phase 1 may leave externally visible partial-success results in place when one
+  or more targets have already succeeded.
+- Phase 1 does not require automatic compensation or rollback for partial
+  success; manual remediation is acceptable.
 - Lifecycle rules for cancellation, supersession, and tag-driven initiation
   remain to be defined.
 
@@ -113,6 +117,8 @@ now tighter in five places:
 5. Phase 1 must support whole-release rerun and dry run, while replay concerns
    should be addressed with skip detection and idempotent behavior rather than
    mandatory single-target retry.
+6. Phase 1 may preserve partial success and rely on manual remediation instead
+   of mandatory automatic rollback.
 
 ## Still Open for Later Requirement Work
 
@@ -121,7 +127,8 @@ now tighter in five places:
 - acceptance criteria for the first workflow-release milestone;
 - the remaining lifecycle rules beyond initial manual triggering, whole-release
   rerun, and dry run;
-- failure-handling and rollback expectations.
+- the remaining failure-handling details beyond preserving partial success and
+  allowing manual remediation.
 
 ## Related Pages
 
