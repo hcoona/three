@@ -689,15 +689,17 @@ Planner-time validation handles request-dependent or external-state-dependent
 questions, such as:
 
 - whether the requested project ids exist in the discovered set;
-- whether the request selected `buddy` or `official` and whether approvals are
-  satisfied;
+- whether the request selected `buddy` or `official`, because that request
+  profile affects downstream publish decisions;
 - commit-derived version identity;
 - target-family-specific resolved publish identity derived from that version
   identity plus the selected projection and manifest inputs;
 - `buddy FORCE` versus immutable-target rules;
 - rerun skip decisions based on already-published remote state;
-- external uniqueness conflicts that require checking the destination;
-- duplicate-run cancellation and other control-plane concerns.
+- external uniqueness conflicts that require checking the destination.
+
+Planner-time validation does not own approval satisfaction, duplicate-run
+cancellation, or other control-plane sequencing concerns.
 
 Planner-time validation also resolves the external publication identity for
 each selected publish intent and freezes that derived identity into the plan
