@@ -58,13 +58,16 @@ supporting assets in `../raw/`.
   required.
 - A first design-direction page now frames the top-level architecture choice
   before descriptor syntax or workflow internals are designed.
+- A dedicated architecture-model page now records the settled planner-centric
+  boundaries, graph ownership rules, artifact identity rules, and publish-side
+  structure.
 
 ## Open Questions
 
-- Should the system use a planner-centric architecture with thin workflow entry
-  points, or should the workflow YAML remain the primary orchestration layer?
-- Once that top-level direction is fixed, which descriptor format and schema
-  should carry the already-frozen business fields?
+- Which descriptor format and schema should carry the already-frozen business
+  fields and instantiate the settled architecture model?
+- What exact plan object shape should realize the agreed envelope/graph model
+  without leaking schema details back into the architecture layer?
 
 ## Related Pages
 
@@ -74,3 +77,4 @@ supporting assets in `../raw/`.
 - [Workflow Release Requirements Baseline](./analyses/workflow-release-requirements-baseline.md)
 - [Workflow Release Requirements-Phase Review](./analyses/workflow-release-requirements-phase-review.md)
 - [Workflow Release Design Direction](./analyses/workflow-release-design-direction.md)
+- [Workflow Release Architecture Model](./analyses/workflow-release-architecture-model.md)

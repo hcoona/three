@@ -121,8 +121,11 @@ These questions are intentionally left for the next layer of design:
   installer production;
 - exact tagging algorithm and approval-job structure.
 
-## Current Top-Level Design Question
+## Outcome of This Design Step
 
-Should the design proceed on the basis that the release system is a
-**planner-centric architecture with thin workflow entry points**, or do we want
-to keep the workflow YAML as the primary orchestration layer instead?
+The architecture discussion has now resolved this page's original top-level
+question in favor of a **planner-centric architecture with thin workflow entry
+points**.
+
+The detailed architecture-layer decisions have been captured in
+[Workflow Release Architecture Model](./workflow-release-architecture-model.md).

@@ -136,3 +136,19 @@ This file is the append-only chronological record of wiki activity.
 - Framed the first architecture-level discussion around whether the system
   should be planner-centric or workflow-centric, with lower-level design
   deliberately deferred until that direction is agreed.
+
+## [2026-04-22] design | Freeze architecture-layer model
+
+- Confirmed planner-centric architecture with GitHub workflows as control plane
+  and a repo-owned planner that emits a fully materialized declarative plan.
+- Recorded the agreed envelope/graph split and the normalized core entities:
+  variant, artifact, publish node, and target instance.
+- Froze the artifact-side rules around variant-centric production, artifact
+  identity, mandatory logical artifact roles, and layered artifact kinds.
+- Froze the publish-side rules around target family vs target instance,
+  protocol-shaped destination contracts, static target-instance capabilities,
+  and explicit target-side projection.
+- Recorded project ownership and graph cardinality rules, including multi-target
+  artifact reuse and shared target instances across projects.
+- Explicitly deferred descriptor schema and concrete plan object shape to the
+  next design layer.

@@ -50,3 +50,4 @@ No entity pages yet.
 - [Workflow Release Requirements Baseline](./analyses/workflow-release-requirements-baseline.md) | Confirmed requirement-phase rules for descriptor-driven release workflows. |
 - [Workflow Release Requirements-Phase Review](./analyses/workflow-release-requirements-phase-review.md) | Review of what belongs in requirements, what should move to design, and what requirement gaps remain. |
 - [Workflow Release Design Direction](./analyses/workflow-release-design-direction.md) | Top-level architecture options and recommended direction for the design phase. |
+- [Workflow Release Architecture Model](./analyses/workflow-release-architecture-model.md) | Settled architecture-layer model for variants, artifacts, publish nodes, target instances, and control-plane boundaries. |
