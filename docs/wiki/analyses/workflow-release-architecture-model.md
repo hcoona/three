@@ -105,7 +105,8 @@ Rules:
 Artifact identity is based on:
 
 - `project-id`
-- `variant-id`
+- variant semantic identity, meaning the variant's full dimensions map rather
+  than any local authoring handle
 - `kind-family`
 - `concrete-kind`
 - `logical-artifact-role`
@@ -125,7 +126,11 @@ Artifacts use two type layers:
    `installer`, `archive`, or `metadata`.
 2. **Concrete kind** — specific artifact form such as `nuget`, `snupkg`,
    `wheel`, `sdist`, `npm-package`, `browser-zip`, `sources-zip`,
-   `cli-binary`, `sbom`, or `hook-config`.
+   `executable`, `sbom`, or `hook-config`.
+
+For raw runnable outputs in the `binary` family, `executable` is the
+single general executable concrete kind and covers both CLI executables
+and desktop GUI executables such as .NET `WinExe` outputs.
 
 `logical-artifact-role` is modeled separately from artifact kind and is
 mandatory for every artifact. Role remains a single-layer taxonomy at the
@@ -160,7 +165,8 @@ The publish side separates several distinct concepts:
 - **target family** — business category such as `github-release`, `nuget`,
   `pypi`, `npm`, or `rubygems`;
 - **target instance** — the concrete publication destination such as `nuget.org`,
-  `npmjs`, `github-packages-nuget`, or `github-packages-npm`;
+  `github-packages-nuget`, `github-packages-npm`, or
+  `github-packages-rubygems`;
 - **destination contract** — a reusable named protocol-shaped publication type;
 - **target instance capability** — static destination-specific constraints;
 - **target-side projection** — target-side naming, labeling, and presentation.
@@ -215,6 +221,13 @@ Examples:
 - `rubygems-publish`
 - `github-release-assets`
 
+In the current signed-off scope, family-to-contract compatibility is one-to-one:
+`github-release` -> `github-release-assets`, `nuget` -> `nuget-publish`,
+`pypi` -> `pypi-publish`, `npm` -> `npm-publish`, and `rubygems` ->
+`rubygems-publish`. The descriptor schema makes that mapping author-time
+mandatory and pairs it with closed family-specific destination shapes for the
+shared catalog.
+
 Rules:
 
 - contract defines the allowed publication structure rather than the exact
@@ -225,6 +238,10 @@ Rules:
   artifact structures;
 - if a contract needs aggregate role checks, it may use local role-set
   constraints, but there is no global role-family taxonomy.
+
+The descriptor layer now closes the current-scope role/kind tuple patterns and
+aggregate compatibility rules for these contracts so author-time static
+validation is deterministic.
 
 ### Target Instance Capability
 
@@ -257,6 +274,11 @@ publication, including:
 - release asset labels;
 - prerelease / release presentation differences;
 - other destination-side display or version projections.
+
+In the current signed-off author-time scope, the descriptor layer narrows this
+to closed family-specific shapes for GitHub Release asset labels and npm
+published package-name override. Broader projection vocabularies remain
+deferred.
 
 ## Ownership and Cardinality
 
@@ -295,9 +317,11 @@ and workflow runtime state.
 
 The following are still deferred to later design layers:
 
-- descriptor schema and file syntax;
 - exact plan JSON/YAML object shape;
 - exact reusable-workflow and job layout;
 - executor interfaces and invocation contracts;
-- exact target-instance catalog format;
-- exact projection field schema.
+- exact plan-level serialization of resolved projection data beyond the closed
+  current-scope descriptor shapes.
+
+Descriptor schema, file syntax, and shared target-instance catalog authoring are
+now defined in [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md).

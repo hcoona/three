@@ -65,11 +65,27 @@ supporting assets in `../raw/`.
   GitHub Packages is represented through host-specific target instances rather
   than as a target family, and execution consumes plan snapshots rather than
   re-reading the catalog.
+- The descriptor-schema page now normatively defines the release authoring
+  files: project-owned `src/**/three.release.yml` descriptors, the shared
+  `eng/release/target-instances.yml` catalog, field-scoped relative-path bases,
+  repo-wide rejection of checked-in descriptors outside `src/`, deterministic
+  in-scope discovery, project-local `variants[].id` handle uniqueness plus
+  descriptor-local rejection of duplicate semantic variant `dimensions` sets,
+  variant-local rejection of duplicate semantic artifact identity tuples
+  regardless of differing `artifact.id` handles, author-time resolution of
+  `source` file paths to real checked-in files under each release root, a
+  closed current-scope mapping from `project.ecosystem` to allowed
+  `source.primary-manifest` types, catalog references, the current-scope
+  catalog contract vocabulary, family-specific destination shapes including
+  host-specific GitHub Packages instances inside the NuGet, npm, and RubyGems
+  families while leaving PyPI unsupported there, closed current-scope
+  capability assignments by family and host, closed current-scope projection
+  shapes, contract-to-artifact compatibility rules, and the three-layer
+  validation model: file-schema validation, author-time static repo validation,
+  and planner-time validation.
 
 ## Open Questions
 
-- Which descriptor format and schema should carry the already-frozen business
-  fields and instantiate the settled architecture model?
 - What exact plan object shape should realize the agreed envelope/graph model
   without leaking schema details back into the architecture layer?
 
@@ -82,3 +98,4 @@ supporting assets in `../raw/`.
 - [Workflow Release Requirements-Phase Review](./analyses/workflow-release-requirements-phase-review.md)
 - [Workflow Release Design Direction](./analyses/workflow-release-design-direction.md)
 - [Workflow Release Architecture Model](./analyses/workflow-release-architecture-model.md)
+- [Workflow Release Descriptor Schema](./analyses/workflow-release-descriptor-schema.md)

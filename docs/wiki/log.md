@@ -161,3 +161,121 @@ This file is the append-only chronological record of wiki activity.
   identity wording to use kind family plus concrete kind.
 - Explicitly deferred descriptor schema and concrete plan object shape to the
   next design layer.
+
+## [2026-04-23] design | Define descriptor schema and file syntax
+
+- Added a descriptor-schema design page for the author-time release layer.
+- Fixed the file inventory to one shared `eng/release/target-instances.yml`
+  catalog plus one project-owned `src/**/three.release.yml` descriptor per
+  releasable project.
+- Defined deterministic descriptor discovery, project and catalog ownership
+  boundaries, `family/instance-id` catalog references, and the split between
+  file-schema, static repo, and planner-time validation.
+- Reduced the top-level open questions to the remaining planner-output design
+  work and linked the new page from the wiki overview and index.
+
+## [2026-04-23] design | Tighten shared target-instance catalog schema
+
+- Made the shared `eng/release/target-instances.yml` catalog schema normative at
+  the family-specific level instead of leaving `contract` and `destination`
+  effectively free-form.
+- Froze the current-scope `contract` vocabulary and one-to-one family
+  compatibility for `github-release`, `nuget`, `pypi`, `npm`, and `rubygems`.
+- Added closed family-specific `destination` shapes and static validation rules,
+  including the host-specific owner requirement for GitHub Packages NuGet and
+  npm instances.
+
+## [2026-04-23] design | Close projection and contract-compatibility gaps
+
+- Narrowed current-scope project `projection` authoring from an open value object
+  to closed family-specific rules: GitHub Release `asset-labels`, npm
+  `package-name`, and projection omission for the other current target families.
+- Added current-scope contract-to-artifact compatibility rules so static
+  validation can deterministically check allowed role/kind tuples and aggregate
+  cardinality for `github-release-assets`, `nuget-publish`, `pypi-publish`,
+  `npm-publish`, and `rubygems-publish`.
+- Updated the architecture and summary pages to reflect that current-scope
+  descriptor-side projection semantics are now defined, while plan serialization
+  and executor behavior remain deferred.
+
+## [2026-04-23] design | Resolve descriptor path-base and discovery gaps
+
+- Reconciled the descriptor schema's path wording so fixed repo locations remain
+  repo-root-relative, while project-descriptor path fields are explicitly
+  release-root-relative.
+- Tightened file-schema validation to require normalized relative paths per
+  field-defined base and clarified that `v1alpha1` has no repo-relative
+  project-descriptor YAML path fields.
+- Changed descriptor discovery to scan all checked-in `three.release.yml` files,
+  reject any that are outside `src/` including under `tests/`, and only then
+  continue with first-delivery-scope filtering and normal static validation.
+
+## [2026-04-23] design | Close descriptor identity and source-existence gaps
+
+- Tightened the descriptor schema so `variants[].id` is explicitly unique within
+  each project descriptor, matching project-local variant identity.
+- Tightened author-time static validation so `source.primary-manifest` and every
+  `source.auxiliary-inputs[]` entry must resolve to an existing checked-in file
+  under the descriptor's release root.
+- Synced the wiki overview and index summaries to reflect only those descriptor-
+  layer validation rules.
+
+## [2026-04-23] design | Relax RubyGems catalog host constraint for GitHub Packages
+
+- Corrected the descriptor-side shared target-instance catalog schema so the
+  `rubygems` family accepts either `rubygems.org` or host-specific GitHub
+  Packages RubyGems destinations, with `owner` forbidden for `rubygems.org` and
+  required for `rubygems.pkg.github.com`.
+- Synced the schema and overview wording so GitHub Packages remains modeled only
+  as host-specific target instances inside the existing `nuget`, `npm`, and
+  `rubygems` families, while PyPI remains the only explicitly unsupported
+  GitHub Packages registry family in current scope.
+
+## [2026-04-23] design | Close descriptor artifact-identity gap
+
+- Tightened the project-descriptor artifact schema so `artifact.id` remains a
+  descriptor-local reference handle rather than the frozen semantic identity.
+- Added a normative rule that within one variant the `role` / `kind-family` /
+  `concrete-kind` tuple must be unique, matching the frozen architecture tuple
+  (`project.id`, variant semantic identity, kind-family, concrete-kind, logical-artifact-role).
+- Synced the overview and index summaries to reflect only that descriptor-layer
+  validation change.
+
+## [2026-04-23] design | Close descriptor variant-identity gap
+
+- Tightened the project-descriptor variant schema so `variants[].id` remains a
+  project-local authoring handle rather than the frozen semantic variant
+  identity.
+- Added a normative author-time validation rule that compares each variant's
+  full `dimensions` key/value set as semantic identity and rejects duplicates
+  within one descriptor even when ids differ.
+- Synced the overview and index summaries to reflect only that descriptor-layer
+  validation change.
+
+## [2026-04-23] design | Sync artifact identity with variant semantic identity
+
+- Corrected the descriptor-layer artifact identity rule so it uses project id, the enclosing variant dimensions map, and the artifact role or kind tuple rather than the local variant handle.
+- Clarified that both variant ids and artifact ids remain local authoring handles whose rename alone does not change semantic artifact identity.
+- Applied the matching minimal architecture terminology sync so the Group 1 docs no longer imply handle-based artifact identity.
+
+## [2026-04-23] design | Close descriptor capability and manifest-mapping gaps
+
+- Added a closed current-scope mapping from `project.ecosystem` to allowed
+  `source.primary-manifest` types, grounded in the in-scope .NET, Python,
+  Node, and Ruby projects already present in the repository.
+- Tightened the shared target-instance catalog so current-scope capability tuples
+  are fixed by family plus destination host instead of being left underconstrained
+  at author time.
+- Made the package-registry coexistence rule deterministic at static-validation
+  time by requiring distinct resolved package identities across `buddy` and
+  `official` for every current-scope package target instance.
+
+## [2026-04-23] design | Generalize raw executable concrete kind
+
+- Replaced the misleading descriptor and architecture references to
+  `cli-binary` with one general `executable` concrete kind for raw runnable
+  outputs.
+- Clarified that this single executable kind intentionally covers both CLI
+  executables and desktop GUI executables such as .NET `WinExe` outputs.
+- Updated the representative WinUI app descriptor example to use
+  `concrete-kind: executable`.
