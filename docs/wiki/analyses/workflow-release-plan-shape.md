@@ -408,8 +408,12 @@ This boundary keeps the plan self-sufficient for descriptor-owned, catalog-
 owned, and planner-resolved publication identity and disposition without
 turning it into a workflow runtime record.
 
+Those control-plane concerns are now defined in
+[Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md).
+
 ## Related Pages
 
 - [Workflow Release Design Direction](./workflow-release-design-direction.md)
 - [Workflow Release Architecture Model](./workflow-release-architecture-model.md)
 - [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md)
+- [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md)

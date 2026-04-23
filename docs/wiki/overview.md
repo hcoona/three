@@ -92,13 +92,15 @@ supporting assets in `../raw/`.
   references onto plan artifact ids, frozen catalog data inside target-instance
   snapshots, and an explicit boundary for what remains outside the plan.
 
+- The workflow-and-executor-boundaries page now fixes the control-plane shape on top of that plan: `buddy` and `official` entry workflows over one shared orchestration workflow, per-variant build fan-out, per-publish-node publish fan-out, control-plane-owned approvals, concurrency, tagging, runtime wiring, and reporting, plus plan-to-job handoff contracts and thin executor boundaries that keep replay decisions and publication identity planner-owned.
+
 ## Open Questions
 
-- What exact workflow and job layout should the control plane use to consume
-  `three.release.plan/v1alpha1` and move artifacts between build and publish
-  stages?
-- What exact executor invocation contracts should later build, packaging, and
-  target-family executors accept from the frozen plan objects?
+- No remaining cross-layer design seam is still open between descriptors, the
+  frozen plan, control-plane workflow layout, and executor contracts in the
+  current scope.
+- Remaining work is implementation of the documented boundaries rather than
+  redesign of those boundaries.
 
 ## Related Pages
 
@@ -111,3 +113,4 @@ supporting assets in `../raw/`.
 - [Workflow Release Architecture Model](./analyses/workflow-release-architecture-model.md)
 - [Workflow Release Descriptor Schema](./analyses/workflow-release-descriptor-schema.md)
 - [Workflow Release Plan Shape](./analyses/workflow-release-plan-shape.md)
+- [Workflow Release Workflow and Executor Boundaries](./analyses/workflow-release-workflow-executor-boundaries.md)

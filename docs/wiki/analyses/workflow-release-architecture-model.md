@@ -315,14 +315,14 @@ dispositions when planner-time validation used remote destination state. The
 control plane expresses execution governance through the raw run envelope and
 workflow runtime state.
 
-## Deliberately Deferred
+## Later-Layer Boundary Page
 
-The following are still deferred to later design layers:
+The architecture-layer separation remains the same, but the next design layer
+now defines the concrete control-plane workflow, job, and executor seams in
+[Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md).
 
-- exact reusable-workflow and job layout;
-- executor interfaces and invocation contracts;
-- exact plan-level serialization of resolved projection data beyond the closed
-  current-scope descriptor shapes.
+Broader projection vocabularies beyond the closed current-scope descriptor and
+plan shapes remain deferred.
 
 Descriptor schema, file syntax, and shared target-instance catalog authoring are
 now defined in [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md).

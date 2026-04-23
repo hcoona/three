@@ -303,3 +303,24 @@ This file is the append-only chronological record of wiki activity.
 - Clarified that each selected publish node serializes planner-resolved external publication identity in the plan: current-scope `release-tag` for GitHub Release or `package-name` plus `version` for package registries.
 - Kept raw remote observations outside the plan while stating that immutable-target replay checks refer to the serialized publish identity plus the derived `publish-disposition`, not to re-derived manifest or commit state.
 - Synced the descriptor-schema, overview, and index summaries so the plan boundary is now explicit about what is frozen versus what remains out of plan.
+
+## [2026-04-23] design | Define workflow and executor boundaries
+
+- Added a dedicated workflow-and-executor-boundaries design page for the control-
+  plane layer on top of `three.release.plan/v1alpha1`.
+- Froze the control-plane entry-point and reusable-boundary model as `buddy` and
+  `official` entry workflows over one shared orchestration workflow, with one
+  build unit per `variant-id` and one publish unit per `publish-node-id`.
+- Froze job-to-job handoff boundaries so build units emit per-variant bundles and
+  build receipts keyed by plan `artifact-id`, publish units consume only their
+  referenced artifacts and target-instance snapshot, and immutable-target skip
+  receipts remain control-plane-authored rather than executor-authored.
+- Froze control-plane ownership of approvals, concurrency, dry-run gating,
+  tagging, runtime wiring, artifact transport, orchestration, and final
+  reporting, and explicitly kept descriptor loading, planning, target selection,
+  and publish-identity derivation out of executors.
+- Updated the architecture, plan-shape, overview, and index pages so this design
+  layer is discoverable and the top-level open questions now collapse to
+  implementation work.
+- Validated the touched markdown files with `pnpm exec prettier --write` and
+  `pnpm exec markdownlint-cli2`.
