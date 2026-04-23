@@ -142,7 +142,7 @@ This file is the append-only chronological record of wiki activity.
 - Confirmed planner-centric architecture with GitHub workflows as control plane
   and a repo-owned planner that emits a fully materialized declarative plan.
 - Recorded the agreed envelope/graph split and the normalized core entities:
-  variant, artifact, publish node, and target instance.
+  variant, artifact, publish node, and target-instance snapshot.
 - Froze the artifact-side rules around variant-centric production, artifact
   identity, mandatory logical artifact roles, and layered artifact kinds.
 - Froze the publish-side rules around target family vs target instance,
@@ -150,5 +150,14 @@ This file is the append-only chronological record of wiki activity.
   and explicit target-side projection.
 - Recorded project ownership and graph cardinality rules, including multi-target
   artifact reuse and shared target instances across projects.
+- Clarified the split between control-plane run envelope and plan envelope, and
+  tightened the shared target-instance catalog model so each target instance
+  belongs to exactly one family and exactly one destination contract.
+- Clarified that shared target instances remain opt-in catalog entries rather
+  than repo-default targets, and that execution consumes the planner's frozen
+  target-instance snapshots rather than re-reading the catalog.
+- Clarified that GitHub Packages is represented through host-specific target
+  instances rather than as its own target family, and tightened artifact
+  identity wording to use kind family plus concrete kind.
 - Explicitly deferred descriptor schema and concrete plan object shape to the
   next design layer.

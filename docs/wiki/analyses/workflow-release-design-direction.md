@@ -45,7 +45,8 @@ specific publish steps itself.
 
 Use thin GitHub workflow entry points that delegate release planning to a repo-
 owned planner layer. That planner reads descriptors, validates requirements,
-computes a normalized release plan, and then invokes reusable execution units.
+and computes a normalized release plan. The control plane then orchestrates
+execution against that plan through reusable execution units.
 
 #### Strengths
 

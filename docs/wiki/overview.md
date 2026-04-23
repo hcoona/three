@@ -59,8 +59,12 @@ supporting assets in `../raw/`.
 - A first design-direction page now frames the top-level architecture choice
   before descriptor syntax or workflow internals are designed.
 - A dedicated architecture-model page now records the settled planner-centric
-  boundaries, graph ownership rules, artifact identity rules, and publish-side
-  structure.
+  boundaries, graph ownership rules, artifact identity rules, the split between
+  control-plane run envelope and plan envelope, and the shared target-instance
+  catalog model on the publish side, where projects still opt in explicitly,
+  GitHub Packages is represented through host-specific target instances rather
+  than as a target family, and execution consumes plan snapshots rather than
+  re-reading the catalog.
 
 ## Open Questions
 

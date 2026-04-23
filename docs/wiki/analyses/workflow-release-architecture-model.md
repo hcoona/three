@@ -24,14 +24,26 @@ partially expanded graph.
 
 ## Plan Top-Level Shape
 
-The plan has two top-level parts:
+The architecture distinguishes two different envelopes:
 
-1. **Envelope** — request context, profile, commit, selected projects, and plan
-   metadata.
+1. **Control-plane run envelope** — raw GitHub Actions runtime context such as
+   `workflow_dispatch` inputs, actor, run identifiers, approval state, and
+   orchestration state.
+2. **Plan envelope** — the planner's normalized, authoritative header for the
+   computed release plan, containing the resolved request summary rather than
+   raw workflow runtime state.
+
+Only the second one belongs to the declarative plan.
+
+The plan itself has two top-level parts:
+
+1. **Envelope** — resolved request summary, profile, commit, selected projects,
+   and plan metadata.
 2. **Graph** — normalized ID-based objects and their relationships.
 
 `Request / Scope` stays in the envelope rather than becoming an executable graph
-node.
+node. The control-plane run envelope is an input to planning; the plan envelope
+is planner output.
 
 ## Normalized Graph Core
 
@@ -40,7 +52,7 @@ The graph uses a normalized model for the core reusable objects:
 - `variant`
 - `artifact`
 - `publish-node`
-- `target-instance`
+- `target-instance-snapshot`
 
 These are the only first-class ID-addressable architecture objects at this
 layer. Smaller structures remain inline value objects, including:
@@ -49,6 +61,15 @@ layer. Smaller structures remain inline value objects, including:
 - capability subfields;
 - destination-contract internal constraints;
 - display metadata and other presentation-only fields.
+
+At this layer, `destination-contract` is a reusable named type outside the
+normalized graph core. Catalog target instances declare one, and plan
+target-instance snapshots carry the resolved contract structure inline for
+execution.
+
+`project` is an architecture-level owning scope rather than a first-class graph
+entity at this layer. The plan envelope carries the resolved project set, and
+project-scoped graph objects carry `project-id` as an ownership anchor.
 
 ## Variant and Artifact Model
 
@@ -85,7 +106,8 @@ Artifact identity is based on:
 
 - `project-id`
 - `variant-id`
-- `artifact-kind`
+- `kind-family`
+- `concrete-kind`
 - `logical-artifact-role`
 
 Artifact identity explicitly excludes publish-time final naming such as:
@@ -117,10 +139,14 @@ One `publish-node` represents **one publication intent**.
 
 Rules:
 
-- one publish node targets exactly one target instance;
+- one publish node targets exactly one target-instance snapshot;
 - one publish node may consume one or more artifacts;
 - one artifact may be consumed by zero or more publish nodes;
-- one publish node may consume artifacts from multiple variants;
+- one publish node may consume only artifacts whose `project-id` matches the
+  owning `project-id` of that publish node;
+- one publish node may consume artifacts from multiple variants only when the
+  destination contract inherited from its referenced target-instance snapshot
+  allows that aggregation shape;
 - one publish node belongs to exactly one project.
 
 This preserves multi-project dispatch as one run containing multiple
@@ -132,17 +158,54 @@ one publish node.
 The publish side separates several distinct concepts:
 
 - **target family** — business category such as `github-release`, `nuget`,
-  `pypi`, `npm`, `rubygems`, or `github-packages`;
-- **target instance** — the concrete publication destination such as `nuget.org`
-  or `npmjs`;
-- **destination contract** — the protocol-shaped publication structure;
+  `pypi`, `npm`, or `rubygems`;
+- **target instance** — the concrete publication destination such as `nuget.org`,
+  `npmjs`, `github-packages-nuget`, or `github-packages-npm`;
+- **destination contract** — a reusable named protocol-shaped publication type;
 - **target instance capability** — static destination-specific constraints;
 - **target-side projection** — target-side naming, labeling, and presentation.
+
+At this layer, two closely related objects must be distinguished:
+
+- **catalog target-instance** — a repo-level shared catalog entity with stable
+  identity and static capability declaration;
+- **plan target-instance snapshot** — the execution-authoritative snapshot of a
+  referenced catalog target-instance inside one fully materialized plan.
+
+Project descriptors do not inline full target-instance definitions. Instead,
+they declare project-owned target usage by referencing catalog target instances
+and adding project-specific publication-intent details such as projection or
+enablement. This keeps target declaration project-owned without turning shared
+target instances into repo-wide default mappings. The shared catalog is the
+planning-time authority only; projects still opt in by their own declarations.
+
+Cardinality and identity boundaries at this layer are:
+
+- one target family contains many target instances;
+- one target instance belongs to exactly one target family;
+- one destination contract may be shared by many target instances;
+- one target instance declares exactly one destination contract;
+- one publish node references exactly one plan target-instance snapshot;
+- one publish node inherits destination-contract structure from its referenced
+  target-instance snapshot rather than selecting a different contract
+  independently.
+- in the current signed-off scope, each target family maps to one concrete
+  protocol-shaped destination contract, though many target instances may share
+  that contract; this is a current-scope simplification rather than a universal
+  architectural invariant.
+
+When the planner emits a fully materialized plan, the referenced catalog
+target-instance data needed for execution is snapshotted into the plan as
+authoritative plan state. Execution consumes that frozen plan snapshot and does
+not re-read the repo catalog out of band.
 
 ### Destination Contract
 
 Destination contracts are modeled by publish protocol / family rather than by
-hosting platform.
+hosting platform. At this layer they are reusable named types outside the
+normalized graph core: catalog target instances declare one, and plan
+target-instance snapshots carry the resolved contract structure inline for
+execution.
 
 Examples:
 
@@ -199,15 +262,17 @@ publication, including:
 
 The current architecture-level ownership and cardinality rules are:
 
+- the plan graph is the union of multiple project-scoped subgraphs plus shared
+  target-instance snapshots derived from the repo catalog at planning time;
 - one project owns many variants;
 - one variant belongs to exactly one project;
 - one variant produces many artifacts;
 - one artifact belongs to exactly one variant;
 - one project owns many publish nodes;
 - one publish node belongs to exactly one project;
-- one publish node targets exactly one target instance;
-- one target instance may be referenced by many publish nodes across many
-  projects;
+- one publish node targets exactly one target-instance snapshot;
+- one target-instance snapshot may be referenced by many publish nodes across
+  many projects within the same plan;
 - one publish node may consume many artifacts;
 - one artifact may be consumed by many publish nodes.
 
@@ -216,14 +281,15 @@ The current architecture-level ownership and cardinality rules are:
 These concerns stay outside the declarative plan graph and remain in the control
 plane:
 
-- workflow dispatch envelope;
+- control-plane run envelope;
 - approvals;
 - concurrency and duplicate-run cancellation;
 - job orchestration;
 - artifact passing and runtime wiring.
 
-The plan expresses release intent. The control plane expresses execution
-governance.
+The plan expresses release intent through a normalized plan envelope and graph.
+The control plane expresses execution governance through the raw run envelope
+and workflow runtime state.
 
 ## Deliberately Deferred
 
