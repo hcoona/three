@@ -279,3 +279,27 @@ This file is the append-only chronological record of wiki activity.
   executables and desktop GUI executables such as .NET `WinExe` outputs.
 - Updated the representative WinUI app descriptor example to use
   `concrete-kind: executable`.
+
+## [2026-04-23] design | Define planner output and plan shape
+
+- Added a dedicated plan-shape design page that normatively defines the authoritative `three.release.plan/v1alpha1` top-level object as `api-version`, `kind`, `envelope`, and `graph`.
+- Fixed the envelope/graph split at the concrete field level, including selected-project source snapshots in the envelope and normalized variants, artifacts, publish nodes, and target-instance snapshots in the graph.
+- Made the plan self-sufficient for descriptor-owned and catalog-owned release intent by freezing resolved catalog contract, destination, and capability data into target-instance snapshots and by normalizing descriptor-handle references to plan ids.
+- Updated the descriptor-schema backlinks plus the wiki overview and index so the remaining design questions now move down to workflow and executor layers instead of planner output shape.
+
+## [2026-04-23] design | Close plan-id determinism and rerun-skip boundary
+
+- Added deterministic canonical ID generation rules for `plan-id`, `variant-id`,
+  `artifact-id`, and `publish-node-id`, including canonical JSON hashing inputs
+  and lexicographic serialized map ordering.
+- Added planner-authored per-publish-node `publish-disposition` so immutable-
+  target rerun skip decisions live in the frozen plan while raw remote
+  observations remain outside target-instance snapshots.
+- Synced the architecture, descriptor-schema, overview, and index pages so the
+  doc set no longer says the exact plan shape is deferred.
+
+## [2026-04-23] design | Close resolved publish identity plan boundary
+
+- Clarified that each selected publish node serializes planner-resolved external publication identity in the plan: current-scope `release-tag` for GitHub Release or `package-name` plus `version` for package registries.
+- Kept raw remote observations outside the plan while stating that immutable-target replay checks refer to the serialized publish identity plus the derived `publish-disposition`, not to re-derived manifest or commit state.
+- Synced the descriptor-schema, overview, and index summaries so the plan boundary is now explicit about what is frozen versus what remains out of plan.

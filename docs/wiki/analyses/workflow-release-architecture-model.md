@@ -309,15 +309,16 @@ plane:
 - job orchestration;
 - artifact passing and runtime wiring.
 
-The plan expresses release intent through a normalized plan envelope and graph.
-The control plane expresses execution governance through the raw run envelope
-and workflow runtime state.
+The plan expresses release intent through a normalized plan envelope and graph,
+including planner-derived per-publish-node publish versus immutable-target-skip
+dispositions when planner-time validation used remote destination state. The
+control plane expresses execution governance through the raw run envelope and
+workflow runtime state.
 
 ## Deliberately Deferred
 
 The following are still deferred to later design layers:
 
-- exact plan JSON/YAML object shape;
 - exact reusable-workflow and job layout;
 - executor interfaces and invocation contracts;
 - exact plan-level serialization of resolved projection data beyond the closed
@@ -325,3 +326,5 @@ The following are still deferred to later design layers:
 
 Descriptor schema, file syntax, and shared target-instance catalog authoring are
 now defined in [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md).
+The exact `three.release.plan/v1alpha1` object shape is now defined in
+[Workflow Release Plan Shape](./workflow-release-plan-shape.md).

@@ -692,10 +692,21 @@ questions, such as:
 - whether the request selected `buddy` or `official` and whether approvals are
   satisfied;
 - commit-derived version identity;
+- target-family-specific resolved publish identity derived from that version
+  identity plus the selected projection and manifest inputs;
 - `buddy FORCE` versus immutable-target rules;
 - rerun skip decisions based on already-published remote state;
 - external uniqueness conflicts that require checking the destination;
 - duplicate-run cancellation and other control-plane concerns.
+
+Planner-time validation also resolves the external publication identity for
+each selected publish intent and freezes that derived identity into the plan
+(current-scope: `release-tag` for GitHub Release, or `package-name` plus
+`version` for package registries). When immutable-target remote checks affect a
+selected publication intent, planner-time validation produces a derived
+per-publish-node `publish-disposition` in the plan. The raw remote observations
+themselves are not author-time schema data and are not frozen into target-
+instance snapshots or into observation records in the plan.
 
 ## Mapping Into the Frozen Architecture
 
@@ -709,8 +720,9 @@ This schema layer is the author-time input counterpart of the architecture page:
 | profile target usage entry                        | `publish-node`                                          |
 | catalog target instance                           | `target-instance-snapshot` source                       |
 
-This gives Group 2 a complete author-time input model without predefining the
-exact serialized planner output shape.
+This gives Group 2 a complete author-time input model. The exact authoritative
+planner output shape is now defined in
+[Workflow Release Plan Shape](./workflow-release-plan-shape.md).
 
 ## Representative YAML Examples
 
@@ -885,5 +897,6 @@ profiles:
 
 - [Workflow Release Design Direction](./workflow-release-design-direction.md)
 - [Workflow Release Architecture Model](./workflow-release-architecture-model.md)
+- [Workflow Release Plan Shape](./workflow-release-plan-shape.md)
 - [Repository Release Landscape](./repository-release-landscape.md)
 - [Workflow Release Requirements Baseline](./workflow-release-requirements-baseline.md)

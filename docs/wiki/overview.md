@@ -83,11 +83,22 @@ supporting assets in `../raw/`.
   shapes, contract-to-artifact compatibility rules, and the three-layer
   validation model: file-schema validation, author-time static repo validation,
   and planner-time validation.
+- The plan-shape page now normatively defines `three.release.plan/v1alpha1`: an
+  envelope keyed by the resolved request and selected project snapshots, a
+  normalized graph keyed by stable deterministic planner ids plus shared target-
+  instance-snapshot ids, deterministic mapping of every Group 1 construct into
+  that plan, planner-authored per-publish-node resolved publish identity plus
+  publish versus immutable-target-skip disposition, normalized projection
+  references onto plan artifact ids, frozen catalog data inside target-instance
+  snapshots, and an explicit boundary for what remains outside the plan.
 
 ## Open Questions
 
-- What exact plan object shape should realize the agreed envelope/graph model
-  without leaking schema details back into the architecture layer?
+- What exact workflow and job layout should the control plane use to consume
+  `three.release.plan/v1alpha1` and move artifacts between build and publish
+  stages?
+- What exact executor invocation contracts should later build, packaging, and
+  target-family executors accept from the frozen plan objects?
 
 ## Related Pages
 
@@ -99,3 +110,4 @@ supporting assets in `../raw/`.
 - [Workflow Release Design Direction](./analyses/workflow-release-design-direction.md)
 - [Workflow Release Architecture Model](./analyses/workflow-release-architecture-model.md)
 - [Workflow Release Descriptor Schema](./analyses/workflow-release-descriptor-schema.md)
+- [Workflow Release Plan Shape](./analyses/workflow-release-plan-shape.md)
