@@ -42,8 +42,10 @@ supporting assets in `../raw/`.
   the same.
 - The target baseline now also requires GitHub Release for any non-zero-target
   profile, keeps package targets project-declared, forbids same-name
-  cross-profile publication to the same package registry, and fixes `buddy` as
-  pre-release plus `official` as release for GitHub Release.
+  cross-profile publication to the same package registry, fixes `buddy` as
+  pre-release plus `official` as release for GitHub Release, and limits tag
+  creation or verification to runs that actually include a GitHub Release
+  publish node.
 - The artifact baseline now allows one canonical build to emit both the binary
   and related packages or installers for the same binary variant, as long as it
   does not recompile divergent binaries per target.
@@ -88,14 +90,16 @@ supporting assets in `../raw/`.
   including normalized request flags inside the authoritative `plan-id` identity,
   a normalized graph keyed by stable deterministic planner ids plus shared
   target-instance-snapshot ids, deterministic mapping of every Group 1 construct
-  into that plan, planner-authored per-publish-node resolved publish identity
-  plus immutable-target replay disposition and live publish mode, a closed
-  current-scope immutable-target and `buddy FORCE` outcome matrix, normalized
-  projection references onto plan artifact ids, frozen catalog data inside
-  target-instance snapshots, and an explicit boundary for what remains outside
-  the plan.
+  into that plan, planner-authored per-publish-node resolved artifact set and
+  publish identity plus GitHub Release desired release state, planner-owned
+  replay-satisfaction disposition including same-tag GitHub Release satisfied
+  skips and same-tag prerelease-to-release authoritative replacement semantics,
+  live publish mode, a closed current-scope replay and `buddy FORCE` outcome
+  matrix, normalized projection references onto plan artifact ids, frozen
+  catalog data inside target-instance snapshots, and an explicit boundary for
+  what remains outside the plan.
 
-- The workflow-and-executor-boundaries page now fixes the control-plane shape on top of that plan: `buddy` and `official` entry workflows over one shared orchestration workflow, a normalized planner-facing request contract for current scope, per-variant build fan-out, per-publish-node publish fan-out, control-plane-owned approvals, concurrency, tagging, runtime wiring, and reporting, plus plan-to-job handoff contracts and thin executor boundaries that keep replay decisions, overwrite mode, and publication identity planner-owned.
+- The workflow-and-executor-boundaries page now fixes the control-plane shape on top of that plan: `buddy` and `official` entry workflows over one shared orchestration workflow, a normalized planner-facing request contract for current scope, per-variant build fan-out, per-publish-node publish fan-out, control-plane-owned approvals, concurrency, tagging only when a GitHub Release publish node is present, runtime wiring, and reporting, plus plan-to-job handoff contracts and thin executor boundaries that keep replay decisions, overwrite or same-tag replacement mode, publication identity, and GitHub Release desired state planner-owned.
 
 ## Open Questions
 

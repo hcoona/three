@@ -324,3 +324,9 @@ This file is the append-only chronological record of wiki activity.
   implementation work.
 - Validated the touched markdown files with `pnpm exec prettier --write` and
   `pnpm exec markdownlint-cli2`.
+
+## [2026-04-23] design | Sync replay-satisfaction log wording
+
+- Corrected the chronology so planner-owned `publish-disposition: skip-satisfied` is the generic replay-satisfaction outcome rather than immutable-target-only rerun wording.
+- Recorded that this satisfied-skip outcome covers both immutable targets that already satisfy publish intent and same-tag GitHub Release reruns whose existing release already matches the full frozen publish intent: `desired-publish-state.release-state`, authoritative asset set, and asset labels.
+- This supersedes earlier log phrasing that framed replay skip behavior mainly as immutable-target rerun handling.

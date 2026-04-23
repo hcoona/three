@@ -26,7 +26,8 @@ limits on top of `three.release.plan/v1alpha1`.
   toolchain wiring, artifact transport, and final reporting remain control-plane
   responsibilities.
 - Executors are thin consumers of plan-defined intent and must never re-plan,
-  rediscover targets, or derive alternate publish identity.
+  rediscover targets, or derive alternate publish identity, overwrite policy,
+  or same-tag GitHub Release replacement policy.
 
 ## Boundary to Group 1 and Group 2
 
@@ -75,7 +76,9 @@ The stable reusable boundaries are therefore:
 4. `ensure-tag` job
     - stays in the control plane;
     - creates or verifies the repository tag exactly once per run when any
-      selected publish node resolves to a GitHub Release publication.
+      selected publish node resolves to a GitHub Release publication;
+    - does nothing when the selected publish-node set contains no GitHub
+      Release publication.
 5. `publish` fan-out
     - runs exactly once per selected `publish-node-id` whose plan
       `publish-disposition` is `publish`;
@@ -118,7 +121,7 @@ plan:
 - `active-variant-ids` are the distinct variants reachable from the artifacts
   referenced by those active publish nodes.
 - Selected publish nodes whose `publish-disposition` is
-  `skip-immutable-satisfied` do not invoke a publish executor and do not force a
+  `skip-satisfied` do not invoke a publish executor and do not force a
   build. The control plane instead emits a synthetic skip receipt for reporting.
 
 This keeps rerun skip logic planner-owned rather than executor-owned.
@@ -210,16 +213,36 @@ executor with at least these fields:
 | `artifacts` map keyed by `artifact-id`                | frozen artifact metadata from the plan plus resolved file paths from build results |
 
 The publish unit must create that request only when the selected publish node has
-`publish-disposition: publish`. For
-`publish-disposition: skip-immutable-satisfied`, the control plane emits the
-receipt directly without invoking a publish executor. When the publish node also
-contains `publish-mode: overwrite-mutable`, the executor must honor that frozen
-mode; it must not infer overwrite behavior by re-reading raw dispatch inputs or
-by probing the destination for alternate policy. When a mutable-prerelease
-destination already contains the same frozen `resolved-publish-identity`, the
-executor must still follow the serialized mode exactly: only planner-authorized
-buddy `FORCE` replay arrives as `overwrite-mutable`, and every other live replay
-case arrives as `create-only`.
+`publish-disposition: publish`. For `publish-disposition: skip-satisfied`, the
+control plane emits the receipt directly without invoking a publish executor.
+When the publish node also contains `publish-mode: overwrite-mutable` or
+`publish-mode: replace-authoritative`, the executor must honor that frozen mode;
+it must not infer overwrite or replacement behavior by re-reading raw dispatch
+inputs or by probing the destination for alternate policy.
+`overwrite-mutable` remains limited to planner-authorized buddy `FORCE` replay.
+`replace-authoritative` is the planner-authorized same-tag GitHub Release
+promotion path: the executor must converge the release identified by the frozen
+`resolved-publish-identity.release-tag` to the node's full official publish
+intent, including `desired-publish-state.release-state`, `artifact-ids`, and
+`projection.asset-labels-by-artifact-id`, and it may delete, re-upload, or
+recreate target-side assets as needed to do so. It must not reinterpret that
+path as a mere state flip or as an additive merge with the prior buddy asset
+set. When a `mutable-prerelease` destination already contains the same frozen
+`resolved-publish-identity`, the executor must still follow the serialized mode
+exactly: only planner-authorized buddy `FORCE` replay arrives as
+`overwrite-mutable`; same-tag GitHub Release prerelease-to-release promotion
+arrives as `replace-authoritative`; and every other live replay case arrives as
+`create-only`. When the frozen publish node also carries GitHub Release
+`desired-publish-state.release-state`, the executor must honor that state
+exactly rather than inferring prerelease versus release from the workflow
+profile or from tag existence alone. By contrast, when the same release tag
+already exists and already matches the frozen desired release state, asset set,
+and asset labels, the planner must serialize `publish-disposition:
+skip-satisfied`, so the executor never receives a live publish request for that
+rerun case. The inverse same-tag release to prerelease transition is
+planner-invalid because official release state is frozen; the planner must
+reject that request before job materialization, so a publish executor never
+receives a live GitHub Release demotion request.
 
 Each publish unit must emit one logical `publish-result` object with at least
 these fields:
@@ -234,8 +257,8 @@ these fields:
 | `outcome: published`                                 | successful live publication                                                                   |
 | `evidence`                                           | small family-specific receipt data such as returned URL or registry identifier when available |
 
-Skip receipts for immutable-target replay stay control-plane-authored and do not
-pass through the publish executor contract.
+Skip receipts for planner-owned satisfied reruns stay control-plane-authored
+and do not pass through the publish executor contract.
 
 ## Control-Plane Ownership Rules
 
@@ -247,8 +270,9 @@ The following concerns are explicitly control-plane-owned:
   duplicate-run concurrency key, using the already frozen workflow-entry-point
   plus commit rule;
 - **tagging**: the planner resolves the final `release-tag`, but the control
-  plane creates or verifies the Git tag once per run before any GitHub Release
-  publication;
+  plane creates or verifies the Git tag once per run only when the selected
+  plan contains at least one GitHub Release publish node, and it does so before
+  any GitHub Release publication;
 - **runtime wiring**: runner selection, tool installation, permissions,
   credential injection, and environment selection stay in workflow jobs and
   wrappers rather than inside executors;
@@ -282,13 +306,14 @@ Executors must not own any of the following:
 - descriptor discovery, schema validation, or shared-catalog loading;
 - project selection, target selection, target compatibility checks, or publish-
   node construction;
-- version derivation, `release-tag` derivation, or final package-name derivation;
+- version derivation, `release-tag` derivation, GitHub Release desired-state
+  derivation, or final package-name derivation;
 - approval handling, concurrency handling, dry-run policy, or cancellation
   policy;
 - Git tag creation, multi-job artifact transport, or final run reporting;
-- immutable-target replay decisions, `FORCE` eligibility decisions, or overwrite
-  policy beyond honoring the already frozen plan `publish-disposition` and
-  `publish-mode`;
+- publish replay-satisfaction decisions, `FORCE` eligibility decisions, or
+  overwrite or replacement policy beyond honoring the already frozen plan
+  `publish-disposition` and `publish-mode`;
 - combining multiple publish nodes into one alternate publish transaction;
 - inventing artifacts, variants, or destination-side projections that are not in
   the request they were given.

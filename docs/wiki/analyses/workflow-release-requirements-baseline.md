@@ -144,8 +144,11 @@ Examples of disallowed behavior:
   any out-of-band follow-up is outside the workflow's scope.
 - The first delivery scope does not require automatic release triggering from a
   Git tag.
-- Workflow release should create the required Git tags automatically for both
-  `buddy` and `official` rather than relying on manual tag operations.
+- Workflow release should create or verify the required Git tag automatically
+  when the selected run includes at least one GitHub Release publication,
+  rather than relying on manual tag operations for those runs.
+- A zero-target run, or any other run whose selected publish nodes contain no
+  GitHub Release publication, must not imply a tag side effect.
 
 ## Confirmed Versioning and Immutability Rule
 
@@ -162,6 +165,12 @@ Examples of disallowed behavior:
   and the same version identity.
 - Promotion does not require reusing the exact same built artifact; rebuilding is
   allowed when `buddy` and `official` build configurations differ.
+- For GitHub Release, same-commit `buddy` to `official` promotion must keep the
+  same release tag while converging to the full official publish intent for that
+  tag: desired release state, final asset set, and asset labels.
+- Replay handling for that promotion must evaluate whether that full GitHub
+  Release publish intent is already satisfied, not merely whether the tag
+  exists or whether only the release state matches.
 - Package-registry promotion on the same registry and the same published package
   name is prohibited.
 - `buddy` and `official` may share a registry only when the published package
@@ -217,7 +226,8 @@ Examples of disallowed behavior:
   execution.
 - Acceptance must include at least one real `official` publication.
 - Acceptance must prove one real `buddy` to `official` promotion on the same
-  commit.
+  commit, including the same-tag GitHub Release pre-release to release case
+  when GitHub Release is part of that run.
 - Acceptance must respect immutable-registry constraints and must not rely on
   publishing the same package name to the same registry from both profiles.
 - Acceptance must also prove one real direct `official` publication without a

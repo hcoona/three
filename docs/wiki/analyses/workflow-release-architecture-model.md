@@ -273,19 +273,47 @@ per request.
 
 ### Target-Side Projection
 
-Projection stays in the publish layer and captures how the target sees the
-publication, including:
+Projection stays in the publish layer but, in the current architecture,
+covers only descriptor-owned target-side naming, labeling, and display data,
+including:
 
 - target-side naming transforms;
 - scoped package names;
 - release asset labels;
-- prerelease / release presentation differences;
-- other destination-side display or version projections.
+- other destination-side display projections.
 
 In the current signed-off author-time scope, the descriptor layer narrows this
 to closed family-specific shapes for GitHub Release asset labels and npm
-published package-name override. Broader projection vocabularies remain
-deferred.
+published package-name override. GitHub Release prerelease versus release is
+not projection here; it is planner-owned desired target-side state carried as
+`desired-publish-state.release-state` in the plan. See
+[Planner-Owned Publish Intent](#planner-owned-publish-intent) below and
+[Workflow Release Plan Shape](./workflow-release-plan-shape.md).
+Broader projection vocabularies remain deferred.
+
+### Planner-Owned Publish Intent
+
+Planner-owned publish intent is broader than destination identity alone. In the
+current architecture it consists of:
+
+- resolved artifact membership for the publish node;
+- resolved external publish identity;
+- any family-specific desired target-side state;
+- resolved target-side projection data;
+- planner-derived publish disposition and live publish mode.
+
+Descriptor-owned projection data remains distinct from planner-owned desired
+target-side state even though both are serialized into the plan for execution.
+In current scope, GitHub Release is the only family that needs explicit desired
+target-side state beyond identity: `buddy` resolves to `prerelease`, and
+`official` resolves to `release` for the same `release-tag`. For same-tag
+prerelease-to-release promotion, the frozen `artifact-ids` plus
+`projection.asset-labels-by-artifact-id` are the authoritative final official
+asset set and labels for that tag, so the promotion model is not a state-only
+flip. That keeps same-tag already-satisfied replay, same-tag prerelease to
+release promotion, and same-tag release to prerelease demotion rejection
+planner-owned instead of leaving executors to infer intent from workflow
+profile names or remote tag observations.
 
 ## Ownership and Cardinality
 
@@ -317,11 +345,12 @@ plane:
 - artifact passing and runtime wiring.
 
 The plan expresses release intent through a normalized plan envelope and graph,
-including planner-derived per-publish-node publish versus immutable-target-skip
-dispositions and, for live publish nodes, the planner-frozen create-only versus
-overwrite-mutable publish mode. `envelope.plan-id` is the authoritative whole-
-release rerun identity for the normalized current-scope request summary: the
-selected profile, selected commit, resolved selected-project scope, and
+including planner-derived per-publish-node publish versus satisfied-skip
+dispositions, any family-specific desired target-side publish state, and, for
+live publish nodes, the planner-frozen create-only, overwrite-mutable, or
+replace-authoritative publish mode. `envelope.plan-id` is the authoritative
+whole-release rerun identity for the normalized current-scope request summary:
+the selected profile, selected commit, resolved selected-project scope, and
 normalized request flags such as `force`. The control plane expresses execution
 governance through the raw run envelope and workflow runtime state.
 
