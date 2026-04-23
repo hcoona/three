@@ -84,15 +84,18 @@ supporting assets in `../raw/`.
   validation model: file-schema validation, author-time static repo validation,
   and planner-time validation.
 - The plan-shape page now normatively defines `three.release.plan/v1alpha1`: an
-  envelope keyed by the resolved request and selected project snapshots, a
-  normalized graph keyed by stable deterministic planner ids plus shared target-
-  instance-snapshot ids, deterministic mapping of every Group 1 construct into
-  that plan, planner-authored per-publish-node resolved publish identity plus
-  publish versus immutable-target-skip disposition, normalized projection
-  references onto plan artifact ids, frozen catalog data inside target-instance
-  snapshots, and an explicit boundary for what remains outside the plan.
+  envelope keyed by the resolved request and selected project snapshots,
+  including normalized request flags inside the authoritative `plan-id` identity,
+  a normalized graph keyed by stable deterministic planner ids plus shared
+  target-instance-snapshot ids, deterministic mapping of every Group 1 construct
+  into that plan, planner-authored per-publish-node resolved publish identity
+  plus immutable-target replay disposition and live publish mode, a closed
+  current-scope immutable-target and `buddy FORCE` outcome matrix, normalized
+  projection references onto plan artifact ids, frozen catalog data inside
+  target-instance snapshots, and an explicit boundary for what remains outside
+  the plan.
 
-- The workflow-and-executor-boundaries page now fixes the control-plane shape on top of that plan: `buddy` and `official` entry workflows over one shared orchestration workflow, per-variant build fan-out, per-publish-node publish fan-out, control-plane-owned approvals, concurrency, tagging, runtime wiring, and reporting, plus plan-to-job handoff contracts and thin executor boundaries that keep replay decisions and publication identity planner-owned.
+- The workflow-and-executor-boundaries page now fixes the control-plane shape on top of that plan: `buddy` and `official` entry workflows over one shared orchestration workflow, a normalized planner-facing request contract for current scope, per-variant build fan-out, per-publish-node publish fan-out, control-plane-owned approvals, concurrency, tagging, runtime wiring, and reporting, plus plan-to-job handoff contracts and thin executor boundaries that keep replay decisions, overwrite mode, and publication identity planner-owned.
 
 ## Open Questions
 

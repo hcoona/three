@@ -691,6 +691,9 @@ questions, such as:
 - whether the requested project ids exist in the discovered set;
 - whether the request selected `buddy` or `official`, because that request
   profile affects downstream publish decisions;
+- the authoritative normalized planner-facing request contract for current
+  scope: `profile`, `commit-sha`, normalized `requested-project-ids`, and
+  normalized `request-flags.force`;
 - commit-derived version identity;
 - target-family-specific resolved publish identity derived from that version
   identity plus the selected projection and manifest inputs;
@@ -704,11 +707,15 @@ cancellation, or other control-plane sequencing concerns.
 Planner-time validation also resolves the external publication identity for
 each selected publish intent and freezes that derived identity into the plan
 (current-scope: `release-tag` for GitHub Release, or `package-name` plus
-`version` for package registries). When immutable-target remote checks affect a
-selected publication intent, planner-time validation produces a derived
-per-publish-node `publish-disposition` in the plan. The raw remote observations
-themselves are not author-time schema data and are not frozen into target-
-instance snapshots or into observation records in the plan.
+`version` for package registries). The normalized planner request is also the
+whole-release rerun-equivalence basis at the plan layer, so changing
+`request-flags.force` changes the request identity even when the selected
+projects and commit stay the same. When immutable-target remote checks affect a
+selected publication intent, planner-time validation produces the derived
+per-publish-node outcome in the plan: closed current-scope `publish-disposition`
+values plus, for live publish nodes, the planner-frozen publish mode. The raw
+remote observations themselves are not author-time schema data and are not
+frozen into target-instance snapshots or into observation records in the plan.
 
 ## Mapping Into the Frozen Architecture
 

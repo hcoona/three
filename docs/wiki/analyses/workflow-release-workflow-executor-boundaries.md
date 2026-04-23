@@ -12,6 +12,9 @@ limits on top of `three.release.plan/v1alpha1`.
   workflows.
 - Both entry workflows call one shared reusable orchestration workflow with the
   selected profile and the raw dispatch envelope.
+- The shared orchestration workflow normalizes that raw envelope into the
+  authoritative planner-facing request for current scope, including
+  `request-flags.force` for `buddy FORCE`.
 - The orchestration workflow consumes one frozen `three.release.plan/v1alpha1`
   and fans out at two granularities only: one build unit per `variant-id` and
   one publish unit per `publish-node-id`.
@@ -57,6 +60,7 @@ The stable reusable boundaries are therefore:
 
 1. `plan` job
     - consumes the raw control-plane run envelope;
+    - materializes the normalized planner request;
     - invokes the planner;
     - publishes the frozen `three.release.plan/v1alpha1` artifact;
     - derives the selected `variant-id` and `publish-node-id` sets for later fan-
@@ -82,6 +86,27 @@ The stable reusable boundaries are therefore:
 
 `approve`, `ensure-tag`, and `report` are ordinary control-plane jobs, not
 executor boundaries.
+
+### Planner Request Materialization
+
+Before invoking the planner, the shared orchestration workflow must normalize
+the raw dispatch envelope into one logical planner request with exactly these
+current-scope fields:
+
+| Field                   | Meaning                                                                                                                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile`               | Selected entry workflow profile, `buddy` or `official`.                                                                                                                                                          |
+| `commit-sha`            | The exact commit being released.                                                                                                                                                                                 |
+| `requested-project-ids` | User-selected project scope, normalized to unique lexicographic order before planning.                                                                                                                           |
+| `request-flags.force`   | Boolean overwrite request flag. In `v1alpha1`, `true` is valid only for `buddy`; `profile: official` with `true` is invalid. Raw GitHub input names remain control-plane-owned and are not the planner contract. |
+
+The planner request is the authoritative planner-facing release-input model for
+current scope. Actor, run id, run attempt, approval state, concurrency groups,
+and dry-run remain outside that object. Whole-release rerun equivalence for
+planner-owned behavior is based on that normalized request after project-scope
+resolution, which is why the resulting plan serializes normalized request flags
+in `envelope.request-flags` and uses resolved project scope plus those flags in
+`envelope.plan-id`.
 
 ### Active Build and Publish Set Derivation
 
@@ -187,7 +212,14 @@ executor with at least these fields:
 The publish unit must create that request only when the selected publish node has
 `publish-disposition: publish`. For
 `publish-disposition: skip-immutable-satisfied`, the control plane emits the
-receipt directly without invoking a publish executor.
+receipt directly without invoking a publish executor. When the publish node also
+contains `publish-mode: overwrite-mutable`, the executor must honor that frozen
+mode; it must not infer overwrite behavior by re-reading raw dispatch inputs or
+by probing the destination for alternate policy. When a mutable-prerelease
+destination already contains the same frozen `resolved-publish-identity`, the
+executor must still follow the serialized mode exactly: only planner-authorized
+buddy `FORCE` replay arrives as `overwrite-mutable`, and every other live replay
+case arrives as `create-only`.
 
 Each publish unit must emit one logical `publish-result` object with at least
 these fields:
@@ -224,6 +256,8 @@ The following concerns are explicitly control-plane-owned:
   bundles and receipts stay in the control plane;
 - **orchestration**: matrix fan-out, dependency ordering, rerun wiring, and
   failure aggregation stay in the control plane;
+- **planner-request normalization**: only the control plane maps raw dispatch
+  inputs into the planner-facing request contract;
 - **reporting**: only the control plane assembles final summaries across multiple
   build and publish units.
 
@@ -252,8 +286,9 @@ Executors must not own any of the following:
 - approval handling, concurrency handling, dry-run policy, or cancellation
   policy;
 - Git tag creation, multi-job artifact transport, or final run reporting;
-- immutable-target replay decisions beyond honoring the already frozen plan
-  disposition;
+- immutable-target replay decisions, `FORCE` eligibility decisions, or overwrite
+  policy beyond honoring the already frozen plan `publish-disposition` and
+  `publish-mode`;
 - combining multiple publish nodes into one alternate publish transaction;
 - inventing artifacts, variants, or destination-side projections that are not in
   the request they were given.

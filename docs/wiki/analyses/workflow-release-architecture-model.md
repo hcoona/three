@@ -24,16 +24,22 @@ partially expanded graph.
 
 ## Plan Top-Level Shape
 
-The architecture distinguishes two different envelopes:
+The architecture distinguishes three related request representations:
 
 1. **Control-plane run envelope** — raw GitHub Actions runtime context such as
    `workflow_dispatch` inputs, actor, run identifiers, approval state, and
    orchestration state.
-2. **Plan envelope** — the planner's normalized, authoritative header for the
+2. **Planner request** — the control-plane-normalized planner-facing input for
+   the current scope: `profile`, `commit-sha`, normalized
+   `requested-project-ids`, and normalized `request-flags.force`.
+3. **Plan envelope** — the planner's normalized, authoritative header for the
    computed release plan, containing the resolved request summary rather than
    raw workflow runtime state.
 
-Only the second one belongs to the declarative plan.
+Only the third one belongs to the declarative plan. The control plane owns raw
+input spelling and normalization into the planner request; the planner owns the
+resolved request summary and all request-dependent publish decisions that appear
+inside the emitted plan.
 
 The plan itself has two top-level parts:
 
@@ -42,8 +48,9 @@ The plan itself has two top-level parts:
 2. **Graph** — normalized ID-based objects and their relationships.
 
 `Request / Scope` stays in the envelope rather than becoming an executable graph
-node. The control-plane run envelope is an input to planning; the plan envelope
-is planner output.
+node. The control-plane run envelope is an input to planner-request
+materialization, the normalized planner request is the planner's authoritative
+input contract, and the plan envelope is planner output.
 
 ## Normalized Graph Core
 
@@ -311,9 +318,12 @@ plane:
 
 The plan expresses release intent through a normalized plan envelope and graph,
 including planner-derived per-publish-node publish versus immutable-target-skip
-dispositions when planner-time validation used remote destination state. The
-control plane expresses execution governance through the raw run envelope and
-workflow runtime state.
+dispositions and, for live publish nodes, the planner-frozen create-only versus
+overwrite-mutable publish mode. `envelope.plan-id` is the authoritative whole-
+release rerun identity for the normalized current-scope request summary: the
+selected profile, selected commit, resolved selected-project scope, and
+normalized request flags such as `force`. The control plane expresses execution
+governance through the raw run envelope and workflow runtime state.
 
 ## Later-Layer Boundary Page
 
