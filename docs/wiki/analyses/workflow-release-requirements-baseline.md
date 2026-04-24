@@ -92,9 +92,13 @@ Examples of disallowed behavior:
   higher.
 - `official` requires an additional approval before publication.
 - Any repository user with `maintain` permission or higher may approve an
-  `official` release.
-- If the initiator is `admin`, self-approval is allowed.
-- If the initiator is `maintain` but not `admin`, self-approval is not allowed.
+  `official` release when configured as a required reviewer for the protected
+  environment.
+- In current scope, `official` approval is modeled with GitHub protected-
+  environment required reviewers.
+- That protected environment must enable GitHub's "prevent self-reviews" rule.
+- If the protected environment still allows administrator bypass, `admin` may
+  use GitHub's native bypass path for that environment.
 
 ## Confirmed Lifecycle Rule
 
@@ -171,6 +175,10 @@ Examples of disallowed behavior:
 
 - For one selected project, version identity comes from that project's NBGV
   resolution at the selected commit.
+- In current scope, every in-scope project is expected to expose that NBGV
+  result through its own ecosystem-native build system.
+- Workflow release does not introduce a second workflow-owned version source or
+  treat manifest-only static versioning as the steady-state release model.
 - In current scope, the stable project slug for release-tag derivation is that
   project's descriptor-owned `project.id`; no extra tag-slug field is introduced.
 - Outputs built from the same project and the same commit should therefore share
@@ -277,8 +285,9 @@ Examples of disallowed behavior:
   input, including rerun after partial success on immutable targets.
 - Acceptance must explicitly prove manual cancellation behavior.
 - Acceptance must explicitly prove the approval boundary between `buddy` and
-  `official`, including `admin` self-approval and the prohibition on plain
-  `maintain` self-approval.
+  `official`, including protected-environment required review for `official`,
+  self-review prevention for the initiating actor, and administrator bypass
+  behavior when that bypass path remains enabled.
 - If any representative project declares a GitHub Packages target in the first
   delivery scope, acceptance must include at least one real GitHub Packages
   publication.

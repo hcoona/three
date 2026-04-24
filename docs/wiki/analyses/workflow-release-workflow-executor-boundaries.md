@@ -46,7 +46,7 @@ shape, or planner-owned resolved publish identity.
 | Boundary                      | Kind               | Stable granularity       | Owns                                                                                                                                                   |
 | ----------------------------- | ------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `buddy` entry workflow        | top-level workflow | one `buddy` run          | manual dispatch inputs, profile selection, entry permissions, and top-level concurrency wiring                                                         |
-| `official` entry workflow     | top-level workflow | one `official` run       | manual dispatch inputs, profile selection, approval environment, entry permissions, and top-level concurrency wiring                                   |
+| `official` entry workflow     | top-level workflow | one `official` run       | manual dispatch inputs, profile selection, protected-environment approval wiring, entry permissions, and top-level concurrency wiring                  |
 | shared orchestration workflow | reusable workflow  | one selected-profile run | planning, selector derivation, approval and side-effect sequencing, tag orchestration, artifact fan-out and fan-in, and final reporting                |
 | `build-variant` unit          | reusable workflow  | one `variant-id`         | build-request materialization, ecosystem-specific build-executor selection, runner or tool wiring, and upload of one variant bundle plus build receipt |
 | `publish-node` unit           | reusable workflow  | one `publish-node-id`    | publish-request materialization, family-specific publish-executor selection, download of referenced build bundles, and upload of one publish receipt   |
@@ -72,7 +72,11 @@ The stable reusable boundaries are therefore:
 3. `approve` gate
     - stays in the control plane;
     - guards all external side effects;
-    - may be bypassed for profiles that do not require approval.
+    - for current-scope `official`, uses a GitHub protected environment with
+      required reviewers and self-review prevention enabled;
+    - may be bypassed for profiles that do not require approval;
+    - administrator bypass, when that environment still allows it, remains a
+      native GitHub control-plane path rather than executor logic.
 4. `ensure-tag` job
     - stays in the control plane;
     - creates or verifies each distinct project-scoped release tag exactly once
@@ -276,7 +280,10 @@ and do not pass through the publish executor contract.
 The following concerns are explicitly control-plane-owned:
 
 - **approvals**: only the control plane decides whether and when approval is
-  required;
+  required; in current scope, `official` approval is wired through a GitHub
+  protected environment with required reviewers and self-review prevention,
+  while administrator bypass stays a native environment capability when
+  enabled;
 - **concurrency**: only the entry workflow or orchestration workflow sets the
   duplicate-run concurrency key, using the already frozen workflow-entry-point
   plus commit rule;

@@ -310,8 +310,11 @@ current architecture it consists of:
 - planner-derived publish disposition and live publish mode.
 
 In current scope, the planner resolves version identity per selected project
-from that project's NBGV result at the selected commit. For GitHub Release, the
-planner then derives the external publish identity as the project-scoped tag
+from that project's build-system-integrated NBGV result at the selected commit.
+The release model assumes every in-scope ecosystem exposes that NBGV result
+through its native build tooling rather than through a separate workflow-owned
+version source. For GitHub Release, the planner then derives the external
+publish identity as the project-scoped tag
 `release/<project.id>/v<nbgv-version>`. This matches the repositories existing
 release-tag shape, including observed tags such as `release/nbgv-python/v2.0.0`,
 `release/steam-account-history-to-csv/v1.1.1`, and
@@ -367,6 +370,11 @@ plane:
 - job orchestration;
 - artifact passing and runtime wiring;
 - release-tag mutation policy and existing-tag verification.
+
+For `official`, current-scope control-plane approval is a GitHub protected
+environment with required reviewers and self-review prevention enabled.
+Administrator bypass, when the environment still allows it, remains a native
+GitHub control-plane capability rather than a planner or executor concern.
 
 The plan expresses release intent through a normalized plan envelope and graph,
 including planner-derived per-publish-node publish versus satisfied-skip

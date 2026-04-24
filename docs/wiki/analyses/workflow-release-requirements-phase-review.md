@@ -75,8 +75,10 @@ items well:
 6. **Approval rule**
     - `buddy` is `write+` without extra approval.
     - `official` is `maintain+` with a second approval step.
-    - `official` self-approval is allowed only for `admin`, not for plain
-      `maintain`.
+    - In current scope, that approval step uses GitHub protected-environment
+      required reviewers with self-review prevention enabled.
+    - If that protected environment keeps administrator bypass enabled, `admin`
+      may still use GitHub's native bypass path.
 7. **Initial lifecycle rule**
     - The first delivery scope prioritizes manual `workflow_dispatch`
       initiation.
@@ -194,6 +196,8 @@ This area is also largely closed at the requirements level. The business side
 has now frozen that:
 
 - version identity is commit-centric rather than profile-centric;
+- every in-scope project is expected to expose that commit-centric version
+  identity through NBGV integrated into its ecosystem-native build system;
 - `official` is the higher-status freezing state;
 - `buddy FORCE` is an explicit but exceptional overwrite path before a version
   reaches `official`;
@@ -241,8 +245,9 @@ must:
   including rerun after partial success on immutable targets;
 - explicitly prove manual cancellation behavior;
 - explicitly prove the approval boundary between `buddy` and `official`,
-  including `admin` self-approval and the prohibition on plain `maintain`
-  self-approval;
+  including protected-environment required review for `official`, self-review
+  prevention for the initiating actor, and administrator bypass behavior when
+  that bypass path remains enabled;
 - include at least one real GitHub Packages publication if that target is
   declared by a representative first-delivery project.
 

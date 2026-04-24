@@ -261,8 +261,9 @@ Current-scope normalized `resolved-publish-identity` shapes are:
 
 For package registries, the planner resolves the final `package-name` after any
 descriptor-side projection override or fallback to manifest-owned intrinsic
-package naming and resolves `version` from the selected project's NBGV version
-identity for the selected run. For GitHub Release, the planner resolves both the
+package naming and resolves `version` from the selected project's build-system-
+integrated NBGV version identity for the selected run. For GitHub Release, the
+planner resolves both the
 final project-scoped `release-tag` and `desired-publish-state.release-state`
 before serializing the plan. In current scope, GitHub Release tags use the
 repositories existing shape `release/<project.id>/v<nbgv-version>`, matching

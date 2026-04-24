@@ -699,7 +699,10 @@ questions, such as:
 - the authoritative normalized planner-facing request contract for current
   scope: `profile`, `commit-sha`, normalized `requested-project-ids`, and
   normalized `request-flags.force`;
-- project-scoped NBGV version identity for each selected project;
+- project-scoped NBGV version identity for each selected project, assuming the
+  current-scope steady state that every in-scope ecosystem exposes its version
+  through build-system-integrated NBGV rather than through manifest-only static
+  versioning;
 - target-family-specific resolved publish identity derived from that
   project-scoped version identity plus the selected projection and manifest
   inputs, including GitHub Release tag derivation as
