@@ -153,6 +153,17 @@ Examples of disallowed behavior:
 - Workflow release should create or verify the required Git tags automatically
   when the selected run includes one or more GitHub Release publications,
   rather than relying on manual tag operations for those runs.
+- For each required project-scoped release tag, verification is not satisfied by
+  tag existence alone.
+- If the required project-scoped release tag does not exist, workflow release
+  creates it.
+- If the required project-scoped release tag already exists, workflow release
+  must confirm that it already points to the selected commit/object for that
+  run.
+- If an existing required project-scoped release tag points elsewhere, workflow
+  release must fail before publication.
+- Retargeting or moving an existing required project-scoped release tag is out of
+  current scope and must not be attempted automatically.
 - A zero-target run, or any other run whose selected publish nodes contain no
   GitHub Release publication, must not imply a tag side effect.
 

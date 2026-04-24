@@ -365,7 +365,8 @@ plane:
 - approvals;
 - concurrency and duplicate-run cancellation;
 - job orchestration;
-- artifact passing and runtime wiring.
+- artifact passing and runtime wiring;
+- release-tag mutation policy and existing-tag verification.
 
 The plan expresses release intent through a normalized plan envelope and graph,
 including planner-derived per-publish-node publish versus satisfied-skip
@@ -375,7 +376,12 @@ replace-authoritative publish mode. `envelope.plan-id` is the authoritative
 whole-release rerun identity for the normalized current-scope request summary:
 the selected profile, selected commit, resolved selected-project scope, and
 normalized request flags such as `force`. The control plane expresses execution
-governance through the raw run envelope and workflow runtime state.
+governance through the raw run envelope and workflow runtime state. For any
+required project-scoped GitHub Release tag, current-scope control-plane
+verification is: create the tag when absent; otherwise confirm that the existing
+tag already points to the selected commit/object for that run; fail before
+publication if it points elsewhere; and never retarget or move an existing
+release tag automatically.
 
 ## Later-Layer Boundary Page
 

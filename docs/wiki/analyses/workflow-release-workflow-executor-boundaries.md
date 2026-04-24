@@ -78,6 +78,13 @@ The stable reusable boundaries are therefore:
     - creates or verifies each distinct project-scoped release tag exactly once
       per run when any selected publish node resolves to a GitHub Release
       publication;
+    - creates the tag when it does not already exist;
+    - when the tag already exists, verifies that it already points to the
+      expected selected commit/object for that run rather than treating tag
+      existence alone as sufficient;
+    - fails the run before publication if any required existing tag points
+      elsewhere;
+    - must not retarget or move an existing release tag in current scope;
     - does nothing when the selected publish-node set contains no GitHub
       Release publication.
 5. `publish` fan-out
@@ -276,7 +283,11 @@ The following concerns are explicitly control-plane-owned:
 - **tagging**: the planner resolves the final project-scoped `release-tag`,
   but the control plane creates or verifies each distinct selected Git tag once
   per run only when the selected plan contains at least one GitHub Release
-  publish node, and it does so before any GitHub Release publication;
+  publish node, and it does so before any GitHub Release publication; if a
+  required tag already exists, verification must confirm that it already points
+  to the expected selected commit/object for that run, mismatches are hard
+  failures, and current scope does not allow retargeting or moving existing
+  release tags;
 - **runtime wiring**: runner selection, tool installation, permissions,
   credential injection, and environment selection stay in workflow jobs and
   wrappers rather than inside executors;
