@@ -195,9 +195,10 @@ workflow design rather than to missing business intent.
 This area is also largely closed at the requirements level. The business side
 has now frozen that:
 
-- version identity is commit-centric rather than profile-centric;
-- every in-scope project is expected to expose that commit-centric version
-  identity through NBGV integrated into its ecosystem-native build system;
+- version identity is project-scoped rather than profile-centric and comes from
+  each selected project's NBGV resolution at the selected commit;
+- every in-scope project is expected to expose that project-scoped NBGV-derived
+  version identity through its ecosystem-native build system;
 - `official` is the higher-status freezing state;
 - `buddy FORCE` is an explicit but exceptional overwrite path before a version
   reaches `official`;
@@ -275,7 +276,8 @@ must:
   model;
 - shared visible handling rules across `buddy` and `official` for failure,
   cancellation, and partial success;
-- commit-centric version identity and `official` freeze semantics;
+- project-scoped NBGV-derived version identity at the selected commit and
+  `official` freeze semantics;
 - multi-target-class scope from the start;
 - ecosystem-specific target families instead of a generic registry bucket;
 - conditionally mandatory GitHub Release for every non-zero-target profile, with
