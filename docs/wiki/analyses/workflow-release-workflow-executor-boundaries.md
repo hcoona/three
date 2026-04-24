@@ -74,6 +74,9 @@ The stable reusable boundaries are therefore:
       publish-destination lookup, normalization, and classification needed for
       remote-state-dependent planning, with bounded retry and fail-closed
       behavior, before freezing the plan;
+    - if any selected publish node cannot be reduced to a planner-owned remote
+      observation class after that bounded retry, fails the run at planning time
+      without emitting a partial plan artifact;
     - publishes the frozen `three.release.plan/v1alpha1` artifact;
     - derives the selected `variant-id` and `publish-node-id` sets for later fan-
       out.
@@ -112,6 +115,26 @@ The stable reusable boundaries are therefore:
 
 `approve`, `ensure-tag`, and `report` are ordinary control-plane jobs, not
 executor boundaries.
+
+### Planner Failure Consequences
+
+Planning is request-atomic. When the planner fails remote-state classification
+for any selected publish node, the orchestration workflow must treat that as a
+planner failure for the whole selected profile run:
+
+- no frozen plan artifact is published;
+- no build fan-out starts, even for nodes whose remote state would otherwise
+  have classified cleanly;
+- no approval, tag creation or verification, or publish fan-out runs;
+- no executor receives a request for the failed run, so executors never
+  reinterpret remote-query failures as retryable publish actions.
+
+The diagnostics path stays control-plane-owned. The plan job must surface
+structured planner diagnostics sufficient to identify the failing node and
+remote-classification phase, and the workflow must expose those diagnostics in
+the operator-facing run summary or final report path. When planning fails before
+plan publication, there are no build receipts, publish receipts, or synthetic
+skip receipts to aggregate.
 
 ### Planner Request Materialization
 
@@ -323,7 +346,8 @@ The following concerns are explicitly control-plane-owned:
   observation, and rerun classification remain planner-owned; only required Git
   tag verification stays as separate control-plane logic;
 - **reporting**: only the control plane assembles final summaries across multiple
-  build and publish units.
+  build and publish units, and it also surfaces planner-time remote-
+  classification failures when planning ends before any executor work starts.
 
 ## Current-Scope Executor Routing
 
