@@ -25,9 +25,15 @@ limits on top of `three.release.plan/v1alpha1`.
 - Approvals, concurrency, dry-run gating, tagging, permissions, runner or
   toolchain wiring, artifact transport, and final reporting remain control-plane
   responsibilities.
+- Planner-owned publish-destination lookup for remote-state-dependent planning
+  is keyed by the frozen resolved publish identity, target snapshot, intended
+  artifacts, projection data, and any desired target-side state.
 - Executors are thin consumers of plan-defined intent and must never re-plan,
   rediscover targets, or derive alternate publish identity, overwrite policy,
   or same-tag GitHub Release replacement policy.
+- Neither workflow jobs after planning nor executors may query publish
+  destinations to decide `skip-satisfied`, immutable-target partial-match
+  handling, or replay classification; they consume the planner's frozen result.
 
 ## Boundary to Group 1 and Group 2
 
@@ -37,7 +43,8 @@ limits on top of `three.release.plan/v1alpha1`.
   frozen plan.
 
 Nothing here reopens descriptor discovery, target compatibility, plan graph
-shape, or planner-owned resolved publish identity.
+shape, planner-owned resolved publish identity, or the planner-owned
+remote-observation seam used to classify remote-state-dependent reruns.
 
 ## Control-Plane Workflow Topology
 
@@ -62,7 +69,11 @@ The stable reusable boundaries are therefore:
 1. `plan` job
     - consumes the raw control-plane run envelope;
     - materializes the normalized planner request;
-    - invokes the planner;
+    - hosts planner execution;
+    - during that planner execution, the planner performs any planner-owned
+      publish-destination lookup, normalization, and classification needed for
+      remote-state-dependent planning, with bounded retry and fail-closed
+      behavior, before freezing the plan;
     - publishes the frozen `three.release.plan/v1alpha1` artifact;
     - derives the selected `variant-id` and `publish-node-id` sets for later fan-
       out.
@@ -257,7 +268,10 @@ skip-satisfied`, so the executor never receives a live publish request for that
 rerun case. The inverse same-tag release to prerelease transition is
 planner-invalid because official release state is frozen; the planner must
 reject that request before job materialization, so a publish executor never
-receives a live GitHub Release demotion request.
+receives a live GitHub Release demotion request. The executor may call the
+destination only to perform that already selected publish action; it must not do
+its own preflight destination query to re-decide satisfaction, promotion,
+overwrite policy, or immutable-target partial-match handling.
 
 Each publish unit must emit one logical `publish-result` object with at least
 these fields:
@@ -304,6 +318,10 @@ The following concerns are explicitly control-plane-owned:
   failure aggregation stay in the control plane;
 - **planner-request normalization**: only the control plane maps raw dispatch
   inputs into the planner-facing request contract;
+- **planner hosting, not planner-side remote classification**: the workflow may
+  host planner execution, but publish-destination querying, normalized remote
+  observation, and rerun classification remain planner-owned; only required Git
+  tag verification stays as separate control-plane logic;
 - **reporting**: only the control plane assembles final summaries across multiple
   build and publish units.
 
@@ -336,6 +354,9 @@ Executors must not own any of the following:
 - publish replay-satisfaction decisions, `FORCE` eligibility decisions, or
   overwrite or replacement policy beyond honoring the already frozen plan
   `publish-disposition` and `publish-mode`;
+- publish-destination querying, normalized remote observation, or remote-state
+  classification to decide whether a request should be skipped, promoted,
+  rejected, or treated as an immutable partial match;
 - combining multiple publish nodes into one alternate publish transaction;
 - inventing artifacts, variants, or destination-side projections that are not in
   the request they were given.

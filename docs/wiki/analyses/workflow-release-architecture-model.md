@@ -341,6 +341,48 @@ rejection against official-frozen versions planner-owned instead of leaving
 executors to infer intent from workflow profile names or remote tag
 observations.
 
+### Planner-Owned Remote Observation Seam
+
+Some current-scope publish decisions are remote-state-dependent. Before the
+planner can freeze `publish-disposition` or `publish-mode`, it may need a
+destination lookup for the exact publish intent already resolved for one
+publish node.
+
+That lookup is keyed by the planner-frozen local intent snapshot for that node:
+
+- `resolved-publish-identity`;
+- the referenced target-instance snapshot;
+- the intended artifact membership;
+- resolved target-side projection data such as asset labels;
+- any family-specific desired target-side state.
+
+At the architecture layer, the output of that lookup is an ephemeral
+**normalized remote observation** for one target family. This means the
+planner's loss-limited normalization of the remote facts needed to classify the
+already resolved publish intent. It is planner working state, not persisted plan
+state. Raw remote responses stay outside the plan, and the persisted plan keeps
+only planner conclusions such as `publish-disposition`, `publish-mode`,
+`desired-publish-state`, and resolved projection or identity data.
+
+Ownership rules for this seam are:
+
+- the planner owns publish-destination querying, bounded retry, normalization,
+  and classification for remote-state-dependent planning;
+- the control plane may host planner execution and separately verify required
+  Git tags, but it must not query publish destinations to decide satisfied
+  reruns, replay policy, or promotion policy;
+- publish executors may call destinations only to perform the already frozen
+  publish request; they must not perform independent preflight classification or
+  reinterpret partial remote matches.
+
+Current-scope guardrails for this seam are:
+
+- for immutable targets, a partial remote match against the frozen intent is not
+  planner-completable; the planner must fail for human intervention;
+- for GitHub Release, `skip-satisfied` requires an exact match of the release
+  state plus the required asset set and asset labels;
+- remote query failures use bounded retry and then fail closed.
+
 ## Ownership and Cardinality
 
 The current architecture-level ownership and cardinality rules are:
