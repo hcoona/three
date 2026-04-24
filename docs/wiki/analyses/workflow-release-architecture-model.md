@@ -377,10 +377,33 @@ Ownership rules for this seam are:
 
 Current-scope guardrails for this seam are:
 
-- for immutable targets, a partial remote match against the frozen intent is not
-  planner-completable; the planner must fail for human intervention;
+- planner classification first reduces one remote observation to exactly one of:
+  `absent`, `exact-satisfied`, `partial`, or `conflicting`;
+- `exact-satisfied` means the remote publication with the same planner-frozen
+  identity exactly matches the full planner-owned publish intent, not just the
+  destination identity;
+- `partial` means the same planner-frozen identity is present but non-exact, and
+  current scope still has a non-error replay outcome for that node;
+- `conflicting` means the same planner-frozen identity is present but non-
+  exact, and current scope has no non-error replay outcome for that node;
+- for immutable targets, any same-identity non-exact observation is
+  `conflicting` and must fail for human intervention;
 - for GitHub Release, `skip-satisfied` requires an exact match of the release
-  state plus the required asset set and asset labels;
+  state plus the required asset set and asset labels, with no extra assets left
+  on the release object;
+- for GitHub Release, same-tag `official` promotion becomes
+  `replace-authoritative` only when the desired state is `release` and the
+  existing same-tag remote state is still `prerelease`; an already-`release`
+  same-tag object is either `skip-satisfied` when exact or planner-error when
+  its authoritative asset set or labels differ;
+- for mutable-target buddy replay, same-identity non-exact remote state remains
+  `create-only` unless current scope explicitly authorizes overwrite with buddy
+  `FORCE`; it becomes planner-error only when the observation crosses into an
+  unauthorized authoritative conflict such as same-tag release-to-prerelease
+  demotion;
+- per-node planner-error checks run before the broader mutable-target replay
+  rows, so a conflicting same-tag GitHub Release observation cannot fall
+  through into buddy replay handling;
 - remote query failures use bounded retry and then fail closed.
 
 ## Ownership and Cardinality

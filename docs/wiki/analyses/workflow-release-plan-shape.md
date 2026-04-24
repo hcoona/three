@@ -326,6 +326,39 @@ run, so the plan records a no-op publish node rather than reserializing raw
 remote observations. `resolved-publish-identity` is the planner-frozen external
 publish identity that those checks refer to.
 
+Current-scope planner classification uses these exact remote-observation terms
+before any row in the matrix below is applied:
+
+- **absent**: no remote publication exists for the node's
+  `resolved-publish-identity`;
+- **exact-satisfied**: a remote publication exists for that same identity and
+  exactly matches the node's full planner-owned publish intent;
+- **partial**: a remote publication exists for that same identity, is not
+  `exact-satisfied`, and current scope still allows a non-error replay outcome
+  for this node;
+- **conflicting**: a remote publication exists for that same identity, is not
+  `exact-satisfied`, and current scope allows no non-error replay outcome for
+  this node, so the planner must fail for human intervention.
+
+These classes are mutually exclusive: every remote observation reduces to
+exactly one of `absent`, `exact-satisfied`, `partial`, or `conflicting`, and
+the replay matrix below must consume that already-chosen class rather than
+reclassifying the observation per row.
+
+For GitHub Release, `exact-satisfied` requires all of the following for the
+same `resolved-publish-identity.release-tag`:
+
+- remote release state exactly equals `desired-publish-state.release-state`;
+- the remote release contains exactly the planned asset set implied by
+  `artifact-ids`;
+- each required asset carries exactly the planned
+  `projection.asset-labels-by-artifact-id` label;
+- no extra remote assets remain on that release object.
+
+For immutable targets, any same-identity non-exact observation is
+`conflicting`, so immutable replay remains a planner-error outcome rather than a
+planner-completable state.
+
 In current scope, `official-frozen` is a planner-time predicate over one
 selected project and its resolved version identity. It becomes true only when
 that same project has already succeeded at the `official` GitHub Release publish
@@ -335,19 +368,24 @@ not make a version official-frozen, and no second freeze tag is introduced.
 
 The planner must apply the following current-scope replay, authoritative-
 replacement, and `FORCE` matrix before serializing publish nodes. Whole-request
-planner-error rows below take precedence over per-node publish or skip
-outcomes, and already-satisfied full publish intent must be detected before any
-live `publish-mode` is chosen.
+planner-error rows below take precedence over all per-node outcomes. For each
+publish node, after reducing the remote state to exactly one observation class,
+evaluate the per-node rows top-to-bottom and stop at the first match:
+`exact-satisfied` skip rows first, then per-node planner-error rows, then live
+`publish-mode` rows. The broad mutable-target replay rows therefore apply only
+to already-classified `partial` observations that survived the earlier planner-
+error checks.
 
 | Condition                                                                                                                                                                                                                                 | Planner outcome                                                                                                                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No existing publication is found for the node's `resolved-publish-identity`.                                                                                                                                                              | Emit `publish-disposition: publish` with `publish-mode: create-only`.                                                                                                                                                                                                                             |
-| A `github-release` target already satisfies the node's full publish intent for the same `resolved-publish-identity.release-tag`, including `desired-publish-state.release-state`, `artifact-ids`, and asset labels.                       | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                              |
-| A `github-release` target already contains the same `resolved-publish-identity.release-tag`, and the node is in the planner-authorized same-tag `official` promotion case.                                                                | Emit `publish-disposition: publish` with `publish-mode: replace-authoritative`. The planner must serialize this explicitly so execution converges the full official publish intent rather than treating the promotion as a state-only change.                                                     |
-| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, and the node is in the planner-authorized buddy `FORCE` overwrite case.                                             | Emit `publish-disposition: publish` with `publish-mode: overwrite-mutable`. The planner must serialize this explicitly rather than leaving mutable-target replay overwrite behavior for executors to infer from destination state.                                                                |
-| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, but neither the planner-authorized same-tag `official` promotion case nor the buddy `FORCE` overwrite case applies. | Emit `publish-disposition: publish` with `publish-mode: create-only`. The planner must serialize this explicitly even though the same mutable publish identity already exists, and executors must not upgrade that replay case into overwrite or authoritative replacement behavior on their own. |
-| An immutable target already satisfies the full publish intent for the node.                                                                                                                                                               | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                              |
-| An immutable target already contains a conflicting publication for the same immutable target identity.                                                                                                                                    | Planner error. Do not emit a plan that asks executors to reconcile or overwrite the conflict.                                                                                                                                                                                                     |
+| A `github-release` target is `exact-satisfied` for the same `resolved-publish-identity.release-tag`, including exact release state, exact required asset set, and exact asset labels.                                                                                        | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                                                                                               |
+| An immutable target is `exact-satisfied` for the node's full publish intent.                                                                                                                                                                                                    | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                                                                                               |
+| An immutable target has a `conflicting` remote publication for the same immutable target identity.                                                                                                                                                                             | Planner error. Do not emit a plan that asks executors to auto-complete, reconcile, or overwrite the immutable conflict.                                                                                                                                                                                                                                                |
+| A `github-release` target has a `conflicting` same-tag remote publication because the observed same-tag remote state is `release` while the node desires `prerelease`, or it is already `release` with a non-exact official asset set or labels.                            | Planner error. Current scope does not allow same-tag release-to-prerelease demotion or reinterpretation of an already authoritative official release.                                                                                                                                                                                                                  |
+| No existing publication is found for the node's `resolved-publish-identity`.                                                                                                                                                                                                     | Emit `publish-disposition: publish` with `publish-mode: create-only`.                                                                                                                                                                                                                                                                                                      |
+| A `github-release` target already contains the same `resolved-publish-identity.release-tag`, the observation is `partial`, the node's desired `release-state` is `release`, and the observed same-tag remote state is still `prerelease`.                                   | Emit `publish-disposition: publish` with `publish-mode: replace-authoritative`. This is the only current-scope same-tag official-promotion path. The planner must serialize this explicitly so execution converges the full official publish intent rather than treating promotion as a state-only change or additive merge.                                                    |
+| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, the observation is `partial`, and the node is in the planner-authorized buddy `FORCE` overwrite case.                                                   | Emit `publish-disposition: publish` with `publish-mode: overwrite-mutable`. The planner must serialize this explicitly rather than leaving mutable-target replay overwrite behavior for executors to infer from destination state.                                                                                                                                                 |
+| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, the observation is `partial`, and neither the planner-authorized same-tag `official` promotion case nor the buddy `FORCE` overwrite case applies.      | Emit `publish-disposition: publish` with `publish-mode: create-only`. This mutable-target buddy replay classification is still allowed because current scope is not auto-completing or overwriting the remote state; executors must not upgrade that replay case into overwrite or authoritative replacement behavior on their own.                                                |
 | `profile: official` with `request-flags.force: true`.                                                                                                                                                                                     | Planner error for the whole request. `FORCE` is not a valid official-profile planner input in current scope.                                                                                                                                                                                      |
 | `profile: buddy` with `request-flags.force: true`, but any selected project resolves to an official-frozen project-scoped version identity.                                                                                               | Planner error for the whole request. `buddy FORCE` is never valid for an official-frozen project or version identity.                                                                                                                                                                             |
 | `request-flags.force: true` for a target whose capability `mutability` is not `mutable-prerelease`.                                                                                                                                       | `FORCE` does not authorize overwrite for that node. Immutable targets still follow the skip-versus-error rules above; only mutable buddy targets may proceed with `publish-mode: overwrite-mutable`.                                                                                              |
