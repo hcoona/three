@@ -173,7 +173,10 @@ Required fields:
 - `release-kind`: one of `lib`, `app`, `tool`, `extension`, or `generator`.
 
 `project.id` is descriptor-owned, not path-derived, because later workflow
-selection must stay stable even if a directory is renamed.
+selection must stay stable even if a directory is renamed. In current scope,
+that same stable `project.id` also serves as the project slug for planner-
+derived GitHub Release tags, so the design does not introduce a second tag-slug
+field.
 
 ### `source` section
 
@@ -688,15 +691,19 @@ schema-valid and statically consistent.
 Planner-time validation handles request-dependent or external-state-dependent
 questions, such as:
 
-- whether the requested project ids exist in the discovered set;
+- whether omitted or empty `requested-project-ids` selects the whole
+  discovered in-scope releasable set, or an explicit non-empty set fully
+  resolves; otherwise planning fails;
 - whether the request selected `buddy` or `official`, because that request
   profile affects downstream publish decisions;
 - the authoritative normalized planner-facing request contract for current
   scope: `profile`, `commit-sha`, normalized `requested-project-ids`, and
   normalized `request-flags.force`;
-- commit-derived version identity;
-- target-family-specific resolved publish identity derived from that version
-  identity plus the selected projection and manifest inputs;
+- project-scoped NBGV version identity for each selected project;
+- target-family-specific resolved publish identity derived from that
+  project-scoped version identity plus the selected projection and manifest
+  inputs, including GitHub Release tag derivation as
+  `release/<project.id>/v<version>` with no extra tag split;
 - `buddy FORCE` versus immutable-target rules;
 - rerun skip decisions based on already-published remote state;
 - external uniqueness conflicts that require checking the destination.

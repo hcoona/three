@@ -102,12 +102,18 @@ Examples of disallowed behavior:
   initiation.
 - Each workflow-dispatch run may target one or more projects selected by input
   parameters.
+- Omitted or empty `requested-project-ids` means all in-scope releasable
+  projects.
+- If `requested-project-ids` is explicitly non-empty, every id must resolve to an
+  in-scope releasable project or planning fails.
+- The resolved `selected-project-ids` set must be normalized to unique
+  lexicographic order.
 - `buddy` and `official` are separate workflow entry points rather than a shared
   profile selector inside one workflow entry.
 - The first delivery scope must support rerunning the entire release against the
   same input.
 - For rerun purposes, "the same input" means the same workflow entry point, the
-  same selected project scope, and the same release inputs.
+  same resolved `selected-project-ids` scope, and the same release inputs.
 - If whole-release rerun is later proven technically infeasible, that reduction
   must be re-confirmed with the user instead of being assumed by the team.
 - The first delivery scope does not require single-target retry.
@@ -144,42 +150,63 @@ Examples of disallowed behavior:
   any out-of-band follow-up is outside the workflow's scope.
 - The first delivery scope does not require automatic release triggering from a
   Git tag.
-- Workflow release should create or verify the required Git tag automatically
-  when the selected run includes at least one GitHub Release publication,
+- Workflow release should create or verify the required Git tags automatically
+  when the selected run includes one or more GitHub Release publications,
   rather than relying on manual tag operations for those runs.
 - A zero-target run, or any other run whose selected publish nodes contain no
   GitHub Release publication, must not imply a tag side effect.
 
 ## Confirmed Versioning and Immutability Rule
 
-- Version identity is determined primarily by the Git commit being built.
-- Outputs built from the same commit should share the same version identity.
-- Outputs built from different commits should not share the same version
-  identity.
+- For one selected project, version identity comes from that project's NBGV
+  resolution at the selected commit.
+- In current scope, the stable project slug for release-tag derivation is that
+  project's descriptor-owned `project.id`; no extra tag-slug field is introduced.
+- Outputs built from the same project and the same commit should therefore share
+  the same project-scoped version identity.
+- Different projects on the same commit may legitimately resolve to different
+  version identities and different GitHub Release tags.
+- GitHub Release identity is project-scoped because the release-tag is
+  project-scoped: `release/<project-slug>/v<version>`.
+- This matches current repository reality, including tags such as
+  `release/nbgv-python/v2.0.0`,
+  `release/steam-account-history-to-csv/v1.1.1`, and
+  `release/hexo-renderer-asciidoc/v3.1.0-beta.11.g3f78566`, and the root
+  `version.json` allowance for `^refs/tags/release/.+/v.+$`.
+- Same-commit multi-project releases therefore do not collapse onto one shared
+  GitHub Release object when project slugs differ.
 - Overwrite should generally be avoided.
 - `official` does not allow overwrite.
 - `buddy` overwrite is allowed only as an exceptional explicit `FORCE` action.
 - Target-platform constraints always take precedence over any business desire to
   overwrite.
 - `buddy` to `official` promotion is in scope and must stay on the same commit
-  and the same version identity.
+  and the same project-scoped version identity.
 - Promotion does not require reusing the exact same built artifact; rebuilding is
   allowed when `buddy` and `official` build configurations differ.
-- For GitHub Release, same-commit `buddy` to `official` promotion must keep the
-  same release tag while converging to the full official publish intent for that
-  tag: desired release state, final asset set, and asset labels.
+- For GitHub Release, same-project same-commit `buddy` to `official` promotion
+  must keep the same project-scoped release tag while converging to the full
+  official publish intent for that tag: desired release state, final asset set,
+  and asset labels.
 - Replay handling for that promotion must evaluate whether that full GitHub
-  Release publish intent is already satisfied, not merely whether the tag
-  exists or whether only the release state matches.
+  Release publish intent is already satisfied, not merely whether the tag exists
+  or whether only the release state matches.
 - Package-registry promotion on the same registry and the same published package
   name is prohibited.
 - `buddy` and `official` may share a registry only when the published package
   names differ because the descriptor declares different target-side identities.
 - `official` does not require a prior `buddy`; it may also be published directly
   from the same commit.
-- `official` is the higher-status state for a version.
-- Once a version enters `official`, that version is considered formally frozen
-  and may no longer be force-overwritten through `buddy`.
+- `official` is the higher-status state for a version identity.
+- A project-scoped version identity becomes officially frozen only when that
+  project's official GitHub Release publication succeeds for its
+  project-scoped release tag.
+- No extra tag split is introduced; the same project-scoped release tag is used
+  for both `buddy` and `official`, with release state carrying the promotion
+  distinction.
+- Once a project-scoped version identity is officially frozen, that same
+  project-scoped version identity may no longer be force-overwritten through
+  `buddy`.
 - `buddy FORCE` keeps the same authorization boundary as ordinary `buddy`:
   `write+`, no extra approval, and no required reason field.
 
@@ -277,12 +304,14 @@ now tighter in ten places:
    behavior rather than mandatory single-target retry.
 6. The first delivery scope may preserve partial success and rely on manual
    remediation instead of mandatory automatic rollback.
-7. Version identity is commit-based, `official` is the freezing state, and the
-   first delivery scope must cover multiple ecosystem-specific target classes
-   rather than only one.
+7. Version identity is now project-scoped and NBGV-derived, `official` freeze
+   is tied to successful official GitHub Release publication for that same
+   project and version identity, and the first delivery scope must cover
+   multiple ecosystem-specific target classes rather than only one.
 8. GitHub Release is now conditionally mandatory for every non-zero-target
-   profile, with fixed `buddy` = pre-release and `official` = release semantics
-   whenever it is declared.
+   profile, with fixed `buddy` = pre-release and `official` = release semantics,
+   project-scoped `release/<project-slug>/v<version>` tag identity, and no extra
+   tag split whenever it is declared.
 9. Package targets remain explicitly project-declared even when GitHub Packages
    supports the ecosystem, Python now has an explicit GitHub Release / PyPI
    split because GitHub Packages is not a Python target, and immutable

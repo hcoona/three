@@ -75,8 +75,9 @@ The stable reusable boundaries are therefore:
     - may be bypassed for profiles that do not require approval.
 4. `ensure-tag` job
     - stays in the control plane;
-    - creates or verifies the repository tag exactly once per run when any
-      selected publish node resolves to a GitHub Release publication;
+    - creates or verifies each distinct project-scoped release tag exactly once
+      per run when any selected publish node resolves to a GitHub Release
+      publication;
     - does nothing when the selected publish-node set contains no GitHub
       Release publication.
 5. `publish` fan-out
@@ -96,19 +97,22 @@ Before invoking the planner, the shared orchestration workflow must normalize
 the raw dispatch envelope into one logical planner request with exactly these
 current-scope fields:
 
-| Field                   | Meaning                                                                                                                                                                                                          |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `profile`               | Selected entry workflow profile, `buddy` or `official`.                                                                                                                                                          |
-| `commit-sha`            | The exact commit being released.                                                                                                                                                                                 |
-| `requested-project-ids` | User-selected project scope, normalized to unique lexicographic order before planning.                                                                                                                           |
-| `request-flags.force`   | Boolean overwrite request flag. In `v1alpha1`, `true` is valid only for `buddy`; `profile: official` with `true` is invalid. Raw GitHub input names remain control-plane-owned and are not the planner contract. |
+| Field                   | Meaning                                                                                                                                                                                                                                             |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile`               | Selected entry workflow profile, `buddy` or `official`.                                                                                                                                                                                             |
+| `commit-sha`            | The exact commit being released.                                                                                                                                                                                                                    |
+| `requested-project-ids` | User-selected project scope, normalized to unique lexicographic order before planning. Omitted or empty means all in-scope releasable projects. If explicitly non-empty, every id must resolve to an in-scope releasable project or planning fails. |
+| `request-flags.force`   | Boolean overwrite request flag. In `v1alpha1`, `true` is valid only for `buddy`; `profile: official` with `true` is invalid. Raw GitHub input names remain control-plane-owned and are not the planner contract.                                    |
 
 The planner request is the authoritative planner-facing release-input model for
 current scope. Actor, run id, run attempt, approval state, concurrency groups,
-and dry-run remain outside that object. Whole-release rerun equivalence for
-planner-owned behavior is based on that normalized request after project-scope
-resolution, which is why the resulting plan serializes normalized request flags
-in `envelope.request-flags` and uses resolved project scope plus those flags in
+and dry-run remain outside that object. The planner, not the control plane or
+executors, resolves `selected-project-ids` from that request, normalizes the
+resolved set to unique lexicographic order, and serializes that resolved set in
+the plan. Whole-release rerun equivalence for planner-owned behavior is based on
+that normalized request after project-scope resolution, which is why the
+resulting plan serializes normalized request flags in
+`envelope.request-flags` and uses resolved project scope plus those flags in
 `envelope.plan-id`.
 
 ### Active Build and Publish Set Derivation
@@ -269,10 +273,10 @@ The following concerns are explicitly control-plane-owned:
 - **concurrency**: only the entry workflow or orchestration workflow sets the
   duplicate-run concurrency key, using the already frozen workflow-entry-point
   plus commit rule;
-- **tagging**: the planner resolves the final `release-tag`, but the control
-  plane creates or verifies the Git tag once per run only when the selected
-  plan contains at least one GitHub Release publish node, and it does so before
-  any GitHub Release publication;
+- **tagging**: the planner resolves the final project-scoped `release-tag`,
+  but the control plane creates or verifies each distinct selected Git tag once
+  per run only when the selected plan contains at least one GitHub Release
+  publish node, and it does so before any GitHub Release publication;
 - **runtime wiring**: runner selection, tool installation, permissions,
   credential injection, and environment selection stay in workflow jobs and
   wrappers rather than inside executors;
@@ -306,8 +310,8 @@ Executors must not own any of the following:
 - descriptor discovery, schema validation, or shared-catalog loading;
 - project selection, target selection, target compatibility checks, or publish-
   node construction;
-- version derivation, `release-tag` derivation, GitHub Release desired-state
-  derivation, or final package-name derivation;
+- project-scoped NBGV version derivation, `release-tag` derivation, GitHub
+  Release desired-state derivation, or final package-name derivation;
 - approval handling, concurrency handling, dry-run policy, or cancellation
   policy;
 - Git tag creation, multi-job artifact transport, or final run reporting;

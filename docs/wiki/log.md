@@ -330,3 +330,10 @@ This file is the append-only chronological record of wiki activity.
 - Corrected the chronology so planner-owned `publish-disposition: skip-satisfied` is the generic replay-satisfaction outcome rather than immutable-target-only rerun wording.
 - Recorded that this satisfied-skip outcome covers both immutable targets that already satisfy publish intent and same-tag GitHub Release reruns whose existing release already matches the full frozen publish intent: `desired-publish-state.release-state`, authoritative asset set, and asset labels.
 - This supersedes earlier log phrasing that framed replay skip behavior mainly as immutable-target rerun handling.
+
+## [2026-04-24] design | Freeze project-scoped release identity semantics
+
+- Updated the requirements baseline, architecture model, plan shape, workflow and executor boundaries, descriptor schema, overview, and index to freeze project-selection semantics for omitted, empty, explicit, and normalized project-id sets.
+- Froze current-scope version identity as project-scoped NBGV output and GitHub Release identity as the existing `release/<project-slug>/v<version>` tag shape, using descriptor-owned `project.id` as the current-scope project slug without adding a second tag field.
+- Clarified that same-commit multi-project releases map to distinct GitHub Release objects when project slugs differ, and that `official-frozen` is created only by successful official GitHub Release publication for that same project-scoped tag.
+- Corrected the workflow boundary so tag orchestration now handles each distinct selected project-scoped release tag rather than implying one shared repository tag per run.

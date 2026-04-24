@@ -31,7 +31,9 @@ The architecture distinguishes three related request representations:
    orchestration state.
 2. **Planner request** — the control-plane-normalized planner-facing input for
    the current scope: `profile`, `commit-sha`, normalized
-   `requested-project-ids`, and normalized `request-flags.force`.
+   `requested-project-ids`, and normalized `request-flags.force`. Omitted or
+   empty `requested-project-ids` means all in-scope releasable projects; an
+   explicit non-empty set must resolve completely or planning fails.
 3. **Plan envelope** — the planner's normalized, authoritative header for the
    computed release plan, containing the resolved request summary rather than
    raw workflow runtime state.
@@ -39,7 +41,10 @@ The architecture distinguishes three related request representations:
 Only the third one belongs to the declarative plan. The control plane owns raw
 input spelling and normalization into the planner request; the planner owns the
 resolved request summary and all request-dependent publish decisions that appear
-inside the emitted plan.
+inside the emitted plan. The emitted plan freezes `selected-project-ids` in
+unique lexicographic order, and that resolved set remains part of
+`envelope.plan-id` rather than being recomputed later from raw workflow input
+spelling.
 
 The plan itself has two top-level parts:
 
@@ -163,7 +168,9 @@ Rules:
 
 This preserves multi-project dispatch as one run containing multiple
 project-scoped publication intents, rather than combining multiple projects into
-one publish node.
+one publish node. For GitHub Release, that also means one run may target
+multiple distinct project-scoped release tags and therefore multiple distinct
+GitHub Release objects when different projects share the same commit.
 
 ### Target Model
 
@@ -302,18 +309,34 @@ current architecture it consists of:
 - resolved target-side projection data;
 - planner-derived publish disposition and live publish mode.
 
+In current scope, the planner resolves version identity per selected project
+from that project's NBGV result at the selected commit. For GitHub Release, the
+planner then derives the external publish identity as the project-scoped tag
+`release/<project.id>/v<nbgv-version>`. This matches the repositories existing
+release-tag shape, including observed tags such as `release/nbgv-python/v2.0.0`,
+`release/steam-account-history-to-csv/v1.1.1`, and
+`release/hexo-renderer-asciidoc/v3.1.0-beta.11.g3f78566`, and it matches the
+root `version.json` allowance for `^refs/tags/release/.+/v.+$`. Different
+projects on the same commit therefore remain different GitHub Release objects
+when their `project.id` values differ, because current-scope GitHub Release
+identity is the project-scoped release tag.
+
 Descriptor-owned projection data remains distinct from planner-owned desired
 target-side state even though both are serialized into the plan for execution.
 In current scope, GitHub Release is the only family that needs explicit desired
 target-side state beyond identity: `buddy` resolves to `prerelease`, and
-`official` resolves to `release` for the same `release-tag`. For same-tag
-prerelease-to-release promotion, the frozen `artifact-ids` plus
+`official` resolves to `release` for the same project-scoped `release-tag`. For
+same-tag prerelease-to-release promotion, the frozen `artifact-ids` plus
 `projection.asset-labels-by-artifact-id` are the authoritative final official
 asset set and labels for that tag, so the promotion model is not a state-only
-flip. That keeps same-tag already-satisfied replay, same-tag prerelease to
-release promotion, and same-tag release to prerelease demotion rejection
-planner-owned instead of leaving executors to infer intent from workflow
-profile names or remote tag observations.
+flip. A project-scoped version identity becomes official-frozen only when that same
+project-scoped tag has already succeeded through the project's official GitHub
+Release publication; there is no second freeze tag or alternate tag family.
+That keeps same-tag already-satisfied replay, same-tag prerelease to release
+promotion, same-tag release to prerelease demotion rejection, and buddy `FORCE`
+rejection against official-frozen versions planner-owned instead of leaving
+executors to infer intent from workflow profile names or remote tag
+observations.
 
 ## Ownership and Cardinality
 

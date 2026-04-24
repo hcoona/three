@@ -82,7 +82,7 @@ graph:
             publish-disposition: publish
             publish-mode: create-only
             resolved-publish-identity:
-                release-tag: v1.2.3
+                release-tag: release/hjg-pngcs/v1.2.3
             desired-publish-state:
                 release-state: prerelease
             projection:
@@ -180,7 +180,10 @@ scope:
 
 - `plan-id` as the deterministic request/selection identity, plus
   `profile`, `commit-sha`, and normalized `request-flags`;
-- `requested-project-ids` and `selected-project-ids`, normalized to unique
+- `requested-project-ids`, where omitted or empty input is serialized as `[]`
+  and means all in-scope releasable projects, while explicit non-empty input
+  must resolve completely or planning fails;
+- `selected-project-ids`, the resolved project set normalized to unique
   lexicographic order;
 - `request-flags`, which in `v1alpha1` has the exact normalized shape
   `{ force: <bool> }`, so `false` is the canonical default when no `FORCE`
@@ -258,13 +261,21 @@ Current-scope normalized `resolved-publish-identity` shapes are:
 
 For package registries, the planner resolves the final `package-name` after any
 descriptor-side projection override or fallback to manifest-owned intrinsic
-package naming and resolves `version` from the planner-authoritative
-commit-derived version identity for the selected run. For GitHub Release, the
-planner resolves both the final `release-tag` and
-`desired-publish-state.release-state` before serializing the plan. Execution
-and later replay checks must treat serialized `resolved-publish-identity` and
-`desired-publish-state` as authoritative for that plan rather than re-deriving
-them from commit, profile, or manifest inputs.
+package naming and resolves `version` from the selected project's NBGV version
+identity for the selected run. For GitHub Release, the planner resolves both the
+final project-scoped `release-tag` and `desired-publish-state.release-state`
+before serializing the plan. In current scope, GitHub Release tags use the
+repositories existing shape `release/<project.id>/v<nbgv-version>`, matching
+observed tags such as `release/nbgv-python/v2.0.0`,
+`release/steam-account-history-to-csv/v1.1.1`, and
+`release/hexo-renderer-asciidoc/v3.1.0-beta.11.g3f78566`, plus the root
+`version.json` allowance for `^refs/tags/release/.+/v.+$`. Different projects on
+the same commit therefore serialize different `release-tag` values and map to
+different GitHub Release objects when their `project.id` values differ.
+Execution and later replay checks must treat serialized
+`resolved-publish-identity` and `desired-publish-state` as authoritative for
+that plan rather than re-deriving them from commit, profile, or manifest
+inputs.
 
 Current-scope normalized `desired-publish-state` shapes are:
 
@@ -314,6 +325,13 @@ run, so the plan records a no-op publish node rather than reserializing raw
 remote observations. `resolved-publish-identity` is the planner-frozen external
 publish identity that those checks refer to.
 
+In current scope, `official-frozen` is a planner-time predicate over one
+selected project and its resolved version identity. It becomes true only when
+that same project has already succeeded at the `official` GitHub Release publish
+intent for the same project-scoped `resolved-publish-identity.release-tag`.
+Buddy prereleases, package-registry publication, or any alternate tag shape do
+not make a version official-frozen, and no second freeze tag is introduced.
+
 The planner must apply the following current-scope replay, authoritative-
 replacement, and `FORCE` matrix before serializing publish nodes. Whole-request
 planner-error rows below take precedence over per-node publish or skip
@@ -330,7 +348,7 @@ live `publish-mode` is chosen.
 | An immutable target already satisfies the full publish intent for the node.                                                                                                                                                               | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                              |
 | An immutable target already contains a conflicting publication for the same immutable target identity.                                                                                                                                    | Planner error. Do not emit a plan that asks executors to reconcile or overwrite the conflict.                                                                                                                                                                                                     |
 | `profile: official` with `request-flags.force: true`.                                                                                                                                                                                     | Planner error for the whole request. `FORCE` is not a valid official-profile planner input in current scope.                                                                                                                                                                                      |
-| `profile: buddy` with `request-flags.force: true`, but the selected commit resolves to any official-frozen version identity.                                                                                                              | Planner error for the whole request. `buddy FORCE` is never valid for an official-frozen version.                                                                                                                                                                                                 |
+| `profile: buddy` with `request-flags.force: true`, but any selected project resolves to an official-frozen project-scoped version identity.                                                                                               | Planner error for the whole request. `buddy FORCE` is never valid for an official-frozen project or version identity.                                                                                                                                                                             |
 | `request-flags.force: true` for a target whose capability `mutability` is not `mutable-prerelease`.                                                                                                                                       | `FORCE` does not authorize overwrite for that node. Immutable targets still follow the skip-versus-error rules above; only mutable buddy targets may proceed with `publish-mode: overwrite-mutable`.                                                                                              |
 
 ### `graph.target-instance-snapshots`
