@@ -151,7 +151,8 @@ current-scope fields:
 
 The planner request is the authoritative planner-facing release-input model for
 current scope. Actor, run id, run attempt, approval state, concurrency groups,
-and dry-run remain outside that object. The planner, not the control plane or
+and dry-run remain outside that object. Dry-run therefore does not participate
+in whole-release rerun identity. The planner, not the control plane or
 executors, resolves `selected-project-ids` from that request, normalizes the
 resolved set to unique lexicographic order, and serializes that resolved set in
 the plan. Whole-release rerun equivalence for planner-owned behavior is based on
@@ -184,7 +185,9 @@ in the plan. In current scope it must suppress side effects:
 - it must not create tags;
 - it must not invoke live publish executors.
 
-Whether a dry run also performs build execution is an implementation choice, but
+Because dry-run stays outside the planner request, toggling it does not change
+whole-release rerun identity. Whether a dry run also performs build execution is
+an implementation choice, but
 that choice must not change the stable workflow or executor contracts defined
 here.
 
@@ -280,8 +283,9 @@ set. When a `mutable-prerelease` destination already contains the same frozen
 `resolved-publish-identity`, the executor must still follow the serialized mode
 exactly: only planner-authorized buddy `FORCE` replay arrives as
 `overwrite-mutable`; same-tag GitHub Release prerelease-to-release promotion
-arrives as `replace-authoritative`; and every other live replay case arrives as
-`create-only`. When the frozen publish node also carries GitHub Release
+arrives as `replace-authoritative`; and every other same-identity mutable replay
+case fails during planning and therefore must not reach the executor. When the
+frozen publish node also carries GitHub Release
 `desired-publish-state.release-state`, the executor must honor that state
 exactly rather than inferring prerelease versus release from the workflow
 profile or from tag existence alone. By contrast, when the same release tag
@@ -324,6 +328,10 @@ The following concerns are explicitly control-plane-owned:
 - **concurrency**: only the entry workflow or orchestration workflow sets the
   duplicate-run concurrency key, using the already frozen workflow-entry-point
   plus commit rule;
+- **cancellation**: manual operator cancellation and any optional duplicate-run
+  cancellation both use native GitHub workflow cancellation semantics and
+  ordinary cancelled status; current scope defines no repo-specific
+  cancellation protocol;
 - **tagging**: the planner resolves the final project-scoped `release-tag`,
   but the control plane creates or verifies each distinct selected Git tag once
   per run only when the selected plan contains at least one GitHub Release

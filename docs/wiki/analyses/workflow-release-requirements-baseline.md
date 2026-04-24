@@ -118,6 +118,7 @@ Examples of disallowed behavior:
   same input.
 - For rerun purposes, "the same input" means the same workflow entry point, the
   same resolved `selected-project-ids` scope, and the same release inputs.
+- Dry-run or validation-only selection is not part of that rerun identity.
 - If whole-release rerun is later proven technically infeasible, that reduction
   must be re-confirmed with the user instead of being assumed by the team.
 - The first delivery scope does not require single-target retry.
@@ -128,6 +129,9 @@ Examples of disallowed behavior:
 - The first delivery scope must support a dry-run or validation-only mode that
   performs input and descriptor validation without publishing to external
   targets.
+- If any release descriptor relevant to the selected run is invalid, planning
+  must fail the whole run rather than silently dropping that project and
+  continuing.
 - The first delivery scope may leave externally visible partial-success results
   in place when one or more targets have already succeeded.
 - The first delivery scope does not require automatic compensation or rollback
@@ -135,6 +139,8 @@ Examples of disallowed behavior:
 - The first delivery scope has no exceptional cases that require automatic
   rollback.
 - The first delivery scope must support manual operator cancellation.
+- Manual operator cancellation uses native GitHub workflow cancellation
+  semantics; the workflow does not introduce a repo-specific cancellation model.
 - The first delivery scope does not require a repo-defined supersession model
   across release requests.
 - If GitHub Actions native concurrency controls conveniently support canceling
@@ -177,6 +183,9 @@ Examples of disallowed behavior:
   resolution at the selected commit.
 - In current scope, every in-scope project is expected to expose that NBGV
   result through its own ecosystem-native build system.
+- C# already satisfies that integration end-to-end; other ecosystems still have
+  rollout gaps, but current-scope workflow design still assumes build-system-
+  integrated NBGV rather than designing non-NBGV alternatives.
 - Workflow release does not introduce a second workflow-owned version source or
   treat manifest-only static versioning as the steady-state release model.
 - In current scope, the stable project slug for release-tag derivation is that
@@ -197,6 +206,9 @@ Examples of disallowed behavior:
 - Overwrite should generally be avoided.
 - `official` does not allow overwrite.
 - `buddy` overwrite is allowed only as an exceptional explicit `FORCE` action.
+- For mutable GitHub Release replay outside the same-tag `buddy` to `official`
+  promotion path, non-`FORCE` reruns must fail planning rather than attempting
+  to reuse or overwrite the existing publication.
 - Target-platform constraints always take precedence over any business desire to
   overwrite.
 - `buddy` to `official` promotion is in scope and must stay on the same commit
@@ -319,9 +331,10 @@ now tighter in ten places:
    approval, while `official` is `maintain+` plus an approval gate.
 4. The first delivery scope now prioritizes manual `workflow_dispatch`
    initiation.
-5. The first delivery scope must support whole-release rerun and dry run, while
-   replay concerns should be addressed with skip detection and idempotent
-   behavior rather than mandatory single-target retry.
+5. The first delivery scope must support whole-release rerun and dry run, with
+   dry run kept outside rerun identity, while replay concerns should be
+   addressed with skip detection and idempotent behavior rather than mandatory
+   single-target retry.
 6. The first delivery scope may preserve partial success and rely on manual
    remediation instead of mandatory automatic rollback.
 7. Version identity is now project-scoped and NBGV-derived, `official` freeze

@@ -31,9 +31,11 @@ The architecture distinguishes three related request representations:
    orchestration state.
 2. **Planner request** — the control-plane-normalized planner-facing input for
    the current scope: `profile`, `commit-sha`, normalized
-   `requested-project-ids`, and normalized `request-flags.force`. Omitted or
-   empty `requested-project-ids` means all in-scope releasable projects; an
-   explicit non-empty set must resolve completely or planning fails.
+   `requested-project-ids`, and normalized `request-flags.force`. Dry-run stays
+   in the control-plane run envelope and is not part of whole-release rerun
+   identity. Omitted or empty `requested-project-ids` means all in-scope
+   releasable projects; an explicit non-empty set must resolve completely or
+   planning fails.
 3. **Plan envelope** — the planner's normalized, authoritative header for the
    computed release plan, containing the resolved request summary rather than
    raw workflow runtime state.
@@ -313,7 +315,10 @@ In current scope, the planner resolves version identity per selected project
 from that project's build-system-integrated NBGV result at the selected commit.
 The release model assumes every in-scope ecosystem exposes that NBGV result
 through its native build tooling rather than through a separate workflow-owned
-version source. For GitHub Release, the planner then derives the external
+version source. C# already satisfies that integration end-to-end; other
+ecosystems still have rollout gaps, but current-scope workflow design does not
+add non-NBGV alternatives to compensate. For GitHub Release, the planner then
+derives the external
 publish identity as the project-scoped tag
 `release/<project.id>/v<nbgv-version>`. This matches the repositories existing
 release-tag shape, including observed tags such as `release/nbgv-python/v2.0.0`,
@@ -396,11 +401,11 @@ Current-scope guardrails for this seam are:
   existing same-tag remote state is still `prerelease`; an already-`release`
   same-tag object is either `skip-satisfied` when exact or planner-error when
   its authoritative asset set or labels differ;
-- for mutable-target buddy replay, same-identity non-exact remote state remains
-  `create-only` unless current scope explicitly authorizes overwrite with buddy
-  `FORCE`; it becomes planner-error only when the observation crosses into an
-  unauthorized authoritative conflict such as same-tag release-to-prerelease
-  demotion;
+- for mutable-target buddy replay, same-identity non-exact remote state becomes
+  planner-error unless current scope explicitly authorizes overwrite with buddy
+  `FORCE`; current scope does not keep non-`FORCE` same-identity replay alive as
+  `create-only`, and unauthorized authoritative conflicts such as same-tag
+  release-to-prerelease demotion are planner-error as well;
 - per-node planner-error checks run before the broader mutable-target replay
   rows, so a conflicting same-tag GitHub Release observation cannot fall
   through into buddy replay handling;

@@ -686,7 +686,9 @@ This is the right layer for CI linting of checked-in authoring files.
 ### 3. Planner-time validation
 
 Planner-time validation starts only after the author-time inputs are already
-schema-valid and statically consistent.
+schema-valid and statically consistent. If any release descriptor relevant to
+the selected run is invalid at either earlier layer, planning must fail the
+whole run rather than silently dropping that project and continuing.
 
 Planner-time validation handles request-dependent or external-state-dependent
 questions, such as:
@@ -700,9 +702,10 @@ questions, such as:
   scope: `profile`, `commit-sha`, normalized `requested-project-ids`, and
   normalized `request-flags.force`;
 - project-scoped NBGV version identity for each selected project, assuming the
-  current-scope steady state that every in-scope ecosystem exposes its version
+  current-scope design stance that every in-scope ecosystem exposes its version
   through build-system-integrated NBGV rather than through manifest-only static
-  versioning;
+  versioning; C# already meets that bar end-to-end, other ecosystems still have
+  rollout gaps, and the schema defines no non-NBGV fallback contract;
 - target-family-specific resolved publish identity derived from that
   project-scoped version identity plus the selected projection and manifest
   inputs, including GitHub Release tag derivation as
