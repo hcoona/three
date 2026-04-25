@@ -25,6 +25,7 @@ members = [
   "src/private/app/supermemo-mcp",
   "src/private/app/transcribe",
   "src/public/app/markdown-hybrid-search-mcp",
+  "src/public/lib/hcoona-release-smoke",
   "src/public/lib/nbgv-python",
   "src/sample/nbgv-hatch-demo",
 ]
@@ -45,6 +46,7 @@ project-includes = [
   "src/private/app/supermemo-mcp",
   "src/private/app/transcribe",
   "src/public/app/markdown-hybrid-search-mcp",
+  "src/public/lib/hcoona-release-smoke",
   "src/public/lib/nbgv-python",
   "src/sample/nbgv-hatch-demo",
 ]

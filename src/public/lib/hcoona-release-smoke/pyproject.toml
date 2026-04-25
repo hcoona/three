@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.24", "nbgv-python"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hcoona-release-smoke"
+description = "Smoke-test package for validating the Three monorepo Python release workflow."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
+license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
+keywords = ["release", "smoke", "workflow", "pypi"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Build Tools",
+]
+dynamic = ["version"]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/hcoona/three"
+Issues = "https://github.com/hcoona/three/issues"
+Documentation = "https://github.com/hcoona/three/blob/main/src/public/lib/hcoona-release-smoke/README.md"
+
+[tool.hatch.version]
+source = "nbgv"
+
+[tool.hatch.version.nbgv]
+version-field = "SemVer2"
+
+[tool.hatch.version.nbgv.write]
+file = "src/hcoona_release_smoke/_version.py"
+template = '''"""Auto-generated version metadata for hcoona-release-smoke."""
+
+from __future__ import annotations
+
+RAW_VERSION = "{version}"
+PEP440_VERSION = "{normalized_version}"
+SEMVER2 = "{SemVer2}"
+GIT_COMMIT = "{GitCommitId}"
+
+__all__ = [
+    "GIT_COMMIT",
+    "PEP440_VERSION",
+    "RAW_VERSION",
+    "SEMVER2",
+    "__version__",
+]
+
+__version__ = PEP440_VERSION
+'''
+
+[tool.hatch.build]
+artifacts = ["src/hcoona_release_smoke/_version.py"]
+
+[tool.uv.sources]
+nbgv-python = { workspace = true }
