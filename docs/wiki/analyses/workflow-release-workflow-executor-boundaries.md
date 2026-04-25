@@ -315,6 +315,16 @@ catalog. Any checkout or workspace materialization used by a build unit must be
 pinned to `build-request.commit-sha`; a build unit must not follow a moving
 branch head after planning has begun.
 
+The `project` snapshot carried by that request includes the planner-frozen
+`resolved-version` for the selected run. Whenever the built outputs carry a
+project-scoped version identity in package metadata, installer metadata, or any
+other contractual version-bearing field, the build executor must preserve that
+exact frozen version rather than silently substituting a divergent manifest- or
+tool-derived value. This is mandatory for the single current-scope
+`nbgv-python` special-support path, where the planner resolved
+`project.resolved-version` from the selected commit's checked-in
+`pyproject.toml` `[project].version`.
+
 In that contract, each `artifact-id` is a planner-defined fulfillment slot for
 one semantic output obligation. It is not a frozen filename, path, bundle
 layout, or command recipe. The planner owns the exact requested key set,
@@ -427,7 +437,10 @@ rules before any live upload starts for that node. This is a conformance check,
 not fresh identity derivation: the serialized plan identity remains
 authoritative, and the executor must not substitute alternate package identity
 from the file, manifest, or destination. Any mismatch must fail closed before
-the node performs live upload.
+the node performs live upload. For current-scope `nbgv-python`, that check also
+enforces that built Python metadata matches the same planner-frozen project
+version that was derived from the selected commit's checked-in
+`pyproject.toml` and used for release-tag and package-identity planning.
 When the publish node also contains `publish-mode: overwrite-mutable` or
 `publish-mode: replace-authoritative`, the executor must honor that frozen mode;
 it must not infer overwrite or replacement behavior by re-reading raw dispatch

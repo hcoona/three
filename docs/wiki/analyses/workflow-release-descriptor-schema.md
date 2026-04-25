@@ -194,13 +194,20 @@ Optional fields:
   semantics for this project, such as packaging scripts or installer metadata.
   Each entry is relative to the release root and must likewise resolve at author
   time to one checked-in file under that root.
+- `version-authority`: current-scope authoritative version-source contract for
+  this project. When omitted, the default is `build-system-nbgv`.
 
 Validation rules:
 
 - `source.primary-manifest` must resolve to an existing checked-in file under the
   descriptor's release root;
 - every `source.auxiliary-inputs[]` entry must resolve to an existing checked-in
-  file under the descriptor's release root.
+  file under the descriptor's release root;
+- `source.version-authority`, when present, must be one of the closed current-
+  scope values `build-system-nbgv` or `nbgv-python-pyproject-version`;
+- `source.version-authority: nbgv-python-pyproject-version` is valid only when
+  `project.id = nbgv-python`, `project.ecosystem = python`, and
+  `source.primary-manifest = pyproject.toml`.
 
 `source.primary-manifest` is also ecosystem-constrained in the current scope.
 Static validation must apply this closed mapping:
@@ -661,6 +668,11 @@ Examples:
   its descriptor's release root;
 - every `source.auxiliary-inputs[]` entry resolves to an existing checked-in file
   under its descriptor's release root;
+- every descriptor other than `nbgv-python` either omits
+  `source.version-authority` or sets it to `build-system-nbgv`;
+- `source.version-authority: nbgv-python-pyproject-version` appears only on the
+  `nbgv-python` descriptor and therefore cannot become a broad manifest-version
+  fallback for other Python projects;
 - every catalog family has unique instance ids;
 - every `uses` reference resolves to a catalog target instance;
 - `artifacts` references resolve to declared artifact ids;
@@ -707,20 +719,23 @@ questions, such as:
 - the authoritative normalized planner-facing request contract for current
   scope: `profile`, `commit-sha`, normalized `requested-project-ids`, and
   normalized `request-flags.force`;
-- project-scoped NBGV version identity for each selected project, assuming the
-  current-scope design stance that every in-scope ecosystem exposes its version
-  through build-system-integrated NBGV rather than through manifest-only static
-  versioning; C# already meets that bar end-to-end, other ecosystems still have
-  rollout gaps, and the schema defines no non-NBGV fallback contract;
+- project-scoped version identity for each selected project from its
+  descriptor-declared authoritative version source: in current scope, that
+  means build-system-integrated NBGV for every project except the single
+  `nbgv-python` special-support path, which resolves version from the selected
+  commit's checked-in `pyproject.toml` `[project].version`; manifest-owned
+  static versioning is not a general fallback for other projects;
 - whether each selected `official` publish intent that resolves to
   `pypi-publish` is admissible under the narrowed current-scope PyPI path:
   before accepting that node, the planner must mechanically verify that the
   selected project's checked-in `pyproject.toml` uses the `hatchling.build`
-  backend, that the project's version at the selected commit resolves through
-  build-system-integrated NBGV, and that the authoritative planner-time PyPI
-  output resolution for that node yields exactly one `py3-none-any` wheel plus
-  an optional sdist from one variant; otherwise planning must reject that PyPI
-  node/project rather than infer or permit any alternate current-scope path;
+  backend, that the project's version at the selected commit resolves either
+  through build-system-integrated NBGV or through the explicit
+  `nbgv-python-pyproject-version` special-support path, and that the
+  authoritative planner-time PyPI output resolution for that node yields
+  exactly one `py3-none-any` wheel plus an optional sdist from one variant;
+  otherwise planning must reject that PyPI node/project rather than infer or
+  permit any alternate current-scope path;
 - target-family-specific resolved publish identity derived from that
   project-scoped version identity plus the selected projection and manifest
   inputs, including GitHub Release tag derivation as

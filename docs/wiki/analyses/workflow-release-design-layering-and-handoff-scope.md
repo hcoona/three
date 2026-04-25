@@ -91,6 +91,14 @@ The final middle-layer seam decisions for current scope are now:
       fails closed on mismatch before live upload.
     - The validation is a publish-time conformance check, not a fresh executor-
       owned derivation of package identity.
+7. **`nbgv-python` version-authority special support**
+    - `nbgv-python` is the only current-scope exception to the normal
+      build-system-integrated NBGV contract.
+    - Its project-scoped version identity is resolved from the selected
+      commit's checked-in `pyproject.toml` `[project].version` through an
+      explicit descriptor-declared special-support path.
+    - The planner freezes that resolved version into the project snapshot, and
+      later build and publish stages must fail closed on any mismatch.
 
 With these contracts written back into the normative pages, middle-layer design
 no longer has any implementation-blocking open seam in current scope.

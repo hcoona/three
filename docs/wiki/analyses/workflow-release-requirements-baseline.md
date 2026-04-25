@@ -192,15 +192,17 @@ Examples of disallowed behavior:
 
 ## Confirmed Versioning and Immutability Rule
 
-- For one selected project, version identity comes from that project's NBGV
-  resolution at the selected commit.
-- In current scope, every in-scope project is expected to expose that NBGV
-  result through its own ecosystem-native build system.
-- C# already satisfies that integration end-to-end; other ecosystems still have
-  rollout gaps, but current-scope workflow design still assumes build-system-
-  integrated NBGV rather than designing non-NBGV alternatives.
-- Workflow release does not introduce a second workflow-owned version source or
-  treat manifest-only static versioning as the steady-state release model.
+- For one selected project, version identity comes from that project's
+  descriptor-declared authoritative version source at the selected commit.
+- In current scope, every in-scope project except `nbgv-python` is expected to
+  expose that version identity through ecosystem-native build-system-integrated
+  NBGV.
+- `nbgv-python` is the only current-scope exception: it uses its checked-in
+  `pyproject.toml` `[project].version` value as a special-support authoritative
+  version source.
+- Workflow release does not introduce a second workflow-owned version source,
+  and manifest-owned static versioning is not a general fallback for other
+  projects.
 - In current scope, the stable project slug for release-tag derivation is that
   project's descriptor-owned `project.id`; no extra tag-slug field is introduced.
 - Outputs built from the same project and the same commit should therefore share
@@ -295,8 +297,10 @@ Examples of disallowed behavior:
 - That narrowed current-scope PyPI contract is limited to projects whose
   packaging metadata and build behavior keep publication on the pure-Python
   `py3-none-any` path, avoid platform-specific or otherwise filename-diverging
-  distribution outputs within the same publication intent, and continue to
-  expose version identity through build-system-integrated NBGV.
+  distribution outputs within the same publication intent, and either continue
+  to expose version identity through build-system-integrated NBGV or, for the
+  single current-scope `nbgv-python` exception, use the checked-in
+  `pyproject.toml` version through an explicit special-support path.
 
 ## Confirmed Acceptance Rule
 
@@ -309,10 +313,10 @@ Examples of disallowed behavior:
     - a Python package project;
     - a Node package project;
     - a Ruby package project.
-- Current repo state does not yet contain a qualifying current-scope Python
-  acceptance candidate under that narrowed PyPI contract, but one will be
-  prepared before implementation, so the Python acceptance requirement remains
-  part of the baseline.
+- Current-scope Python acceptance includes `nbgv-python` through that explicit
+  special-support path: planner authority comes from the selected commit's
+  checked-in `pyproject.toml` version, and later build and publish stages must
+  preserve that same frozen project-scoped version identity.
 - Acceptance must cover both `buddy` and `official` overall, but not every
   representative project is required to publish through both profiles if one of
   its profiles intentionally has zero targets.

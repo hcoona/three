@@ -2,12 +2,11 @@
 
 ## Summary
 
-`src/public/lib/nbgv-python/pyproject.toml` is the clearest public Python
-packaging metadata example in the repo, but it is not yet a current-scope
-PyPI-ready release candidate because it remains a bootstrap-special case: the
-normal current-scope contract expects build-system-integrated NBGV, so this
-package needs a separate bootstrap path before it can become PyPI-ready under
-that contract.
+`src/public/lib/nbgv-python/pyproject.toml` is the clearest current-scope
+special-support Python packaging metadata example in the repo. Unlike the
+normal Python contract, which expects build-system-integrated NBGV, this one
+named exception uses the checked-in `pyproject.toml` `[project].version` as its
+authoritative release version.
 
 ## Key Points
 
@@ -18,14 +17,13 @@ that contract.
 
 ## Important Claims
 
-- The repository already has at least one Python project with clearly public
-  package metadata, but the current repo state still leaves Python rollout work
-  because this project is still a bootstrap-special case before it becomes
-  current-scope PyPI-ready.
-- `nbgv-python` should not be framed as the immediate first PyPI rollout
-  candidate under the normal current-scope rules; it first needs a separate
-  bootstrap path, after which it can be reconsidered alongside the rest of the
-  PyPI-targeted contract.
+- The repository already has normal Python NBGV integration examples, but
+  `nbgv-python` remains a named special-support exception rather than evidence
+  that manifest-version fallback is generally allowed.
+- `nbgv-python` is in first-delivery scope under that explicit exception path:
+  planner authority comes from the selected commit's checked-in
+  `pyproject.toml` version, and later build and publish stages must preserve
+  that same frozen project-scoped version identity.
 
 ## Related Pages
 

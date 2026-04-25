@@ -332,15 +332,16 @@ current architecture it consists of:
 - planner-derived publish disposition and live publish mode.
 
 In current scope, the planner resolves version identity per selected project
-from that project's build-system-integrated NBGV result at the selected commit.
-The release model assumes every in-scope ecosystem exposes that NBGV result
-through its native build tooling rather than through a separate workflow-owned
-version source. C# already satisfies that integration end-to-end; other
-ecosystems still have rollout gaps, but current-scope workflow design does not
-add non-NBGV alternatives to compensate. For GitHub Release, the planner then
-derives the external
+from that project's descriptor-declared authoritative version source at the
+selected commit. For every project except `nbgv-python`, that source remains
+the project's build-system-integrated NBGV result. `nbgv-python` is the one
+current-scope special-support exception: its version identity is resolved from
+the selected commit's checked-in `pyproject.toml` `[project].version`, and
+that path must not be generalized into a manifest-version fallback for other
+projects. For GitHub Release, the planner then derives the external
 publish identity as the project-scoped tag
-`release/<project.id>/v<nbgv-version>`. This matches the repositories existing
+`release/<project.id>/v<resolved-version>`. This matches the repositories
+existing
 release-tag shape, including observed tags such as `release/nbgv-python/v2.0.0`,
 `release/steam-account-history-to-csv/v1.1.1`, and
 `release/hexo-renderer-asciidoc/v3.1.0-beta.11.g3f78566`, and it matches the

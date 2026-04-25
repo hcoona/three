@@ -11,10 +11,10 @@ The clearest current patterns are:
 - another public C# app and several private apps still rely on
   `Microsoft.Build.Artifacts`;
 - `hexo-renderer-asciidoc` is the clearest currently publishable Node.js
-  package, while `nbgv-python` is the clearest public Python metadata example
-  but remains a bootstrap-special case rather than the immediate current-scope
-  PyPI rollout candidate because it still needs a separate bootstrap path before
-  it can satisfy the normal build-system-integrated NBGV contract;
+  package, while Python now has both a normal build-system-integrated NBGV path
+  (`hcoona-release-smoke`) and one named current-scope special-support path
+  (`nbgv-python`, whose authoritative version comes from its checked-in
+  `pyproject.toml`);
 - buddy and official channels already exist in policy scripts, but not yet as
   checked-in GitHub workflow files in this worktree.
 
@@ -49,11 +49,11 @@ This analysis assumes the intended future release shape is:
 
 ### Python
 
-| Scope                                      | Findings                                                   | Release Signals                                                                                                                                                                                                                                                             |
-| ------------------------------------------ | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/public/lib`                           | `nbgv-python` is the only public library workspace member. | Clearly public metadata, console script, Hatch entry point, and public URLs, but it remains a bootstrap-special case: under the current-scope PyPI contract it needs a separate bootstrap path before it can become PyPI-ready through normal build-system-integrated NBGV. |
-| `src/public/app`                           | `markdown-hybrid-search-mcp`.                              | Lives under `public/app` but is still marked `Private :: Do Not Upload`.                                                                                                                                                                                                    |
-| `src/private/app`, `src/lab`, `src/sample` | 10 additional workspace members.                           | All inspected manifests are internal-facing or explicitly `Private :: Do Not Upload`.                                                                                                                                                                                       |
+| Scope                                      | Findings                                                                           | Release Signals                                                                                                                                                                                                                                   |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/public/lib`                           | `nbgv-python` and `hcoona-release-smoke` are the public library workspace members. | `hcoona-release-smoke` demonstrates the normal Hatch plus build-system-integrated NBGV path, while `nbgv-python` is the one named current-scope special-support exception whose authoritative version comes from its checked-in `pyproject.toml`. |
+| `src/public/app`                           | `markdown-hybrid-search-mcp`.                                                      | Lives under `public/app` but is still marked `Private :: Do Not Upload`.                                                                                                                                                                          |
+| `src/private/app`, `src/lab`, `src/sample` | 10 additional workspace members.                                                   | All inspected manifests are internal-facing or explicitly `Private :: Do Not Upload`.                                                                                                                                                             |
 
 ### JS/TS
 
@@ -185,10 +185,10 @@ This implies the future release descriptor should distinguish:
     - Migrate remaining `Microsoft.Build.Artifacts` app projects to the same
       model.
 3. **Python**
-    - Treat `nbgv-python` as the clearest public Python metadata candidate, but
-      keep it out of the immediate current-scope PyPI rollout path because it
-      remains a bootstrap-special case that needs a separate bootstrap path
-      before it can satisfy the normal build-system-integrated NBGV contract.
+    - Treat `nbgv-python` as a first-delivery Python release target through its
+      explicit special-support path: planner authority comes from its checked-in
+      `pyproject.toml` version, while other Python projects continue to use the
+      normal build-system-integrated NBGV path.
     - Freeze Python `buddy` to GitHub Release only, because GitHub Packages does
       not provide a Python package target and TestPyPI is not part of the current
       baseline.

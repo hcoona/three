@@ -196,9 +196,12 @@ This area is also largely closed at the requirements level. The business side
 has now frozen that:
 
 - version identity is project-scoped rather than profile-centric and comes from
-  each selected project's NBGV resolution at the selected commit;
-- every in-scope project is expected to expose that project-scoped NBGV-derived
-  version identity through its ecosystem-native build system;
+  each selected project's descriptor-declared authoritative version source at
+  the selected commit;
+- every in-scope project except `nbgv-python` is expected to expose that
+  project-scoped version identity through ecosystem-native build-system-
+  integrated NBGV, while `nbgv-python` is the one current-scope special-support
+  exception that uses its checked-in `pyproject.toml` version;
 - `official` is the higher-status freezing state;
 - `buddy FORCE` is an explicit but exceptional overwrite path before a version
   reaches `official`;
