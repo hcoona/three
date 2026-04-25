@@ -84,6 +84,10 @@ The final middle-layer seam decisions for current scope are now:
     - Only after that full precheck passes may the control plane create the
       missing required tags for the run.
 6. **Package-registry identity conformance**
+    - Current-scope package identity sources and equivalence rules are frozen per
+      target family: NuGet explicit `PackageId`, PyPI normalized
+      `[project].name`, npm descriptor override or `package.json` `name`, and
+      RubyGems evaluated `Gem::Specification.name`.
     - For each live package-registry publish member, the concrete produced file
       is validated against the owning publish node's frozen
       `resolved-publish-identity`.

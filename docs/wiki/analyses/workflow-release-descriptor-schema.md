@@ -567,6 +567,22 @@ That split avoids duplicating package identity data in the release descriptor
 while still letting the descriptor express deliberate target-side differences,
 such as an npm scope rewrite for GitHub Packages.
 
+Current-scope package-registry identity is resolved from those manifests through
+this closed table before the planner emits `resolved-publish-identity`:
+
+| Target family | Authoritative package-name source                                                               | Current-scope fallback and normalization rule                                                                                                                                                                                                                                                                        |
+| ------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nuget`       | The evaluated `PackageId` MSBuild property from the selected project's primary `.csproj`.       | No descriptor override and no MSBuild `AssemblyName` or directory-name fallback are allowed for release planning. If `PackageId` is absent or evaluates empty, a `nuget-publish` target is invalid. The planner preserves the evaluated spelling in the plan, while NuGet identity comparisons are case-insensitive. |
+| `pypi`        | `[project].name` in the selected project's `pyproject.toml`.                                    | No descriptor override is allowed. The planner serializes the PyPI / PEP 503 normalized name: lowercase, then replace each maximal run of `.`, `-`, or `_` with one `-`.                                                                                                                                             |
+| `npm`         | `projection.package-name` when declared for that target usage; otherwise `package.json` `name`. | The resolved value must be a valid publishable npm package name. Current-scope selected package names must be lowercase; scoped GitHub Packages names must keep a scope matching the catalog destination owner. The planner preserves the resolved spelling.                                                         |
+| `rubygems`    | The selected `.gemspec`'s evaluated `Gem::Specification.name`.                                  | No descriptor override is allowed. Current-scope gem names must be lowercase and are serialized with their evaluated spelling.                                                                                                                                                                                       |
+
+For all package-registry families, `resolved-publish-identity.version` comes from
+the planner-frozen project `resolved-version`, not from a target-specific
+descriptor field. Family-specific version normalization is used only for remote
+identity and publish-time conformance checks; it does not introduce a second
+author-time version source.
+
 ### Repo-layout-owned data
 
 The monorepo layout remains authoritative for directory scope such as
@@ -689,6 +705,11 @@ Examples:
 - the descriptor ecosystem matches the referenced primary manifest type from the
   closed current-scope mapping (`dotnet` -> `.csproj`, `python` ->
   `pyproject.toml`, `node` -> `package.json`, `ruby` -> `.gemspec`);
+- every selected package-registry target can resolve its package name through the
+  closed current-scope table in
+  [Existing manifest-owned data](#existing-manifest-owned-data), including the
+  current-scope rule that NuGet package publication requires an explicit
+  non-empty `PackageId` rather than relying on MSBuild's pack default;
 - cross-profile package-registry coexistence is evaluated from the resolved
   package-registry identity tuple (family, destination.host, destination.owner?,
   published-name) after combining descriptor data with manifest-owned default

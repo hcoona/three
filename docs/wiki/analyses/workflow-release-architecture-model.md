@@ -360,6 +360,15 @@ lowercase the resolved name, then replace each maximal run of `.`, `-`, or `_`
 with a single `-`. This remote package identity canonicalization is separate
 from planner-time PyPI distribution filename computation, which remains a
 filename-only concern.
+The current-scope family-specific identity rules are frozen in the plan shape:
+NuGet uses an explicit evaluated `.csproj` `PackageId` with case-insensitive
+identity comparison; PyPI uses normalized `[project].name`; npm uses the
+descriptor override or `package.json` `name` with exact package-name comparison;
+and RubyGems uses the evaluated `.gemspec` `Gem::Specification.name` with exact
+gem-name comparison. Package-registry versions always come from the
+project-scoped planner-frozen `resolved-version`, with family-specific version
+equivalence applied only for remote lookup, classification, and publish-time
+conformance.
 
 For current-scope NuGet and PyPI publish nodes, the planner must also determine
 one canonical final distribution filename per planned artifact before any

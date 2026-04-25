@@ -441,6 +441,18 @@ the node performs live upload. For current-scope `nbgv-python`, that check also
 enforces that built Python metadata matches the same planner-frozen project
 version that was derived from the selected commit's checked-in
 `pyproject.toml` and used for release-tag and package-identity planning.
+The current-scope conformance contract is:
+
+| Family     | Artifact metadata source                                                                                  | Required name equivalence                                                                                                              | Required version equivalence                                                                           |
+| ---------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `nuget`    | The embedded `.nuspec` metadata inside each `.nupkg` or `.snupkg` member.                                 | The metadata `id` must equal `publish-node.resolved-publish-identity.package-name` under NuGet's case-insensitive package-ID identity. | The metadata `version` must equal the frozen version under NuGet normalized package-version identity.  |
+| `pypi`     | Wheel `METADATA` and sdist `PKG-INFO` or equivalent core metadata produced by the selected build backend. | The metadata `Name` must equal the frozen package name after PyPI / PEP 503 normalization.                                             | The metadata `Version` must equal the frozen version under normalized Python package version identity. |
+| `npm`      | The packed npm package's `package/package.json`.                                                          | The metadata `name` must exactly equal the frozen npm package name after npm package-name validation.                                  | The metadata `version` and frozen version must resolve to the same canonical `node-semver` version.    |
+| `rubygems` | The built gem's RubyGems specification metadata.                                                          | The gem metadata `name` must exactly equal the frozen gem name after RubyGems name validation.                                         | The gem metadata `version` must equal the frozen version under RubyGems `Gem::Version` equality.       |
+
+If the publish executor cannot read the required metadata, if the metadata is
+missing, or if the family-specific equivalence check cannot be completed
+unambiguously, the node must fail closed before live upload.
 When the publish node also contains `publish-mode: overwrite-mutable` or
 `publish-mode: replace-authoritative`, the executor must honor that frozen mode;
 it must not infer overwrite or replacement behavior by re-reading raw dispatch

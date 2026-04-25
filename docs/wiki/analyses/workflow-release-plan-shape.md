@@ -292,15 +292,18 @@ planner-frozen `resolved-version` for the selected run. In current scope, that
 resolved project version comes from build-system-integrated NBGV for every
 project except the single `nbgv-python` special-support path, which instead
 uses the selected commit's checked-in `pyproject.toml` `[project].version`.
-For current-scope `pypi`,
-after that target-side name resolution the planner must canonicalize
-`resolved-publish-identity.package-name` to the PyPI / PEP 503 normalized
-project-name form for remote lookup, classification, and uniqueness checks:
-lowercase the resolved name, then replace each maximal run of `.`, `-`, or `_`
-with a single `-`. This remote package identity canonicalization is distinct
-from planner-time PyPI distribution filename computation in `projection`, which
-remains a separate filename-only concern. For GitHub Release, the planner
-resolves both the
+The current-scope package-name resolution and identity-equivalence contract is:
+
+| Family     | Planned `package-name` source and serialization                                                                                                                                                                          | Name equivalence for remote lookup and same-identity classification                                                                                             | Version equivalence for remote lookup and same-identity classification                                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nuget`    | Serialize the evaluated primary `.csproj` `PackageId` spelling. `nuget-publish` is invalid when `PackageId` is absent or empty; current scope does not rely on NuGet/MSBuild's `AssemblyName` or directory-name default. | NuGet package IDs are case-insensitive; compare with ordinal case-insensitive semantics while preserving the serialized spelling for filenames and diagnostics. | Compare using NuGet normalized package-version identity, including removal of leading numeric zeroes, omission of a zero fourth version part, and ignoring SemVer build metadata for identity. |
+| `pypi`     | Serialize `[project].name` after PyPI / PEP 503 normalization: lowercase, then replace each maximal run of `.`, `-`, or `_` with one `-`.                                                                                | Compare the PEP 503 normalized project name.                                                                                                                    | Compare using normalized Python package version identity under the Python packaging version-specifier rules.                                                                                   |
+| `npm`      | Serialize `projection.package-name` when declared; otherwise serialize `package.json` `name`. The resolved value must be a valid publishable npm package name and lowercase in current scope.                            | Compare the serialized npm package name exactly after npm package-name validation; scoped names include the scope.                                              | Compare the canonical `node-semver` package version identity for the serialized frozen version and the observed package metadata version.                                                      |
+| `rubygems` | Serialize the evaluated `.gemspec` `Gem::Specification.name`; current-scope gem names must be lowercase.                                                                                                                 | Compare the serialized gem name exactly after RubyGems name validation.                                                                                         | Compare through RubyGems `Gem::Version` equality for the frozen version and the observed gem metadata version.                                                                                 |
+
+Family-specific canonicalization is part of planner-owned publish identity and
+remote-state classification. It must not be re-derived differently by executors
+or by later workflow jobs. For GitHub Release, the planner resolves both the
 final project-scoped `release-tag` and `desired-publish-state.release-state`
 before serializing the plan. In current scope, GitHub Release tags use the
 repositories existing shape `release/<project.id>/v<resolved-version>`, matching
