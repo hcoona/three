@@ -104,19 +104,20 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
 
 - The workflow-and-executor-boundaries page now fixes the control-plane shape on top of that plan: `buddy` and `official` entry workflows over one shared orchestration workflow, a normalized planner-facing request contract for current scope including frozen project-selection semantics, per-variant build fan-out, per-publish-node publish fan-out, control-plane-owned approvals, concurrency, distinct project-scoped tag orchestration only when a GitHub Release publish node is present, runtime wiring, and reporting, plus plan-to-job handoff contracts and thin executor boundaries that keep replay decisions, overwrite or same-tag replacement mode, publication identity, and GitHub Release desired state planner-owned.
 - A dedicated design-layering and handoff-scope page now records the current
-  three-layer reading of the design corpus: upper-layer design is effectively
-  closed, middle-layer design is largely in place but still has a small set of
-  implementation-critical seam items, and lower-layer realization remains
-  intentionally implementation-owned after those seam items are frozen.
+  three-layer reading of the design corpus and now records that upper-layer and
+  middle-layer design are both closed in current scope, while lower-layer
+  realization remains intentionally implementation-owned.
+- The current middle-layer design now also freezes current-scope handoff seams:
+  manual dispatch selects a branch/tag ref and then pins all later stages to the
+  resolved SHA, planner-time remote observation uses public reads plus
+  least-privilege `GITHUB_TOKEN` reads for GitHub-hosted surfaces, `official`
+  runs require an early control-plane `maintain+` authorization check distinct
+  from later approval, and immutable proof reuse is guaranteed only within the
+  default GitHub Actions artifact retention window.
 
 ## Open Questions
 
-- No major upper-layer architecture gap remains in the current scope.
-- Before the implementation handoff can be treated as fully closed, design still
-  needs to freeze selected-commit materialization, prior build-receipt
-  durability and lookup, planner-time remote-observation auth, `official`
-  `maintain+` trigger enforcement, and the closed current-scope artifact-typing
-  vocabularies.
+- No major upper-layer or middle-layer design gap remains in the current scope.
 - Lower-layer realization details such as code organization, concrete workflow
   file layout, and command plumbing remain intentionally implementation-owned
   within those frozen contracts.

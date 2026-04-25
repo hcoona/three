@@ -352,3 +352,22 @@ This file is the append-only chronological record of wiki activity.
   closed current-scope artifact-typing vocabularies.
 - Updated the wiki overview and index so they no longer imply that all
   cross-layer design seams are already closed.
+
+## [2026-04-25] design | Close middle-layer handoff seams
+
+- Froze current-scope manual dispatch commit selection as branch/tag entry in the
+  GitHub UI followed by control-plane pinning to the resolved commit SHA for all
+  later planning, build, tag, and publish stages.
+- Froze planner-time remote observation to use public reads where possible and
+  otherwise only least-privilege `GITHUB_TOKEN` reads for GitHub-hosted surfaces,
+  excluding publish credentials and approval-gated environment secrets.
+- Froze `official` triggering authorization as an explicit early control-plane
+  repository-permission check that fails closed unless the actor has at least
+  `maintain`, while keeping later protected-environment approval as a separate
+  gate.
+- Froze prior build-receipt durability expectations to the platform's default
+  GitHub Actions artifact retention window, with immutable proof reuse
+  guaranteed only while the relevant records remain unexpired.
+- Updated the workflow-boundary, architecture, plan-shape, layering, and
+  overview pages so middle-layer design is now treated as closed in current
+  scope.

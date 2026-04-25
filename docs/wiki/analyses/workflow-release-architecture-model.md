@@ -27,8 +27,8 @@ partially expanded graph.
 The architecture distinguishes three related request representations:
 
 1. **Control-plane run envelope** — raw GitHub Actions runtime context such as
-   `workflow_dispatch` inputs, actor, run identifiers, approval state, and
-   orchestration state.
+   `workflow_dispatch` inputs, selected branch/tag ref, actor, run identifiers,
+   approval state, and orchestration state.
 2. **Planner request** — the control-plane-normalized planner-facing input for
    the current scope: `profile`, `commit-sha`, normalized
    `requested-project-ids`, and normalized `request-flags.force`. Dry-run stays
@@ -47,6 +47,12 @@ inside the emitted plan. The emitted plan freezes `selected-project-ids` in
 unique lexicographic order, and that resolved set remains part of
 `envelope.plan-id` rather than being recomputed later from raw workflow input
 spelling.
+
+In current scope for manual `workflow_dispatch`, the operator selects a branch
+or tag ref in the GitHub UI. The control plane resolves that selection once to
+one exact `commit-sha` at run start, and later plan/build/publish/tagging stages
+must remain pinned to that same resolved commit rather than following a moving
+branch head.
 
 The plan itself has two top-level parts:
 
@@ -426,12 +432,21 @@ Ownership rules for this seam are:
 
 - the planner owns publish-destination querying, bounded retry, normalization,
   and classification for remote-state-dependent planning;
+- planner-time remote observation uses public read access where the destination
+  supports it; for GitHub-hosted surfaces in current scope, the control plane
+  may provide `GITHUB_TOKEN` with least-privilege read permissions for those
+  queries;
 - the control plane may host planner execution and separately verify required
   Git tags, but it must not query publish destinations to decide satisfied
   reruns, replay policy, or promotion policy;
 - publish executors may call destinations only to perform the already frozen
   publish request; they must not perform independent preflight classification or
   reinterpret same-identity remote matches.
+
+Current scope must not provide publish credentials or approval-gated environment
+secrets to planner-time remote observation. The planner's pre-approval
+classification identity is therefore limited to public reads plus the
+repository-scoped `GITHUB_TOKEN` reads described above.
 
 ### Control-Plane Immutable Proof Lookup Seam
 
@@ -468,6 +483,13 @@ Ownership rules for this seam are:
 - publish executors do not consume this seam directly;
 - persisted plan state keeps only planner conclusions, not the lookup index
   contents or workflow-run provenance records themselves.
+
+In current scope, this lookup/index is backed by GitHub Actions artifact
+retention under the platform's default retention window. Immutable proof reuse
+is therefore guaranteed only while the relevant receipt records remain
+unexpired in that default retention window; once they expire, proof is
+unavailable and immutable same-identity classification must fail closed where
+that proof would otherwise be required.
 
 Current-scope guardrails for this seam are:
 

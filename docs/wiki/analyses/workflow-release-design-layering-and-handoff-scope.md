@@ -13,11 +13,11 @@ may be left to an experienced implementer.
 
 ## Three-Layer Framing
 
-| Layer               | Main question                                                                                                 | Current primary pages                                                                                                                                                                                                                                                                                                                    | Current status                                |
-| ------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Upper-layer design  | What system are we building, what are its major responsibilities, and what principles are fixed?              | [Workflow Release Requirements Baseline](./workflow-release-requirements-baseline.md), [Workflow Release Design Direction](./workflow-release-design-direction.md), [Workflow Release Architecture Model](./workflow-release-architecture-model.md)                                                                                      | Settled for current scope                     |
-| Middle-layer design | What cross-component contracts must be frozen so implementation does not reinterpret the business rules?      | [Workflow Release Architecture Model](./workflow-release-architecture-model.md), [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md), [Workflow Release Plan Shape](./workflow-release-plan-shape.md), [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md) | Mostly settled, with bounded pre-handoff gaps |
-| Lower-layer design  | How will the bounded components be realized in code, workflow files, scripts, receipts, and internal helpers? | No separate exhaustive page set yet                                                                                                                                                                                                                                                                                                      | Intentionally only partially designed         |
+| Layer               | Main question                                                                                                 | Current primary pages                                                                                                                                                                                                                                                                                                                    | Current status                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Upper-layer design  | What system are we building, what are its major responsibilities, and what principles are fixed?              | [Workflow Release Requirements Baseline](./workflow-release-requirements-baseline.md), [Workflow Release Design Direction](./workflow-release-design-direction.md), [Workflow Release Architecture Model](./workflow-release-architecture-model.md)                                                                                      | Settled for current scope             |
+| Middle-layer design | What cross-component contracts must be frozen so implementation does not reinterpret the business rules?      | [Workflow Release Architecture Model](./workflow-release-architecture-model.md), [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md), [Workflow Release Plan Shape](./workflow-release-plan-shape.md), [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md) | Settled for current scope             |
+| Lower-layer design  | How will the bounded components be realized in code, workflow files, scripts, receipts, and internal helpers? | No separate exhaustive page set yet                                                                                                                                                                                                                                                                                                      | Intentionally only partially designed |
 
 ## Current Assessment by Layer
 
@@ -40,8 +40,7 @@ does not need another broad architecture pass before implementation.
 
 ### Middle-Layer Design
 
-Middle-layer design is largely in place, but the implementation handoff is not
-yet fully sealed.
+Middle-layer design is now fully sealed for current scope.
 
 The current doc set already provides:
 
@@ -51,30 +50,35 @@ The current doc set already provides:
 - stable build and publish fan-out granularity;
 - planner-owned versus control-plane-owned versus executor-owned boundaries.
 
-Before the implementation handoff can be treated as fully complete, design
-still needs to freeze these bounded seam items:
+The final middle-layer seam decisions for current scope are now:
 
 1. **Selected commit materialization**
-    - Define how the selected commit is chosen from the dispatch request and how
-      every planning, build, tag, and publish step is guaranteed to operate on
-      that same commit.
+    - Manual `workflow_dispatch` selects a branch or tag ref in the GitHub UI.
+    - The control plane resolves that choice once to one exact `commit-sha` at
+      run start.
+    - All later planning, build, tag, and publish stages stay pinned to that
+      same resolved SHA.
 2. **Prior build-receipt durability and lookup**
-    - Define where prior build receipts or proof records live, how long they must
-      remain available, and what lookup contract the planner may rely on for
-      immutable-target replay handling.
+    - Prior build-receipt lookup remains control-plane-owned.
+    - Current scope relies on the platform's default GitHub Actions artifact
+      retention window for those records.
+    - Immutable proof reuse is therefore guaranteed only while the relevant
+      records remain unexpired in that default window; after expiry, proof is
+      unavailable and planning fails closed when that proof is required.
 3. **Planner-time remote-observation auth model**
-    - Define what permission model or credentials planner-time destination
-      queries use before approval and publish jobs run.
+    - Planner-time destination observation uses public reads where possible.
+    - For GitHub-hosted surfaces in current scope, the control plane may provide
+      least-privilege read access through `GITHUB_TOKEN`.
+    - Planner-time observation must not use publish credentials or approval-
+      gated environment secrets.
 4. **`official` trigger-role enforcement**
-    - Define how the `maintain+` trigger requirement for `official` is enforced at
-      workflow entry or early control-plane execution time.
-5. **Closed current-scope vocabularies for artifact typing**
-    - Explicitly close the valid current-scope value sets for `role`,
-      `kind-family`, and `concrete-kind` so schema validation can be implemented
-      without guesswork.
+    - `official` requires an explicit early control-plane authorization check of
+      the triggering actor's repository permission.
+    - That check fails closed unless the actor has at least `maintain`.
+    - This remains distinct from the later protected-environment approval gate.
 
-These are not broad redesign items. They are cross-component contracts that
-should be frozen by design rather than discovered during implementation.
+With these contracts written back into the normative pages, middle-layer design
+no longer has any implementation-blocking open seam in current scope.
 
 ### Lower-Layer Design
 
@@ -108,17 +112,11 @@ The current design package is already ready to hand off in these areas:
 - the frozen plan shape and normalized graph model;
 - the control-plane, planner, build-unit, and publish-unit responsibility split.
 
-### Still design-owned before handoff is complete
-
-The implementation handoff should not yet be treated as fully closed until the
-five seam items in the middle-layer section are written back into the normative
-design pages.
-
 ### Explicitly left to implementation
 
 The current handoff does **not** attempt to freeze every workflow line, script,
 or helper API. That lower-layer realization work may be delegated to an
-experienced implementer after the bounded seam items above are resolved.
+experienced implementer within the now-frozen middle-layer contracts.
 
 ## Summary Judgment
 
@@ -126,13 +124,12 @@ For the current workflow-release initiative, the design package is best
 understood as:
 
 - **upper-layer design:** closed;
-- **middle-layer design:** mostly closed, but still missing a small number of
-  implementation-critical seam contracts;
+- **middle-layer design:** closed;
 - **lower-layer design:** intentionally only partially authored.
 
-That means the next design task is not a fresh architecture round. It is a
-small handoff-hardening pass that freezes the remaining cross-layer contracts
-before implementation begins in earnest.
+That means the next work is implementation, not another middle-layer design
+pass. Lower-layer realization details remain intentionally implementation-owned
+within the frozen contracts above.
 
 ## Related Pages
 

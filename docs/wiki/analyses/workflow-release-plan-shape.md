@@ -202,6 +202,12 @@ Dry-run or validation-only selection stays in the control-plane run envelope
 rather than in `request-flags`, so it does not change `envelope.plan-id` or the
 whole-release rerun identity.
 
+In current scope for manual `workflow_dispatch`, the selected commit comes from
+resolving the operator-selected branch/tag ref once at run start. The serialized
+`envelope.commit-sha` is that resolved immutable commit, and later control-plane
+and executor stages must remain pinned to it rather than following the source
+ref after dispatch.
+
 Each `envelope.projects[project-id]` snapshot freezes the selected project
 fields that later control-plane and execution design will need without re-
 reading descriptors:

@@ -12,6 +12,9 @@ limits on top of `three.release.plan/v1alpha1`.
   workflows.
 - Both entry workflows call one shared reusable orchestration workflow with the
   selected profile and the raw dispatch envelope.
+- In current scope, manual dispatch selects a branch or tag ref; the control
+  plane resolves it once to `commit-sha` at run start and later jobs stay pinned
+  to that exact commit.
 - The shared orchestration workflow normalizes that raw envelope into the
   authoritative planner-facing request for current scope, including
   `request-flags.force` for `buddy FORCE`.
@@ -30,6 +33,13 @@ limits on top of `three.release.plan/v1alpha1`.
 - Planner-owned publish-destination lookup for remote-state-dependent planning
   is keyed by the frozen resolved publish identity, target snapshot, intended
   artifacts, projection data, and any desired target-side state.
+- Current-scope planner-time destination observation uses public reads where
+  possible and otherwise only least-privilege read access through
+  `GITHUB_TOKEN`; it must not depend on publish credentials or approval-gated
+  environment secrets.
+- Current-scope immutable proof reuse relies on the default GitHub Actions
+  artifact retention window; replay proof is guaranteed only while the relevant
+  receipt records remain unexpired in that default window.
 - Executors are thin consumers of plan-defined intent and must never re-plan,
   rediscover targets, or derive alternate publish identity, overwrite policy,
   or same-tag GitHub Release replacement policy.
@@ -52,13 +62,13 @@ remote-observation seam used to classify remote-state-dependent reruns.
 
 ### Top-Level Boundaries
 
-| Boundary                      | Kind               | Stable granularity       | Owns                                                                                                                                                   |
-| ----------------------------- | ------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `buddy` entry workflow        | top-level workflow | one `buddy` run          | manual dispatch inputs, profile selection, entry permissions, and top-level concurrency wiring                                                         |
-| `official` entry workflow     | top-level workflow | one `official` run       | manual dispatch inputs, profile selection, protected-environment approval wiring, entry permissions, and top-level concurrency wiring                  |
-| shared orchestration workflow | reusable workflow  | one selected-profile run | planning, selector derivation, approval and side-effect sequencing, tag orchestration, artifact fan-out and fan-in, and final reporting                |
-| `build-variant` unit          | reusable workflow  | one `variant-id`         | build-request materialization, ecosystem-specific build-executor selection, runner or tool wiring, and upload of one variant bundle plus build receipt |
-| `publish-node` unit           | reusable workflow  | one `publish-node-id`    | publish-request materialization, family-specific publish-executor selection, download of referenced build bundles, and upload of one publish receipt   |
+| Boundary                      | Kind               | Stable granularity       | Owns                                                                                                                                                                    |
+| ----------------------------- | ------------------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `buddy` entry workflow        | top-level workflow | one `buddy` run          | manual dispatch inputs, profile selection, entry permissions, and top-level concurrency wiring                                                                          |
+| `official` entry workflow     | top-level workflow | one `official` run       | manual dispatch inputs, profile selection, explicit triggering-actor `maintain+` authorization, protected-environment approval wiring, and top-level concurrency wiring |
+| shared orchestration workflow | reusable workflow  | one selected-profile run | planning, selector derivation, approval and side-effect sequencing, tag orchestration, artifact fan-out and fan-in, and final reporting                                 |
+| `build-variant` unit          | reusable workflow  | one `variant-id`         | build-request materialization, ecosystem-specific build-executor selection, runner or tool wiring, and upload of one variant bundle plus build receipt                  |
+| `publish-node` unit           | reusable workflow  | one `publish-node-id`    | publish-request materialization, family-specific publish-executor selection, download of referenced build bundles, and upload of one publish receipt                    |
 
 The stable reusable boundaries are therefore:
 
@@ -68,8 +78,18 @@ The stable reusable boundaries are therefore:
 
 ### Required Job Sequence Inside the Shared Orchestration Workflow
 
-1. `plan` job
+1. `authorize-entry` job
+    - stays in the control plane;
+    - runs before planning;
+    - in current scope for `official`, resolves the triggering actor's
+      repository permission through the GitHub API and fails closed unless the
+      actor has at least `maintain`;
+    - is separate from the later protected-environment approval gate, which
+      still applies to `official` publication after planning and build fan-out.
+2. `plan` job
     - consumes the raw control-plane run envelope;
+    - runs against the exact `commit-sha` resolved once from the operator-
+      selected branch/tag ref at dispatch time;
     - materializes the normalized planner request;
     - hosts planner execution;
     - during that planner execution, serves the control-plane-owned prior build
@@ -77,17 +97,20 @@ The stable reusable boundaries are therefore:
     - during that planner execution, the planner performs any planner-owned
       publish-destination lookup, normalization, and classification needed for
       remote-state-dependent planning, with bounded retry and fail-closed
-      behavior, before freezing the plan;
+      behavior, before freezing the plan; current scope uses public reads where
+      sufficient and otherwise only least-privilege `GITHUB_TOKEN` reads for
+      GitHub-hosted surfaces, never publish credentials or approval-gated
+      environment secrets;
     - if any selected publish node cannot be reduced to a planner-owned remote
       observation class after that bounded retry, fails the run at planning time
       without emitting a partial plan artifact;
     - publishes the frozen `three.release.plan/v1alpha1` artifact;
     - derives the selected `variant-id` and `publish-node-id` sets for later fan-
       out.
-2. `build` fan-out
+3. `build` fan-out
     - runs exactly once per active `variant-id`;
     - produces one bundle and one build receipt per variant.
-3. `approve` gate
+4. `approve` gate
     - stays in the control plane;
     - guards all external side effects;
     - for current-scope `official`, uses a GitHub protected environment with
@@ -95,7 +118,7 @@ The stable reusable boundaries are therefore:
     - may be bypassed for profiles that do not require approval;
     - administrator bypass, when that environment still allows it, remains a
       native GitHub control-plane path rather than executor logic.
-4. `ensure-tag` job
+5. `ensure-tag` job
     - stays in the control plane;
     - creates or verifies each distinct project-scoped release tag exactly once
       per run when any selected publish node resolves to a GitHub Release
@@ -109,11 +132,11 @@ The stable reusable boundaries are therefore:
     - must not retarget or move an existing release tag in current scope;
     - does nothing when the selected publish-node set contains no GitHub
       Release publication.
-5. `publish` fan-out
+6. `publish` fan-out
     - runs exactly once per selected `publish-node-id` whose plan
       `publish-disposition` is `publish`;
     - emits one publish receipt per publish node.
-6. `report` job
+7. `report` job
     - aggregates plan metadata, build receipts, publish receipts, synthetic skip
       receipts, and GitHub job conclusions into the final operator-facing summary.
 
@@ -149,7 +172,7 @@ current-scope fields:
 | Field                   | Meaning                                                                                                                                                                                                                                             |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `profile`               | Selected entry workflow profile, `buddy` or `official`.                                                                                                                                                                                             |
-| `commit-sha`            | The exact commit being released.                                                                                                                                                                                                                    |
+| `commit-sha`            | The exact commit being released, resolved once from the operator-selected branch/tag ref at dispatch time. All later control-plane jobs and executors must stay pinned to this SHA.                                                                 |
 | `requested-project-ids` | User-selected project scope, normalized to unique lexicographic order before planning. Omitted or empty means all in-scope releasable projects. If explicitly non-empty, every id must resolve to an in-scope releasable project or planning fails. |
 | `request-flags.force`   | Boolean overwrite request flag. In `v1alpha1`, `true` is valid only for `buddy`; `profile: official` with `true` is invalid. Raw GitHub input names remain control-plane-owned and are not the planner contract.                                    |
 
@@ -164,6 +187,11 @@ that normalized request after project-scope resolution, which is why the
 resulting plan serializes normalized request flags in
 `envelope.request-flags` and uses resolved project scope plus those flags in
 `envelope.plan-id`.
+
+Current scope does not add an arbitrary-SHA manual selector to
+`workflow_dispatch`. Manual entry selects a branch or tag ref in the GitHub UI,
+and the control plane resolves `commit-sha` from that chosen ref once at run
+start.
 
 ### Active Build and Publish Set Derivation
 
@@ -242,7 +270,9 @@ executor with at least these fields:
 
 A build executor may read checked-out repository files and manifests referenced
 by that request, but it must not re-read descriptors or the shared target
-catalog.
+catalog. Any checkout or workspace materialization used by a build unit must be
+pinned to `build-request.commit-sha`; a build unit must not follow a moving
+branch head after planning has begun.
 
 In that contract, each `artifact-id` is a planner-defined fulfillment slot for
 one semantic output obligation. It is not a frozen filename, path, bundle
@@ -405,9 +435,16 @@ The following concerns are explicitly control-plane-owned:
   protected environment with required reviewers and self-review prevention,
   while administrator bypass stays a native environment capability when
   enabled;
+- **triggering-actor authorization**: only the control plane decides whether the
+  triggering actor is allowed to start the selected profile; in current scope,
+  `official` must fail before planning unless the triggering actor has at least
+  repository `maintain`, and this check stays distinct from later approval;
 - **concurrency**: only the entry workflow or orchestration workflow sets the
   duplicate-run concurrency key, using the already frozen workflow-entry-point
   plus commit rule;
+- **selected-commit pinning**: only the control plane resolves the operator-
+  selected branch/tag ref into the authoritative `commit-sha`, and every later
+  planner, build, publish, and tag job must stay pinned to that same commit;
 - **cancellation**: manual operator cancellation and any optional duplicate-run
   cancellation both use native GitHub workflow cancellation semantics and
   ordinary cancelled status; current scope defines no repo-specific
@@ -422,9 +459,15 @@ The following concerns are explicitly control-plane-owned:
   release tags;
 - **runtime wiring**: runner selection, tool installation, permissions,
   credential injection, and environment selection stay in workflow jobs and
-  wrappers rather than inside executors;
+  wrappers rather than inside executors; current-scope planner-time remote
+  observation uses public reads where sufficient and otherwise only least-
+  privilege `GITHUB_TOKEN` reads for GitHub-hosted surfaces, never publish
+  credentials or approval-gated environment secrets;
 - **artifact transport**: upload, download, naming, and retention of build
-  bundles and receipts stay in the control plane;
+  bundles and receipts stay in the control plane; current-scope prior-build
+  receipt lookup relies on the platform's default GitHub Actions artifact
+  retention window, so immutable proof reuse is guaranteed only while the
+  relevant receipt records remain unexpired in that default window;
 - **prior build-receipt lookup/index**: only the control plane may attach
   workflow-run provenance to `build-result` receipts and look up admissible
   prior build receipt records for immutable proof reuse;
@@ -478,7 +521,8 @@ Executors must not own any of the following:
 
 Executors are allowed to:
 
-- read the checked-out repository files named by the build or publish request;
+- read the checked-out repository files named by the build or publish request,
+  as long as that checkout remains pinned to the request's `commit-sha`;
 - perform the one build or publish action represented by that request;
 - return structured receipts for the control plane to aggregate.
 
@@ -489,6 +533,8 @@ With these boundaries, the cross-layer seam is now explicit:
 descriptor -> frozen plan -> per-variant build request -> per-publish-node
 publish request -> aggregated control-plane report.
 
+Current scope now also freezes entry authorization, selected-commit pinning,
+planner-time remote-observation auth, and default-window immutable-proof reuse.
 The remaining work is implementation of the frozen boundaries, not more design
 about where planning stops and execution starts.
 
