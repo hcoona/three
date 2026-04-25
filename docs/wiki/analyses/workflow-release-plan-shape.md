@@ -17,7 +17,11 @@ shared target-instance catalog schema.
 - Planner-assigned IDs are opaque business-wise but lexically
   deterministic from canonical normalized identity inputs; `envelope.plan-id`
   keys resolved request/selection scope rather than every emitted-plan
-  difference.
+  difference. Immutable package-registry proof reuse therefore uses the
+  planner-frozen (`publish-node-id`, `artifact-id`,
+  `resolved-publish-identity.package-name`,
+  `resolved-publish-identity.version`) member binding rather than `plan-id`
+  alone.
 - The plan is execution-authoritative for descriptor-owned, catalog-owned, and
   planner-derived resolved publish identity, desired publish state, and
   publish-disposition data.
@@ -49,10 +53,10 @@ envelope:
             display-name: Hjg.Pngcs
             ecosystem: dotnet
             release-kind: lib
-            descriptor-path: src/public/dotnet/Hjg.Pngcs/three.release.yml
-            release-root: src/public/dotnet/Hjg.Pngcs
+            descriptor-path: src/public/lib/Hjg.Pngcs/three.release.yml
+            release-root: src/public/lib/Hjg.Pngcs
             source:
-                primary-manifest-path: src/public/dotnet/Hjg.Pngcs/Hjg.Pngcs.csproj
+                primary-manifest-path: src/public/lib/Hjg.Pngcs/Hjg.Pngcs.csproj
                 auxiliary-input-paths: []
             variant-ids: [variant/...]
             publish-node-ids: [publish-node/release, publish-node/package]
@@ -99,7 +103,9 @@ graph:
             resolved-publish-identity:
                 package-name: Hjg.Pngcs
                 version: 1.2.3
-            projection: {}
+            projection:
+                final-distribution-filenames-by-artifact-id:
+                    artifact/...: Hjg.Pngcs.1.2.3.nupkg
     target-instance-snapshots:
         github-release/public:
             family: github-release
@@ -233,6 +239,12 @@ Each artifact object contains:
 - `produced-from-artifact-ids`, normalized from descriptor-local artifact
   handles to plan artifact IDs.
 
+In the frozen plan, `artifact-id` is the planner-defined fulfillment slot for
+that semantic artifact obligation. It is not a filename, path, bundle location,
+or executor command recipe. The planner therefore owns the exact `artifact-id`
+set, tuple metadata, ownership, `produced-from-artifact-ids`, and publish-node
+consumption edges, while execution later proves fulfillment of each slot.
+
 ### `graph.publish-nodes`
 
 Each publish node contains:
@@ -266,8 +278,15 @@ Current-scope normalized `resolved-publish-identity` shapes are:
 For package registries, the planner resolves the final `package-name` after any
 descriptor-side projection override or fallback to manifest-owned intrinsic
 package naming and resolves `version` from the selected project's build-system-
-integrated NBGV version identity for the selected run. For GitHub Release, the
-planner resolves both the
+integrated NBGV version identity for the selected run. For current-scope `pypi`,
+after that target-side name resolution the planner must canonicalize
+`resolved-publish-identity.package-name` to the PyPI / PEP 503 normalized
+project-name form for remote lookup, classification, and uniqueness checks:
+lowercase the resolved name, then replace each maximal run of `.`, `-`, or `_`
+with a single `-`. This remote package identity canonicalization is distinct
+from planner-time PyPI distribution filename computation in `projection`, which
+remains a separate filename-only concern. For GitHub Release, the planner
+resolves both the
 final project-scoped `release-tag` and `desired-publish-state.release-state`
 before serializing the plan. In current scope, GitHub Release tags use the
 repositories existing shape `release/<project.id>/v<nbgv-version>`, matching
@@ -284,21 +303,22 @@ inputs.
 
 Current-scope normalized `desired-publish-state` shapes are:
 
-| Resolved family                    | Plan `desired-publish-state` shape |
-| ---------------------------------- | ---------------------------------- | -------- |
-| `github-release`                   | `release-state: prerelease         | release` |
-| `npm`, `nuget`, `pypi`, `rubygems` | omitted                            |
+| Resolved family                    | Plan `desired-publish-state` shape     |
+| ---------------------------------- | -------------------------------------- |
+| `github-release`                   | `release-state: prerelease \| release` |
+| `npm`, `nuget`, `pypi`, `rubygems` | omitted                                |
 
 GitHub Release `desired-publish-state.release-state` is planner-owned desired
 target-side state. It must not be copied into `projection`.
 
 Current-scope normalized `projection` shapes are:
 
-| Resolved family             | Plan `projection` shape                               |
-| --------------------------- | ----------------------------------------------------- |
-| `github-release`            | `asset-labels-by-artifact-id: { <artifact-id>: ... }` |
-| `npm`                       | `package-name?: <string>`                             |
-| `nuget`, `pypi`, `rubygems` | `{}`                                                  |
+| Resolved family  | Plan `projection` shape                                                    |
+| ---------------- | -------------------------------------------------------------------------- |
+| `github-release` | `asset-labels-by-artifact-id: { <artifact-id>: ... }`                      |
+| `npm`            | `package-name?: <string>`                                                  |
+| `nuget`, `pypi`  | `final-distribution-filenames-by-artifact-id: { <artifact-id>: <string> }` |
+| `rubygems`       | `{}`                                                                       |
 
 For GitHub Release, descriptor-side `projection.asset-labels` keys are resolved
 from descriptor-local `artifact.id` handles into plan artifact IDs before the
@@ -313,9 +333,47 @@ than backfilling the manifest-derived `package.json.name`. The final external
 npm package name always belongs in `resolved-publish-identity.package-name`,
 whether it came from the descriptor override or the manifest fallback.
 
+For current-scope `nuget` and `pypi`, the planner must deterministically
+determine one final distribution filename per planned artifact before any
+remote-state
+classification:
+
+- for `nuget`, using `resolved-publish-identity.package-name`,
+  `resolved-publish-identity.version`, and the artifact's `concrete-kind`, with
+  the exact formulas `<package-name>.<version>.nupkg` for `nuget` and
+  `<package-name>.<version>.snupkg` for `snupkg`;
+- for `pypi`, by invoking the selected project's checked-in current-scope build
+  backend tooling (`hatchling.build`, via the repo's expected tooling boundary
+  such as `mise`/`uv`) during planning to compute the exact final distribution
+  filename(s) for that node's planned artifact set, then freezing those
+  authoritative results into the plan rather than trusting executor-discovered
+  output names or reimplementing Hatchling rules in static prose. This filename
+  computation is separate from PyPI remote package identity canonicalization in
+  `resolved-publish-identity.package-name`. Current scope still limits each
+  `pypi-publish` node to exactly one wheel and zero or one sdist, all from the
+  same variant. Multi-wheel, cross-variant, and platform-specific wheel layouts
+  are deferred.
+
+For current-scope immutable package registries that classify several remote
+members under one resolved `{ package-name, version }` identity, the planner
+must serialize `projection.final-distribution-filenames-by-artifact-id` as the
+planner-frozen final distribution filename map. That map must contain exactly
+one entry for every `artifact-id` in the node's full `artifact-ids`
+membership, including singleton nodes. These filenames are family-specific
+remote-member matching keys only: they do not redefine `artifact-id`, which
+remains the planner-owned fulfillment slot rather than a filename, path, or
+command recipe. For each `artifact-id` a live publish node publishes, the
+actual target-side uploaded member filename must equal that planner-derived
+final filename; the
+executor must consume the frozen value rather than re-derive an alternate
+filename, and may satisfy the upload rule by using a bundle file that already
+has that basename or by staging/renaming to that exact filename before upload.
+Any mismatch must fail closed.
+
 `publish-disposition: publish` means execution should attempt the publication
 intent represented by that node. `publish-mode: create-only` means the executor
-must attempt a normal non-overwrite publication. `publish-mode:
+must attempt a normal non-overwrite publication for the node's full
+`artifact-ids` set. `publish-mode:
 overwrite-mutable` means the executor must perform the planner-authorized
 overwrite behavior for a mutable current-scope buddy target rather than
 inventing its own overwrite policy from raw inputs. `publish-mode:
@@ -338,8 +396,8 @@ before any row in the matrix below is applied:
 - **exact-satisfied**: a remote publication exists for that same identity and
   exactly matches the node's full planner-owned publish intent;
 - **partial**: a remote publication exists for that same identity, is not
-  `exact-satisfied`, and current scope still allows a non-error replay outcome
-  for this node;
+  `exact-satisfied`, and the planner can still normalize it into a structured
+  same-identity subset case rather than an irreducible conflict;
 - **conflicting**: a remote publication exists for that same identity, is not
   `exact-satisfied`, and current scope allows no non-error replay outcome for
   this node, so the planner must fail for human intervention.
@@ -348,6 +406,10 @@ These classes are mutually exclusive: every remote observation reduces to
 exactly one of `absent`, `exact-satisfied`, `partial`, or `conflicting`, and
 the replay matrix below must consume that already-chosen class rather than
 reclassifying the observation per row.
+
+For package registries, that classification is publish-node-wide for one
+resolved `{ package-name, version }` identity and the planner-owned member set
+for that node rather than per uploaded file in isolation.
 
 Remote-query failure policy for that classification step is:
 
@@ -379,9 +441,74 @@ same `resolved-publish-identity.release-tag`:
   `projection.asset-labels-by-artifact-id` label;
 - no extra remote assets remain on that release object.
 
-For immutable targets, any same-identity non-exact observation is
-`conflicting`, so immutable replay remains a planner-error outcome rather than a
-planner-completable state.
+For immutable package registries, the planner must classify same-identity remote
+state with these current-scope rules:
+
+- `absent`: none of the planned members for that resolved
+  `{ package-name, version }` identity exist remotely, so the node may publish
+  with `create-only`;
+- before evaluating immutable `exact-satisfied`, `partial`, or `conflicting`
+  for a same-identity observation, the planner must first establish remote-
+  member ↔ planned-artifact matching for the node's full planned member set; in
+  current scope for NuGet and PyPI, nodes match by the planner-frozen final
+  distribution filename
+  `projection.final-distribution-filenames-by-artifact-id[artifact-id]`,
+  including singleton nodes;
+- content-equivalence for an already-present member is planner-provable only
+  when the planner has a planner-available digest for the corresponding planned
+  member from the control-plane-owned prior build receipt lookup/index for the
+  same current planner-frozen immutable-proof member binding
+  (`publish-node-id`, `artifact-id`,
+  `resolved-publish-identity.package-name`,
+  `resolved-publish-identity.version`); matching `envelope.plan-id` alone is
+  not sufficient. Including the immutable resolved `{ package-name, version }`
+  identity in that binding keeps proof lookup version-sensitive for all
+  immutable package-registry families, including current-scope single-member
+  npm/RubyGems nodes. The planner-frozen
+  `projection.final-distribution-filenames-by-artifact-id` map still serves
+  only remote-member matching and classification; it is not the proof-binding
+  key. That seam must
+  yield `build-result` receipts together with authoritative control-plane
+  provenance proving that the producing live build unit successfully emitted
+  the receipt, whether the run was live versus dry-run or validation-only, and
+  the run identity/attempt; no other proof source is admissible, which keeps
+  the proof bound to the same planner-frozen versioned output slot; for any
+  given immutable-proof member binding, the admissible receipt set must
+  collapse to one digest, and if multiple admissible receipts exist with
+  differing digests then digest proof is unavailable; proof from dry-run
+  receipts or other immutable-proof bindings is invalid for immutable
+  `exact-satisfied` / `partial` classification;
+- if that digest proof is unavailable for any member needed to distinguish
+  `exact-satisfied`, `partial`, or `conflicting`, the planner must fail closed
+  rather than infer equivalence from unfrozen filenames, handles, or descriptor
+  shape;
+- `exact-satisfied`: after that member-key matching step, the remote member set
+  for that identity exactly matches the full planner-owned member set with
+  content-equivalent matched members and no extras, so the node becomes
+  `skip-satisfied`;
+- `partial`: after that member-key matching step, the remote member set is a
+  proved additive non-empty proper subset: all already-present planned members
+  are content-equivalent to the planned members, all still-missing planned
+  members are truly absent, and there are no extra unplanned remote members for
+  that same identity; current scope still treats this as planner-error rather
+  than a live publish case;
+- `conflicting`: any same-identity observation outside the `partial`
+  proved-subset case, including remote members that cannot be matched
+  one-to-one by that frozen member key, non-equivalent existing members, extra
+  unplanned members, or remote state that cannot be normalized and proved into
+  a safe additive subset.
+
+Immutable same-identity handling remains conservative in current scope. The
+planner may emit a live publish only for `absent`; both immutable `partial` and
+immutable `conflicting` must fail closed for human intervention.
+
+In current scope, npm and RubyGems are single-member families, so immutable
+`partial` is structurally unreachable there. NuGet can still observe `partial`
+because one publish node may own multiple remote members for the same resolved
+package identity. PyPI can also observe `partial`, but only for the narrowed
+current-scope member set of exactly one wheel and zero or one sdist under one
+resolved package identity. Those observations remain planner-error in current
+scope.
 
 In current scope, `official-frozen` is a planner-time predicate over one
 selected project and its resolved version identity. It becomes true only when
@@ -392,28 +519,29 @@ not make a version official-frozen, and no second freeze tag is introduced.
 
 The planner must apply the following current-scope replay, authoritative-
 replacement, and `FORCE` matrix before serializing publish nodes. Whole-request
-planner-error rows below take precedence over all per-node outcomes. For each
-publish node, after reducing the remote state to exactly one observation class,
-evaluate the per-node rows top-to-bottom and stop at the first match:
-`exact-satisfied` skip rows first, then per-node planner-error rows, then live
-`publish-mode` rows. The broad mutable-target replay rows therefore apply only
-to already-classified `partial` observations that survived the earlier planner-
-error checks. An unclassifiable remote state does not enter this matrix; it is a
-fail-closed planner error before any row evaluation.
+planner-error rows below take precedence over all per-node outcomes even though
+they appear later in the table. For each publish node, after reducing the
+remote state to exactly one observation class, evaluate the per-node rows in
+the table's listed order and stop at the first match. In the current ordering,
+that means the `exact-satisfied` skip rows first, then the immutable fail-closed
+rows, then the remaining per-node planner-error and live `publish-mode` rows.
+An unclassifiable remote state does not enter this matrix;
+it is a fail-closed planner error before any row evaluation.
 
-| Condition                                                                                                                                                                                                                                                               | Planner outcome                                                                                                                                                                                                                                                                                                                     |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A `github-release` target is `exact-satisfied` for the same `resolved-publish-identity.release-tag`, including exact release state, exact required asset set, and exact asset labels.                                                                                   | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                                                                |
-| An immutable target is `exact-satisfied` for the node's full publish intent.                                                                                                                                                                                            | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                                                                |
-| An immutable target has a `conflicting` remote publication for the same immutable target identity.                                                                                                                                                                      | Planner error. Do not emit a plan that asks executors to auto-complete, reconcile, or overwrite the immutable conflict.                                                                                                                                                                                                             |
-| A `github-release` target has a `conflicting` same-tag remote publication because the observed same-tag remote state is `release` while the node desires `prerelease`, or it is already `release` with a non-exact official asset set or labels.                        | Planner error. Current scope does not allow same-tag release-to-prerelease demotion or reinterpretation of an already authoritative official release.                                                                                                                                                                               |
-| No existing publication is found for the node's `resolved-publish-identity`.                                                                                                                                                                                            | Emit `publish-disposition: publish` with `publish-mode: create-only`.                                                                                                                                                                                                                                                               |
-| A `github-release` target already contains the same `resolved-publish-identity.release-tag`, the observation is `partial`, the node's desired `release-state` is `release`, and the observed same-tag remote state is still `prerelease`.                               | Emit `publish-disposition: publish` with `publish-mode: replace-authoritative`. This is the only current-scope same-tag official-promotion path. The planner must serialize this explicitly so execution converges the full official publish intent rather than treating promotion as a state-only change or additive merge.        |
-| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, the observation is `partial`, and the node is in the planner-authorized buddy `FORCE` overwrite case.                                             | Emit `publish-disposition: publish` with `publish-mode: overwrite-mutable`. The planner must serialize this explicitly rather than leaving mutable-target replay overwrite behavior for executors to infer from destination state.                                                                                                  |
-| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, the observation is `partial`, and neither the planner-authorized same-tag `official` promotion case nor the buddy `FORCE` overwrite case applies. | Planner error. Current scope does not allow non-`FORCE` mutable replay to proceed as `create-only`; the planner must fail before execution rather than leaving existing publication handling ambiguous. |
-| `profile: official` with `request-flags.force: true`.                                                                                                                                                                                                                   | Planner error for the whole request. `FORCE` is not a valid official-profile planner input in current scope.                                                                                                                                                                                                                        |
-| `profile: buddy` with `request-flags.force: true`, but any selected project resolves to an official-frozen project-scoped version identity.                                                                                                                             | Planner error for the whole request. `buddy FORCE` is never valid for an official-frozen project or version identity.                                                                                                                                                                                                               |
-| `request-flags.force: true` for a target whose capability `mutability` is not `mutable-prerelease`.                                                                                                                                                                     | `FORCE` does not authorize overwrite for that node. Immutable targets still follow the skip-versus-error rules above; only mutable buddy targets may proceed with `publish-mode: overwrite-mutable`.                                                                                                                                |
+| Condition                                                                                                                                                                                                                                                               | Planner outcome                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A `github-release` target is `exact-satisfied` for the same `resolved-publish-identity.release-tag`, including exact release state, exact required asset set, and exact asset labels.                                                                                   | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                                                         |
+| An immutable target is `exact-satisfied` for the node's full publish intent.                                                                                                                                                                                            | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                                                         |
+| An immutable target is `partial` for the node's full publish intent, meaning the remote state is a proved additive non-empty proper subset with content-equivalent existing planned members, absent missing planned members, and no extra same-identity members.        | Planner error. Current scope does not auto-complete immutable targets even when the same-identity subset relationship is proved.                                                                                                                                                                                             |
+| An immutable target has a `conflicting` remote publication for the same immutable target identity.                                                                                                                                                                      | Planner error. Do not emit a plan that asks executors to auto-complete, reconcile, or overwrite the immutable conflict.                                                                                                                                                                                                      |
+| A `github-release` target has a `conflicting` same-tag remote publication because the observed same-tag remote state is `release` while the node desires `prerelease`, or it is already `release` with a non-exact official asset set or labels.                        | Planner error. Current scope does not allow same-tag release-to-prerelease demotion or reinterpretation of an already authoritative official release.                                                                                                                                                                        |
+| No existing publication is found for the node's `resolved-publish-identity`.                                                                                                                                                                                            | Emit `publish-disposition: publish` with `publish-mode: create-only`.                                                                                                                                                                                                                                                        |
+| A `github-release` target already contains the same `resolved-publish-identity.release-tag`, the observation is `partial`, the node's desired `release-state` is `release`, and the observed same-tag remote state is still `prerelease`.                               | Emit `publish-disposition: publish` with `publish-mode: replace-authoritative`. This is the only current-scope same-tag official-promotion path. The planner must serialize this explicitly so execution converges the full official publish intent rather than treating promotion as a state-only change or additive merge. |
+| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, the observation is `partial`, and the node is in the planner-authorized buddy `FORCE` overwrite case.                                             | Emit `publish-disposition: publish` with `publish-mode: overwrite-mutable`. The planner must serialize this explicitly rather than leaving mutable-target replay overwrite behavior for executors to infer from destination state.                                                                                           |
+| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, the observation is `partial`, and neither the planner-authorized same-tag `official` promotion case nor the buddy `FORCE` overwrite case applies. | Planner error. Current scope does not allow non-`FORCE` mutable replay to proceed as `create-only`; the planner must fail before execution rather than leaving existing publication handling ambiguous.                                                                                                                      |
+| `profile: official` with `request-flags.force: true`.                                                                                                                                                                                                                   | Planner error for the whole request. `FORCE` is not a valid official-profile planner input in current scope.                                                                                                                                                                                                                 |
+| `profile: buddy` with `request-flags.force: true`, but any selected project resolves to an official-frozen project-scoped version identity.                                                                                                                             | Planner error for the whole request. `buddy FORCE` is never valid for an official-frozen project or version identity.                                                                                                                                                                                                        |
+| `request-flags.force: true` for a target whose capability `mutability` is not `mutable-prerelease`.                                                                                                                                                                     | `FORCE` does not authorize overwrite for that node. Immutable targets still follow the skip-versus-error rules above; only mutable buddy targets may proceed with `publish-mode: overwrite-mutable`.                                                                                                                         |
 
 ### `graph.target-instance-snapshots`
 
@@ -477,7 +605,8 @@ The plan uses four kinds of identifiers:
   `variant/<hex-sha256>`, `artifact/<hex-sha256>`, and
   `publish-node/<hex-sha256>` from the canonical identity payloads below. Later
   layers must treat them as equality-only references rather than parseable
-  business keys.
+  business keys. In particular, `artifact-id` is a fulfillment slot reference,
+  not an implied output filename, path, or command template.
 - `target-instance-snapshot-id`: exactly the resolved catalog reference string
   `family/instance-id`, because one snapshot exists per referenced catalog
   target instance per plan.
@@ -502,7 +631,17 @@ Canonical ID generation rules:
   `resolved-publish-identity`, an npm publish node with no descriptor-side
   package-name override hashes with `projection: {}`. A manifest-derived final
   package name therefore changes `resolved-publish-identity` but does not by
-  itself create a different publish-node ID.
+  itself create a different publish-node ID. Likewise, current-scope NuGet or
+  PyPI nodes always include the frozen filename map in `projection` and
+  therefore in the publish-node ID, including singleton nodes; that map covers
+  every `artifact-id` in the node's full `artifact-ids` membership. That
+  version-sensitive current-scope
+  NuGet/PyPI `publish-node-id` still participates in immutable proof
+  admissibility, but the admissible binding is the planner-frozen
+  (`publish-node-id`, `artifact-id`,
+  `resolved-publish-identity.package-name`,
+  `resolved-publish-identity.version`) member binding; `envelope.plan-id`
+  remains only request/selection scope identity.
 - `descriptor-handle`, `display-name`, approvals, timestamps, remote
   observation payloads, `resolved-publish-identity`, `desired-publish-state`,
   `publish-disposition`, and `publish-mode` do not participate in these
@@ -552,24 +691,24 @@ snapshot data or raw observation payloads.
 
 ## Deterministic Mapping from Group 1 Inputs
 
-| Group 1 construct                                                   | Plan location                                                      | Deterministic mapping rule                                                                                                                                                                                                                                                              |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Descriptor file path and release root                               | `envelope.projects[project-id].descriptor-path` and `release-root` | Derived from the discovered `src/**/three.release.yml` location.                                                                                                                                                                                                                        |
-| `project.display-name`, `project.ecosystem`, `project.release-kind` | `envelope.projects[project-id]`                                    | Copied verbatim from the selected descriptor.                                                                                                                                                                                                                                           |
-| `source.primary-manifest` and `source.auxiliary-inputs[]`           | `envelope.projects[project-id].source.*`                           | Resolved from release-root-relative authoring paths to repo-root-relative execution paths.                                                                                                                                                                                              |
-| `variants[]` entry                                                  | `graph.variants[variant-id]`                                       | One plan variant per descriptor variant. `variants[].id` becomes `descriptor-handle`; `dimensions` is copied verbatim.                                                                                                                                                                  |
-| `artifacts[]` entry                                                 | `graph.artifacts[artifact-id]`                                     | One plan artifact per descriptor artifact. `artifacts[].id` becomes `descriptor-handle`; semantic artifact data is copied verbatim.                                                                                                                                                     |
-| `artifacts[].produced-from[]`                                       | `graph.artifacts[artifact-id].produced-from-artifact-ids`          | Resolved from descriptor-local artifact handles to plan artifact IDs within the same variant.                                                                                                                                                                                           |
-| Selected `profiles.<profile>.targets[n]` entry                      | `graph.publish-nodes[publish-node-id]`                             | Exactly one publish node per target usage entry in the selected profile. The zero-based target-list ordinal becomes `descriptor-target-index`.                                                                                                                                          |
-| Planner request-affecting flags                                     | `envelope.request-flags`                                           | Current-scope normalized request flags are planner-facing inputs, not raw control-plane runtime state. `v1alpha1` currently freezes only `force: <bool>` there.                                                                                                                         |
-| Planner-time replay-satisfaction decision                           | `graph.publish-nodes[publish-node-id].publish-disposition`         | Planner-time validation may consult remote state, but the plan serializes only the derived closed outcome: `publish` or `skip-satisfied`.                                                                                                                                               |
-| Planner-time live publish behavior                                  | `graph.publish-nodes[publish-node-id].publish-mode`                | For live publish nodes, the planner serializes the executor-visible behavior: `create-only`, `overwrite-mutable`, or `replace-authoritative`. Executors do not infer overwrite or authoritative replacement from raw dispatch flags.                                                    |
-| Planner-time resolved external publish identity                     | `graph.publish-nodes[publish-node-id].resolved-publish-identity`   | The planner serializes the target-family-specific identity used for publication and replay checks: current-scope `release-tag` for GitHub Release or `package-name` plus `version` for package registries.                                                                              |
-| Planner-time family-specific desired target-side state              | `graph.publish-nodes[publish-node-id].desired-publish-state`       | For current-scope GitHub Release nodes, the planner serializes `release-state: prerelease                                                                                                                                                                                               | release`. No other current-scope family defines `desired-publish-state`. |
-| `targets[n].artifacts[]`                                            | `graph.publish-nodes[publish-node-id].artifact-ids`                | Resolved from descriptor-local artifact handles to plan artifact IDs, preserving target entry order.                                                                                                                                                                                    |
-| `targets[n].uses`                                                   | `graph.publish-nodes[publish-node-id].target-instance-snapshot-id` | Resolved from `family/instance-id` to one shared target-instance snapshot in the same plan.                                                                                                                                                                                             |
-| `targets[n].projection`                                             | `graph.publish-nodes[publish-node-id].projection`                  | Copied into the family-specific plan shape, with any artifact-handle keys normalized to artifact IDs. For npm, `projection.package-name` is serialized only when the descriptor declared that override; the planner must not copy the manifest-derived fallback name into `projection`. |
-| Catalog target instance                                             | `graph.target-instance-snapshots[target-instance-snapshot-id]`     | One snapshot per referenced catalog entry. `contract`, `destination`, and `capabilities` are frozen inline.                                                                                                                                                                             |
+| Group 1 construct                                                          | Plan location                                                      | Deterministic mapping rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Descriptor file path and release root                                      | `envelope.projects[project-id].descriptor-path` and `release-root` | Derived from the discovered `src/**/three.release.yml` location.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `project.display-name`, `project.ecosystem`, `project.release-kind`        | `envelope.projects[project-id]`                                    | Copied verbatim from the selected descriptor.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `source.primary-manifest` and `source.auxiliary-inputs[]`                  | `envelope.projects[project-id].source.*`                           | Resolved from release-root-relative authoring paths to repo-root-relative execution paths.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `variants[]` entry                                                         | `graph.variants[variant-id]`                                       | One plan variant per descriptor variant. `variants[].id` becomes `descriptor-handle`; `dimensions` is copied verbatim.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `artifacts[]` entry                                                        | `graph.artifacts[artifact-id]`                                     | One plan artifact per descriptor artifact. `artifacts[].id` becomes `descriptor-handle`; semantic artifact data is copied verbatim.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `artifacts[].produced-from[]`                                              | `graph.artifacts[artifact-id].produced-from-artifact-ids`          | Resolved from descriptor-local artifact handles to plan artifact IDs within the same variant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Selected `profiles.<profile>.targets[n]` entry                             | `graph.publish-nodes[publish-node-id]`                             | Exactly one publish node per target usage entry in the selected profile. The zero-based target-list ordinal becomes `descriptor-target-index`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Planner request-affecting flags                                            | `envelope.request-flags`                                           | Current-scope normalized request flags are planner-facing inputs, not raw control-plane runtime state. `v1alpha1` currently freezes only `force: <bool>` there.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Planner-time replay-satisfaction decision                                  | `graph.publish-nodes[publish-node-id].publish-disposition`         | Planner-time validation may consult remote state, but the plan serializes only the derived closed outcome: `publish` or `skip-satisfied`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Planner-time live publish behavior                                         | `graph.publish-nodes[publish-node-id].publish-mode`                | For live publish nodes, the planner serializes the executor-visible behavior: `create-only`, `overwrite-mutable`, or `replace-authoritative`. Executors do not infer overwrite or authoritative replacement from raw dispatch flags.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Planner-time resolved external publish identity                            | `graph.publish-nodes[publish-node-id].resolved-publish-identity`   | The planner serializes the target-family-specific identity used for publication and replay checks: current-scope `release-tag` for GitHub Release or `package-name` plus `version` for package registries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Planner-time family-specific desired target-side state                     | `graph.publish-nodes[publish-node-id].desired-publish-state`       | For current-scope GitHub Release nodes, the planner serializes `release-state: prerelease \| release`. No other current-scope family defines `desired-publish-state`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `targets[n].artifacts[]`                                                   | `graph.publish-nodes[publish-node-id].artifact-ids`                | Resolved from descriptor-local artifact handles to plan artifact IDs, preserving target entry order.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `targets[n].uses`                                                          | `graph.publish-nodes[publish-node-id].target-instance-snapshot-id` | Resolved from `family/instance-id` to one shared target-instance snapshot in the same plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `targets[n].projection` plus planner-frozen immutable registry member keys | `graph.publish-nodes[publish-node-id].projection`                  | Copied into the family-specific plan shape, with any artifact-handle keys normalized to artifact IDs. For npm, `projection.package-name` is serialized only when the descriptor declared that override; the planner must not copy the manifest-derived fallback name into `projection`. For current-scope NuGet/PyPI nodes, the planner determines one final distribution filename per artifact before replay classification and always serializes `projection.final-distribution-filenames-by-artifact-id`; for current-scope PyPI, that filename computation is performed by invoking Hatchling during planning and freezing the authoritative result. The map covers every `artifact-id` in the node's full `artifact-ids` membership, including singleton nodes, and remains remote-member matching data only. For every artifact the executor publishes for a live node, it must upload under exactly the planner-derived final filename. |
+| Catalog target instance                                                    | `graph.target-instance-snapshots[target-instance-snapshot-id]`     | One snapshot per referenced catalog entry. `contract`, `destination`, and `capabilities` are frozen inline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Only the selected profile contributes publish nodes, and only the selected
 projects appear anywhere in the plan.
@@ -586,17 +725,21 @@ The following explicitly stay outside `release-plan` in `v1alpha1`:
 - the raw text of descriptors or the shared target catalog;
 - unselected projects and the unselected profile block of selected projects;
 - manifest-owned intrinsic package metadata as free-form source inputs, except
-  where the planner has already frozen their publication-identity contribution
-  into `graph.publish-nodes[*].resolved-publish-identity` or
-  `desired-publish-state`;
+  where the planner has already frozen their current-scope publication
+  contribution into `graph.publish-nodes[*].resolved-publish-identity`,
+  `desired-publish-state`, or `projection` (including final distribution
+  filenames and matching keys);
 - raw remote observations such as already-exists responses, registry query
   payloads, or rerun evidence, even when the planner used them to derive a
   publish-node `publish-disposition`;
 - execution status, publish receipts, or other post-plan mutable results.
+- the control-plane prior build-receipt lookup/index and its workflow-run
+  provenance records, even when the planner used them to prove immutable
+  same-identity content equivalence.
 
 This boundary keeps the plan self-sufficient for descriptor-owned, catalog-
 owned, and planner-resolved publication identity, desired target-side state,
-and disposition without turning it into a workflow runtime record.
+projection, and disposition without turning it into a workflow runtime record.
 
 Those control-plane concerns are now defined in
 [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md).

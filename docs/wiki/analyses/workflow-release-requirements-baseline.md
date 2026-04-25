@@ -129,9 +129,9 @@ Examples of disallowed behavior:
 - The first delivery scope must support a dry-run or validation-only mode that
   performs input and descriptor validation without publishing to external
   targets.
-- If any release descriptor relevant to the selected run is invalid, planning
-  must fail the whole run rather than silently dropping that project and
-  continuing.
+- If any discovered in-scope release descriptor is invalid, planning must fail
+  before any release request is planned rather than silently dropping that
+  project and continuing.
 - The first delivery scope may leave externally visible partial-success results
   in place when one or more targets have already succeeded.
 - The first delivery scope does not require automatic compensation or rollback
@@ -211,6 +211,16 @@ Examples of disallowed behavior:
   to reuse or overwrite the existing publication.
 - Target-platform constraints always take precedence over any business desire to
   overwrite.
+- For immutable registries whose one package identity may own multiple immutable
+  remote members, rerun handling is conservative: `absent` may publish,
+  `exact-satisfied` may skip, and any same-identity non-exact observation
+  (`partial` or `conflicting`) must fail closed for human intervention.
+- Current-scope NuGet/PyPI immutable handling must reliably distinguish an
+  already-satisfied publication from a same-identity mismatch before treating a
+  rerun as skippable; if that distinction cannot be established confidently,
+  the run must fail closed for human intervention.
+- In current scope, npm and RubyGems are single-member families, so that
+  immutable-registry `partial` case does not arise there.
 - `buddy` to `official` promotion is in scope and must stay on the same commit
   and the same project-scoped version identity.
 - Promotion does not require reusing the exact same built artifact; rebuilding is
@@ -265,6 +275,15 @@ Examples of disallowed behavior:
   ecosystems: GitHub Packages is not available as a Python package target, so
   Python `buddy` falls back to GitHub Release only, and Python `official`
   package publication uses PyPI when declared.
+- Current-scope PyPI publication is intentionally narrowed to pure-Python
+  packaging layouts: one `pypi-publish` publication intent must own exactly one
+  wheel and may own zero or one sdist, and those artifacts must come from the
+  same variant.
+- That narrowed current-scope PyPI contract is limited to projects whose
+  packaging metadata and build behavior keep publication on the pure-Python
+  `py3-none-any` path, avoid platform-specific or otherwise filename-diverging
+  distribution outputs within the same publication intent, and continue to
+  expose version identity through build-system-integrated NBGV.
 
 ## Confirmed Acceptance Rule
 
@@ -277,6 +296,10 @@ Examples of disallowed behavior:
     - a Python package project;
     - a Node package project;
     - a Ruby package project.
+- Current repo state does not yet contain a qualifying current-scope Python
+  acceptance candidate under that narrowed PyPI contract, but one will be
+  prepared before implementation, so the Python acceptance requirement remains
+  part of the baseline.
 - Acceptance must cover both `buddy` and `official` overall, but not every
   representative project is required to publish through both profiles if one of
   its profiles intentionally has zero targets.

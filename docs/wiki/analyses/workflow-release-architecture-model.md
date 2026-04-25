@@ -132,6 +132,13 @@ Artifact identity explicitly excludes publish-time final naming such as:
 - GitHub Release asset labels;
 - other destination-side display projections.
 
+Within the frozen plan, `artifact-id` is the planner-defined fulfillment slot for
+one semantic output obligation, not a filename, path, or command recipe. The
+planner owns the exact planned artifact set, artifact tuples, ownership,
+`produced-from-artifact-ids`, and publish-node consumption edges. Execution owns
+only later realization of each planned slot into one concrete produced file plus
+proof in receipts.
+
 ### Artifact Typing
 
 Artifacts use two type layers:
@@ -185,7 +192,7 @@ The publish side separates several distinct concepts:
   `github-packages-rubygems`;
 - **destination contract** — a reusable named protocol-shaped publication type;
 - **target instance capability** — static destination-specific constraints;
-- **target-side projection** — target-side naming, labeling, and presentation.
+- **target-side projection** — target-side naming, labeling, presentation, and where applicable planner-frozen family-specific matching keys.
 
 At this layer, two closely related objects must be distinguished:
 
@@ -283,18 +290,25 @@ per request.
 ### Target-Side Projection
 
 Projection stays in the publish layer but, in the current architecture,
-covers only descriptor-owned target-side naming, labeling, and display data,
+covers descriptor-owned target-side naming, labeling, and display data plus,
+where applicable, current-scope planner-frozen family-specific matching keys,
 including:
 
 - target-side naming transforms;
+- immutable multi-member registry member keys such as planner-frozen final
+  distribution filenames;
 - scoped package names;
 - release asset labels;
 - other destination-side display projections.
 
-In the current signed-off author-time scope, the descriptor layer narrows this
-to closed family-specific shapes for GitHub Release asset labels and npm
-published package-name override. GitHub Release prerelease versus release is
-not projection here; it is planner-owned desired target-side state carried as
+In the current signed-off scope, the persisted plan narrows this to closed
+family-specific shapes for GitHub Release asset labels, npm published
+package-name override, and planner-frozen final distribution filenames used as
+remote-member keys for immutable package registries. For current-scope
+NuGet/PyPI nodes, the plan serializes one such filename for every full artifact
+member in the node, including singleton nodes.
+GitHub Release prerelease versus release is not projection here; it is planner-
+owned desired target-side state carried as
 `desired-publish-state.release-state` in the plan. See
 [Planner-Owned Publish Intent](#planner-owned-publish-intent) below and
 [Workflow Release Plan Shape](./workflow-release-plan-shape.md).
@@ -329,8 +343,47 @@ projects on the same commit therefore remain different GitHub Release objects
 when their `project.id` values differ, because current-scope GitHub Release
 identity is the project-scoped release tag.
 
-Descriptor-owned projection data remains distinct from planner-owned desired
-target-side state even though both are serialized into the plan for execution.
+For current-scope package registries, the planner first resolves the final
+target-side package name after any descriptor-side projection override or
+fallback to the manifest-owned intrinsic package name. For current-scope PyPI,
+after that target-side name resolution the planner must canonicalize
+`resolved-publish-identity.package-name` to the PyPI / PEP 503 normalized
+project-name form for remote lookup, classification, and uniqueness checks:
+lowercase the resolved name, then replace each maximal run of `.`, `-`, or `_`
+with a single `-`. This remote package identity canonicalization is separate
+from planner-time PyPI distribution filename computation, which remains a
+filename-only concern.
+
+For current-scope NuGet and PyPI publish nodes, the planner must also determine
+one canonical final distribution filename per planned artifact before any
+remote-state classification:
+
+- for NuGet, the filename is derived entirely from the frozen resolved package
+  identity plus artifact kind: `<package-name>.<version>.nupkg` for
+  `concrete-kind: nuget` and `<package-name>.<version>.snupkg` for
+  `concrete-kind: snupkg`, using
+  `resolved-publish-identity.{ package-name, version }` as the authoritative
+  source;
+- for PyPI, the planner must not reimplement Hatchling filename rules in static
+  plan logic. Instead, in the narrowed current scope it invokes the selected
+  project's checked-in PyPI build backend tooling (`hatchling.build`, via the
+  repo's expected tooling boundary such as `mise`/`uv`) during planning to
+  compute the exact final distribution filename(s) for that node's planned
+  artifact set, then freezes those authoritative results into the plan. This
+  filename computation is separate from PyPI remote package identity
+  canonicalization in `resolved-publish-identity.package-name`. Current scope
+  still limits each `pypi-publish` node to exactly one wheel and zero or one
+  sdist from the same variant, and still defers multi-wheel, cross-variant, and
+  platform-specific wheel layouts.
+
+Those frozen filename values are planner-owned publish intent. The persisted
+plan serializes them in
+`projection.final-distribution-filenames-by-artifact-id` for every full member
+of a current-scope NuGet or PyPI node, including singleton nodes. Executors
+consume those serialized values and must not re-derive alternate filenames.
+
+Projection data remains distinct from planner-owned desired target-side state
+even though both are serialized into the plan for execution.
 In current scope, GitHub Release is the only family that needs explicit desired
 target-side state beyond identity: `buddy` resolves to `prerelease`, and
 `official` resolves to `release` for the same project-scoped `release-tag`. For
@@ -378,7 +431,43 @@ Ownership rules for this seam are:
   reruns, replay policy, or promotion policy;
 - publish executors may call destinations only to perform the already frozen
   publish request; they must not perform independent preflight classification or
-  reinterpret partial remote matches.
+  reinterpret same-identity remote matches.
+
+### Control-Plane Immutable Proof Lookup Seam
+
+Immutable package-registry proof reuse also needs a separate seam for prior
+admissible executor-receipt lookup during planner-time immutable same-identity
+classification. The executor-authored `build-result` object stays the build
+receipt payload; admissibility provenance for proof reuse stays control-plane-
+owned runtime metadata rather than becoming planner-owned or executor-owned
+payload shape.
+
+At the architecture layer, the control plane owns a **prior build receipt
+lookup/index** that the planner may query by the current planner-frozen
+immutable-proof member binding (`publish-node-id`, `artifact-id`,
+`resolved-publish-identity.package-name`, `resolved-publish-identity.version`)
+rather than by `envelope.plan-id` alone.
+Each returned record is a control-plane wrapper around one executor-authored
+`build-result` plus the authoritative runtime provenance needed to decide
+admissibility, including at least:
+
+- whether the producing live build unit successfully emitted that receipt,
+  independent of any later overall workflow-run outcome;
+- whether that run was live versus dry-run or validation-only;
+- the producing workflow run identity and attempt;
+- the producing plan's immutable-proof member binding(s) for any immutable
+  package-registry publish nodes that consume that artifact.
+
+Ownership rules for this seam are:
+
+- the control plane owns receipt collection, indexing, provenance attachment,
+  and lookup for planner-time immutable proof reuse;
+- the planner may consume only the normalized receipt records the control plane
+  exposes through this seam; it does not scrape workflow artifacts or infer
+  admissibility from raw executor payload alone;
+- publish executors do not consume this seam directly;
+- persisted plan state keeps only planner conclusions, not the lookup index
+  contents or workflow-run provenance records themselves.
 
 Current-scope guardrails for this seam are:
 
@@ -388,11 +477,72 @@ Current-scope guardrails for this seam are:
   identity exactly matches the full planner-owned publish intent, not just the
   destination identity;
 - `partial` means the same planner-frozen identity is present but non-exact, and
-  current scope still has a non-error replay outcome for that node;
+  the planner can still normalize it into a structured same-identity subset case
+  rather than an irreducible conflict;
 - `conflicting` means the same planner-frozen identity is present but non-
   exact, and current scope has no non-error replay outcome for that node;
-- for immutable targets, any same-identity non-exact observation is
-  `conflicting` and must fail for human intervention;
+- for immutable package registries, classification is publish-node-wide for one
+  resolved `{ package-name, version }` identity and the planner-owned member set
+  for that node;
+- for immutable package registries, classification must first establish a
+  remote-member ↔ planned-artifact matching for the node's full planned member
+  set; current-scope PyPI/NuGet matching uses the planner-frozen final
+  distribution filename for each member, including singleton nodes, from
+  `projection.final-distribution-filenames-by-artifact-id`;
+- that filename key is used only for remote-member matching and classification;
+  it does not redefine `artifact-id`, which remains the planner-owned
+  fulfillment slot rather than a filename, path, or command recipe;
+- for actionable uploads against such a node, the actual target-side uploaded
+  member filename must equal that planner-derived final filename, whether
+  directly or after executor staging/rename; otherwise execution fails closed;
+- for immutable package registries, the planner may treat an already-present
+  remote member as content-equivalent to a planned member only when it has
+  planner-available digest proof for that planned member from the control-
+  plane-owned prior build receipt lookup/index for the same current
+  planner-frozen immutable-proof member binding (`publish-node-id`,
+  `artifact-id`, `resolved-publish-identity.package-name`,
+  `resolved-publish-identity.version`); matching `envelope.plan-id` alone is
+  not sufficient. Including the immutable resolved `{ package-name, version }`
+  identity in that binding keeps proof lookup version-sensitive for all
+  immutable package-registry families, including current-scope single-member
+  npm/RubyGems nodes. The planner-frozen
+  `projection.final-distribution-filenames-by-artifact-id` map still serves
+  only remote-member matching and classification; it is not the proof-binding
+  key. That seam must yield
+  `build-result` receipts together with authoritative workflow-run provenance
+  proving success, live versus dry-run or validation-only mode, and run
+  identity/attempt; for any given immutable-proof member binding, the
+  admissible receipt set must collapse to one digest, and if multiple
+  admissible receipts exist with differing digests then digest proof is
+  unavailable; no other proof source is admissible, which keeps the proof bound
+  to the same planner-frozen versioned output slot;
+- if that proof is unavailable for any member needed to distinguish
+  `exact-satisfied`, `partial`, or `conflicting`, immutable same-identity
+  classification must fail closed rather than guessing from unfrozen filenames,
+  descriptor shape, or other non-receipted hints;
+- for immutable package registries, `exact-satisfied`, `partial`, and
+  `conflicting` are evaluated only after that remote-member ↔ planned-artifact
+  matching step; digest proof and equality rules then apply to the matched
+  pairs, while unmatched remote members count as extras and unmatched planned
+  members count as missing;
+- for immutable package registries, `partial` means a proved additive non-empty
+  proper subset: every already-present planned
+  member must be content-equivalent to the planned member, every still-missing
+  planned member must be absent, and there must be no extra unplanned remote
+  members for that same identity;
+- immutable `partial` remains planner-error in current scope: the planner must
+  fail closed for human intervention rather than keeping the node live;
+- for immutable package registries, any same-identity observation outside that
+  proved subset case is `conflicting` and must fail for human
+  intervention;
+- npm and current-scope RubyGems are single-member families, so immutable
+  `partial` is structurally unreachable there;
+- NuGet can still observe immutable `partial` because one publish node may own
+  multiple remote members under the same resolved package identity, but current
+  scope still fails closed there;
+- narrowed current-scope PyPI can also observe immutable `partial`, but only for
+  the member set of exactly one wheel and zero or one sdist under the same
+  resolved package identity, and current scope still fails closed there as well;
 - for GitHub Release, `skip-satisfied` requires an exact match of the release
   state plus the required asset set and asset labels, with no extra assets left
   on the release object;
@@ -467,8 +617,8 @@ The architecture-layer separation remains the same, but the next design layer
 now defines the concrete control-plane workflow, job, and executor seams in
 [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md).
 
-Broader projection vocabularies beyond the closed current-scope descriptor and
-plan shapes remain deferred.
+Broader projection vocabularies beyond the closed current-scope descriptor-
+owned and planner-frozen matching-key plan shapes remain deferred.
 
 Descriptor schema, file syntax, and shared target-instance catalog authoring are
 now defined in [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md).

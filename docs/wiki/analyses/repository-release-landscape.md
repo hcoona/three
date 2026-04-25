@@ -10,8 +10,11 @@ The clearest current patterns are:
 - one public C# app already uses `dotnet publish` plus Inno Setup packaging;
 - another public C# app and several private apps still rely on
   `Microsoft.Build.Artifacts`;
-- `nbgv-python` and `hexo-renderer-asciidoc` are the clearest publishable
-  Python and Node.js packages;
+- `hexo-renderer-asciidoc` is the clearest currently publishable Node.js
+  package, while `nbgv-python` is the clearest public Python metadata example
+  but remains a bootstrap-special case rather than the immediate current-scope
+  PyPI rollout candidate because it still needs a separate bootstrap path before
+  it can satisfy the normal build-system-integrated NBGV contract;
 - buddy and official channels already exist in policy scripts, but not yet as
   checked-in GitHub workflow files in this worktree.
 
@@ -46,11 +49,11 @@ This analysis assumes the intended future release shape is:
 
 ### Python
 
-| Scope                                      | Findings                                                   | Release Signals                                                                       |
-| ------------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `src/public/lib`                           | `nbgv-python` is the only public library workspace member. | Clearly public metadata, console script, Hatch entry point, public URLs.              |
-| `src/public/app`                           | `markdown-hybrid-search-mcp`.                              | Lives under `public/app` but is still marked `Private :: Do Not Upload`.              |
-| `src/private/app`, `src/lab`, `src/sample` | 10 additional workspace members.                           | All inspected manifests are internal-facing or explicitly `Private :: Do Not Upload`. |
+| Scope                                      | Findings                                                   | Release Signals                                                                                                                                                                                                                                                             |
+| ------------------------------------------ | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/public/lib`                           | `nbgv-python` is the only public library workspace member. | Clearly public metadata, console script, Hatch entry point, and public URLs, but it remains a bootstrap-special case: under the current-scope PyPI contract it needs a separate bootstrap path before it can become PyPI-ready through normal build-system-integrated NBGV. |
+| `src/public/app`                           | `markdown-hybrid-search-mcp`.                              | Lives under `public/app` but is still marked `Private :: Do Not Upload`.                                                                                                                                                                                                    |
+| `src/private/app`, `src/lab`, `src/sample` | 10 additional workspace members.                           | All inspected manifests are internal-facing or explicitly `Private :: Do Not Upload`.                                                                                                                                                                                       |
 
 ### JS/TS
 
@@ -133,7 +136,7 @@ The same design should be replicated for:
 
 - NuGet.org;
 - GitHub Packages for NuGet or npm;
-- PyPI or TestPyPI if Python packages are published there.
+- PyPI if Python packages are published there.
 
 Under the current requirements discussion, this is stronger than a preference:
 no known in-scope target currently requires repository-stored static publishing
@@ -182,7 +185,10 @@ This implies the future release descriptor should distinguish:
     - Migrate remaining `Microsoft.Build.Artifacts` app projects to the same
       model.
 3. **Python**
-    - Start with `nbgv-python`.
+    - Treat `nbgv-python` as the clearest public Python metadata candidate, but
+      keep it out of the immediate current-scope PyPI rollout path because it
+      remains a bootstrap-special case that needs a separate bootstrap path
+      before it can satisfy the normal build-system-integrated NBGV contract.
     - Freeze Python `buddy` to GitHub Release only, because GitHub Packages does
       not provide a Python package target and TestPyPI is not part of the current
       baseline.
@@ -192,10 +198,11 @@ This implies the future release descriptor should distinguish:
       final targets still declared per project instead of inferred from this
       example.
 
-## Open Decisions
+## Settled Decision
 
-- What file should become the repo-wide source of truth for per-project release
-  targets and profiles?
+- Per-project release targets and profiles now come from project-owned
+  `src/**/three.release.yml` descriptors plus the shared
+  `eng/release/target-instances.yml` catalog.
 
 ## Source Pages
 

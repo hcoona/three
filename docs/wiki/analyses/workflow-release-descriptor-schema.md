@@ -598,18 +598,20 @@ resolved `contract`. Compatibility is defined by the current-scope
 `role` / `kind-family` / `concrete-kind` tuple rules and aggregate cardinality
 rules below.
 
-| `contract`              | Allowed artifact tuples                                                                                                                                                                                                                                                     | Aggregate rules                                                                                                                                                                       |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `github-release-assets` | `primary-package/package/nuget`, `symbols/package/snupkg`, `primary-package/package/wheel`, `primary-package/package/sdist`, `primary-package/package/npm-package`, `primary-package/package/rubygem`, `primary-binary/binary/executable`, `installer/installer/inno-setup` | One or more artifacts are required. Any mix of the allowed tuples may appear. Artifacts may come from one or more variants of the same project.                                       |
-| `nuget-publish`         | `primary-package/package/nuget`, `symbols/package/snupkg`                                                                                                                                                                                                                   | Exactly one `primary-package/package/nuget` artifact is required. Zero or one `symbols/package/snupkg` artifact is allowed. All referenced artifacts must come from the same variant. |
-| `pypi-publish`          | `primary-package/package/wheel`, `primary-package/package/sdist`                                                                                                                                                                                                            | One or more artifacts are required. At most one `sdist` artifact is allowed. One or more `wheel` artifacts are allowed, including across multiple variants.                           |
-| `npm-publish`           | `primary-package/package/npm-package`                                                                                                                                                                                                                                       | Exactly one artifact is required, and it must come from exactly one variant.                                                                                                          |
-| `rubygems-publish`      | `primary-package/package/rubygem`                                                                                                                                                                                                                                           | Exactly one artifact is required, and it must come from exactly one variant.                                                                                                          |
+| `contract`              | Allowed artifact tuples                                                                                                                                                                                                                                                     | Aggregate rules                                                                                                                                                                                                                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `github-release-assets` | `primary-package/package/nuget`, `symbols/package/snupkg`, `primary-package/package/wheel`, `primary-package/package/sdist`, `primary-package/package/npm-package`, `primary-package/package/rubygem`, `primary-binary/binary/executable`, `installer/installer/inno-setup` | One or more artifacts are required. Any mix of the allowed tuples may appear. Artifacts may come from one or more variants of the same project.                                                                                                                                              |
+| `nuget-publish`         | `primary-package/package/nuget`, `symbols/package/snupkg`                                                                                                                                                                                                                   | Exactly one `primary-package/package/nuget` artifact is required. Zero or one `symbols/package/snupkg` artifact is allowed. All referenced artifacts must come from the same variant.                                                                                                        |
+| `pypi-publish`          | `primary-package/package/wheel`, `primary-package/package/sdist`                                                                                                                                                                                                            | Exactly one `wheel` artifact is required. Zero or one `sdist` artifact is allowed. All referenced artifacts must come from the same variant. Planner-time PyPI admissibility still requires that the resolved output be exactly one pure-Python `py3-none-any` wheel plus an optional sdist. |
+| `npm-publish`           | `primary-package/package/npm-package`                                                                                                                                                                                                                                       | Exactly one artifact is required, and it must come from exactly one variant.                                                                                                                                                                                                                 |
+| `rubygems-publish`      | `primary-package/package/rubygem`                                                                                                                                                                                                                                           | Exactly one artifact is required, and it must come from exactly one variant.                                                                                                                                                                                                                 |
 
 Validation must reject any target usage whose artifact set violates either the
 allowed tuple set or the aggregate rules of its resolved contract. This keeps
 current-scope contract compatibility authorable and statically checkable
-without defining executor behavior.
+without defining executor behavior. Planner-time admissibility then applies any
+request-dependent or build-output-dependent gates, including the narrowed PyPI
+pure-Python `py3-none-any` requirement.
 
 ## Validation Boundary
 
@@ -663,6 +665,9 @@ Examples:
 - every `uses` reference resolves to a catalog target instance;
 - `artifacts` references resolve to declared artifact ids;
 - non-zero-target profiles also declare `github-release`;
+- any discovered `buddy` target usage that resolves to `pypi-publish` is
+  statically invalid in current scope, because Python `buddy` remains
+  GitHub Release-only while PyPI package publication is `official`-only;
 - each resolved `projection` object matches the closed family-specific schema and
   host rules for its referenced target instance, including the rule that an
   `npm.pkg.github.com` target resolves to an npm package scope equal to the
@@ -686,9 +691,10 @@ This is the right layer for CI linting of checked-in authoring files.
 ### 3. Planner-time validation
 
 Planner-time validation starts only after the author-time inputs are already
-schema-valid and statically consistent. If any release descriptor relevant to
-the selected run is invalid at either earlier layer, planning must fail the
-whole run rather than silently dropping that project and continuing.
+schema-valid and statically consistent. If any discovered in-scope release
+descriptor is invalid at either earlier layer, planning must fail before any
+release request is planned rather than silently dropping that project and
+continuing.
 
 Planner-time validation handles request-dependent or external-state-dependent
 questions, such as:
@@ -706,6 +712,15 @@ questions, such as:
   through build-system-integrated NBGV rather than through manifest-only static
   versioning; C# already meets that bar end-to-end, other ecosystems still have
   rollout gaps, and the schema defines no non-NBGV fallback contract;
+- whether each selected `official` publish intent that resolves to
+  `pypi-publish` is admissible under the narrowed current-scope PyPI path:
+  before accepting that node, the planner must mechanically verify that the
+  selected project's checked-in `pyproject.toml` uses the `hatchling.build`
+  backend, that the project's version at the selected commit resolves through
+  build-system-integrated NBGV, and that the authoritative planner-time PyPI
+  output resolution for that node yields exactly one `py3-none-any` wheel plus
+  an optional sdist from one variant; otherwise planning must reject that PyPI
+  node/project rather than infer or permit any alternate current-scope path;
 - target-family-specific resolved publish identity derived from that
   project-scoped version identity plus the selected projection and manifest
   inputs, including GitHub Release tag derivation as

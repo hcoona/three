@@ -25,6 +25,8 @@ limits on top of `three.release.plan/v1alpha1`.
 - Approvals, concurrency, dry-run gating, tagging, permissions, runner or
   toolchain wiring, artifact transport, and final reporting remain control-plane
   responsibilities.
+- Prior build-receipt indexing and admissibility lookup for immutable proof
+  reuse remain control-plane responsibilities.
 - Planner-owned publish-destination lookup for remote-state-dependent planning
   is keyed by the frozen resolved publish identity, target snapshot, intended
   artifacts, projection data, and any desired target-side state.
@@ -32,7 +34,7 @@ limits on top of `three.release.plan/v1alpha1`.
   rediscover targets, or derive alternate publish identity, overwrite policy,
   or same-tag GitHub Release replacement policy.
 - Neither workflow jobs after planning nor executors may query publish
-  destinations to decide `skip-satisfied`, immutable-target partial-match
+  destinations to decide `skip-satisfied`, immutable-target same-identity
   handling, or replay classification; they consume the planner's frozen result.
 
 ## Boundary to Group 1 and Group 2
@@ -70,6 +72,8 @@ The stable reusable boundaries are therefore:
     - consumes the raw control-plane run envelope;
     - materializes the normalized planner request;
     - hosts planner execution;
+    - during that planner execution, serves the control-plane-owned prior build
+      receipt lookup/index seam the planner may use for immutable proof reuse;
     - during that planner execution, the planner performs any planner-owned
       publish-destination lookup, normalization, and classification needed for
       remote-state-dependent planning, with bounded retry and fail-closed
@@ -168,8 +172,9 @@ plan:
 
 - `active-publish-node-ids` are the selected publish nodes whose
   `publish-disposition` is `publish`.
-- `active-variant-ids` are the distinct variants reachable from the artifacts
-  referenced by those active publish nodes.
+- `active-variant-ids` are the distinct variants reachable from the full desired
+  artifact set referenced by those active publish nodes: the union of each
+  active node's `publish-node.artifact-ids`.
 - Selected publish nodes whose `publish-disposition` is
   `skip-satisfied` do not invoke a publish executor and do not force a
   build. The control plane instead emits a synthetic skip receipt for reporting.
@@ -189,7 +194,9 @@ Because dry-run stays outside the planner request, toggling it does not change
 whole-release rerun identity. Whether a dry run also performs build execution is
 an implementation choice, but
 that choice must not change the stable workflow or executor contracts defined
-here.
+here. If dry-run build execution emits any `build-result` artifact, that receipt
+is validation-only and must not be reused as immutable-registry digest proof for
+later immutable same-identity classification on a live plan.
 
 ## What Consumes the Frozen Plan
 
@@ -202,7 +209,9 @@ here.
 
 A publish unit may consume artifacts from multiple variants only when the frozen
 publish node already references them and the frozen target-instance contract
-allows that aggregation. Executors do not widen that set.
+allows that aggregation. Executors do not widen that set. Under the narrowed
+current-scope PyPI contract, that means each PyPI publish unit is single-variant
+and carries exactly one wheel and zero or one sdist.
 
 ## Job-to-Job Handoff Boundaries
 
@@ -235,6 +244,20 @@ A build executor may read checked-out repository files and manifests referenced
 by that request, but it must not re-read descriptors or the shared target
 catalog.
 
+In that contract, each `artifact-id` is a planner-defined fulfillment slot for
+one semantic output obligation. It is not a frozen filename, path, bundle
+layout, or command recipe. The planner owns the exact requested key set,
+artifact tuples, ownership, `produced-from-artifact-ids`, and publish-node
+consumption. The build executor owns realization only: it must fulfill each
+requested `artifact-id` exactly once by mapping it to one concrete file inside
+the variant bundle.
+
+Build executors do not receive `publish-node` snapshots or other publish-layer
+target context. When a
+publish target family needs planner-owned remote-member keys for immutable
+multi-member registry classification, those keys live on the publish-node layer
+rather than in the build executor contract.
+
 Each build unit must emit one logical `build-result` object with at least these
 fields:
 
@@ -244,29 +267,86 @@ fields:
 | `kind: build-result`                               | result type                                                      |
 | `plan-id`, `project-id`, `variant-id`              | receipt identity                                                 |
 | `artifacts[artifact-id].bundle-relative-path`      | where the produced file lives inside the uploaded variant bundle |
+| `artifacts[artifact-id].sha256`                    | strong content digest for the produced file                      |
+| `artifacts[artifact-id].byte-size`                 | byte size of the produced file                                   |
 
 Every `artifact-id` declared in the corresponding `build-request.artifacts` map
-must appear exactly once in the `build-result` map. The build executor owns file
-production; the control plane owns artifact upload and later download.
+must appear exactly once in the `build-result` map, and the result key set must
+match the request key set exactly. Variant bundles may contain incidental
+executor-owned files, but only the files mapped in the receipt by `artifact-id`
+are contractual release artifacts and later publishable. The build executor owns
+file production; the control plane owns artifact upload and later download.
+For planner-time immutable-registry proof reuse, only live/non-dry-run
+`build-result` receipts that were successfully produced by the relevant build
+unit for the same current planner-frozen immutable-proof member binding
+(`publish-node-id`, `artifact-id`,
+`resolved-publish-identity.package-name`,
+`resolved-publish-identity.version`) are admissible; matching `plan-id` alone
+is not sufficient. Including the immutable resolved `{ package-name, version }`
+identity in that binding keeps proof lookup version-sensitive for all
+immutable package-registry families, including current-scope single-member
+npm/RubyGems nodes. The planner-frozen
+`projection.final-distribution-filenames-by-artifact-id` map still serves only
+remote-member matching and classification; it is not the proof-binding key.
+Overall workflow-run success is not required. No other proof source is
+admissible, matching `artifact-id` alone is not sufficient, and dry-run or
+other-binding receipts must not satisfy immutable same-identity proof
+requirements. For any given immutable-proof member binding, the admissible
+receipt set must collapse to one digest; if multiple admissible receipts exist
+with differing digests, the planner must treat digest proof as unavailable and
+fail closed for immutable registry classification that depends on that proof.
+
+The executor-authored `build-result` object remains the receipt payload. Receipt
+admissibility metadata for immutable proof reuse—such as whether the producing
+live build unit successfully emitted the receipt, live versus dry-run or
+validation-only status, and producing run identity/attempt—belongs to the
+control plane's receipt transport and lookup/index seam, not to required
+`build-result` fields.
+
+Current scope intentionally does not freeze executor commands or bundle-
+internal layout beyond receipted bundle-relative paths. Even where a publish
+node later carries planner-frozen final distribution filenames for immutable
+multi-member registry matching, those values remain publish-layer matching keys
+rather than a redefinition of `artifact-id` or a general bundle-layout recipe.
+Bundle-internal realization details remain executor-owned.
 
 ### Publish Executor Contract
 
 Each publish unit must materialize one logical `publish-request` object for its
 executor with at least these fields:
 
-| Field                                                 | Source                                                                             |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `api-version: three.release.publish-request/v1alpha1` | control-plane materialization                                                      |
-| `kind: publish-request`                               | control-plane materialization                                                      |
-| `plan-id`, `profile`                                  | plan envelope                                                                      |
-| `project` snapshot                                    | `envelope.projects[project-id]`                                                    |
-| `publish-node` snapshot                               | `graph.publish-nodes[publish-node-id]`                                             |
-| `target-instance-snapshot`                            | referenced `graph.target-instance-snapshots[*]`                                    |
-| `artifacts` map keyed by `artifact-id`                | frozen artifact metadata from the plan plus resolved file paths from build results |
+| Field                                                 | Source                                                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `api-version: three.release.publish-request/v1alpha1` | control-plane materialization                                                                             |
+| `kind: publish-request`                               | control-plane materialization                                                                             |
+| `plan-id`, `profile`                                  | plan envelope                                                                                             |
+| `project` snapshot                                    | `envelope.projects[project-id]`                                                                           |
+| `publish-node` snapshot                               | `graph.publish-nodes[publish-node-id]`                                                                    |
+| `target-instance-snapshot`                            | referenced `graph.target-instance-snapshots[*]`                                                           |
+| `artifacts` map keyed by `artifact-id`                | frozen artifact metadata from the plan plus receipt-proved file path, digest, and size from build results |
 
 The publish unit must create that request only when the selected publish node has
 `publish-disposition: publish`. For `publish-disposition: skip-satisfied`, the
 control plane emits the receipt directly without invoking a publish executor.
+Within that request, `publish-node.artifact-ids` is the node's full
+planner-owned desired member set and, whenever `publish-disposition: publish`,
+the exact set the executor may upload. The executor must not widen, narrow, or
+rediscover that set by its own destination preflight classification. Build
+fan-out likewise continues to follow the node's full
+`publish-node.artifact-ids` set.
+For current-scope NuGet/PyPI nodes,
+`publish-node.projection.final-distribution-filenames-by-artifact-id` must
+cover every full `artifact-id` in the node, including singleton nodes. When it
+covers an `artifact-id` for a live publish node, the publish executor must upload that
+target-side member under exactly the frozen filename. It may satisfy the rule
+either by uploading a bundle member whose basename already matches or by
+staging/renaming to that exact filename before upload, but any filename
+mismatch must fail closed. Those filenames remain
+publish-layer remote-member matching keys only: they do not redefine
+`artifact-id` and they do not replace receipt-owned bundle-relative paths from
+the build side. For current-scope PyPI specifically, executors must not invoke
+Hatchling again to decide upload filenames; planner-time Hatchling computation
+already froze the authoritative result into the plan.
 When the publish node also contains `publish-mode: overwrite-mutable` or
 `publish-mode: replace-authoritative`, the executor must honor that frozen mode;
 it must not infer overwrite or replacement behavior by re-reading raw dispatch
@@ -298,7 +378,7 @@ reject that request before job materialization, so a publish executor never
 receives a live GitHub Release demotion request. The executor may call the
 destination only to perform that already selected publish action; it must not do
 its own preflight destination query to re-decide satisfaction, promotion,
-overwrite policy, or immutable-target partial-match handling.
+overwrite policy, or immutable-target same-identity handling.
 
 Each publish unit must emit one logical `publish-result` object with at least
 these fields:
@@ -345,6 +425,9 @@ The following concerns are explicitly control-plane-owned:
   wrappers rather than inside executors;
 - **artifact transport**: upload, download, naming, and retention of build
   bundles and receipts stay in the control plane;
+- **prior build-receipt lookup/index**: only the control plane may attach
+  workflow-run provenance to `build-result` receipts and look up admissible
+  prior build receipt records for immutable proof reuse;
 - **orchestration**: matrix fan-out, dependency ordering, rerun wiring, and
   failure aggregation stay in the control plane;
 - **planner-request normalization**: only the control plane maps raw dispatch
@@ -388,7 +471,7 @@ Executors must not own any of the following:
   `publish-disposition` and `publish-mode`;
 - publish-destination querying, normalized remote observation, or remote-state
   classification to decide whether a request should be skipped, promoted,
-  rejected, or treated as an immutable partial match;
+  rejected, or treated as an immutable same-identity case;
 - combining multiple publish nodes into one alternate publish transaction;
 - inventing artifacts, variants, or destination-side projections that are not in
   the request they were given.
