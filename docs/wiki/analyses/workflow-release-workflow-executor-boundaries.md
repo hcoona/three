@@ -418,6 +418,16 @@ publish-layer remote-member matching keys only: they do not redefine
 the build side. For current-scope PyPI specifically, executors must not invoke
 Hatchling again to decide upload filenames; planner-time Hatchling computation
 already froze the authoritative result into the plan.
+For current-scope package-registry publish nodes, live publication also requires
+one family-specific package-identity conformance check per uploaded
+`artifact-id`. The publish executor must read the concrete package metadata from
+the receipted file and verify that it is consistent with the node's frozen
+`resolved-publish-identity` under that target family's canonical equivalence
+rules before any live upload starts for that node. This is a conformance check,
+not fresh identity derivation: the serialized plan identity remains
+authoritative, and the executor must not substitute alternate package identity
+from the file, manifest, or destination. Any mismatch must fail closed before
+the node performs live upload.
 When the publish node also contains `publish-mode: overwrite-mutable` or
 `publish-mode: replace-authoritative`, the executor must honor that frozen mode;
 it must not infer overwrite or replacement behavior by re-reading raw dispatch

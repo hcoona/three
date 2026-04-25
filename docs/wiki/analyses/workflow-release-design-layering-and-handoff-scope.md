@@ -83,6 +83,14 @@ The final middle-layer seam decisions for current scope are now:
       before any new tag is created.
     - Only after that full precheck passes may the control plane create the
       missing required tags for the run.
+6. **Package-registry identity conformance**
+    - For each live package-registry publish member, the concrete produced file
+      is validated against the owning publish node's frozen
+      `resolved-publish-identity`.
+    - That validation uses the target family's canonical equivalence rules and
+      fails closed on mismatch before live upload.
+    - The validation is a publish-time conformance check, not a fresh executor-
+      owned derivation of package identity.
 
 With these contracts written back into the normative pages, middle-layer design
 no longer has any implementation-blocking open seam in current scope.
