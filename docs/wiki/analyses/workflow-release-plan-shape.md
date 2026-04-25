@@ -405,13 +405,16 @@ before any row in the matrix below is applied:
   `exact-satisfied`, and the planner can still normalize it into a structured
   same-identity subset case rather than an irreducible conflict;
 - **conflicting**: a remote publication exists for that same identity, is not
-  `exact-satisfied`, and current scope allows no non-error replay outcome for
-  this node, so the planner must fail for human intervention.
+  `exact-satisfied`, and current-scope target semantics allow no non-error
+  replay outcome for that observed state regardless of request flags, so the
+  planner must fail for human intervention.
 
 These classes are mutually exclusive: every remote observation reduces to
 exactly one of `absent`, `exact-satisfied`, `partial`, or `conflicting`, and
 the replay matrix below must consume that already-chosen class rather than
-reclassifying the observation per row.
+reclassifying the observation per row. Request flags such as `FORCE` are
+evaluated only after this structural classification step and therefore do not
+change whether one same-identity observation is `partial` or `conflicting`.
 
 For package registries, that classification is publish-node-wide for one
 resolved `{ package-name, version }` identity and the planner-owned member set
@@ -446,6 +449,23 @@ same `resolved-publish-identity.release-tag`:
 - each required asset carries exactly the planned
   `projection.asset-labels-by-artifact-id` label;
 - no extra remote assets remain on that release object.
+
+For current-scope same-tag GitHub Release observations that are not
+`exact-satisfied`, classification remains structural:
+
+- when the target capability is `mutable-prerelease`, the same-tag observation
+  is `partial` unless one of the authoritative `conflicting` cases below
+  applies;
+- the authoritative same-tag `conflicting` cases are limited to:
+    - the remote release is already `release` while the frozen intent wants
+      `prerelease`;
+    - the frozen intent wants `release`, the remote release is already
+      `release`, and the authoritative asset set or asset labels are non-exact.
+
+That means `buddy FORCE`, same-tag `official` promotion, and non-`FORCE`
+mutable replay all consume one already-chosen `partial` GitHub Release
+observation in the replay matrix below rather than changing the classification
+term itself.
 
 For immutable package registries, the planner must classify same-identity remote
 state with these current-scope rules:

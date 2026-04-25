@@ -125,7 +125,7 @@ The stable reusable boundaries are therefore:
 5. `ensure-tag` job
     - stays in the control plane;
     - creates or verifies each distinct project-scoped release tag exactly once
-      per run when any selected publish node resolves to a GitHub Release
+      per run when any active publish node resolves to a GitHub Release
       publication;
     - creates the tag when it does not already exist;
     - when the tag already exists, verifies that it already points to the
@@ -134,8 +134,9 @@ The stable reusable boundaries are therefore:
     - fails the run before publication if any required existing tag points
       elsewhere;
     - must not retarget or move an existing release tag in current scope;
-    - does nothing when the selected publish-node set contains no GitHub
-      Release publication.
+    - does nothing when the active publish-node set contains no GitHub Release
+      publication, including runs where every selected GitHub Release publish
+      node is already planner-classified as `skip-satisfied`.
 6. `publish` fan-out
     - runs exactly once per selected `publish-node-id` whose plan
       `publish-disposition` is `publish`;

@@ -495,6 +495,9 @@ Current-scope guardrails for this seam are:
 
 - planner classification first reduces one remote observation to exactly one of:
   `absent`, `exact-satisfied`, `partial`, or `conflicting`;
+- that classification is structural with respect to the frozen publish intent and
+  the observed remote state; it is chosen before replay-policy evaluation and
+  therefore does not vary with request flags such as `FORCE`;
 - `exact-satisfied` means the remote publication with the same planner-frozen
   identity exactly matches the full planner-owned publish intent, not just the
   destination identity;
@@ -502,7 +505,14 @@ Current-scope guardrails for this seam are:
   the planner can still normalize it into a structured same-identity subset case
   rather than an irreducible conflict;
 - `conflicting` means the same planner-frozen identity is present but non-
-  exact, and current scope has no non-error replay outcome for that node;
+  exact, and the current-scope target semantics leave no non-error replay path
+  for that observed state regardless of request flags;
+- for current-scope `mutable-prerelease` GitHub Release nodes, a same-tag
+  non-exact remote observation is classified as `partial` unless it is already
+  authoritative `release` state while the frozen intent wants `prerelease`, or
+  it is already `release` with a non-exact authoritative asset/label set for a
+  frozen `release` intent; those two authoritative same-tag cases are
+  `conflicting`;
 - for immutable package registries, classification is publish-node-wide for one
   resolved `{ package-name, version }` identity and the planner-owned member set
   for that node;
