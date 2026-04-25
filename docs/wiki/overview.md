@@ -121,6 +121,10 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
 - Lower-layer realization details such as code organization, concrete workflow
   file layout, and command plumbing remain intentionally implementation-owned
   within those frozen contracts.
+- Before lower-layer design starts, track only handoff-level guardrails:
+  acceptance traceability, concrete planner diagnostic-code handling, the chosen
+  dry-run build policy, and the artifact or receipt lookup layout for immutable
+  proof reuse.
 
 ## Related Pages
 

@@ -371,3 +371,15 @@ This file is the append-only chronological record of wiki activity.
 - Updated the workflow-boundary, architecture, plan-shape, layering, and
   overview pages so middle-layer design is now treated as closed in current
   scope.
+
+## [2026-04-25] design | Record pre-lower-layer handoff guardrails
+
+- Reviewed the middle-layer design against the waterfall handoff boundary and
+  recorded that no blocking upper-layer or middle-layer gap remains before
+  lower-layer design.
+- Added a pre-lower-layer handoff review that keeps the remaining work at the
+  implementation-traceability level rather than reopening architecture:
+  acceptance traceability, planner diagnostic-code handling, dry-run build
+  policy, and receipt lookup or artifact layout.
+- Synced the wiki overview and index so the remaining open items are framed as
+  low-level handoff guardrails within the frozen contracts.

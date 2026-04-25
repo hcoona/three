@@ -145,6 +145,27 @@ The current handoff does **not** attempt to freeze every workflow line, script,
 or helper API. That lower-layer realization work may be delegated to an
 experienced implementer within the now-frozen middle-layer contracts.
 
+### Pre-lower-layer handoff review
+
+A final middle-layer review found no blocking upper-layer or middle-layer gap
+that should delay lower-layer design. The remaining work should therefore be
+treated as low-level handoff tracking rather than another business-rule or
+architecture pass.
+
+Before detailed workflow files, scripts, or executor internals are authored, the
+lower-layer design should carry forward these handoff guardrails:
+
+| Handoff item                       | Status in middle-layer design                                                                                                   | Lower-layer responsibility                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Acceptance traceability            | Requirements and middle-layer contracts are frozen, but there is no separate trace table from acceptance scenarios to tests.    | Map each acceptance scenario to the frozen descriptor, plan, workflow-boundary, receipt, and reporting contracts it proves.             |
+| Planner diagnostic codes           | `planner-diagnostic.code` is a stable field, while the current middle layer intentionally avoids a full error taxonomy.         | Define the concrete minimum diagnostic-code vocabulary or planner-owned code-registration rule used by tests and reporting.             |
+| Dry-run build behavior             | Dry-run is outside rerun identity and must suppress tags and live publish, while build execution is explicitly left optional.   | Choose the concrete dry-run build policy and ensure any validation-only build receipts cannot satisfy live immutable-proof lookup.      |
+| Receipt lookup and artifact layout | Immutable-proof admissibility, provenance, and default-retention limits are frozen, but storage layout and index shape are not. | Design the concrete artifact names, receipt transport, lookup/index layout, and provenance attachment without changing proof semantics. |
+
+These items do not reopen the middle-layer contracts. They are the first
+low-level design checkpoints needed to keep implementation traceable to the
+waterfall handoff.
+
 ## Summary Judgment
 
 For the current workflow-release initiative, the design package is best
