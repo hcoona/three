@@ -115,6 +115,10 @@ The stable reusable boundaries are therefore:
     - guards all external side effects;
     - for current-scope `official`, uses a GitHub protected environment with
       required reviewers and self-review prevention enabled;
+    - is skipped entirely when the selected run has no external side effects;
+      current-scope no-side-effect cases are dry-run or validation-only runs,
+      zero-target runs, and runs where every selected publish node is already
+      planner-classified as `skip-satisfied`;
     - may be bypassed for profiles that do not require approval;
     - administrator bypass, when that environment still allows it, remains a
       native GitHub control-plane path rather than executor logic.
@@ -162,6 +166,38 @@ remote-classification phase, and the workflow must expose those diagnostics in
 the operator-facing run summary or final report path. When planning fails before
 plan publication, there are no build receipts, publish receipts, or synthetic
 skip receipts to aggregate.
+
+### Planner Diagnostics Contract
+
+When planning fails after request normalization has begun, the plan job must
+surface one or more logical `planner-diagnostic` objects for control-plane
+reporting. Current scope freezes only the minimum machine-facing structure
+needed for stable cross-component handoff; it does not define a full error
+taxonomy, renderer, or stack-trace model.
+
+Each `planner-diagnostic` must contain at least these fields:
+
+| Field                                                    | Meaning                                                                                                                                       |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-version: three.release.planner-diagnostic/v1alpha1` | contract version                                                                                                                              |
+| `kind: planner-diagnostic`                               | diagnostic type                                                                                                                               |
+| `code`                                                   | stable planner-defined diagnostic code for the failure class                                                                                  |
+| `message`                                                | concise human-readable summary                                                                                                                |
+| `phase`                                                  | current-scope phase discriminator: `query`, `normalization`, `classification`, or `validation`                                                |
+| `scope-kind`                                             | affected scope: `request`, `project`, or `publish-node`                                                                                       |
+| `project-id`                                             | required when the failing scope is one project or one publish node; omitted for whole-request failures that cannot be narrowed to one project |
+| `publish-node-id`                                        | required when one publish node has already been materialized and identified; otherwise omitted                                                |
+| `target-instance-snapshot-id`                            | required when one target instance has already been identified for the failing path; otherwise omitted                                         |
+| `resolved-publish-identity`                              | required when the failing path already resolved an external publish identity; otherwise omitted                                               |
+| `blocking`                                               | whether this diagnostic blocks plan emission; current-scope planner-failure diagnostics that abort the run use `true`                         |
+| `details`                                                | extensible mapping for additional machine-readable context; may be empty, but any extra adapter-specific fields must remain nested under here |
+
+The control plane may render or aggregate those diagnostics however it wants,
+but it must preserve the frozen fields above when passing diagnostics between
+planner hosting, workflow reporting, and test fixtures. Lower-layer choices
+such as error-string formatting, nested exception rendering, or destination-
+specific debug payload shape remain implementation-owned as long as they stay
+inside `details` or outside this contract entirely.
 
 ### Planner Request Materialization
 
@@ -233,7 +269,7 @@ later immutable same-identity classification on a live plan.
 | shared orchestration workflow | full `release-plan` envelope and graph                                                                                                                                                                        | one per selected profile run                          |
 | one build unit                | owning `envelope.projects[project-id]` snapshot, one `graph.variants[variant-id]`, and that variant's `graph.artifacts[*]`                                                                                    | one build executor invocation per `variant-id`        |
 | one publish unit              | owning `envelope.projects[project-id]` snapshot, one `graph.publish-nodes[publish-node-id]`, its referenced `graph.target-instance-snapshots[*]`, and the referenced `graph.artifacts[*]` plus build receipts | one publish executor invocation per `publish-node-id` |
-| report job                    | full plan plus all build and publish receipts                                                                                                                                                                 | one per selected profile run                          |
+| report job                    | full plan plus all build receipts, publish receipts, and synthetic skip receipts                                                                                                                              | one per selected profile run                          |
 
 A publish unit may consume artifacts from multiple variants only when the frozen
 publish node already references them and the frozen target-instance contract
@@ -426,6 +462,30 @@ these fields:
 Skip receipts for planner-owned satisfied reruns stay control-plane-authored
 and do not pass through the publish executor contract.
 
+### Synthetic Skip Receipt Contract
+
+When a selected publish node has `publish-disposition: skip-satisfied`, the
+control plane must emit a distinct logical `skip-result` object rather than
+reusing `publish-result`. This keeps planner-owned satisfied-rerun reporting
+separate from executor-authored live publication receipts.
+
+Each `skip-result` must contain at least these fields:
+
+| Field                                             | Meaning                                                                                              |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `api-version: three.release.skip-result/v1alpha1` | contract version                                                                                     |
+| `kind: skip-result`                               | synthetic skip receipt type                                                                          |
+| `plan-id`, `project-id`, `publish-node-id`        | receipt identity                                                                                     |
+| `target-instance-snapshot-id`                     | the destination slot whose live publish work was skipped                                             |
+| `resolved-publish-identity`                       | copied from the publish node for traceability                                                        |
+| `outcome: skip-satisfied`                         | planner-owned satisfied-rerun outcome                                                                |
+| `reason-source: planner`                          | records that the skip decision came from planner-time classification rather than executor-side logic |
+| `evidence`                                        | optional small family-specific or planner-summary data that helps explain the satisfied state        |
+
+`skip-result` is control-plane-authored reporting data only. It does not imply
+that any publish executor ran, and it must not be treated as evidence of a live
+publish attempt in receipt lookup, retry routing, or executor success metrics.
+
 ## Control-Plane Ownership Rules
 
 The following concerns are explicitly control-plane-owned:
@@ -434,7 +494,9 @@ The following concerns are explicitly control-plane-owned:
   required; in current scope, `official` approval is wired through a GitHub
   protected environment with required reviewers and self-review prevention,
   while administrator bypass stays a native environment capability when
-  enabled;
+  enabled, and the gate is skipped entirely for no-side-effect runs such as
+  dry-run or validation-only runs, zero-target runs, and all-`skip-satisfied`
+  runs;
 - **triggering-actor authorization**: only the control plane decides whether the
   triggering actor is allowed to start the selected profile; in current scope,
   `official` must fail before planning unless the triggering actor has at least

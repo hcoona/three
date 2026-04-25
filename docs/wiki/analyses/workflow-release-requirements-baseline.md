@@ -90,7 +90,13 @@ Examples of disallowed behavior:
 - `official` is treated as a repository-maintenance action.
 - `official` may be triggered by repository users with `maintain` permission or
   higher.
-- `official` requires an additional approval before publication.
+- `official` requires an additional approval before live publication side
+  effects.
+- A current-scope run with no external side effects does not enter that
+  approval gate.
+- Current-scope no-side-effect cases include dry-run or validation-only runs,
+  zero-target runs, and runs where every selected publish node is already
+  planner-classified as `skip-satisfied`.
 - Any repository user with `maintain` permission or higher may approve an
   `official` release when configured as a required reviewer for the protected
   environment.
