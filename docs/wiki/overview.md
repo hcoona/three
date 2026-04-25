@@ -103,14 +103,23 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   boundary for what remains outside the plan.
 
 - The workflow-and-executor-boundaries page now fixes the control-plane shape on top of that plan: `buddy` and `official` entry workflows over one shared orchestration workflow, a normalized planner-facing request contract for current scope including frozen project-selection semantics, per-variant build fan-out, per-publish-node publish fan-out, control-plane-owned approvals, concurrency, distinct project-scoped tag orchestration only when a GitHub Release publish node is present, runtime wiring, and reporting, plus plan-to-job handoff contracts and thin executor boundaries that keep replay decisions, overwrite or same-tag replacement mode, publication identity, and GitHub Release desired state planner-owned.
+- A dedicated design-layering and handoff-scope page now records the current
+  three-layer reading of the design corpus: upper-layer design is effectively
+  closed, middle-layer design is largely in place but still has a small set of
+  implementation-critical seam items, and lower-layer realization remains
+  intentionally implementation-owned after those seam items are frozen.
 
 ## Open Questions
 
-- No remaining cross-layer design seam is still open between descriptors, the
-  frozen plan, control-plane workflow layout, and executor contracts in the
-  current scope.
-- Remaining work is implementation of the documented boundaries rather than
-  redesign of those boundaries.
+- No major upper-layer architecture gap remains in the current scope.
+- Before the implementation handoff can be treated as fully closed, design still
+  needs to freeze selected-commit materialization, prior build-receipt
+  durability and lookup, planner-time remote-observation auth, `official`
+  `maintain+` trigger enforcement, and the closed current-scope artifact-typing
+  vocabularies.
+- Lower-layer realization details such as code organization, concrete workflow
+  file layout, and command plumbing remain intentionally implementation-owned
+  within those frozen contracts.
 
 ## Related Pages
 
@@ -121,6 +130,7 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
 - [Workflow Release Requirements-Phase Review](./analyses/workflow-release-requirements-phase-review.md)
 - [Workflow Release Design Direction](./analyses/workflow-release-design-direction.md)
 - [Workflow Release Architecture Model](./analyses/workflow-release-architecture-model.md)
+- [Workflow Release Design Layering and Implementation Handoff Scope](./analyses/workflow-release-design-layering-and-handoff-scope.md)
 - [Workflow Release Descriptor Schema](./analyses/workflow-release-descriptor-schema.md)
 - [Workflow Release Plan Shape](./analyses/workflow-release-plan-shape.md)
 - [Workflow Release Workflow and Executor Boundaries](./analyses/workflow-release-workflow-executor-boundaries.md)

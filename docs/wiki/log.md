@@ -337,3 +337,18 @@ This file is the append-only chronological record of wiki activity.
 - Froze current-scope version identity as project-scoped NBGV output and GitHub Release identity as the existing `release/<project-slug>/v<version>` tag shape, using descriptor-owned `project.id` as the current-scope project slug without adding a second tag field.
 - Clarified that same-commit multi-project releases map to distinct GitHub Release objects when project slugs differ, and that `official-frozen` is created only by successful official GitHub Release publication for that same project-scoped tag.
 - Corrected the workflow boundary so tag orchestration now handles each distinct selected project-scoped release tag rather than implying one shared repository tag per run.
+
+## [2026-04-25] design | Record design layering and handoff scope
+
+- Added a dedicated analysis page that frames the current workflow-release design
+  corpus in upper-layer, middle-layer, and lower-layer terms for implementation
+  handoff.
+- Recorded that upper-layer design is effectively closed, while middle-layer
+  design still needs a small set of seam contracts to be frozen before the
+  handoff can be treated as fully complete.
+- Named the current pre-handoff seam items explicitly: selected-commit
+  materialization, prior build-receipt durability and lookup, planner-time
+  remote-observation auth, `official` `maintain+` trigger enforcement, and the
+  closed current-scope artifact-typing vocabularies.
+- Updated the wiki overview and index so they no longer imply that all
+  cross-layer design seams are already closed.
