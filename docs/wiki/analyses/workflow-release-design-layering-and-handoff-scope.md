@@ -76,6 +76,13 @@ The final middle-layer seam decisions for current scope are now:
       the triggering actor's repository permission.
     - That check fails closed unless the actor has at least `maintain`.
     - This remains distinct from the later protected-environment approval gate.
+5. **Multi-tag `ensure-tag` atomicity**
+    - When one run requires more than one distinct project-scoped release tag,
+      the control plane first prechecks the full required tag set.
+    - If any already-existing required tag points elsewhere, the run fails
+      before any new tag is created.
+    - Only after that full precheck passes may the control plane create the
+      missing required tags for the run.
 
 With these contracts written back into the normative pages, middle-layer design
 no longer has any implementation-blocking open seam in current scope.

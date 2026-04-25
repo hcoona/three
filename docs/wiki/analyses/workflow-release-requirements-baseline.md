@@ -176,8 +176,15 @@ Examples of disallowed behavior:
 - If the required project-scoped release tag already exists, workflow release
   must confirm that it already points to the selected commit/object for that
   run.
+- When one run requires more than one distinct project-scoped release tag,
+  workflow release must first verify every already-existing required tag before
+  creating any missing tag.
 - If an existing required project-scoped release tag points elsewhere, workflow
   release must fail before publication.
+- If any required existing tag points elsewhere in such a multi-tag run,
+  workflow release must fail without creating new tags for that run.
+- Only after the full required tag set passes verification may workflow release
+  create any missing required tags for that run.
 - Retargeting or moving an existing required project-scoped release tag is out of
   current scope and must not be attempted automatically.
 - A zero-target run, or any other run whose selected publish nodes contain no

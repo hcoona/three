@@ -127,12 +127,16 @@ The stable reusable boundaries are therefore:
     - creates or verifies each distinct project-scoped release tag exactly once
       per run when any active publish node resolves to a GitHub Release
       publication;
-    - creates the tag when it does not already exist;
+    - when one run requires more than one distinct project-scoped release tag,
+      first computes the full required tag set and verifies every already-
+      existing required tag before creating any missing tag;
+    - creates the tag when it does not already exist, but only after that full
+      precheck passes for the run;
     - when the tag already exists, verifies that it already points to the
       expected selected commit/object for that run rather than treating tag
       existence alone as sufficient;
     - fails the run before publication if any required existing tag points
-      elsewhere;
+      elsewhere, and in that case creates no new tags for the run;
     - must not retarget or move an existing release tag in current scope;
     - does nothing when the active publish-node set contains no GitHub Release
       publication, including runs where every selected GitHub Release publish
