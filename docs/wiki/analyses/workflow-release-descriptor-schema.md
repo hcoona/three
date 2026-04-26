@@ -65,6 +65,13 @@ The first-delivery scope currently allows descriptors only under:
 A checked-in descriptor outside that scope is an authoring error, not a hidden
 future opt-in.
 
+The signed-off first-delivery project set is narrower than these allowed root
+patterns and is recorded in
+[Workflow Release Low-Level Design](./workflow-release-low-level-design.md#first-delivery-author-time-input-project-set).
+The extra allowed private app root remains valid schema scope for future
+descriptor migration, but it is not part of the first generated author-time input
+batch unless that low-level project set is updated.
+
 ### Project descriptor uniqueness rules
 
 Static validation must reject all of the following:
