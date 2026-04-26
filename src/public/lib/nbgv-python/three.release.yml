@@ -1,0 +1,37 @@
+api-version: three.release/v1alpha1
+kind: project
+
+project:
+  id: nbgv-python
+  display-name: nbgv-python
+  ecosystem: python
+  release-kind: lib
+
+source:
+  primary-manifest: pyproject.toml
+  version-authority: nbgv-python-pyproject-version
+
+variants:
+  - id: package
+    dimensions: {}
+    artifacts:
+      - id: wheel
+        role: primary-package
+        kind-family: package
+        concrete-kind: wheel
+      - id: sdist
+        role: primary-package
+        kind-family: package
+        concrete-kind: sdist
+
+profiles:
+  buddy:
+    targets:
+      - uses: github-release/public
+        artifacts: [wheel, sdist]
+  official:
+    targets:
+      - uses: github-release/public
+        artifacts: [wheel, sdist]
+      - uses: pypi/pypi
+        artifacts: [wheel, sdist]

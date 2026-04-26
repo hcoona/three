@@ -5,6 +5,11 @@
 The root `pyproject.toml` defines the uv workspace membership for Python
 projects and marks the root manifest itself as private.
 
+Clarification for current workflow-release handoff: this dated source digest
+preserves the observation below as historical. Current authoritative release
+analyses supersede it and include `hcoona-release-smoke` as the normal public
+Python NBGV/Hatch package alongside the `nbgv-python` special-support path.
+
 ## Key Points
 
 - Workspace members span `lab`, `private/app`, `public/app`, `public/lib`, and
