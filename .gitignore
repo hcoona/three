@@ -24,6 +24,9 @@ mono_crash.*
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
+!eng/release/
+eng/release/*
+!eng/release/target-instances.yml
 [Rr]eleases/
 x64/
 x86/

@@ -1,0 +1,99 @@
+api-version: three.release/v1alpha1
+kind: target-instance-catalog
+
+families:
+  github-release:
+    instances:
+      - id: public
+        contract: github-release-assets
+        destination:
+          host: github
+          owner: hcoona
+          repo: three
+        capabilities:
+          mutability: mutable-prerelease
+          name-uniqueness-scope: release-tag
+          version-uniqueness-rule: tag
+          profile-coexistence-rule: not-applicable
+          credential-posture: github-token
+  nuget:
+    instances:
+      - id: nuget-org
+        contract: nuget-publish
+        destination:
+          host: nuget.org
+        capabilities:
+          mutability: immutable
+          name-uniqueness-scope: package-name
+          version-uniqueness-rule: package-name-plus-version
+          profile-coexistence-rule: requires-distinct-name
+          credential-posture: oidc
+      - id: github-packages
+        contract: nuget-publish
+        destination:
+          host: nuget.pkg.github.com
+          owner: hcoona
+        capabilities:
+          mutability: immutable
+          name-uniqueness-scope: package-name-with-owner
+          version-uniqueness-rule: package-name-plus-version
+          profile-coexistence-rule: requires-distinct-name
+          credential-posture: github-token
+  pypi:
+    instances:
+      - id: pypi
+        contract: pypi-publish
+        destination:
+          host: pypi.org
+        capabilities:
+          mutability: immutable
+          name-uniqueness-scope: package-name
+          version-uniqueness-rule: package-name-plus-version
+          profile-coexistence-rule: requires-distinct-name
+          credential-posture: oidc
+  npm:
+    instances:
+      - id: npmjs
+        contract: npm-publish
+        destination:
+          host: registry.npmjs.org
+        capabilities:
+          mutability: immutable
+          name-uniqueness-scope: package-name
+          version-uniqueness-rule: package-name-plus-version
+          profile-coexistence-rule: requires-distinct-name
+          credential-posture: oidc
+      - id: github-packages
+        contract: npm-publish
+        destination:
+          host: npm.pkg.github.com
+          owner: hcoona
+        capabilities:
+          mutability: immutable
+          name-uniqueness-scope: package-name-with-owner
+          version-uniqueness-rule: package-name-plus-version
+          profile-coexistence-rule: requires-distinct-name
+          credential-posture: github-token
+  rubygems:
+    instances:
+      - id: rubygems-org
+        contract: rubygems-publish
+        destination:
+          host: rubygems.org
+        capabilities:
+          mutability: immutable
+          name-uniqueness-scope: package-name
+          version-uniqueness-rule: package-name-plus-version
+          profile-coexistence-rule: requires-distinct-name
+          credential-posture: oidc
+      - id: github-packages
+        contract: rubygems-publish
+        destination:
+          host: rubygems.pkg.github.com
+          owner: hcoona
+        capabilities:
+          mutability: immutable
+          name-uniqueness-scope: package-name-with-owner
+          version-uniqueness-rule: package-name-plus-version
+          profile-coexistence-rule: requires-distinct-name
+          credential-posture: github-token
