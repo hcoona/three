@@ -1,12 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
-  "version": "3.1.0-beta.{height}",
+  "version": "2.0.0-beta.{height}",
   "pathFilters": ["."],
   "gitCommitIdShortFixedLength": 7,
   "gitCommitIdShortAutoMinimum": 7,
   "nugetPackageVersion": {
     "semVer": 2
   },
-  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/tags/release/hexo-renderer-asciidoc/v.+$"],
+  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/heads/release/.*$", "^refs/tags/release/image-occlusion-editor/v.+$"],
   "inherit": false
 }
