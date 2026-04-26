@@ -7,6 +7,10 @@
   "nugetPackageVersion": {
     "semVer": 2
   },
-  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/heads/release/.*$", "^refs/tags/release/image-occlusion-editor/v.+$"],
+  "publicReleaseRefSpec": [
+    "^refs/heads/main$",
+    "^refs/heads/release/.*$",
+    "^refs/tags/release/image-occlusion-editor/v.+$"
+  ],
   "inherit": false
 }

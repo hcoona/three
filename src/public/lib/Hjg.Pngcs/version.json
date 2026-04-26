@@ -2,7 +2,11 @@
   "$schema": "https://raw.githubusercontent.com/AArnott/Nerdbank.GitVersioning/master/src/NerdBank.GitVersioning/version.schema.json",
   "version": "1.4.0-beta.{height}",
   "pathFilters": ["."],
-  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/heads/release/Hjg.Pngcs/v\\d+\\.\\d+\\.x$", "^refs/tags/release/hjg-pngcs/v.+$"],
+  "publicReleaseRefSpec": [
+    "^refs/heads/main$",
+    "^refs/heads/release/Hjg.Pngcs/v\\d+\\.\\d+\\.x$",
+    "^refs/tags/release/hjg-pngcs/v.+$"
+  ],
   "release": {
     "tagName": "release/hjg-pngcs/v{version}",
     "firstUnstableTag": "beta"

@@ -7,9 +7,6 @@
   "nugetPackageVersion": {
     "semVer": 2
   },
-  "publicReleaseRefSpec": [
-    "^refs/heads/main$",
-    "^refs/tags/release/qidian-novel-downloader/v.+$"
-  ],
+  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/tags/release/qidian-novel-downloader/v.+$"],
   "inherit": false
 }

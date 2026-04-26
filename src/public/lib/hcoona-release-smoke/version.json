@@ -4,9 +4,6 @@
   "pathFilters": ["."],
   "gitCommitIdShortFixedLength": 7,
   "gitCommitIdShortAutoMinimum": 7,
-  "publicReleaseRefSpec": [
-    "^refs/heads/main$",
-    "^refs/tags/release/hcoona-release-smoke/v.+$"
-  ],
+  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/tags/release/hcoona-release-smoke/v.+$"],
   "inherit": false
 }
