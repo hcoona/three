@@ -84,8 +84,9 @@ The stable reusable boundaries are therefore:
     - in current scope for `official`, resolves the triggering actor's
       repository permission through the GitHub API and fails closed unless the
       actor has at least `maintain`;
-    - is separate from the later protected-environment approval gate, which
-      still applies to `official` publication after planning and build fan-out.
+    - is separate from the later protected-environment gates on live side-effect
+      jobs, which still apply to `official` publication after planning and build
+      fan-out.
 2. `plan` job
     - consumes the raw control-plane run envelope;
     - runs against the exact `commit-sha` resolved once from the operator-
@@ -110,23 +111,13 @@ The stable reusable boundaries are therefore:
 3. `build` fan-out
     - runs exactly once per active `variant-id`;
     - produces one bundle and one build receipt per variant.
-4. `approve` gate
-    - stays in the control plane;
-    - guards all external side effects;
-    - for current-scope `official`, uses a GitHub protected environment with
-      required reviewers and self-review prevention enabled;
-    - is skipped entirely when the selected run has no external side effects;
-      current-scope no-side-effect cases are dry-run or validation-only runs,
-      zero-target runs, and runs where every selected publish node is already
-      planner-classified as `skip-satisfied`;
-    - may be bypassed for profiles that do not require approval;
-    - administrator bypass, when that environment still allows it, remains a
-      native GitHub control-plane path rather than executor logic.
-5. `ensure-tag` job
+4. `ensure-tag` job
     - stays in the control plane;
     - creates or verifies each distinct project-scoped release tag exactly once
       per run when any active publish node resolves to a GitHub Release
       publication;
+    - for current-scope `official`, references the protected GitHub `release`
+      environment whenever the job can perform that live side effect;
     - when one run requires more than one distinct project-scoped release tag,
       first computes the full required tag set and verifies every already-
       existing required tag before creating any missing tag;
@@ -141,16 +132,23 @@ The stable reusable boundaries are therefore:
     - does nothing when the active publish-node set contains no GitHub Release
       publication, including runs where every selected GitHub Release publish
       node is already planner-classified as `skip-satisfied`.
-6. `publish` fan-out
+5. `publish` fan-out
     - runs exactly once per selected `publish-node-id` whose plan
       `publish-disposition` is `publish`;
+    - for current-scope `official`, each live publish matrix job references the
+      protected GitHub `release` environment before obtaining publish
+      credentials or an OIDC trusted-publishing token;
     - emits one publish receipt per publish node.
-7. `report` job
+6. `report` job
     - aggregates plan metadata, build receipts, publish receipts, synthetic skip
       receipts, and GitHub job conclusions into the final operator-facing summary.
 
-`approve`, `ensure-tag`, and `report` are ordinary control-plane jobs, not
-executor boundaries.
+`ensure-tag` and `report` are ordinary control-plane jobs, not executor
+boundaries. There is no separate approval-only job in current scope; approval is
+realized through the protected `release` environment attached to the live jobs
+that can perform official external side effects. Dry-run or validation-only
+runs, zero-target runs, and all-`skip-satisfied` runs do not attach this
+environment because they have no live external side effects.
 
 ### Planner Failure Consequences
 
@@ -176,9 +174,12 @@ skip receipts to aggregate.
 
 When planning fails after request normalization has begun, the plan job must
 surface one or more logical `planner-diagnostic` objects for control-plane
-reporting. Current scope freezes only the minimum machine-facing structure
-needed for stable cross-component handoff; it does not define a full error
-taxonomy, renderer, or stack-trace model.
+reporting. Pre-planner control-plane input rejections that happen after workflow
+input normalization has begun, such as invalid `official` `force` or invalid
+`validation-build` combinations, must use the same diagnostic object shape and
+registered `REQ_*` request-code vocabulary. Current scope freezes only the
+minimum machine-facing structure needed for stable cross-component handoff; it
+does not define a full error taxonomy, renderer, or stack-trace model.
 
 Each `planner-diagnostic` must contain at least these fields:
 
@@ -531,12 +532,13 @@ publish attempt in receipt lookup, retry routing, or executor success metrics.
 The following concerns are explicitly control-plane-owned:
 
 - **approvals**: only the control plane decides whether and when approval is
-  required; in current scope, `official` approval is wired through a GitHub
-  protected environment with required reviewers and self-review prevention,
-  while administrator bypass stays a native environment capability when
-  enabled, and the gate is skipped entirely for no-side-effect runs such as
-  dry-run or validation-only runs, zero-target runs, and all-`skip-satisfied`
-  runs;
+  required; in current scope, `official` approval is wired through the GitHub
+  protected `release` environment with required reviewers and self-review
+  prevention, attached directly to the live jobs that can perform external side
+  effects (`ensure-tag` and live `publish` matrix jobs). Administrator bypass
+  stays a native environment capability when enabled, and the environment is not
+  attached for no-side-effect runs such as dry-run or validation-only runs,
+  zero-target runs, and all-`skip-satisfied` runs;
 - **triggering-actor authorization**: only the control plane decides whether the
   triggering actor is allowed to start the selected profile; in current scope,
   `official` must fail before planning unless the triggering actor has at least

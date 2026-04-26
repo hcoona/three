@@ -756,8 +756,8 @@ projects appear anywhere in the plan.
 The following explicitly stay outside `release-plan` in `v1alpha1`:
 
 - the raw control-plane run envelope, including actor, run id, attempt id,
-  approval jobs, concurrency groups, raw workflow input names, and control-
-  plane-only flags such as dry-run;
+  approval or environment-gate state, concurrency groups, raw workflow input
+  names, and control-plane-only flags such as dry-run;
 - workflow or job layout, reusable-workflow boundaries, artifact transport, and
   executor invocation syntax;
 - the raw text of descriptors or the shared target catalog;

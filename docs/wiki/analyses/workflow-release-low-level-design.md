@@ -95,6 +95,11 @@ Input normalization rules:
 4. Keep `dry-run` and `validation-build` outside the planner request and plan
    envelope so they do not enter whole-release rerun identity.
 
+If a pre-planner input rule rejects the run after workflow input normalization
+has begun, the control plane must write `planner-diagnostics.json` using the same
+`planner-diagnostic` contract and registered `REQ_*` code vocabulary used by
+planner-hosted request validation. It must not emit a partial plan.
+
 ## Orchestration Job Realization
 
 The shared orchestration workflow should implement the middle-layer job sequence
@@ -106,7 +111,6 @@ with these concrete data handoffs:
 | `plan`                  | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service | Frozen plan artifact or planner diagnostics.                            |
 | `derive-execution-sets` | Frozen plan, raw dry-run controls                                                       | JSON arrays for active `variant-id` and active `publish-node-id`.       |
 | `build`                 | Plan artifact, one `variant-id` per matrix row                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts. |
-| `approve`               | Frozen plan and selected active publish nodes                                           | GitHub environment approval conclusion when required.                   |
 | `ensure-tag`            | Frozen plan and active GitHub Release publish nodes                                     | Tag verification or creation evidence.                                  |
 | `publish`               | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts          | `publish-result` artifacts.                                             |
 | `report`                | Plan, diagnostics, build results, skip results, publish results, job conclusions        | Final operator summary.                                                 |
@@ -114,6 +118,14 @@ with these concrete data handoffs:
 `derive-execution-sets` may be a separate job or an implementation detail of
 `plan`, but the produced selectors must be serialized as machine-readable JSON
 rather than reconstructed from ad hoc shell output in later jobs.
+
+Current scope does not use a separate `approve` job. `official` live side effects
+are gated by attaching the protected GitHub `release` environment directly to
+the jobs that can perform those side effects: `ensure-tag` when it would create
+or verify release tags for active GitHub Release publish nodes, and each live
+`publish` matrix job. This keeps the environment claim on OIDC-backed external
+trusted publishing jobs aligned with the registry-side trusted-publisher
+configuration.
 
 ## Dry-Run and Validation Build Policy
 
@@ -492,11 +504,21 @@ Use job-level least privilege rather than a broad workflow-level write token.
 | GitHub Packages publication                 | `packages: write`, scoped to the matching publish job.                        |
 | Trusted publishing to external registries   | `id-token: write`, scoped to the matching publish job.                        |
 
-`official` live publication must use a GitHub environment with required
-reviewers and prevent-self-review enabled. The approval job should reference the
-environment only after planning and validation-build work have completed, so
-approval-gated secrets and OIDC publish jobs remain unavailable to planner-time
-remote observation.
+`official` live side-effect jobs must use the GitHub environment named
+`release`, with required reviewers and prevent-self-review enabled. The
+`release` environment is referenced only by jobs that can perform live external
+side effects after planning and validation-build work have completed:
+
+- `ensure-tag`, when it would create or verify tags for active GitHub Release
+  publish nodes;
+- each live `publish` matrix job.
+
+There is no separate approval-only job in current scope. External trusted
+publisher policies for NuGet.org, PyPI, npmjs, and RubyGems.org should be
+configured for the stable publish workflow file and the same `release`
+environment, so the job that obtains the OIDC token is also the job constrained
+by the registry-side environment policy. Planner-time remote observation remains
+unable to access approval-gated secrets or OIDC publish jobs.
 
 No-side-effect runs skip this environment gate entirely:
 
