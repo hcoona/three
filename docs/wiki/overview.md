@@ -114,17 +114,20 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   runs require an early control-plane `maintain+` authorization check distinct
   from later approval, and immutable proof reuse is guaranteed only within the
   default GitHub Actions artifact retention window.
+- The lower-layer design handoff now freezes the implementation seams that affect
+  registry configuration and replay safety: stable workflow filenames for trusted
+  publishing, entry inputs including dry-run plus explicit validation-build,
+  registered planner diagnostic codes, JSON handoff files, artifact and
+  immutable-proof naming, registry-adapter obligations, GitHub permission
+  boundaries, tag orchestration, and acceptance traceability.
 
 ## Open Questions
 
 - No major upper-layer or middle-layer design gap remains in the current scope.
-- Lower-layer realization details such as code organization, concrete workflow
-  file layout, and command plumbing remain intentionally implementation-owned
-  within those frozen contracts.
-- Before lower-layer design starts, track only handoff-level guardrails:
-  acceptance traceability, concrete planner diagnostic-code handling, the chosen
-  dry-run build policy, and the artifact or receipt lookup layout for immutable
-  proof reuse.
+- No known lower-layer handoff guardrail remains unresolved for current scope.
+- Internal planner modules, helper script decomposition, exact retry timings, and
+  command wrappers remain intentionally implementation-owned within the frozen
+  lower-layer contracts.
 
 ## Related Pages
 
@@ -139,3 +142,4 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
 - [Workflow Release Descriptor Schema](./analyses/workflow-release-descriptor-schema.md)
 - [Workflow Release Plan Shape](./analyses/workflow-release-plan-shape.md)
 - [Workflow Release Workflow and Executor Boundaries](./analyses/workflow-release-workflow-executor-boundaries.md)
+- [Workflow Release Low-Level Design](./analyses/workflow-release-low-level-design.md)

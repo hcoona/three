@@ -166,6 +166,9 @@ These items do not reopen the middle-layer contracts. They are the first
 low-level design checkpoints needed to keep implementation traceable to the
 waterfall handoff.
 
+Those checkpoints are now resolved in
+[Workflow Release Low-Level Design](./workflow-release-low-level-design.md).
+
 ## Summary Judgment
 
 For the current workflow-release initiative, the design package is best
@@ -187,3 +190,4 @@ within the frozen contracts above.
 - [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md)
 - [Workflow Release Plan Shape](./workflow-release-plan-shape.md)
 - [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md)
+- [Workflow Release Low-Level Design](./workflow-release-low-level-design.md)

@@ -383,3 +383,17 @@ This file is the append-only chronological record of wiki activity.
   policy, and receipt lookup or artifact layout.
 - Synced the wiki overview and index so the remaining open items are framed as
   low-level handoff guardrails within the frozen contracts.
+
+## [2026-04-25] design | Add workflow-release low-level design
+
+- Added the lower-layer implementation handoff page for workflow release,
+  covering stable workflow filenames for trusted publishing, entry inputs,
+  dry-run plus validation-build behavior, planner diagnostic-code registration,
+  JSON handoff files, artifact and immutable-proof naming, registry adapter
+  obligations, GitHub permission boundaries, tag orchestration, and acceptance
+  traceability.
+- Recorded the Human-in-the-Loop decision that dry-run defaults to no build while
+  an explicit `validation-build` input may run validation-only build units.
+- Updated the design-layering page, wiki overview, and index so the lower-layer
+  handoff is discoverable and no current-scope lower-layer guardrail remains
+  unresolved.
