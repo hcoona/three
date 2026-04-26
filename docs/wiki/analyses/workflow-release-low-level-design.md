@@ -547,6 +547,16 @@ Build executors are selected from `project.ecosystem`.
 | `node`    | Ubuntu             | `mise`, `pnpm`, npm CLI                  | Pack exactly one npm tarball per planned npm artifact.                      |
 | `ruby`    | Ubuntu             | `mise`, RubyGems, Bundler when needed    | Build exactly one `.gem` per planned RubyGems artifact.                     |
 
+For .NET package variants, the current repository-wide MSBuild configuration
+sets `IncludeSymbols=true`, `DebugType=portable`, and
+`SymbolPackageFormat=snupkg` in the root `Directory.Build.props`. The `src/`
+layer marks library roots packable and app, lab, and sample roots nonpackable,
+with explicit project-level overrides still able to opt out. Therefore current
+packable .NET library release builds are expected to produce one `.nupkg` and
+one `.snupkg` when the descriptor declares the corresponding symbol artifact;
+nonpackable .NET app release builds do not implicitly produce `.snupkg` package
+artifacts.
+
 Executors must materialize every requested `artifact-id` exactly once in the
 `build-result`. A variant bundle may contain incidental files, but only files
 listed by `artifact-id` in `build-result.json` are contractual release artifacts.
@@ -620,23 +630,21 @@ Planner adapter responsibilities:
   registration resources for public nuget.org observation where possible.
 - For GitHub Packages NuGet, use GitHub-hosted read access with least-privilege
   `GITHUB_TOKEN` when public registry reads are insufficient.
-- Treat `.snupkg` observation as proof-unavailable unless implementation uses a
-  documented symbol-package observation path and tests it. The ordinary package
+- For NuGet.org `.snupkg`, use a documented symbol-package observation path and
+  test its asynchronous validation and indexing behavior. The ordinary package
   content API documents `.nupkg` content, while symbol packages are published to
   NuGet's symbol-server path and can undergo asynchronous validation.
 
-Before first live NuGet package-registry release, the owner must make one manual
-scope decision for `.snupkg`:
-
-1. either include a documented, tested symbol-package observation path in the
-   first implementation and keep `.snupkg` inside NuGet immutable publish nodes;
-2. or defer `.snupkg` package-registry publication from first delivery and allow
-   symbol packages only as GitHub Release assets until that observation path is
-   added.
-
-The recommended first-delivery choice is option 2, because it preserves
-fail-closed immutable replay semantics without requiring asynchronous symbol
-server state to satisfy `skip-satisfied` classification.
+Because the repo-wide .NET pack configuration produces `.snupkg` for packable
+library packages, current .NET package descriptors should model that symbol
+package as a canonical artifact. For NuGet.org publication, first delivery
+should keep the `.nupkg` and `.snupkg` as separate planned artifacts and publish
+both when the descriptor references both members. This follows NuGet's modern
+symbol-package model rather than the legacy `.symbols.nupkg` format or embedding
+portable PDBs into the primary package. If symbol-package observation cannot be
+implemented and tested in first delivery, then first delivery must defer
+NuGet.org publication for affected .NET package descriptors rather than silently
+publishing untracked `.snupkg` side effects.
 
 Publish executor responsibilities:
 

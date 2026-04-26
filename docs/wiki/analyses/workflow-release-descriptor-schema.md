@@ -636,6 +636,16 @@ without defining executor behavior. Planner-time admissibility then applies any
 request-dependent or build-output-dependent gates, including the narrowed PyPI
 pure-Python `py3-none-any` requirement.
 
+For current .NET package projects, the repo-wide MSBuild configuration emits a
+portable `.snupkg` alongside `.nupkg` when a packable library is packed. Project
+descriptors for such package variants should therefore declare both the primary
+NuGet artifact and the symbol artifact. GitHub Release target usages may carry
+both package files as release assets. NuGet.org target usages should also
+reference both artifacts when the release includes NuGet symbol publication,
+because `.snupkg` is the modern separate symbol-package format. That in turn
+requires the planner's NuGet.org adapter to implement and test symbol-package
+remote observation before first live NuGet.org publication for those descriptors.
+
 ## Validation Boundary
 
 The validation model is intentionally split into three layers.
