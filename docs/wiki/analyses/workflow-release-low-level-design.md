@@ -32,22 +32,22 @@ these existing contracts as authoritative:
 
 ## Low-Level Design Summary
 
-| Area                      | Low-level decision                                                                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workflow files            | Use stable checked-in workflow filenames because OIDC trusted-publisher policies match workflow identity.                                                             |
-| Entry authorization       | Explicitly check `buddy` as `write+` and `official` as `maintain+` before planning; do not enable duplicate-run auto-cancellation.                                    |
-| Planner host              | Expose the planner through a repo-owned CLI contract; the implementation language remains implementation-owned.                                                       |
-| Request and receipt files | Serialize all cross-job machine data as UTF-8 JSON with LF line endings and stable `api-version` plus `kind`.                                                         |
-| Dry-run builds            | Dry-run does not build by default. A separate `validation-build` input may run build units, but its receipts are validation-only and inadmissible as immutable proof. |
-| Build proof lookup        | Publish one small proof artifact per immutable-proof member binding so future planner runs can query by exact artifact name.                                          |
-| Tag orchestration         | Create lightweight release tags and verify existing tags by peeling annotated tags to the selected commit.                                                            |
-| External setup            | Require the `release` environment and registry trusted-publisher policies to target the stable publish workflow and environment.                                      |
-| Diagnostics               | Use a small registered planner-code vocabulary plus a registration rule for new codes.                                                                                |
-| Diagnostics artifact      | Serialize planner diagnostics through one closed container object rather than a raw array, NDJSON stream, or ad hoc log file.                                         |
-| Execution sets            | Materialize matrix selectors in one closed JSON object so empty dry-run, validation-build, zero-target, and all-skip runs have deterministic workflow behavior.       |
-| Failure reporting         | Treat success and skip receipts as positive evidence only; failed or cancelled jobs are summarized from job conclusions plus missing expected receipts.               |
-| Registry adapters         | Keep remote observation in planner adapters, live mutation in publish executors, and package metadata conformance in publish executors before upload.                 |
-| Acceptance                | Maintain a trace table from each acceptance scenario to descriptors, plans, receipts, registry evidence, and workflow conclusions.                                    |
+| Area                      | Low-level decision                                                                                                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workflow files            | Use stable checked-in workflow filenames because OIDC trusted-publisher policies match workflow identity.                                                                               |
+| Entry authorization       | Explicitly check `buddy` as `write+` and `official` as `maintain+` before planning; serialize same-commit release runs without auto-cancellation.                                       |
+| Planner host              | Expose the planner through a repo-owned CLI contract; the implementation language remains implementation-owned.                                                                         |
+| Request and receipt files | Serialize all cross-job machine data as UTF-8 JSON with LF line endings and stable `api-version` plus `kind`.                                                                           |
+| Dry-run builds            | Dry-run does not build by default. A separate `validation-build` input may run build units, but its receipts are validation-only and inadmissible as immutable proof.                   |
+| Build proof lookup        | Publish one small proof artifact per immutable-proof member binding so future planner runs can query by exact artifact name.                                                            |
+| Tag orchestration         | Create lightweight release tags and verify existing tags by peeling annotated tags to the selected commit.                                                                              |
+| External setup            | Require the `release` environment and registry trusted-publisher policies to target the stable publish workflow and environment.                                                        |
+| Diagnostics               | Use a small registered planner-code vocabulary plus a registration rule for new codes.                                                                                                  |
+| Diagnostics artifact      | Serialize planner diagnostics through one closed container object rather than a raw array, NDJSON stream, or ad hoc log file.                                                           |
+| Execution sets            | Materialize matrix selectors in one closed JSON object so empty dry-run, validation-build, zero-target, and all-skip runs have deterministic workflow behavior.                         |
+| Failure reporting         | Treat success and skip receipts as positive evidence only; failed jobs are summarized from job conclusions plus missing expected receipts, while cancellation reporting is best-effort. |
+| Registry adapters         | Keep remote observation in planner adapters, live mutation in publish executors, and package metadata conformance in publish executors before upload.                                   |
+| Acceptance                | Maintain a trace table from each acceptance scenario to descriptors, plans, receipts, registry evidence, and workflow conclusions.                                                      |
 
 ## Workflow File Layout
 
@@ -128,12 +128,12 @@ that failure, it uses the planner-diagnostic file contract with
 
 Current scope does not adopt native duplicate-run auto-cancellation. Entry
 workflows and the shared orchestration workflow must not configure
-`cancel-in-progress: true` for release runs. If the implementation needs a
-GitHub Actions concurrency key to serialize same-commit release work, it must use
-a key derived from the selected entry workflow plus resolved `commit-sha` and
-must set `cancel-in-progress: false`. Cancellation therefore remains manual
-operator cancellation or ordinary platform cancellation, not a repo-defined
-supersession protocol.
+`cancel-in-progress: true` for release runs. They must still serialize
+same-entry, same-commit release work with a GitHub Actions concurrency key
+derived from the selected entry workflow plus resolved `commit-sha`, and must set
+`cancel-in-progress: false`. Cancellation therefore remains manual operator
+cancellation or ordinary platform cancellation, not a repo-defined supersession
+protocol, while same-commit live release side effects do not race each other.
 
 ## Orchestration Job Realization
 
@@ -191,7 +191,8 @@ The selector fields are derived as follows:
 Empty arrays are first-class workflow outcomes, not missing outputs. A build or
 publish matrix with an empty corresponding selector is skipped by the control
 plane, and the `report` job still runs from the serialized selectors, available
-receipts, diagnostics, and job conclusions.
+receipts, diagnostics, and job conclusions when the workflow has not been
+cancelled before the platform can schedule that job.
 
 Current scope does not use a separate `approve` job. `official` live side effects
 are gated by attaching the protected GitHub `release` environment directly to
@@ -466,12 +467,16 @@ path was suppressed.
 
 Successful `tag-result`, `build-result`, `publish-result`, and `skip-result`
 files are positive evidence only. Current scope does not define failed tag,
-failed build, failed publish, or failed skip receipt files. The `report` job must
-run after success, failure, cancellation, and skipped matrix paths, then
-summarize failure from the serialized execution sets, job conclusions, and any
-missing expected positive receipts. A completed positive receipt remains valid
-evidence of a side effect that happened before a later job failed or the workflow
-was cancelled.
+failed build, failed publish, or failed skip receipt files. For non-cancelled
+runs, the `report` job must run after success, failure, and skipped matrix paths,
+then summarize failure from the serialized execution sets, job conclusions, and
+any missing expected positive receipts. For cancelled runs, in-run report
+generation is best-effort only because GitHub Actions cancellation can prevent a
+not-yet-started final job from being scheduled. The authoritative cancellation
+evidence is therefore the native GitHub cancelled conclusion plus any positive
+receipts already persisted before cancellation. A completed positive receipt
+remains valid evidence of a side effect that happened before a later job failed
+or the workflow was cancelled.
 
 ## Artifact Naming and Retention
 
@@ -702,6 +707,10 @@ This follows NuGet's modern symbol-package model rather than the legacy
 symbol-package observation cannot be implemented and tested in first delivery,
 then first delivery must defer NuGet.org publication for affected .NET package
 descriptors rather than silently publishing untracked `.snupkg` side effects.
+For the first-delivery `hjg-pngcs` descriptor, live `nuget/nuget-org`
+enablement is therefore blocked until this NuGet.org symbol-package observation
+path has been proven, or until that descriptor's NuGet.org official target is
+explicitly deferred.
 
 Publish executor responsibilities:
 
@@ -819,7 +828,10 @@ include this checklist:
 Missing trusted-publisher configuration is a live publish failure surfaced by the
 matching publish executor or credential acquisition step. The planner must not
 probe those approval-gated trusted-publishing credentials during remote
-observation.
+observation. This setup is not required to implement or validate dry-run,
+validation-build, GitHub Release, or GitHub Packages paths, but it is a
+live-enable prerequisite for official external-registry publication and
+acceptance evidence.
 
 No-side-effect runs skip this environment gate entirely:
 
@@ -899,7 +911,7 @@ minimum shape:
 | Direct official publication            | Any GitHub Release fixture above                                                    | `official` run with no prior `buddy` evidence for the same project-scoped version, protected-environment approval evidence, `create-only` plan snapshot, tag result, and publish result.                                                          |
 | GitHub Packages publication            | `src/public/lib/hexo-renderer-asciidoc/` or `src/public/lib/Hjg.Pngcs/`             | Real GitHub Packages publish evidence when a first-delivery descriptor declares that target, including target-instance snapshot, package build receipt, and publish result.                                                                       |
 | Immutable partial replay               | NuGet or PyPI multi-member fixture, real or mocked at adapter boundary              | Planner diagnostic proving fail-closed behavior for a same-identity partial case.                                                                                                                                                                 |
-| Cancellation                           | Workflow-level integration fixture                                                  | GitHub cancelled conclusion plus report showing already completed external side effects only.                                                                                                                                                     |
+| Cancellation                           | Workflow-level integration fixture                                                  | GitHub cancelled conclusion plus any already persisted positive receipts; in-run report artifact is best-effort because platform cancellation may prevent the final report job from starting.                                                     |
 | Approval boundary                      | Workflow-level integration fixture                                                  | `buddy` explicit `write+` authorization with no approval, `official` `maintain+` authorization, required-review run, self-review prevention, and admin bypass behavior when enabled.                                                              |
 
 The trace table may live in test fixtures or generated CI output. It does not
@@ -910,8 +922,8 @@ need to become a new operator-facing release record.
 This low-level design was checked against these official or primary sources:
 
 - GitHub Actions environments, required reviewers, prevent self-review, artifact
-  APIs, OIDC claims, workflow syntax, `GITHUB_TOKEN`, GitHub Release REST API, and
-  GitHub Packages registry guides.
+  APIs, OIDC claims, workflow syntax, workflow cancellation reference,
+  `GITHUB_TOKEN`, GitHub Release REST API, and GitHub Packages registry guides.
 - Microsoft Learn NuGet trusted publishing, service index, package base address,
   registration, package publish, and `.snupkg` symbol package pages.
 - PyPI trusted publishing, JSON API, Python package name normalization, and
