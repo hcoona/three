@@ -43,6 +43,9 @@ these existing contracts as authoritative:
 | Tag orchestration         | Create lightweight release tags and verify existing tags by peeling annotated tags to the selected commit.                                                            |
 | External setup            | Require the `release` environment and registry trusted-publisher policies to target the stable publish workflow and environment.                                      |
 | Diagnostics               | Use a small registered planner-code vocabulary plus a registration rule for new codes.                                                                                |
+| Diagnostics artifact      | Serialize planner diagnostics through one closed container object rather than a raw array, NDJSON stream, or ad hoc log file.                                         |
+| Execution sets            | Materialize matrix selectors in one closed JSON object so empty dry-run, validation-build, zero-target, and all-skip runs have deterministic workflow behavior.       |
+| Failure reporting         | Treat success and skip receipts as positive evidence only; failed or cancelled jobs are summarized from job conclusions plus missing expected receipts.               |
 | Registry adapters         | Keep remote observation in planner adapters, live mutation in publish executors, and package metadata conformance in publish executors before upload.                 |
 | Acceptance                | Maintain a trace table from each acceptance scenario to descriptors, plans, receipts, registry evidence, and workflow conclusions.                                    |
 
@@ -141,7 +144,7 @@ with these concrete data handoffs:
 | ----------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `authorize-entry`       | GitHub event context, selected profile                                                  | Authorization conclusion and normalized run metadata.                   |
 | `plan`                  | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service | Frozen plan artifact or planner diagnostics.                            |
-| `derive-execution-sets` | Frozen plan, raw dry-run controls                                                       | JSON arrays for active `variant-id` and active `publish-node-id`.       |
+| `derive-execution-sets` | Frozen plan, raw dry-run controls                                                       | `execution-sets.json` selector object.                                  |
 | `build`                 | Plan artifact, one `variant-id` per matrix row                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts. |
 | `ensure-tag`            | Frozen plan and active GitHub Release publish nodes                                     | Tag verification or creation evidence.                                  |
 | `publish`               | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts          | `publish-result` artifacts.                                             |
@@ -150,6 +153,45 @@ with these concrete data handoffs:
 `derive-execution-sets` may be a separate job or an implementation detail of
 `plan`, but the produced selectors must be serialized as machine-readable JSON
 rather than reconstructed from ad hoc shell output in later jobs.
+
+The machine-readable selector file is `execution-sets.json` with this closed
+top-level shape:
+
+```json
+{
+    "api-version": "three.release.execution-sets/v1alpha1",
+    "kind": "execution-sets",
+    "plan-id": "...",
+    "dry-run": false,
+    "validation-build": false,
+    "publish-intent-node-ids": [],
+    "active-variant-ids": [],
+    "active-publish-node-ids": [],
+    "skip-satisfied-publish-node-ids": [],
+    "active-github-release-publish-node-ids": []
+}
+```
+
+The selector fields are derived as follows:
+
+1. `publish-intent-node-ids` contains every selected publish node whose frozen
+   `publish-disposition` is `publish`, before applying dry-run suppression.
+2. `active-publish-node-ids` is empty when `dry-run` is true; otherwise it equals
+   `publish-intent-node-ids`.
+3. `active-variant-ids` contains the distinct variants reachable from
+   `publish-intent-node-ids` only when either the run is live or
+   `validation-build` is true. Ordinary dry-runs therefore serialize `[]`.
+4. `skip-satisfied-publish-node-ids` contains every selected publish node whose
+   frozen `publish-disposition` is `skip-satisfied`; the control plane uses this
+   set to emit synthetic skip receipts.
+5. `active-github-release-publish-node-ids` is the subset of
+   `active-publish-node-ids` whose target family is `github-release`; `ensure-tag`
+   must not run when this array is empty.
+
+Empty arrays are first-class workflow outcomes, not missing outputs. A build or
+publish matrix with an empty corresponding selector is skipped by the control
+plane, and the `report` job still runs from the serialized selectors, available
+receipts, diagnostics, and job conclusions.
 
 Current scope does not use a separate `approve` job. `official` live side effects
 are gated by attaching the protected GitHub `release` environment directly to
@@ -233,6 +275,33 @@ New planner diagnostic codes may be added by implementation, but every new code
 must be registered in this page or in a successor registry before tests depend
 on it. Free-form adapter messages belong in `details`, not in the `code` field.
 
+`planner-diagnostics.json` is not a raw array, NDJSON stream, or rendered log.
+It is one closed container object:
+
+```json
+{
+    "api-version": "three.release.planner-diagnostics/v1alpha1",
+    "kind": "planner-diagnostics",
+    "diagnostics": [
+        {
+            "api-version": "three.release.planner-diagnostic/v1alpha1",
+            "kind": "planner-diagnostic",
+            "code": "REQ_INVALID_INPUT",
+            "message": "...",
+            "phase": "validation",
+            "scope-kind": "request",
+            "blocking": true,
+            "details": {}
+        }
+    ]
+}
+```
+
+When this artifact is emitted for a failed run, `diagnostics` must be non-empty.
+The control plane may render those diagnostics into Markdown, but downstream
+jobs and tests consume only the JSON container and its logical diagnostic
+objects.
+
 ## File Formats
 
 All cross-job files should be JSON, not YAML, even when examples in middle-layer
@@ -251,6 +320,7 @@ Required file naming inside artifacts:
 | Publish request         | `publish-request.json`     |
 | Publish result          | `publish-result.json`      |
 | Skip result             | `skip-result.json`         |
+| Execution sets          | `execution-sets.json`      |
 | Immutable proof wrapper | `immutable-proof.json`     |
 | Final run report data   | `release-report.json`      |
 
@@ -272,6 +342,14 @@ depending on. Current-scope extensibility fields are:
 | Planner diagnostics      | `details`                    | Adapter-specific machine context belongs under `details`.                                                |
 | Publish and skip results | `evidence`                   | Small family-specific receipt evidence belongs under `evidence`.                                         |
 | Immutable proof wrapper  | additional provenance fields | Extra control-plane provenance may be added only if proof lookup still applies the minimum checks below. |
+
+Where the boundary documents say a request or result object contains "at least"
+some fields, this low-level handoff freezes those listed top-level fields as the
+complete `v1alpha1` contract unless an extensibility field is named above or in
+the object's defining section. In particular, `build-request`, `build-result`,
+`publish-request`, `publish-result`, and `skip-result` must not grow extra
+root-level fields during implementation. New root-level machine fields require a
+successor contract update before tests or workflows depend on them.
 
 `release-report.json` is the control-plane-authored final report data consumed by
 `render-summary`. Its minimum shape is:
@@ -298,9 +376,23 @@ depending on. Current-scope extensibility fields are:
     "artifacts": {
         "plan-artifact-name": "...",
         "planner-diagnostics-artifact-name": null,
+        "execution-sets-artifact-name": "...",
         "build-result-artifact-names": [],
         "publish-result-artifact-names": [],
         "skip-result-artifact-names": []
+    },
+    "jobs": {
+        "authorize-entry": { "conclusion": "success" },
+        "plan": { "conclusion": "success" },
+        "build": {
+            "conclusion": "success",
+            "failed-variant-ids": []
+        },
+        "ensure-tag": { "conclusion": "skipped" },
+        "publish": {
+            "conclusion": "success",
+            "failed-publish-node-ids": []
+        }
     },
     "counts": {
         "selected-projects": 0,
@@ -316,7 +408,18 @@ For planner failure before plan emission, `plan.plan-id`,
 `plan.selected-project-ids`, and `artifacts.plan-artifact-name` are `null`, while
 `artifacts.planner-diagnostics-artifact-name` identifies the diagnostics
 artifact when one was produced. `run.conclusion` uses GitHub job conclusion
-spelling such as `success`, `failure`, or `cancelled`.
+spelling such as `success`, `failure`, or `cancelled`. Job-level conclusions
+under `jobs` use the same spelling and may also use `skipped` for jobs that did
+not run because their serialized selector set was empty or their prerequisite
+path was suppressed.
+
+Successful `build-result`, `publish-result`, and `skip-result` files are
+positive evidence only. Current scope does not define failed build, failed
+publish, or failed skip receipt files. The `report` job must run after success,
+failure, cancellation, and skipped matrix paths, then summarize failure from the
+serialized execution sets, job conclusions, and any missing expected positive
+receipts. A completed positive receipt remains valid evidence of a side effect
+that happened before a later job failed or the workflow was cancelled.
 
 ## Artifact Naming and Retention
 
@@ -337,6 +440,7 @@ Current-scope artifact names:
 | ------------------- | ----------------------------------------------------------------------- |
 | Frozen plan         | `release-plan-v1-<safe-id(plan-id)>`                                    |
 | Planner diagnostics | `release-planner-diagnostics-v1-<run-id>-<attempt>`                     |
+| Execution sets      | `release-execution-sets-v1-<safe-id(plan-id)>`                          |
 | Variant bundle      | `release-build-bundle-v1-<safe-id(plan-id + "\n" + variant-id)>`        |
 | Build result        | `release-build-result-v1-<safe-id(plan-id + "\n" + variant-id)>`        |
 | Publish result      | `release-publish-result-v1-<safe-id(plan-id + "\n" + publish-node-id)>` |
@@ -520,6 +624,19 @@ Planner adapter responsibilities:
   documented symbol-package observation path and tests it. The ordinary package
   content API documents `.nupkg` content, while symbol packages are published to
   NuGet's symbol-server path and can undergo asynchronous validation.
+
+Before first live NuGet package-registry release, the owner must make one manual
+scope decision for `.snupkg`:
+
+1. either include a documented, tested symbol-package observation path in the
+   first implementation and keep `.snupkg` inside NuGet immutable publish nodes;
+2. or defer `.snupkg` package-registry publication from first delivery and allow
+   symbol packages only as GitHub Release assets until that observation path is
+   added.
+
+The recommended first-delivery choice is option 2, because it preserves
+fail-closed immutable replay semantics without requiring asynchronous symbol
+server state to satisfy `skip-satisfied` classification.
 
 Publish executor responsibilities:
 
