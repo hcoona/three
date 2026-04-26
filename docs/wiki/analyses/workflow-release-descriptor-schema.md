@@ -238,8 +238,9 @@ Examples grounded in the repo:
 - `nbgv-python` points at `pyproject.toml`;
 - `hexo-renderer-asciidoc` points at `package.json`;
 - `asciidoctor-latexmath` points at `asciidoctor-latexmath.gemspec`;
-- `ImageOcclusionEditor` points at its nested WinUI `.csproj` and may list
-  `script/Build-InnoInstaller.ps1` and `script/Setup.iss` as auxiliary inputs.
+- `ImageOcclusionEditor` points at its nested WinUI `.csproj` and lists the
+  lock file, installer payload metadata, template files, icon, and packaging
+  scripts that materially affect release semantics as auxiliary inputs.
 
 ### `variants` section
 
@@ -647,11 +648,13 @@ For current .NET package projects, the repo-wide MSBuild configuration emits a
 portable `.snupkg` alongside `.nupkg` when a packable library is packed. Project
 descriptors for such package variants should therefore declare both the primary
 NuGet artifact and the symbol artifact. GitHub Release target usages may carry
-both package files as release assets. NuGet.org target usages should also
-reference both artifacts when the release includes NuGet symbol publication,
-because `.snupkg` is the modern separate symbol-package format. That in turn
-requires the planner's NuGet.org adapter to implement and test symbol-package
-remote observation before first live NuGet.org publication for those descriptors.
+both package files as release assets. GitHub Packages NuGet buddy target usages
+should also publish both artifacts rather than treating the buddy package target
+as `.nupkg`-only. NuGet.org target usages should likewise reference both
+artifacts when the release includes NuGet symbol publication, because `.snupkg`
+is the modern separate symbol-package format. That in turn requires the
+planner's NuGet.org adapter to implement and test symbol-package remote
+observation before first live NuGet.org publication for those descriptors.
 
 ## Validation Boundary
 
@@ -885,7 +888,7 @@ profiles:
             - uses: github-release/public
               artifacts: [nuget, snupkg]
             - uses: nuget/github-packages
-              artifacts: [nuget]
+              artifacts: [nuget, snupkg]
     official:
         targets:
             - uses: github-release/public
@@ -909,7 +912,20 @@ project:
 source:
     primary-manifest: ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj
     auxiliary-inputs:
+        - ImageOcclusionEditorWinUI3/app.manifest
+        - ImageOcclusionEditorWinUI3/packages.lock.json
+        - LICENSE
+        - LICENSE.GPL3.txt
+        - LICENSE.MIT.txt
+        - README.md
+        - Resources/Template_IIOT.txt
+        - Resources/Template_IIOTT.txt
+        - THIRD-PARTY-NOTICES.TXT
+        - imageocclusioneditor.ico
         - script/Build-InnoInstaller.ps1
+        - script/Helpers.ps1
+        - script/New-ThirdPartyNotices.ps1
+        - script/Publish-ImageOcclusionEditor.ps1
         - script/Setup.iss
 
 variants:

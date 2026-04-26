@@ -637,14 +637,15 @@ Planner adapter responsibilities:
 
 Because the repo-wide .NET pack configuration produces `.snupkg` for packable
 library packages, current .NET package descriptors should model that symbol
-package as a canonical artifact. For NuGet.org publication, first delivery
-should keep the `.nupkg` and `.snupkg` as separate planned artifacts and publish
-both when the descriptor references both members. This follows NuGet's modern
-symbol-package model rather than the legacy `.symbols.nupkg` format or embedding
-portable PDBs into the primary package. If symbol-package observation cannot be
-implemented and tested in first delivery, then first delivery must defer
-NuGet.org publication for affected .NET package descriptors rather than silently
-publishing untracked `.snupkg` side effects.
+package as a canonical artifact. GitHub Packages NuGet buddy publication should
+publish the modeled `.nupkg` and `.snupkg` artifacts together. For NuGet.org
+publication, first delivery should keep the `.nupkg` and `.snupkg` as separate
+planned artifacts and publish both when the descriptor references both members.
+This follows NuGet's modern symbol-package model rather than the legacy
+`.symbols.nupkg` format or embedding portable PDBs into the primary package. If
+symbol-package observation cannot be implemented and tested in first delivery,
+then first delivery must defer NuGet.org publication for affected .NET package
+descriptors rather than silently publishing untracked `.snupkg` side effects.
 
 Publish executor responsibilities:
 

@@ -66,9 +66,9 @@ graph:
             project-id: hjg-pngcs
             descriptor-handle: package
             dimensions: {}
-            artifact-ids: [artifact/...]
+            artifact-ids: [artifact/package, artifact/symbols]
     artifacts:
-        artifact/...:
+        artifact/package:
             project-id: hjg-pngcs
             variant-id: variant/...
             descriptor-handle: nuget
@@ -76,13 +76,21 @@ graph:
             kind-family: package
             concrete-kind: nuget
             produced-from-artifact-ids: []
+        artifact/symbols:
+            project-id: hjg-pngcs
+            variant-id: variant/...
+            descriptor-handle: snupkg
+            role: symbols
+            kind-family: package
+            concrete-kind: snupkg
+            produced-from-artifact-ids: []
     publish-nodes:
         publish-node/release:
             project-id: hjg-pngcs
             profile: buddy
             descriptor-target-index: 0
             target-instance-snapshot-id: github-release/public
-            artifact-ids: [artifact/...]
+            artifact-ids: [artifact/package, artifact/symbols]
             publish-disposition: publish
             publish-mode: create-only
             resolved-publish-identity:
@@ -90,22 +98,22 @@ graph:
             desired-publish-state:
                 release-state: prerelease
             projection:
-                asset-labels-by-artifact-id:
-                    artifact/...: Hjg.Pngcs.1.2.3.nupkg
+                asset-labels-by-artifact-id: {}
         publish-node/package:
             project-id: hjg-pngcs
             profile: buddy
             descriptor-target-index: 1
             target-instance-snapshot-id: nuget/github-packages
-            artifact-ids: [artifact/...]
+            artifact-ids: [artifact/package, artifact/symbols]
             publish-disposition: publish
             publish-mode: create-only
             resolved-publish-identity:
-                package-name: Hjg.Pngcs
+                package-name: IO.Github.Hcoona.Pngcs
                 version: 1.2.3
             projection:
                 final-distribution-filenames-by-artifact-id:
-                    artifact/...: Hjg.Pngcs.1.2.3.nupkg
+                    artifact/package: IO.Github.Hcoona.Pngcs.1.2.3.nupkg
+                    artifact/symbols: IO.Github.Hcoona.Pngcs.1.2.3.snupkg
     target-instance-snapshots:
         github-release/public:
             family: github-release
@@ -117,6 +125,27 @@ graph:
                     - role: primary-package
                       kind-family: package
                       concrete-kind: nuget
+                    - role: symbols
+                      kind-family: package
+                      concrete-kind: snupkg
+                    - role: primary-package
+                      kind-family: package
+                      concrete-kind: wheel
+                    - role: primary-package
+                      kind-family: package
+                      concrete-kind: sdist
+                    - role: primary-package
+                      kind-family: package
+                      concrete-kind: npm-package
+                    - role: primary-package
+                      kind-family: package
+                      concrete-kind: rubygem
+                    - role: primary-binary
+                      kind-family: binary
+                      concrete-kind: executable
+                    - role: installer
+                      kind-family: installer
+                      concrete-kind: inno-setup
                 aggregate-rules:
                     min-artifact-count: 1
                     max-artifact-count: null
@@ -125,7 +154,42 @@ graph:
                         - role: primary-package
                           kind-family: package
                           concrete-kind: nuget
-                          min-count: 1
+                          min-count: 0
+                          max-count: null
+                        - role: symbols
+                          kind-family: package
+                          concrete-kind: snupkg
+                          min-count: 0
+                          max-count: null
+                        - role: primary-package
+                          kind-family: package
+                          concrete-kind: wheel
+                          min-count: 0
+                          max-count: null
+                        - role: primary-package
+                          kind-family: package
+                          concrete-kind: sdist
+                          min-count: 0
+                          max-count: null
+                        - role: primary-package
+                          kind-family: package
+                          concrete-kind: npm-package
+                          min-count: 0
+                          max-count: null
+                        - role: primary-package
+                          kind-family: package
+                          concrete-kind: rubygem
+                          min-count: 0
+                          max-count: null
+                        - role: primary-binary
+                          kind-family: binary
+                          concrete-kind: executable
+                          min-count: 0
+                          max-count: null
+                        - role: installer
+                          kind-family: installer
+                          concrete-kind: inno-setup
+                          min-count: 0
                           max-count: null
             destination:
                 host: github

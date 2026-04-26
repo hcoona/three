@@ -1,0 +1,38 @@
+api-version: three.release/v1alpha1
+kind: project
+
+project:
+  id: hjg-pngcs
+  display-name: Hjg.Pngcs
+  ecosystem: dotnet
+  release-kind: lib
+
+source:
+  primary-manifest: Hjg.Pngcs.csproj
+
+variants:
+  - id: package
+    dimensions: {}
+    artifacts:
+      - id: nuget
+        role: primary-package
+        kind-family: package
+        concrete-kind: nuget
+      - id: snupkg
+        role: symbols
+        kind-family: package
+        concrete-kind: snupkg
+
+profiles:
+  buddy:
+    targets:
+      - uses: github-release/public
+        artifacts: [nuget, snupkg]
+      - uses: nuget/github-packages
+        artifacts: [nuget, snupkg]
+  official:
+    targets:
+      - uses: github-release/public
+        artifacts: [nuget, snupkg]
+      - uses: nuget/nuget-org
+        artifacts: [nuget, snupkg]
