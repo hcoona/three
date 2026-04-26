@@ -9,7 +9,7 @@
   },
   "publicReleaseRefSpec": [
     "^refs/heads/main$",
-    "^refs/heads/release/.*$",
+    "^refs/heads/release/image-occlusion-editor/v\\d+\\.\\d+\\.x$",
     "^refs/tags/release/image-occlusion-editor/v.+$"
   ],
   "inherit": false
