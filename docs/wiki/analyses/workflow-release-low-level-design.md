@@ -602,22 +602,25 @@ Planner adapter responsibilities:
 
 - Query releases by the frozen `release-tag`.
 - Normalize release state as `prerelease` or `release`.
-- Normalize the asset set by asset name and label.
+- Normalize the asset set by asset name and label, then compare it to the
+  planner-frozen `projection.asset-names-by-artifact-id` and
+  `projection.asset-labels-by-artifact-id` maps.
 - Classify exact matches, same-tag prerelease partials, and same-tag conflicts
   according to the replay matrix.
 
 Publish executor responsibilities:
 
 - `create-only`: create the release for the already verified tag and upload the
-  exact planned asset set.
+  exact planned asset set under the planner-frozen asset names.
 - `overwrite-mutable`: converge the mutable prerelease to the frozen `buddy`
   intent when the planner authorized `FORCE`.
 - `replace-authoritative`: converge the same-tag prerelease to the frozen
-  official intent, including final release state, asset set, and asset labels.
+  official intent, including final release state, asset names, and asset labels.
 
 The executor may delete and recreate assets only when the plan mode authorizes an
 overwrite or authoritative replacement. It must not use release asset presence as
-a fresh skip decision.
+a fresh skip decision, and it must not derive alternate release asset names from
+bundle-relative paths, produced filenames, or executor-local packaging output.
 
 ### NuGet
 

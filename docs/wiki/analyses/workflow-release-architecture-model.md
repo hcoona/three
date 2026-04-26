@@ -404,6 +404,7 @@ In current scope, GitHub Release is the only family that needs explicit desired
 target-side state beyond identity: `buddy` resolves to `prerelease`, and
 `official` resolves to `release` for the same project-scoped `release-tag`. For
 same-tag prerelease-to-release promotion, the frozen `artifact-ids` plus
+`projection.asset-names-by-artifact-id` and
 `projection.asset-labels-by-artifact-id` are the authoritative final official
 asset set and labels for that tag, so the promotion model is not a state-only
 flip. A project-scoped version identity becomes official-frozen only when that same
@@ -586,8 +587,8 @@ Current-scope guardrails for this seam are:
   the member set of exactly one wheel and zero or one sdist under the same
   resolved package identity, and current scope still fails closed there as well;
 - for GitHub Release, `skip-satisfied` requires an exact match of the release
-  state plus the required asset set and asset labels, with no extra assets left
-  on the release object;
+  state plus the planner-frozen asset names and asset labels, with no extra
+  assets left on the release object;
 - for GitHub Release, same-tag `official` promotion becomes
   `replace-authoritative` only when the desired state is `release` and the
   existing same-tag remote state is still `prerelease`; an already-`release`

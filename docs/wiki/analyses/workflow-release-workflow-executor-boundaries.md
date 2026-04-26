@@ -463,10 +463,14 @@ inputs or by probing the destination for alternate policy.
 promotion path: the executor must converge the release identified by the frozen
 `resolved-publish-identity.release-tag` to the node's full official publish
 intent, including `desired-publish-state.release-state`, `artifact-ids`, and
+`projection.asset-names-by-artifact-id` plus
 `projection.asset-labels-by-artifact-id`, and it may delete, re-upload, or
-recreate target-side assets as needed to do so. It must not reinterpret that
-path as a mere state flip or as an additive merge with the prior buddy asset
-set. When a `mutable-prerelease` destination already contains the same frozen
+recreate target-side assets as needed to do so. For GitHub Release, the executor
+must upload or stage each receipted file under the frozen asset name for its
+`artifact-id`; it must not use the bundle-relative path or produced basename as
+a fresh target-side name. It must not reinterpret that path as a mere state flip
+or as an additive merge with the prior buddy asset set. When a
+`mutable-prerelease` destination already contains the same frozen
 `resolved-publish-identity`, the executor must still follow the serialized mode
 exactly: only planner-authorized buddy `FORCE` replay arrives as
 `overwrite-mutable`; same-tag GitHub Release prerelease-to-release promotion
@@ -476,8 +480,8 @@ frozen publish node also carries GitHub Release
 `desired-publish-state.release-state`, the executor must honor that state
 exactly rather than inferring prerelease versus release from the workflow
 profile or from tag existence alone. By contrast, when the same release tag
-already exists and already matches the frozen desired release state, asset set,
-and asset labels, the planner must serialize `publish-disposition:
+already exists and already matches the frozen desired release state, asset
+names, and asset labels, the planner must serialize `publish-disposition:
 skip-satisfied`, so the executor never receives a live publish request for that
 rerun case. The inverse same-tag release to prerelease transition is
 planner-invalid because official release state is frozen; the planner must

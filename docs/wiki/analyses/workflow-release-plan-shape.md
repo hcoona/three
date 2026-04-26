@@ -98,6 +98,9 @@ graph:
             desired-publish-state:
                 release-state: prerelease
             projection:
+                asset-names-by-artifact-id:
+                    artifact/package: IO.Github.Hcoona.Pngcs.1.2.3.nupkg
+                    artifact/symbols: IO.Github.Hcoona.Pngcs.1.2.3.snupkg
                 asset-labels-by-artifact-id: {}
         publish-node/package:
             project-id: hjg-pngcs
@@ -394,17 +397,46 @@ target-side state. It must not be copied into `projection`.
 
 Current-scope normalized `projection` shapes are:
 
-| Resolved family  | Plan `projection` shape                                                    |
-| ---------------- | -------------------------------------------------------------------------- |
-| `github-release` | `asset-labels-by-artifact-id: { <artifact-id>: ... }`                      |
-| `npm`            | `package-name?: <string>`                                                  |
-| `nuget`, `pypi`  | `final-distribution-filenames-by-artifact-id: { <artifact-id>: <string> }` |
-| `rubygems`       | `{}`                                                                       |
+| Resolved family  | Plan `projection` shape                                                                                               |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `github-release` | `asset-names-by-artifact-id: { <artifact-id>: <string> }`; `asset-labels-by-artifact-id: { <artifact-id>: <string> }` |
+| `npm`            | `package-name?: <string>`                                                                                             |
+| `nuget`, `pypi`  | `final-distribution-filenames-by-artifact-id: { <artifact-id>: <string> }`                                            |
+| `rubygems`       | `{}`                                                                                                                  |
 
 For GitHub Release, descriptor-side `projection.asset-labels` keys are resolved
 from descriptor-local `artifact.id` handles into plan artifact IDs before the
-plan is serialized. Release-state remains outside `projection` and belongs only
-in `desired-publish-state`.
+plan is serialized. The planner must also serialize
+`projection.asset-names-by-artifact-id` with exactly one target-side asset
+basename for every `artifact-id` in the node's full `artifact-ids` membership.
+Those names are planner-owned remote-member matching keys and live upload names;
+they are not bundle paths, executor output paths, or replacements for
+`artifact-id`. Release-state remains outside `projection` and belongs only in
+`desired-publish-state`.
+
+Current-scope GitHub Release asset-name derivation is closed and descriptor-
+independent:
+
+- package artifacts use the ecosystem package basename that the planner can
+  compute for the selected project and resolved version:
+    - `nuget` and `snupkg` use the same NuGet filename formulas as the NuGet
+      projection;
+    - `wheel` and `sdist` use the same planner-time PyPI filename computation
+      as the PyPI projection;
+    - `npm-package` uses the npm pack tarball basename for the resolved npm
+      package name and resolved version;
+    - `rubygem` uses `<gem-name>-<version>.gem` after RubyGems name and version
+      resolution.
+- `binary/executable` uses
+  `<project-id>-<resolved-version>-<variant-token>` for non-Windows variants and
+  `<project-id>-<resolved-version>-<variant-token>.exe` for Windows variants.
+- `installer/inno-setup` uses
+  `<project-id>-<resolved-version>-<variant-token>-setup.exe`.
+
+`variant-token` is the hyphen-joined, lexicographically key-sorted
+`dimensions` values for the owning variant; an empty dimensions map serializes
+as `default`. The planner must reject a GitHub Release publish node if the
+derived asset names are not unique within that node.
 
 For npm, `projection.package-name` remains descriptor-owned override data only.
 The planner must serialize that key only when the selected descriptor target
@@ -461,6 +493,7 @@ inventing its own overwrite policy from raw inputs. `publish-mode:
 replace-authoritative` means the executor must converge a same-tag GitHub
 Release node to the planner-owned full official publish intent, including
 `desired-publish-state.release-state`, `artifact-ids`, and
+`projection.asset-names-by-artifact-id` plus
 `projection.asset-labels-by-artifact-id`, rather than treating promotion as a
 state-only flip or additive merge.
 `publish-disposition: skip-satisfied` means planner-time validation already
@@ -519,10 +552,11 @@ For GitHub Release, `exact-satisfied` requires all of the following for the
 same `resolved-publish-identity.release-tag`:
 
 - remote release state exactly equals `desired-publish-state.release-state`;
-- the remote release contains exactly the planned asset set implied by
-  `artifact-ids`;
-- each required asset carries exactly the planned
-  `projection.asset-labels-by-artifact-id` label;
+- the remote release contains exactly the planned asset names from
+  `projection.asset-names-by-artifact-id`;
+- each required asset name carries the planned label state from
+  `projection.asset-labels-by-artifact-id`, where a missing map entry means no
+  planned label;
 - no extra remote assets remain on that release object.
 
 For current-scope same-tag GitHub Release observations that are not
@@ -732,13 +766,14 @@ Canonical ID generation rules:
   `resolved-publish-identity`, an npm publish node with no descriptor-side
   package-name override hashes with `projection: {}`. A manifest-derived final
   package name therefore changes `resolved-publish-identity` but does not by
-  itself create a different publish-node ID. Likewise, current-scope NuGet or
-  PyPI nodes always include the frozen filename map in `projection` and
-  therefore in the publish-node ID, including singleton nodes; that map covers
-  every `artifact-id` in the node's full `artifact-ids` membership. That
-  version-sensitive current-scope
-  NuGet/PyPI `publish-node-id` still participates in immutable proof
-  admissibility, but the admissible binding is the planner-frozen
+  itself create a different publish-node ID. Current-scope GitHub Release nodes
+  always include the frozen asset-name map in `projection`, and current-scope
+  NuGet or PyPI nodes always include the frozen filename map in `projection`,
+  including singleton nodes; each map covers every `artifact-id` in the node's
+  full `artifact-ids` membership. Those version-sensitive current-scope
+  GitHub Release, NuGet, and PyPI `publish-node-id` values still participate in
+  proof and rerun seams, but the immutable-package admissible binding is the
+  planner-frozen
   (`publish-node-id`, `artifact-id`,
   `resolved-publish-identity.package-name`,
   `resolved-publish-identity.version`) member binding; `envelope.plan-id`
