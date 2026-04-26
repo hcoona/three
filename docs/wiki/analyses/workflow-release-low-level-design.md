@@ -35,10 +35,13 @@ these existing contracts as authoritative:
 | Area                      | Low-level decision                                                                                                                                                    |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Workflow files            | Use stable checked-in workflow filenames because OIDC trusted-publisher policies match workflow identity.                                                             |
+| Entry authorization       | Explicitly check `buddy` as `write+` and `official` as `maintain+` before planning; do not enable duplicate-run auto-cancellation.                                    |
 | Planner host              | Expose the planner through a repo-owned CLI contract; the implementation language remains implementation-owned.                                                       |
 | Request and receipt files | Serialize all cross-job machine data as UTF-8 JSON with LF line endings and stable `api-version` plus `kind`.                                                         |
 | Dry-run builds            | Dry-run does not build by default. A separate `validation-build` input may run build units, but its receipts are validation-only and inadmissible as immutable proof. |
 | Build proof lookup        | Publish one small proof artifact per immutable-proof member binding so future planner runs can query by exact artifact name.                                          |
+| Tag orchestration         | Create lightweight release tags and verify existing tags by peeling annotated tags to the selected commit.                                                            |
+| External setup            | Require the `release` environment and registry trusted-publisher policies to target the stable publish workflow and environment.                                      |
 | Diagnostics               | Use a small registered planner-code vocabulary plus a registration rule for new codes.                                                                                |
 | Registry adapters         | Keep remote observation in planner adapters, live mutation in publish executors, and package metadata conformance in publish executors before upload.                 |
 | Acceptance                | Maintain a trace table from each acceptance scenario to descriptors, plans, receipts, registry evidence, and workflow conclusions.                                    |
@@ -99,6 +102,35 @@ If a pre-planner input rule rejects the run after workflow input normalization
 has begun, the control plane must write `planner-diagnostics.json` using the same
 `planner-diagnostic` contract and registered `REQ_*` code vocabulary used by
 planner-hosted request validation. It must not emit a partial plan.
+
+## Entry Authorization and Duplicate-Run Concurrency
+
+`authorize-entry` is a control-plane gate and runs before planner execution for
+both profiles.
+
+Current-scope authorization policy:
+
+| Profile    | Required triggering-actor repository permission | Approval behavior                                        |
+| ---------- | ----------------------------------------------- | -------------------------------------------------------- |
+| `buddy`    | `write` or higher                               | no extra approval                                        |
+| `official` | `maintain` or higher                            | protected `release` environment on live side-effect jobs |
+
+The implementation must perform the permission check explicitly through the
+GitHub API rather than relying only on the workflow dispatch UI. If the
+permission check cannot resolve the actor's effective repository permission, or
+if the resolved permission is below the selected profile's threshold, the run
+fails closed before planning. When a machine-readable diagnostic is emitted for
+that failure, it uses the planner-diagnostic file contract with
+`REQ_ACTOR_UNAUTHORIZED`.
+
+Current scope does not adopt native duplicate-run auto-cancellation. Entry
+workflows and the shared orchestration workflow must not configure
+`cancel-in-progress: true` for release runs. If the implementation needs a
+GitHub Actions concurrency key to serialize same-commit release work, it must use
+a key derived from the selected entry workflow plus resolved `commit-sha` and
+must set `cancel-in-progress: false`. Cancellation therefore remains manual
+operator cancellation or ordinary platform cancellation, not a repo-defined
+supersession protocol.
 
 ## Orchestration Job Realization
 
@@ -194,6 +226,7 @@ vocabulary. Current scope should start with this minimum code registry:
 | `IMMUTABLE_PARTIAL_UNSUPPORTED` | `classification` | `publish-node` | Same-identity immutable remote state was a proved partial subset, which current scope fails closed. |
 | `REMOTE_CONFLICTING`            | `classification` | `publish-node` | Same-identity remote state conflicts with the frozen publish intent.                                |
 | `OFFICIAL_FROZEN_VERSION`       | `classification` | `project`      | A `buddy FORCE` request targeted a project/version already frozen by official GitHub Release.       |
+| `REQ_ACTOR_UNAUTHORIZED`        | `validation`     | `request`      | The triggering actor did not have the required repository permission for the selected profile.      |
 | `PLAN_INTERNAL_INVARIANT`       | `validation`     | `request`      | Planner detected an impossible internal state after validation should have prevented it.            |
 
 New planner diagnostic codes may be added by implementation, but every new code
@@ -228,6 +261,62 @@ Every JSON file must use:
 - deterministic object key ordering where produced by repo-owned tooling;
 - top-level `api-version` and `kind` for every contract object;
 - no secrets, tokens, API keys, or raw OIDC tokens.
+
+The cross-job JSON contracts are closed at the top level unless the defining
+section names an extensibility field. Implementations must not add arbitrary
+root-level fields that downstream jobs or tests could accidentally start
+depending on. Current-scope extensibility fields are:
+
+| Object family            | Extensibility field          | Rule                                                                                                     |
+| ------------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Planner diagnostics      | `details`                    | Adapter-specific machine context belongs under `details`.                                                |
+| Publish and skip results | `evidence`                   | Small family-specific receipt evidence belongs under `evidence`.                                         |
+| Immutable proof wrapper  | additional provenance fields | Extra control-plane provenance may be added only if proof lookup still applies the minimum checks below. |
+
+`release-report.json` is the control-plane-authored final report data consumed by
+`render-summary`. Its minimum shape is:
+
+```json
+{
+    "api-version": "three.release.report/v1alpha1",
+    "kind": "release-report",
+    "run": {
+        "repository": "hcoona/three",
+        "workflow": "...",
+        "run-id": 123,
+        "run-attempt": 1,
+        "head-sha": "...",
+        "profile": "buddy",
+        "dry-run": false,
+        "validation-build": false,
+        "conclusion": "success"
+    },
+    "plan": {
+        "plan-id": "...",
+        "selected-project-ids": []
+    },
+    "artifacts": {
+        "plan-artifact-name": "...",
+        "planner-diagnostics-artifact-name": null,
+        "build-result-artifact-names": [],
+        "publish-result-artifact-names": [],
+        "skip-result-artifact-names": []
+    },
+    "counts": {
+        "selected-projects": 0,
+        "active-variants": 0,
+        "active-publish-nodes": 0,
+        "published-nodes": 0,
+        "skipped-publish-nodes": 0
+    }
+}
+```
+
+For planner failure before plan emission, `plan.plan-id`,
+`plan.selected-project-ids`, and `artifacts.plan-artifact-name` are `null`, while
+`artifacts.planner-diagnostics-artifact-name` identifies the diagnostics
+artifact when one was produced. `run.conclusion` uses GitHub job conclusion
+spelling such as `success`, `failure`, or `cancelled`.
 
 ## Artifact Naming and Retention
 
@@ -265,6 +354,19 @@ Current-scope artifact names:
     "version": "..."
 }
 ```
+
+For this hash input, canonical JSON means the exact UTF-8 byte sequence produced
+with this member order, double-quoted JSON strings, colon separators with no
+spaces, comma separators with no spaces, and no trailing newline:
+
+```text
+{"publish-node-id":"...","artifact-id":"...","package-name":"...","version":"..."}
+```
+
+The values are copied from the current frozen plan after the planner has applied
+the target family's package-name and version canonicalization rules. Implementers
+must not use manifest spelling, destination spelling, or executor-discovered
+metadata as `binding-json` input.
 
 The immutable proof artifact must include `immutable-proof.json`, and that file
 must repeat the full binding fields. The repeated fields are required so a hash
@@ -520,6 +622,23 @@ environment, so the job that obtains the OIDC token is also the job constrained
 by the registry-side environment policy. Planner-time remote observation remains
 unable to access approval-gated secrets or OIDC publish jobs.
 
+Before live official publication is enabled, release infrastructure setup must
+include this checklist:
+
+| Surface                         | Required configuration                                                                                                                                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, and native admin bypass left to repository policy.                                                               |
+| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                               |
+| PyPI trusted publishing         | Project owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                               |
+| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release` where the package supports trusted publishing. |
+| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                   |
+| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                    |
+
+Missing trusted-publisher configuration is a live publish failure surfaced by the
+matching publish executor or credential acquisition step. The planner must not
+probe those approval-gated trusted-publishing credentials during remote
+observation.
+
 No-side-effect runs skip this environment gate entirely:
 
 - dry-run or validation-only;
@@ -535,10 +654,16 @@ Implementation sequence:
 1. Read all active GitHub Release publish nodes from the frozen plan.
 2. Compute the distinct required `release-tag` set.
 3. Query every existing tag in the set before creating any missing tag.
-4. If any existing tag points away from the selected `commit-sha`, fail without
+4. If any existing tag does not peel to the selected `commit-sha`, fail without
    creating tags.
 5. After the full precheck passes, create every missing tag at the selected
    commit.
+
+Newly created release tags are lightweight tags that point directly at the
+selected commit. Existing annotated tags are accepted only when peeling the tag
+object resolves to the selected commit. The job must never retarget an existing
+tag and must never treat a tag object that points elsewhere as satisfying the
+selected commit requirement.
 
 The job must not run when dry-run is true or when the active publish set contains
 no GitHub Release publication.
@@ -548,21 +673,21 @@ no GitHub Release publication.
 Implementation should maintain a trace table in tests or CI reports with this
 minimum shape:
 
-| Scenario                               | Required evidence                                                                                                                          |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| C# library package release             | Descriptor, plan snapshot, Windows build receipt, NuGet or GitHub Release publish or skip receipt.                                         |
-| C# app `dotnet publish` binary         | Descriptor, plan snapshot, Windows build receipt for binary artifact, GitHub Release evidence.                                             |
-| C# app Inno installer                  | Descriptor, plan snapshot, Windows build receipt proving installer produced from binary artifact, GitHub Release evidence.                 |
-| Python package including `nbgv-python` | Descriptor with special version authority, plan snapshot with frozen version, build metadata conformance, PyPI or GitHub Release evidence. |
-| Node package                           | Descriptor, plan snapshot, npm pack receipt, npmjs or GitHub Packages evidence.                                                            |
-| Ruby gem                               | Descriptor, plan snapshot, gem build receipt, RubyGems.org or GitHub Packages evidence.                                                    |
-| Multi-project dispatch                 | One run report showing normalized selected projects and multiple project-scoped publish nodes.                                             |
-| Dry-run                                | Run report proving no tags, approval, or publish jobs ran.                                                                                 |
-| Validation build                       | Dry-run report plus validation-only build receipts excluded from immutable proof lookup.                                                   |
-| Rerun skip                             | Planner diagnostics or plan snapshot proving `skip-satisfied` and synthetic skip receipt.                                                  |
-| Immutable partial replay               | Planner diagnostic proving fail-closed behavior for a same-identity partial case.                                                          |
-| Cancellation                           | GitHub cancelled conclusion plus report showing already completed external side effects only.                                              |
-| Approval boundary                      | `buddy` no-approval run, `official` required-review run, self-review prevention, and admin bypass behavior when enabled.                   |
+| Scenario                               | Fixture anchor                                                                                | Required evidence                                                                                                                                                                    |
+| -------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C# library package release             | `src/public/lib/Hjg.Pngcs/`                                                                   | Descriptor, plan snapshot, Windows build receipt, NuGet or GitHub Release publish or skip receipt.                                                                                   |
+| C# app `dotnet publish` binary         | `src/private/app/qidian-novel-downloader/` or `src/private/app/vscode-copilot-telegram-hook/` | Descriptor, plan snapshot, Windows build receipt for binary artifact, GitHub Release evidence.                                                                                       |
+| C# app Inno installer                  | `src/public/app/ImageOcclusionEditor/`                                                        | Descriptor, plan snapshot, Windows build receipt proving installer produced from binary artifact, GitHub Release evidence.                                                           |
+| Python package including `nbgv-python` | `src/public/lib/nbgv-python/`                                                                 | Descriptor with special version authority, plan snapshot with frozen version, build metadata conformance, PyPI or GitHub Release evidence.                                           |
+| Node package                           | `src/public/lib/hexo-renderer-asciidoc/`                                                      | Descriptor, plan snapshot, npm pack receipt, npmjs or GitHub Packages evidence.                                                                                                      |
+| Ruby gem                               | `src/public/lib/asciidoctor-latexmath/`                                                       | Descriptor, plan snapshot, gem build receipt, RubyGems.org or GitHub Packages evidence.                                                                                              |
+| Multi-project dispatch                 | Any two fixture anchors above                                                                 | One run report showing normalized selected projects and multiple project-scoped publish nodes.                                                                                       |
+| Dry-run                                | Any fixture anchor above                                                                      | Run report proving no tags, approval, or publish jobs ran.                                                                                                                           |
+| Validation build                       | `src/public/lib/nbgv-python/` plus at least one package fixture                               | Dry-run report plus validation-only build receipts excluded from immutable proof lookup.                                                                                             |
+| Rerun skip                             | Any GitHub Release fixture or immutable package fixture with prior admissible proof           | Planner diagnostics or plan snapshot proving `skip-satisfied` and synthetic skip receipt.                                                                                            |
+| Immutable partial replay               | NuGet or PyPI multi-member fixture, real or mocked at adapter boundary                        | Planner diagnostic proving fail-closed behavior for a same-identity partial case.                                                                                                    |
+| Cancellation                           | Workflow-level integration fixture                                                            | GitHub cancelled conclusion plus report showing already completed external side effects only.                                                                                        |
+| Approval boundary                      | Workflow-level integration fixture                                                            | `buddy` explicit `write+` authorization with no approval, `official` `maintain+` authorization, required-review run, self-review prevention, and admin bypass behavior when enabled. |
 
 The trace table may live in test fixtures or generated CI output. It does not
 need to become a new operator-facing release record.
