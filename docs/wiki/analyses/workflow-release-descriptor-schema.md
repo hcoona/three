@@ -945,15 +945,10 @@ variants:
           os: windows
           rid: win-x64
       artifacts:
-          - id: app-binary
-            role: primary-binary
-            kind-family: binary
-            concrete-kind: executable
           - id: installer
             role: installer
             kind-family: installer
             concrete-kind: inno-setup
-            produced-from: [app-binary]
 
 profiles:
     buddy:

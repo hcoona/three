@@ -174,14 +174,14 @@ substitute for the resolved-SHA key required above.
 The shared orchestration workflow should implement the middle-layer job sequence
 with these concrete data handoffs:
 
-| Job               | Required inputs                                                                                                                         | Required outputs                                                        |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `authorize-entry` | GitHub event context, selected profile                                                                                                  | Authorization conclusion and normalized run metadata.                   |
-| `plan`            | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan and `execution-sets.json` artifacts, or diagnostics.        |
-| `build`           | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts. |
-| `ensure-tag`      | Frozen plan plus selected and active GitHub Release publish nodes                                                                       | `tag-result.json` tag verification or creation evidence.                |
-| `publish`         | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts                                                          | `publish-result` artifacts.                                             |
-| `report`          | Plan, diagnostics, tag results, build results, skip results, publish results, job conclusions                                           | Final operator summary.                                                 |
+| Job               | Required inputs                                                                                                                         | Required outputs                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `authorize-entry` | GitHub event context, selected profile                                                                                                  | Authorization conclusion and normalized run metadata.                                    |
+| `plan`            | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics. |
+| `build`           | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts.                  |
+| `ensure-tag`      | Frozen plan plus selected and active GitHub Release publish nodes                                                                       | `tag-result.json` tag verification or creation evidence.                                 |
+| `publish`         | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts                                                          | `publish-result` artifacts.                                                              |
+| `report`          | Plan, diagnostics, tag results, build results, skip results, publish results, job conclusions                                           | Final operator summary.                                                                  |
 
 In current-scope first delivery, execution-set derivation is an implementation
 detail of the `plan` job, not a separate reportable workflow job. This keeps the
@@ -226,8 +226,9 @@ The selector fields are derived as follows:
    `publish-intent-node-ids` only when either the run is live or
    `validation-build` is true. Ordinary dry-runs therefore serialize `[]`.
 4. `skip-satisfied-publish-node-ids` contains every selected publish node whose
-   frozen `publish-disposition` is `skip-satisfied`; the control plane uses this
-   set to emit synthetic skip receipts.
+   frozen `publish-disposition` is `skip-satisfied`; the `plan` job uses this set
+   to emit synthetic skip receipts immediately after publishing
+   `execution-sets.json` and before any build, tag, or publish fan-out starts.
 5. `selected-github-release-publish-node-ids` is the subset of all selected
    publish nodes whose target family is `github-release`, including
    `skip-satisfied` nodes.
@@ -336,6 +337,30 @@ vocabulary. Current scope should start with this minimum code registry:
 New planner diagnostic codes may be added by implementation, but every new code
 must be registered in this page or in a successor registry before tests depend
 on it. Free-form adapter messages belong in `details`, not in the `code` field.
+
+`planner-diagnostic` fields are closed:
+
+| Field                         | Required rule                                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `api-version`                 | Always required; value is `three.release.planner-diagnostic/v1alpha1`.                                    |
+| `kind`                        | Always required; value is `planner-diagnostic`.                                                           |
+| `code`                        | Always required; one registered diagnostic code.                                                          |
+| `message`                     | Always required; concise human-readable text.                                                             |
+| `phase`                       | Always required; one current-scope phase value.                                                           |
+| `scope-kind`                  | Always required; `request`, `project`, or `publish-node`.                                                 |
+| `project-id`                  | Required when `scope-kind` is `project` or `publish-node`; omitted otherwise.                             |
+| `publish-node-id`             | Required when `scope-kind` is `publish-node` and a plan publish node was materialized; omitted otherwise. |
+| `target-instance-snapshot-id` | Required when one target instance was identified for the failing path; omitted otherwise.                 |
+| `resolved-publish-identity`   | Required when external publish identity was resolved for the failing path; omitted otherwise.             |
+| `blocking`                    | Always required; current-scope diagnostics that abort plan emission use `true`.                           |
+| `details`                     | Always required; empty object when there is no extra machine context.                                     |
+
+Conditional fields are omitted when not applicable; they are not serialized as
+`null`. For `REQ_EXTERNAL_TARGET_DISABLED`, no plan artifact is published, so
+`publish-node-id` may be omitted if the implementation has not assigned the
+opaque plan ID before the readiness gate, but `project-id`,
+`target-instance-snapshot-id`, `resolved-publish-identity`, and the required
+enablement token must be present through the top-level fields and `details`.
 
 `planner-diagnostics.json` is not a raw array, NDJSON stream, or rendered log.
 It is one closed container object:
@@ -771,10 +796,11 @@ separate concrete artifact kind or successor descriptor contract rather than
 stretching `binary/executable`.
 
 `qidian-novel-downloader` publishes standalone `binary/executable` artifacts in
-first delivery. `image-occlusion-editor` keeps its WinUI publish output as the
-build-side `app-binary` artifact that the Inno Setup installer is produced from,
-but its first-delivery GitHub Release target publishes only the installer because
-the WinUI publish directory is not a standalone single-file executable artifact.
+first delivery. `image-occlusion-editor` keeps its WinUI publish output as an
+executor-internal input to the Inno Setup packaging step, not as a descriptor
+artifact, because the WinUI publish directory is not a standalone single-file
+executable artifact. Its first-delivery GitHub Release target publishes only the
+installer.
 
 Executors must materialize every requested `artifact-id` exactly once in the
 `build-result`. A variant bundle may contain incidental files, but only files
@@ -1114,7 +1140,7 @@ shapes without turning first implementation into bulk descriptor migration.
 | -------------------------------- | ------------------------- | ------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | C# packable library              | `hjg-pngcs`               | `src/public/lib/Hjg.Pngcs/`                | `Hjg.Pngcs.csproj`                                             | Windows `dotnet pack`, `.nupkg`, `.snupkg`, GitHub Release assets, and GitHub Packages NuGet for `.nupkg`; NuGet.org and GitHub Packages `.snupkg` publication are deferred until `.snupkg` observation is proven. |
 | C# private app binary            | `qidian-novel-downloader` | `src/private/app/qidian-novel-downloader/` | `QidianNovelDownloader.csproj`                                 | Nonpackable app release, `dotnet publish` binary artifact, private-app first-delivery scope.                                                                                                                       |
-| C# public app installer          | `image-occlusion-editor`  | `src/public/app/ImageOcclusionEditor/`     | `ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj` | Build-side WinUI binary output plus `installer/installer/inno-setup` produced from that binary output; first-delivery GitHub Release publication includes the installer artifact only.                             |
+| C# public app installer          | `image-occlusion-editor`  | `src/public/app/ImageOcclusionEditor/`     | `ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj` | Executor-internal WinUI publish output plus `installer/installer/inno-setup` produced from that output; first-delivery GitHub Release publication includes the installer artifact only.                            |
 | Python special version authority | `nbgv-python`             | `src/public/lib/nbgv-python/`              | `pyproject.toml`                                               | `nbgv-python-pyproject-version` exception, Hatchling wheel plus optional sdist, PyPI/GitHub Release publication shape.                                                                                             |
 | Python normal NBGV/Hatch package | `hcoona-release-smoke`    | `src/public/lib/hcoona-release-smoke/`     | `pyproject.toml`                                               | Normal Python build-system NBGV integration through Hatchling, separate from the `nbgv-python` exception path.                                                                                                     |
 | Node npm package                 | `hexo-renderer-asciidoc`  | `src/public/lib/hexo-renderer-asciidoc/`   | `package.json`                                                 | pnpm/npm packaging, npmjs and GitHub Packages target shapes, package-name projection where needed.                                                                                                                 |
