@@ -141,6 +141,9 @@ The stable reusable boundaries are therefore:
     - for current-scope `official`, each live publish matrix job references the
       protected GitHub `release` environment before obtaining publish
       credentials or an OIDC trusted-publishing token;
+    - must not schedule a live PyPI publish node through the reusable
+      `publish-node` unit in first delivery, because PyPI Trusted Publishing
+      cannot use a reusable workflow as the configured publisher workflow;
     - emits one publish receipt per publish node.
 6. `report` job
     - aggregates plan metadata, build receipts, publish receipts, synthetic skip
@@ -457,6 +460,10 @@ The current-scope conformance contract is:
 If the publish executor cannot read the required metadata, if the metadata is
 missing, or if the family-specific equivalence check cannot be completed
 unambiguously, the node must fail closed before live upload.
+In first delivery, the PyPI row is a conformance contract for descriptor
+validation, planning, build receipts, GitHub Release evidence, and the future
+non-reusable PyPI publishing path; reusable `publish-node` jobs must not request
+PyPI OIDC credentials or perform live PyPI uploads.
 When the publish node also contains `publish-mode: overwrite-mutable` or
 `publish-mode: replace-authoritative`, the executor must honor that frozen mode;
 it must not infer overwrite or replacement behavior by re-reading raw dispatch
