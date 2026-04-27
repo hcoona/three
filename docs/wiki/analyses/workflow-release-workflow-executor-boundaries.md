@@ -12,9 +12,9 @@ limits on top of `three.release.plan/v1alpha1`.
   workflows.
 - Both entry workflows call one shared reusable orchestration workflow with the
   selected profile and the raw dispatch envelope.
-- In current scope, manual dispatch selects a branch or tag ref; the control
-  plane resolves it once to `commit-sha` at run start and later jobs stay pinned
-  to that exact commit.
+- In current scope, manual dispatch selects a trusted branch or tag ref; the
+  control plane resolves it once to `commit-sha` at run start and later jobs stay
+  pinned to that exact commit.
 - The shared orchestration workflow normalizes that raw envelope into the
   authoritative planner-facing request for current scope, including
   `request-flags.force` for `buddy FORCE`.
@@ -234,9 +234,9 @@ resulting plan serializes normalized request flags in
 `envelope.plan-id`.
 
 Current scope does not add an arbitrary-SHA manual selector to
-`workflow_dispatch`. Manual entry selects a branch or tag ref in the GitHub UI,
-and the control plane resolves `commit-sha` from that chosen ref once at run
-start.
+`workflow_dispatch`. Manual entry selects a trusted branch or tag ref in the
+GitHub UI, and the control plane resolves `commit-sha` from that chosen ref once
+at run start.
 
 ### Active Build and Publish Set Derivation
 

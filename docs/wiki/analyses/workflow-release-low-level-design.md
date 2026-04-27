@@ -92,6 +92,16 @@ The selected commit is not a text input. The operator selects the workflow ref i
 the GitHub UI, and the control plane resolves that ref once to the exact
 `commit-sha` at run start.
 
+In current scope, the workflow source ref and the release source ref are the same
+operator-selected GitHub ref. Because external trusted-publisher policies match
+stable workflow identity and environment rather than reviewed workflow contents,
+release workflows must be dispatched only from trusted refs: the default branch,
+or a branch or tag protected by repository rules and allowed by the `release`
+environment deployment policy. Arbitrary unprotected branch dispatch is out of
+scope for live release workflows. Supporting a trusted default-branch dispatcher
+that releases a separate arbitrary source ref would be a successor workflow-entry
+design, not an implementation detail.
+
 The entry workflow must resolve the selected ref before invoking shared
 orchestration. That resolution step peels an annotated tag, if selected, to the
 commit that all later planning, build, tag, and publish work will use, then
@@ -136,6 +146,11 @@ Authorization failures must write
 `planner-diagnostics.json` using the planner-diagnostic file contract with
 `REQ_ACTOR_UNAUTHORIZED`, must not emit a partial plan, and must still be
 available to the final report path whenever GitHub Actions schedules that path.
+The same pre-planner gate must verify that the selected workflow ref is a trusted
+ref under the rule above. If the selected ref is not trusted or its protection
+status cannot be determined, the run fails closed with
+`REQ_UNTRUSTED_WORKFLOW_REF` before planning and before any write token, OIDC
+token, or protected environment can be used.
 
 Current scope does not adopt native duplicate-run auto-cancellation. Entry
 workflows and the shared orchestration workflow must not configure
@@ -306,6 +321,7 @@ vocabulary. Current scope should start with this minimum code registry:
 | `REMOTE_CONFLICTING`            | `classification` | `publish-node` | Same-identity remote state conflicts with the frozen publish intent.                                 |
 | `OFFICIAL_FROZEN_VERSION`       | `classification` | `project`      | A `buddy FORCE` request targeted a project/version already frozen by official GitHub Release.        |
 | `REQ_ACTOR_UNAUTHORIZED`        | `validation`     | `request`      | The triggering actor did not have the required repository permission for the selected profile.       |
+| `REQ_UNTRUSTED_WORKFLOW_REF`    | `validation`     | `request`      | The selected workflow ref was not a trusted protected release ref for current-scope release runs.    |
 | `REQ_EXTERNAL_TARGET_DISABLED`  | `validation`     | `publish-node` | A selected live official external OIDC registry target was not present in the live-enable allowlist. |
 | `PLAN_INTERNAL_INVARIANT`       | `validation`     | `request`      | Planner detected an impossible internal state after validation should have prevented it.             |
 
@@ -511,6 +527,18 @@ Current scope defines no root-level extension field for `release-report.json`.
 New root-level report fields require a successor contract update before
 workflows, renderers, or tests depend on them.
 
+Artifact-name nullability is closed:
+
+| Field                                         | Nullability rule                                                                                     |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `artifacts.plan-artifact-name`                | `null` whenever no plan artifact was published; otherwise the frozen plan artifact name.             |
+| `artifacts.planner-diagnostics-artifact-name` | `null` only when no diagnostics artifact exists; otherwise the diagnostics artifact name.            |
+| `artifacts.execution-sets-artifact-name`      | `null` whenever no execution-set artifact was published; otherwise the execution-set artifact name.  |
+| `artifacts.tag-result-artifact-name`          | `null` when `ensure-tag` did not emit positive tag evidence; otherwise the tag-result artifact name. |
+| `artifacts.build-result-artifact-names`       | Empty array when no positive build-result artifacts exist; otherwise sorted artifact names.          |
+| `artifacts.publish-result-artifact-names`     | Empty array when no positive publish-result artifacts exist; otherwise sorted artifact names.        |
+| `artifacts.skip-result-artifact-names`        | Empty array when no synthetic skip-result artifacts exist; otherwise sorted artifact names.          |
+
 Because execution-set derivation is part of the `plan` job in current-scope first
 delivery, `release-report.json.jobs` intentionally has no
 `derive-execution-sets` entry. If a later design splits execution-set derivation
@@ -542,6 +570,24 @@ evidence is therefore the native GitHub cancelled conclusion plus any positive
 receipts already persisted before cancellation. A completed positive receipt
 remains valid evidence of a side effect that happened before a later job failed
 or the workflow was cancelled.
+
+Matrix aggregation is deterministic for non-cancelled runs:
+
+1. The expected build row set is `execution-sets.active-variant-ids`; the expected
+   publish row set is `execution-sets.active-publish-node-ids`.
+2. `jobs.build.conclusion` and `jobs.publish.conclusion` are `skipped` when their
+   expected row set is empty.
+3. For a non-empty expected row set, the aggregate conclusion is `success` only
+   when every expected row has exactly one matching positive receipt and no row
+   concluded unsuccessfully.
+4. The aggregate conclusion is `cancelled` when the workflow or any expected row
+   is cancelled before the report can prove either success or failure for every
+   expected row.
+5. Otherwise the aggregate conclusion is `failure`.
+6. `failed-variant-ids` and `failed-publish-node-ids` contain every expected ID
+   whose row concluded unsuccessfully or whose positive receipt is missing in a
+   non-cancelled run, sorted lexicographically. They are empty for `success`,
+   `skipped`, and best-effort `cancelled` summaries.
 
 ## Artifact Naming and Retention
 
@@ -703,6 +749,16 @@ packable .NET library release builds are expected to produce one `.nupkg` and
 one `.snupkg` when the descriptor declares the corresponding symbol artifact;
 nonpackable .NET app release builds do not implicitly produce `.snupkg` package
 artifacts.
+
+For first-delivery `.NET` app artifacts with
+`kind-family: binary` and `concrete-kind: executable`, the contractual artifact
+shape is one receipted executable file per `artifact-id`, not a directory. The
+build executor must use project-specific `dotnet publish` settings or packaging
+steps that produce one single-file executable for each planned RID, with no
+sidecar files required to satisfy the receipted artifact. If a future .NET app
+requires a directory layout, support files, or an archive, it must model that as a
+separate concrete artifact kind or successor descriptor contract rather than
+stretching `binary/executable`.
 
 Executors must materialize every requested `artifact-id` exactly once in the
 `build-result`. A variant bundle may contain incidental files, but only files
@@ -919,14 +975,14 @@ unable to access approval-gated secrets or OIDC publish jobs.
 Before live official publication is enabled, release infrastructure setup must
 include this checklist:
 
-| Surface                         | Required configuration                                                                                                                                                                                           |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, and native admin bypass left to repository policy.                                                                      |
-| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow file name `release-publish-node.yml`, and environment `release`; required only when the deferred NuGet.org target is enabled. |
-| PyPI trusted publishing         | Project owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                      |
-| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release` where the package supports trusted publishing.        |
-| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                          |
-| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                           |
+| Surface                         | Required configuration                                                                                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, deployment branch or tag restrictions limited to trusted release refs, and native admin bypass left to repository policy. |
+| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow file name `release-publish-node.yml`, and environment `release`; required only when the deferred NuGet.org target is enabled.   |
+| PyPI trusted publishing         | Project owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                        |
+| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release` where the package supports trusted publishing.          |
+| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                            |
+| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                             |
 
 Missing trusted-publisher configuration is a live publish failure surfaced by the
 matching publish executor or credential acquisition step. The planner must not

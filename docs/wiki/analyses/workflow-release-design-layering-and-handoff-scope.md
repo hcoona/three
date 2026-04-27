@@ -53,7 +53,8 @@ The current doc set already provides:
 The final middle-layer seam decisions for current scope are now:
 
 1. **Selected commit materialization**
-    - Manual `workflow_dispatch` selects a branch or tag ref in the GitHub UI.
+    - Manual `workflow_dispatch` selects a trusted branch or tag ref in the
+      GitHub UI.
     - The control plane resolves that choice once to one exact `commit-sha` at
       run start.
     - All later planning, build, tag, and publish stages stay pinned to that
