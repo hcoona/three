@@ -63,24 +63,20 @@ Current-scope workflow files should use these stable paths:
 | `.github/workflows/release-publish-node.yml`  | `workflow_call`       | One reusable publish unit for one `publish-node-id`.                       |
 
 These filenames are intentionally part of the low-level design because NuGet.org,
-npm, and RubyGems.org trusted-publisher policies are configured against GitHub
-Actions workflow identity. The job that requests an OIDC token must stay in this
-repository. When a publish job runs through the reusable publish workflow for a
-registry that supports that topology, the trusted-publisher policy must be
-configured for the workflow file that mints the OIDC token, currently
-`release-publish-node.yml`, not merely the top-level entry workflow. GitHub's
-OIDC token includes reusable-workflow identity in `job_workflow_ref`, and
-RubyGems explicitly documents reusable-workflow configuration.
+PyPI, npm, and RubyGems.org trusted-publisher policies are configured against
+GitHub Actions workflow identity. The job that requests an OIDC token must stay
+in this repository, and the configured workflow filename must match the frozen
+`publish-topology` for the target instance. Reusable-workflow-bound targets, such
+as the current RubyGems.org topology, configure the reusable publish workflow
+that mints the OIDC token. Entry- or caller-workflow-bound targets, including
+current-scope PyPI, configure the top-level entry workflow identity instead.
 
-PyPI is the current-scope exception. PyPI Trusted Publishing does not currently
-allow a reusable workflow to be used as the configured Trusted Publisher
-workflow, so `.github/workflows/release-publish-node.yml` and
+PyPI is therefore an exception only to the reusable publish-unit topology, not to
+first-delivery live publication. `.github/workflows/release-publish-node.yml` and
 `.github/workflows/release-orchestrate.yml` must not be configured as PyPI
-Trusted Publishers. First delivery therefore does not live-enable PyPI
-publication through this reusable publish-unit topology. Live PyPI publication
-requires a later dedicated, non-reusable GitHub Actions publishing path whose
-configured PyPI workflow filename, repository, and `release` environment are
-frozen before enabling the `pypi/pypi` target.
+Trusted Publishers. A valid active official `pypi/pypi` publish node must be
+scheduled through the entry-workflow-bound path, with PyPI configured for the
+`.github/workflows/release-official.yml` workflow and the `release` environment.
 
 The implementer may refactor internal scripts and helper actions, but changing
 these workflow file names after registry policies exist is a release-infra
@@ -181,17 +177,17 @@ substitute for the resolved-SHA key required above.
 
 ## Orchestration Job Realization
 
-The shared orchestration workflow should implement the middle-layer job sequence
-with these concrete data handoffs:
+The selected entry workflow and the shared orchestration workflow together
+implement the middle-layer job sequence with these concrete data handoffs:
 
-| Job               | Required inputs                                                                                                                         | Required outputs                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `authorize-entry` | GitHub event context, selected profile                                                                                                  | Authorization conclusion and normalized run metadata.                                    |
-| `plan`            | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics. |
-| `build`           | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts.                  |
-| `ensure-tag`      | Frozen plan plus selected and active GitHub Release publish nodes                                                                       | `tag-result.json` tag verification or creation evidence.                                 |
-| `publish`         | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts                                                          | `publish-result` artifacts.                                                              |
-| `report`          | Plan, diagnostics, tag results, build results, skip results, publish results, job conclusions                                           | Final operator summary.                                                                  |
+| Job               | Physical host                                                                                           | Required inputs                                                                                                                         | Required outputs                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `authorize-entry` | top-level entry workflow or the called orchestration workflow before planning                           | GitHub event context, selected profile                                                                                                  | Authorization conclusion and normalized run metadata.                                    |
+| `plan`            | shared orchestration workflow                                                                           | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics. |
+| `build`           | shared orchestration workflow calling the reusable build unit                                           | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts.                  |
+| `ensure-tag`      | control-plane job before publish fan-out                                                                | Frozen plan plus selected and active GitHub Release publish nodes                                                                       | `tag-result.json` tag verification or creation evidence.                                 |
+| `publish`         | shared orchestration for reusable-hosted selectors; top-level entry workflow for entry-hosted selectors | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts                                                          | `publish-result` artifacts.                                                              |
+| `report`          | top-level entry workflow after any entry-hosted publish jobs complete                                   | Plan, diagnostics, tag results, build results, skip results, publish results from all topology paths, job conclusions                   | Final operator summary.                                                                  |
 
 In current-scope first delivery, execution-set derivation is an implementation
 detail of the `plan` job, not a separate reportable workflow job. This keeps the
@@ -220,6 +216,12 @@ top-level shape:
     "publish-intent-node-ids": [],
     "active-variant-ids": [],
     "active-publish-node-ids": [],
+    "active-publish-selectors": {
+        "github-token": [],
+        "external-oidc-entry-workflow": [],
+        "external-oidc-caller-workflow": [],
+        "external-oidc-reusable-workflow": []
+    },
     "skip-satisfied-publish-node-ids": [],
     "selected-github-release-publish-node-ids": [],
     "active-github-release-publish-node-ids": []
@@ -235,14 +237,20 @@ The selector fields are derived as follows:
 3. `active-variant-ids` contains the distinct variants reachable from
    `publish-intent-node-ids` only when either the run is live or
    `validation-build` is true. Ordinary dry-runs therefore serialize `[]`.
-4. `skip-satisfied-publish-node-ids` contains every selected publish node whose
+4. `active-publish-selectors` partitions every `active-publish-node-ids` member
+   by its frozen `target-instance-snapshot.capabilities.publish-topology` value.
+   Empty topology arrays are serialized as `[]`. The shared orchestration
+   workflow consumes only reusable-hosted partitions; the top-level entry
+   workflow consumes entry- or caller-workflow-bound partitions after the
+   orchestration call returns.
+5. `skip-satisfied-publish-node-ids` contains every selected publish node whose
    frozen `publish-disposition` is `skip-satisfied`; the `plan` job uses this set
    to emit synthetic skip receipts immediately after publishing
    `execution-sets.json` and before any build, tag, or publish fan-out starts.
-5. `selected-github-release-publish-node-ids` is the subset of all selected
+6. `selected-github-release-publish-node-ids` is the subset of all selected
    publish nodes whose target family is `github-release`, including
    `skip-satisfied` nodes.
-6. `active-github-release-publish-node-ids` is the subset of
+7. `active-github-release-publish-node-ids` is the subset of
    `active-publish-node-ids` whose target family is `github-release`; `ensure-tag`
    may create missing tags only for this active subset.
 
@@ -962,16 +970,13 @@ Planner adapter responsibilities:
   sdist from one variant.
 
 First delivery supports PyPI descriptor validation, planner-time filename
-computation, build conformance, and GitHub Release evidence for Python artifacts.
-It does not live-enable official PyPI publication through the reusable
-`release-publish-node.yml` publish unit. If an active official `pypi/pypi` node is
-selected before a dedicated non-reusable PyPI publishing path exists, the control
-plane must fail closed before requesting the `release` environment, before
-requesting an OIDC token, and before emitting plan or execution-set artifacts for
-that attempt, using `REQ_EXTERNAL_TOPOLOGY_BLOCKED`.
+computation, build conformance, GitHub Release evidence for Python artifacts, and
+live official PyPI publication through the entry-workflow-bound topology frozen
+in the `pypi/pypi` target-instance snapshot. A valid active official `pypi/pypi`
+node must not be routed through the reusable `release-publish-node.yml` publish
+unit or rejected as a normal topology block.
 
-Future PyPI live-publish responsibilities, after that non-reusable path is
-designed and enabled:
+PyPI live-publish responsibilities:
 
 - Use PyPI Trusted Publishing with GitHub Actions OIDC.
 - Upload only the frozen wheel and optional sdist members under the exact
@@ -1051,25 +1056,27 @@ side effects after planning and validation-build work have completed:
 - each live `publish` matrix job.
 
 There is no separate approval-only job in current scope. External trusted
-publisher policies for NuGet.org, npmjs, and RubyGems.org should be configured
-for the stable publish workflow filename and the same `release` environment, so
-the job that obtains the OIDC token is also the job constrained by the
-registry-side environment policy. PyPI is deferred because its Trusted Publisher
-configuration cannot use the current reusable publish workflow. Planner-time
-remote observation remains unable to access approval-gated secrets or OIDC
-publish jobs.
+publisher policies must be configured for the topology-specific workflow
+identity that mints each registry OIDC token and for the same `release`
+environment, so the token-requesting job is also constrained by the
+registry-side environment policy. PyPI uses the official entry workflow identity
+in first delivery, NuGet.org remains conservative entry-workflow-bound until
+registry verification proves otherwise, npmjs uses the caller/top-level workflow
+identity required by npm trusted publishing, and RubyGems.org uses its
+reusable-workflow topology. Planner-time remote observation remains unable to
+access approval-gated secrets or OIDC publish jobs.
 
 Before live official publication is enabled, release infrastructure setup must
 include this checklist:
 
-| Surface                         | Required configuration                                                                                                                                                                                                                             |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, deployment branch or tag restrictions limited to trusted release refs, and native admin bypass left to repository policy.                                 |
-| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow file name `release-publish-node.yml` with no `.github/workflows/` path, and environment `release`; required only when the deferred NuGet.org target is enabled. |
-| PyPI trusted publishing         | Not live-enabled in first delivery. Do not configure the reusable `release-publish-node.yml` or `release-orchestrate.yml` workflow as a PyPI Trusted Publisher. Future enablement requires a non-reusable workflow filename and environment.       |
-| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow file name `release-publish-node.yml` with no `.github/workflows/` path, and environment `release` where the package supports trusted publishing.                |
-| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, workflow filename `release-publish-node.yml`, same-repository workflow owner fields left blank, and environment `release`.                                                   |
-| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                                                             |
+| Surface                         | Required configuration                                                                                                                                                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, deployment branch or tag restrictions limited to trusted release refs, and native admin bypass left to repository policy.                                                                         |
+| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, conservative entry workflow file name `release-official.yml` with no `.github/workflows/` path, and environment `release`; required only when the deferred NuGet.org target is enabled.                          |
+| PyPI trusted publishing         | Project owner-side trusted publisher entry for repository `hcoona/three`, workflow file name `release-official.yml` with no `.github/workflows/` path, and environment `release` for first-delivery live `pypi/pypi` publication.                                                          |
+| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, caller/top-level workflow file name `release-official.yml` with no `.github/workflows/` path per npm trusted-publishing identity rules, and environment `release` where the package supports trusted publishing. |
+| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, reusable publish workflow filename `release-publish-node.yml`, same-repository workflow owner fields left blank, and environment `release`.                                                                          |
+| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                                                                                                     |
 
 Missing trusted-publisher configuration is a live publish failure surfaced by the
 matching publish executor or credential acquisition step. The planner must not
@@ -1118,10 +1125,11 @@ Allowlist normalization is closed:
 After the plan and execution sets are computed in memory, but before either
 artifact is published, before any protected environment is requested, and before
 any live side-effect job is scheduled, the control plane must first reject any
-active official external OIDC publish node whose registry cannot run through the
-current workflow topology. In first delivery, that topology block applies to
-`pypi/pypi` because live PyPI Trusted Publishing requires a non-reusable workflow
-identity. Such a run fails with `REQ_EXTERNAL_TOPOLOGY_BLOCKED`.
+active official external OIDC publish node whose frozen `publish-topology` cannot
+be scheduled by the current workflow topology. `REQ_EXTERNAL_TOPOLOGY_BLOCKED` is
+reserved for genuinely unsupported topology values or catalog combinations. It
+must not be emitted for a normal active official `pypi/pypi` node, because PyPI is
+supported through the entry-workflow-bound path in first delivery.
 
 For the remaining external OIDC nodes, the control plane must compute the
 required enablement token from the frozen `target-instance-snapshot-id`,
@@ -1187,8 +1195,8 @@ shapes without turning first implementation into bulk descriptor migration.
 | C# packable library              | `hjg-pngcs`               | `src/public/lib/Hjg.Pngcs/`                | `Hjg.Pngcs.csproj`                                             | Windows `dotnet pack`, `.nupkg`, `.snupkg`, GitHub Release assets, and GitHub Packages NuGet for `.nupkg`; NuGet.org and GitHub Packages `.snupkg` publication are deferred until `.snupkg` observation is proven. |
 | C# private app binary            | `qidian-novel-downloader` | `src/private/app/qidian-novel-downloader/` | `QidianNovelDownloader.csproj`                                 | Nonpackable app release, `dotnet publish` binary artifact, private-app first-delivery scope.                                                                                                                       |
 | C# public app installer          | `image-occlusion-editor`  | `src/public/app/ImageOcclusionEditor/`     | `ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj` | Executor-internal WinUI publish output plus `installer/installer/inno-setup` produced from that output; first-delivery GitHub Release publication includes the installer artifact only.                            |
-| Python special version authority | `nbgv-python`             | `src/public/lib/nbgv-python/`              | `pyproject.toml`                                               | `nbgv-python-pyproject-version` exception, Hatchling wheel plus optional sdist, GitHub Release publication, and deferred PyPI live publication shape.                                                              |
-| Python normal NBGV/Hatch package | `hcoona-release-smoke`    | `src/public/lib/hcoona-release-smoke/`     | `pyproject.toml`                                               | Normal Python build-system NBGV integration through Hatchling, separate from the `nbgv-python` exception path; live PyPI publication remains deferred with the same topology gate.                                 |
+| Python special version authority | `nbgv-python`             | `src/public/lib/nbgv-python/`              | `pyproject.toml`                                               | `nbgv-python-pyproject-version` exception, Hatchling wheel plus optional sdist, GitHub Release publication, and live PyPI publication through the entry-workflow topology.                                         |
+| Python normal NBGV/Hatch package | `hcoona-release-smoke`    | `src/public/lib/hcoona-release-smoke/`     | `pyproject.toml`                                               | Normal Python build-system NBGV integration through Hatchling, separate from the `nbgv-python` exception path; live PyPI publication uses the entry-workflow topology gate.                                        |
 | Node npm package                 | `hexo-renderer-asciidoc`  | `src/public/lib/hexo-renderer-asciidoc/`   | `package.json`                                                 | pnpm/npm packaging, GitHub Release evidence, and npmjs trusted publishing; GitHub Packages npm projection is deferred until target-specific npm package artifacts or transform receipts are designed.              |
 | Ruby gem                         | `asciidoctor-latexmath`   | `src/public/lib/asciidoctor-latexmath/`    | `asciidoctor-latexmath.gemspec`                                | RubyGems build and publication target shapes.                                                                                                                                                                      |
 
@@ -1216,10 +1224,10 @@ minimum shape:
 | GitHub Packages NuGet publication      | `src/public/lib/Hjg.Pngcs/`                                                         | Descriptor target `nuget/github-packages`, target-instance snapshot, Windows build receipt for the `.nupkg` member, `packages: write` GitHub Packages publish or skip receipt, and no live `.snupkg` package-registry side effect.                                |
 | C# app `dotnet publish` binary         | `src/private/app/qidian-novel-downloader/`                                          | Descriptor, plan snapshot, Windows build receipt for binary artifact, GitHub Release evidence.                                                                                                                                                                    |
 | C# app Inno installer                  | `src/public/app/ImageOcclusionEditor/`                                              | Descriptor, plan snapshot, Windows build receipt for the `installer` artifact, acceptance packaging evidence artifact/log proving Inno Setup consumed the executor-internal WinUI publish output, and GitHub Release evidence for the installer.                  |
-| Python package including `nbgv-python` | `src/public/lib/nbgv-python/`                                                       | Descriptor with special version authority, plan snapshot with frozen version, build metadata conformance, and GitHub Release evidence; PyPI live evidence is required only after the deferred non-reusable PyPI publisher path is explicitly enabled.             |
-| Python normal NBGV/Hatch package       | `src/public/lib/hcoona-release-smoke/`                                              | Descriptor with build-system NBGV version authority, plan snapshot with frozen version, build metadata conformance, and GitHub Release evidence; PyPI live evidence is required only after the deferred non-reusable PyPI publisher path is enabled.              |
+| Python package including `nbgv-python` | `src/public/lib/nbgv-python/`                                                       | Descriptor with special version authority, plan snapshot with frozen version, build metadata conformance, GitHub Release evidence, and PyPI live evidence when the descriptor targets `pypi/pypi`.                                                                |
+| Python normal NBGV/Hatch package       | `src/public/lib/hcoona-release-smoke/`                                              | Descriptor with build-system NBGV version authority, plan snapshot with frozen version, build metadata conformance, GitHub Release evidence, and PyPI live evidence when the descriptor targets `pypi/pypi`.                                                      |
 | Node package build and release         | `src/public/lib/hexo-renderer-asciidoc/`                                            | Descriptor, plan snapshot, npm pack receipt, and GitHub Release publish or skip receipt for the packed npm artifact.                                                                                                                                              |
-| npmjs trusted publication              | `src/public/lib/hexo-renderer-asciidoc/`                                            | Descriptor target `npm/npmjs`, target-instance snapshot, npm pack receipt, OIDC trusted-publisher setup for workflow filename `release-publish-node.yml` and environment `release`, plus npmjs publish or skip receipt.                                           |
+| npmjs trusted publication              | `src/public/lib/hexo-renderer-asciidoc/`                                            | Descriptor target `npm/npmjs`, target-instance snapshot, npm pack receipt, OIDC trusted-publisher setup for the caller/top-level workflow identity and environment `release`, plus npmjs publish or skip receipt.                                                 |
 | Ruby gem build and release             | `src/public/lib/asciidoctor-latexmath/`                                             | Descriptor, plan snapshot, gem build receipt, and GitHub Release publish or skip receipt for the `.gem` artifact.                                                                                                                                                 |
 | GitHub Packages RubyGems publication   | `src/public/lib/asciidoctor-latexmath/`                                             | Descriptor target `rubygems/github-packages`, target-instance snapshot, gem build receipt, `packages: write` GitHub Packages publish or skip receipt.                                                                                                             |
 | RubyGems.org trusted publication       | `src/public/lib/asciidoctor-latexmath/`                                             | Descriptor target `rubygems/rubygems-org`, target-instance snapshot, gem build receipt, OIDC trusted-publisher setup for workflow filename `release-publish-node.yml`, same-repository workflow owner fields, environment `release`, and publish or skip receipt. |
@@ -1232,8 +1240,8 @@ minimum shape:
 | Direct official publication            | Any GitHub Release fixture above                                                    | `official` run with no prior `buddy` evidence for the same project-scoped version, protected-environment approval evidence, `create-only` plan snapshot, tag result, and publish result.                                                                          |
 | Immutable partial replay               | NuGet or future PyPI multi-member fixture, real or mocked at adapter boundary       | Planner diagnostic proving fail-closed behavior for a same-identity partial case.                                                                                                                                                                                 |
 | Cancellation                           | Workflow-level integration fixture                                                  | GitHub cancelled conclusion plus any already persisted positive receipts; in-run report artifact is best-effort because platform cancellation may prevent the final report job from starting.                                                                     |
-| External OIDC live enablement          | npmjs, RubyGems.org, or future NuGet.org official fixture                           | Disabled-token run fails before plan artifact publication, protected-environment approval, tags, or publish jobs with `REQ_EXTERNAL_TARGET_DISABLED`; enabled-token run reaches the normal official approval and publish path.                                    |
-| PyPI reusable-topology gate            | Future `pypi/pypi` official fixture before the non-reusable publisher path exists   | Run fails before plan artifact publication, protected-environment approval, tags, OIDC token acquisition, or publish jobs with `REQ_EXTERNAL_TOPOLOGY_BLOCKED`.                                                                                                   |
+| External OIDC live enablement          | PyPI, npmjs, RubyGems.org, or future NuGet.org official fixture                     | Disabled-token run fails before plan artifact publication, protected-environment approval, tags, or publish jobs with `REQ_EXTERNAL_TARGET_DISABLED`; enabled-token run reaches the normal official approval and publish path.                                    |
+| Unsupported OIDC topology gate         | Synthetic catalog fixture with an unsupported external OIDC topology                | Run fails before plan artifact publication, protected-environment approval, tags, OIDC token acquisition, or publish jobs with `REQ_EXTERNAL_TOPOLOGY_BLOCKED`.                                                                                                   |
 | Approval boundary                      | Workflow-level integration fixture                                                  | `buddy` explicit `write+` authorization with no approval, `official` `maintain+` authorization, required-review run, self-review prevention, and admin bypass behavior when enabled.                                                                              |
 
 The trace table may live in test fixtures or generated CI output. It does not

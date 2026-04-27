@@ -10,17 +10,22 @@ limits on top of `three.release.plan/v1alpha1`.
 
 - `buddy` and `official` remain the only top-level `workflow_dispatch` entry
   workflows.
-- Both entry workflows call one shared reusable orchestration workflow with the
-  selected profile and the raw dispatch envelope.
+- Both entry workflows call the same shared orchestration contract with the
+  selected profile and the raw dispatch envelope, but the top-level entry
+  workflow remains the physical host for any publish job whose trusted-publisher
+  topology is bound to the entry or caller workflow identity.
 - In current scope, manual dispatch selects a trusted branch or tag ref; the
   control plane resolves it once to `commit-sha` at run start and later jobs stay
   pinned to that exact commit.
 - The shared orchestration workflow normalizes that raw envelope into the
   authoritative planner-facing request for current scope, including
   `request-flags.force` for `buddy FORCE`.
-- The orchestration workflow consumes one frozen `three.release.plan/v1alpha1`
-  and fans out at two granularities only: one build unit per `variant-id` and
-  one publish unit per `publish-node-id`.
+- The orchestration contract consumes one frozen `three.release.plan/v1alpha1`
+  and fans out at two logical granularities only: one build unit per
+  `variant-id` and one publish unit per `publish-node-id`. Publish units are
+  partitioned by the frozen target-instance `publish-topology` before they are
+  routed either to reusable-capable publish jobs or back to the top-level entry
+  workflow for entry/caller-bound OIDC jobs.
 - Build units emit per-variant build bundles plus machine-readable build
   receipts keyed by plan `artifact-id`.
 - Publish units emit per-publish-node publish receipts keyed by plan
@@ -62,21 +67,44 @@ remote-observation seam used to classify remote-state-dependent reruns.
 
 ### Top-Level Boundaries
 
-| Boundary                      | Kind               | Stable granularity       | Owns                                                                                                                                                                    |
-| ----------------------------- | ------------------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `buddy` entry workflow        | top-level workflow | one `buddy` run          | manual dispatch inputs, profile selection, entry permissions, and top-level concurrency wiring                                                                          |
-| `official` entry workflow     | top-level workflow | one `official` run       | manual dispatch inputs, profile selection, explicit triggering-actor `maintain+` authorization, protected-environment approval wiring, and top-level concurrency wiring |
-| shared orchestration workflow | reusable workflow  | one selected-profile run | planning, selector derivation, approval and side-effect sequencing, tag orchestration, artifact fan-out and fan-in, and final reporting                                 |
-| `build-variant` unit          | reusable workflow  | one `variant-id`         | build-request materialization, ecosystem-specific build-executor selection, runner or tool wiring, and upload of one variant bundle plus build receipt                  |
-| `publish-node` unit           | reusable workflow  | one `publish-node-id`    | publish-request materialization, family-specific publish-executor selection, download of referenced build bundles, and upload of one publish receipt                    |
+| Boundary                      | Kind                           | Stable granularity       | Owns                                                                                                                                                                                                                                                                                     |
+| ----------------------------- | ------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `buddy` entry workflow        | top-level workflow             | one `buddy` run          | manual dispatch inputs, profile selection, entry permissions, top-level concurrency wiring, physical hosting for any publish selector whose trusted-publisher topology is bound to the `buddy` entry or caller workflow identity, and final reporting                                    |
+| `official` entry workflow     | top-level workflow             | one `official` run       | manual dispatch inputs, profile selection, explicit triggering-actor `maintain+` authorization, protected-environment approval wiring, top-level concurrency wiring, physical hosting for `official` entry/caller-bound OIDC publish jobs such as live PyPI publish, and final reporting |
+| shared orchestration workflow | reusable workflow              | one selected-profile run | planning, selector derivation, reusable-safe side-effect sequencing, tag orchestration, artifact fan-out and fan-in, reusable-capable publish fan-out, and entry/caller-bound publish selector handoff                                                                                   |
+| `build-variant` unit          | reusable workflow              | one `variant-id`         | build-request materialization, ecosystem-specific build-executor selection, runner or tool wiring, and upload of one variant bundle plus build receipt                                                                                                                                   |
+| `publish-node` unit           | topology-specific publish path | one `publish-node-id`    | publish-request materialization, topology and family-specific publish-executor routing, download of referenced build bundles, and upload of one publish receipt, whether the concrete job is reusable-hosted or entry-workflow-hosted                                                    |
 
-The stable reusable boundaries are therefore:
+The stable workflow handoff boundaries are therefore:
 
 1. profile entry workflow -> shared orchestration workflow;
 2. shared orchestration workflow -> one build unit per `variant-id`;
-3. shared orchestration workflow -> one publish unit per `publish-node-id`.
+3. shared orchestration workflow -> one reusable-capable publish unit per
+   `publish-node-id`;
+4. shared orchestration workflow -> profile entry workflow handoff for
+   entry/caller-bound publish selectors, followed by one entry-hosted publish
+   unit per `publish-node-id`;
+5. profile entry workflow -> final report after both reusable-hosted and
+   entry-hosted publish receipts are available, or after the run has reached a
+   reportable failure state.
 
-### Required Job Sequence Inside the Shared Orchestration Workflow
+The fourth boundary is not a third operator-facing entry. It is a caller-side
+continuation inside the same `buddy` or `official` run, required only when the
+frozen publish topology says the job that requests the OIDC token must be hosted
+by the top-level workflow identity. For a valid active `pypi/pypi` `official`
+publish node, the live publish job must therefore be hosted by
+`.github/workflows/release-official.yml`, not by the reusable
+`release-orchestrate.yml` workflow and not by the reusable `publish-node` unit.
+
+### Required Control-Plane Job Sequence
+
+The selected top-level entry run owns the full sequence. The shared orchestration
+workflow owns only the reusable-safe portion and returns any entry/caller-bound
+publish selectors plus reusable-hosted receipt locations to its caller. The
+top-level entry workflow then schedules those returned selectors in entry-hosted
+jobs and performs final receipt aggregation after those jobs complete. Lower-layer
+YAML may split these logical steps across one or more reusable jobs, but it must
+preserve the host boundary described here.
 
 1. `authorize-entry` job
     - stays in the control plane;
@@ -107,7 +135,13 @@ The stable reusable boundaries are therefore:
       without emitting a partial plan artifact;
     - publishes the frozen `three.release.plan/v1alpha1` artifact;
     - derives the selected `variant-id` and `publish-node-id` sets for later fan-
-      out.
+      out;
+    - partitions active publish nodes by the frozen
+      `target-instance-snapshot.capabilities.publish-topology` value before
+      choosing concrete publish jobs or reusable workflows;
+    - marks entry/caller-bound OIDC publish partitions as caller-side selectors
+      to be materialized and scheduled by the top-level entry workflow rather
+      than by the called reusable orchestration workflow.
 3. `build` fan-out
     - runs exactly once per active `variant-id`;
     - produces one bundle and one build receipt per variant.
@@ -141,16 +175,29 @@ The stable reusable boundaries are therefore:
     - for current-scope `official`, each live publish matrix job references the
       protected GitHub `release` environment before obtaining publish
       credentials or an OIDC trusted-publishing token;
-    - must not schedule a live PyPI publish node through the reusable
-      `publish-node` unit in first delivery, because PyPI Trusted Publishing
-      cannot use a reusable workflow as the configured publisher workflow;
+    - schedules reusable-capable publish selectors inside the shared reusable
+      orchestration workflow;
+    - returns entry/caller-bound OIDC publish selectors to the top-level entry
+      workflow so those publish jobs are physically hosted by the workflow
+      identity configured in the external registry;
+    - must not schedule a live PyPI publish node through either the reusable
+      `publish-node` unit or the reusable `release-orchestrate.yml` workflow in
+      first delivery, because PyPI Trusted Publishing is configured against the
+      top-level publisher workflow identity;
     - emits one publish receipt per publish node.
 6. `report` job
-    - aggregates plan metadata, build receipts, publish receipts, synthetic skip
-      receipts, and GitHub job conclusions into the final operator-facing summary.
+    - is scheduled by the top-level entry workflow after the shared orchestration
+      call and any entry-hosted publish jobs have reached terminal states;
+    - aggregates plan metadata, build receipts, publish receipts from every
+      topology path, synthetic skip receipts, and GitHub job conclusions into the
+      final operator-facing summary.
 
 `ensure-tag` and `report` are ordinary control-plane jobs, not executor
-boundaries. There is no separate approval-only job in current scope; approval is
+boundaries. If a lower layer factors report rendering into a reusable workflow,
+that call must happen after entry-hosted publishes complete; the first shared
+orchestration invocation must not try to aggregate receipts that can only be
+created later by caller-side jobs. There is no separate approval-only job in
+current scope; approval is
 realized through the protected `release` environment attached to the live jobs
 that can perform official external side effects. Dry-run or validation-only
 runs, zero-target runs, and all-`skip-satisfied` runs do not attach this
@@ -254,8 +301,25 @@ plan:
 - Selected publish nodes whose `publish-disposition` is
   `skip-satisfied` do not invoke a publish executor and do not force a
   build. The control plane instead emits a synthetic skip receipt for reporting.
+- `active-publish-selectors` are topology partitions of active publish nodes.
+  Each selector contains the closed publish-node-id set for one frozen
+  `publish-topology` value, such as `github-token`,
+  `external-oidc-entry-workflow`, `external-oidc-caller-workflow`, or
+  `external-oidc-reusable-workflow`. Empty partitions may be omitted or
+  represented explicitly by the lower-layer execution-set file, but mixed
+  topology runs must never be scheduled by target-family guessing after this
+  derivation.
+- Each active publish selector also carries or implies its required workflow host:
+  reusable-orchestration-hosted for `github-token` and
+  `external-oidc-reusable-workflow` selectors, top-level-entry-hosted for
+  `external-oidc-entry-workflow` selectors, and caller-identity-hosted for
+  `external-oidc-caller-workflow` selectors. Selectors in the latter two classes
+  are consumed outside the called reusable orchestration workflow even though
+  their `publish-request.json` materialization, artifact inputs, and
+  `publish-result.json` receipt shape remain identical.
 
-This keeps rerun skip logic planner-owned rather than executor-owned.
+This keeps rerun skip logic planner-owned rather than executor-owned and keeps
+trusted-publisher scheduling a middle-layer control-plane contract.
 
 ### Dry-Run Boundary
 
@@ -276,12 +340,13 @@ later immutable same-identity classification on a live plan.
 
 ## What Consumes the Frozen Plan
 
-| Consumer                      | Required frozen input                                                                                                                                                                                         | Granularity rule                                      |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| shared orchestration workflow | full `release-plan` envelope and graph                                                                                                                                                                        | one per selected profile run                          |
-| one build unit                | owning `envelope.projects[project-id]` snapshot, one `graph.variants[variant-id]`, and that variant's `graph.artifacts[*]`                                                                                    | one build executor invocation per `variant-id`        |
-| one publish unit              | owning `envelope.projects[project-id]` snapshot, one `graph.publish-nodes[publish-node-id]`, its referenced `graph.target-instance-snapshots[*]`, and the referenced `graph.artifacts[*]` plus build receipts | one publish executor invocation per `publish-node-id` |
-| report job                    | full plan plus all build receipts, publish receipts, and synthetic skip receipts                                                                                                                              | one per selected profile run                          |
+| Consumer                                | Required frozen input                                                                                                                                                                                         | Granularity rule                                      |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| shared orchestration workflow           | full `release-plan` envelope and graph                                                                                                                                                                        | one per selected profile run                          |
+| top-level entry workflow publish bridge | full `release-plan`, topology-partitioned entry/caller-bound publish selectors, and build receipt or bundle references                                                                                        | one per selected profile run                          |
+| one build unit                          | owning `envelope.projects[project-id]` snapshot, one `graph.variants[variant-id]`, and that variant's `graph.artifacts[*]`                                                                                    | one build executor invocation per `variant-id`        |
+| one publish unit                        | owning `envelope.projects[project-id]` snapshot, one `graph.publish-nodes[publish-node-id]`, its referenced `graph.target-instance-snapshots[*]`, and the referenced `graph.artifacts[*]` plus build receipts | one publish executor invocation per `publish-node-id` |
+| top-level entry report job              | full plan plus all build receipts, publish receipts from every topology path, and synthetic skip receipts                                                                                                     | one per selected profile run                          |
 
 A publish unit may consume artifacts from multiple variants only when the frozen
 publish node already references them and the frozen target-instance contract
@@ -293,14 +358,19 @@ and carries exactly one wheel and zero or one sdist.
 
 ### Reusable Workflow Inputs
 
-| Boundary                      | Required input                                                                                           | Required output                           |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| orchestration -> build unit   | immutable plan artifact plus one `variant-id` selector                                                   | one variant bundle plus one build receipt |
-| orchestration -> publish unit | immutable plan artifact plus one `publish-node-id` selector and the referenced build bundles or receipts | one publish receipt                       |
+| Boundary                                       | Required input                                                                                                                                      | Required output                           |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| orchestration -> build unit                    | immutable plan artifact plus one `variant-id` selector                                                                                              | one variant bundle plus one build receipt |
+| orchestration -> reusable-hosted publish unit  | immutable plan artifact plus one reusable-capable `publish-node-id` selector and the referenced build bundles or receipts                           | one publish receipt                       |
+| orchestration -> entry workflow publish bridge | immutable plan artifact, topology-partitioned entry/caller-bound publish selectors, and the referenced build bundle or receipt artifact names       | entry workflow schedules publish units    |
+| entry workflow -> entry-hosted publish unit    | immutable plan artifact plus one entry/caller-bound `publish-node-id` selector and the referenced build bundles or receipts from the bridge handoff | one publish receipt                       |
+| entry workflow -> report job                   | immutable plan artifact, diagnostics, tag results, build receipts, skip receipts, publish receipts from all topology paths, and job conclusions     | one final operator-facing report          |
 
-The reusable workflow boundary carries selectors and immutable artifacts.
-The executor boundary inside each unit is narrower and uses a materialized
-request object.
+Reusable workflow boundaries carry selectors and immutable artifacts. Entry-
+hosted publish boundaries carry the same logical selector and artifact inputs but
+are physically scheduled by the top-level workflow file so registry OIDC claims
+name the configured publisher workflow. The executor boundary inside each unit is
+narrower and uses a materialized request object.
 
 ### Build Executor Contract
 
@@ -400,8 +470,9 @@ Bundle-internal realization details remain executor-owned.
 
 ### Publish Executor Contract
 
-Each publish unit must materialize one logical `publish-request` object for its
-executor with these exact top-level fields:
+Each publish unit, regardless of whether it is reusable-hosted or entry-hosted,
+must materialize one logical `publish-request` object for its executor with these
+exact top-level fields:
 
 | Field                                                 | Source                                                                                                    |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -460,10 +531,9 @@ The current-scope conformance contract is:
 If the publish executor cannot read the required metadata, if the metadata is
 missing, or if the family-specific equivalence check cannot be completed
 unambiguously, the node must fail closed before live upload.
-In first delivery, the PyPI row is a conformance contract for descriptor
-validation, planning, build receipts, GitHub Release evidence, and the future
-non-reusable PyPI publishing path; reusable `publish-node` jobs must not request
-PyPI OIDC credentials or perform live PyPI uploads.
+The PyPI row is a conformance contract for descriptor validation, planning,
+build receipts, GitHub Release evidence, and live publication through the
+topology path frozen in the referenced target-instance snapshot.
 When the publish node also contains `publish-mode: overwrite-mutable` or
 `publish-mode: replace-authoritative`, the executor must honor that frozen mode;
 it must not infer overwrite or replacement behavior by re-reading raw dispatch
@@ -501,8 +571,8 @@ destination only to perform that already selected publish action; it must not do
 its own preflight destination query to re-decide satisfaction, promotion,
 overwrite policy, or immutable-target same-identity handling.
 
-Each publish unit must emit one logical `publish-result` object with these exact
-top-level fields:
+Each publish unit, regardless of workflow host topology, must emit one logical
+`publish-result` object with these exact top-level fields:
 
 | Field                                                | Meaning                                                                                       |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -705,11 +775,12 @@ The following concerns are explicitly control-plane-owned:
   failures, and current scope does not allow retargeting or moving existing
   release tags;
 - **runtime wiring**: runner selection, tool installation, permissions,
-  credential injection, and environment selection stay in workflow jobs and
-  wrappers rather than inside executors; current-scope planner-time remote
-  observation uses public reads where sufficient and otherwise only least-
-  privilege `GITHUB_TOKEN` reads for GitHub-hosted surfaces, never publish
-  credentials or approval-gated environment secrets;
+  credential injection, publish-topology partitioning, entry/caller-bound publish
+  selector handoff, and environment selection stay in workflow jobs and wrappers
+  rather than inside executors; current-scope planner-time remote observation
+  uses public reads where sufficient and otherwise only least-privilege
+  `GITHUB_TOKEN` reads for GitHub-hosted surfaces, never publish credentials or
+  approval-gated environment secrets;
 - **artifact transport**: upload, download, naming, and retention of build
   bundles and receipts stay in the control plane; current-scope prior-build
   receipt lookup relies on the platform's default GitHub Actions artifact
@@ -737,7 +808,10 @@ schema:
 
 - build units select an ecosystem-specific build executor from
   `project.ecosystem`, currently .NET, Python, Node.js, or Ruby;
-- publish units select a target-family-specific publish executor from
+- publish units first select a topology-specific publish path from
+  `target-instance-snapshot.capabilities.publish-topology`, including whether the
+  concrete job is reusable-orchestration-hosted or top-level-entry-hosted, then
+  select a target-family-specific publish executor from
   `target-instance-snapshot.family`, currently `github-release`, `nuget`,
   `pypi`, `npm`, or `rubygems`.
 
@@ -777,8 +851,9 @@ Executors are allowed to:
 
 With these boundaries, the cross-layer seam is now explicit:
 
-descriptor -> frozen plan -> per-variant build request -> per-publish-node
-publish request -> aggregated control-plane report.
+descriptor -> frozen plan -> per-variant build request -> topology-partitioned
+per-publish-node publish selectors -> reusable-hosted or entry-hosted
+`publish-request` / `publish-result` -> aggregated control-plane report.
 
 Current scope now also freezes entry authorization, selected-commit pinning,
 planner-time remote-observation auth, and default-window immutable-proof reuse.
@@ -791,3 +866,4 @@ about where planning stops and execution starts.
 - [Workflow Release Architecture Model](./workflow-release-architecture-model.md)
 - [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md)
 - [Workflow Release Plan Shape](./workflow-release-plan-shape.md)
+- [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)

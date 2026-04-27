@@ -205,6 +205,7 @@ graph:
                 version-uniqueness-rule: tag
                 profile-coexistence-rule: not-applicable
                 credential-posture: github-token
+                publish-topology: github-token
         nuget/github-packages:
             family: nuget
             instance-id: github-packages
@@ -242,6 +243,7 @@ graph:
                 version-uniqueness-rule: package-name-plus-version
                 profile-coexistence-rule: requires-distinct-name
                 credential-posture: github-token
+                publish-topology: github-token
 ```
 
 ## Envelope Contents vs Graph Contents
@@ -692,7 +694,8 @@ Each target-instance snapshot contains:
 - `family`, `instance-id`, and `catalog-ref`;
 - `contract`, frozen inline rather than left as a catalog lookup;
 - `destination`, copied from the shared catalog;
-- `capabilities`, copied from the shared catalog.
+- `capabilities`, copied from the shared catalog, including
+  `publish-topology`.
 
 The normalized `contract` object uses this exact shape:
 
@@ -718,7 +721,9 @@ contract:
 This is the plan-time normalization of the Group 1 contract-compatibility table.
 Execution therefore does not need to re-read the shared catalog or the author-
 time compatibility rules to understand what one referenced target instance
-means.
+means. The copied capability block also freezes the trusted-publisher topology
+selector that the control plane uses to schedule live publish paths without
+registry-specific inference after planning.
 
 ## Plan IDs, Ownership, and References
 
@@ -815,7 +820,7 @@ The planner freezes all catalog-owned execution-relevant data into
 - target family and instance identity;
 - resolved destination contract id plus normalized compatibility structure;
 - destination locator data;
-- static capability data, including credential posture.
+- static capability data, including credential posture and publish topology.
 
 The planner does **not** freeze mutable or control-plane-owned state there,
 including:
@@ -851,6 +856,7 @@ snapshot data or raw observation payloads.
 | Planner-time family-specific desired target-side state                     | `graph.publish-nodes[publish-node-id].desired-publish-state`       | For current-scope GitHub Release nodes, the planner serializes `release-state: prerelease \| release`. No other current-scope family defines `desired-publish-state`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `targets[n].artifacts[]`                                                   | `graph.publish-nodes[publish-node-id].artifact-ids`                | Resolved from descriptor-local artifact handles to plan artifact IDs, preserving target entry order.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `targets[n].uses`                                                          | `graph.publish-nodes[publish-node-id].target-instance-snapshot-id` | Resolved from `family/instance-id` to one shared target-instance snapshot in the same plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Catalog target-instance `capabilities.publish-topology`                    | `graph.target-instance-snapshots[*].capabilities.publish-topology` | Copied from the catalog into the snapshot. The control plane partitions active publish nodes by this frozen value rather than by target family guesses or registry-specific rules after planning.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `targets[n].projection` plus planner-frozen immutable registry member keys | `graph.publish-nodes[publish-node-id].projection`                  | Copied into the family-specific plan shape, with any artifact-handle keys normalized to artifact IDs. For npm, `projection.package-name` is serialized only when the descriptor declared that override; the planner must not copy the manifest-derived fallback name into `projection`. For current-scope NuGet/PyPI nodes, the planner determines one final distribution filename per artifact before replay classification and always serializes `projection.final-distribution-filenames-by-artifact-id`; for current-scope PyPI, that filename computation is performed by invoking Hatchling during planning and freezing the authoritative result. The map covers every `artifact-id` in the node's full `artifact-ids` membership, including singleton nodes, and remains remote-member matching data only. For every artifact the executor publishes for a live node, it must upload under exactly the planner-derived final filename. |
 | Catalog target instance                                                    | `graph.target-instance-snapshots[target-instance-snapshot-id]`     | One snapshot per referenced catalog entry. `contract`, `destination`, and `capabilities` are frozen inline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
@@ -894,3 +900,4 @@ Those control-plane concerns are now defined in
 - [Workflow Release Architecture Model](./workflow-release-architecture-model.md)
 - [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md)
 - [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md)
+- [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)

@@ -198,6 +198,8 @@ The publish side separates several distinct concepts:
   `github-packages-rubygems`;
 - **destination contract** — a reusable named protocol-shaped publication type;
 - **target instance capability** — static destination-specific constraints;
+- **publish topology** — the trusted-publisher workflow identity class required
+  for live publication;
 - **target-side projection** — target-side naming, labeling, presentation, and where applicable planner-frozen family-specific matching keys.
 
 At this layer, two closely related objects must be distinguished:
@@ -283,12 +285,21 @@ The minimum capability set in the current scope is:
 - name uniqueness scope;
 - version uniqueness rule;
 - profile coexistence rule;
-- credential posture.
+- credential posture;
+- publish topology.
+
+`credential posture` answers what kind of credential or token family is used.
+`publish topology` answers which workflow identity must perform the live publish
+step: GitHub-token publication, entry-workflow OIDC, caller-workflow OIDC, or
+reusable-workflow OIDC. The planner freezes that catalog-owned selector into the
+target-instance snapshot so the control plane can partition publish execution
+without inferring registry behavior after planning.
 
 These are lightly grouped for reasoning purposes into:
 
 - identity / mutability capabilities;
-- credential / auth capabilities.
+- credential / auth capabilities;
+- trusted-publisher topology capabilities.
 
 Planner logic reads and applies these capabilities; it does not rewrite them
 per request.
@@ -640,8 +651,8 @@ Administrator bypass, when the environment still allows it, remains a native
 GitHub control-plane capability rather than a planner or executor concern.
 
 The plan expresses release intent through a normalized plan envelope and graph,
-including planner-derived per-publish-node publish versus satisfied-skip
-dispositions, any family-specific desired target-side publish state, and, for
+including target-instance-snapshot publish topology, planner-derived
+per-publish-node publish versus satisfied-skip dispositions, any family-specific desired target-side publish state, and, for
 live publish nodes, the planner-frozen create-only, overwrite-mutable, or
 replace-authoritative publish mode. `envelope.plan-id` is the authoritative
 whole-release rerun identity for the normalized current-scope request summary:
@@ -666,4 +677,6 @@ owned and planner-frozen matching-key plan shapes remain deferred.
 Descriptor schema, file syntax, and shared target-instance catalog authoring are
 now defined in [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md).
 The exact `three.release.plan/v1alpha1` object shape is now defined in
-[Workflow Release Plan Shape](./workflow-release-plan-shape.md).
+[Workflow Release Plan Shape](./workflow-release-plan-shape.md). Registry
+grounding for the topology dimension is captured in
+[Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md).

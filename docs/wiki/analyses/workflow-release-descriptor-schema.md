@@ -488,33 +488,39 @@ dimensions:
 - `version-uniqueness-rule`
 - `profile-coexistence-rule`
 - `credential-posture`
+- `publish-topology`
 
 The current `v1alpha1` value vocabulary is:
 
-| Capability key             | Allowed values                                                  |
-| -------------------------- | --------------------------------------------------------------- |
-| `mutability`               | `immutable`, `mutable-prerelease`, `replaceable`                |
-| `name-uniqueness-scope`    | `release-tag`, `package-name`, `package-name-with-owner`        |
-| `version-uniqueness-rule`  | `tag`, `version`, `package-name-plus-version`                   |
-| `profile-coexistence-rule` | `same-name-allowed`, `requires-distinct-name`, `not-applicable` |
-| `credential-posture`       | `oidc`, `github-token`                                          |
+| Capability key             | Allowed values                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `mutability`               | `immutable`, `mutable-prerelease`, `replaceable`                                                                   |
+| `name-uniqueness-scope`    | `release-tag`, `package-name`, `package-name-with-owner`                                                           |
+| `version-uniqueness-rule`  | `tag`, `version`, `package-name-plus-version`                                                                      |
+| `profile-coexistence-rule` | `same-name-allowed`, `requires-distinct-name`, `not-applicable`                                                    |
+| `credential-posture`       | `oidc`, `github-token`                                                                                             |
+| `publish-topology`         | `github-token`, `external-oidc-entry-workflow`, `external-oidc-caller-workflow`, `external-oidc-reusable-workflow` |
 
 These values are catalog-owned. Project descriptors may not override them.
+`credential-posture` describes the credential family. `publish-topology`
+describes the trusted workflow identity the control plane must schedule for live
+publication, so OIDC targets do not require registry-specific guessing after
+planning.
 
 In current-scope `v1alpha1`, the capability tuple is also constrained by the
 resolved family plus destination host. Static validation must require exactly
 the following assignments:
 
-| Family           | Destination discriminator                      | Required capabilities                                                                                                                                                                                                   |
-| ---------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `github-release` | `host: github`, `owner: hcoona`, `repo: three` | `mutability: mutable-prerelease`; `name-uniqueness-scope: release-tag`; `version-uniqueness-rule: tag`; `profile-coexistence-rule: not-applicable`; `credential-posture: github-token`                                  |
-| `nuget`          | `host: nuget.org`                              | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    |
-| `nuget`          | `host: nuget.pkg.github.com`                   | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: github-token` |
-| `pypi`           | `host: pypi.org`                               | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    |
-| `npm`            | `host: registry.npmjs.org`                     | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    |
-| `npm`            | `host: npm.pkg.github.com`                     | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: github-token` |
-| `rubygems`       | `host: rubygems.org`                           | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    |
-| `rubygems`       | `host: rubygems.pkg.github.com`                | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: github-token` |
+| Family           | Destination discriminator                      | Required capabilities                                                                                                                                                                                                   | Required publish topology                           |
+| ---------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `github-release` | `host: github`, `owner: hcoona`, `repo: three` | `mutability: mutable-prerelease`; `name-uniqueness-scope: release-tag`; `version-uniqueness-rule: tag`; `profile-coexistence-rule: not-applicable`; `credential-posture: github-token`                                  | `publish-topology: github-token`                    |
+| `nuget`          | `host: nuget.org`                              | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    | `publish-topology: external-oidc-entry-workflow`    |
+| `nuget`          | `host: nuget.pkg.github.com`                   | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: github-token` | `publish-topology: github-token`                    |
+| `pypi`           | `host: pypi.org`                               | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    | `publish-topology: external-oidc-entry-workflow`    |
+| `npm`            | `host: registry.npmjs.org`                     | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    | `publish-topology: external-oidc-caller-workflow`   |
+| `npm`            | `host: npm.pkg.github.com`                     | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: github-token` | `publish-topology: github-token`                    |
+| `rubygems`       | `host: rubygems.org`                           | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    | `publish-topology: external-oidc-reusable-workflow` |
+| `rubygems`       | `host: rubygems.pkg.github.com`                | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: github-token` | `publish-topology: github-token`                    |
 
 This closes the current-scope author-time rules that are otherwise only implied
 by the frozen baseline:
@@ -523,6 +529,11 @@ by the frozen baseline:
   `credential-posture: github-token`;
 - all other current-scope package-registry hosts must use
   `credential-posture: oidc`;
+- every live publish target must expose the topology selector the control plane
+  uses for scheduling: `github-token`, `external-oidc-entry-workflow`,
+  `external-oidc-caller-workflow`, or `external-oidc-reusable-workflow`;
+- the topology assignments follow the registry research in
+  [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md).
 - all current-scope package-registry hosts must use
   `profile-coexistence-rule: requires-distinct-name`, so same-registry same-name
   `buddy` and `official` publication stays forbidden at author time;
@@ -848,6 +859,7 @@ families:
                   version-uniqueness-rule: tag
                   profile-coexistence-rule: not-applicable
                   credential-posture: github-token
+                  publish-topology: github-token
     nuget:
         instances:
             - id: nuget-org
@@ -860,6 +872,7 @@ families:
                   version-uniqueness-rule: package-name-plus-version
                   profile-coexistence-rule: requires-distinct-name
                   credential-posture: oidc
+                  publish-topology: external-oidc-entry-workflow
 ```
 
 ### Public .NET library descriptor excerpt
@@ -1006,5 +1019,6 @@ profiles:
 - [Workflow Release Design Direction](./workflow-release-design-direction.md)
 - [Workflow Release Architecture Model](./workflow-release-architecture-model.md)
 - [Workflow Release Plan Shape](./workflow-release-plan-shape.md)
+- [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)
 - [Repository Release Landscape](./repository-release-landscape.md)
 - [Workflow Release Requirements Baseline](./workflow-release-requirements-baseline.md)

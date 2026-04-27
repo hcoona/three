@@ -48,6 +48,8 @@ The current doc set already provides:
 - the shared target-instance catalog model;
 - the authoritative `three.release.plan/v1alpha1` envelope and graph shape;
 - stable build and publish fan-out granularity;
+- first-class OIDC publish topology as a target-instance and plan-snapshot
+  capability;
 - planner-owned versus control-plane-owned versus executor-owned boundaries.
 
 The final middle-layer seam decisions for current scope are now:
@@ -96,7 +98,17 @@ The final middle-layer seam decisions for current scope are now:
       fails closed on mismatch before live upload.
     - The validation is a publish-time conformance check, not a fresh executor-
       owned derivation of package identity.
-7. **`nbgv-python` version-authority special support**
+7. **Trusted-publisher publish topology**
+    - Each target instance exposes `capabilities.publish-topology` separately
+      from `credential-posture`.
+    - The planner freezes that topology into target-instance snapshots.
+    - The control plane derives topology-partitioned publish selectors from the
+      frozen plan before scheduling concrete publish jobs or reusable workflows.
+    - One logical publish node and one logical publish or skip receipt remain
+      keyed by each `publish-node-id` regardless of the topology path used.
+    - Registry-specific grounding is captured in
+      [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md).
+8. **`nbgv-python` version-authority special support**
     - `nbgv-python` is the only current-scope exception to the normal
       build-system-integrated NBGV contract.
     - Its project-scoped version identity is resolved from the selected
@@ -120,9 +132,9 @@ contracts:
 - repo file layout for planner, validators, and workflow helpers;
 - internal module, class, function, and script decomposition;
 - exact reusable-workflow file names and internal job wiring details that do
-  not change the published control-plane boundaries, except for workflow
-  filenames explicitly frozen by the low-level registry trusted-publisher
-  contract;
+  not change the published control-plane boundaries or the topology-partitioned
+  publish selector contract, except for workflow filenames explicitly frozen by
+  the low-level registry trusted-publisher contract;
 - concrete action selection, shell wrappers, and helper command structure;
 - receipt file locations, temporary directories, and logging structure;
 - language-specific helper APIs and local refactoring choices.
@@ -193,4 +205,5 @@ within the frozen contracts above.
 - [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md)
 - [Workflow Release Plan Shape](./workflow-release-plan-shape.md)
 - [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md)
+- [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)
 - [Workflow Release Low-Level Design](./workflow-release-low-level-design.md)

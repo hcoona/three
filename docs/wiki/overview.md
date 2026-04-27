@@ -102,7 +102,19 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   ids, frozen catalog data inside target-instance snapshots, and an explicit
   boundary for what remains outside the plan.
 
-- The workflow-and-executor-boundaries page now fixes the control-plane shape on top of that plan: `buddy` and `official` entry workflows over one shared orchestration workflow, a normalized planner-facing request contract for current scope including frozen project-selection semantics, per-variant build fan-out, per-publish-node publish fan-out, control-plane-owned approvals, concurrency, distinct project-scoped tag orchestration only when a GitHub Release publish node is present, runtime wiring, and reporting, plus plan-to-job handoff contracts, a distinct control-plane-authored synthetic skip receipt contract, a minimal structured planner-diagnostic contract, and thin executor boundaries that keep replay decisions, overwrite or same-tag replacement mode, publication identity, and GitHub Release desired state planner-owned.
+- The workflow-and-executor-boundaries page now fixes the control-plane shape on
+  top of that plan: `buddy` and `official` entry workflows over one shared
+  orchestration contract, a normalized planner-facing request contract for
+  current scope including frozen project-selection semantics, per-variant build
+  fan-out, topology-partitioned per-publish-node publish fan-out that returns
+  entry/caller-bound OIDC selectors to the top-level entry workflow identity,
+  control-plane-owned approvals, concurrency, distinct project-scoped tag
+  orchestration only when a GitHub Release publish node is present, runtime
+  wiring, and reporting, plus plan-to-job handoff contracts, a distinct control-
+  plane-authored synthetic skip receipt contract, a minimal structured planner-
+  diagnostic contract, and thin executor boundaries that keep replay decisions,
+  overwrite or same-tag replacement mode, publication identity, and GitHub
+  Release desired state planner-owned.
 - A dedicated design-layering and handoff-scope page now records the current
   three-layer reading of the design corpus and now records that upper-layer and
   middle-layer design are both closed in current scope, while lower-layer
