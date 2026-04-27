@@ -34,10 +34,22 @@ limits on top of `three.release.plan/v1alpha1`.
 - Approvals, concurrency, dry-run gating, tagging, permissions, runner or
   toolchain wiring, artifact transport, and final reporting remain control-plane
   responsibilities.
-- Caller-workflow-bound OIDC publish paths such as npmjs must grant
-  `id-token: write` on both the caller or parent job that invokes the reusable
-  publish path and the child reusable publish job that requests the token; other
-  jobs remain least-privilege and do not receive OIDC permission.
+- Caller-workflow-bound OIDC publish paths such as npmjs keep registry
+  validation tied to the caller/top-level workflow identity. In the current
+  nested chain, `release-official.yml` invokes `release-orchestrate.yml`, which
+  invokes `release-publish-node.yml`; grant `id-token: write` only to every
+  active caller job in that chain that must pass OIDC capability onward and to
+  the child reusable publish job that mints the token. Unrelated jobs remain
+  least-privilege and do not receive OIDC permission.
+- Reusable-workflow-bound OIDC publish paths such as RubyGems.org keep registry
+  validation tied to the reusable publish workflow identity. In the current
+  nested chain, the `release-official.yml` caller job invokes
+  `release-orchestrate.yml`, whose publish caller job invokes
+  `release-publish-node.yml`; because reusable workflows cannot elevate
+  permissions, every active caller job in that chain that must pass OIDC
+  capability onward plus the child reusable publish job that mints the token
+  must declare `id-token: write`. Unrelated jobs remain least-privilege and do
+  not receive OIDC permission.
 - Prior build-receipt indexing and admissibility lookup for immutable proof
   reuse remain control-plane responsibilities.
 - Planner-owned publish-destination lookup for remote-state-dependent planning
@@ -392,10 +404,24 @@ workflow identity. Entry-hosted publish boundaries carry the same logical select
 and artifact inputs but are physically scheduled by the top-level workflow file so
 registry OIDC claims name the configured publisher workflow. The executor
 boundary inside each unit is narrower and uses a materialized request object.
-When a caller-workflow-bound selector is implemented through `workflow_call`, the
-job that calls the reusable publish workflow and the child reusable publish job
-must both declare `id-token: write`; this is required for npmjs-style trusted
-publishing and must not be generalized to unrelated jobs.
+When a caller-workflow-bound selector is implemented through `workflow_call`,
+npmjs-style trusted publishing still validates the caller/top-level workflow
+identity. In the current official nested chain, `release-official.yml` invokes
+`release-orchestrate.yml`, which invokes `release-publish-node.yml`. Every
+active caller job in that chain that must pass OIDC capability onward must
+declare `id-token: write`, and the child reusable publish job that mints the
+token must also declare `id-token: write`; this must not be generalized to
+unrelated jobs.
+
+When a reusable-workflow-bound selector is implemented through `workflow_call`,
+RubyGems.org-style trusted publishing validates the reusable publish workflow
+identity. In the current official nested chain, the `release-official.yml`
+caller job invokes `release-orchestrate.yml`, whose publish caller job invokes
+`release-publish-node.yml`. Because reusable workflows cannot elevate
+permissions above their caller jobs, every active caller job in that chain that
+passes OIDC capability onward must declare `id-token: write`, and the child
+reusable publish job that mints the token must also declare `id-token: write`;
+this must not be generalized to unrelated jobs.
 
 ### Build Executor Contract
 
