@@ -39,10 +39,10 @@ The accepted rebaseline order is:
 11. implementation-owned boundaries;
 12. consistency review.
 
-Group 1 established that skeleton. Section 2 has since been rebaselined by the
-frozen-contract pass, while the remaining later sections continue to preserve
-starting material for their owning follow-up groups unless small wording is
-needed to keep the outline coherent.
+Group 1 established that skeleton. Completed rebaseline passes replace their
+owned sections as normative design content, while sections not yet reworked
+continue to preserve starting material until their owning follow-up pass updates
+them.
 
 ### Low-Level Design Summary
 
@@ -143,44 +143,60 @@ Frozen workflow and executor boundaries:
 
 ## 3. Workflow Identity and Filename Contract
 
-Current-scope workflow files should use these stable paths:
+Current-scope workflow files must use these stable checked-in paths:
 
-| File                                          | Trigger or call shape | Stable responsibility                                                      |
-| --------------------------------------------- | --------------------- | -------------------------------------------------------------------------- |
-| `.github/workflows/release-buddy.yml`         | `workflow_dispatch`   | `buddy` entry workflow.                                                    |
-| `.github/workflows/release-official.yml`      | `workflow_dispatch`   | `official` entry workflow, including early actor-permission authorization. |
-| `.github/workflows/release-orchestrate.yml`   | `workflow_call`       | Shared orchestration workflow for one selected profile run.                |
-| `.github/workflows/release-build-variant.yml` | `workflow_call`       | One reusable build unit for one `variant-id`.                              |
-| `.github/workflows/release-publish-node.yml`  | `workflow_call`       | One reusable publish unit for one `publish-node-id`.                       |
+| File                                          | Trigger or call shape | Stable responsibility                                                      | External registry filename role                                                               |
+| --------------------------------------------- | --------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `.github/workflows/release-buddy.yml`         | `workflow_dispatch`   | `buddy` entry workflow.                                                    | Stable entry contract; not a first-delivery trusted-publisher filename.                       |
+| `.github/workflows/release-official.yml`      | `workflow_dispatch`   | `official` entry workflow, including early actor-permission authorization. | Trusted-publisher filename for entry/caller-workflow-bound external registries.               |
+| `.github/workflows/release-orchestrate.yml`   | `workflow_call`       | Shared orchestration workflow for one selected profile run.                | Internal orchestration contract; must not be configured as a current external publisher.      |
+| `.github/workflows/release-build-variant.yml` | `workflow_call`       | One reusable build unit for one `variant-id`.                              | Internal build contract; must not be configured as an external publisher.                     |
+| `.github/workflows/release-publish-node.yml`  | `workflow_call`       | One reusable publish unit for one `publish-node-id`.                       | Trusted-publisher filename only for registries that validate reusable workflow identity here. |
 
-These filenames are intentionally part of the low-level design because NuGet.org,
-PyPI, npm, and RubyGems.org trusted-publisher policies are configured against
-GitHub Actions workflow identity. The job that requests an OIDC token must stay
-in this repository, and the configured workflow filename must match the frozen
-`publish-topology` for the target instance. Entry-workflow-bound targets,
-including current-scope PyPI, configure the top-level entry workflow identity and
-must use entry-hosted publish jobs. Caller-workflow-bound targets can still use
-the reusable publish workflow, while registry validation remains tied to the
-caller/top-level workflow identity. For caller-workflow-bound targets such as
-npmjs, GitHub OIDC permission is part of that reusable-workflow contract: every
-job in the `workflow_call` path that must pass OIDC capability to the reusable
-publish job grants `id-token: write`, and the called publish job that mints the
-token also grants `id-token: write`. Unrelated planning, build, report, and
-GitHub-token publish jobs must not inherit that permission.
-Reusable-workflow-bound targets, such as the current RubyGems.org topology,
-configure the reusable publish workflow identity when the registry supports that
-reusable identity.
+All five workflow filenames above are stable low-level workflow contracts, not
+implementation details. The low-level contract is the checked-in workflow file
+path; for registry-facing workflows, it also includes the registry-visible
+filename derived from that path. Implementation-owned scripts, composite actions,
+helper action versions, command wrappers, and executor internals are intentionally
+outside this frozen filename contract. Renaming or replacing any file above is a
+coordinated low-level/workflow contract change, not a harmless refactor. When the
+changed file is currently configured in an external trusted-publisher policy, the
+migration additionally requires coordinated registry-policy updates and evidence
+refresh. In current scope, that additional registry-policy migration constraint
+applies only to `release-official.yml` and `release-publish-node.yml`.
 
-PyPI is therefore an exception only to the reusable publish-unit topology, not to
-first-delivery live publication. `.github/workflows/release-publish-node.yml` and
-`.github/workflows/release-orchestrate.yml` must not be configured as PyPI
-Trusted Publishers. A valid active official `pypi/pypi` publish node must be
-scheduled through the entry-workflow-bound path, with PyPI configured for the
-`.github/workflows/release-official.yml` workflow and the `release` environment.
+Only filenames that an external registry may store in a trusted-publisher policy
+are registry-facing identity contracts. In first delivery, those filenames are
+`release-official.yml` for entry/caller-workflow-bound publication and
+`release-publish-node.yml` for the reusable-workflow-bound RubyGems.org
+publication topology. `release-buddy.yml`, `release-orchestrate.yml`, and
+`release-build-variant.yml` remain stable workflow contracts, but they must not
+be entered into current external trusted-publisher registry policies.
 
-The implementer may refactor internal scripts and helper actions, but changing
-these workflow file names after registry policies exist is a release-infra
-migration, not a harmless rename.
+PyPI trusted publishing must be configured to repository `hcoona/three`,
+workflow filename `release-official.yml`, and GitHub Actions environment
+`release` for first-delivery live PyPI publication. PyPI must not be configured
+to trust `release-orchestrate.yml`, `release-publish-node.yml`, or any reusable
+workflow identity in this design. A valid active official `pypi/pypi` publish
+node therefore routes through the entry-workflow-bound path so the job requesting
+the PyPI OIDC token runs under the configured `official` entry workflow identity.
+
+npmjs trusted publishing stores the caller/top-level GitHub Actions workflow
+filename. The reusable publish workflow may host the `npm publish` command and
+mint the OIDC token, but npmjs validation is tied to the calling/top-level
+workflow identity; in first delivery that registry-side filename is
+`release-official.yml` with the `release` environment. For this topology,
+`id-token: write` must be granted through both the caller/parent workflow path
+and the called publish job that requests the token.
+
+RubyGems.org trusted publishing can trust the reusable workflow identity where
+configured. For the current same-repository reusable-publish topology, configure
+RubyGems.org with workflow filename `release-publish-node.yml`, leave separate
+workflow-repository owner/name fields blank, and use the `release` environment.
+
+GitHub Release and GitHub Packages publication use `GITHUB_TOKEN` authority.
+They do not have an external trusted-publisher policy and therefore do not add an
+external registry workflow filename beyond the stable workflow contracts above.
 
 ## 4. Topology Routing Core
 

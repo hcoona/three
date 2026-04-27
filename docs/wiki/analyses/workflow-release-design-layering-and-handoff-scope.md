@@ -133,10 +133,11 @@ contracts:
 
 - repo file layout for planner, validators, and workflow helpers;
 - internal module, class, function, and script decomposition;
-- exact reusable-workflow file names and internal job wiring details that do
-  not change the published control-plane boundaries or the topology-partitioned
-  publish selector contract, except for workflow filenames explicitly frozen by
-  the low-level registry trusted-publisher contract;
+- internal job wiring details that do not change the published control-plane
+  boundaries or the topology-partitioned publish selector contract; the
+  low-level design freezes current-scope workflow filenames as handoff
+  contracts, and registry-trusted filenames carry the additional external
+  trusted-publisher migration constraint;
 - concrete action selection, shell wrappers, and helper command structure;
 - receipt file locations, temporary directories, and logging structure;
 - language-specific helper APIs and local refactoring choices.
