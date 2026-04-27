@@ -843,12 +843,13 @@ Planner adapter responsibilities:
 
 Because the repo-wide .NET pack configuration produces `.snupkg` for packable
 library packages, current .NET package descriptors should model that symbol
-package as a canonical artifact. GitHub Packages NuGet buddy publication should
-publish the modeled `.nupkg` and `.snupkg` artifacts together only after the
-implementation verifies that both members are publishable and observable with
-the same fail-closed replay guarantees. This follows NuGet's modern
-symbol-package model rather than the legacy `.symbols.nupkg` format or embedding
-portable PDBs into the primary package.
+package as a canonical artifact for GitHub Release evidence and for future
+NuGet.org publication. First delivery does not require GitHub Packages NuGet to
+publish `.snupkg`; GitHub Packages NuGet buddy publication uses only the modeled
+`.nupkg` member until the implementation verifies that `.snupkg` members are
+publishable and observable with the same fail-closed replay guarantees. This
+follows NuGet's modern symbol-package model rather than the legacy
+`.symbols.nupkg` format or embedding portable PDBs into the primary package.
 
 GitHub Packages NuGet `.snupkg` support remains an implementation-time adapter
 verification point. If the implementation cannot publish and observe `.snupkg`
@@ -863,11 +864,13 @@ First delivery defers live NuGet.org official publication for `hjg-pngcs`
 instead of accepting an unproven `.snupkg` observation path. Until that path is
 documented and tested, the first-delivery `hjg-pngcs` acceptance scope covers the
 modeled `.nupkg` and `.snupkg` artifacts through GitHub Release and GitHub
-Packages NuGet only, and the first-delivery `hjg-pngcs` descriptor must not
-declare a `nuget/nuget-org` target. When NuGet.org publication is later enabled,
-the planner must keep the `.nupkg` and `.snupkg` as separate planned artifacts
-and the publish executor must publish both when the descriptor references both
-members; it must not silently publish an untracked `.snupkg` side effect.
+Packages NuGet `.nupkg` publication only, and the first-delivery `hjg-pngcs`
+descriptor must not declare a `nuget/nuget-org` target or a GitHub Packages
+NuGet `.snupkg` member. When NuGet.org publication or GitHub Packages `.snupkg`
+publication is later enabled, the planner must keep the `.nupkg` and `.snupkg`
+as separate planned artifacts and the publish executor must publish both when the
+descriptor references both members; it must not silently publish an untracked
+`.snupkg` side effect.
 
 Publish executor responsibilities:
 
@@ -1091,15 +1094,15 @@ The first delivery should generate project descriptors for a deliberately small
 project set that covers the release system's required ecosystem and artifact
 shapes without turning first implementation into bulk descriptor migration.
 
-| Coverage category                | Project id                | Descriptor root                            | Primary manifest or build entry point                          | Required coverage                                                                                                                                                               |
-| -------------------------------- | ------------------------- | ------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C# packable library              | `hjg-pngcs`               | `src/public/lib/Hjg.Pngcs/`                | `Hjg.Pngcs.csproj`                                             | Windows `dotnet pack`, `.nupkg`, `.snupkg`, GitHub Release assets, and GitHub Packages NuGet; NuGet.org official publication is deferred until `.snupkg` observation is proven. |
-| C# private app binary            | `qidian-novel-downloader` | `src/private/app/qidian-novel-downloader/` | `QidianNovelDownloader.csproj`                                 | Nonpackable app release, `dotnet publish` binary artifact, private-app first-delivery scope.                                                                                    |
-| C# public app installer          | `image-occlusion-editor`  | `src/public/app/ImageOcclusionEditor/`     | `ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj` | Binary artifact plus `installer/installer/inno-setup` produced from the binary.                                                                                                 |
-| Python special version authority | `nbgv-python`             | `src/public/lib/nbgv-python/`              | `pyproject.toml`                                               | `nbgv-python-pyproject-version` exception, Hatchling wheel plus optional sdist, PyPI/GitHub Release publication shape.                                                          |
-| Python normal NBGV/Hatch package | `hcoona-release-smoke`    | `src/public/lib/hcoona-release-smoke/`     | `pyproject.toml`                                               | Normal Python build-system NBGV integration through Hatchling, separate from the `nbgv-python` exception path.                                                                  |
-| Node npm package                 | `hexo-renderer-asciidoc`  | `src/public/lib/hexo-renderer-asciidoc/`   | `package.json`                                                 | pnpm/npm packaging, npmjs and GitHub Packages target shapes, package-name projection where needed.                                                                              |
-| Ruby gem                         | `asciidoctor-latexmath`   | `src/public/lib/asciidoctor-latexmath/`    | `asciidoctor-latexmath.gemspec`                                | RubyGems build and publication target shapes.                                                                                                                                   |
+| Coverage category                | Project id                | Descriptor root                            | Primary manifest or build entry point                          | Required coverage                                                                                                                                                                                                  |
+| -------------------------------- | ------------------------- | ------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C# packable library              | `hjg-pngcs`               | `src/public/lib/Hjg.Pngcs/`                | `Hjg.Pngcs.csproj`                                             | Windows `dotnet pack`, `.nupkg`, `.snupkg`, GitHub Release assets, and GitHub Packages NuGet for `.nupkg`; NuGet.org and GitHub Packages `.snupkg` publication are deferred until `.snupkg` observation is proven. |
+| C# private app binary            | `qidian-novel-downloader` | `src/private/app/qidian-novel-downloader/` | `QidianNovelDownloader.csproj`                                 | Nonpackable app release, `dotnet publish` binary artifact, private-app first-delivery scope.                                                                                                                       |
+| C# public app installer          | `image-occlusion-editor`  | `src/public/app/ImageOcclusionEditor/`     | `ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj` | Binary artifact plus `installer/installer/inno-setup` produced from the binary.                                                                                                                                    |
+| Python special version authority | `nbgv-python`             | `src/public/lib/nbgv-python/`              | `pyproject.toml`                                               | `nbgv-python-pyproject-version` exception, Hatchling wheel plus optional sdist, PyPI/GitHub Release publication shape.                                                                                             |
+| Python normal NBGV/Hatch package | `hcoona-release-smoke`    | `src/public/lib/hcoona-release-smoke/`     | `pyproject.toml`                                               | Normal Python build-system NBGV integration through Hatchling, separate from the `nbgv-python` exception path.                                                                                                     |
+| Node npm package                 | `hexo-renderer-asciidoc`  | `src/public/lib/hexo-renderer-asciidoc/`   | `package.json`                                                 | pnpm/npm packaging, npmjs and GitHub Packages target shapes, package-name projection where needed.                                                                                                                 |
+| Ruby gem                         | `asciidoctor-latexmath`   | `src/public/lib/asciidoctor-latexmath/`    | `asciidoctor-latexmath.gemspec`                                | RubyGems build and publication target shapes.                                                                                                                                                                      |
 
 This set intentionally excludes first-delivery descriptors for private WXT or
 browser-extension packages, archive-only artifacts, metadata-only artifacts,

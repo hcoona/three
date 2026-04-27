@@ -896,15 +896,17 @@ profiles:
             - uses: github-release/public
               artifacts: [nuget, snupkg]
             - uses: nuget/github-packages
-              artifacts: [nuget, snupkg]
+              artifacts: [nuget]
     official:
         targets:
             - uses: github-release/public
               artifacts: [nuget, snupkg]
 ```
 
-First delivery intentionally omits `nuget/nuget-org` from this descriptor until
-the deferred NuGet.org `.snupkg` observation path is documented and tested.
+First delivery intentionally publishes only the primary `.nupkg` member to
+GitHub Packages NuGet. It keeps `.snupkg` modeled for GitHub Release evidence and
+omits `nuget/nuget-org` until the deferred `.snupkg` observation path is
+documented and tested.
 
 ### Public .NET app descriptor excerpt
 

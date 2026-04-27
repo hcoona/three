@@ -29,7 +29,7 @@ profiles:
       - uses: github-release/public
         artifacts: [nuget, snupkg]
       - uses: nuget/github-packages
-        artifacts: [nuget, snupkg]
+        artifacts: [nuget]
   official:
     targets:
       - uses: github-release/public

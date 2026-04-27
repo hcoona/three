@@ -404,7 +404,7 @@ executor with at least these fields:
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `api-version: three.release.publish-request/v1alpha1` | control-plane materialization                                                                             |
 | `kind: publish-request`                               | control-plane materialization                                                                             |
-| `plan-id`, `profile`                                  | plan envelope                                                                                             |
+| `plan-id`, `profile`, `commit-sha`                    | plan envelope                                                                                             |
 | `project` snapshot                                    | `envelope.projects[project-id]`                                                                           |
 | `publish-node` snapshot                               | `graph.publish-nodes[publish-node-id]`                                                                    |
 | `target-instance-snapshot`                            | referenced `graph.target-instance-snapshots[*]`                                                           |
