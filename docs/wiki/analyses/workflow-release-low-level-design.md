@@ -824,6 +824,9 @@ Planner adapter responsibilities:
 
 - Resolve package identity from evaluated `Gem::Specification.name`.
 - Compare versions with RubyGems `Gem::Version`.
+- Resolve release versions through build-system-integrated NBGV for every Ruby
+  project in current scope; the gemspec must fail closed when NBGV cannot provide
+  `SemVer2` rather than falling back to a static source-tree version.
 - For RubyGems.org, use the RubyGems.org API for version and digest observation.
 - For GitHub Packages RubyGems, use GitHub-hosted read access or `gem fetch`
   with `GITHUB_TOKEN` where needed.

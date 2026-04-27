@@ -11,7 +11,7 @@ require "json"
 require "open3"
 
 nbgv_gemspec_version = lambda do |project_root|
-  stdout, _stderr, status = Open3.capture3(
+  stdout, stderr, status = Open3.capture3(
     "dotnet",
     "tool",
     "run",
@@ -22,12 +22,13 @@ nbgv_gemspec_version = lambda do |project_root|
     chdir: project_root
   )
 
-  next Asciidoctor::Latexmath::VERSION unless status.success?
+  unless status.success?
+    message = stderr.strip
+    raise "Failed to resolve asciidoctor-latexmath version with NBGV#{": #{message}" unless message.empty?}"
+  end
 
   version = JSON.parse(stdout).fetch("SemVer2")
   Asciidoctor::Latexmath::Version.rubygems_version(version)
-rescue Errno::ENOENT, JSON::ParserError, KeyError, Gem::InvalidVersionError
-  Asciidoctor::Latexmath::VERSION
 end
 
 gem_name = "asciidoctor-latexmath"
