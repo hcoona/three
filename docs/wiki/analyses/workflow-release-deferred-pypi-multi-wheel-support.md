@@ -22,6 +22,10 @@ Support for multiple wheels under one PyPI publication intent, including cross-
 variant wheel sets or platform-specific wheel matrices, is out of current
 scope.
 
+This deferral is only about broader PyPI artifact cardinality. It does not defer
+first-delivery live PyPI publication for the current one-wheel-plus-optional-
+sdist path.
+
 ## Why It Is Deferred
 
 That broader support would require a fuller planner-frozen wheel

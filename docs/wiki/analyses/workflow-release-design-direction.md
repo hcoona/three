@@ -93,8 +93,9 @@ At the highest level, the system should have three layers:
 2. **Planning layer**: repo-owned logic that loads descriptors, validates the
    request, expands the selected project set, and emits a normalized release
    plan.
-3. **Execution layer**: reusable executors for canonical build, packaging, and
-   target publication.
+3. **Execution layer**: topology-aware build and publish units for canonical
+   build, packaging, and target publication, including entry-hosted publish jobs
+   where a registry's OIDC trust policy requires the top-level workflow identity.
 
 This direction best matches the signed-off requirements because the hardest part
 of the problem is not "how to run a publish command" but "how to interpret
@@ -111,13 +112,15 @@ targets."
 - **Controlled requirement changes** imply we should keep business-rule
   interpretation centralized and inspectable.
 
-## Deliberately Deferred to the Next Design Layer
+## Historical Deferrals Resolved by Later Design Layers
 
-These questions are intentionally left for the next layer of design:
+At the design-direction step, these questions were intentionally left for later
+design layers and are now resolved by the architecture model, workflow and
+executor boundaries, and low-level design handoff pages:
 
 - descriptor file format and schema syntax;
 - exact planner output shape;
-- exact reusable-workflow and job boundaries;
+- exact reusable-workflow, topology-specific publish, and job boundaries;
 - exact executor interfaces for NuGet, PyPI, npm, RubyGems, GitHub Release, and
   installer production;
 - exact tagging algorithm and approval-job structure.

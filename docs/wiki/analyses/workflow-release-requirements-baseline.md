@@ -290,6 +290,9 @@ Examples of disallowed behavior:
   ecosystems: GitHub Packages is not available as a Python package target, so
   Python `buddy` falls back to GitHub Release only, and Python `official`
   package publication uses PyPI when declared.
+- The first delivery scope must include live `official` PyPI publication for at
+  least one valid active `pypi/pypi` target. Live PyPI publishing is not deferred
+  to a later topology change.
 - Current-scope PyPI publication is intentionally narrowed to pure-Python
   packaging layouts: one `pypi-publish` publication intent must own exactly one
   wheel and may own zero or one sdist, and those artifacts must come from the
@@ -323,6 +326,8 @@ Examples of disallowed behavior:
 - Acceptance must include real publication, not only dry-run or validation-only
   execution.
 - Acceptance must include at least one real `official` publication.
+- Acceptance must include first-delivery live `official` PyPI publication through
+  the current-scope one-wheel-plus-optional-sdist PyPI path.
 - Acceptance must prove one real `buddy` to `official` promotion on the same
   commit, including the same-tag GitHub Release pre-release to release case
   when GitHub Release is part of that run.

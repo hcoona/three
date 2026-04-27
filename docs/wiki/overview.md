@@ -129,10 +129,11 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   default GitHub Actions artifact retention window.
 - The lower-layer design handoff now freezes the implementation seams that affect
   registry configuration and replay safety: stable workflow filenames for trusted
-  publishing, entry inputs including dry-run plus explicit validation-build,
-  registered planner diagnostic codes, JSON handoff files, artifact and
-  immutable-proof naming, registry-adapter obligations, GitHub permission
-  boundaries, tag orchestration, and acceptance traceability.
+  publishing, entry-workflow-bound first-delivery live PyPI publication, entry
+  inputs including dry-run plus explicit validation-build, registered planner
+  diagnostic codes, JSON handoff files, artifact and immutable-proof naming,
+  registry-adapter obligations, GitHub permission boundaries, tag orchestration,
+  and acceptance traceability.
 
 ## Open Questions
 
@@ -156,3 +157,4 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
 - [Workflow Release Plan Shape](./analyses/workflow-release-plan-shape.md)
 - [Workflow Release Workflow and Executor Boundaries](./analyses/workflow-release-workflow-executor-boundaries.md)
 - [Workflow Release Low-Level Design](./analyses/workflow-release-low-level-design.md)
+- [Workflow Release OIDC Publish Topology Research](./analyses/workflow-release-oidc-publish-topology.md)

@@ -411,3 +411,12 @@ This file is the append-only chronological record of wiki activity.
 - Added acceptance traceability requiring real PyPI official publish evidence in
   first delivery and clarified that normal PyPI readiness, credential,
   conformance, or upload failures are not topology-block diagnostics.
+
+## [2026-04-27] design | Align OIDC and PyPI release docs
+
+- Synced the requirements review, design direction, layering, overview, and
+  index pages with the first-class OIDC publish topology model.
+- Clarified that first delivery includes live `official` PyPI publication through
+  the entry-workflow-bound path.
+- Kept deferred PyPI multi-wheel or cross-variant support separate from the
+  current live PyPI one-wheel-plus-optional-sdist path.

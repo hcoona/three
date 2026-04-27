@@ -13,11 +13,11 @@ may be left to an experienced implementer.
 
 ## Three-Layer Framing
 
-| Layer               | Main question                                                                                                 | Current primary pages                                                                                                                                                                                                                                                                                                                    | Current status                        |
-| ------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| Upper-layer design  | What system are we building, what are its major responsibilities, and what principles are fixed?              | [Workflow Release Requirements Baseline](./workflow-release-requirements-baseline.md), [Workflow Release Design Direction](./workflow-release-design-direction.md), [Workflow Release Architecture Model](./workflow-release-architecture-model.md)                                                                                      | Settled for current scope             |
-| Middle-layer design | What cross-component contracts must be frozen so implementation does not reinterpret the business rules?      | [Workflow Release Architecture Model](./workflow-release-architecture-model.md), [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md), [Workflow Release Plan Shape](./workflow-release-plan-shape.md), [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md) | Settled for current scope             |
-| Lower-layer design  | How will the bounded components be realized in code, workflow files, scripts, receipts, and internal helpers? | No separate exhaustive page set yet                                                                                                                                                                                                                                                                                                      | Intentionally only partially designed |
+| Layer               | Main question                                                                                                 | Current primary pages                                                                                                                                                                                                                                                                                                                    | Current status                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Upper-layer design  | What system are we building, what are its major responsibilities, and what principles are fixed?              | [Workflow Release Requirements Baseline](./workflow-release-requirements-baseline.md), [Workflow Release Design Direction](./workflow-release-design-direction.md), [Workflow Release Architecture Model](./workflow-release-architecture-model.md)                                                                                      | Settled for current scope                                                      |
+| Middle-layer design | What cross-component contracts must be frozen so implementation does not reinterpret the business rules?      | [Workflow Release Architecture Model](./workflow-release-architecture-model.md), [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md), [Workflow Release Plan Shape](./workflow-release-plan-shape.md), [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md) | Settled for current scope                                                      |
+| Lower-layer design  | How will the bounded components be realized in code, workflow files, scripts, receipts, and internal helpers? | [Workflow Release Low-Level Design](./workflow-release-low-level-design.md)                                                                                                                                                                                                                                                              | Handoff guardrails resolved; internal realization remains implementation-owned |
 
 ## Current Assessment by Layer
 
@@ -50,6 +50,8 @@ The current doc set already provides:
 - stable build and publish fan-out granularity;
 - first-class OIDC publish topology as a target-instance and plan-snapshot
   capability;
+- first-delivery live PyPI publication through the entry-workflow-bound
+  `official` topology, while broader PyPI multi-wheel layouts remain deferred;
 - planner-owned versus control-plane-owned versus executor-owned boundaries.
 
 The final middle-layer seam decisions for current scope are now:
@@ -191,7 +193,8 @@ understood as:
 
 - **upper-layer design:** closed;
 - **middle-layer design:** closed;
-- **lower-layer design:** intentionally only partially authored.
+- **lower-layer design:** handoff guardrails authored, with internal realization
+  intentionally implementation-owned.
 
 That means the next work is implementation, not another middle-layer design
 pass. Lower-layer realization details remain intentionally implementation-owned

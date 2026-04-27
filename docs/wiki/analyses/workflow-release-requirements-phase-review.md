@@ -110,6 +110,8 @@ items well:
     - The first delivery scope must be accepted against real projects.
     - Acceptance must include real publication, including at least one real
       `official` publication.
+    - Acceptance must include live `official` PyPI publication in first delivery;
+      only broader PyPI multi-wheel or cross-variant layouts are deferred.
     - Acceptance must prove both `buddy` to `official` promotion and direct
       `official` publication.
 
@@ -172,6 +174,9 @@ This is no longer an empty gap. The business side has now frozen that:
 - Python is the known exception where GitHub Packages does not provide the
   package target, so Python `buddy` falls back to GitHub Release and Python
   `official` package publication uses PyPI when declared.
+- first delivery must prove live `official` PyPI publication for at least one
+  valid active `pypi/pypi` target rather than deferring PyPI live publish to a
+  later topology.
 - immutable registries may not be shared across profiles under the same
   published package name.
 
@@ -241,6 +246,8 @@ must:
 - cover a C# library, both C# app packaging paths, Python, Node, and Ruby;
 - include real publication rather than only dry-run validation;
 - include at least one real `official` publication;
+- include live `official` PyPI publication for at least one valid active
+  `pypi/pypi` target in first delivery;
 - prove both same-commit `buddy` to `official` promotion and direct
   `official` publication;
 - explicitly prove multi-project `workflow_dispatch` scope;
@@ -287,8 +294,9 @@ must:
   fixed `buddy` / `official` release semantics;
 - project-declared registry targets with no repo-wide default mapping;
 - immutable registries excluded from same-name cross-profile promotion;
-- acceptance based on real projects and real publication rather than on dry-run
-  evidence alone;
+- acceptance based on real projects and real publication, including live
+  `official` PyPI first-delivery publication, rather than on dry-run evidence
+  alone;
 - explicit acceptance proof for multi-project dispatch, dry-run, rerun,
   cancellation, approval boundaries, and GitHub Packages when in scope;
 - GitHub-native audit history as the current sufficient audit baseline.
