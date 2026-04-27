@@ -380,6 +380,13 @@ it must include golden valid fixtures and representative closed-shape rejection
 cases for request, result, selector, proof, diagnostics, and report files. The
 test harness choice remains implementation-owned; the field set does not.
 
+Treat this executable contract coverage as the first implementation milestone
+for workflow data exchange. For objects whose complete `v1alpha1` field set is
+assembled from this page plus the workflow-boundary tables, the implementation
+must codify the combined field set before wiring dependent jobs. No workflow,
+executor, renderer, or test may depend on an ad hoc root-level field that has not
+been registered in this page or a successor contract.
+
 `planner-request.json` is the control-plane-authored planner input file. Its
 closed current-scope shape is:
 
@@ -731,9 +738,20 @@ Planner adapter responsibilities:
 Because the repo-wide .NET pack configuration produces `.snupkg` for packable
 library packages, current .NET package descriptors should model that symbol
 package as a canonical artifact. GitHub Packages NuGet buddy publication should
-publish the modeled `.nupkg` and `.snupkg` artifacts together. This follows
-NuGet's modern symbol-package model rather than the legacy `.symbols.nupkg`
-format or embedding portable PDBs into the primary package.
+publish the modeled `.nupkg` and `.snupkg` artifacts together only after the
+implementation verifies that both members are publishable and observable with
+the same fail-closed replay guarantees. This follows NuGet's modern
+symbol-package model rather than the legacy `.symbols.nupkg` format or embedding
+portable PDBs into the primary package.
+
+GitHub Packages NuGet `.snupkg` support remains an implementation-time adapter
+verification point. If the implementation cannot publish and observe `.snupkg`
+members through GitHub Packages with the same fail-closed replay guarantees as
+the primary `.nupkg`, current scope must not treat GitHub Packages `.snupkg` as
+a required live package-registry member. In that case, keep `.snupkg` modeled for
+GitHub Release evidence and continue publishing only the reliably observable
+NuGet package-registry members until GitHub Packages symbol-package behavior is
+documented and tested.
 
 First delivery defers live NuGet.org official publication for `hjg-pngcs`
 instead of accepting an unproven `.snupkg` observation path. Until that path is
@@ -866,6 +884,12 @@ validation-build, GitHub Release, or GitHub Packages paths, but it is a
 live-enable prerequisite for official external-registry publication and
 acceptance evidence.
 
+This checklist is an external operations readiness gate, not a reason to delay
+the implementation of no-side-effect, GitHub Release, or GitHub Packages paths.
+Official external-registry publication remains disabled for any target whose
+trusted-publisher entry or `release` environment policy has not been configured
+by a repository or package owner.
+
 No-side-effect runs skip this environment gate entirely:
 
 - dry-run or validation-only;
@@ -949,6 +973,11 @@ minimum shape:
 
 The trace table may live in test fixtures or generated CI output. It does not
 need to become a new operator-facing release record.
+
+The default implementation choice is to keep the trace table with the executable
+acceptance fixtures or generated CI evidence. A missing row for any first-
+delivery scenario is an acceptance-coverage gap before declaring the workflow
+implementation complete, but it does not reopen design or block initial coding.
 
 ## External Documentation Grounding
 

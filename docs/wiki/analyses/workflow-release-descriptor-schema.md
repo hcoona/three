@@ -649,15 +649,20 @@ portable `.snupkg` alongside `.nupkg` when a packable library is packed. Project
 descriptors for such package variants should therefore declare both the primary
 NuGet artifact and the symbol artifact. GitHub Release target usages may carry
 both package files as release assets. GitHub Packages NuGet buddy target usages
-should also publish both artifacts rather than treating the buddy package target
-as `.nupkg`-only. NuGet.org target usages should likewise reference both
-artifacts when the release includes NuGet symbol publication, because `.snupkg`
-is the modern separate symbol-package format. That in turn requires the
-planner's NuGet.org adapter to implement and test symbol-package remote
-observation before first live NuGet.org publication for those descriptors. Until
-that adapter path is documented and tested, first-delivery descriptors that would
-publish a `.snupkg` to NuGet.org must omit the `nuget/nuget-org` target; adding
-that target is a later live-enablement change, not an implementation detail.
+may model both artifacts during implementation, but live GitHub Packages
+publication must only require `.snupkg` after the implementation verifies that
+GitHub Packages can publish and observe symbol-package members with the same
+fail-closed replay guarantees as `.nupkg`. If that verification fails, the live
+GitHub Packages package-registry target should be narrowed to the reliably
+observable `.nupkg` member while `.snupkg` remains modeled as GitHub Release
+evidence. NuGet.org target usages should likewise reference both artifacts when
+the release includes NuGet symbol publication, because `.snupkg` is the modern
+separate symbol-package format. That in turn requires the planner's NuGet.org
+adapter to implement and test symbol-package remote observation before first live
+NuGet.org publication for those descriptors. Until that adapter path is
+documented and tested, first-delivery descriptors that would publish a `.snupkg`
+to NuGet.org must omit the `nuget/nuget-org` target; adding that target is a
+later live-enablement change, not an implementation detail.
 
 ## Validation Boundary
 
