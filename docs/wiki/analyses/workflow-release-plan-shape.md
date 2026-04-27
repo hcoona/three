@@ -58,6 +58,8 @@ envelope:
             source:
                 primary-manifest-path: src/public/lib/Hjg.Pngcs/Hjg.Pngcs.csproj
                 auxiliary-input-paths: []
+                version-authority-kind: build-system-nbgv
+            resolved-version: 1.2.3
             variant-ids: [variant/...]
             publish-node-ids: [publish-node/release, publish-node/package]
 graph:
