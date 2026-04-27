@@ -1156,7 +1156,259 @@ Acceptance scenarios and required proof artifacts belong to Section 10.
 
 ## 7. Registry Adapter Partitioning
 
+Registry adapters are partitioned by target surface, not only by source
+ecosystem. Each surface below freezes the credential posture, required publish
+topology, planner-owned observation, executor-owned mutation, identity
+conformance rule, and live mutation boundary for current scope. Permission and
+environment mechanics remain in Section 8, owner-side setup remains in Section
+9, and acceptance traceability remains in Section 10.
+
+Planner adapters may observe public registry state, or GitHub-hosted state with
+least-privilege `GITHUB_TOKEN` reads where this section explicitly allows it.
+They must not use live publish credentials, request trusted-publishing
+credentials, or mutate the destination. Publish executors receive the
+planner-frozen request and may mutate only the one planned target surface for
+the one `publish-node-id` after artifact metadata conformance succeeds.
+
+### PyPI
+
+Credential posture:
+
+- PyPI uses external trusted publishing with GitHub Actions OIDC; no long-lived
+  PyPI API token is a current-scope credential.
+- First delivery includes live official PyPI publication. The PyPI trusted
+  publisher must be configured for repository `hcoona/three`, workflow filename
+  `release-official.yml`, and environment `release`.
+
+Required publish topology:
+
+- The `pypi/pypi` target requires `external-oidc-entry-workflow`.
+- The OIDC token request and the upload command run in the `official` entry
+  workflow identity, not in `release-orchestrate.yml` and not in
+  `release-publish-node.yml`.
+- If an active official PyPI node is routed through a reusable workflow identity,
+  the control plane or executor must fail closed before upload. That is a
+  topology/configuration error, not an alternate PyPI publish path.
+
+Planner adapter responsibilities:
+
+- Resolve package identity from `[project].name` and serialize the PEP 503
+  normalized name.
+- Use Python packaging normalized version identity for remote comparison.
+- Use the PyPI JSON API to observe existing release files and their SHA-256
+  digests for the resolved project and version.
+- Invoke the checked-in Hatchling build backend during planning to compute exact
+  current-scope final distribution filenames. Current scope is one wheel plus an
+  optional sdist from one variant; extra distribution members are out of scope
+  unless the descriptor and plan model them explicitly.
+
+Publish executor responsibilities:
+
+- Request the PyPI trusted-publishing credential only in the entry-hosted live
+  publish job, shortly before upload.
+- Upload only the planner-frozen wheel and optional sdist members under the exact
+  planner-frozen filenames.
+- Emit one `publish-result.json` for the planned `publish-node-id` after
+  successful upload, including the uploaded distribution filenames and a PyPI
+  project or release URL as registry evidence.
+
+Identity conformance:
+
+- Before requesting or using the live upload credential, read wheel `METADATA`
+  and sdist `PKG-INFO` from the concrete files that will be uploaded.
+- Compare normalized package name and version to the planner-frozen
+  `resolved-publish-identity`.
+- Fail closed on unreadable metadata, ambiguous normalization, extra planned
+  members, missing planned members, or any name/version mismatch.
+
+Live mutation boundary:
+
+- The executor may create the planned PyPI release files only through the
+  supported PyPI upload flow. It must not delete files, replace files, reconcile
+  target-side conflicts, create alternate project names, or treat target-side
+  file presence as a fresh skip decision.
+- First-delivery PyPI readiness failures, including missing live enablement or
+  missing/mismatched trusted publisher setup, surface as live readiness or
+  publish failures described in Sections 8 and 9 rather than as planner remote
+  observation results.
+
+### npmjs
+
+Credential posture:
+
+- npmjs uses npm trusted publishing with GitHub Actions OIDC for packages whose
+  npmjs trusted publisher is configured. No long-lived npm automation token is a
+  current-scope credential for npmjs live official publication.
+- npm trusted publishing is package-scoped on npmjs.com; package owner-side
+  enablement is required before the live official target is allowed to run.
+
+Required publish topology:
+
+- The `npm/npmjs` target requires `external-oidc-caller-workflow`.
+- npmjs validates the caller or top-level workflow filename configured on
+  npmjs.com. In first delivery that identity is `release-official.yml` with the
+  `release` environment.
+- The concrete `npm publish` command may run inside
+  `release-publish-node.yml`, and the reusable job may request the OIDC token, as
+  long as the caller/top-level identity boundary required by npmjs trusted
+  publishing is preserved.
+
+Planner adapter responsibilities:
+
+- Resolve the package identity from an explicit descriptor target projection
+  override when present; otherwise use `package.json` `name`.
+- Require current-scope npmjs package names to match the produced package
+  identity. Do not project an unscoped npmjs package into an owner-scoped GitHub
+  Packages name unless a target-specific artifact or transform receipt explicitly
+  models the rewritten package contents, digest, and metadata.
+- Use npm package metadata, such as `npm view --json`, to observe the exact
+  package version and `dist.integrity`.
+
+Publish executor responsibilities:
+
+- Publish the receipted tarball to npmjs using trusted publishing from the
+  planned topology.
+- Verify the tarball's `package/package.json` name and version before upload.
+- Preserve the tarball digest represented by the build receipt; do not rewrite
+  `package.json`, scope, version, provenance configuration, or packed contents in
+  the publish job.
+
+Identity conformance:
+
+- The upload identity is the final npm package name and version inside the
+  tarball, after applying only the planner-frozen descriptor override rules.
+- The executor must fail closed if the tarball package name or version differs
+  from `resolved-publish-identity`.
+
+Live mutation boundary:
+
+- The executor may create exactly the planned npmjs package version. It must not
+  unpublish, deprecate, dist-tag repair, publish under an alternate scoped name,
+  or retry with token-based authentication after OIDC failure.
+- npmjs target-side conflicts after planning are hard publish failures with
+  registry evidence, not reasons to recompute disposition.
+
+### NuGet.org
+
+Credential posture:
+
+- NuGet.org uses NuGet trusted publishing with GitHub Actions OIDC when the
+  deferred NuGet.org target is explicitly enabled. No long-lived NuGet API key is
+  a current-scope credential.
+- First delivery defers live NuGet.org official publication for `hjg-pngcs` until
+  the trusted-publishing policy, live-enable token, and `.snupkg` observation
+  behavior are documented and tested.
+
+Required publish topology:
+
+- The conservative NuGet.org topology is `external-oidc-entry-workflow` with
+  `release-official.yml` and the `release` environment.
+- Do not assume or model reusable-workflow trusted publishing for NuGet.org until
+  official NuGet.org behavior is verified and this design is updated.
+
+Planner adapter responsibilities:
+
+- Resolve package identity from evaluated `PackageId`; do not fall back to
+  `AssemblyName`, project file name, package file name, or directory name.
+- Use NuGet normalized version identity for remote version comparison.
+- For `.nupkg`, use the NuGet V3 service index plus PackageBaseAddress and
+  registration resources for public NuGet.org observation where possible.
+- For `.snupkg`, use only a documented and tested symbol-package observation path
+  before enabling live NuGet.org publication. The ordinary package content API
+  documents `.nupkg` content, while symbol packages are published to NuGet's
+  symbol-server path and can undergo asynchronous validation.
+
+Publish executor responsibilities:
+
+- When NuGet.org is enabled, request the short-lived NuGet trusted-publishing API
+  key in the entry-hosted live publish job shortly before upload because NuGet
+  documents the temporary key as one-use and valid for one hour.
+- Push exactly the planned `.nupkg` and, only when modeled and enabled, the
+  planned `.snupkg` member.
+- Fail and report the NuGet response if a target-side conflict, validation
+  delay, or symbol-package problem occurs; do not attempt reconciliation.
+
+Identity conformance:
+
+- Read the `.nupkg` package metadata and compare `PackageId` plus normalized
+  version to `resolved-publish-identity`.
+- If a `.snupkg` member is modeled, verify that it corresponds to the same
+  planner-frozen package identity and version before upload.
+
+Live mutation boundary:
+
+- The executor may create only the planned NuGet.org package-version members. It
+  must not push an unmodeled `.snupkg`, substitute a different package source,
+  retry with a long-lived API key, delete package versions, or derive package
+  identity from file names.
+- Until NuGet.org is explicitly enabled, descriptors must not declare a
+  `nuget/nuget-org` live target for first-delivery `hjg-pngcs`; keep `.nupkg` and
+  `.snupkg` artifacts modeled for GitHub Release evidence and publish only the
+  separately supported GitHub Packages `.nupkg` member.
+
+### RubyGems.org
+
+Credential posture:
+
+- RubyGems.org uses trusted publishing with GitHub Actions OIDC; no long-lived
+  RubyGems API key is a current-scope credential for RubyGems.org live official
+  publication.
+- Trusted publisher setup is gem-owner-side and may be configured for an existing
+  gem or pending publisher before first gem creation.
+
+Required publish topology:
+
+- RubyGems.org uses `external-oidc-reusable-workflow` where configured.
+- For the current same-repository reusable publish topology, RubyGems.org trusts
+  workflow filename `release-publish-node.yml` with repository `hcoona/three` and
+  environment `release`; separate workflow-repository owner/name fields remain
+  blank unless a future cross-repository reusable workflow is introduced.
+
+Planner adapter responsibilities:
+
+- Resolve package identity from evaluated `Gem::Specification.name`.
+- Compare versions with RubyGems `Gem::Version`.
+- Resolve release versions through build-system-integrated NBGV for every Ruby
+  project in current scope; the gemspec must fail closed when NBGV cannot provide
+  `SemVer2` rather than falling back to a static source-tree version.
+- Use the RubyGems.org API for version and digest observation.
+
+Publish executor responsibilities:
+
+- Consume only the receipted `.gem` file from the build unit's referenced build
+  receipt and publish it to RubyGems.org from the reusable workflow identity.
+  It must not rebuild the gem or rediscover package artifacts.
+- Request the RubyGems.org trusted-publishing credential only inside the
+  reusable-hosted publish job selected by topology.
+- Emit registry evidence containing at least the gem name, version, and
+  RubyGems.org version or gem URL after successful upload.
+
+Identity conformance:
+
+- Read the built gem specification from the concrete `.gem` file and compare its
+  name and `Gem::Version` to the planner-frozen `resolved-publish-identity`.
+- Fail closed if gemspec evaluation, metadata reading, normalization, or
+  comparison is ambiguous.
+
+Live mutation boundary:
+
+- The executor may create exactly the planned RubyGems.org gem version. It must
+  not yank versions, push under an alternate gem name, rewrite the gemspec in the
+  publish job, or fall back to API-key authentication after OIDC failure.
+
 ### GitHub Release
+
+Credential posture:
+
+- GitHub Release uses `GITHUB_TOKEN`; it has no external OIDC trusted-publisher
+  policy and no registry-side workflow filename beyond the stable workflow files
+  in Section 3.
+
+Required publish topology:
+
+- GitHub Release uses the `github-token` topology. Current routing may host the
+  command in the reusable publish job, but the authority remains GitHub's token
+  for the repository.
 
 Planner adapter responsibilities:
 
@@ -1177,151 +1429,79 @@ Publish executor responsibilities:
 - `replace-authoritative`: converge the same-tag prerelease to the frozen
   official intent, including final release state, asset names, and asset labels.
 
-The executor may delete and recreate assets only when the plan mode authorizes an
-overwrite or authoritative replacement. It must not use release asset presence as
-a fresh skip decision, and it must not derive alternate release asset names from
-bundle-relative paths, produced filenames, or executor-local packaging output.
+Identity conformance:
 
-### NuGet
+- The GitHub Release identity is the planner-frozen `release-tag`, release state,
+  asset names, and asset labels. It is not a package metadata identity.
+- The executor must not derive alternate release asset names from bundle-relative
+  paths, produced filenames, or executor-local packaging output.
+
+Live mutation boundary:
+
+- The executor may create or converge only the planned release and planned assets
+  for the already verified tag. It may delete and recreate assets only when the
+  plan mode authorizes an overwrite or authoritative replacement.
+- It must not use release asset presence as a fresh skip decision and must never
+  retarget tags; tag creation and verification remain the `ensure-tag`
+  control-plane responsibility.
+
+### GitHub Packages
+
+Credential posture:
+
+- GitHub Packages uses `GITHUB_TOKEN` with GitHub package permissions. It has no
+  external OIDC trusted-publisher policy, no external registry workflow filename,
+  and no owner-side trusted publisher setup.
+
+Required publish topology:
+
+- GitHub Packages package-registry targets use the `github-token` topology.
+- The package publish command may be reusable-hosted, but it must use the
+  materialized request for the planned GitHub Packages target and must not borrow
+  topology or credentials from npmjs, PyPI, NuGet.org, or RubyGems.org.
 
 Planner adapter responsibilities:
 
-- Resolve package identity from evaluated `PackageId`; do not fall back to
-  `AssemblyName` or directory name.
-- Use NuGet normalized version identity for remote version comparison.
-- For `.nupkg`, use the NuGet V3 service index plus PackageBaseAddress and
-  registration resources for public nuget.org observation where possible.
-- For GitHub Packages NuGet, use GitHub-hosted read access with least-privilege
-  `GITHUB_TOKEN` when public registry reads are insufficient.
-- For NuGet.org `.snupkg`, use a documented symbol-package observation path and
-  test its asynchronous validation and indexing behavior. The ordinary package
-  content API documents `.nupkg` content, while symbol packages are published to
-  NuGet's symbol-server path and can undergo asynchronous validation.
-
-Because the repo-wide .NET pack configuration produces `.snupkg` for packable
-library packages, current .NET package descriptors should model that symbol
-package as a canonical artifact for GitHub Release evidence and for future
-NuGet.org publication. First delivery does not require GitHub Packages NuGet to
-publish `.snupkg`; GitHub Packages NuGet buddy publication uses only the modeled
-`.nupkg` member until the implementation verifies that `.snupkg` members are
-publishable and observable with the same fail-closed replay guarantees. This
-follows NuGet's modern symbol-package model rather than the legacy
-`.symbols.nupkg` format or embedding portable PDBs into the primary package.
-
-GitHub Packages NuGet `.snupkg` support remains an implementation-time adapter
-verification point. If the implementation cannot publish and observe `.snupkg`
-members through GitHub Packages with the same fail-closed replay guarantees as
-the primary `.nupkg`, current scope must not treat GitHub Packages `.snupkg` as
-a required live package-registry member. In that case, keep `.snupkg` modeled for
-GitHub Release evidence and continue publishing only the reliably observable
-NuGet package-registry members until GitHub Packages symbol-package behavior is
-documented and tested.
-
-First delivery defers live NuGet.org official publication for `hjg-pngcs`
-instead of accepting an unproven `.snupkg` observation path. Until that path is
-documented and tested, the first-delivery `hjg-pngcs` acceptance scope covers the
-modeled `.nupkg` and `.snupkg` artifacts through GitHub Release and GitHub
-Packages NuGet `.nupkg` publication only, and the first-delivery `hjg-pngcs`
-descriptor must not declare a `nuget/nuget-org` target or a GitHub Packages
-NuGet `.snupkg` member. When NuGet.org publication or GitHub Packages `.snupkg`
-publication is later enabled, the planner must keep the `.nupkg` and `.snupkg`
-as separate planned artifacts and the publish executor must publish both when the
-descriptor references both members; it must not silently publish an untracked
-`.snupkg` side effect.
+- Use GitHub-hosted package reads with least-privilege `GITHUB_TOKEN` only when
+  public observation is insufficient.
+- Preserve the source ecosystem identity rules for package metadata:
+  NuGet `PackageId`, npm descriptor override or `package.json` `name`, and
+  evaluated RubyGems gemspec name.
+- Model GitHub Packages target projection explicitly. Do not infer npm owner
+  scoping, package renames, or package-content rewrites from the destination host.
+- For GitHub Packages NuGet, treat `.snupkg` support as a verification point. If
+  the implementation cannot publish and observe `.snupkg` members with the same
+  fail-closed replay guarantees as `.nupkg`, current scope must not require live
+  GitHub Packages `.snupkg` publication.
 
 Publish executor responsibilities:
 
-- For `nuget.org`, use NuGet trusted publishing through GitHub OIDC. Request the
-  short-lived NuGet credential shortly before upload because NuGet documents the
-  temporary API key as one-use and valid for one hour.
-- For GitHub Packages NuGet, configure the package source with
-  `GITHUB_TOKEN` and `packages: write`.
-- Push the exact planned `.nupkg` and optional `.snupkg` members. If a target-side
-  conflict occurs despite planner classification, fail and report the registry
-  response instead of attempting reconciliation.
+- Configure the matching ecosystem client for GitHub Packages using
+  `GITHUB_TOKEN` and publish exactly the modeled package-registry members.
+- Verify package metadata from the concrete artifact before upload using the same
+  family equivalence rules as the external registry for that ecosystem.
+- For first-delivery `hjg-pngcs`, publish only the reliably modeled GitHub
+  Packages NuGet `.nupkg` member; keep `.snupkg` as GitHub Release evidence until
+  GitHub Packages symbol-package behavior is documented and tested.
 
-### PyPI
+Identity conformance:
 
-Planner adapter responsibilities:
+- The executor must compare the concrete package metadata to the
+  planner-frozen `resolved-publish-identity` and target projection. A GitHub
+  Packages host requirement does not permit unmodeled package renaming.
+- The projected `npm/github-packages` path for `hexo-renderer-asciidoc` remains
+  out of first-delivery live scope because the npmjs tarball is unscoped while
+  GitHub Packages npm would require an owner-scoped package identity. A future
+  path must model a target-specific artifact or transform receipt that records
+  rewritten contents, digest, and metadata before upload.
 
-- Resolve package identity from `[project].name` and serialize the PEP 503
-  normalized name.
-- Use Python packaging normalized version identity for remote comparison.
-- Use the PyPI JSON API to observe existing release files and their SHA-256
-  digests for the resolved project and version.
-- Invoke the checked-in Hatchling build backend during planning to compute exact
-  current-scope final distribution filenames, limited to one wheel plus optional
-  sdist from one variant.
+Live mutation boundary:
 
-First delivery supports PyPI descriptor validation, planner-time filename
-computation, build conformance, GitHub Release evidence for Python artifacts, and
-live official PyPI publication through the entry-workflow-bound topology frozen
-in the `pypi/pypi` target-instance snapshot. A valid active official `pypi/pypi`
-node must not be routed through the reusable `release-publish-node.yml` publish
-unit or rejected as a normal topology block.
-
-PyPI live-publish responsibilities:
-
-- Use PyPI Trusted Publishing with GitHub Actions OIDC.
-- Run in the top-level `official` entry workflow identity configured on PyPI, not
-  in `release-orchestrate.yml` or `release-publish-node.yml`.
-- Upload only the frozen wheel and optional sdist members under the exact
-  planner-frozen filenames.
-- Fail before upload if wheel `METADATA` or sdist `PKG-INFO` does not match the
-  frozen normalized package name and version.
-- Emit the standard `publish-result.json` receipt with PyPI evidence, such as the
-  project release URL and uploaded distribution filenames, after a successful
-  live upload.
-
-### npm
-
-Planner adapter responsibilities:
-
-- Resolve the final package name from descriptor projection or `package.json`
-  `name`.
-- Require lowercase current-scope names; scoped GitHub Packages names must match
-  the catalog owner scope.
-- Use npm package metadata, such as `npm view --json`, to observe the exact
-  package version and `dist.integrity`.
-
-Publish executor responsibilities:
-
-- For npmjs, use npm trusted publishing with GitHub Actions OIDC when the package
-  has a trusted publisher configured. npm trusted publishing also publishes
-  provenance automatically with current npm CLI support.
-- For GitHub Packages npm, use `GITHUB_TOKEN` with `packages: write`.
-- Publish the receipted tarball under the frozen package name.
-- Verify the packed package's `package/package.json` name and version before
-  upload.
-
-First delivery does not support live npm publication under a target-side package
-name that differs from the receipted tarball's `package/package.json` `name`.
-That excludes the projected `npm/github-packages` path for
-`hexo-renderer-asciidoc`, whose npmjs package name is unscoped while GitHub
-Packages npm would require an owner-scoped name. A future implementation may add
-that path only by modeling a target-specific build artifact or a post-build
-transform receipt that records the rewritten package contents, digest, and
-metadata before upload.
-
-### RubyGems
-
-Planner adapter responsibilities:
-
-- Resolve package identity from evaluated `Gem::Specification.name`.
-- Compare versions with RubyGems `Gem::Version`.
-- Resolve release versions through build-system-integrated NBGV for every Ruby
-  project in current scope; the gemspec must fail closed when NBGV cannot provide
-  `SemVer2` rather than falling back to a static source-tree version.
-- For RubyGems.org, use the RubyGems.org API for version and digest observation.
-- For GitHub Packages RubyGems, use GitHub-hosted read access or `gem fetch`
-  with `GITHUB_TOKEN` where needed.
-
-Publish executor responsibilities:
-
-- For RubyGems.org, use RubyGems Trusted Publishing with GitHub Actions OIDC.
-- For GitHub Packages RubyGems, configure RubyGems credentials with
-  `GITHUB_TOKEN` and publish to the owner-scoped GitHub Packages host.
-- Verify the built gem specification name and version before upload.
+- The executor may create only the planned GitHub Packages package version and
+  planned members. It must not delete package versions, rewrite package contents,
+  publish unmodeled sidecar files, or route through external OIDC credentials.
+- Target-side conflicts after planning are hard publish failures with GitHub
+  Packages evidence, not reasons to recompute disposition.
 
 ## 8. Permissions and Environment
 
