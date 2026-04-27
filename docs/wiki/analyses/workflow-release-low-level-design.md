@@ -39,7 +39,7 @@ these existing contracts as authoritative:
 | Planner host              | Expose the planner through a repo-owned CLI contract; the implementation language remains implementation-owned.                                                                         |
 | Request and receipt files | Serialize all cross-job machine data as UTF-8 JSON with LF line endings and stable `api-version` plus `kind`.                                                                           |
 | Dry-run builds            | Dry-run does not build by default. A separate `validation-build` input may run build units, but its receipts are validation-only and inadmissible as immutable proof.                   |
-| Build proof lookup        | Publish one small proof artifact per immutable-proof member binding so future planner runs can query by exact artifact name.                                                            |
+| Build proof lookup        | Publish one small attempt-scoped proof artifact per immutable-proof member binding under a binding-hash prefix so future planner runs can discover and validate admissible proofs.      |
 | Dispatch SHA lock         | Resolve the UI-selected branch or tag before orchestration, pass the peeled commit SHA forward, and place same-entry same-commit concurrency where that SHA is available.               |
 | Tag orchestration         | Create lightweight release tags and verify existing tags by peeling annotated tags to the selected commit.                                                                              |
 | External setup            | Require the `release` environment, registry trusted-publisher policies, and explicit external-registry live enablement before official OIDC registry publication.                       |
@@ -515,13 +515,15 @@ can become observable by tests or renderers.
 For planner failure before plan emission, `plan.plan-id`,
 `plan.selected-project-ids`, and `artifacts.plan-artifact-name` are `null`, while
 `artifacts.planner-diagnostics-artifact-name` identifies the diagnostics artifact
-for pre-planner or planner failures. That field may be `null` only when no
-diagnostics artifact can exist, such as cancellation before the platform
-persists the diagnostic path. `run.conclusion` uses GitHub job conclusion
-spelling such as `success`, `failure`, or `cancelled`. Job-level conclusions
-under `jobs` use the same spelling and may also use `skipped` for jobs that did
-not run because their serialized selector set was empty or their prerequisite
-path was suppressed.
+for pre-planner or planner failures. This also covers the external OIDC
+live-enable readiness gate, where the `plan` job may have computed plan and
+execution-set data in memory but suppresses both artifacts before any live side
+effect can be scheduled. That field may be `null` only when no diagnostics
+artifact can exist, such as cancellation before the platform persists the
+diagnostic path. `run.conclusion` uses GitHub job conclusion spelling such as
+`success`, `failure`, or `cancelled`. Job-level conclusions under `jobs` use the
+same spelling and may also use `skipped` for jobs that did not run because their
+serialized selector set was empty or their prerequisite path was suppressed.
 
 Successful `tag-result`, `build-result`, `publish-result`, and `skip-result`
 files are positive evidence only. Current scope does not define failed tag,
@@ -538,10 +540,16 @@ or the workflow was cancelled.
 
 ## Artifact Naming and Retention
 
-GitHub Actions artifact names are the lookup key available to later runs through
-the Actions artifact API, including exact `name` filtering. The control plane
-should therefore use deterministic artifact names with a short hash suffix
-instead of embedding raw plan IDs that may contain slashes or long strings.
+GitHub Actions artifact names are the lookup key available to later jobs and
+runs through the Actions artifact API. The control plane should therefore use
+deterministic artifact names with a short hash suffix instead of embedding raw
+plan IDs that may contain slashes or long strings. Run-local transport artifacts
+are attempt-scoped so re-running the same workflow run cannot collide with
+artifacts from a prior attempt. Immutable proof artifacts keep the binding hash
+immediately after the stable prefix and add the producing run and attempt as a
+suffix; future proof lookup discovers candidate proof artifacts by that binding
+prefix, then validates the repeated binding and provenance inside
+`immutable-proof.json`.
 
 Define:
 
@@ -551,18 +559,18 @@ safe-id(input) = first 24 lowercase hex chars of SHA-256 over the UTF-8 input
 
 Current-scope artifact names:
 
-| Artifact            | Name pattern                                                            |
-| ------------------- | ----------------------------------------------------------------------- |
-| Frozen plan         | `release-plan-v1-<safe-id(plan-id)>`                                    |
-| Planner diagnostics | `release-planner-diagnostics-v1-<run-id>-<attempt>`                     |
-| Execution sets      | `release-execution-sets-v1-<safe-id(plan-id)>`                          |
-| Variant bundle      | `release-build-bundle-v1-<safe-id(plan-id + "\n" + variant-id)>`        |
-| Build result        | `release-build-result-v1-<safe-id(plan-id + "\n" + variant-id)>`        |
-| Tag result          | `release-tag-result-v1-<safe-id(plan-id)>`                              |
-| Publish result      | `release-publish-result-v1-<safe-id(plan-id + "\n" + publish-node-id)>` |
-| Skip result         | `release-skip-result-v1-<safe-id(plan-id + "\n" + publish-node-id)>`    |
-| Immutable proof     | `release-immutable-proof-v1-<safe-id(binding-json)>`                    |
-| Final report        | `release-report-v1-<run-id>-<attempt>`                                  |
+| Artifact            | Name pattern                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------ |
+| Frozen plan         | `release-plan-v1-<run-id>-<attempt>-<safe-id(plan-id)>`                                    |
+| Planner diagnostics | `release-planner-diagnostics-v1-<run-id>-<attempt>`                                        |
+| Execution sets      | `release-execution-sets-v1-<run-id>-<attempt>-<safe-id(plan-id)>`                          |
+| Variant bundle      | `release-build-bundle-v1-<run-id>-<attempt>-<safe-id(plan-id + "\n" + variant-id)>`        |
+| Build result        | `release-build-result-v1-<run-id>-<attempt>-<safe-id(plan-id + "\n" + variant-id)>`        |
+| Tag result          | `release-tag-result-v1-<run-id>-<attempt>-<safe-id(plan-id)>`                              |
+| Publish result      | `release-publish-result-v1-<run-id>-<attempt>-<safe-id(plan-id + "\n" + publish-node-id)>` |
+| Skip result         | `release-skip-result-v1-<run-id>-<attempt>-<safe-id(plan-id + "\n" + publish-node-id)>`    |
+| Immutable proof     | `release-immutable-proof-v1-<safe-id(binding-json)>-<run-id>-<attempt>`                    |
+| Final report        | `release-report-v1-<run-id>-<attempt>`                                                     |
 
 `binding-json` is the canonical JSON serialization of:
 
@@ -591,6 +599,12 @@ metadata as `binding-json` input.
 The immutable proof artifact must include `immutable-proof.json`, and that file
 must repeat the full binding fields. The repeated fields are required so a hash
 collision or accidental name reuse cannot silently satisfy proof lookup.
+When a future planner needs proof for a binding, the control-plane lookup lists
+unexpired artifact records whose names start with
+`release-immutable-proof-v1-<safe-id(binding-json)>-`, then applies the
+admissibility checks below. The suffix is provenance, not part of the binding.
+If two rerun attempts produce proofs for the same binding, both remain discoverable
+and must collapse to one digest before proof is usable.
 
 Immutable proof artifacts are emitted by the build-unit control-plane wrapper
 after the executor has produced `build-result.json` and after the control plane
@@ -927,22 +941,48 @@ by a repository or package owner.
 First delivery uses an explicit non-secret repository variable,
 `THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS`, as the control-plane live-enable
 allowlist for official live publication to external OIDC registries. The value is
-a comma or newline separated list of target-instance refs such as `pypi/pypi`,
-`npm/npmjs`, `rubygems/rubygems-org`, or `nuget/nuget-org`; `*` enables every
-external OIDC registry target declared in the frozen plan. A missing or empty
-value enables none. This allowlist applies only to active `official` publish
+a comma or newline separated list of package-scoped enablement tokens. Each token
+has this exact case-sensitive shape:
+
+```text
+<target-instance-ref>#<project-id>#<planner-frozen-package-name>
+```
+
+Examples include `pypi/pypi#nbgv-python#nbgv-python`,
+`npm/npmjs#hexo-renderer-asciidoc#hexo-renderer-asciidoc`,
+`rubygems/rubygems-org#asciidoctor-latexmath#asciidoctor-latexmath`, and
+`nuget/nuget-org#hjg-pngcs#IO.Github.Hcoona.Pngcs`. A missing or empty value
+enables none. First delivery does not define a wildcard token; enabling a whole
+external registry target would be too coarse because trusted-publisher readiness
+is package-owner-side. This allowlist applies only to active `official` publish
 nodes whose target-instance snapshot has `credential-posture: oidc`; GitHub
 Release and GitHub Packages nodes are not gated by this variable.
 
-After the plan and execution sets are computed, but before any protected
-environment is requested or any live side-effect job is scheduled, the control
-plane must compare every active official external OIDC publish node with that
-allowlist. If any selected node is not enabled, the run fails before tag or
-publish side effects, writes `planner-diagnostics.json` with
-`REQ_EXTERNAL_TARGET_DISABLED`, publishes no plan or execution-set artifacts for
-that attempt, and emits no partial live-publish receipts. This is a fail-closed
-readiness gate, not a planner-owned remote-observation rule and not a skip
-condition.
+Allowlist normalization is closed:
+
+1. split on comma and newline;
+2. trim ASCII whitespace;
+3. drop empty entries;
+4. de-duplicate exact tokens and sort lexicographically for diagnostics;
+5. reject any token whose target-instance ref is not a known catalog ref with
+   `credential-posture: oidc`;
+6. reject `*`, mixed wildcard forms, malformed tokens, and tokens with empty
+   components.
+
+After the plan and execution sets are computed in memory, but before either
+artifact is published, before any protected environment is requested, and before
+any live side-effect job is scheduled, the control plane must compute the
+required enablement token for every active official external OIDC publish node
+from the frozen `target-instance-snapshot-id`, `project-id`, and
+`resolved-publish-identity.package-name`. If any selected node is not enabled,
+the run fails before tag or publish side effects, writes
+`planner-diagnostics.json` with `REQ_EXTERNAL_TARGET_DISABLED`, publishes no plan
+or execution-set artifacts for that attempt, and emits no partial live-publish
+receipts. The diagnostic `details` must include the required enablement token,
+target-instance ref, project id, and resolved publish identity so the final
+report is self-contained even though no plan artifact is published. This is a
+fail-closed readiness gate, not a planner-owned remote-observation rule and not a
+skip condition.
 
 No-side-effect runs skip this environment gate entirely:
 
@@ -1023,6 +1063,7 @@ minimum shape:
 | GitHub Packages publication            | `src/public/lib/hexo-renderer-asciidoc/` or `src/public/lib/Hjg.Pngcs/`             | Real GitHub Packages publish evidence when a first-delivery descriptor declares that target, including target-instance snapshot, package build receipt, and publish result.                                                                            |
 | Immutable partial replay               | NuGet or PyPI multi-member fixture, real or mocked at adapter boundary              | Planner diagnostic proving fail-closed behavior for a same-identity partial case.                                                                                                                                                                      |
 | Cancellation                           | Workflow-level integration fixture                                                  | GitHub cancelled conclusion plus any already persisted positive receipts; in-run report artifact is best-effort because platform cancellation may prevent the final report job from starting.                                                          |
+| External OIDC live enablement          | Any PyPI, npmjs, RubyGems.org, or future NuGet.org official fixture                 | Disabled-token run fails before plan artifact publication, protected-environment approval, tags, or publish jobs with `REQ_EXTERNAL_TARGET_DISABLED`; enabled-token run reaches the normal official approval and publish path.                         |
 | Approval boundary                      | Workflow-level integration fixture                                                  | `buddy` explicit `write+` authorization with no approval, `official` `maintain+` authorization, required-review run, self-review prevention, and admin bypass behavior when enabled.                                                                   |
 
 The trace table may live in test fixtures or generated CI output. It does not

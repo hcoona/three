@@ -553,10 +553,11 @@ The following concerns are explicitly control-plane-owned:
 - **selected-commit pinning**: only the control plane resolves the operator-
   selected branch/tag ref into the authoritative `commit-sha`, and every later
   planner, build, publish, and tag job must stay pinned to that same commit;
-- **cancellation**: manual operator cancellation and any optional duplicate-run
-  cancellation both use native GitHub workflow cancellation semantics and
-  ordinary cancelled status; current scope defines no repo-specific
-  cancellation protocol;
+- **cancellation**: manual operator cancellation and ordinary platform
+  cancellation use native GitHub workflow cancellation semantics and ordinary
+  cancelled status; current scope does not adopt repo-defined duplicate-run
+  auto-cancellation, and duplicate same-entry same-commit runs are serialized
+  with `cancel-in-progress: false`;
 - **tagging**: the planner resolves the final project-scoped `release-tag`,
   but the control plane creates or verifies each distinct selected Git tag once
   per run only when the selected plan contains at least one GitHub Release

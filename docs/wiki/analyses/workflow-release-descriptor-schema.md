@@ -901,9 +901,10 @@ profiles:
         targets:
             - uses: github-release/public
               artifacts: [nuget, snupkg]
-            - uses: nuget/nuget-org
-              artifacts: [nuget, snupkg]
 ```
+
+First delivery intentionally omits `nuget/nuget-org` from this descriptor until
+the deferred NuGet.org `.snupkg` observation path is documented and tested.
 
 ### Public .NET app descriptor excerpt
 
