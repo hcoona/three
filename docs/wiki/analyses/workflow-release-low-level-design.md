@@ -298,14 +298,14 @@ substitute for the resolved-SHA key required above.
 The selected entry workflow and the shared orchestration workflow together
 implement the middle-layer job sequence with these concrete data handoffs:
 
-| Job               | Physical host                                                                                                   | Required inputs                                                                                                                         | Required outputs                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `authorize-entry` | top-level entry workflow or the called orchestration workflow before planning                                   | GitHub event context, selected profile                                                                                                  | Authorization conclusion and normalized run metadata.                                    |
-| `plan`            | shared orchestration workflow                                                                                   | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics. |
-| `build`           | shared orchestration workflow calling the reusable build unit                                                   | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts.                  |
-| `ensure-tag`      | control-plane job before publish fan-out                                                                        | Frozen plan plus selected and active GitHub Release publish nodes                                                                       | `tag-result.json` tag verification or creation evidence.                                 |
-| `publish`         | shared orchestration for reusable-hosted selectors; entry workflow resumes hosting for entry-workflow selectors | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts, and a materialized `publish-request.json`               | `publish-result` artifacts.                                                              |
-| `report`          | top-level entry workflow after any entry-hosted publish jobs complete                                           | Plan, diagnostics, tag results, build results, skip results, publish results from all topology paths, job conclusions                   | Final operator summary.                                                                  |
+| Job               | Physical host                                                                                                   | Required inputs                                                                                                                         | Required outputs                                                                           |
+| ----------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `authorize-entry` | top-level entry workflow before invoking `release-orchestrate.yml`                                              | GitHub event context, selected profile, and resolved normalized dispatch context                                                        | Authorization conclusion and authorized normalized run metadata consumed by orchestration. |
+| `plan`            | shared orchestration workflow                                                                                   | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics.   |
+| `build`           | shared orchestration workflow calling the reusable build unit                                                   | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts.                    |
+| `ensure-tag`      | control-plane job before publish fan-out                                                                        | Frozen plan plus selected and active GitHub Release publish nodes                                                                       | `tag-result.json` tag verification or creation evidence.                                   |
+| `publish`         | shared orchestration for reusable-hosted selectors; entry workflow resumes hosting for entry-workflow selectors | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts, and a materialized `publish-request.json`               | `publish-result` artifacts.                                                                |
+| `report`          | top-level entry workflow after any entry-hosted publish jobs complete                                           | Plan, diagnostics, tag results, build results, skip results, publish results from all topology paths, job conclusions                   | Final operator summary.                                                                    |
 
 In current-scope first delivery, execution-set derivation is an implementation
 detail of the `plan` job, not a separate reportable workflow job. This keeps the
@@ -1081,22 +1081,78 @@ evidence remains in Section 10.
 
 ## 6. Publish Executor Design
 
-Publish executors are selected from `target-instance-snapshot.family`.
+Publish executors are selected from `target-instance-snapshot.family` and are
+thin realizers of planner-authored intent. Their only authoritative inputs are
+the materialized `publish-request.json`, the frozen plan data referenced by that
+request, referenced build receipts and bundles, and workflow-provided credential
+or token material appropriate to the already selected topology. An executor must
+not rediscover release descriptors, re-read `eng/release/target-instances.yml`,
+recompute topology, decide `skip-satisfied` or replay behavior, reclassify
+overwrite or replacement policy, or derive an alternate publish identity.
+
+### Topology Host Model
+
+The topology decides which workflow identity hosts the publish command and where
+any registry OIDC token is minted. It does not change the logical publish unit:
+all rows below emit the same `publish-result.json` shape and use the same
+`publish-node-id` semantics.
+
+| Topology path                     | Physical publish host                                                                                               | Token or authority boundary                                                                    | Executor contract                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `github-token`                    | Reusable publish job on the shared orchestration path; currently reusable-hosted per `execution-sets.json` routing. | Uses GitHub-provided `GITHUB_TOKEN`; no external OIDC token is minted.                         | Execute the planned GitHub-hosted publication with the same request and result contracts as other paths.  |
+| `external-oidc-entry-workflow`    | Top-level entry workflow job.                                                                                       | External registry token is requested and minted in the entry workflow identity.                | The command and token request must stay entry-hosted, even if scripts or helpers are shared.              |
+| `external-oidc-caller-workflow`   | Command may run in the reusable publish workflow.                                                                   | Registry validates the caller or top-level workflow identity for the trusted-publisher policy. | Preserve the caller/top-level identity boundary while consuming the standard materialized request.        |
+| `external-oidc-reusable-workflow` | Reusable publish workflow job.                                                                                      | Registry trusts the reusable workflow identity where the registry supports that policy shape.  | Mint and use the external token only inside the reusable workflow identity selected by the plan topology. |
+
+Shared scripts, composite actions, or libraries may be used by both entry-hosted
+and reusable-hosted publish paths. That code reuse must not move the live upload,
+credential request, or OIDC token minting step across the workflow identity
+boundary selected by topology.
+
+### Request Consumption and Guardrails
+
+For each active publish node, workflow routing materializes one
+`publish-request.json` for one logical `publish-node-id`. The executor consumes
+that request as an instruction, not as a discovery seed. It may validate that
+referenced plan slices, build receipts, package files, and bundle digests are
+internally consistent, but validation failures must stop the publish rather than
+falling back to source-tree or registry discovery.
 
 Before any live upload starts, each package-registry publish executor must:
 
-1. locate the receipted file for every `artifact-id` in the publish node;
-2. for NuGet and PyPI, stage or rename each file so its basename equals the
-   planner-frozen final distribution filename for that `artifact-id`;
-3. read package metadata from the concrete file;
-4. verify package name and version against
+1. locate the receipted file for every planned `artifact-id` in the publish node;
+2. apply only planner-frozen filename materialization rules for registries whose
+   final distribution filename is part of the plan;
+3. read package metadata from the concrete file that will be uploaded;
+4. verify package name and version against the planner-frozen
    `publish-node.resolved-publish-identity` under the family equivalence rules;
-5. fail closed if metadata cannot be read or compared unambiguously.
+5. fail closed if metadata cannot be read, normalized, or compared
+   unambiguously.
+
+The metadata check is a pre-upload safety gate. A mismatch between produced
+package metadata and `resolved-publish-identity` is never a reason to rewrite the
+package, pick a different target, or ask the registry which identity would be
+accepted.
 
 Publish executors must not perform destination preflight queries to decide
 whether to skip, overwrite, promote, or reconcile. Any destination call before
 upload must be strictly necessary to carry out the already frozen publish action,
 such as obtaining a short-lived trusted-publishing credential.
+
+### Result Contract
+
+Every topology path emits exactly one positive `publish-result.json` for a
+successful live publish of a logical node. The receipt is keyed by the original
+`publish-node-id`; physical host, called workflow filename, runner operating
+system, helper implementation, or token-minting location do not create a new
+logical publish identity. Failure reporting therefore treats a missing
+entry-hosted result and a missing reusable-hosted result the same way for the
+same planned `publish-node-id`.
+
+Registry-specific upload commands, evidence fields, and target-side conflict
+handling are partitioned to Section 7. Permission grants and environment binding
+belong to Section 8. External trusted-publisher setup belongs to Section 9.
+Acceptance scenarios and required proof artifacts belong to Section 10.
 
 ## 7. Registry Adapter Partitioning
 
