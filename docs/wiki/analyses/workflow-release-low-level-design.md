@@ -1007,12 +1007,77 @@ not.
 
 ## 5. Entry-Hosted Publish Path
 
-The current PyPI entry-hosted publish path is captured across the workflow
-identity, routing, publish executor, registry adapter, and permissions sections.
-Group 5 owns any later dedicated rewrite of this path. Until that pass, the
-binding rule is that entry-workflow-bound publish nodes are scheduled by the
-top-level entry workflow and must not be routed through the reusable publish
-workflow.
+The entry-hosted publish path is the physical workflow realization for active
+publish nodes partitioned under
+`active-publish-selectors.external-oidc-entry-workflow` in
+`execution-sets.json`. It exists for registries whose trusted-publisher policy
+must validate the top-level entry workflow identity. In first delivery, live
+official PyPI publication uses this path.
+
+The shared orchestration workflow still owns planning, build fan-out,
+tag-gating, reusable-hosted publish fan-out, and production of the authoritative
+execution sets. For `external-oidc-entry-workflow` members, however,
+orchestration must return the selected `publish-node-id` values and supporting
+artifact references to the selected top-level entry workflow. It must not
+physically host those publish jobs and must not hide them behind
+`release-publish-node.yml`. The entry workflow resumes after the orchestration
+call and schedules a live publish matrix over exactly the returned selector
+members.
+
+The high-level handoff is:
+
+1. `release-official.yml` or `release-buddy.yml` resolves the trusted dispatch
+   ref, performs entry authorization, and invokes `release-orchestrate.yml` with
+   the resolved `commit-sha` and normalized controls.
+2. `release-orchestrate.yml` emits the frozen plan, `execution-sets.json`,
+   synthetic skip receipts, build receipts and bundles, tag evidence, and any
+   reusable-hosted publish results. Its workflow-call outputs or documented
+   artifacts include the
+   `active-publish-selectors.external-oidc-entry-workflow` array and enough
+   stable artifact names for the caller to materialize each entry-hosted publish
+   request without recomputing topology.
+3. The top-level entry workflow creates an entry-hosted publish job only for the
+   returned entry selector members. An empty selector is serialized and treated
+   as a normal skipped matrix, not as a missing output.
+4. Each entry-hosted publish job consumes the same frozen plan, referenced build
+   receipts and bundles, and materialized `publish-request.json` contract as a
+   reusable-hosted publish job for the same `publish-node-id` would consume.
+5. Each entry-hosted publish job emits the same standard `publish-result.json`
+   receipt and uploads it using the standard publish-result artifact contract.
+   The logical key remains the original `publish-node-id`; the physical host is
+   not part of publish identity.
+
+For first-delivery PyPI official publication, the job that requests the PyPI
+trusted-publishing OIDC token and performs the live upload must be a job in
+`.github/workflows/release-official.yml` with the GitHub Actions environment
+`release`. That token-requesting job must not run in
+`.github/workflows/release-orchestrate.yml`, must not run in
+`.github/workflows/release-publish-node.yml`, and must not be implemented as a
+reusable workflow call whose called workflow mints the PyPI OIDC token. Internal
+code reuse is allowed through repository scripts, libraries, or composite
+actions shared with other publish paths, provided the PyPI OIDC token is minted
+only by the top-level official entry workflow job.
+
+Entry-hosted publication does not create a separate request or receipt schema.
+It uses the same `publish-request.json` and `publish-result.json` contracts,
+artifact naming rules, plan identity, build-result references, and failure
+semantics as reusable-hosted publish paths. Shared helpers may materialize or
+validate those files, but they must not re-read descriptors, reclassify registry
+state, recompute topology, or change the physical workflow identity that mints
+an external OIDC token.
+
+Report aggregation waits for both sides of the publish fan-out: reusable-hosted
+results produced inside orchestration and entry-hosted results produced after
+the orchestration call returns to the top-level workflow. The report consumes the
+union of reusable-hosted publish results, entry-hosted publish results, synthetic
+skip receipts, diagnostics, and job conclusions. A missing expected
+entry-hosted `publish-result.json` is reported the same way as a missing expected
+reusable-hosted publish result for the corresponding logical `publish-node-id`.
+
+Detailed publish executor internals remain in Section 6, registry adapter
+behavior remains in Section 7, permissions and environment rules remain in
+Section 8, external trusted-publisher setup remains in Section 9, and acceptance
+evidence remains in Section 10.
 
 ## 6. Publish Executor Design
 
