@@ -40,6 +40,7 @@ these existing contracts as authoritative:
 | Request and receipt files | Serialize all cross-job machine data as UTF-8 JSON with LF line endings and stable `api-version` plus `kind`.                                                                           |
 | Dry-run builds            | Dry-run does not build by default. A separate `validation-build` input may run build units, but its receipts are validation-only and inadmissible as immutable proof.                   |
 | Build proof lookup        | Publish one small proof artifact per immutable-proof member binding so future planner runs can query by exact artifact name.                                                            |
+| Dispatch SHA lock         | Resolve the UI-selected branch or tag before orchestration, pass the peeled commit SHA forward, and place same-entry same-commit concurrency where that SHA is available.               |
 | Tag orchestration         | Create lightweight release tags and verify existing tags by peeling annotated tags to the selected commit.                                                                              |
 | External setup            | Require the `release` environment and registry trusted-publisher policies to target the stable publish workflow and environment.                                                        |
 | Diagnostics               | Use a small registered planner-code vocabulary plus a registration rule for new codes.                                                                                                  |
@@ -91,6 +92,12 @@ The selected commit is not a text input. The operator selects the workflow ref i
 the GitHub UI, and the control plane resolves that ref once to the exact
 `commit-sha` at run start.
 
+The entry workflow must resolve the selected ref before invoking shared
+orchestration. That resolution step peels an annotated tag, if selected, to the
+commit that all later planning, build, tag, and publish work will use, then
+passes the resolved `commit-sha` as an explicit orchestration input. Later jobs
+must not recompute the selected ref or follow a moving branch head.
+
 Input normalization rules:
 
 1. Split `requested-project-ids` on comma and newline, trim ASCII whitespace, drop
@@ -113,16 +120,19 @@ both profiles.
 
 Current-scope authorization policy:
 
-| Profile    | Required triggering-actor repository permission | Approval behavior                                        |
-| ---------- | ----------------------------------------------- | -------------------------------------------------------- |
-| `buddy`    | `write` or higher                               | no extra approval                                        |
-| `official` | `maintain` or higher                            | protected `release` environment on live side-effect jobs |
+| Profile    | Required current-attempt actor repository permission | Approval behavior                                        |
+| ---------- | ---------------------------------------------------- | -------------------------------------------------------- |
+| `buddy`    | `write` or higher                                    | no extra approval                                        |
+| `official` | `maintain` or higher                                 | protected `release` environment on live side-effect jobs |
 
 The implementation must perform the permission check explicitly through the
-GitHub API rather than relying only on the workflow dispatch UI. If the
-permission check cannot resolve the actor's effective repository permission, or
-if the resolved permission is below the selected profile's threshold, the run
-fails closed before planning. Authorization failures must write
+GitHub API rather than relying only on the workflow dispatch UI. For reruns, the
+actor being checked is the user who triggered the current attempt, not merely the
+original dispatch actor; the original dispatch actor may still be retained as
+audit/report metadata. If the permission check cannot resolve the current
+attempt actor's effective repository permission, or if the resolved permission is
+below the selected profile's threshold, the run fails closed before planning.
+Authorization failures must write
 `planner-diagnostics.json` using the planner-diagnostic file contract with
 `REQ_ACTOR_UNAUTHORIZED`, must not emit a partial plan, and must still be
 available to the final report path whenever GitHub Actions schedules that path.
@@ -136,6 +146,13 @@ derived from the selected entry workflow plus resolved `commit-sha`, and must se
 cancellation or ordinary platform cancellation, not a repo-defined supersession
 protocol, while same-entry, same-commit live release side effects do not race
 each other.
+
+Because the resolved `commit-sha` is computed after the platform accepts the
+entry workflow run, the same-entry same-commit concurrency key must be attached at
+a workflow or job boundary where that value is already available, such as the
+shared orchestration workflow call. A coarser entry-workflow concurrency key based
+only on the raw ref may be added for operator convenience, but it is not a
+substitute for the resolved-SHA key required above.
 
 ## Orchestration Job Realization
 
@@ -355,6 +372,13 @@ the object's defining section. In particular, `planner-request`, `build-request`
 `skip-result` must not grow extra root-level fields during implementation. New
 root-level machine fields require a successor contract update before tests or
 workflows depend on them.
+
+Before workflow jobs exchange these files, implementation must add executable
+contract coverage for the closed cross-job JSON shapes. That coverage may be JSON
+Schema, typed fixture validation, or an equivalent repo-owned test harness, but
+it must include golden valid fixtures and representative closed-shape rejection
+cases for request, result, selector, proof, diagnostics, and report files. The
+test harness choice remains implementation-owned; the field set does not.
 
 `planner-request.json` is the control-plane-authored planner input file. Its
 closed current-scope shape is:
@@ -825,14 +849,14 @@ unable to access approval-gated secrets or OIDC publish jobs.
 Before live official publication is enabled, release infrastructure setup must
 include this checklist:
 
-| Surface                         | Required configuration                                                                                                                                                                                                   |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, and native admin bypass left to repository policy.                                                                              |
-| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`; required only when the deferred NuGet.org target is enabled. |
-| PyPI trusted publishing         | Project owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                              |
-| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release` where the package supports trusted publishing.                |
-| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                                  |
-| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                                   |
+| Surface                         | Required configuration                                                                                                                                                                                           |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, and native admin bypass left to repository policy.                                                                      |
+| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow file name `release-publish-node.yml`, and environment `release`; required only when the deferred NuGet.org target is enabled. |
+| PyPI trusted publishing         | Project owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                      |
+| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release` where the package supports trusted publishing.        |
+| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                          |
+| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                           |
 
 Missing trusted-publisher configuration is a live publish failure surfaced by the
 matching publish executor or credential acquisition step. The planner must not
