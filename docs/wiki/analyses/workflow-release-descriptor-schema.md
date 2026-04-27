@@ -959,11 +959,11 @@ profiles:
     buddy:
         targets:
             - uses: github-release/public
-              artifacts: [app-binary, installer]
+              artifacts: [installer]
     official:
         targets:
             - uses: github-release/public
-              artifacts: [app-binary, installer]
+              artifacts: [installer]
 ```
 
 ### Public Node package descriptor excerpt

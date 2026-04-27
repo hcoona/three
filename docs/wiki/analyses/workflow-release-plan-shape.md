@@ -107,7 +107,7 @@ graph:
             profile: buddy
             descriptor-target-index: 1
             target-instance-snapshot-id: nuget/github-packages
-            artifact-ids: [artifact/package, artifact/symbols]
+            artifact-ids: [artifact/package]
             publish-disposition: publish
             publish-mode: create-only
             resolved-publish-identity:
@@ -116,7 +116,6 @@ graph:
             projection:
                 final-distribution-filenames-by-artifact-id:
                     artifact/package: IO.Github.Hcoona.Pngcs.1.2.3.nupkg
-                    artifact/symbols: IO.Github.Hcoona.Pngcs.1.2.3.snupkg
     target-instance-snapshots:
         github-release/public:
             family: github-release

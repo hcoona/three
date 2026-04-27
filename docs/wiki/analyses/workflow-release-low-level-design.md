@@ -189,6 +189,14 @@ closed `release-report.json.jobs` shape aligned with the workflow. The produced
 selectors must still be serialized as machine-readable JSON rather than
 reconstructed from ad hoc shell output in later jobs.
 
+Every planner, build, tag, and publish job that materializes the source tree must
+check out the exact resolved `commit-sha` with enough Git history and tags for
+NBGV to compute the same project version that the planner froze. In current
+scope, that means non-shallow history and tags, equivalent to `fetch-depth: 0`
+plus tag fetching for `actions/checkout`, rather than a default shallow checkout.
+If a job cannot materialize the selected commit with NBGV-compatible history, it
+must fail closed instead of computing a fallback version.
+
 The machine-readable selector file is `execution-sets.json` with this closed
 top-level shape:
 
@@ -575,15 +583,17 @@ Matrix aggregation is deterministic for non-cancelled runs:
 
 1. The expected build row set is `execution-sets.active-variant-ids`; the expected
    publish row set is `execution-sets.active-publish-node-ids`.
-2. `jobs.build.conclusion` and `jobs.publish.conclusion` are `skipped` when their
-   expected row set is empty.
+2. `jobs.build.conclusion` and `jobs.publish.conclusion` are `skipped` only when
+   their expected row set is empty or unavailable because planning failed before
+   `execution-sets.json` was published.
 3. For a non-empty expected row set, the aggregate conclusion is `success` only
    when every expected row has exactly one matching positive receipt and no row
    concluded unsuccessfully.
 4. The aggregate conclusion is `cancelled` when the workflow or any expected row
    is cancelled before the report can prove either success or failure for every
    expected row.
-5. Otherwise the aggregate conclusion is `failure`.
+5. Otherwise the aggregate conclusion is `failure`; this includes a non-empty
+   expected row set that GitHub skipped because an earlier prerequisite failed.
 6. `failed-variant-ids` and `failed-publish-node-ids` contain every expected ID
    whose row concluded unsuccessfully or whose positive receipt is missing in a
    non-cancelled run, sorted lexicographically. They are empty for `success`,
@@ -759,6 +769,12 @@ sidecar files required to satisfy the receipted artifact. If a future .NET app
 requires a directory layout, support files, or an archive, it must model that as a
 separate concrete artifact kind or successor descriptor contract rather than
 stretching `binary/executable`.
+
+`qidian-novel-downloader` publishes standalone `binary/executable` artifacts in
+first delivery. `image-occlusion-editor` keeps its WinUI publish output as the
+build-side `app-binary` artifact that the Inno Setup installer is produced from,
+but its first-delivery GitHub Release target publishes only the installer because
+the WinUI publish directory is not a standalone single-file executable artifact.
 
 Executors must materialize every requested `artifact-id` exactly once in the
 `build-result`. A variant bundle may contain incidental files, but only files
@@ -1098,7 +1114,7 @@ shapes without turning first implementation into bulk descriptor migration.
 | -------------------------------- | ------------------------- | ------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | C# packable library              | `hjg-pngcs`               | `src/public/lib/Hjg.Pngcs/`                | `Hjg.Pngcs.csproj`                                             | Windows `dotnet pack`, `.nupkg`, `.snupkg`, GitHub Release assets, and GitHub Packages NuGet for `.nupkg`; NuGet.org and GitHub Packages `.snupkg` publication are deferred until `.snupkg` observation is proven. |
 | C# private app binary            | `qidian-novel-downloader` | `src/private/app/qidian-novel-downloader/` | `QidianNovelDownloader.csproj`                                 | Nonpackable app release, `dotnet publish` binary artifact, private-app first-delivery scope.                                                                                                                       |
-| C# public app installer          | `image-occlusion-editor`  | `src/public/app/ImageOcclusionEditor/`     | `ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj` | Binary artifact plus `installer/installer/inno-setup` produced from the binary.                                                                                                                                    |
+| C# public app installer          | `image-occlusion-editor`  | `src/public/app/ImageOcclusionEditor/`     | `ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj` | Build-side WinUI binary output plus `installer/installer/inno-setup` produced from that binary output; first-delivery GitHub Release publication includes the installer artifact only.                             |
 | Python special version authority | `nbgv-python`             | `src/public/lib/nbgv-python/`              | `pyproject.toml`                                               | `nbgv-python-pyproject-version` exception, Hatchling wheel plus optional sdist, PyPI/GitHub Release publication shape.                                                                                             |
 | Python normal NBGV/Hatch package | `hcoona-release-smoke`    | `src/public/lib/hcoona-release-smoke/`     | `pyproject.toml`                                               | Normal Python build-system NBGV integration through Hatchling, separate from the `nbgv-python` exception path.                                                                                                     |
 | Node npm package                 | `hexo-renderer-asciidoc`  | `src/public/lib/hexo-renderer-asciidoc/`   | `package.json`                                                 | pnpm/npm packaging, npmjs and GitHub Packages target shapes, package-name projection where needed.                                                                                                                 |
