@@ -39,11 +39,10 @@ The accepted rebaseline order is:
 11. implementation-owned boundaries;
 12. consistency review.
 
-This group establishes that skeleton and leaves the substantive topology,
-publish, registry, permissions, external-readiness, and acceptance rewrites to
-their owning follow-up groups unless small wording is needed to keep the outline
-coherent. Existing content below is preserved in place as the starting material
-for those later passes.
+Group 1 established that skeleton. Section 2 has since been rebaselined by the
+frozen-contract pass, while the remaining later sections continue to preserve
+starting material for their owning follow-up groups unless small wording is
+needed to keep the outline coherent.
 
 ### Low-Level Design Summary
 
@@ -65,24 +64,82 @@ for those later passes.
 | Registry adapters         | Keep remote observation in planner adapters, live mutation in publish executors, and package metadata conformance in publish executors before upload.                                   |
 | Acceptance                | Maintain a trace table from each acceptance scenario to descriptors, plans, receipts, registry evidence, and workflow conclusions.                                                      |
 
-## 2. Frozen Upstream Contracts
+## 2. Frozen Upstream Contracts and Non-Reopened Seams
 
-This page does not reopen the upper-layer or middle-layer design. It consumes
-these existing contracts as authoritative:
+This page consumes the signed-off requirements, high-level architecture, and
+middle-layer contracts as fixed input. Low-level realization may still make
+incompatible internal choices before implementation starts, but those choices
+must remain below the frozen seams named here. They must not change descriptor
+schema, plan shape, workflow/executor boundaries, topology mapping, or business
+rules.
 
-- `src/**/three.release.yml` project descriptors and
-  `eng/release/target-instances.yml` are the only author-time release files.
-- The planner emits one `three.release.plan/v1alpha1` artifact with an envelope
-  and normalized graph.
+Frozen requirements and high-level architecture:
+
+- Participation is descriptor-gated. Workflow release must not infer releasable
+  projects from directory structure alone, and a project without a valid
+  descriptor is skipped or rejected according to the frozen discovery rules.
+- `buddy` and `official` are the only current-scope profiles and operator entry
+  points. `buddy` is a `write+` day-to-day delivery path; `official` is a
+  `maintain+` repository-maintenance path with protected-environment approval for
+  live side effects.
+- The architecture is planner-centric, with a fixed split between control plane,
+  planning layer, and execution layer. Workflows orchestrate and enforce control
+  gates, the planner computes release intent, and executors only carry out
+  materialized build or publish requests.
+- Dry-run and validation-only runs must have no live tag or external publication
+  side effects. Validation-build receipts are validation evidence only and are
+  not admissible as immutable publication proof.
+- Every non-zero publish profile includes GitHub Release. The first delivery
+  scope includes GitHub Release, NuGet, PyPI, npm, and RubyGems, including live
+  official PyPI publication.
+- `buddy` and `official` must not publish the same package name to the same
+  registry.
+- `nbgv-python` is the only current-scope special version authority. Its version
+  identity comes from the selected commit's checked-in `pyproject.toml`
+  `[project].version`; other current-scope projects use the descriptor-declared
+  build-system NBGV authority.
+
+Frozen authoring and planner contracts:
+
+- The only release authoring files are project descriptors at
+  `src/**/three.release.yml` and the target-instance catalog at
+  `eng/release/target-instances.yml`.
+- The planner emits one `three.release.plan/v1alpha1` artifact with the frozen
+  envelope and normalized graph shape. That plan is execution-authoritative for
+  descriptor-owned data, catalog snapshots, resolved publish identity, desired
+  publish state, replay/overwrite classification, and publish disposition.
+- Manual dispatch resolves the selected branch or tag once to an exact
+  `commit-sha`. Planning, build, tag, and publish work must stay pinned to that
+  exact resolved commit SHA and must not follow a moving ref later in the run.
+- A target-instance `capabilities.publish-topology` value is frozen into the plan
+  target-instance snapshot. Later workflow routing derives concrete publish paths
+  from that planned topology rather than recomputing registry topology.
+- Planner-owned remote observation classifies destination state before plan
+  emission. It uses public reads where possible and otherwise only
+  least-privilege `GITHUB_TOKEN` reads for GitHub-hosted surfaces; it never uses
+  publish credentials or approval-gated environment secrets.
+
+Frozen workflow and executor boundaries:
+
 - The control plane fans out at exactly two execution granularities: one build
-  unit per `variant-id` and one publish unit per `publish-node-id`.
-- Executors consume materialized requests and must not rediscover descriptors,
-  targets, publish identity, replay policy, or overwrite policy.
-- Planner-time remote observation uses public reads where possible and otherwise
-  only least-privilege `GITHUB_TOKEN` reads for GitHub-hosted surfaces. It never
-  uses publish credentials or approval-gated environment secrets.
+  unit per `variant-id` and one logical publish unit per `publish-node-id`.
+- One logical publish or skip result remains keyed by each `publish-node-id`,
+  even when topology routes the concrete publish job through an entry-hosted,
+  caller-workflow-bound, reusable-workflow-bound, or GitHub-token path.
+- Executors are thin consumers of materialized requests. They must not re-read
+  release descriptors or `eng/release/target-instances.yml`, rediscover targets,
+  query publish destinations for replay classification, or derive alternate
+  publish identity, topology, overwrite policy, or same-tag GitHub Release
+  replacement policy.
+- Package-registry publish executors validate produced package metadata against
+  the planner-frozen `resolved-publish-identity` before upload and fail closed on
+  mismatch.
+- `ensure-tag` verifies the full existing required tag set before creating any
+  missing tags, creates none if any existing tag points elsewhere, and never
+  retargets tags.
 - Current-scope immutable proof reuse is limited to unexpired GitHub Actions
-  artifacts under the platform retention window.
+  artifacts under the platform retention window, subject to the frozen proof
+  admissibility rules.
 
 ## 3. Workflow Identity and Filename Contract
 
