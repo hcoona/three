@@ -42,7 +42,7 @@ these existing contracts as authoritative:
 | Build proof lookup        | Publish one small proof artifact per immutable-proof member binding so future planner runs can query by exact artifact name.                                                            |
 | Dispatch SHA lock         | Resolve the UI-selected branch or tag before orchestration, pass the peeled commit SHA forward, and place same-entry same-commit concurrency where that SHA is available.               |
 | Tag orchestration         | Create lightweight release tags and verify existing tags by peeling annotated tags to the selected commit.                                                                              |
-| External setup            | Require the `release` environment and registry trusted-publisher policies to target the stable publish workflow and environment.                                                        |
+| External setup            | Require the `release` environment, registry trusted-publisher policies, and explicit external-registry live enablement before official OIDC registry publication.                       |
 | Diagnostics               | Use a small registered planner-code vocabulary plus a registration rule for new codes.                                                                                                  |
 | Diagnostics artifact      | Serialize planner diagnostics through one closed container object rather than a raw array, NDJSON stream, or ad hoc log file.                                                           |
 | Execution sets            | Materialize matrix selectors in one closed JSON object so empty dry-run, validation-build, zero-target, and all-skip runs have deterministic workflow behavior.                         |
@@ -159,19 +159,20 @@ substitute for the resolved-SHA key required above.
 The shared orchestration workflow should implement the middle-layer job sequence
 with these concrete data handoffs:
 
-| Job                     | Required inputs                                                                               | Required outputs                                                        |
-| ----------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `authorize-entry`       | GitHub event context, selected profile                                                        | Authorization conclusion and normalized run metadata.                   |
-| `plan`                  | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service       | Frozen plan artifact or planner diagnostics.                            |
-| `derive-execution-sets` | Frozen plan, raw dry-run controls                                                             | `execution-sets.json` selector object.                                  |
-| `build`                 | Plan artifact, one `variant-id` per matrix row                                                | Variant bundle, `build-result`, and optional immutable-proof artifacts. |
-| `ensure-tag`            | Frozen plan and active GitHub Release publish nodes                                           | `tag-result.json` tag verification or creation evidence.                |
-| `publish`               | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts                | `publish-result` artifacts.                                             |
-| `report`                | Plan, diagnostics, tag results, build results, skip results, publish results, job conclusions | Final operator summary.                                                 |
+| Job               | Required inputs                                                                                                                         | Required outputs                                                        |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `authorize-entry` | GitHub event context, selected profile                                                                                                  | Authorization conclusion and normalized run metadata.                   |
+| `plan`            | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan and `execution-sets.json` artifacts, or diagnostics.        |
+| `build`           | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts. |
+| `ensure-tag`      | Frozen plan and active GitHub Release publish nodes                                                                                     | `tag-result.json` tag verification or creation evidence.                |
+| `publish`         | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts                                                          | `publish-result` artifacts.                                             |
+| `report`          | Plan, diagnostics, tag results, build results, skip results, publish results, job conclusions                                           | Final operator summary.                                                 |
 
-`derive-execution-sets` may be a separate job or an implementation detail of
-`plan`, but the produced selectors must be serialized as machine-readable JSON
-rather than reconstructed from ad hoc shell output in later jobs.
+In current-scope first delivery, execution-set derivation is an implementation
+detail of the `plan` job, not a separate reportable workflow job. This keeps the
+closed `release-report.json.jobs` shape aligned with the workflow. The produced
+selectors must still be serialized as machine-readable JSON rather than
+reconstructed from ad hoc shell output in later jobs.
 
 The machine-readable selector file is `execution-sets.json` with this closed
 top-level shape:
@@ -257,6 +258,17 @@ The implementation may merge these commands into one binary or script entry
 point as long as the workflow still treats the file outputs as the stable
 contract.
 
+The planner job runs on Ubuntu and uses the repository's `mise` tool boundary to
+install and invoke the ecosystem tools needed for planner-owned normalization.
+Current scope allows the planner host to call `dotnet` or MSBuild evaluation for
+NuGet `PackageId`, `uv`/Hatchling for PyPI filename computation, `pnpm`/`npm`
+for npm package metadata, and Ruby/Bundler or RubyGems evaluation for gem
+metadata. These calls are planner-owned observations, not release builds; actual
+C# release builds remain in Windows build units, and publish credentials or
+approval-gated secrets remain unavailable to the planner. If a required tool is
+unavailable or its output cannot be normalized into the frozen contract, the
+planner fails closed with diagnostics rather than falling back to static guesses.
+
 The CLI must fail closed:
 
 - invalid descriptors anywhere in current scope block all planning;
@@ -270,26 +282,27 @@ The CLI must fail closed:
 The middle-layer contract freezes the diagnostic object shape but not the code
 vocabulary. Current scope should start with this minimum code registry:
 
-| Code                            | Phase            | Scope          | Meaning                                                                                             |
-| ------------------------------- | ---------------- | -------------- | --------------------------------------------------------------------------------------------------- |
-| `REQ_INVALID_INPUT`             | `validation`     | `request`      | Raw workflow input could not be normalized into the planner request contract.                       |
-| `REQ_FORCE_FOR_OFFICIAL`        | `validation`     | `request`      | `request-flags.force` was true for `profile: official`.                                             |
-| `REQ_PROJECT_NOT_FOUND`         | `validation`     | `project`      | An explicitly requested project ID was not an in-scope releasable project.                          |
-| `DESC_SCHEMA_INVALID`           | `validation`     | `project`      | A project descriptor failed file-schema validation.                                                 |
-| `DESC_STATIC_INVALID`           | `validation`     | `project`      | Descriptor passed syntax but failed static repo validation.                                         |
-| `CATALOG_SCHEMA_INVALID`        | `validation`     | `request`      | The shared target-instance catalog failed schema validation.                                        |
-| `CATALOG_REF_NOT_FOUND`         | `validation`     | `project`      | A descriptor target reference did not resolve to exactly one catalog target instance.               |
-| `VERSION_AUTHORITY_FAILED`      | `normalization`  | `project`      | The planner could not resolve the project-scoped version identity.                                  |
-| `PYPI_FILENAME_COMPUTE_FAILED`  | `normalization`  | `publish-node` | Planner-time PyPI filename computation failed or produced an unexpected member set.                 |
-| `REMOTE_QUERY_FAILED`           | `query`          | `publish-node` | Destination query failed after bounded retry.                                                       |
-| `REMOTE_NORMALIZATION_FAILED`   | `normalization`  | `publish-node` | Raw destination state could not be normalized for the target family.                                |
-| `REMOTE_CLASSIFICATION_FAILED`  | `classification` | `publish-node` | Normalized destination state could not be reduced to one remote-observation class.                  |
-| `IMMUTABLE_PROOF_UNAVAILABLE`   | `classification` | `publish-node` | Required prior build digest proof was absent, expired, ambiguous, or conflicting.                   |
-| `IMMUTABLE_PARTIAL_UNSUPPORTED` | `classification` | `publish-node` | Same-identity immutable remote state was a proved partial subset, which current scope fails closed. |
-| `REMOTE_CONFLICTING`            | `classification` | `publish-node` | Same-identity remote state conflicts with the frozen publish intent.                                |
-| `OFFICIAL_FROZEN_VERSION`       | `classification` | `project`      | A `buddy FORCE` request targeted a project/version already frozen by official GitHub Release.       |
-| `REQ_ACTOR_UNAUTHORIZED`        | `validation`     | `request`      | The triggering actor did not have the required repository permission for the selected profile.      |
-| `PLAN_INTERNAL_INVARIANT`       | `validation`     | `request`      | Planner detected an impossible internal state after validation should have prevented it.            |
+| Code                            | Phase            | Scope          | Meaning                                                                                              |
+| ------------------------------- | ---------------- | -------------- | ---------------------------------------------------------------------------------------------------- |
+| `REQ_INVALID_INPUT`             | `validation`     | `request`      | Raw workflow input could not be normalized into the planner request contract.                        |
+| `REQ_FORCE_FOR_OFFICIAL`        | `validation`     | `request`      | `request-flags.force` was true for `profile: official`.                                              |
+| `REQ_PROJECT_NOT_FOUND`         | `validation`     | `project`      | An explicitly requested project ID was not an in-scope releasable project.                           |
+| `DESC_SCHEMA_INVALID`           | `validation`     | `project`      | A project descriptor failed file-schema validation.                                                  |
+| `DESC_STATIC_INVALID`           | `validation`     | `project`      | Descriptor passed syntax but failed static repo validation.                                          |
+| `CATALOG_SCHEMA_INVALID`        | `validation`     | `request`      | The shared target-instance catalog failed schema validation.                                         |
+| `CATALOG_REF_NOT_FOUND`         | `validation`     | `project`      | A descriptor target reference did not resolve to exactly one catalog target instance.                |
+| `VERSION_AUTHORITY_FAILED`      | `normalization`  | `project`      | The planner could not resolve the project-scoped version identity.                                   |
+| `PYPI_FILENAME_COMPUTE_FAILED`  | `normalization`  | `publish-node` | Planner-time PyPI filename computation failed or produced an unexpected member set.                  |
+| `REMOTE_QUERY_FAILED`           | `query`          | `publish-node` | Destination query failed after bounded retry.                                                        |
+| `REMOTE_NORMALIZATION_FAILED`   | `normalization`  | `publish-node` | Raw destination state could not be normalized for the target family.                                 |
+| `REMOTE_CLASSIFICATION_FAILED`  | `classification` | `publish-node` | Normalized destination state could not be reduced to one remote-observation class.                   |
+| `IMMUTABLE_PROOF_UNAVAILABLE`   | `classification` | `publish-node` | Required prior build digest proof was absent, expired, ambiguous, or conflicting.                    |
+| `IMMUTABLE_PARTIAL_UNSUPPORTED` | `classification` | `publish-node` | Same-identity immutable remote state was a proved partial subset, which current scope fails closed.  |
+| `REMOTE_CONFLICTING`            | `classification` | `publish-node` | Same-identity remote state conflicts with the frozen publish intent.                                 |
+| `OFFICIAL_FROZEN_VERSION`       | `classification` | `project`      | A `buddy FORCE` request targeted a project/version already frozen by official GitHub Release.        |
+| `REQ_ACTOR_UNAUTHORIZED`        | `validation`     | `request`      | The triggering actor did not have the required repository permission for the selected profile.       |
+| `REQ_EXTERNAL_TARGET_DISABLED`  | `validation`     | `publish-node` | A selected live official external OIDC registry target was not present in the live-enable allowlist. |
+| `PLAN_INTERNAL_INVARIANT`       | `validation`     | `request`      | Planner detected an impossible internal state after validation should have prevented it.             |
 
 New planner diagnostic codes may be added by implementation, but every new code
 must be registered in this page or in a successor registry before tests depend
@@ -493,6 +506,12 @@ Current scope defines no root-level extension field for `release-report.json`.
 New root-level report fields require a successor contract update before
 workflows, renderers, or tests depend on them.
 
+Because execution-set derivation is part of the `plan` job in current-scope first
+delivery, `release-report.json.jobs` intentionally has no
+`derive-execution-sets` entry. If a later design splits execution-set derivation
+into a standalone workflow job, the report schema must be updated before that job
+can become observable by tests or renderers.
+
 For planner failure before plan emission, `plan.plan-id`,
 `plan.selected-project-ids`, and `artifacts.plan-artifact-name` are `null`, while
 `artifacts.planner-diagnostics-artifact-name` identifies the diagnostics artifact
@@ -572,6 +591,18 @@ metadata as `binding-json` input.
 The immutable proof artifact must include `immutable-proof.json`, and that file
 must repeat the full binding fields. The repeated fields are required so a hash
 collision or accidental name reuse cannot silently satisfy proof lookup.
+
+Immutable proof artifacts are emitted by the build-unit control-plane wrapper
+after the executor has produced `build-result.json` and after the control plane
+has uploaded the corresponding build-result and bundle artifacts. The build
+executor still receives only its `build-request` and does not receive publish-node
+snapshots. For each live, non-dry-run, non-validation build result, the wrapper
+reads the frozen plan and emits one immutable proof artifact for each immutable
+package-registry publish-node/artifact binding that references an artifact
+fulfilled by that build result. Dry-run and validation-build units must not emit
+admissible immutable proof artifacts; if implementation persists any diagnostic
+wrapper for such runs, proof lookup must ignore it through `run.dry-run` or
+`run.validation-only`.
 
 The workflow should not extend artifact retention just to satisfy immutable proof
 reuse. If an artifact is expired or missing, the proof is unavailable and the
@@ -892,6 +923,26 @@ the implementation of no-side-effect, GitHub Release, or GitHub Packages paths.
 Official external-registry publication remains disabled for any target whose
 trusted-publisher entry or `release` environment policy has not been configured
 by a repository or package owner.
+
+First delivery uses an explicit non-secret repository variable,
+`THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS`, as the control-plane live-enable
+allowlist for official live publication to external OIDC registries. The value is
+a comma or newline separated list of target-instance refs such as `pypi/pypi`,
+`npm/npmjs`, `rubygems/rubygems-org`, or `nuget/nuget-org`; `*` enables every
+external OIDC registry target declared in the frozen plan. A missing or empty
+value enables none. This allowlist applies only to active `official` publish
+nodes whose target-instance snapshot has `credential-posture: oidc`; GitHub
+Release and GitHub Packages nodes are not gated by this variable.
+
+After the plan and execution sets are computed, but before any protected
+environment is requested or any live side-effect job is scheduled, the control
+plane must compare every active official external OIDC publish node with that
+allowlist. If any selected node is not enabled, the run fails before tag or
+publish side effects, writes `planner-diagnostics.json` with
+`REQ_EXTERNAL_TARGET_DISABLED`, publishes no plan or execution-set artifacts for
+that attempt, and emits no partial live-publish receipts. This is a fail-closed
+readiness gate, not a planner-owned remote-observation rule and not a skip
+condition.
 
 No-side-effect runs skip this environment gate entirely:
 
