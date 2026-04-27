@@ -298,14 +298,14 @@ substitute for the resolved-SHA key required above.
 The selected entry workflow and the shared orchestration workflow together
 implement the middle-layer job sequence with these concrete data handoffs:
 
-| Job               | Physical host                                                                                           | Required inputs                                                                                                                         | Required outputs                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `authorize-entry` | top-level entry workflow or the called orchestration workflow before planning                           | GitHub event context, selected profile                                                                                                  | Authorization conclusion and normalized run metadata.                                    |
-| `plan`            | shared orchestration workflow                                                                           | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics. |
-| `build`           | shared orchestration workflow calling the reusable build unit                                           | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts.                  |
-| `ensure-tag`      | control-plane job before publish fan-out                                                                | Frozen plan plus selected and active GitHub Release publish nodes                                                                       | `tag-result.json` tag verification or creation evidence.                                 |
-| `publish`         | shared orchestration for reusable-hosted selectors; top-level entry workflow for entry-hosted selectors | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts, and a materialized `publish-request.json`               | `publish-result` artifacts.                                                              |
-| `report`          | top-level entry workflow after any entry-hosted publish jobs complete                                   | Plan, diagnostics, tag results, build results, skip results, publish results from all topology paths, job conclusions                   | Final operator summary.                                                                  |
+| Job               | Physical host                                                                                                   | Required inputs                                                                                                                         | Required outputs                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `authorize-entry` | top-level entry workflow or the called orchestration workflow before planning                                   | GitHub event context, selected profile                                                                                                  | Authorization conclusion and normalized run metadata.                                    |
+| `plan`            | shared orchestration workflow                                                                                   | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics. |
+| `build`           | shared orchestration workflow calling the reusable build unit                                                   | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts.                  |
+| `ensure-tag`      | control-plane job before publish fan-out                                                                        | Frozen plan plus selected and active GitHub Release publish nodes                                                                       | `tag-result.json` tag verification or creation evidence.                                 |
+| `publish`         | shared orchestration for reusable-hosted selectors; entry workflow resumes hosting for entry-workflow selectors | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts, and a materialized `publish-request.json`               | `publish-result` artifacts.                                                              |
+| `report`          | top-level entry workflow after any entry-hosted publish jobs complete                                           | Plan, diagnostics, tag results, build results, skip results, publish results from all topology paths, job conclusions                   | Final operator summary.                                                                  |
 
 In current-scope first delivery, execution-set derivation is an implementation
 detail of the `plan` job, not a separate reportable workflow job. This keeps the
@@ -321,8 +321,10 @@ plus tag fetching for `actions/checkout`, rather than a default shallow checkout
 If a job cannot materialize the selected commit with NBGV-compatible history, it
 must fail closed instead of computing a fallback version.
 
-The machine-readable selector file is `execution-sets.json` with this closed
-top-level shape:
+`execution-sets.json` is the authoritative low-level routing contract for build
+and publish fan-out. Later jobs must consume this file rather than re-deriving
+publish routes from target family, registry name, executor type, shell
+conditionals, or workflow-local side lists. Its top-level shape is closed:
 
 ```json
 {
@@ -356,17 +358,21 @@ The selector fields are derived as follows:
    `publish-intent-node-ids` only when either the run is live or
    `validation-build` is true. Ordinary dry-runs therefore serialize `[]`.
 4. `active-publish-selectors` partitions every `active-publish-node-ids` member
-   by its frozen `target-instance-snapshot.capabilities.publish-topology` value.
-   Empty topology arrays are serialized as `[]`. The shared orchestration
-   workflow consumes reusable-hosted partitions, including caller-workflow-bound
-   selectors whose registry validates the caller/top-level identity and
-   reusable-workflow-bound selectors whose registry supports reusable identity.
-   The top-level entry workflow consumes only entry-workflow-bound selectors
-   after the orchestration call returns. A first-delivery `pypi/pypi` official
-   publish node must therefore appear only in
-   `active-publish-selectors.external-oidc-entry-workflow`; it must not be
-   selected by target-family guessing, by a PyPI-specific side list, or by the
-   reusable workflow partition.
+   by the planner-frozen
+   `target-instance-snapshot.capabilities.publish-topology` value on that
+   publish node. The control plane must not guess topology from target family,
+   registry family, target-instance ref, executor implementation, or credential
+   posture after the planner has emitted the plan. The key set is frozen to
+   exactly:
+    - `github-token`;
+    - `external-oidc-entry-workflow`;
+    - `external-oidc-caller-workflow`;
+    - `external-oidc-reusable-workflow`.
+
+    Each active publish node appears in exactly one of those arrays. Unsupported
+    or unmapped frozen topology values fail the topology gate before fan-out;
+    supported empty partitions are still serialized as `[]`.
+
 5. `skip-satisfied-publish-node-ids` contains every selected publish node whose
    frozen `publish-disposition` is `skip-satisfied`; the `plan` job uses this set
    to emit synthetic skip receipts immediately after publishing
@@ -382,7 +388,31 @@ Empty arrays are first-class workflow outcomes, not missing outputs. A build or
 publish matrix with an empty corresponding selector is skipped by the control
 plane, and the `report` job still runs from the serialized selectors, available
 receipts, diagnostics, and job conclusions when the workflow has not been
-cancelled before the platform can schedule that job.
+cancelled before the platform can schedule that job. Empty arrays are meaningful
+for ordinary dry-runs, validation-build dry-runs, zero-target selections,
+all-`skip-satisfied` selections, and any run where a particular topology
+partition has no active members.
+
+Topology changes only the physical host that runs the live publish side effect.
+It does not change the logical `publish-node-id`, the planner-frozen
+`publish-disposition`, the synthetic skip-receipt semantics, the
+`publish-request.json` materialization rules, or the standard `publish-result`
+contract. Report aggregation therefore treats publish and skip receipts from all
+topology paths as receipts for the same logical publish-node graph.
+
+At fan-out time, the control plane routes from `execution-sets.json` at a high
+level:
+
+- `github-token`, `external-oidc-caller-workflow`, and
+  `external-oidc-reusable-workflow` are reusable-hosted selectors and remain on
+  the shared orchestration path that invokes the reusable publish unit.
+- `external-oidc-entry-workflow` is entry-workflow-bound. The orchestration call
+  returns this selector to the selected top-level entry workflow, and the entry
+  workflow is responsible for physically hosting those publish jobs.
+
+This section defines only the routing contract. Registry-specific entry-hosted
+job details belong to the entry-hosted publish path design, and publish executor
+internals remain executor-owned.
 
 Current scope does not use a separate `approve` job. `official` live side effects
 are gated by attaching the protected GitHub `release` environment directly to
