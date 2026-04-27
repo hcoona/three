@@ -457,8 +457,10 @@ Before workflow jobs exchange these files, implementation must add executable
 contract coverage for the closed cross-job JSON shapes. That coverage may be JSON
 Schema, typed fixture validation, or an equivalent repo-owned test harness, but
 it must include golden valid fixtures and representative closed-shape rejection
-cases for request, result, selector, proof, diagnostics, and report files. The
-test harness choice remains implementation-owned; the field set does not.
+cases for plan, request, result, selector, proof, diagnostics, and report files.
+The `release-plan.json` fixtures must be derived from the authoritative shape in
+[Workflow Release Plan Shape](./workflow-release-plan-shape.md). The test harness
+choice remains implementation-owned; the field set does not.
 
 Treat this executable contract coverage as the first implementation milestone
 for workflow data exchange. For objects whose complete `v1alpha1` field set is
@@ -550,12 +552,12 @@ positive `tag-result`.
         "authorize-entry": { "conclusion": "success" },
         "plan": { "conclusion": "success" },
         "build": {
-            "conclusion": "success",
+            "conclusion": "skipped",
             "failed-variant-ids": []
         },
         "ensure-tag": { "conclusion": "skipped" },
         "publish": {
-            "conclusion": "success",
+            "conclusion": "skipped",
             "failed-publish-node-ids": []
         }
     },
@@ -814,6 +816,14 @@ executor-internal input to the Inno Setup packaging step, not as a descriptor
 artifact, because the WinUI publish directory is not a standalone single-file
 executable artifact. Its first-delivery GitHub Release target publishes only the
 installer.
+
+`image-occlusion-editor` acceptance must use a test-harness-owned packaging
+evidence artifact or log, not a `build-result` extension, to prove that Inno Setup
+consumed the executor-internal WinUI publish output. That evidence is scoped to
+acceptance fixtures only: it must identify the packaging command or script,
+selected RID, installer artifact ID, and normalized internal publish-output path
+used as Inno Setup input, and it must not be consumed by planner classification,
+publish execution, proof lookup, or release-report aggregation.
 
 Executors must materialize every requested `artifact-id` exactly once in the
 `build-result`. A variant bundle may contain incidental files, but only files
@@ -1205,7 +1215,7 @@ minimum shape:
 | C# library package build and release   | `src/public/lib/Hjg.Pngcs/`                                                         | Descriptor, plan snapshot, Windows build receipt for `.nupkg` and `.snupkg`, and GitHub Release publish or skip receipt for both modeled assets.                                                                                                                  |
 | GitHub Packages NuGet publication      | `src/public/lib/Hjg.Pngcs/`                                                         | Descriptor target `nuget/github-packages`, target-instance snapshot, Windows build receipt for the `.nupkg` member, `packages: write` GitHub Packages publish or skip receipt, and no live `.snupkg` package-registry side effect.                                |
 | C# app `dotnet publish` binary         | `src/private/app/qidian-novel-downloader/`                                          | Descriptor, plan snapshot, Windows build receipt for binary artifact, GitHub Release evidence.                                                                                                                                                                    |
-| C# app Inno installer                  | `src/public/app/ImageOcclusionEditor/`                                              | Descriptor, plan snapshot, Windows build receipt for the `installer` artifact, packaging evidence that Inno Setup consumed the executor-internal WinUI publish output, and GitHub Release evidence for the installer.                                             |
+| C# app Inno installer                  | `src/public/app/ImageOcclusionEditor/`                                              | Descriptor, plan snapshot, Windows build receipt for the `installer` artifact, acceptance packaging evidence artifact/log proving Inno Setup consumed the executor-internal WinUI publish output, and GitHub Release evidence for the installer.                  |
 | Python package including `nbgv-python` | `src/public/lib/nbgv-python/`                                                       | Descriptor with special version authority, plan snapshot with frozen version, build metadata conformance, and GitHub Release evidence; PyPI live evidence is required only after the deferred non-reusable PyPI publisher path is explicitly enabled.             |
 | Python normal NBGV/Hatch package       | `src/public/lib/hcoona-release-smoke/`                                              | Descriptor with build-system NBGV version authority, plan snapshot with frozen version, build metadata conformance, and GitHub Release evidence; PyPI live evidence is required only after the deferred non-reusable PyPI publisher path is enabled.              |
 | Node package build and release         | `src/public/lib/hexo-renderer-asciidoc/`                                            | Descriptor, plan snapshot, npm pack receipt, and GitHub Release publish or skip receipt for the packed npm artifact.                                                                                                                                              |
