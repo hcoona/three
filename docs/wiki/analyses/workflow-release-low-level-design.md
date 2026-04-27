@@ -35,7 +35,7 @@ these existing contracts as authoritative:
 | Area                      | Low-level decision                                                                                                                                                                      |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Workflow files            | Use stable checked-in workflow filenames because OIDC trusted-publisher policies match workflow identity.                                                                               |
-| Entry authorization       | Explicitly check `buddy` as `write+` and `official` as `maintain+` before planning; serialize same-commit release runs without auto-cancellation.                                       |
+| Entry authorization       | Explicitly check `buddy` as `write+` and `official` as `maintain+` before planning; serialize same-entry, same-commit release work without auto-cancellation.                           |
 | Planner host              | Expose the planner through a repo-owned CLI contract; the implementation language remains implementation-owned.                                                                         |
 | Request and receipt files | Serialize all cross-job machine data as UTF-8 JSON with LF line endings and stable `api-version` plus `kind`.                                                                           |
 | Dry-run builds            | Dry-run does not build by default. A separate `validation-build` input may run build units, but its receipts are validation-only and inadmissible as immutable proof.                   |
@@ -122,9 +122,10 @@ The implementation must perform the permission check explicitly through the
 GitHub API rather than relying only on the workflow dispatch UI. If the
 permission check cannot resolve the actor's effective repository permission, or
 if the resolved permission is below the selected profile's threshold, the run
-fails closed before planning. When a machine-readable diagnostic is emitted for
-that failure, it uses the planner-diagnostic file contract with
-`REQ_ACTOR_UNAUTHORIZED`.
+fails closed before planning. Authorization failures must write
+`planner-diagnostics.json` using the planner-diagnostic file contract with
+`REQ_ACTOR_UNAUTHORIZED`, must not emit a partial plan, and must still be
+available to the final report path whenever GitHub Actions schedules that path.
 
 Current scope does not adopt native duplicate-run auto-cancellation. Entry
 workflows and the shared orchestration workflow must not configure
@@ -133,7 +134,8 @@ same-entry, same-commit release work with a GitHub Actions concurrency key
 derived from the selected entry workflow plus resolved `commit-sha`, and must set
 `cancel-in-progress: false`. Cancellation therefore remains manual operator
 cancellation or ordinary platform cancellation, not a repo-defined supersession
-protocol, while same-commit live release side effects do not race each other.
+protocol, while same-entry, same-commit live release side effects do not race
+each other.
 
 ## Orchestration Job Realization
 
@@ -403,7 +405,7 @@ tag failures are reported from the `ensure-tag` job conclusion plus a missing
 positive `tag-result`.
 
 `release-report.json` is the control-plane-authored final report data consumed by
-`render-summary`. Its minimum shape is:
+`render-summary`. Its closed current-scope shape is:
 
 ```json
 {
@@ -456,10 +458,16 @@ positive `tag-result`.
 }
 ```
 
+Current scope defines no root-level extension field for `release-report.json`.
+New root-level report fields require a successor contract update before
+workflows, renderers, or tests depend on them.
+
 For planner failure before plan emission, `plan.plan-id`,
 `plan.selected-project-ids`, and `artifacts.plan-artifact-name` are `null`, while
-`artifacts.planner-diagnostics-artifact-name` identifies the diagnostics
-artifact when one was produced. `run.conclusion` uses GitHub job conclusion
+`artifacts.planner-diagnostics-artifact-name` identifies the diagnostics artifact
+for pre-planner or planner failures. That field may be `null` only when no
+diagnostics artifact can exist, such as cancellation before the platform
+persists the diagnostic path. `run.conclusion` uses GitHub job conclusion
 spelling such as `success`, `failure`, or `cancelled`. Job-level conclusions
 under `jobs` use the same spelling and may also use `skipped` for jobs that did
 not run because their serialized selector set was empty or their prerequisite
@@ -707,10 +715,11 @@ First delivery defers live NuGet.org official publication for `hjg-pngcs`
 instead of accepting an unproven `.snupkg` observation path. Until that path is
 documented and tested, the first-delivery `hjg-pngcs` acceptance scope covers the
 modeled `.nupkg` and `.snupkg` artifacts through GitHub Release and GitHub
-Packages NuGet only. When NuGet.org publication is later enabled, the planner
-must keep the `.nupkg` and `.snupkg` as separate planned artifacts and the
-publish executor must publish both when the descriptor references both members;
-it must not silently publish an untracked `.snupkg` side effect.
+Packages NuGet only, and the first-delivery `hjg-pngcs` descriptor must not
+declare a `nuget/nuget-org` target. When NuGet.org publication is later enabled,
+the planner must keep the `.nupkg` and `.snupkg` as separate planned artifacts
+and the publish executor must publish both when the descriptor references both
+members; it must not silently publish an untracked `.snupkg` side effect.
 
 Publish executor responsibilities:
 
@@ -816,14 +825,14 @@ unable to access approval-gated secrets or OIDC publish jobs.
 Before live official publication is enabled, release infrastructure setup must
 include this checklist:
 
-| Surface                         | Required configuration                                                                                                                                                                                    |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, and native admin bypass left to repository policy.                                                               |
-| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                               |
-| PyPI trusted publishing         | Project owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                               |
-| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release` where the package supports trusted publishing. |
-| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                   |
-| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                    |
+| Surface                         | Required configuration                                                                                                                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, and native admin bypass left to repository policy.                                                                              |
+| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`; required only when the deferred NuGet.org target is enabled. |
+| PyPI trusted publishing         | Project owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                              |
+| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release` where the package supports trusted publishing.                |
+| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, workflow `.github/workflows/release-publish-node.yml`, and environment `release`.                                                                  |
+| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                                   |
 
 Missing trusted-publisher configuration is a live publish failure surfaced by the
 matching publish executor or credential acquisition step. The planner must not

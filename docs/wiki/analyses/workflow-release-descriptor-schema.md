@@ -654,7 +654,10 @@ as `.nupkg`-only. NuGet.org target usages should likewise reference both
 artifacts when the release includes NuGet symbol publication, because `.snupkg`
 is the modern separate symbol-package format. That in turn requires the
 planner's NuGet.org adapter to implement and test symbol-package remote
-observation before first live NuGet.org publication for those descriptors.
+observation before first live NuGet.org publication for those descriptors. Until
+that adapter path is documented and tested, first-delivery descriptors that would
+publish a `.snupkg` to NuGet.org must omit the `nuget/nuget-org` target; adding
+that target is a later live-enablement change, not an implementation detail.
 
 ## Validation Boundary
 
