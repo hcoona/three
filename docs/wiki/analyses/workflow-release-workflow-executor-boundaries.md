@@ -113,25 +113,28 @@ The stable reusable boundaries are therefore:
     - produces one bundle and one build receipt per variant.
 4. `ensure-tag` job
     - stays in the control plane;
-    - creates or verifies each distinct project-scoped release tag exactly once
-      per run when any active publish node resolves to a GitHub Release
-      publication;
+    - verifies each distinct project-scoped release tag exactly once per run when
+      any selected publish node resolves to a GitHub Release publication,
+      including nodes already classified as `skip-satisfied`;
     - for current-scope `official`, references the protected GitHub `release`
       environment whenever the job can perform that live side effect;
     - when one run requires more than one distinct project-scoped release tag,
       first computes the full required tag set and verifies every already-
       existing required tag before creating any missing tag;
-    - creates the tag when it does not already exist, but only after that full
+    - creates the tag when it does not already exist and at least one active
+      GitHub Release publish node references it, but only after that full
       precheck passes for the run;
+    - fails the run before publication when a required tag is missing but is
+      needed only by `skip-satisfied` GitHub Release nodes, because those nodes
+      are verification-only in current scope;
     - when the tag already exists, verifies that it already points to the
       expected selected commit/object for that run rather than treating tag
       existence alone as sufficient;
     - fails the run before publication if any required existing tag points
       elsewhere, and in that case creates no new tags for the run;
     - must not retarget or move an existing release tag in current scope;
-    - does nothing when the active publish-node set contains no GitHub Release
-      publication, including runs where every selected GitHub Release publish
-      node is already planner-classified as `skip-satisfied`.
+    - does nothing when the selected publish-node set contains no GitHub Release
+      publication.
 5. `publish` fan-out
     - runs exactly once per selected `publish-node-id` whose plan
       `publish-disposition` is `publish`;

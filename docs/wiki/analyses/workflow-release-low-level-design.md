@@ -164,7 +164,7 @@ with these concrete data handoffs:
 | `authorize-entry` | GitHub event context, selected profile                                                                                                  | Authorization conclusion and normalized run metadata.                   |
 | `plan`            | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map | Frozen plan and `execution-sets.json` artifacts, or diagnostics.        |
 | `build`           | Plan artifact, one `variant-id` per matrix row                                                                                          | Variant bundle, `build-result`, and optional immutable-proof artifacts. |
-| `ensure-tag`      | Frozen plan and active GitHub Release publish nodes                                                                                     | `tag-result.json` tag verification or creation evidence.                |
+| `ensure-tag`      | Frozen plan plus selected and active GitHub Release publish nodes                                                                       | `tag-result.json` tag verification or creation evidence.                |
 | `publish`         | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts                                                          | `publish-result` artifacts.                                             |
 | `report`          | Plan, diagnostics, tag results, build results, skip results, publish results, job conclusions                                           | Final operator summary.                                                 |
 
@@ -188,6 +188,7 @@ top-level shape:
     "active-variant-ids": [],
     "active-publish-node-ids": [],
     "skip-satisfied-publish-node-ids": [],
+    "selected-github-release-publish-node-ids": [],
     "active-github-release-publish-node-ids": []
 }
 ```
@@ -204,9 +205,12 @@ The selector fields are derived as follows:
 4. `skip-satisfied-publish-node-ids` contains every selected publish node whose
    frozen `publish-disposition` is `skip-satisfied`; the control plane uses this
    set to emit synthetic skip receipts.
-5. `active-github-release-publish-node-ids` is the subset of
+5. `selected-github-release-publish-node-ids` is the subset of all selected
+   publish nodes whose target family is `github-release`, including
+   `skip-satisfied` nodes.
+6. `active-github-release-publish-node-ids` is the subset of
    `active-publish-node-ids` whose target family is `github-release`; `ensure-tag`
-   must not run when this array is empty.
+   may create missing tags only for this active subset.
 
 Empty arrays are first-class workflow outcomes, not missing outputs. A build or
 publish matrix with an empty corresponding selector is skipped by the control
@@ -217,10 +221,11 @@ cancelled before the platform can schedule that job.
 Current scope does not use a separate `approve` job. `official` live side effects
 are gated by attaching the protected GitHub `release` environment directly to
 the jobs that can perform those side effects: `ensure-tag` when it would create
-or verify release tags for active GitHub Release publish nodes, and each live
-`publish` matrix job. This keeps the environment claim on OIDC-backed external
-trusted publishing jobs aligned with the registry-side trusted-publisher
-configuration.
+tags for active GitHub Release publish nodes, and each live `publish` matrix job.
+Read-only tag verification for all-`skip-satisfied` GitHub Release nodes does not
+attach the protected environment because it cannot create tags or publish
+externally. This keeps the environment claim on OIDC-backed external trusted
+publishing jobs aligned with the registry-side trusted-publisher configuration.
 
 ## Dry-Run and Validation Build Policy
 
@@ -901,8 +906,7 @@ Use job-level least privilege rather than a broad workflow-level write token.
 `release` environment is referenced only by jobs that can perform live external
 side effects after planning and validation-build work have completed:
 
-- `ensure-tag`, when it would create or verify tags for active GitHub Release
-  publish nodes;
+- `ensure-tag`, when it may create tags for active GitHub Release publish nodes;
 - each live `publish` matrix job.
 
 There is no separate approval-only job in current scope. External trusted
@@ -996,13 +1000,19 @@ No-side-effect runs skip this environment gate entirely:
 
 Implementation sequence:
 
-1. Read all active GitHub Release publish nodes from the frozen plan.
-2. Compute the distinct required `release-tag` set.
-3. Query every existing tag in the set before creating any missing tag.
+1. Read all selected GitHub Release publish nodes from the frozen plan, including
+   nodes whose frozen `publish-disposition` is `skip-satisfied`.
+2. Compute the distinct required `release-tag` set and the subset of tags that
+   are creation-eligible because at least one active GitHub Release publish node
+   references that tag.
+3. Query every existing tag in the full required set before creating any missing
+   tag.
 4. If any existing tag does not peel to the selected `commit-sha`, fail without
    creating tags.
-5. After the full precheck passes, create every missing tag at the selected
-   commit.
+5. If a required tag is missing but is not creation-eligible because it is needed
+   only by `skip-satisfied` GitHub Release nodes, fail without creating tags.
+6. After the full precheck passes, create every missing creation-eligible tag at
+   the selected commit.
 
 Newly created release tags are lightweight tags that point directly at the
 selected commit. Existing annotated tags are accepted only when peeling the tag
@@ -1010,8 +1020,10 @@ object resolves to the selected commit. The job must never retarget an existing
 tag and must never treat a tag object that points elsewhere as satisfying the
 selected commit requirement.
 
-The job must not run when dry-run is true or when the active publish set contains
-no GitHub Release publication.
+The job must not run when dry-run is true or when the selected publish set
+contains no GitHub Release publication. If selected GitHub Release nodes are all
+`skip-satisfied`, the job is read-only tag verification and must not create
+missing tags.
 
 When the job succeeds, it must emit exactly one `tag-result.json` covering every
 distinct required release tag. If any existing tag fails the peel-to-commit
@@ -1038,6 +1050,13 @@ browser-extension packages, archive-only artifacts, metadata-only artifacts,
 tool/generator-specific release kinds, and multi-wheel or platform-specific
 Python wheel layouts. Those cases may be added in later descriptor migration
 work after the current release workflow contracts are implemented and validated.
+
+Although the requirements baseline keeps both current private apps in confirmed
+scope under the descriptor-gated participation rule, the first generated
+author-time input batch intentionally includes only
+`qidian-novel-downloader` for private-app coverage. A descriptor for
+`src/private/app/vscode-copilot-telegram-hook/` is explicitly deferred to a later
+descriptor-migration batch unless this low-level project set is updated.
 
 ## Acceptance Traceability
 
