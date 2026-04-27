@@ -445,12 +445,11 @@ depending on. Current-scope extensibility fields are:
 | Publish and skip results | `evidence`                   | Small family-specific receipt evidence belongs under `evidence`.                                         |
 | Immutable proof wrapper  | additional provenance fields | Extra control-plane provenance may be added only if proof lookup still applies the minimum checks below. |
 
-Where the boundary documents say a request or result object contains "at least"
-some fields, this low-level handoff freezes those listed top-level fields as the
-complete `v1alpha1` contract unless an extensibility field is named above or in
-the object's defining section. In particular, `planner-request`, `build-request`,
+The boundary documents define complete request and result object shapes for the
+current `v1alpha1` handoff. In particular, `planner-request`, `build-request`,
 `build-result`, `tag-result`, `publish-request`, `publish-result`, and
-`skip-result` must not grow extra root-level fields during implementation. New
+`skip-result` must not grow extra root-level fields during implementation unless
+an extensibility field is named above or in the object's defining section. New
 root-level machine fields require a successor contract update before tests or
 workflows depend on them.
 

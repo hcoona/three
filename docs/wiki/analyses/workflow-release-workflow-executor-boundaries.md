@@ -305,7 +305,7 @@ request object.
 ### Build Executor Contract
 
 Each build unit must materialize one logical `build-request` object for its
-executor with at least these fields:
+executor with these exact top-level fields:
 
 | Field                                               | Source                              |
 | --------------------------------------------------- | ----------------------------------- |
@@ -346,8 +346,8 @@ publish target family needs planner-owned remote-member keys for immutable
 multi-member registry classification, those keys live on the publish-node layer
 rather than in the build executor contract.
 
-Each build unit must emit one logical `build-result` object with at least these
-fields:
+Each build unit must emit one logical `build-result` object with these exact
+top-level fields:
 
 | Field                                              | Meaning                                                          |
 | -------------------------------------------------- | ---------------------------------------------------------------- |
@@ -401,7 +401,7 @@ Bundle-internal realization details remain executor-owned.
 ### Publish Executor Contract
 
 Each publish unit must materialize one logical `publish-request` object for its
-executor with at least these fields:
+executor with these exact top-level fields:
 
 | Field                                                 | Source                                                                                                    |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -501,8 +501,8 @@ destination only to perform that already selected publish action; it must not do
 its own preflight destination query to re-decide satisfaction, promotion,
 overwrite policy, or immutable-target same-identity handling.
 
-Each publish unit must emit one logical `publish-result` object with at least
-these fields:
+Each publish unit must emit one logical `publish-result` object with these exact
+top-level fields:
 
 | Field                                                | Meaning                                                                                       |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -524,7 +524,7 @@ control plane must emit a distinct logical `skip-result` object rather than
 reusing `publish-result`. This keeps planner-owned satisfied-rerun reporting
 separate from executor-authored live publication receipts.
 
-Each `skip-result` must contain at least these fields:
+Each `skip-result` must contain these exact top-level fields:
 
 | Field                                             | Meaning                                                                                              |
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -540,6 +540,134 @@ Each `skip-result` must contain at least these fields:
 `skip-result` is control-plane-authored reporting data only. It does not imply
 that any publish executor ran, and it must not be treated as evidence of a live
 publish attempt in receipt lookup, retry routing, or executor success metrics.
+
+### Closed Executor Handoff JSON Shapes
+
+The executor handoff objects above use closed `v1alpha1` shapes. The snippets
+below are shape notation: angle-bracket values stand for concrete JSON values,
+and copied plan snapshots must keep the complete object shape defined by
+`release-plan.json`.
+
+`build-request.json`:
+
+```text
+{
+    "api-version": "three.release.build-request/v1alpha1",
+    "kind": "build-request",
+    "plan-id": "<plan-id>",
+    "profile": "buddy|official",
+    "commit-sha": "<40-hex-sha>",
+    "project": <envelope.projects[project-id] object>,
+    "variant": <graph.variants[variant-id] object>,
+    "artifacts": {
+        "<artifact-id>": <graph.artifacts[artifact-id] object>
+    }
+}
+```
+
+`build-request.artifacts` must contain exactly the artifact IDs listed by
+`variant.artifact-ids`. The `project`, `variant`, and artifact snapshot values
+are copied from the frozen plan without adding executor-local fields.
+
+`build-result.json`:
+
+```text
+{
+    "api-version": "three.release.build-result/v1alpha1",
+    "kind": "build-result",
+    "plan-id": "<plan-id>",
+    "project-id": "<project-id>",
+    "variant-id": "<variant-id>",
+    "artifacts": {
+        "<artifact-id>": {
+            "bundle-relative-path": "<normalized-relative-path>",
+            "sha256": "<lowercase-64-hex-digest>",
+            "byte-size": 123
+        }
+    }
+}
+```
+
+Each `build-result.artifacts[artifact-id]` entry is closed to the three fields
+shown above. `bundle-relative-path` is relative to the uploaded variant bundle,
+uses normalized forward slashes, and must not be absolute or contain `.` or `..`
+path segments. `byte-size` is a non-negative integer.
+
+`publish-request.json`:
+
+```text
+{
+    "api-version": "three.release.publish-request/v1alpha1",
+    "kind": "publish-request",
+    "plan-id": "<plan-id>",
+    "profile": "buddy|official",
+    "commit-sha": "<40-hex-sha>",
+    "project": <envelope.projects[project-id] object>,
+    "publish-node": <graph.publish-nodes[publish-node-id] object>,
+    "target-instance-snapshot": <graph.target-instance-snapshots[target-instance-snapshot-id] object>,
+    "artifacts": {
+        "<artifact-id>": {
+            "artifact": <graph.artifacts[artifact-id] object>,
+            "input-path": "<publish-workspace-relative-path>",
+            "bundle-relative-path": "<build-result artifact bundle-relative-path>",
+            "sha256": "<build-result artifact sha256>",
+            "byte-size": 123
+        }
+    }
+}
+```
+
+`publish-request.artifacts` must contain exactly the artifact IDs listed by
+`publish-node.artifact-ids`. `artifact` is the frozen plan artifact snapshot.
+`input-path` is the publish-unit workspace-relative path materialized by the
+control plane after downloading the owning variant bundle; before invoking the
+publish executor, the control plane must verify that the file at `input-path`
+matches the carried `sha256` and `byte-size`. The receipt-derived
+`bundle-relative-path`, `sha256`, and `byte-size` fields use the same validation
+rules as `build-result`.
+
+`publish-result.json`:
+
+```text
+{
+    "api-version": "three.release.publish-result/v1alpha1",
+    "kind": "publish-result",
+    "plan-id": "<plan-id>",
+    "project-id": "<project-id>",
+    "publish-node-id": "<publish-node-id>",
+    "target-instance-snapshot-id": "<target-instance-snapshot-id>",
+    "resolved-publish-identity": <publish-node.resolved-publish-identity object>,
+    "outcome": "published",
+    "evidence": {}
+}
+```
+
+`skip-result.json`:
+
+```text
+{
+    "api-version": "three.release.skip-result/v1alpha1",
+    "kind": "skip-result",
+    "plan-id": "<plan-id>",
+    "project-id": "<project-id>",
+    "publish-node-id": "<publish-node-id>",
+    "target-instance-snapshot-id": "<target-instance-snapshot-id>",
+    "resolved-publish-identity": <publish-node.resolved-publish-identity object>,
+    "outcome": "skip-satisfied",
+    "reason-source": "planner",
+    "evidence": {}
+}
+```
+
+For both publish and skip results, `evidence` is required and may be `{}`. It is
+the only extensibility object in these result shapes. Evidence must not contain
+secrets, credentials, OIDC tokens, or unpublished request payloads; it must not
+be required to decide replay, skip, overwrite, or promotion semantics. Current
+scope allows only small JSON-serializable registry facts, such as target URLs,
+registry object IDs, asset IDs keyed by `artifact-id`, or package/version page
+URLs. Contract tests should assert the closed root shape and the presence of a
+JSON object at `evidence`, while family-specific evidence keys remain optional
+unless a later acceptance fixture explicitly registers them.
 
 ## Control-Plane Ownership Rules
 
