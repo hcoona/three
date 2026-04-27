@@ -1618,31 +1618,44 @@ and receipts behaved as intended.
 
 ## 9. External Setup and Readiness
 
-Before live official publication is enabled, release infrastructure setup must
-include this checklist:
+External account setup is an operations readiness responsibility, not a planner
+or workflow-automation responsibility. A single senior implementer may own the
+handoff, but that ownership means verifying the repository environment, registry
+owner-side trusted-publisher configuration, and live-enable controls before
+declaring official live publication ready. It does not mean teaching the planner
+to create, repair, or probe external account configuration.
 
-| Surface                         | Required configuration                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, deployment branch or tag restrictions limited to trusted release refs, and native admin bypass left to repository policy.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, conservative entry workflow file name `release-official.yml` with no `.github/workflows/` path, and environment `release`; required only when the deferred NuGet.org target is enabled.                                                                                                                                                                                                                                                                                                                                                                                            |
-| PyPI trusted publishing         | Project owner-side trusted publisher entry, or pending publisher before first project creation, for each first-delivery PyPI project name. Configure repository owner `hcoona`, repository name `three`, workflow filename `release-official.yml` with no `.github/workflows/` path, and environment `release`. Do not configure `release-orchestrate.yml`, `release-publish-node.yml`, or any reusable workflow as the PyPI publisher.                                                                                                                                                                                                                      |
-| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, caller/top-level workflow file name `release-official.yml` with no `.github/workflows/` path per npm trusted-publishing identity rules, and environment `release` where the package supports trusted publishing. When npm publish runs through `workflow_call`, the active caller chain is `release-official.yml` -> `release-orchestrate.yml` -> `release-publish-node.yml`; grant `id-token: write` to every active caller job in that chain that must pass the OIDC capability onward and to the child reusable publish job that requests the token, but not to unrelated jobs. |
-| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, reusable publish workflow filename `release-publish-node.yml`, same-repository workflow owner fields left blank, and environment `release`. When RubyGems.org publish runs through `workflow_call`, the active caller chain is the `release-official.yml` caller job -> `release-orchestrate.yml` publish caller job -> `release-publish-node.yml` child publish job; grant `id-token: write` to every active caller job in that chain that must pass the OIDC capability onward and to the child reusable publish job that requests the token, but not to unrelated jobs.             |
-| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+Planner-time remote observation remains limited to the registry state reads in
+Section 7 and the permission rules in Section 8. It must never use publish
+credentials, request external OIDC tokens, enter the approval-gated `release`
+environment, or run a synthetic trusted-publishing credential exchange merely to
+test whether a registry account has been configured correctly. Trusted-publisher
+misconfiguration is detected by readiness review before enablement or by the
+real live publish job when that target is intentionally enabled.
 
-Missing trusted-publisher configuration is a live publish failure surfaced by the
-matching publish executor or credential acquisition step. The planner must not
-probe those approval-gated trusted-publishing credentials during remote
-observation. This setup is not required to implement or validate dry-run,
-validation-build, GitHub Release, or GitHub Packages paths, but it is a
-live-enable prerequisite for official external-registry publication and
-acceptance evidence.
+Before any official live external publication is declared ready, the implementer
+must verify this checklist for every enabled target surface:
 
-This checklist is an external operations readiness gate, not a reason to delay
-the implementation of no-side-effect, GitHub Release, or GitHub Packages paths.
-Official external-registry publication remains disabled for any target whose
-trusted-publisher entry or `release` environment policy has not been configured
-by a repository or package owner.
+| Surface                         | Applies when                                                                                            | Live-ready configuration                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub environment              | Any official job can create tags, mutate GitHub Release, mutate GitHub Packages, or publish externally. | Environment named `release`, required reviewers configured, prevent self-review enabled, deployment branch or tag restrictions limited to trusted release refs, and native admin bypass left to repository policy.                                                                                                                                                                                    |
+| PyPI trusted publishing         | Acceptance-blocking for each first-delivery project whose `pypi/pypi` official target is enabled.       | Project owner-side trusted publisher, or pending publisher before first project creation, for the exact PyPI project name. Configure owner `hcoona`, repository `three`, workflow filename `release-official.yml` with no `.github/workflows/` path, and environment `release`. Do not configure `release-orchestrate.yml`, `release-publish-node.yml`, or a reusable workflow as the PyPI publisher. |
+| npmjs trusted publishing        | Each enabled `npm/npmjs` official target.                                                               | Package owner-side trusted publisher for owner `hcoona`, repository `three`, caller/top-level workflow filename `release-official.yml` with no `.github/workflows/` path, and environment `release`. The workflow implementation must also satisfy the full nested OIDC permission chain for `release-official.yml` -> `release-orchestrate.yml` -> `release-publish-node.yml` from Section 8.        |
+| RubyGems.org trusted publishing | Each enabled `rubygems/rubygems-org` official target.                                                   | Gem owner-side trusted publisher, or pending trusted publisher before first gem creation, for repository `hcoona/three`, reusable workflow filename `release-publish-node.yml`, same-repository workflow owner fields left blank, and environment `release`. The workflow implementation must also satisfy the full nested OIDC permission chain from Section 8.                                      |
+| NuGet.org trusted publishing    | Only after the deferred `nuget/nuget-org` official target is explicitly enabled.                        | Package owner-side trusted publisher for repository `hcoona/three`, conservative entry workflow filename `release-official.yml` with no `.github/workflows/` path, and environment `release`. External setup review and live evidence are not first-delivery requirements while the NuGet.org target remains deferred.                                                                                |
+| GitHub Release                  | Any enabled GitHub Release target.                                                                      | No external OIDC trusted-publisher policy. Use GitHub repository permissions, `contents: write` on the exact live mutation job, tag gating, and the `release` environment where Section 8 requires it.                                                                                                                                                                                                |
+| GitHub Packages                 | Any enabled GitHub Packages target.                                                                     | No external OIDC trusted-publisher policy and no owner-side trusted-publisher setup. Use `GITHUB_TOKEN`, the exact required `packages: write` permission, any required package read permission, and the `release` environment where Section 8 requires it.                                                                                                                                            |
+
+This checklist is a readiness gate for live official publication, not an
+acceptance evidence matrix. Section 10 remains the owner of detailed acceptance
+evidence rows. Section 9 only defines what must be configured and verified before
+an enabled target is treated as live-publication ready.
+
+This checklist must not delay implementation of no-side-effect, GitHub Release,
+or GitHub Packages paths. Official external-registry publication remains disabled
+for any target whose owner-side trusted-publisher entry, repository `release`
+environment policy, workflow OIDC permission chain, or explicit live-enable token
+has not been verified by the implementer.
 
 First delivery uses an explicit non-secret repository variable,
 `THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS`, as the control-plane live-enable
