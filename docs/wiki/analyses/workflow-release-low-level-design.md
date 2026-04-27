@@ -987,11 +987,18 @@ Publish executor responsibilities:
   has a trusted publisher configured. npm trusted publishing also publishes
   provenance automatically with current npm CLI support.
 - For GitHub Packages npm, use `GITHUB_TOKEN` with `packages: write`.
-- Publish the receipted tarball under the frozen package name. If the package
-  name must differ from manifest metadata, stage a temporary package directory or
-  manifest rewrite that affects only the packed artifact for that publish node.
+- Publish the receipted tarball under the frozen package name.
 - Verify the packed package's `package/package.json` name and version before
   upload.
+
+First delivery does not support live npm publication under a target-side package
+name that differs from the receipted tarball's `package/package.json` `name`.
+That excludes the projected `npm/github-packages` path for
+`hexo-renderer-asciidoc`, whose npmjs package name is unscoped while GitHub
+Packages npm would require an owner-scoped name. A future implementation may add
+that path only by modeling a target-specific build artifact or a post-build
+transform receipt that records the rewritten package contents, digest, and
+metadata before upload.
 
 ### RubyGems
 
@@ -1173,7 +1180,7 @@ shapes without turning first implementation into bulk descriptor migration.
 | C# public app installer          | `image-occlusion-editor`  | `src/public/app/ImageOcclusionEditor/`     | `ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj` | Executor-internal WinUI publish output plus `installer/installer/inno-setup` produced from that output; first-delivery GitHub Release publication includes the installer artifact only.                            |
 | Python special version authority | `nbgv-python`             | `src/public/lib/nbgv-python/`              | `pyproject.toml`                                               | `nbgv-python-pyproject-version` exception, Hatchling wheel plus optional sdist, GitHub Release publication, and deferred PyPI live publication shape.                                                              |
 | Python normal NBGV/Hatch package | `hcoona-release-smoke`    | `src/public/lib/hcoona-release-smoke/`     | `pyproject.toml`                                               | Normal Python build-system NBGV integration through Hatchling, separate from the `nbgv-python` exception path; live PyPI publication remains deferred with the same topology gate.                                 |
-| Node npm package                 | `hexo-renderer-asciidoc`  | `src/public/lib/hexo-renderer-asciidoc/`   | `package.json`                                                 | pnpm/npm packaging, npmjs and GitHub Packages target shapes, package-name projection where needed.                                                                                                                 |
+| Node npm package                 | `hexo-renderer-asciidoc`  | `src/public/lib/hexo-renderer-asciidoc/`   | `package.json`                                                 | pnpm/npm packaging, GitHub Release evidence, and npmjs trusted publishing; GitHub Packages npm projection is deferred until target-specific npm package artifacts or transform receipts are designed.              |
 | Ruby gem                         | `asciidoctor-latexmath`   | `src/public/lib/asciidoctor-latexmath/`    | `asciidoctor-latexmath.gemspec`                                | RubyGems build and publication target shapes.                                                                                                                                                                      |
 
 This set intentionally excludes first-delivery descriptors for private WXT or
@@ -1203,7 +1210,6 @@ minimum shape:
 | Python package including `nbgv-python` | `src/public/lib/nbgv-python/`                                                       | Descriptor with special version authority, plan snapshot with frozen version, build metadata conformance, and GitHub Release evidence; PyPI live evidence is required only after the deferred non-reusable PyPI publisher path is explicitly enabled.             |
 | Python normal NBGV/Hatch package       | `src/public/lib/hcoona-release-smoke/`                                              | Descriptor with build-system NBGV version authority, plan snapshot with frozen version, build metadata conformance, and GitHub Release evidence; PyPI live evidence is required only after the deferred non-reusable PyPI publisher path is enabled.              |
 | Node package build and release         | `src/public/lib/hexo-renderer-asciidoc/`                                            | Descriptor, plan snapshot, npm pack receipt, and GitHub Release publish or skip receipt for the packed npm artifact.                                                                                                                                              |
-| GitHub Packages npm publication        | `src/public/lib/hexo-renderer-asciidoc/`                                            | Descriptor target `npm/github-packages`, frozen package-name projection `@hcoona/hexo-renderer-asciidoc`, target-instance snapshot, npm pack receipt, `packages: write` GitHub Packages publish or skip receipt.                                                  |
 | npmjs trusted publication              | `src/public/lib/hexo-renderer-asciidoc/`                                            | Descriptor target `npm/npmjs`, target-instance snapshot, npm pack receipt, OIDC trusted-publisher setup for workflow filename `release-publish-node.yml` and environment `release`, plus npmjs publish or skip receipt.                                           |
 | Ruby gem build and release             | `src/public/lib/asciidoctor-latexmath/`                                             | Descriptor, plan snapshot, gem build receipt, and GitHub Release publish or skip receipt for the `.gem` artifact.                                                                                                                                                 |
 | GitHub Packages RubyGems publication   | `src/public/lib/asciidoctor-latexmath/`                                             | Descriptor target `rubygems/github-packages`, target-instance snapshot, gem build receipt, `packages: write` GitHub Packages publish or skip receipt.                                                                                                             |

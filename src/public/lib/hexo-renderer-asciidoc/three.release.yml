@@ -32,10 +32,6 @@ profiles:
     targets:
       - uses: github-release/public
         artifacts: [npm-package]
-      - uses: npm/github-packages
-        artifacts: [npm-package]
-        projection:
-          package-name: '@hcoona/hexo-renderer-asciidoc'
   official:
     targets:
       - uses: github-release/public

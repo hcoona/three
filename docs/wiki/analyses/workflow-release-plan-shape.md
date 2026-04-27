@@ -447,6 +447,12 @@ than backfilling the manifest-derived `package.json.name`. The final external
 npm package name always belongs in `resolved-publish-identity.package-name`,
 whether it came from the descriptor override or the manifest fallback.
 
+Current first delivery must not use an npm `projection.package-name` override
+that differs from the receipted package tarball's `package/package.json` `name`.
+Publishing one built npm artifact under a second package name requires a future
+target-specific build artifact or a post-build transform receipt contract; it is
+not modeled by changing `resolved-publish-identity` alone.
+
 For current-scope `nuget` and `pypi`, the planner must deterministically
 determine one final distribution filename per planned artifact before any
 remote-state

@@ -993,10 +993,6 @@ profiles:
               projection:
                   asset-labels:
                       npm-package: hexo-renderer-asciidoc npm package
-            - uses: npm/github-packages
-              artifacts: [npm-package]
-              projection:
-                  package-name: '@hcoona/hexo-renderer-asciidoc'
     official:
         targets:
             - uses: github-release/public
