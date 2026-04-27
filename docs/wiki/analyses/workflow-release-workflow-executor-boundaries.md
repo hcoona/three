@@ -316,7 +316,10 @@ plan:
   `external-oidc-caller-workflow` selectors. Selectors in the latter two classes
   are consumed outside the called reusable orchestration workflow even though
   their `publish-request.json` materialization, artifact inputs, and
-  `publish-result.json` receipt shape remain identical.
+  `publish-result.json` receipt shape remain identical. A valid first-delivery
+  `pypi/pypi` official publish node is a member of the
+  `external-oidc-entry-workflow` selector partition and is scheduled by that
+  topology selector, not by target-family special casing.
 
 This keeps rerun skip logic planner-owned rather than executor-owned and keeps
 trusted-publisher scheduling a middle-layer control-plane contract.
@@ -483,6 +486,16 @@ exact top-level fields:
 | `publish-node` snapshot                               | `graph.publish-nodes[publish-node-id]`                                                                    |
 | `target-instance-snapshot`                            | referenced `graph.target-instance-snapshots[*]`                                                           |
 | `artifacts` map keyed by `artifact-id`                | frozen artifact metadata from the plan plus receipt-proved file path, digest, and size from build results |
+
+Entry-hosted publish units are not a forked executor contract. The top-level
+entry workflow downloads the same frozen plan artifact and referenced
+`build-result`/bundle artifacts, materializes the same `publish-request.json`
+shape, and uploads the same `publish-result.json` receipt as a reusable-hosted
+unit. The only intentional difference is physical workflow identity for OIDC
+token minting. For first-delivery PyPI, the `official` entry workflow hosts this
+unit so PyPI sees the configured `.github/workflows/release-official.yml`
+publisher identity while the executor still consumes the frozen `pypi/pypi`
+publish node, planner-frozen filenames, and receipt-proved build files.
 
 The publish unit must create that request only when the selected publish node has
 `publish-disposition: publish`. For `publish-disposition: skip-satisfied`, the

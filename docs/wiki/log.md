@@ -397,3 +397,17 @@ This file is the append-only chronological record of wiki activity.
 - Updated the design-layering page, wiki overview, and index so the lower-layer
   handoff is discoverable and no current-scope lower-layer guardrail remains
   unresolved.
+
+## [2026-04-27] design | Specify first-delivery PyPI live publish
+
+- Tightened the lower-layer workflow handoff so first-delivery `pypi/pypi`
+  official publication is selected by `external-oidc-entry-workflow`, hosted by
+  `.github/workflows/release-official.yml`, and still uses the standard
+  `publish-request.json` / `publish-result.json` contracts.
+- Made the PyPI external setup checklist concrete for project or pending Trusted
+  Publisher setup: repository `hcoona/three`, workflow filename
+  `release-official.yml`, environment `release`, and no reusable workflow as the
+  configured PyPI publisher.
+- Added acceptance traceability requiring real PyPI official publish evidence in
+  first delivery and clarified that normal PyPI readiness, credential,
+  conformance, or upload failures are not topology-block diagnostics.

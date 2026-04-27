@@ -81,7 +81,8 @@ supporting assets in `../raw/`.
   `source.primary-manifest` types, catalog references, the current-scope
   catalog contract vocabulary, family-specific destination shapes including
   host-specific GitHub Packages instances inside the NuGet, npm, and RubyGems
-  families while leaving PyPI unsupported there, closed current-scope
+  families while recognizing that GitHub Packages has no PyPI registry, closed
+  current-scope
   capability assignments by family and host, closed current-scope projection
   shapes, contract-to-artifact compatibility rules, and the three-layer
   validation model: file-schema validation, author-time static repo validation,
