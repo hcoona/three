@@ -70,9 +70,15 @@ in this repository, and the configured workflow filename must match the frozen
 including current-scope PyPI, configure the top-level entry workflow identity and
 must use entry-hosted publish jobs. Caller-workflow-bound targets can still use
 the reusable publish workflow, while registry validation remains tied to the
-caller/top-level workflow identity. Reusable-workflow-bound targets, such as the
-current RubyGems.org topology, configure the reusable publish workflow identity
-when the registry supports that reusable identity.
+caller/top-level workflow identity. For caller-workflow-bound targets such as
+npmjs, GitHub OIDC permission is part of that reusable-workflow contract: every
+job in the `workflow_call` path that must pass OIDC capability to the reusable
+publish job grants `id-token: write`, and the called publish job that mints the
+token also grants `id-token: write`. Unrelated planning, build, report, and
+GitHub-token publish jobs must not inherit that permission.
+Reusable-workflow-bound targets, such as the current RubyGems.org topology,
+configure the reusable publish workflow identity when the registry supports that
+reusable identity.
 
 PyPI is therefore an exception only to the reusable publish-unit topology, not to
 first-delivery live publication. `.github/workflows/release-publish-node.yml` and
@@ -1061,6 +1067,16 @@ Use job-level least privilege rather than a broad workflow-level write token.
 | GitHub Packages publication                 | `packages: write`, scoped to the matching publish job.                        |
 | Trusted publishing to external registries   | `id-token: write`, scoped to the matching publish job.                        |
 
+For `external-oidc-caller-workflow` publish nodes, this table means both sides of
+the reusable-workflow call boundary, not a workflow-wide grant. The caller or
+parent job that invokes the reusable publish path must grant `id-token: write` so
+GitHub allows OIDC capability to flow through `workflow_call`, and the child
+`release-publish-node.yml` publish job that actually requests the OIDC token must
+also grant `id-token: write`. In the current npmjs topology, apply that
+permission only to the active npmjs caller-workflow-bound publish path; do not add
+it to unrelated planner, build, tag-verification, report, GitHub Release, GitHub
+Packages, or `skip-satisfied` jobs.
+
 `official` live side-effect jobs must use the GitHub environment named
 `release`, with required reviewers and prevent-self-review enabled. The
 `release` environment is referenced only by jobs that can perform live external
@@ -1084,14 +1100,14 @@ unable to access approval-gated secrets or OIDC publish jobs.
 Before live official publication is enabled, release infrastructure setup must
 include this checklist:
 
-| Surface                         | Required configuration                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, deployment branch or tag restrictions limited to trusted release refs, and native admin bypass left to repository policy.                                                                                                                                                                                                                      |
-| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, conservative entry workflow file name `release-official.yml` with no `.github/workflows/` path, and environment `release`; required only when the deferred NuGet.org target is enabled.                                                                                                                                                                       |
-| PyPI trusted publishing         | Project owner-side trusted publisher entry, or pending publisher before first project creation, for each first-delivery PyPI project name. Configure repository owner `hcoona`, repository name `three`, workflow filename `release-official.yml` with no `.github/workflows/` path, and environment `release`. Do not configure `release-orchestrate.yml`, `release-publish-node.yml`, or any reusable workflow as the PyPI publisher. |
-| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, caller/top-level workflow file name `release-official.yml` with no `.github/workflows/` path per npm trusted-publishing identity rules, and environment `release` where the package supports trusted publishing.                                                                                                                                              |
-| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, reusable publish workflow filename `release-publish-node.yml`, same-repository workflow owner fields left blank, and environment `release`.                                                                                                                                                                                                                       |
-| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                                                                                                                                                                                                                                                  |
+| Surface                         | Required configuration                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub environment              | Environment named `release`, required reviewers configured, prevent self-review enabled, deployment branch or tag restrictions limited to trusted release refs, and native admin bypass left to repository policy.                                                                                                                                                                                                                          |
+| NuGet.org trusted publishing    | Package owner-side trusted publisher entry for repository `hcoona/three`, conservative entry workflow file name `release-official.yml` with no `.github/workflows/` path, and environment `release`; required only when the deferred NuGet.org target is enabled.                                                                                                                                                                           |
+| PyPI trusted publishing         | Project owner-side trusted publisher entry, or pending publisher before first project creation, for each first-delivery PyPI project name. Configure repository owner `hcoona`, repository name `three`, workflow filename `release-official.yml` with no `.github/workflows/` path, and environment `release`. Do not configure `release-orchestrate.yml`, `release-publish-node.yml`, or any reusable workflow as the PyPI publisher.     |
+| npmjs trusted publishing        | Package owner-side trusted publisher entry for repository `hcoona/three`, caller/top-level workflow file name `release-official.yml` with no `.github/workflows/` path per npm trusted-publishing identity rules, and environment `release` where the package supports trusted publishing. When npm publish runs through `workflow_call`, grant `id-token: write` on the caller/parent job path and on the child reusable publish job only. |
+| RubyGems.org trusted publishing | Gem owner-side trusted publisher entry for repository `hcoona/three`, reusable publish workflow filename `release-publish-node.yml`, same-repository workflow owner fields left blank, and environment `release`.                                                                                                                                                                                                                           |
+| GitHub Packages                 | No external OIDC trusted-publisher policy; publish jobs use `GITHUB_TOKEN` with the required package write permission.                                                                                                                                                                                                                                                                                                                      |
 
 Missing trusted-publisher configuration is a live publish failure surfaced by the
 matching publish executor or credential acquisition step. The planner must not

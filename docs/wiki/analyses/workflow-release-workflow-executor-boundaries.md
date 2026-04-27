@@ -34,6 +34,10 @@ limits on top of `three.release.plan/v1alpha1`.
 - Approvals, concurrency, dry-run gating, tagging, permissions, runner or
   toolchain wiring, artifact transport, and final reporting remain control-plane
   responsibilities.
+- Caller-workflow-bound OIDC publish paths such as npmjs must grant
+  `id-token: write` on both the caller or parent job that invokes the reusable
+  publish path and the child reusable publish job that requests the token; other
+  jobs remain least-privilege and do not receive OIDC permission.
 - Prior build-receipt indexing and admissibility lookup for immutable proof
   reuse remain control-plane responsibilities.
 - Planner-owned publish-destination lookup for remote-state-dependent planning
@@ -388,6 +392,10 @@ workflow identity. Entry-hosted publish boundaries carry the same logical select
 and artifact inputs but are physically scheduled by the top-level workflow file so
 registry OIDC claims name the configured publisher workflow. The executor
 boundary inside each unit is narrower and uses a materialized request object.
+When a caller-workflow-bound selector is implemented through `workflow_call`, the
+job that calls the reusable publish workflow and the child reusable publish job
+must both declare `id-token: write`; this is required for npmjs-style trusted
+publishing and must not be generalized to unrelated jobs.
 
 ### Build Executor Contract
 
