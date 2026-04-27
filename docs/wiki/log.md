@@ -420,3 +420,13 @@ This file is the append-only chronological record of wiki activity.
   the entry-workflow-bound path.
 - Kept deferred PyPI multi-wheel or cross-variant support separate from the
   current live PyPI one-wheel-plus-optional-sdist path.
+
+## [2026-04-27] cleanup | Finalize OIDC and PyPI documentation links
+
+- Standardized summary wording around the `publish-topology` value
+  `external-oidc-entry-workflow`, entry-hosted publish scheduling, and live PyPI
+  first-delivery scope.
+- Added cross-links between the OIDC topology research, low-level design, wiki
+  overview, index, and deferred PyPI multi-wheel issue record.
+- Reconfirmed that future PyPI multi-wheel or cross-variant wheel support remains
+  out of current scope and separate from current live PyPI support.

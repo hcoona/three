@@ -107,15 +107,17 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   top of that plan: `buddy` and `official` entry workflows over one shared
   orchestration contract, a normalized planner-facing request contract for
   current scope including frozen project-selection semantics, per-variant build
-  fan-out, topology-partitioned per-publish-node publish fan-out that returns
-  entry/caller-bound OIDC selectors to the top-level entry workflow identity,
-  control-plane-owned approvals, concurrency, distinct project-scoped tag
-  orchestration only when a GitHub Release publish node is present, runtime
-  wiring, and reporting, plus plan-to-job handoff contracts, a distinct control-
-  plane-authored synthetic skip receipt contract, a minimal structured planner-
-  diagnostic contract, and thin executor boundaries that keep replay decisions,
-  overwrite or same-tag replacement mode, publication identity, and GitHub
-  Release desired state planner-owned.
+  fan-out, topology-partitioned per-publish-node publish fan-out that schedules
+  entry-workflow-bound OIDC selectors as entry-hosted publish while keeping
+  caller-workflow-bound and reusable-workflow-bound selectors reusable-hosted
+  with registry validation against the appropriate caller/top-level or reusable
+  workflow identity, control-plane-owned approvals, concurrency, distinct
+  project-scoped tag orchestration only when a GitHub Release publish node is
+  present, runtime wiring, and reporting, plus plan-to-job handoff contracts, a
+  distinct control-plane-authored synthetic skip receipt contract, a minimal
+  structured planner-diagnostic contract, and thin executor boundaries that keep
+  replay decisions, overwrite or same-tag replacement mode, publication
+  identity, and GitHub Release desired state planner-owned.
 - A dedicated design-layering and handoff-scope page now records the current
   three-layer reading of the design corpus and now records that upper-layer and
   middle-layer design are both closed in current scope, while lower-layer
@@ -129,9 +131,12 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   default GitHub Actions artifact retention window.
 - The lower-layer design handoff now freezes the implementation seams that affect
   registry configuration and replay safety: stable workflow filenames for trusted
-  publishing, entry-workflow-bound first-delivery live PyPI publication, entry
-  inputs including dry-run plus explicit validation-build, registered planner
-  diagnostic codes, JSON handoff files, artifact and immutable-proof naming,
+  publishing, first-delivery live PyPI publication through
+  `publish-topology: external-oidc-entry-workflow`, entry-hosted publish
+  scheduling for entry-workflow-bound selectors, reusable-hosted scheduling for
+  caller-workflow-bound and reusable-workflow-bound selectors, entry inputs
+  including dry-run plus explicit validation-build, registered planner diagnostic
+  codes, JSON handoff files, artifact and immutable-proof naming,
   registry-adapter obligations, GitHub permission boundaries, tag orchestration,
   and acceptance traceability.
 
@@ -158,3 +163,4 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
 - [Workflow Release Workflow and Executor Boundaries](./analyses/workflow-release-workflow-executor-boundaries.md)
 - [Workflow Release Low-Level Design](./analyses/workflow-release-low-level-design.md)
 - [Workflow Release OIDC Publish Topology Research](./analyses/workflow-release-oidc-publish-topology.md)
+- [Workflow Release Deferred PyPI Multi-Wheel Support](./analyses/workflow-release-deferred-pypi-multi-wheel-support.md)

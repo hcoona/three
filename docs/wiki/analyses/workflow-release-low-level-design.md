@@ -66,10 +66,13 @@ These filenames are intentionally part of the low-level design because NuGet.org
 PyPI, npm, and RubyGems.org trusted-publisher policies are configured against
 GitHub Actions workflow identity. The job that requests an OIDC token must stay
 in this repository, and the configured workflow filename must match the frozen
-`publish-topology` for the target instance. Reusable-workflow-bound targets, such
-as the current RubyGems.org topology, configure the reusable publish workflow
-that mints the OIDC token. Entry- or caller-workflow-bound targets, including
-current-scope PyPI, configure the top-level entry workflow identity instead.
+`publish-topology` for the target instance. Entry-workflow-bound targets,
+including current-scope PyPI, configure the top-level entry workflow identity and
+must use entry-hosted publish jobs. Caller-workflow-bound targets can still use
+the reusable publish workflow, while registry validation remains tied to the
+caller/top-level workflow identity. Reusable-workflow-bound targets, such as the
+current RubyGems.org topology, configure the reusable publish workflow identity
+when the registry supports that reusable identity.
 
 PyPI is therefore an exception only to the reusable publish-unit topology, not to
 first-delivery live publication. `.github/workflows/release-publish-node.yml` and
@@ -240,10 +243,12 @@ The selector fields are derived as follows:
 4. `active-publish-selectors` partitions every `active-publish-node-ids` member
    by its frozen `target-instance-snapshot.capabilities.publish-topology` value.
    Empty topology arrays are serialized as `[]`. The shared orchestration
-   workflow consumes only reusable-hosted partitions; the top-level entry
-   workflow consumes entry- or caller-workflow-bound partitions after the
-   orchestration call returns. A first-delivery `pypi/pypi` official publish
-   node must therefore appear only in
+   workflow consumes reusable-hosted partitions, including caller-workflow-bound
+   selectors whose registry validates the caller/top-level identity and
+   reusable-workflow-bound selectors whose registry supports reusable identity.
+   The top-level entry workflow consumes only entry-workflow-bound selectors
+   after the orchestration call returns. A first-delivery `pypi/pypi` official
+   publish node must therefore appear only in
    `active-publish-selectors.external-oidc-entry-workflow`; it must not be
    selected by target-family guessing, by a PyPI-specific side list, or by the
    reusable workflow partition.
@@ -1066,14 +1071,15 @@ side effects after planning and validation-build work have completed:
 
 There is no separate approval-only job in current scope. External trusted
 publisher policies must be configured for the topology-specific workflow
-identity that mints each registry OIDC token and for the same `release`
-environment, so the token-requesting job is also constrained by the
+identity that each registry validates for the OIDC token and for the same
+`release` environment, so the token-requesting job is also constrained by the
 registry-side environment policy. PyPI uses the official entry workflow identity
 in first delivery, NuGet.org remains conservative entry-workflow-bound until
 registry verification proves otherwise, npmjs uses the caller/top-level workflow
-identity required by npm trusted publishing, and RubyGems.org uses its
-reusable-workflow topology. Planner-time remote observation remains unable to
-access approval-gated secrets or OIDC publish jobs.
+identity required by npm trusted publishing while the publish job can remain
+reusable-hosted, and RubyGems.org uses its reusable-workflow topology with
+registry support for reusable identity. Planner-time remote observation remains
+unable to access approval-gated secrets or OIDC publish jobs.
 
 Before live official publication is enabled, release infrastructure setup must
 include this checklist:
@@ -1311,4 +1317,5 @@ remain intact.
 - [Workflow Release Plan Shape](./workflow-release-plan-shape.md)
 - [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md)
 - [Workflow Release Design Layering and Implementation Handoff Scope](./workflow-release-design-layering-and-handoff-scope.md)
+- [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)
 - [Workflow Release Deferred PyPI Multi-Wheel Support](./workflow-release-deferred-pypi-multi-wheel-support.md)

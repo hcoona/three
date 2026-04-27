@@ -26,14 +26,17 @@ by its target registry, not only by target family.
 
 ## Terminology
 
-| Term                               | Meaning                                                                                                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| External OIDC trusted publishing   | A package registry issues a short-lived publish credential after validating a GitHub Actions OIDC token.                                                |
-| Publishing workflow identity       | The workflow file and related OIDC claims that the registry accepts as authorized to publish.                                                           |
-| Entry-workflow-bound publishing    | The registry trust policy is configured for the top-level workflow that is directly triggered by `workflow_dispatch`, such as `release-official.yml`.   |
-| Caller-workflow-bound publishing   | The registry validates the workflow that called a reusable workflow, even if the publish command runs inside the called workflow.                       |
-| Reusable-workflow-bound publishing | The registry can explicitly trust the called reusable workflow identity, usually through GitHub's `job_workflow_ref` claim or registry-specific fields. |
-| GitHub-token publishing            | Publication uses `GITHUB_TOKEN` permissions instead of an external OIDC trusted-publisher policy.                                                       |
+| Term                               | Meaning                                                                                                                                                                                                        |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| External OIDC trusted publishing   | A package registry issues a short-lived publish credential after validating a GitHub Actions OIDC token.                                                                                                       |
+| Publishing workflow identity       | The workflow file and related OIDC claims that the registry accepts as authorized to publish.                                                                                                                  |
+| Entry-workflow-bound publishing    | The registry trust policy is configured for the top-level workflow that is directly triggered by `workflow_dispatch`, such as `release-official.yml`.                                                          |
+| Caller-workflow-bound publishing   | The registry validates the workflow that called a reusable workflow, even if the publish command runs inside the called workflow.                                                                              |
+| Reusable-workflow-bound publishing | The registry can explicitly trust the called reusable workflow identity, usually through GitHub's `job_workflow_ref` claim or registry-specific fields.                                                        |
+| GitHub-token publishing            | Publication uses `GITHUB_TOKEN` permissions instead of an external OIDC trusted-publisher policy.                                                                                                              |
+| Entry-workflow-bound publish node  | A logical publish node whose frozen `publish-topology` is `external-oidc-entry-workflow` and whose OIDC-requesting publish job must be hosted by the top-level entry workflow.                                 |
+| Caller-workflow-bound publish node | A logical publish node whose frozen `publish-topology` is `external-oidc-caller-workflow`; its publish job may run in a reusable workflow while the registry validates the caller/top-level workflow identity. |
+| Entry-hosted publish job           | The concrete top-level workflow job used for an entry-workflow-bound publish node while preserving the standard `publish-request.json` and `publish-result.json` contracts.                                    |
 
 ## GitHub OIDC Claim Baseline
 
@@ -57,7 +60,7 @@ external OIDC target.
 | GitHub Packages | `GITHUB_TOKEN`     | Current repository design uses package write permissions on `GITHUB_TOKEN`, not external OIDC trusted publishing.                                                          | Not applicable.                                                                                                                                                                                                                                                             | `github-token`; no external trusted-publisher topology.                                                                                 |
 | PyPI            | external OIDC      | PyPI GitHub Actions trusted publishers require repository owner, repository name, workflow filename, and optional environment.                                             | No PyPI documentation in the reviewed source exposes reusable-workflow or `job_workflow_ref` configuration fields. Treat live PyPI as entry-workflow-bound unless a successor design proves otherwise.                                                                      | `external-oidc-entry-workflow`; first delivery must live-publish PyPI from the workflow identity configured on PyPI.                    |
 | npmjs           | external OIDC      | npm trusted publishers require owner, repository, workflow filename, and optional environment.                                                                             | npm troubleshooting explicitly says that when `workflow_call` invokes another workflow that runs `npm publish`, validation checks the calling workflow's name, and `id-token: write` must be granted to both parent and child workflows.                                    | `external-oidc-caller-workflow`; configure the caller/top-level workflow, not blindly the reusable publish workflow.                    |
-| NuGet.org       | external OIDC      | NuGet.org trusted publishing requires repository owner, repository, workflow file name, and optional environment; the temporary API key is one-use and valid for one hour. | The reviewed Microsoft Learn page does not document reusable-workflow-specific fields. Treat NuGet.org as caller/entry workflow-bound until a successor verification proves a reusable-workflow binding.                                                                    | `external-oidc-entry-workflow` by conservative default.                                                                                 |
+| NuGet.org       | external OIDC      | NuGet.org trusted publishing requires repository owner, repository, workflow file name, and optional environment; the temporary API key is one-use and valid for one hour. | The reviewed Microsoft Learn page does not document reusable-workflow-specific fields. Treat NuGet.org as entry-workflow-bound by conservative default until a successor verification proves caller-workflow-bound or reusable-workflow-bound publishing.                   | `external-oidc-entry-workflow` by conservative default.                                                                                 |
 | RubyGems.org    | external OIDC      | RubyGems trusted publishers require owner, repository, GitHub Actions workflow name, and optional environment.                                                             | RubyGems explicitly documents reusable workflows. When a workflow calls a reusable workflow from another repository, `job_workflow_ref` points to the reusable workflow location, and RubyGems uses optional workflow repository fields to locate the actual workflow file. | `external-oidc-reusable-workflow` is documented as possible; same-repository configuration still must be frozen before live enablement. |
 
 ## Design Consequences
@@ -98,9 +101,11 @@ node.
 
 The orchestration layer should derive execution sets that distinguish at least:
 
-- publish nodes that can run in the reusable publish workflow;
-- publish nodes that must run in the entry workflow because the registry trusts
-  the entry or caller workflow identity.
+- publish nodes that can run in the reusable publish workflow, including
+  caller-workflow-bound nodes where registry validation remains tied to the
+  caller/top-level workflow identity;
+- entry-workflow-bound publish nodes that must run in the entry workflow because
+  the registry requires the OIDC-requesting job there.
 
 All topology paths should still consume the same `publish-request.json` contract
 and emit the same `publish-result.json` contract. The split is a control-plane
@@ -119,6 +124,18 @@ Adding a third operator-facing PyPI workflow would avoid some wiring complexity
 but would reopen the already-settled two-profile entry model and should be
 treated as a larger design change.
 
+## Out-of-Scope Boundary
+
+This topology decision covers whether current-scope live publish nodes are
+scheduled as `github-token`, `external-oidc-entry-workflow`,
+`external-oidc-caller-workflow`, or `external-oidc-reusable-workflow`.
+
+It does not expand PyPI artifact cardinality. Current live PyPI support remains
+the one-wheel-plus-optional-sdist path described by the descriptor, plan, and
+low-level design pages. Broader PyPI multi-wheel or cross-variant wheel sets are
+tracked separately in
+[Workflow Release Deferred PyPI Multi-Wheel Support](./workflow-release-deferred-pypi-multi-wheel-support.md).
+
 ## Middle-Layer Impact
 
 Yes, this affects middle-layer design. It does not overturn the upper-layer
@@ -126,15 +143,15 @@ planner-centric architecture, descriptor-gated participation, or the `buddy` /
 `official` profile model. It does change cross-component contracts that were
 previously treated as settled:
 
-| Design surface                        | Required change                                                                                                                                                                               |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Target-instance catalog and snapshots | Add or derive a first-class trusted-publisher topology value for each live publish target.                                                                                                    |
-| Plan shape                            | Freeze enough topology data for the control plane to schedule publish nodes without registry-specific guesses after planning.                                                                 |
-| Workflow and executor boundaries      | Replace the single reusable publish fan-out assumption with topology-partitioned publish execution while preserving one logical publish node and one publish receipt per `publish-node-id`.   |
-| Execution-set file                    | Add topology-partitioned publish selectors, or an equivalent closed shape, so empty and mixed-topology runs are deterministic.                                                                |
-| External setup checklist              | Configure PyPI for the official entry workflow, npm for the caller workflow, NuGet.org conservatively for the entry/caller workflow, and RubyGems according to its reusable-workflow support. |
-| Low-level workflow filenames          | Freeze every workflow filename that appears in a registry trusted-publisher policy, not just a single reusable publish workflow filename.                                                     |
-| Acceptance traceability               | Add live PyPI official publication evidence to first-delivery acceptance.                                                                                                                     |
+| Design surface                        | Required change                                                                                                                                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Target-instance catalog and snapshots | Add or derive a first-class trusted-publisher topology value for each live publish target.                                                                                                       |
+| Plan shape                            | Freeze enough topology data for the control plane to schedule publish nodes without registry-specific guesses after planning.                                                                    |
+| Workflow and executor boundaries      | Replace the single reusable publish fan-out assumption with topology-partitioned publish execution while preserving one logical publish node and one publish receipt per `publish-node-id`.      |
+| Execution-set file                    | Add topology-partitioned publish selectors, or an equivalent closed shape, so empty and mixed-topology runs are deterministic.                                                                   |
+| External setup checklist              | Configure PyPI for the official entry workflow, npm for the caller/top-level workflow, NuGet.org conservatively for the entry workflow, and RubyGems according to its reusable-workflow support. |
+| Low-level workflow filenames          | Freeze every workflow filename that appears in a registry trusted-publisher policy, not just a single reusable publish workflow filename.                                                        |
+| Acceptance traceability               | Add live PyPI official publication evidence to first-delivery acceptance.                                                                                                                        |
 
 The lower-layer implementation can still own helper scripts, internal modules,
 and exact matrix mechanics, but it must not choose the topology model on the fly.
@@ -158,3 +175,11 @@ The topology partition belongs in the sealed design contracts before coding.
 - RubyGems trusted publishing documents reusable workflow handling and
   `job_workflow_ref` implications:
   <https://guides.rubygems.org/trusted-publishing/>.
+
+## Related Pages
+
+- [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md)
+- [Workflow Release Plan Shape](./workflow-release-plan-shape.md)
+- [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md)
+- [Workflow Release Low-Level Design](./workflow-release-low-level-design.md)
+- [Workflow Release Deferred PyPI Multi-Wheel Support](./workflow-release-deferred-pypi-multi-wheel-support.md)

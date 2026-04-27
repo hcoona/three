@@ -16,6 +16,7 @@ families:
           version-uniqueness-rule: tag
           profile-coexistence-rule: not-applicable
           credential-posture: github-token
+          publish-topology: github-token
   nuget:
     instances:
       - id: nuget-org
@@ -28,6 +29,7 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: oidc
+          publish-topology: external-oidc-entry-workflow
       - id: github-packages
         contract: nuget-publish
         destination:
@@ -39,6 +41,7 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: github-token
+          publish-topology: github-token
   pypi:
     instances:
       - id: pypi
@@ -51,6 +54,7 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: oidc
+          publish-topology: external-oidc-entry-workflow
   npm:
     instances:
       - id: npmjs
@@ -63,6 +67,7 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: oidc
+          publish-topology: external-oidc-caller-workflow
       - id: github-packages
         contract: npm-publish
         destination:
@@ -74,6 +79,7 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: github-token
+          publish-topology: github-token
   rubygems:
     instances:
       - id: rubygems-org
@@ -86,6 +92,7 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: oidc
+          publish-topology: external-oidc-reusable-workflow
       - id: github-packages
         contract: rubygems-publish
         destination:
@@ -97,3 +104,4 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: github-token
+          publish-topology: github-token
