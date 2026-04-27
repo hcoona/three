@@ -2,8 +2,11 @@
 
 ## Recommendation
 
-Use this page as a process record for major middle-layer release-topology
-changes. When the middle layer changes the topology contract, do not restart the
+Use this page as a process record and rebaseline guide for major middle-layer
+release-topology changes. It is not a competing low-level design baseline; the
+implementation baseline is
+[Workflow Release Low-Level Design](./workflow-release-low-level-design.md).
+When the middle layer changes the topology contract, do not restart the
 workflow-release low-level design from scratch. Keep the requirements and
 high-level architecture fixed, then run a focused low-level rebaseline and
 readiness check against the new topology constraints.

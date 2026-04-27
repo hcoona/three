@@ -1,36 +1,51 @@
 # Workflow Release Low-Level Design
 
-## Purpose
+## 1. Document Governance and Baseline Status
 
-This page is the lower-layer design handoff for implementing workflow-based
-release after the requirements, architecture, descriptor-schema, plan-shape, and
-workflow-boundary pages have been sealed for current scope.
+Status: this page is the post-middle-layer-topology-rebaseline low-level baseline
+for workflow-release implementation handoff. It supersedes earlier low-level
+workflow-release drafts for current-scope implementation guidance while keeping
+the frozen requirements, high-level architecture, descriptor schema, plan shape,
+and workflow/executor boundary contracts unchanged.
 
-The target reader is a senior implementer. This page therefore freezes concrete
-realization seams that affect correctness, testability, and external registry
-configuration, but it does not prescribe every internal class, function, or shell
-line.
+The target reader is one experienced senior implementer. This page freezes the
+concrete realization seams that affect correctness, testability, external
+registry configuration, and acceptance evidence, but it intentionally does not
+freeze every helper, internal module, private API, script name, or command-line
+wrapper. Those details remain implementation-owned unless this page names them as
+cross-job, cross-workflow, registry-facing, or acceptance-facing contracts.
 
-## Inputs Already Frozen
+Low-level rebaseline changes may reorder and clarify this page before
+implementation starts, including incompatible changes to lower-layer guidance.
+They must not silently reopen upstream requirements or middle-layer contracts. If
+a later consistency review finds a contradiction that cannot be solved inside the
+low-level layer, the upstream decision must be escalated rather than rewritten
+here.
 
-This page does not reopen the upper-layer or middle-layer design. It consumes
-these existing contracts as authoritative:
+### Rebaseline Skeleton
 
-- `src/**/three.release.yml` project descriptors and
-  `eng/release/target-instances.yml` are the only author-time release files.
-- The planner emits one `three.release.plan/v1alpha1` artifact with an envelope
-  and normalized graph.
-- The control plane fans out at exactly two execution granularities: one build
-  unit per `variant-id` and one publish unit per `publish-node-id`.
-- Executors consume materialized requests and must not rediscover descriptors,
-  targets, publish identity, replay policy, or overwrite policy.
-- Planner-time remote observation uses public reads where possible and otherwise
-  only least-privilege `GITHUB_TOKEN` reads for GitHub-hosted surfaces. It never
-  uses publish credentials or approval-gated environment secrets.
-- Current-scope immutable proof reuse is limited to unexpired GitHub Actions
-  artifacts under the platform retention window.
+The accepted rebaseline order is:
 
-## Low-Level Design Summary
+1. document governance and reordering skeleton;
+2. frozen upstream contracts;
+3. workflow identity and filename contract;
+4. topology routing core;
+5. entry-hosted publish path;
+6. publish executor design;
+7. registry adapter partitioning;
+8. permissions and environment;
+9. external setup and readiness;
+10. acceptance traceability;
+11. implementation-owned boundaries;
+12. consistency review.
+
+This group establishes that skeleton and leaves the substantive topology,
+publish, registry, permissions, external-readiness, and acceptance rewrites to
+their owning follow-up groups unless small wording is needed to keep the outline
+coherent. Existing content below is preserved in place as the starting material
+for those later passes.
+
+### Low-Level Design Summary
 
 | Area                      | Low-level decision                                                                                                                                                                      |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,7 +65,26 @@ these existing contracts as authoritative:
 | Registry adapters         | Keep remote observation in planner adapters, live mutation in publish executors, and package metadata conformance in publish executors before upload.                                   |
 | Acceptance                | Maintain a trace table from each acceptance scenario to descriptors, plans, receipts, registry evidence, and workflow conclusions.                                                      |
 
-## Workflow File Layout
+## 2. Frozen Upstream Contracts
+
+This page does not reopen the upper-layer or middle-layer design. It consumes
+these existing contracts as authoritative:
+
+- `src/**/three.release.yml` project descriptors and
+  `eng/release/target-instances.yml` are the only author-time release files.
+- The planner emits one `three.release.plan/v1alpha1` artifact with an envelope
+  and normalized graph.
+- The control plane fans out at exactly two execution granularities: one build
+  unit per `variant-id` and one publish unit per `publish-node-id`.
+- Executors consume materialized requests and must not rediscover descriptors,
+  targets, publish identity, replay policy, or overwrite policy.
+- Planner-time remote observation uses public reads where possible and otherwise
+  only least-privilege `GITHUB_TOKEN` reads for GitHub-hosted surfaces. It never
+  uses publish credentials or approval-gated environment secrets.
+- Current-scope immutable proof reuse is limited to unexpired GitHub Actions
+  artifacts under the platform retention window.
+
+## 3. Workflow Identity and Filename Contract
 
 Current-scope workflow files should use these stable paths:
 
@@ -91,7 +125,9 @@ The implementer may refactor internal scripts and helper actions, but changing
 these workflow file names after registry policies exist is a release-infra
 migration, not a harmless rename.
 
-## Entry Workflow Inputs
+## 4. Topology Routing Core
+
+### Entry Workflow Inputs
 
 Both entry workflows should expose the same operator-facing input shape except
 for `force`, which is valid only on `buddy`.
@@ -138,7 +174,7 @@ has begun, the control plane must write `planner-diagnostics.json` using the sam
 `planner-diagnostic` contract and registered `REQ_*` code vocabulary used by
 planner-hosted request validation. It must not emit a partial plan.
 
-## Entry Authorization and Duplicate-Run Concurrency
+### Entry Authorization and Duplicate-Run Concurrency
 
 `authorize-entry` is a control-plane gate and runs before planner execution for
 both profiles.
@@ -184,7 +220,7 @@ shared orchestration workflow call. A coarser entry-workflow concurrency key bas
 only on the raw ref may be added for operator convenience, but it is not a
 substitute for the resolved-SHA key required above.
 
-## Orchestration Job Realization
+### Orchestration Job Realization
 
 The selected entry workflow and the shared orchestration workflow together
 implement the middle-layer job sequence with these concrete data handoffs:
@@ -284,7 +320,7 @@ attach the protected environment because it cannot create tags or publish
 externally. This keeps the environment claim on OIDC-backed external trusted
 publishing jobs aligned with the registry-side trusted-publisher configuration.
 
-## Dry-Run and Validation Build Policy
+### Dry-Run and Validation Build Policy
 
 The concrete current-scope policy is:
 
@@ -304,7 +340,7 @@ The concrete current-scope policy is:
 This policy keeps ordinary dry-run fast and side-effect-light while still giving
 operators a deliberate path to test build and packaging realization.
 
-## Planner CLI Boundary
+### Planner CLI Boundary
 
 The planner should be invoked through a repo-owned CLI with subcommands that
 mirror stable workflow seams:
@@ -339,7 +375,7 @@ The CLI must fail closed:
 - machine-readable diagnostics are written before returning a non-zero exit code
   whenever request normalization has begun.
 
-## Planner Diagnostic Codes
+### Planner Diagnostic Codes
 
 The middle-layer contract freezes the diagnostic object shape but not the code
 vocabulary. Current scope should start with this minimum code registry:
@@ -426,7 +462,7 @@ The control plane may render those diagnostics into Markdown, but downstream
 jobs and tests consume only the JSON container and its logical diagnostic
 objects.
 
-## File Formats
+### File Formats
 
 All cross-job files should be JSON, not YAML, even when examples in middle-layer
 pages are written in YAML for readability. JSON avoids YAML parser differences in
@@ -662,7 +698,7 @@ Matrix aggregation is deterministic for non-cancelled runs:
    non-cancelled run, sorted lexicographically. They are empty for `success`,
    `skipped`, and best-effort `cancelled` summaries.
 
-## Artifact Naming and Retention
+### Artifact Naming and Retention
 
 GitHub Actions artifact names are the lookup key available to later jobs and
 runs through the Actions artifact API. The control plane should therefore use
@@ -746,7 +782,7 @@ The workflow should not extend artifact retention just to satisfy immutable proo
 reuse. If an artifact is expired or missing, the proof is unavailable and the
 planner fails closed when proof is required.
 
-## Immutable Proof Wrapper
+### Immutable Proof Wrapper
 
 `immutable-proof.json` is control-plane-authored wrapper metadata around an
 executor-authored `build-result`. It is not a replacement for `build-result`.
@@ -802,7 +838,7 @@ ignore a proof unless all of these checks pass:
 If multiple admissible proofs for one binding have different digests, proof is
 unavailable. The planner must not pick the newest proof to break the tie.
 
-## Build Executor Realization
+### Build Executor Realization
 
 Build executors are selected from `project.ecosystem`.
 
@@ -866,7 +902,16 @@ commands that produce the same package file later uploaded by publish executors:
 The exact command wrappers remain implementation-owned, but the output receipt is
 not.
 
-## Publish Executor Realization
+## 5. Entry-Hosted Publish Path
+
+The current PyPI entry-hosted publish path is captured across the workflow
+identity, routing, publish executor, registry adapter, and permissions sections.
+Group 5 owns any later dedicated rewrite of this path. Until that pass, the
+binding rule is that entry-workflow-bound publish nodes are scheduled by the
+top-level entry workflow and must not be routed through the reusable publish
+workflow.
+
+## 6. Publish Executor Design
 
 Publish executors are selected from `target-instance-snapshot.family`.
 
@@ -885,7 +930,7 @@ whether to skip, overwrite, promote, or reconcile. Any destination call before
 upload must be strictly necessary to carry out the already frozen publish action,
 such as obtaining a short-lived trusted-publishing credential.
 
-## Registry Adapter Details
+## 7. Registry Adapter Partitioning
 
 ### GitHub Release
 
@@ -1054,7 +1099,7 @@ Publish executor responsibilities:
   `GITHUB_TOKEN` and publish to the owner-scoped GitHub Packages host.
 - Verify the built gem specification name and version before upload.
 
-## GitHub Permissions and Environments
+## 8. Permissions and Environment
 
 Use job-level least privilege rather than a broad workflow-level write token.
 
@@ -1096,6 +1141,8 @@ identity required by npm trusted publishing while the publish job can remain
 reusable-hosted, and RubyGems.org uses its reusable-workflow topology with
 registry support for reusable identity. Planner-time remote observation remains
 unable to access approval-gated secrets or OIDC publish jobs.
+
+## 9. External Setup and Readiness
 
 Before live official publication is enabled, release infrastructure setup must
 include this checklist:
@@ -1189,7 +1236,7 @@ No-side-effect runs skip this environment gate entirely:
 - zero-target;
 - all selected publish nodes are `skip-satisfied`.
 
-## Tag Orchestration
+### Tag Orchestration
 
 `ensure-tag` is a control-plane job, not an executor.
 
@@ -1224,7 +1271,7 @@ When the job succeeds, it must emit exactly one `tag-result.json` covering every
 distinct required release tag. If any existing tag fails the peel-to-commit
 precheck, the job emits no positive tag result and creates no missing tags.
 
-## First-Delivery Author-Time Input Project Set
+### First-Delivery Author-Time Input Project Set
 
 The first delivery should generate project descriptors for a deliberately small
 project set that covers the release system's required ecosystem and artifact
@@ -1253,7 +1300,7 @@ author-time input batch intentionally includes only
 `src/private/app/vscode-copilot-telegram-hook/` is explicitly deferred to a later
 descriptor-migration batch unless this low-level project set is updated.
 
-## Acceptance Traceability
+## 10. Acceptance Traceability
 
 Implementation should maintain a trace table in tests or CI reports with this
 minimum shape:
@@ -1293,23 +1340,7 @@ acceptance fixtures or generated CI evidence. A missing row for any first-
 delivery scenario is an acceptance-coverage gap before declaring the workflow
 implementation complete, but it does not reopen design or block initial coding.
 
-## External Documentation Grounding
-
-This low-level design was checked against these official or primary sources:
-
-- GitHub Actions environments, required reviewers, prevent self-review, artifact
-  APIs, OIDC claims, workflow syntax, workflow cancellation reference,
-  `GITHUB_TOKEN`, GitHub Release REST API, and GitHub Packages registry guides.
-- Microsoft Learn NuGet trusted publishing, service index, package base address,
-  registration, package publish, and `.snupkg` symbol package pages.
-- PyPI trusted publishing, JSON API, Python package name normalization, and
-  version normalization specifications.
-- npm trusted publishers, provenance, package-name guidelines, and npm CLI
-  `view` and `pack` documentation.
-- RubyGems trusted publishing, RubyGems.org API, publishing guide, and GitHub
-  Packages RubyGems guide.
-
-## What Remains Implementation-Owned
+## 11. Implementation-Owned Boundaries
 
 These details remain owned by implementation:
 
@@ -1324,6 +1355,30 @@ These details remain owned by implementation:
 These details may change without reopening design if the frozen descriptor, plan,
 workflow, executor, receipt, proof, and registry-observation contracts above
 remain intact.
+
+## 12. Consistency Review
+
+Group 12 owns the final cross-section review after the topology, publish,
+registry, permissions, readiness, and acceptance groups complete. That pass must
+check that this page uses one coherent vocabulary for topology partitions,
+workflow identity, permissions, request and receipt files, external readiness,
+acceptance evidence, and implementation-owned boundaries.
+
+The consistency pass must also preserve or refresh the external documentation
+grounding. This low-level design was checked against these official or primary
+sources:
+
+- GitHub Actions environments, required reviewers, prevent self-review, artifact
+  APIs, OIDC claims, workflow syntax, workflow cancellation reference,
+  `GITHUB_TOKEN`, GitHub Release REST API, and GitHub Packages registry guides.
+- Microsoft Learn NuGet trusted publishing, service index, package base address,
+  registration, package publish, and `.snupkg` symbol package pages.
+- PyPI trusted publishing, JSON API, Python package name normalization, and
+  version normalization specifications.
+- npm trusted publishers, provenance, package-name guidelines, and npm CLI
+  `view` and `pack` documentation.
+- RubyGems trusted publishing, RubyGems.org API, publishing guide, and GitHub
+  Packages RubyGems guide.
 
 ## Related Pages
 
