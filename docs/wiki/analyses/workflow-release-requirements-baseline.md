@@ -401,11 +401,19 @@ now tighter in ten places:
     cancellation, approval boundaries, and GitHub Packages coverage when that
     target is exercised.
 
-## Still Open for Design Work
+## Requirements-Phase Design Deferrals
+
+During the requirements phase, the following items were intentionally deferred
+from business-requirements definition into design work:
 
 - the final descriptor filename and syntax;
 - the exact schema shape and reuse model;
 - the exact workflow YAML and job decomposition that implements these rules.
+
+Those deferrals have since been resolved by the descriptor schema, plan shape,
+workflow/executor boundary, and low-level design pages. This resolution records
+where the design decisions now live; it does not change the business
+requirements captured above.
 
 ## Related Pages
 
