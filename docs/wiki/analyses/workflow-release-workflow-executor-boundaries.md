@@ -815,9 +815,10 @@ The following concerns are explicitly control-plane-owned:
   triggering actor is allowed to start the selected profile; in current scope,
   `official` must fail before planning unless the triggering actor has at least
   repository `maintain`, and this check stays distinct from later approval;
-- **concurrency**: only the entry workflow or orchestration workflow sets the
+- **concurrency**: exactly one top-level entry continuation boundary sets the
   duplicate-run concurrency key, using the already frozen workflow-entry-point
-  plus commit rule;
+  plus commit rule; child reusable workflows, matrix rows, publish jobs, and
+  report jobs do not reuse that group;
 - **selected-commit pinning**: only the control plane resolves the operator-
   selected branch/tag ref into the authoritative `commit-sha`, and every later
   planner, build, publish, and tag job must stay pinned to that same commit;

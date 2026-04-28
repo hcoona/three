@@ -567,17 +567,19 @@ same `resolved-publish-identity.release-tag`:
   `projection.asset-labels-by-artifact-id`, where a missing map entry means no
   planned label;
 - each required remote asset has content-equivalence evidence for the planned
-  artifact: the remote asset digest must match an admissible planner-owned build
-  receipt or immutable proof digest for the corresponding `artifact-id`, with
-  remote size matching the same evidence as corroboration;
+  artifact: the planner can download the remote asset and verify an admissible
+  GitHub Artifact Attestation whose subject name, digest, signer workflow, source
+  repository, source digest, and predicate type match the frozen publish node and
+  selected commit; the remote asset size must match the downloaded file and any
+  unexpired matching `github-release-asset-proof.json` wrapper as corroboration;
 - no extra remote assets remain on that release object.
 
-If GitHub Release remote asset digest or size evidence is unavailable,
-unparseable, or mismatched for any planned asset, the same-tag state is not
-`exact-satisfied`. The planner must classify it as `partial` or `conflicting`
-under the same-tag rules below, or fail closed when it cannot safely reduce the
-observation to one class. A same-name asset is never sufficient evidence by
-itself.
+If GitHub Release remote asset download, attestation verification, digest
+evidence, or size evidence is unavailable, unparseable, or mismatched for any
+planned asset, the same-tag state is not `exact-satisfied`. The planner must
+classify it as `partial` or `conflicting` under the same-tag rules below, or fail
+closed when it cannot safely reduce the observation to one class. A same-name
+asset is never sufficient evidence by itself.
 
 For current-scope same-tag GitHub Release observations that are not
 `exact-satisfied`, classification remains structural:
