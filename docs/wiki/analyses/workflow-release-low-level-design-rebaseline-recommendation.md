@@ -12,9 +12,9 @@ high-level architecture fixed, then run a focused low-level rebaseline and
 readiness check against the new topology constraints.
 
 The current design corpus has already incorporated topology-partitioned routing
-for first-class OIDC topology and first-delivery live PyPI. This record captures
-why that low-level rebaseline was necessary, how it was bounded, and how to
-repeat or verify the same kind of pass after future middle-layer changes.
+for first-class OIDC topology and first-delivery live PyPI and npmjs. This record
+captures why that low-level rebaseline was necessary, how it was bounded, and how
+to repeat or verify the same kind of pass after future middle-layer changes.
 
 The expected outcome of such a pass is focused readiness evidence: identify any
 places where the low-level design still carries superseded topology assumptions,
@@ -36,10 +36,10 @@ checked for stale assumptions such as routing every live external publish throug
 one reusable workflow like `.github/workflows/release-publish-node.yml`.
 
 Status: the current corpus has been updated for topology-partitioned publish
-routing, including first-class OIDC topology and first-delivery live PyPI through
-an entry-workflow-bound path. This page is not an assertion that the current
-low-level design remains broken; it is the recommendation and verification
-record for the rebaseline that addressed that risk.
+routing, including first-class OIDC topology and first-delivery live PyPI and
+npmjs through entry-workflow-bound paths. This page is not an assertion that the
+current low-level design remains broken; it is the recommendation and
+verification record for the rebaseline that addressed that risk.
 
 ## Assumptions the Rebaseline Must Check
 
@@ -47,8 +47,9 @@ record for the rebaseline that addressed that risk.
 - External OIDC publishing is not one uniform reusable workflow behavior.
 - PyPI is treated as entry-workflow-bound for current scope unless a successor
   design proves another supported topology.
-- npmjs can remain caller-workflow-bound, with OIDC capability passed along the
-  `workflow_call` path.
+- npmjs is entry-workflow-bound for first delivery because npm validates the
+  calling workflow for `workflow_call` publishes, and the current design keeps
+  the trusted-publisher filename bound to `release-official.yml`.
 - RubyGems.org can use a reusable-workflow-bound topology where registry support
   is explicitly configured.
 - GitHub Release and GitHub Packages remain GitHub-token publishing paths rather
@@ -73,7 +74,7 @@ where comparable topology changes can invalidate implementation guidance:
 - external setup instructions for trusted-publisher configuration;
 - dry-run and validation-build behavior where live-publish topology is observed
   but not executed;
-- acceptance traceability for first-delivery live PyPI and mixed topology
+- acceptance traceability for first-delivery live PyPI, npmjs, and mixed topology
   publish graphs.
 
 Do not use such a pass to redesign descriptor schema, plan shape, architecture,

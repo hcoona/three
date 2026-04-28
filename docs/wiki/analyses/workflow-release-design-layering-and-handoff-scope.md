@@ -50,8 +50,9 @@ The current doc set already provides:
 - stable build and publish fan-out granularity;
 - first-class OIDC publish topology as a target-instance and plan-snapshot
   capability;
-- first-delivery live PyPI publication through the entry-workflow-bound
-  `official` topology, while broader PyPI multi-wheel layouts remain deferred;
+- first-delivery live PyPI and npmjs publication through the
+  entry-workflow-bound `official` topology, while broader PyPI multi-wheel
+  layouts remain deferred;
 - planner-owned versus control-plane-owned versus executor-owned boundaries.
 
 The final middle-layer seam decisions for current scope are now:

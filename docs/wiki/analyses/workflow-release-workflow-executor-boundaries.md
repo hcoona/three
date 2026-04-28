@@ -12,8 +12,8 @@ contracts, and executor limits on top of `three.release.plan/v1alpha1`.
   workflows.
 - Both entry workflows call the same shared orchestration contract with the
   selected profile and the raw dispatch envelope, but the topology partition
-  decides whether each OIDC publish job is reusable-hosted with caller/top-level
-  identity validation, reusable-hosted with reusable-workflow identity
+  decides whether each OIDC publish job is reusable-hosted with direct-caller
+  workflow identity validation, reusable-hosted with reusable-workflow identity
   validation, or physically hosted by the entry workflow.
 - In current scope, manual dispatch selects a trusted branch or tag ref; the
   control plane resolves it once to `commit-sha` at run start and later jobs stay
@@ -34,13 +34,11 @@ contracts, and executor limits on top of `three.release.plan/v1alpha1`.
 - Approvals, concurrency, dry-run gating, tagging, permissions, runner or
   toolchain wiring, artifact transport, and final reporting remain control-plane
   responsibilities.
-- Caller-workflow-bound OIDC publish paths such as npmjs keep registry
-  validation tied to the caller/top-level workflow identity. In the current
-  nested chain, `release-official.yml` invokes `release-orchestrate.yml`, which
-  invokes `release-publish-node.yml`; grant `id-token: write` only to every
-  active caller job in that chain that must pass OIDC capability onward and to
-  the child reusable publish job that mints the token. Unrelated jobs remain
-  least-privilege and do not receive OIDC permission.
+- Caller-workflow-bound OIDC publish paths keep registry validation tied to the
+  direct caller workflow identity. First-delivery npmjs is not routed through the
+  nested reusable chain because npm documents caller-workflow validation for
+  `workflow_call`; it is entry-hosted so the configured workflow filename remains
+  `release-official.yml`.
 - Reusable-workflow-bound OIDC publish paths such as RubyGems.org keep registry
   validation tied to the reusable publish workflow identity. In the current
   nested chain, the `release-official.yml` caller job invokes
@@ -84,13 +82,13 @@ remote-observation seam used to classify remote-state-dependent reruns.
 
 ### Top-Level Boundaries
 
-| Boundary                      | Kind                           | Stable granularity       | Owns                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------- | ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `buddy` entry workflow        | top-level workflow             | one `buddy` run          | manual dispatch inputs, profile selection, entry permissions, top-level concurrency wiring, caller/top-level identity for caller-workflow-bound OIDC publishes, physical hosting for entry-workflow-bound OIDC publishes, and final reporting                                                                                                    |
-| `official` entry workflow     | top-level workflow             | one `official` run       | manual dispatch inputs, profile selection, explicit triggering-actor `maintain+` authorization, protected-environment approval wiring, top-level concurrency wiring, caller/top-level identity for caller-workflow-bound OIDC publishes, physical hosting for entry-workflow-bound OIDC publishes such as live PyPI publish, and final reporting |
-| shared orchestration workflow | reusable workflow              | one selected-profile run | planning, selector derivation, reusable-safe side-effect sequencing, tag orchestration, artifact fan-out and fan-in, reusable-hosted publish fan-out including caller-workflow-bound selectors, and entry-workflow-bound publish selector handoff                                                                                                |
-| `build-variant` unit          | reusable workflow              | one `variant-id`         | build-request materialization, ecosystem-specific build-executor selection, runner or tool wiring, and upload of one variant bundle plus build receipt                                                                                                                                                                                           |
-| `publish-node` unit           | topology-specific publish path | one `publish-node-id`    | publish-request materialization, topology and family-specific publish-executor routing, download of referenced build bundles, and upload of one publish receipt, whether the concrete job is reusable-hosted or entry-workflow-hosted                                                                                                            |
+| Boundary                      | Kind                           | Stable granularity       | Owns                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------- | ------------------------------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `buddy` entry workflow        | top-level workflow             | one `buddy` run          | manual dispatch inputs, profile selection, entry permissions, top-level concurrency wiring, direct-caller identity for any future top-level-direct caller-workflow-bound OIDC publishes, physical hosting for entry-workflow-bound OIDC publishes, and final reporting                                                                                                              |
+| `official` entry workflow     | top-level workflow             | one `official` run       | manual dispatch inputs, profile selection, explicit triggering-actor `maintain+` authorization, protected-environment approval wiring, top-level concurrency wiring, direct-caller identity for any future top-level-direct caller-workflow-bound OIDC publishes, physical hosting for entry-workflow-bound OIDC publishes such as live PyPI and npmjs publish, and final reporting |
+| shared orchestration workflow | reusable workflow              | one selected-profile run | planning, selector derivation, reusable-safe side-effect sequencing, tag orchestration, artifact fan-out and fan-in, reusable-hosted publish fan-out including caller-workflow-bound selectors, and entry-workflow-bound publish selector handoff                                                                                                                                   |
+| `build-variant` unit          | reusable workflow              | one `variant-id`         | build-request materialization, ecosystem-specific build-executor selection, runner or tool wiring, and upload of one variant bundle plus build receipt                                                                                                                                                                                                                              |
+| `publish-node` unit           | topology-specific publish path | one `publish-node-id`    | publish-request materialization, topology and family-specific publish-executor routing, download of referenced build bundles, and upload of one publish receipt, whether the concrete job is reusable-hosted or entry-workflow-hosted                                                                                                                                               |
 
 The stable workflow handoff boundaries are therefore:
 
@@ -98,7 +96,7 @@ The stable workflow handoff boundaries are therefore:
 2. shared orchestration workflow -> one build unit per `variant-id`;
 3. shared orchestration workflow -> one reusable-hosted publish unit per
    `publish-node-id`, including caller-workflow-bound selectors whose registry
-   validates the caller/top-level workflow identity;
+   validates the direct caller workflow identity;
 4. shared orchestration workflow -> profile entry workflow handoff for
    entry-workflow-bound publish selectors, followed by one entry-hosted publish
    unit per `publish-node-id`;
@@ -110,12 +108,13 @@ The fourth boundary is not a third operator-facing entry. It is an entry-run
 continuation inside the same `buddy` or `official` run, required only when the
 frozen publish topology is `external-oidc-entry-workflow` and the job that
 requests the OIDC token must be hosted by the top-level entry workflow file. For
-a valid active `pypi/pypi` `official` publish node, the live publish job must
-therefore be hosted by `.github/workflows/release-official.yml`, not by the
-reusable `release-orchestrate.yml` workflow and not by the reusable
-`publish-node` unit. Caller-workflow-bound selectors are different: they may run
-inside reusable publish workflow jobs while the registry validates the
-caller/top-level workflow identity.
+a valid active `pypi/pypi` or `npm/npmjs` `official` publish node, the live
+publish job must therefore be hosted by `.github/workflows/release-official.yml`,
+not by the reusable `release-orchestrate.yml` workflow and not by the reusable
+`publish-node` unit. Caller-workflow-bound selectors are different: they may
+run inside reusable publish workflow jobs while the registry validates the
+direct caller workflow identity, but no first-delivery target uses that
+topology.
 
 ### Required Control-Plane Job Sequence
 
@@ -165,8 +164,8 @@ reusable jobs, but it must preserve the topology boundary described here.
       to be materialized and scheduled by the top-level entry workflow rather
       than by the called reusable orchestration workflow;
     - keeps caller-workflow-bound OIDC publish partitions reusable-hosted when
-      the registry validates the caller/top-level workflow identity even though
-      the publish command runs inside the called workflow.
+      the registry validates the direct caller workflow identity even though the
+      publish command runs inside the called workflow.
 3. `build` fan-out
     - runs exactly once per active `variant-id`;
     - produces one bundle and one build receipt per variant.
@@ -202,12 +201,12 @@ reusable jobs, but it must preserve the topology boundary described here.
       credentials or an OIDC trusted-publishing token;
     - schedules reusable-hosted publish selectors inside the shared reusable
       orchestration workflow, including caller-workflow-bound selectors whose
-      registry trust policy validates the caller/top-level workflow identity;
+      registry trust policy validates the direct caller workflow identity;
     - returns entry-workflow-bound OIDC publish selectors to the top-level entry
       workflow so those publish jobs are physically hosted by the workflow
       identity configured in the external registry;
-    - must not schedule a live PyPI publish node through either the reusable
-      `publish-node` unit or the reusable `release-orchestrate.yml` workflow in
+    - must not schedule a live PyPI or npmjs publish node through either the
+      reusable `publish-node` unit or the reusable `release-orchestrate.yml` workflow in
       first delivery, because PyPI Trusted Publishing is configured against the
       top-level entry workflow identity;
     - emits one publish receipt per publish node.
@@ -341,12 +340,12 @@ plan:
   `external-oidc-reusable-workflow` selectors, and top-level-entry-hosted for
   `external-oidc-entry-workflow` selectors. Caller-workflow-bound selectors may
   run inside the called reusable publish workflow while the registry validates the
-  caller/top-level workflow identity; they are not returned to the entry workflow
+  direct caller workflow identity; they are not returned to the entry workflow
   merely because the trusted identity is the caller. Entry-workflow-bound
   selectors are consumed outside the called reusable orchestration workflow even
   though their `publish-request.json` materialization, artifact inputs, and
   `publish-result.json` receipt shape remain identical. A valid first-delivery
-  `pypi/pypi` official publish node is a member of the
+  `pypi/pypi` or `npm/npmjs` official publish node is a member of the
   `external-oidc-entry-workflow` selector partition and is scheduled by that
   topology selector, not by target-family special casing.
 
@@ -399,19 +398,19 @@ and carries exactly one wheel and zero or one sdist.
 | entry workflow -> report job                   | immutable plan artifact, diagnostics, tag results, build receipts, skip receipts, publish receipts from all topology paths, and job conclusions       | one final operator-facing report          |
 
 Reusable workflow boundaries carry selectors and immutable artifacts, including
-caller-workflow-bound selectors when the registry validates the caller/top-level
+caller-workflow-bound selectors when the registry validates the direct caller
 workflow identity. Entry-hosted publish boundaries carry the same logical selector
 and artifact inputs but are physically scheduled by the top-level workflow file so
 registry OIDC claims name the configured publisher workflow. The executor
 boundary inside each unit is narrower and uses a materialized request object.
-When a caller-workflow-bound selector is implemented through `workflow_call`,
-npmjs-style trusted publishing still validates the caller/top-level workflow
-identity. In the current official nested chain, `release-official.yml` invokes
-`release-orchestrate.yml`, which invokes `release-publish-node.yml`. Every
-active caller job in that chain that must pass OIDC capability onward must
-declare `id-token: write`, and the child reusable publish job that mints the
-token must also declare `id-token: write`; this must not be generalized to
-unrelated jobs.
+When a caller-workflow-bound selector is implemented through `workflow_call`, the
+trusted-publisher policy must be configured for the direct caller workflow that
+the registry validates, not for a transitive top-level workflow unless that
+workflow directly calls the token-minting reusable publish job. Because npmjs
+documents caller-workflow validation for `workflow_call` publishes, first
+delivery routes npmjs through the entry-hosted path instead of the current
+`release-official.yml` -> `release-orchestrate.yml` ->
+`release-publish-node.yml` nested reusable chain.
 
 When a reusable-workflow-bound selector is implemented through `workflow_call`,
 RubyGems.org-style trusted publishing validates the reusable publish workflow
