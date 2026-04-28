@@ -324,16 +324,16 @@ substitute for the resolved-SHA key required above.
 The selected entry workflow and the shared orchestration workflow together
 implement the middle-layer job sequence with these concrete data handoffs:
 
-| Job                  | Physical host                                                                                                                        | Required inputs                                                                                                                                                                       | Required outputs                                                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `authorize-entry`    | top-level entry workflow before invoking `release-orchestrate.yml`                                                                   | GitHub event context, selected profile, and resolved normalized dispatch context                                                                                                      | Authorization conclusion and authorized normalized run metadata consumed by orchestration.                                     |
-| `validate-authoring` | shared orchestration workflow before `dotnet-metadata` and `plan`                                                                    | Pinned checkout at `commit-sha`, normalized planner request, descriptors, and shared catalog                                                                                          | Diagnostics-only failure, or validated authoring state plus `dotnet-planner-metadata-input.json` for the Windows metadata job. |
-| `dotnet-metadata`    | Windows job before planner execution when validated current-scope .NET descriptors are present                                       | Pinned checkout at `commit-sha`, `dotnet-planner-metadata-input.json`, and repo .NET toolchain                                                                                        | `dotnet-planner-metadata.json` observation artifact consumed by the planner.                                                   |
-| `plan`               | shared orchestration workflow                                                                                                        | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map, and any required pre-plan metadata artifacts | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics.                                       |
-| `build`              | shared orchestration workflow calling the reusable build unit                                                                        | Plan artifact, one `variant-id` per matrix row                                                                                                                                        | Variant bundle, `build-result`, and optional immutable-proof artifacts.                                                        |
-| `ensure-tag`         | control-plane job before publish fan-out                                                                                             | Frozen plan plus selected and active GitHub Release publish nodes                                                                                                                     | `tag-result.json` tag verification or creation evidence.                                                                       |
-| `publish`            | shared orchestration for reusable-hosted selectors; entry workflow resumes hosting for entry-workflow selectors                      | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts, and a materialized `publish-request.json`                                                             | `publish-result` artifacts.                                                                                                    |
-| `report`             | top-level entry workflow after any entry-hosted publish jobs complete, or the entry workflow's pre-orchestration failure-report path | Plan, diagnostics, tag results, build results, skip results, publish results from all topology paths, job conclusions                                                                 | Final operator summary and `release-report.json`.                                                                              |
+| Job                  | Physical host                                                                                                                        | Required inputs                                                                                                                                                                       | Required outputs                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `authorize-entry`    | top-level entry workflow before invoking `release-orchestrate.yml`                                                                   | GitHub event context, selected profile, and resolved normalized dispatch context                                                                                                      | Authorization conclusion and authorized normalized run metadata consumed by orchestration.                   |
+| `validate-authoring` | shared orchestration workflow before `dotnet-metadata` and `plan`                                                                    | Pinned checkout at `commit-sha`, normalized planner request, descriptors, and shared catalog                                                                                          | Diagnostics-only failure, or `dotnet-planner-metadata-input.json` when the Windows metadata job is required. |
+| `dotnet-metadata`    | Windows job before planner execution when validated current-scope .NET descriptors are present                                       | Pinned checkout at `commit-sha`, `dotnet-planner-metadata-input.json`, and repo .NET toolchain                                                                                        | `dotnet-planner-metadata.json` observation artifact consumed by the planner.                                 |
+| `plan`               | shared orchestration workflow                                                                                                        | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map, and any required pre-plan metadata artifacts | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics.                     |
+| `build`              | shared orchestration workflow calling the reusable build unit                                                                        | Plan artifact, one `variant-id` per matrix row                                                                                                                                        | Variant bundle, `build-result`, and optional immutable-proof artifacts.                                      |
+| `ensure-tag`         | control-plane job before publish fan-out                                                                                             | Frozen plan plus selected and active GitHub Release publish nodes                                                                                                                     | `tag-result.json` tag verification or creation evidence.                                                     |
+| `publish`            | shared orchestration for reusable-hosted selectors; entry workflow resumes hosting for entry-workflow selectors                      | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts, and a materialized `publish-request.json`                                                             | `publish-result` artifacts.                                                                                  |
+| `report`             | top-level entry workflow after any entry-hosted publish jobs complete, or the entry workflow's pre-orchestration failure-report path | Plan, diagnostics, tag results, build results, skip results, publish results from all topology paths, job conclusions                                                                 | Final operator summary and `release-report.json`.                                                            |
 
 In current-scope first delivery, execution-set derivation is an implementation
 detail of the `plan` job, not a separate reportable workflow job. This keeps the
@@ -350,6 +350,11 @@ the workflow reports the normalized diagnostics path instead of a Windows helper
 failure. If the validated metadata input cannot be evaluated on Windows, the
 failure is a metadata-observation failure for the listed validated project, not a
 descriptor-schema or descriptor-static-validation decision.
+No separate validated-authoring state crosses workflow jobs in current scope:
+`dotnet-planner-metadata-input.json` is the only serialized validate-to-metadata
+handoff. The later `plan` job consumes the pinned checkout, normalized planner
+request, and required metadata artifacts; it must not depend on an ad hoc
+validate-to-plan state file or invent a second authoring-validation handoff.
 
 Every planner, build, tag, and publish job that materializes the source tree must
 check out the exact resolved `commit-sha` with enough Git history and tags for
@@ -857,22 +862,34 @@ positive `tag-result`.
 Current scope defines no root-level extension field for `release-report.json`.
 New root-level report fields require a successor contract update before
 workflows, renderers, or tests depend on them.
-The `.NET` metadata artifact names are `null` when the validated authoring state
-contains no current-scope .NET projects requiring Windows metadata. The entry
-handoff artifact name is non-null whenever orchestration completed selector
-serialization for the entry workflow, including the empty-selector case.
 
 Artifact-name nullability is closed:
 
-| Field                                         | Nullability rule                                                                                     |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `artifacts.plan-artifact-name`                | `null` whenever no plan artifact was published; otherwise the frozen plan artifact name.             |
-| `artifacts.planner-diagnostics-artifact-name` | `null` only when no diagnostics artifact exists; otherwise the diagnostics artifact name.            |
-| `artifacts.execution-sets-artifact-name`      | `null` whenever no execution-set artifact was published; otherwise the execution-set artifact name.  |
-| `artifacts.tag-result-artifact-name`          | `null` when `ensure-tag` did not emit positive tag evidence; otherwise the tag-result artifact name. |
-| `artifacts.build-result-artifact-names`       | Empty array when no positive build-result artifacts exist; otherwise sorted artifact names.          |
-| `artifacts.publish-result-artifact-names`     | Empty array when no positive publish-result artifacts exist; otherwise sorted artifact names.        |
-| `artifacts.skip-result-artifact-names`        | Empty array when no synthetic skip-result artifacts exist; otherwise sorted artifact names.          |
+| Field                                                   | Nullability rule                                                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `artifacts.plan-artifact-name`                          | `null` whenever no plan artifact was published; otherwise the frozen plan artifact name.                            |
+| `artifacts.planner-diagnostics-artifact-name`           | `null` only when no diagnostics artifact exists; otherwise the diagnostics artifact name.                           |
+| `artifacts.dotnet-planner-metadata-input-artifact-name` | `null` when no validated .NET metadata input artifact was emitted; otherwise the metadata input artifact name.      |
+| `artifacts.dotnet-planner-metadata-artifact-name`       | `null` when no Windows metadata observation artifact was emitted; otherwise the metadata observation artifact name. |
+| `artifacts.execution-sets-artifact-name`                | `null` whenever no execution-set artifact was published; otherwise the execution-set artifact name.                 |
+| `artifacts.entry-publish-handoff-artifact-name`         | `null` when no entry-publish handoff artifact was emitted; otherwise the entry-publish handoff artifact name.       |
+| `artifacts.tag-result-artifact-name`                    | `null` when `ensure-tag` did not emit positive tag evidence; otherwise the tag-result artifact name.                |
+| `artifacts.build-result-artifact-names`                 | Empty array when no positive build-result artifacts exist; otherwise sorted artifact names.                         |
+| `artifacts.publish-result-artifact-names`               | Empty array when no positive publish-result artifacts exist; otherwise sorted artifact names.                       |
+| `artifacts.skip-result-artifact-names`                  | Empty array when no synthetic skip-result artifacts exist; otherwise sorted artifact names.                         |
+
+`dotnet-planner-metadata-input-artifact-name` and
+`dotnet-planner-metadata-artifact-name` are both `null` when the validated
+authoring state contains no current-scope .NET projects requiring Windows
+metadata. If Windows metadata is required but either artifact is not positively
+emitted, the missing artifact is reported through the relevant job conclusion and
+diagnostics; the report must not synthesize a metadata artifact name or infer
+metadata from descriptor contents. `entry-publish-handoff-artifact-name` is
+non-null whenever orchestration completed selector serialization for the entry
+workflow, including the empty-selector case. If that handoff was required but not
+emitted, the report summarizes the orchestration or entry-hosted publish failure
+from job conclusions and diagnostics, and the entry workflow must not recover a
+missing bridge from target-family or selector guesses.
 
 Because execution-set derivation is part of the `plan` job in current-scope first
 delivery, `release-report.json.jobs` intentionally has no
