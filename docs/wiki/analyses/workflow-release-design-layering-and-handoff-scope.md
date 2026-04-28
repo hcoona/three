@@ -127,20 +127,24 @@ no longer has any implementation-blocking open seam in current scope.
 Lower-layer design does not need to be exhaustively authored before
 implementation for an experienced programmer.
 
-After the middle-layer seam items above are frozen, the following details may
-remain implementation-owned as long as they stay within the documented
-contracts:
+After the middle-layer seam items above are frozen, the implementation-owned
+space is limited to internal realization below the documented contracts:
 
-- repo file layout for planner, validators, and workflow helpers;
-- internal module, class, function, and script decomposition;
-- internal job wiring details that do not change the published control-plane
-  boundaries or the topology-partitioned publish selector contract; the
-  low-level design freezes current-scope workflow filenames as handoff
-  contracts, and registry-trusted filenames carry the additional external
-  trusted-publisher migration constraint;
-- concrete action selection, shell wrappers, and helper command structure;
-- receipt file locations, temporary directories, and logging structure;
-- language-specific helper APIs and local refactoring choices.
+- internal module, class, function, and helper-script decomposition;
+- helper script and composite-action structure, shell wrappers, and private
+  command organization;
+- language and runtime choices that remain within repository conventions;
+- local refactoring and shared utility extraction inside frozen boundaries;
+- logging details, temporary directories, scratch staging, and cleanup behavior;
+- exact internal helper APIs and private in-process data structures.
+
+The following are explicitly **not** implementation-owned: frozen workflow
+filenames and identities; descriptor and shared catalog paths; plan shape;
+execution-set selector keys and semantics; request, result, receipt, proof, and
+diagnostic contracts; publish topology routing; permission placement; external
+readiness gates; acceptance evidence requirements; and package-registry identity
+conformance. Shared code reuse is allowed only when it preserves workflow
+identity, token boundaries, topology partitioning, and all data contracts.
 
 In other words, the remaining lower-layer work should be implementation detail,
 not backdoor architecture design.
@@ -159,9 +163,11 @@ The current design package is already ready to hand off in these areas:
 
 ### Explicitly left to implementation
 
-The current handoff does **not** attempt to freeze every workflow line, script,
-or helper API. That lower-layer realization work may be delegated to an
-experienced implementer within the now-frozen middle-layer contracts.
+The current handoff leaves implementation-owned realization concerns to the
+implementer, including internal helper, composite-action, and script
+realization plus wiring choices. Those choices remain constrained by the frozen
+workflow identity, topology routing, selector semantics, permission placement,
+readiness, and data-contract boundaries.
 
 ### Pre-lower-layer handoff review
 

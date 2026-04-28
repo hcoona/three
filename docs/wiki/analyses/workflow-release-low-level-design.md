@@ -8,12 +8,14 @@ workflow-release drafts for current-scope implementation guidance while keeping
 the frozen requirements, high-level architecture, descriptor schema, plan shape,
 and workflow/executor boundary contracts unchanged.
 
-The target reader is one experienced senior implementer. This page freezes the
-concrete realization seams that affect correctness, testability, external
+The target reader is one experienced senior programmer who can choose efficient
+internal structure without reinterpreting the release design. This page freezes
+the concrete realization seams that affect correctness, testability, external
 registry configuration, and acceptance evidence, but it intentionally does not
-freeze every helper, internal module, private API, script name, or command-line
-wrapper. Those details remain implementation-owned unless this page names them as
-cross-job, cross-workflow, registry-facing, or acceptance-facing contracts.
+freeze every helper, internal module, private API, internal script, composite
+action, or command-line wrapper. Those details remain implementation-owned only
+while they stay below the frozen workflow identity, data-contract, permission,
+routing, readiness, and evidence boundaries named here.
 
 Low-level rebaseline changes may reorder and clarify this page before
 implementation starts, including incompatible changes to lower-layer guidance.
@@ -1849,19 +1851,68 @@ implementation complete, but it does not reopen design or block initial coding.
 
 ## 11. Implementation-Owned Boundaries
 
-These details remain owned by implementation:
+The remaining implementation work is intentionally sized for one experienced
+senior programmer. The implementer may choose the smallest maintainable internal
+shape that satisfies this page, but must not use "implementation detail" as a
+reason to rename workflow identities, reinterpret selectors, move frozen inputs
+or outputs, weaken readiness gates, or change acceptance evidence.
 
-- exact planner implementation language and internal module boundaries;
-- exact JSON schema library and test harness;
-- exact wrapper scripts and helper names under `eng/`;
-- exact retry counts and backoff timings, as long as retry is bounded and failure
-  remains fail-closed;
-- internal bundle directory layout beyond receipted bundle-relative paths;
-- exact Markdown wording in the final run summary.
+The following details remain implementation-owned:
 
-These details may change without reopening design if the frozen descriptor, plan,
-workflow, executor, receipt, proof, and registry-observation contracts above
-remain intact.
+- internal module, class, function, and package decomposition for the planner,
+  validators, executors, registry adapters, and report generation;
+- helper script layout, internal command names, composite action structure, and
+  shell or JavaScript/Python/.NET wrapper organization under repository
+  conventions;
+- exact language and runtime choices for internal helpers when the choice stays
+  within the repository's established C#, Python, JavaScript/TypeScript, MISE,
+  and HK conventions;
+- local refactoring, shared utility extraction, and private adapter factoring
+  inside a frozen workflow, planner, executor, or registry-adapter boundary;
+- logging implementation details, including logger choice, message wording, log
+  grouping, and debug verbosity, as long as required diagnostics, receipts,
+  results, and run-summary evidence remain machine-readable where specified;
+- temporary directories, cache directories, scratch bundle staging, cleanup
+  behavior, and retry/backoff constants, as long as receipted paths and
+  fail-closed semantics remain intact; and
+- exact internal helper APIs, private function signatures, in-process data
+  structures, JSON schema library selection, and test harness mechanics.
+
+The following details are **not** implementation-owned:
+
+- frozen workflow filenames, workflow identities, and registry-visible workflow
+  filename roles from Section 3;
+- descriptor file paths, shared target-instance catalog paths, discovery rules,
+  and descriptor/catalog ownership;
+- the `three.release.plan/v1alpha1` envelope, normalized graph shape, snapshot
+  ownership, and other frozen plan-shape contracts;
+- execution-set selector keys, selector object shapes, and selector semantics;
+- planner request contracts, publish request contracts, publish result
+  contracts, skip receipt contracts, build receipt contracts, tag result
+  contracts, immutable-proof wrappers, diagnostics containers, and any
+  acceptance-facing artifact identity;
+- publish topology routing, including which topology path hosts each registry
+  operation and which selector partition reaches each path;
+- placement of `id-token`, `contents`, `packages`, and `environment: release`
+  permissions on jobs that need them, and the absence of those permissions from
+  unrelated jobs;
+- external readiness gates, including repository environment configuration,
+  owner-side trusted-publisher setup, and explicit live-enable controls;
+- acceptance evidence requirements, including the traceability matrix rows and
+  the concrete evidence each row requires; and
+- package-registry identity conformance, including package-name equivalence
+  rules and publish-time produced-file validation.
+
+Shared code reuse is allowed and encouraged when it reduces duplication inside
+the implementation-owned layer. It must not change a workflow identity or token
+boundary, merge topology paths that are contractually distinct, alter any
+request/result/receipt/plan contract, or make one registry adapter derive facts
+that the frozen design assigns to another owner.
+
+The implementation-owned details may change without reopening design only if all
+frozen descriptor, catalog, plan, workflow identity, topology routing,
+permission, request, result, receipt, proof, readiness, registry-observation,
+registry-conformance, and acceptance-evidence contracts above remain intact.
 
 ## 12. Consistency Review
 
