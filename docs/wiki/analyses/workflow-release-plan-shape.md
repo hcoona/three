@@ -566,7 +566,18 @@ same `resolved-publish-identity.release-tag`:
 - each required asset name carries the planned label state from
   `projection.asset-labels-by-artifact-id`, where a missing map entry means no
   planned label;
+- each required remote asset has content-equivalence evidence for the planned
+  artifact: the remote asset digest must match an admissible planner-owned build
+  receipt or immutable proof digest for the corresponding `artifact-id`, with
+  remote size matching the same evidence as corroboration;
 - no extra remote assets remain on that release object.
+
+If GitHub Release remote asset digest or size evidence is unavailable,
+unparseable, or mismatched for any planned asset, the same-tag state is not
+`exact-satisfied`. The planner must classify it as `partial` or `conflicting`
+under the same-tag rules below, or fail closed when it cannot safely reduce the
+observation to one class. A same-name asset is never sufficient evidence by
+itself.
 
 For current-scope same-tag GitHub Release observations that are not
 `exact-satisfied`, classification remains structural:
@@ -674,7 +685,7 @@ it is a fail-closed planner error before any row evaluation.
 
 | Condition                                                                                                                                                                                                                                                               | Planner outcome                                                                                                                                                                                                                                                                                                              |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A `github-release` target is `exact-satisfied` for the same `resolved-publish-identity.release-tag`, including exact release state, exact required asset set, and exact asset labels.                                                                                   | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                                                         |
+| A `github-release` target is `exact-satisfied` for the same `resolved-publish-identity.release-tag`, including exact release state, exact required asset set, exact asset labels, and content-equivalent remote assets for every planned artifact.                      | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                                                         |
 | An immutable target is `exact-satisfied` for the node's full publish intent.                                                                                                                                                                                            | Emit `publish-disposition: skip-satisfied`. Do not invoke a publish executor for that node on rerun.                                                                                                                                                                                                                         |
 | An immutable target is `partial` for the node's full publish intent, meaning the remote state is a proved additive non-empty proper subset with content-equivalent existing planned members, absent missing planned members, and no extra same-identity members.        | Planner error. Current scope does not auto-complete immutable targets even when the same-identity subset relationship is proved.                                                                                                                                                                                             |
 | An immutable target has a `conflicting` remote publication for the same immutable target identity.                                                                                                                                                                      | Planner error. Do not emit a plan that asks executors to auto-complete, reconcile, or overwrite the immutable conflict.                                                                                                                                                                                                      |
