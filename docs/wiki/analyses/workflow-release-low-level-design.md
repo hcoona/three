@@ -324,21 +324,32 @@ substitute for the resolved-SHA key required above.
 The selected entry workflow and the shared orchestration workflow together
 implement the middle-layer job sequence with these concrete data handoffs:
 
-| Job               | Physical host                                                                                                                        | Required inputs                                                                                                                                                                       | Required outputs                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `authorize-entry` | top-level entry workflow before invoking `release-orchestrate.yml`                                                                   | GitHub event context, selected profile, and resolved normalized dispatch context                                                                                                      | Authorization conclusion and authorized normalized run metadata consumed by orchestration. |
-| `dotnet-metadata` | Windows job before planner execution when current-scope .NET descriptors are in the authoring universe                               | Pinned checkout at `commit-sha`, discovered current-scope .NET descriptors, and repo .NET toolchain                                                                                   | `dotnet-planner-metadata.json` observation artifact consumed by the planner.               |
-| `plan`            | shared orchestration workflow                                                                                                        | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map, and any required pre-plan metadata artifacts | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics.   |
-| `build`           | shared orchestration workflow calling the reusable build unit                                                                        | Plan artifact, one `variant-id` per matrix row                                                                                                                                        | Variant bundle, `build-result`, and optional immutable-proof artifacts.                    |
-| `ensure-tag`      | control-plane job before publish fan-out                                                                                             | Frozen plan plus selected and active GitHub Release publish nodes                                                                                                                     | `tag-result.json` tag verification or creation evidence.                                   |
-| `publish`         | shared orchestration for reusable-hosted selectors; entry workflow resumes hosting for entry-workflow selectors                      | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts, and a materialized `publish-request.json`                                                             | `publish-result` artifacts.                                                                |
-| `report`          | top-level entry workflow after any entry-hosted publish jobs complete, or the entry workflow's pre-orchestration failure-report path | Plan, diagnostics, tag results, build results, skip results, publish results from all topology paths, job conclusions                                                                 | Final operator summary and `release-report.json`.                                          |
+| Job                  | Physical host                                                                                                                        | Required inputs                                                                                                                                                                       | Required outputs                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `authorize-entry`    | top-level entry workflow before invoking `release-orchestrate.yml`                                                                   | GitHub event context, selected profile, and resolved normalized dispatch context                                                                                                      | Authorization conclusion and authorized normalized run metadata consumed by orchestration.                                     |
+| `validate-authoring` | shared orchestration workflow before `dotnet-metadata` and `plan`                                                                    | Pinned checkout at `commit-sha`, normalized planner request, descriptors, and shared catalog                                                                                          | Diagnostics-only failure, or validated authoring state plus `dotnet-planner-metadata-input.json` for the Windows metadata job. |
+| `dotnet-metadata`    | Windows job before planner execution when validated current-scope .NET descriptors are present                                       | Pinned checkout at `commit-sha`, `dotnet-planner-metadata-input.json`, and repo .NET toolchain                                                                                        | `dotnet-planner-metadata.json` observation artifact consumed by the planner.                                                   |
+| `plan`               | shared orchestration workflow                                                                                                        | Pinned checkout at `commit-sha`, normalized planner request, prior proof lookup service, raw dry-run controls, external live-enable map, and any required pre-plan metadata artifacts | Frozen plan, `execution-sets.json`, and synthetic skip-result artifacts, or diagnostics.                                       |
+| `build`              | shared orchestration workflow calling the reusable build unit                                                                        | Plan artifact, one `variant-id` per matrix row                                                                                                                                        | Variant bundle, `build-result`, and optional immutable-proof artifacts.                                                        |
+| `ensure-tag`         | control-plane job before publish fan-out                                                                                             | Frozen plan plus selected and active GitHub Release publish nodes                                                                                                                     | `tag-result.json` tag verification or creation evidence.                                                                       |
+| `publish`            | shared orchestration for reusable-hosted selectors; entry workflow resumes hosting for entry-workflow selectors                      | Plan artifact, one `publish-node-id` per matrix row, referenced build receipts, and a materialized `publish-request.json`                                                             | `publish-result` artifacts.                                                                                                    |
+| `report`             | top-level entry workflow after any entry-hosted publish jobs complete, or the entry workflow's pre-orchestration failure-report path | Plan, diagnostics, tag results, build results, skip results, publish results from all topology paths, job conclusions                                                                 | Final operator summary and `release-report.json`.                                                                              |
 
 In current-scope first delivery, execution-set derivation is an implementation
 detail of the `plan` job, not a separate reportable workflow job. This keeps the
 closed `release-report.json.jobs` shape aligned with the workflow. The produced
 selectors must still be serialized as machine-readable JSON rather than
 reconstructed from ad hoc shell output in later jobs.
+
+`validate-authoring` is the only pre-plan job that may reject malformed
+descriptors or catalog data with `DESC_*` or `CATALOG_*` diagnostics. The Windows
+`dotnet-metadata` job runs only after that validation succeeds and consumes only
+the closed `dotnet-planner-metadata-input.json` manifest, not raw descriptor
+discovery state. If authoring validation fails, `dotnet-metadata` is skipped and
+the workflow reports the normalized diagnostics path instead of a Windows helper
+failure. If the validated metadata input cannot be evaluated on Windows, the
+failure is a metadata-observation failure for the listed validated project, not a
+descriptor-schema or descriptor-static-validation decision.
 
 Every planner, build, tag, and publish job that materializes the source tree must
 check out the exact resolved `commit-sha` with enough Git history and tags for
@@ -475,12 +486,12 @@ operators a deliberate path to test build and packaging realization.
 The planner should be invoked through a repo-owned CLI with subcommands that
 mirror stable workflow seams:
 
-| Subcommand               | Required behavior                                                                                                                    |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `validate-authoring`     | Load and validate all in-scope descriptors plus the shared catalog without emitting a plan.                                          |
-| `plan`                   | Consume one normalized planner request and emit either one plan JSON file or planner diagnostics.                                    |
-| `compute-pypi-filenames` | For the narrowed PyPI path, invoke the selected build backend tooling during planning and return exact final distribution filenames. |
-| `render-summary`         | Convert plan, diagnostics, and receipts into compact Markdown for the workflow summary.                                              |
+| Subcommand               | Required behavior                                                                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `validate-authoring`     | Load and validate all in-scope descriptors plus the shared catalog without emitting a plan; emit `dotnet-planner-metadata-input.json` when validated .NET metadata is needed. |
+| `plan`                   | Consume one normalized planner request and emit either one plan JSON file or planner diagnostics.                                                                             |
+| `compute-pypi-filenames` | For the narrowed PyPI path, invoke the selected build backend tooling during planning and return exact final distribution filenames.                                          |
+| `render-summary`         | Convert plan, diagnostics, and receipts into compact Markdown for the workflow summary.                                                                                       |
 
 The implementation may merge these commands into one binary or script entry
 point as long as the workflow still treats the file outputs as the stable
@@ -491,17 +502,20 @@ install and invoke the ecosystem tools needed for planner-owned normalization.
 Current scope keeps that Ubuntu planner as the single policy engine, but .NET
 metadata that may require Windows MSBuild, Windows workloads, or NBGV evaluation
 for Windows-targeted projects is supplied by the pre-plan Windows
-`dotnet-metadata` job through `dotnet-planner-metadata.json`. The Ubuntu planner
-must not directly load Windows-only .NET projects such as WinUI projects as a
-fallback for missing helper evidence. Current scope still allows the Ubuntu
-planner host to call `uv`/Hatchling for PyPI filename computation, `pnpm`/`npm`
-for npm package metadata, and Ruby/Bundler or RubyGems evaluation for gem
-metadata. These calls and the Windows metadata helper are planner-owned
-observations, not release builds; actual C# release builds remain in Windows
-build units, and publish credentials or approval-gated secrets remain unavailable
-to the planner. If a required tool or helper output is unavailable or cannot be
-normalized into the frozen contract, the planner fails closed with diagnostics
-rather than falling back to static guesses.
+`dotnet-metadata` job through `dotnet-planner-metadata.json`. The metadata job is
+started only from `dotnet-planner-metadata-input.json`, which is produced after
+descriptor and catalog validation, so the helper cannot become the first
+component to reject malformed descriptor authoring. The Ubuntu planner must not
+directly load Windows-only .NET projects such as WinUI projects as a fallback for
+missing helper evidence. Current scope still allows the Ubuntu planner host to
+call `uv`/Hatchling for PyPI filename computation, `pnpm`/`npm` for npm package
+metadata, and Ruby/Bundler or RubyGems evaluation for gem metadata. These calls
+and the Windows metadata helper are planner-owned observations, not release
+builds; actual C# release builds remain in Windows build units, and publish
+credentials or approval-gated secrets remain unavailable to the planner. If a
+required tool or helper output is unavailable or cannot be normalized into the
+frozen contract, the planner fails closed with diagnostics rather than falling
+back to static guesses.
 
 The CLI must fail closed:
 
@@ -526,6 +540,7 @@ vocabulary. Current scope should start with this minimum code registry:
 | `CATALOG_SCHEMA_INVALID`        | `validation`     | `request`      | The shared target-instance catalog failed schema or static validation.                                                    |
 | `CATALOG_REF_NOT_FOUND`         | `validation`     | `project`      | A descriptor target reference did not resolve to exactly one catalog target instance.                                     |
 | `VERSION_AUTHORITY_FAILED`      | `normalization`  | `project`      | The planner could not resolve the project-scoped version identity.                                                        |
+| `DOTNET_METADATA_FAILED`        | `normalization`  | `project`      | The Windows metadata helper could not evaluate or emit required metadata for a validated .NET project manifest.           |
 | `PYPI_FILENAME_COMPUTE_FAILED`  | `normalization`  | `publish-node` | Planner-time PyPI filename computation failed or produced an unexpected member set.                                       |
 | `REMOTE_QUERY_FAILED`           | `query`          | `publish-node` | Destination query failed after bounded retry.                                                                             |
 | `REMOTE_NORMALIZATION_FAILED`   | `normalization`  | `publish-node` | Raw destination state could not be normalized for the target family.                                                      |
@@ -610,21 +625,23 @@ workflow shell, PowerShell, Node, and Python helpers.
 
 Required file naming inside artifacts:
 
-| Logical object          | File name                      |
-| ----------------------- | ------------------------------ |
-| Planner request         | `planner-request.json`         |
-| .NET planner metadata   | `dotnet-planner-metadata.json` |
-| Frozen plan             | `release-plan.json`            |
-| Planner diagnostics     | `planner-diagnostics.json`     |
-| Build request           | `build-request.json`           |
-| Build result            | `build-result.json`            |
-| Tag result              | `tag-result.json`              |
-| Publish request         | `publish-request.json`         |
-| Publish result          | `publish-result.json`          |
-| Skip result             | `skip-result.json`             |
-| Execution sets          | `execution-sets.json`          |
-| Immutable proof wrapper | `immutable-proof.json`         |
-| Final run report data   | `release-report.json`          |
+| Logical object          | File name                            |
+| ----------------------- | ------------------------------------ |
+| Planner request         | `planner-request.json`               |
+| .NET metadata input     | `dotnet-planner-metadata-input.json` |
+| .NET planner metadata   | `dotnet-planner-metadata.json`       |
+| Frozen plan             | `release-plan.json`                  |
+| Planner diagnostics     | `planner-diagnostics.json`           |
+| Build request           | `build-request.json`                 |
+| Build result            | `build-result.json`                  |
+| Tag result              | `tag-result.json`                    |
+| Publish request         | `publish-request.json`               |
+| Publish result          | `publish-result.json`                |
+| Skip result             | `skip-result.json`                   |
+| Execution sets          | `execution-sets.json`                |
+| Entry publish handoff   | `entry-publish-handoff.json`         |
+| Immutable proof wrapper | `immutable-proof.json`               |
+| Final run report data   | `release-report.json`                |
 
 Every JSON file must use:
 
@@ -647,11 +664,12 @@ depending on. Current-scope extensibility fields are:
 
 The boundary documents define complete request and result object shapes for the
 current `v1alpha1` handoff. In particular, `planner-request`,
-`dotnet-planner-metadata`, `build-request`, `build-result`, `tag-result`,
-`publish-request`, `publish-result`, and `skip-result` must not grow extra
-root-level fields during implementation unless an extensibility field is named
-above or in the object's defining section. New root-level machine fields require
-a successor contract update before tests or workflows depend on them.
+`dotnet-planner-metadata-input`, `dotnet-planner-metadata`, `build-request`,
+`build-result`, `tag-result`, `entry-publish-handoff`, `publish-request`,
+`publish-result`, and `skip-result` must not grow extra root-level fields during
+implementation unless an extensibility field is named above or in the object's
+defining section. New root-level machine fields require a successor contract
+update before tests or workflows depend on them.
 
 Before workflow jobs exchange these files, implementation must add executable
 contract coverage for the closed cross-job JSON shapes. That coverage may be JSON
@@ -690,6 +708,32 @@ closed current-scope shape is:
 the raw workflow input; `[]` means all in-scope releasable projects. In
 `v1alpha1`, `request-flags` has the exact key set shown above.
 
+`dotnet-planner-metadata-input.json` is the validated authoring handoff from
+`validate-authoring` to the Windows `dotnet-metadata` job. Its closed
+current-scope shape is:
+
+```json
+{
+    "api-version": "three.release.dotnet-planner-metadata-input/v1alpha1",
+    "kind": "dotnet-planner-metadata-input",
+    "commit-sha": "...",
+    "projects": {
+        "hjg-pngcs": {
+            "descriptor-path": "src/public/lib/Hjg.Pngcs/three.release.yml",
+            "primary-manifest-path": "src/public/lib/Hjg.Pngcs/Hjg.Pngcs.csproj",
+            "requires-package-id": true
+        }
+    }
+}
+```
+
+The `projects` map contains only current-scope .NET descriptors that already
+passed file-schema validation and author-time static repo validation. Its values
+are normalized paths and booleans from validated authoring state, not raw
+descriptor snippets. `dotnet-metadata` must not rediscover descriptors, accept
+additional project paths, reinterpret target usage, or downgrade a descriptor
+validation failure into a Windows evaluation failure.
+
 `dotnet-planner-metadata.json` is a pre-plan observation file authored by a
 Windows job for current-scope .NET projects. Its closed current-scope shape is:
 
@@ -709,18 +753,19 @@ Windows job for current-scope .NET projects. Its closed current-scope shape is:
 }
 ```
 
-The `projects` keys are descriptor-owned `project.id` values for discovered
-current-scope .NET descriptors only. `resolved-version` is required for every
+The `projects` keys are descriptor-owned `project.id` values from the validated
+.NET metadata input manifest only. `resolved-version` is required for every
 listed project and must come from the selected commit's build-system-integrated
 NBGV result. `package-id` is required only when the project can participate in a
-NuGet-shaped package artifact or target; app-only entries omit it. The helper may
-read descriptors only to locate current-scope .NET project manifests and must not
-decide selected projects, target usage, publish disposition, replay policy, or
-profile behavior. The Ubuntu planner remains the owner of release policy: it
-validates this metadata against the normalized planner request and frozen
-descriptor/catalog contracts, then fails closed with diagnostics when a required
-.NET entry is missing, comes from a different `commit-sha`, cannot be normalized,
-or conflicts with descriptor-owned source paths.
+NuGet-shaped package artifact or target; app-only entries omit it. The helper
+must use the validated metadata input manifest to locate current-scope .NET
+project manifests and must not rediscover descriptors, decide selected projects,
+target usage, publish disposition, replay policy, or profile behavior. The Ubuntu
+planner remains the owner of release policy: it validates this metadata against
+the normalized planner request and frozen descriptor/catalog contracts, then
+fails closed with diagnostics when a required .NET entry is missing, comes from a
+different `commit-sha`, cannot be normalized, or conflicts with descriptor-owned
+source paths.
 
 `tag-result.json` is the control-plane-authored positive evidence file for a
 successful `ensure-tag` job. Its closed current-scope shape is:
@@ -775,7 +820,10 @@ positive `tag-result`.
     "artifacts": {
         "plan-artifact-name": "...",
         "planner-diagnostics-artifact-name": null,
+        "dotnet-planner-metadata-input-artifact-name": null,
+        "dotnet-planner-metadata-artifact-name": null,
         "execution-sets-artifact-name": "...",
+        "entry-publish-handoff-artifact-name": null,
         "tag-result-artifact-name": null,
         "build-result-artifact-names": [],
         "publish-result-artifact-names": [],
@@ -783,6 +831,8 @@ positive `tag-result`.
     },
     "jobs": {
         "authorize-entry": { "conclusion": "success" },
+        "validate-authoring": { "conclusion": "success" },
+        "dotnet-metadata": { "conclusion": "skipped" },
         "plan": { "conclusion": "success" },
         "build": {
             "conclusion": "skipped",
@@ -807,6 +857,10 @@ positive `tag-result`.
 Current scope defines no root-level extension field for `release-report.json`.
 New root-level report fields require a successor contract update before
 workflows, renderers, or tests depend on them.
+The `.NET` metadata artifact names are `null` when the validated authoring state
+contains no current-scope .NET projects requiring Windows metadata. The entry
+handoff artifact name is non-null whenever orchestration completed selector
+serialization for the entry workflow, including the empty-selector case.
 
 Artifact-name nullability is closed:
 
@@ -1102,13 +1156,11 @@ The high-level handoff is:
    the resolved `commit-sha` and normalized controls.
 2. `release-orchestrate.yml` emits the frozen plan, `execution-sets.json`,
    synthetic skip receipts, build receipts and bundles, tag evidence, and any
-   reusable-hosted publish results. Its workflow-call outputs or documented
-   artifacts include the
-   `active-publish-selectors.external-oidc-entry-workflow` array and enough
-   stable artifact names for the caller to materialize each entry-hosted publish
-   request without recomputing topology.
+   reusable-hosted publish results. It also emits
+   `entry-publish-handoff.json` as the closed bridge artifact and exposes only
+   that handoff artifact name to the calling entry workflow.
 3. The top-level entry workflow creates an entry-hosted publish job only for the
-   returned entry selector members. An empty selector is serialized and treated
+   handoff's entry selector members. An empty selector is serialized and treated
    as a normal skipped matrix, not as a missing output.
 4. Each entry-hosted publish job consumes the same frozen plan, referenced build
    receipts and bundles, and materialized `publish-request.json` contract as a
@@ -1117,6 +1169,42 @@ The high-level handoff is:
    receipt and uploads it using the standard publish-result artifact contract.
    The logical key remains the original `publish-node-id`; the physical host is
    not part of publish identity.
+
+`entry-publish-handoff.json` is orchestration-authored and consumed only by the
+top-level entry workflow. Its closed current-scope shape is:
+
+```json
+{
+    "api-version": "three.release.entry-publish-handoff/v1alpha1",
+    "kind": "entry-publish-handoff",
+    "plan-id": "...",
+    "commit-sha": "...",
+    "plan-artifact-name": "...",
+    "execution-sets-artifact-name": "...",
+    "entry-publish-node-ids": ["..."],
+    "publish-inputs-by-node-id": {
+        "publish-node/...": {
+            "target-instance-snapshot-id": "...",
+            "build-result-artifact-names": ["..."],
+            "build-bundle-artifact-names": ["..."]
+        }
+    }
+}
+```
+
+`entry-publish-node-ids` must equal
+`execution-sets.active-publish-selectors.external-oidc-entry-workflow` in the
+same order. `publish-inputs-by-node-id` must contain exactly one key for every
+entry publish node and no others. The listed build result and bundle artifact
+names must be sufficient for the entry workflow to materialize the same
+`publish-request.json` shape as a reusable-hosted publish unit, but they are
+transport references only: the entry workflow must still validate the downloaded
+build receipts and bundle files before invoking the executor. The top-level entry
+workflow must not recompute topology, rederive active selectors, or recover a
+missing handoff from target-family guesses. When the entry selector set is empty,
+orchestration still emits a handoff with empty `entry-publish-node-ids` and an
+empty `publish-inputs-by-node-id` object so the caller can distinguish an empty
+matrix from a missing bridge artifact.
 
 For first-delivery PyPI official publication, the job that requests the PyPI
 trusted-publishing OIDC token and performs the live upload must be a job in
