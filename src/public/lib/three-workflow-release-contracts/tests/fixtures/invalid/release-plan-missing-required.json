@@ -1,0 +1,42 @@
+{
+  "api-version": "three.release.plan/v1alpha1",
+  "envelope": {
+    "authoring-inputs": {
+      "catalog-path": "eng/release/target-instances.yml",
+      "descriptor-api-version": "three.release/v1alpha1"
+    },
+    "commit-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "plan-id": "plan/abc123",
+    "profile": "buddy",
+    "projects": {
+      "example": {
+        "descriptor-path": "src/public/lib/Example/three.release.yml",
+        "display-name": "Example Package",
+        "ecosystem": "dotnet",
+        "publish-node-ids": [
+          "publish-node/gh",
+          "publish-node/nuget"
+        ],
+        "release-kind": "lib",
+        "release-root": "src/public/lib/Example",
+        "resolved-version": "1.2.3",
+        "source": {
+          "auxiliary-input-paths": [],
+          "primary-manifest-path": "src/public/lib/Example/Example.csproj",
+          "version-authority-kind": "build-system-nbgv"
+        },
+        "variant-ids": [
+          "variant/v1"
+        ]
+      }
+    },
+    "request-flags": {
+      "force": false
+    },
+    "requested-project-ids": [],
+    "selected-project-ids": [
+      "example"
+    ]
+  },
+  "kind": "release-plan"
+}

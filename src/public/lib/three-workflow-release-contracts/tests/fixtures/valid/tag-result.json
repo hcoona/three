@@ -1,0 +1,14 @@
+{
+  "api-version": "three.release.tag-result/v1alpha1",
+  "commit-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "kind": "tag-result",
+  "plan-id": "plan/abc123",
+  "tags": [
+    {
+      "expected-commit-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "outcome": "verified",
+      "peeled-commit-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "release-tag": "release/example/v1.2.3"
+    }
+  ]
+}

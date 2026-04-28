@@ -1,0 +1,38 @@
+{
+  "api-version": "three.release.github-release-asset-proof/v1alpha1",
+  "artifact": {
+    "bundle-relative-path": "dist/Example.1.2.3.nupkg",
+    "byte-size": 123,
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "attestation": {
+    "attestation-id": "att-1",
+    "attestation-url": "https://github.com/hcoona/three/attestations/1",
+    "predicate-type": "https://slsa.dev/provenance/v1",
+    "signer-workflow": "hcoona/three/.github/workflows/release-publish-node.yml",
+    "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source-repository": "hcoona/three",
+    "subject-digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "subject-name": "Example.1.2.3.nupkg"
+  },
+  "binding": {
+    "artifact-id": "artifact/package",
+    "asset-name": "Example.1.2.3.nupkg",
+    "publish-node-id": "publish-node/gh",
+    "release-tag": "release/example/v1.2.3"
+  },
+  "kind": "github-release-asset-proof",
+  "plan-id": "plan/abc123",
+  "project-id": "example",
+  "run": {
+    "dry-run": false,
+    "head-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "live": true,
+    "repository": "hcoona/three",
+    "run-attempt": 1,
+    "run-id": 123,
+    "validation-only": false,
+    "workflow": "release-publish-node.yml"
+  },
+  "variant-id": "variant/v1"
+}

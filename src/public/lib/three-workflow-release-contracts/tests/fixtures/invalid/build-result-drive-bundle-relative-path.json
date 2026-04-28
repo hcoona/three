@@ -1,0 +1,19 @@
+{
+  "api-version": "three.release.build-result/v1alpha1",
+  "artifacts": {
+    "artifact/package": {
+      "bundle-relative-path": "C:/absolute/file.nupkg",
+      "byte-size": 123,
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "artifact/symbols": {
+      "bundle-relative-path": "dist/Example.1.2.3.snupkg",
+      "byte-size": 456,
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  "kind": "build-result",
+  "plan-id": "plan/abc123",
+  "project-id": "example",
+  "variant-id": "variant/v1"
+}

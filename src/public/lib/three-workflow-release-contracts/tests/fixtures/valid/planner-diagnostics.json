@@ -1,0 +1,16 @@
+{
+  "api-version": "three.release.planner-diagnostics/v1alpha1",
+  "diagnostics": [
+    {
+      "api-version": "three.release.planner-diagnostic/v1alpha1",
+      "blocking": true,
+      "code": "REQ_INVALID_INPUT",
+      "details": {},
+      "kind": "planner-diagnostic",
+      "message": "Invalid input.",
+      "phase": "validation",
+      "scope-kind": "request"
+    }
+  ],
+  "kind": "planner-diagnostics"
+}

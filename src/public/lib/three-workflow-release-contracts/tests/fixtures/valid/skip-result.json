@@ -1,0 +1,15 @@
+{
+  "api-version": "three.release.skip-result/v1alpha1",
+  "evidence": {},
+  "kind": "skip-result",
+  "outcome": "skip-satisfied",
+  "plan-id": "plan/abc123",
+  "project-id": "example",
+  "publish-node-id": "publish-node/nuget",
+  "reason-source": "planner",
+  "resolved-publish-identity": {
+    "package-name": "Example",
+    "version": "1.2.3"
+  },
+  "target-instance-snapshot-id": "nuget/github-packages"
+}

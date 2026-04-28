@@ -27,6 +27,7 @@ members = [
   "src/public/app/markdown-hybrid-search-mcp",
   "src/public/lib/hcoona-release-smoke",
   "src/public/lib/nbgv-python",
+  "src/public/lib/three-workflow-release-contracts",
   "src/sample/nbgv-hatch-demo",
 ]
 
@@ -48,6 +49,7 @@ project-includes = [
   "src/public/app/markdown-hybrid-search-mcp",
   "src/public/lib/hcoona-release-smoke",
   "src/public/lib/nbgv-python",
+  "src/public/lib/three-workflow-release-contracts",
   "src/sample/nbgv-hatch-demo",
 ]
 project-excludes = ['.venv/**', 'dist/**']

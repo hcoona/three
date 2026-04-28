@@ -1,0 +1,12 @@
+{
+  "api-version": "three.release.entry-publish-handoff/v1alpha1",
+  "commit-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "entry-publish-node-ids": [
+    "publish-node/gh"
+  ],
+  "execution-sets-artifact-name": "release-execution-sets-v1-123-1-abc",
+  "kind": "entry-publish-handoff",
+  "plan-artifact-name": "release-plan-v1-123-1-abc",
+  "plan-id": "plan/abc123",
+  "publish-inputs-by-node-id": {}
+}

@@ -1,0 +1,17 @@
+{
+  "api-version": "three.release.dotnet-planner-metadata-input/v1alpha1",
+  "commit-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "kind": "dotnet-planner-metadata-input",
+  "projects": {
+    "app": {
+      "descriptor-path": "src/public/app/App/three.release.yml",
+      "primary-manifest-path": "src/public/app/App/App.csproj",
+      "requires-package-id": false
+    },
+    "example": {
+      "descriptor-path": "src/public/lib/Example/three.release.yml",
+      "primary-manifest-path": "src/public/lib/Example/Example.csproj",
+      "requires-package-id": true
+    }
+  }
+}

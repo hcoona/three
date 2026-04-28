@@ -1,0 +1,56 @@
+{
+  "api-version": "three.release.build-request/v1alpha1",
+  "artifacts": {
+    "artifact/package": {
+      "concrete-kind": "nuget",
+      "descriptor-handle": "nuget",
+      "kind-family": "package",
+      "produced-from-artifact-ids": [],
+      "project-id": "example",
+      "role": "primary-package",
+      "variant-id": "variant/v1"
+    },
+    "artifact/symbols": {
+      "concrete-kind": "snupkg",
+      "descriptor-handle": "snupkg",
+      "kind-family": "package",
+      "produced-from-artifact-ids": [],
+      "project-id": "example",
+      "role": "symbols",
+      "variant-id": "variant/v1"
+    }
+  },
+  "commit-sha": "not-a-sha",
+  "kind": "build-request",
+  "plan-id": "plan/abc123",
+  "profile": "buddy",
+  "project": {
+    "descriptor-path": "src/public/lib/Example/three.release.yml",
+    "display-name": "Example Package",
+    "ecosystem": "dotnet",
+    "publish-node-ids": [
+      "publish-node/gh",
+      "publish-node/nuget"
+    ],
+    "release-kind": "lib",
+    "release-root": "src/public/lib/Example",
+    "resolved-version": "1.2.3",
+    "source": {
+      "auxiliary-input-paths": [],
+      "primary-manifest-path": "src/public/lib/Example/Example.csproj",
+      "version-authority-kind": "build-system-nbgv"
+    },
+    "variant-ids": [
+      "variant/v1"
+    ]
+  },
+  "variant": {
+    "artifact-ids": [
+      "artifact/package",
+      "artifact/symbols"
+    ],
+    "descriptor-handle": "package",
+    "dimensions": {},
+    "project-id": "example"
+  }
+}

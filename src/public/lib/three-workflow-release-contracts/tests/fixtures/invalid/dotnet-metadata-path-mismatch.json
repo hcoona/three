@@ -1,0 +1,18 @@
+{
+  "api-version": "three.release.dotnet-planner-metadata/v1alpha1",
+  "commit-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "kind": "dotnet-planner-metadata",
+  "projects": {
+    "app": {
+      "descriptor-path": "src/public/app/App/three.release.yml",
+      "primary-manifest-path": "src/public/app/App/App.csproj",
+      "resolved-version": "1.2.3"
+    },
+    "example": {
+      "descriptor-path": "src/other/three.release.yml",
+      "package-id": "Example",
+      "primary-manifest-path": "src/public/lib/Example/Example.csproj",
+      "resolved-version": "1.2.3"
+    }
+  }
+}
