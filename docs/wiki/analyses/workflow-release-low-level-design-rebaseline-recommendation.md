@@ -24,10 +24,10 @@ coherent for the accepted publish topology.
 ## Why This Rebaseline Was Required
 
 The middle-layer change is not cosmetic. It changed the release topology model
-from a reusable-only publish-unit assumption to first-class OIDC publish topology:
-entry-workflow-bound, caller-workflow-bound, reusable-workflow-bound, and
-GitHub-token publish paths can have different workflow identities and different
-permission placement.
+from a single reusable publish-unit assumption to first-class OIDC publish
+topology: entry-workflow-bound, caller-workflow-bound,
+reusable-workflow-bound, and GitHub-token publish paths can have different
+workflow identities and different permission placement.
 
 That class of change is large enough to affect low-level workflow layout,
 scheduling, permissions, request and receipt handoffs, trusted-publisher setup,
@@ -38,12 +38,12 @@ one reusable workflow like `.github/workflows/release-publish-node.yml`.
 Status: the current corpus has been updated for topology-partitioned publish
 routing, including first-class OIDC topology and first-delivery live PyPI through
 an entry-workflow-bound path. This page is not an assertion that the current
-low-level design remains known-broken; it is the recommendation and verification
+low-level design remains broken; it is the recommendation and verification
 record for the rebaseline that addressed that risk.
 
 ## Assumptions the Rebaseline Must Check
 
-- Live PyPI publication is no longer deferred beyond first delivery.
+- Live PyPI publication is part of first-delivery scope.
 - External OIDC publishing is not one uniform reusable workflow behavior.
 - PyPI is treated as entry-workflow-bound for current scope unless a successor
   design proves another supported topology.
@@ -105,3 +105,10 @@ but it must not silently change scope. If the review discovers that a new
 middle-layer topology requires overturning prior requirements, architecture,
 descriptor, plan-shape, or workflow-boundary decisions, escalate to Human-in-Loop
 review before changing those decisions.
+
+## Related Pages
+
+- [Workflow Release Low-Level Design](./workflow-release-low-level-design.md)
+- [Workflow Release Design Layering and Implementation Handoff Scope](./workflow-release-design-layering-and-handoff-scope.md)
+- [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md)
+- [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)

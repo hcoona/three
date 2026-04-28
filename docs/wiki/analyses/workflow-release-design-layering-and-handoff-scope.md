@@ -13,11 +13,11 @@ may be left to an experienced implementer.
 
 ## Three-Layer Framing
 
-| Layer               | Main question                                                                                                 | Current primary pages                                                                                                                                                                                                                                                                                                                    | Current status                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Upper-layer design  | What system are we building, what are its major responsibilities, and what principles are fixed?              | [Workflow Release Requirements Baseline](./workflow-release-requirements-baseline.md), [Workflow Release Design Direction](./workflow-release-design-direction.md), [Workflow Release Architecture Model](./workflow-release-architecture-model.md)                                                                                      | Settled for current scope                                                      |
-| Middle-layer design | What cross-component contracts must be frozen so implementation does not reinterpret the business rules?      | [Workflow Release Architecture Model](./workflow-release-architecture-model.md), [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md), [Workflow Release Plan Shape](./workflow-release-plan-shape.md), [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md) | Settled for current scope                                                      |
-| Lower-layer design  | How will the bounded components be realized in code, workflow files, scripts, receipts, and internal helpers? | [Workflow Release Low-Level Design](./workflow-release-low-level-design.md)                                                                                                                                                                                                                                                              | Handoff guardrails resolved; internal realization remains implementation-owned |
+| Layer               | Main question                                                                                                 | Current primary pages                                                                                                                                                                                                                                                                                                                    | Current status                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Upper-layer design  | What system are we building, what are its major responsibilities, and what principles are fixed?              | [Workflow Release Requirements Baseline](./workflow-release-requirements-baseline.md), [Workflow Release Design Direction](./workflow-release-design-direction.md), [Workflow Release Architecture Model](./workflow-release-architecture-model.md)                                                                                      | Settled for current scope                                                                   |
+| Middle-layer design | What cross-component contracts must be frozen so implementation does not reinterpret the business rules?      | [Workflow Release Architecture Model](./workflow-release-architecture-model.md), [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md), [Workflow Release Plan Shape](./workflow-release-plan-shape.md), [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md) | Settled for current scope                                                                   |
+| Lower-layer design  | How will the bounded components be realized in code, workflow files, scripts, receipts, and internal helpers? | [Workflow Release Low-Level Design](./workflow-release-low-level-design.md)                                                                                                                                                                                                                                                              | Implementation handoff baseline resolved; internal realization remains implementation-owned |
 
 ## Current Assessment by Layer
 
@@ -169,7 +169,7 @@ realization plus wiring choices. Those choices remain constrained by the frozen
 workflow identity, topology routing, selector semantics, permission placement,
 readiness, and data-contract boundaries.
 
-### Pre-lower-layer handoff review
+### Lower-layer handoff review
 
 A final middle-layer review found no blocking upper-layer or middle-layer gap
 that should delay lower-layer design. The remaining work should therefore be
@@ -182,15 +182,13 @@ lower-layer design should carry forward these handoff guardrails:
 | Handoff item                       | Status in middle-layer design                                                                                                   | Lower-layer responsibility                                                                                                              |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Acceptance traceability            | Requirements and middle-layer contracts are frozen, but there is no separate trace table from acceptance scenarios to tests.    | Map each acceptance scenario to the frozen descriptor, plan, workflow-boundary, receipt, and reporting contracts it proves.             |
-| Planner diagnostic codes           | `planner-diagnostic.code` is a stable field, while the current middle layer intentionally avoids a full error taxonomy.         | Define the concrete minimum diagnostic-code vocabulary or planner-owned code-registration rule used by tests and reporting.             |
+| Planner diagnostic codes           | `planner-diagnostic.code` is a stable field, while the current middle layer intentionally avoids a full error taxonomy.         | Define the concrete minimum planner diagnostic-code vocabulary or planner-owned code-registration rule used by tests and reporting.     |
 | Dry-run build behavior             | Dry-run is outside rerun identity and must suppress tags and live publish, while build execution is explicitly left optional.   | Choose the concrete dry-run build policy and ensure any validation-only build receipts cannot satisfy live immutable-proof lookup.      |
 | Receipt lookup and artifact layout | Immutable-proof admissibility, provenance, and default-retention limits are frozen, but storage layout and index shape are not. | Design the concrete artifact names, receipt transport, lookup/index layout, and provenance attachment without changing proof semantics. |
 
-These items do not reopen the middle-layer contracts. They are the first
-low-level design checkpoints needed to keep implementation traceable to the
-waterfall handoff.
-
-Those checkpoints are now resolved in
+These items do not reopen the middle-layer contracts. They were the low-level
+design checkpoints needed to keep implementation traceable to the waterfall
+handoff and are now resolved in
 [Workflow Release Low-Level Design](./workflow-release-low-level-design.md).
 
 ## Summary Judgment
@@ -200,8 +198,8 @@ understood as:
 
 - **upper-layer design:** closed;
 - **middle-layer design:** closed;
-- **lower-layer design:** handoff guardrails authored, with internal realization
-  intentionally implementation-owned.
+- **lower-layer design:** implementation handoff baseline resolved, with
+  internal realization intentionally implementation-owned.
 
 That means the next work is implementation, not another middle-layer design
 pass. Lower-layer realization details remain intentionally implementation-owned
@@ -217,3 +215,4 @@ within the frozen contracts above.
 - [Workflow Release Workflow and Executor Boundaries](./workflow-release-workflow-executor-boundaries.md)
 - [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)
 - [Workflow Release Low-Level Design](./workflow-release-low-level-design.md)
+- [Workflow Release Low-Level Design Rebaseline Recommendation](./workflow-release-low-level-design-rebaseline-recommendation.md)

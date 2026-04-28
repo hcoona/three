@@ -291,8 +291,8 @@ Examples of disallowed behavior:
   Python `buddy` falls back to GitHub Release only, and Python `official`
   package publication uses PyPI when declared.
 - The first delivery scope must include live `official` PyPI publication for at
-  least one valid active `pypi/pypi` target. Live PyPI publishing is not deferred
-  to a later topology change.
+  least one valid active `pypi/pypi` target. Live PyPI publishing must ship in
+  the first-delivery topology.
 - Current-scope PyPI publication is intentionally narrowed to pure-Python
   packaging layouts: one `pypi-publish` publication intent must own exactly one
   wheel and may own zero or one sdist, and those artifacts must come from the

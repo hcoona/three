@@ -2,8 +2,8 @@
 
 ## 1. Document Governance and Baseline Status
 
-Status: this page is the post-middle-layer-topology-rebaseline low-level baseline
-for workflow-release implementation handoff. It supersedes earlier low-level
+Status: this page is the post-topology-rebaseline low-level implementation
+handoff baseline for workflow release. It supersedes earlier low-level
 workflow-release drafts for current-scope implementation guidance while keeping
 the frozen requirements, high-level architecture, descriptor schema, plan shape,
 and workflow/executor boundary contracts unchanged.
@@ -41,10 +41,10 @@ The accepted rebaseline order is:
 11. implementation-owned boundaries;
 12. consistency review.
 
-Group 1 established that skeleton. Completed rebaseline passes replace their
-owned sections as normative design content, while sections not yet reworked
-continue to preserve starting material until their owning follow-up pass updates
-them.
+The topology rebaseline has completed against this skeleton. The sections below
+are the normative low-level implementation baseline for current scope; successor
+rebaseline work may reuse the skeleton as a review order but must not treat this
+page as an incomplete draft.
 
 ### Low-Level Design Summary
 
@@ -59,7 +59,7 @@ them.
 | Dispatch SHA lock         | Resolve the UI-selected branch or tag before orchestration, pass the peeled commit SHA forward, and place same-entry same-commit concurrency where that SHA is available.               |
 | Tag orchestration         | Create lightweight release tags and verify existing tags by peeling annotated tags to the selected commit.                                                                              |
 | External setup            | Require the `release` environment, registry trusted-publisher policies, and explicit external-registry live enablement before official OIDC registry publication.                       |
-| Diagnostics               | Use a small registered planner-code vocabulary plus a registration rule for new codes.                                                                                                  |
+| Diagnostics               | Use a small registered planner diagnostic-code vocabulary plus a registration rule for new codes.                                                                                       |
 | Diagnostics artifact      | Serialize planner diagnostics through one closed container object rather than a raw array, NDJSON stream, or ad hoc log file.                                                           |
 | Execution sets            | Materialize matrix selectors in one closed JSON object so empty dry-run, validation-build, zero-target, and all-skip runs have deterministic workflow behavior.                         |
 | Failure reporting         | Treat success and skip receipts as positive evidence only; failed jobs are summarized from job conclusions plus missing expected receipts, while cancellation reporting is best-effort. |
@@ -1916,11 +1916,11 @@ registry-conformance, and acceptance-evidence contracts above remain intact.
 
 ## 12. Consistency Review
 
-Group 12 owns the final cross-section review after the topology, publish,
-registry, permissions, readiness, and acceptance groups complete. That pass must
-check that this page uses one coherent vocabulary for topology partitions,
-workflow identity, permissions, request and receipt files, external readiness,
-acceptance evidence, and implementation-owned boundaries.
+The final cross-section review after the topology, publish, registry,
+permissions, readiness, and acceptance passes confirms that this page uses one
+coherent vocabulary for topology partitions, workflow identity, permissions,
+request and receipt files, external readiness, acceptance evidence, and
+implementation-owned boundaries.
 
 The consistency pass must also preserve or refresh the external documentation
 grounding. This low-level design was checked against these official or primary
@@ -1941,6 +1941,7 @@ sources:
 ## Related Pages
 
 - [Workflow Release Requirements Baseline](./workflow-release-requirements-baseline.md)
+- [Workflow Release Design Direction](./workflow-release-design-direction.md)
 - [Workflow Release Architecture Model](./workflow-release-architecture-model.md)
 - [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md)
 - [Workflow Release Plan Shape](./workflow-release-plan-shape.md)
@@ -1948,3 +1949,4 @@ sources:
 - [Workflow Release Design Layering and Implementation Handoff Scope](./workflow-release-design-layering-and-handoff-scope.md)
 - [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)
 - [Workflow Release Deferred PyPI Multi-Wheel Support](./workflow-release-deferred-pypi-multi-wheel-support.md)
+- [Workflow Release Low-Level Design Rebaseline Recommendation](./workflow-release-low-level-design-rebaseline-recommendation.md)

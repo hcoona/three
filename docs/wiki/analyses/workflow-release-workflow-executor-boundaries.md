@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This page defines the Group 3 design layer: control-plane workflow entry points,
-reusable workflow and job seams, planner-to-executor contracts, and executor
-limits on top of `three.release.plan/v1alpha1`.
+This page defines the middle-layer workflow/executor boundary: control-plane
+workflow entry points, reusable workflow and job seams, planner-to-executor
+contracts, and executor limits on top of `three.release.plan/v1alpha1`.
 
 ## Design Summary
 
@@ -930,3 +930,4 @@ about where planning stops and execution starts.
 - [Workflow Release Descriptor Schema](./workflow-release-descriptor-schema.md)
 - [Workflow Release Plan Shape](./workflow-release-plan-shape.md)
 - [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)
+- [Workflow Release Low-Level Design](./workflow-release-low-level-design.md)

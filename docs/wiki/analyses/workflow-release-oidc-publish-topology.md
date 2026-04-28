@@ -15,10 +15,10 @@ file, repository, environment, and reusable-workflow identity can publish.
 
 ## Current Design Decision
 
-First delivery must include live PyPI publication. Deferring live PyPI
-publication to a future non-reusable workflow would leave an unacceptable
-structural tail: the first implementation would prove a topology that cannot
-later be extended to PyPI without changing the workflow contract.
+First delivery must include live PyPI publication. Moving live PyPI publication
+to a future non-reusable workflow would leave an unacceptable structural tail:
+the first implementation would prove a topology that cannot later be extended to
+PyPI without changing the workflow contract.
 
 OIDC publish topology is therefore a first-class design dimension. The design
 must classify each live publish node by the trusted-publisher topology required
