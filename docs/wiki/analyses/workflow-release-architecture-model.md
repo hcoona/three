@@ -417,10 +417,12 @@ target-side state beyond identity: `buddy` resolves to `prerelease`, and
 same-tag prerelease-to-release promotion, the frozen `artifact-ids` plus
 `projection.asset-names-by-artifact-id` and
 `projection.asset-labels-by-artifact-id` are the authoritative final official
-asset set and labels for that tag, so the promotion model is not a state-only
-flip. A project-scoped version identity becomes official-frozen only when that same
-project-scoped tag has already succeeded through the project's official GitHub
-Release publication; there is no second freeze tag or alternate tag family.
+asset set and labels for that tag, and every remote asset must have
+attestation-backed content proof before the same-tag state is exact-satisfied, so
+the promotion model is not a state-only flip. A project-scoped version identity
+becomes official-frozen only when that same project-scoped tag has already
+succeeded through the project's official GitHub Release publication; there is no
+second freeze tag or alternate tag family.
 That keeps same-tag already-satisfied replay, same-tag prerelease to release
 promotion, same-tag release to prerelease demotion rejection, and buddy `FORCE`
 rejection against official-frozen versions planner-owned instead of leaving
@@ -598,13 +600,15 @@ Current-scope guardrails for this seam are:
   the member set of exactly one wheel and zero or one sdist under the same
   resolved package identity, and current scope still fails closed there as well;
 - for GitHub Release, `skip-satisfied` requires an exact match of the release
-  state plus the planner-frozen asset names and asset labels, with no extra
-  assets left on the release object;
+  state plus the planner-frozen asset names, asset labels, and
+  attestation-backed asset content proof, with no extra assets left on the
+  release object;
 - for GitHub Release, same-tag `official` promotion becomes
   `replace-authoritative` only when the desired state is `release` and the
   existing same-tag remote state is still `prerelease`; an already-`release`
   same-tag object is either `skip-satisfied` when exact or planner-error when
-  its authoritative asset set or labels differ;
+  its authoritative asset set, labels, or attestation-backed asset content proof
+  differs;
 - for mutable-target buddy replay, same-identity non-exact remote state becomes
   planner-error unless current scope explicitly authorizes overwrite with buddy
   `FORCE`; current scope does not keep non-`FORCE` same-identity replay alive as

@@ -531,16 +531,24 @@ by the frozen baseline:
   [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md).
 - all current-scope package-registry hosts must use
   `profile-coexistence-rule: requires-distinct-name`, so same-registry same-name
-  `buddy` and `official` publication stays forbidden at author time;
+  `buddy` and `official` publication stays forbidden; author-time validation
+  enforces this when the published name is statically resolvable, while NuGet
+  checks that require evaluated `PackageId` run after the Windows
+  `dotnet-metadata` handoff;
 - `same-name-allowed` and `replaceable` remain out of scope for all current-scope
   package-registry target instances.
 
-For that coexistence check, author-time static validation must compute the
-resolved published package identity from the target family, destination host,
-optional destination owner, and the published package name after applying any
-allowed descriptor-side projection. Two target usages from the same project but
+For that coexistence check, validation computes the resolved published package
+identity from the target family, destination host, optional destination owner,
+and the published package name after applying any allowed descriptor-side
+projection or manifest-owned name. Two target usages from the same project but
 different profiles may not resolve to the same package-registry identity tuple,
-even if they reference different catalog `instance-id` values.
+even if they reference different catalog `instance-id` values. Author-time static
+validation performs this rejection only for families whose published names are
+available without deferred ecosystem evaluation. For NuGet, author-time
+validation derives the `requires-package-id` handoff and defers any
+`PackageId`-dependent coexistence rejection until `dotnet-metadata` has emitted
+the Windows-evaluated `package-id`.
 
 ## Ownership Boundaries
 
@@ -747,12 +755,14 @@ Examples:
   validation;
 - cross-profile package-registry coexistence is evaluated from the resolved
   package-registry identity tuple (family, destination.host, destination.owner?,
-  published-name) after combining descriptor data with manifest-owned default
-  names and any npm `projection.package-name` override;
+  published-name) after combining descriptor data with statically available
+  manifest-owned default names and any npm `projection.package-name` override;
 - because every current-scope package-registry target instance uses
   `profile-coexistence-rule: requires-distinct-name`, static validation must
   reject any one-project `buddy`/`official` pair that resolves to the same
-  package-registry identity tuple.
+  package-registry identity tuple without deferred ecosystem evaluation. NuGet
+  pairs whose equality depends on evaluated `PackageId` are rejected by the
+  planner after the Windows metadata handoff, not during author-time validation.
 
 This is the right layer for CI linting of checked-in authoring files.
 

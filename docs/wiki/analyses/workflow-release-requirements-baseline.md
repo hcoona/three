@@ -243,10 +243,11 @@ Examples of disallowed behavior:
 - For GitHub Release, same-project same-commit `buddy` to `official` promotion
   must keep the same project-scoped release tag while converging to the full
   official publish intent for that tag: desired release state, final asset set,
-  and asset labels.
+  asset labels, and content-equivalent asset bytes proven by the accepted
+  release asset proof mechanism.
 - Replay handling for that promotion must evaluate whether that full GitHub
   Release publish intent is already satisfied, not merely whether the tag exists
-  or whether only the release state matches.
+  or whether only the release state, asset names, or labels match.
 - Package-registry promotion on the same registry and the same published package
   name is prohibited.
 - `buddy` and `official` may share a registry only when the published package
