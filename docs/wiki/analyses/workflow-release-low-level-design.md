@@ -211,6 +211,9 @@ receive that permission.
 GitHub Release and GitHub Packages publication use `GITHUB_TOKEN` authority.
 They do not have an external trusted-publisher policy and therefore do not add an
 external registry workflow filename beyond the stable workflow contracts above.
+GitHub Release asset attestation is the only current-scope `github-token` path
+that also grants `id-token: write`; that OIDC permission is scoped to
+`actions/attest` provenance signing and is not an external registry credential.
 
 ## 4. Topology Routing Core
 
@@ -1840,17 +1843,17 @@ permissions that the caller job did not grant.
 
 Minimum job-level permission intents are:
 
-| Job group                                      | Minimum permission intent                                                                                       |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Authorization, report, skip, and pure planning | `contents: read` only, unless the job has a narrower documented read need.                                      |
-| Immutable proof lookup                         | Add `actions: read` only to the job that downloads or lists proof artifacts.                                    |
-| Planner GitHub-hosted remote observation       | Add only the required read scopes, such as `packages: read`, to the planning job that performs that read.       |
-| Tag verification only                          | `contents: read`; do not grant tag write permission when all required tags are already expected to exist.       |
-| Tag creation                                   | `contents: write`, scoped only to the `ensure-tag` job when it may create missing release tags.                 |
-| GitHub Release publication                     | `contents: write`, scoped only to the GitHub Release publish job that creates or converges releases or assets.  |
-| GitHub Packages publication                    | `packages: write`, scoped only to the matching GitHub Packages publish job; add `contents: read` if required.   |
-| External trusted publishing with GitHub OIDC   | `id-token: write`, scoped only according to the topology rules below; do not combine with unrelated write jobs. |
-| External OIDC registry publication artifacts   | Add only the read permissions needed to download the planned artifacts and receipts before minting credentials. |
+| Job group                                      | Minimum permission intent                                                                                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authorization, report, skip, and pure planning | `contents: read` only, unless the job has a narrower documented read need.                                                                                          |
+| Immutable proof lookup                         | Add `actions: read` only to the job that downloads or lists proof artifacts.                                                                                        |
+| Planner GitHub-hosted remote observation       | Add only the required read scopes, such as `packages: read`, to the planning job that performs that read.                                                           |
+| Tag verification only                          | `contents: read`; do not grant tag write permission when all required tags are already expected to exist.                                                           |
+| Tag creation                                   | `contents: write`, scoped only to the `ensure-tag` job when it may create missing release tags.                                                                     |
+| GitHub Release publication and attestation     | `contents: write`, `attestations: write`, and attestation-scoped `id-token: write`, scoped only to the GitHub Release publish job that creates or converges assets. |
+| GitHub Packages publication                    | `packages: write`, scoped only to the matching GitHub Packages publish job; add `contents: read` if required.                                                       |
+| External trusted publishing with GitHub OIDC   | `id-token: write`, scoped only according to the external registry topology rules below; do not combine with unrelated write jobs.                                   |
+| External OIDC registry publication artifacts   | Add only the read permissions needed to download the planned artifacts and receipts before minting external registry credentials.                                   |
 
 `id-token: write` placement is topology-specific:
 
@@ -1880,9 +1883,13 @@ Minimum job-level permission intents are:
   `id-token: write`. Unrelated orchestration jobs, unrelated matrix entries,
   planning, build, tag, report, skip, GitHub Release, and GitHub Packages jobs
   must not receive this OIDC grant.
-- `github-token`: do not grant `id-token: write`. GitHub Release and GitHub
-  Packages paths use `GITHUB_TOKEN` only, with `contents: write` or
-  `packages: write` scoped to the live mutation job that needs that authority.
+- `github-token`: GitHub Packages paths do not grant `id-token: write` and use
+  `GITHUB_TOKEN` only, with `packages: write` scoped to the live mutation job
+  that needs that authority. GitHub Release paths use `GITHUB_TOKEN` with
+  `contents: write` for release mutation, and the same live publish job may also
+  grant `attestations: write` plus attestation-scoped `id-token: write` solely to
+  run `actions/attest` for uploaded release assets. That OIDC grant must not be
+  passed to external registry publication or unrelated jobs.
 
 Planner-time remote observation must never run in a publish-credential context.
 Planner adapters may use public registry reads and the least-privilege
@@ -1946,7 +1953,7 @@ must verify this checklist for every enabled target surface:
 | npmjs trusted publishing        | Each enabled `npm/npmjs` official target.                                                               | Package owner-side trusted publisher for owner `hcoona`, repository `three`, workflow filename `release-official.yml` with no `.github/workflows/` path, and environment `release`. The OIDC-token-requesting npm publish job must be hosted directly by that top-level official entry workflow; do not configure `release-orchestrate.yml` or `release-publish-node.yml` as the npmjs trusted publisher. |
 | RubyGems.org trusted publishing | Each enabled `rubygems/rubygems-org` official target.                                                   | Gem owner-side trusted publisher, or pending trusted publisher before first gem creation, for repository `hcoona/three`, reusable workflow filename `release-publish-node.yml`, same-repository workflow owner fields left blank, and environment `release`. The workflow implementation must also satisfy the full nested OIDC permission chain from Section 8.                                          |
 | NuGet.org trusted publishing    | Only after the deferred `nuget/nuget-org` official target is explicitly enabled.                        | Package owner-side trusted publisher for repository `hcoona/three`, conservative entry workflow filename `release-official.yml` with no `.github/workflows/` path, and environment `release`. External setup review and live evidence are not first-delivery requirements while the NuGet.org target remains deferred.                                                                                    |
-| GitHub Release                  | Any enabled GitHub Release target.                                                                      | No external OIDC trusted-publisher policy. Use GitHub repository permissions, `contents: write` on the exact live mutation job, tag gating, and the `release` environment where Section 8 requires it.                                                                                                                                                                                                    |
+| GitHub Release                  | Any enabled GitHub Release target.                                                                      | No external OIDC trusted-publisher policy. Use GitHub repository permissions, `contents: write` on the exact live mutation job, attestation-scoped `attestations: write` and `id-token: write` for uploaded asset provenance, tag gating, and the `release` environment where Section 8 requires it.                                                                                                      |
 | GitHub Packages                 | Any enabled GitHub Packages target.                                                                     | No external OIDC trusted-publisher policy and no owner-side trusted-publisher setup. Use `GITHUB_TOKEN`, the exact required `packages: write` permission, any required package read permission, and the `release` environment where Section 8 requires it.                                                                                                                                                |
 
 This checklist is a readiness gate for live official publication, not an
