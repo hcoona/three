@@ -826,9 +826,11 @@ The following concerns are explicitly control-plane-owned:
   planner, build, publish, and tag job must stay pinned to that same commit;
 - **cancellation**: manual operator cancellation and ordinary platform
   cancellation use native GitHub workflow cancellation semantics and ordinary
-  cancelled status; current scope does not adopt repo-defined duplicate-run
-  auto-cancellation, and same-entry workflow runs are serialized with
-  `cancel-in-progress: false`;
+  cancelled status; current scope does not adopt repo-defined in-progress
+  duplicate-run auto-cancellation, and same-entry workflow runs are serialized
+  with `cancel-in-progress: false`; GitHub may still cancel and replace an older
+  pending same-entry run when a newer pending run enters the same native
+  concurrency group;
 - **tagging**: the planner resolves the final project-scoped `release-tag`,
   but the control plane creates or verifies each distinct selected Git tag once
   per run only when the selected plan contains at least one GitHub Release

@@ -104,6 +104,8 @@ graph:
                     artifact/package: IO.Github.Hcoona.Pngcs.1.2.3.nupkg
                     artifact/symbols: IO.Github.Hcoona.Pngcs.1.2.3.snupkg
                 asset-labels-by-artifact-id: {}
+            attestation:
+                signer-workflow: hcoona/three/.github/workflows/release-publish-node.yml
         publish-node/package:
             project-id: hjg-pngcs
             profile: buddy
@@ -417,6 +419,16 @@ they are not bundle paths, executor output paths, or replacements for
 `artifact-id`. Release-state remains outside `projection` and belongs only in
 `desired-publish-state`.
 
+Current-scope GitHub Release publish nodes must also serialize
+`attestation.signer-workflow`. The value is the full GitHub CLI signer workflow
+identity used by `gh attestation verify --signer-workflow`, not a bare filename.
+For the current `github-token` topology, the publish and `actions/attest` steps
+are reusable-hosted by `.github/workflows/release-publish-node.yml`, so the
+frozen value is `hcoona/three/.github/workflows/release-publish-node.yml`. If a
+successor topology moves GitHub Release attestation to another workflow, that
+topology must freeze its corresponding full signer workflow identity in the plan
+before any proof lookup can be considered admissible.
+
 Current-scope GitHub Release asset-name derivation is closed and descriptor-
 independent:
 
@@ -569,9 +581,10 @@ same `resolved-publish-identity.release-tag`:
 - each required remote asset has content-equivalence evidence for the planned
   artifact: the planner can download the remote asset and verify an admissible
   GitHub Artifact Attestation whose subject name, digest, signer workflow, source
-  repository, source digest, and predicate type match the frozen publish node and
-  selected commit; the remote asset size must match the downloaded file and any
-  unexpired matching `github-release-asset-proof.json` wrapper as corroboration;
+  repository, source digest, and predicate type match the frozen publish node,
+  including `attestation.signer-workflow`, and selected commit; the remote asset
+  size must match the downloaded file and any unexpired matching
+  `github-release-asset-proof.json` wrapper as corroboration;
 - no extra remote assets remain on that release object.
 
 If GitHub Release remote asset download, attestation verification, digest

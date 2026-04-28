@@ -151,10 +151,16 @@ Examples of disallowed behavior:
   across release requests.
 - First delivery uses native GitHub Actions concurrency only for conservative
   same-entry serialization with `cancel-in-progress: false`; it does not use
-  native duplicate-run cancellation.
+  native in-progress duplicate-run cancellation.
 - The first-delivery concurrency key is the selected top-level entry workflow,
   not the resolved commit or project subset. Finer-grained duplicate detection is
   successor scope.
+- Native GitHub Actions concurrency retains at most one running and one pending
+  run per group. If another same-entry run is queued while one run is already
+  running and one is pending, GitHub may cancel the older pending run and keep the
+  newer pending run. First delivery accepts that platform pending-replacement
+  behavior as pre-execution queue compaction, not as repo-defined supersession of
+  a running release.
 - When a release is cancelled, whether manually or by ordinary platform
   cancellation, it must stop the remaining unpublished targets while leaving
   already published results visible for manual follow-up.
