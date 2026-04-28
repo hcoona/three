@@ -28,11 +28,14 @@ members = [
   "src/public/lib/hcoona-release-smoke",
   "src/public/lib/nbgv-python",
   "src/public/lib/three-workflow-release-contracts",
+  "src/public/lib/three-workflow-release-authoring",
   "src/sample/nbgv-hatch-demo",
 ]
 
 [tool.uv.sources]
 nbgv-python = { workspace = true }
+three-workflow-release-contracts = { workspace = true }
+three-workflow-release-authoring = { workspace = true }
 
 [tool.pyrefly]
 # Keep type-check coverage aligned with the root uv workspace membership.
@@ -50,6 +53,7 @@ project-includes = [
   "src/public/lib/hcoona-release-smoke",
   "src/public/lib/nbgv-python",
   "src/public/lib/three-workflow-release-contracts",
+  "src/public/lib/three-workflow-release-authoring",
   "src/sample/nbgv-hatch-demo",
 ]
 project-excludes = ['.venv/**', 'dist/**']

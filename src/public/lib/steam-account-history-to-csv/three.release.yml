@@ -1,0 +1,22 @@
+api-version: three.release/v1alpha1
+kind: project
+
+project:
+  id: steam-account-history-to-csv
+  display-name: Steam Account History to CSV
+  ecosystem: node
+  release-kind: extension
+
+source:
+  primary-manifest: package.json
+
+variants:
+  - id: extension
+    dimensions: {}
+    artifacts: []
+
+profiles:
+  buddy:
+    targets: []
+  official:
+    targets: []

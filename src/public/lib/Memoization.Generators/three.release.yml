@@ -1,0 +1,22 @@
+api-version: three.release/v1alpha1
+kind: project
+
+project:
+  id: memoization-generators
+  display-name: Memoization.Generators
+  ecosystem: dotnet
+  release-kind: generator
+
+source:
+  primary-manifest: Memoization.Generators.csproj
+
+variants:
+  - id: source-generator
+    dimensions: {}
+    artifacts: []
+
+profiles:
+  buddy:
+    targets: []
+  official:
+    targets: []

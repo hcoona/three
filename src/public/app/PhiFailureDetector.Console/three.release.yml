@@ -1,0 +1,22 @@
+api-version: three.release/v1alpha1
+kind: project
+
+project:
+  id: phi-failure-detector-console
+  display-name: PhiFailureDetector.Console
+  ecosystem: dotnet
+  release-kind: app
+
+source:
+  primary-manifest: PhiFailureDetector.ConsoleApp.csproj
+
+variants:
+  - id: app-binary
+    dimensions: {}
+    artifacts: []
+
+profiles:
+  buddy:
+    targets: []
+  official:
+    targets: []

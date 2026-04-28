@@ -1,0 +1,34 @@
+api-version: three.release/v1alpha1
+kind: project
+
+project:
+  id: circular-list
+  display-name: CircularList
+  ecosystem: dotnet
+  release-kind: lib
+
+source:
+  primary-manifest: CircularList.csproj
+
+variants:
+  - id: package
+    dimensions: {}
+    artifacts:
+      - id: nuget
+        role: primary-package
+        kind-family: package
+        concrete-kind: nuget
+      - id: snupkg
+        role: symbols
+        kind-family: package
+        concrete-kind: snupkg
+
+profiles:
+  buddy:
+    targets:
+      - uses: github-release/public
+        artifacts: [nuget, snupkg]
+  official:
+    targets:
+      - uses: github-release/public
+        artifacts: [nuget, snupkg]

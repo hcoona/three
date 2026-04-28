@@ -67,7 +67,7 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: oidc
-          publish-topology: external-oidc-caller-workflow
+          publish-topology: external-oidc-entry-workflow
       - id: github-packages
         contract: npm-publish
         destination:
