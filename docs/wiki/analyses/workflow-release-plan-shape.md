@@ -348,7 +348,8 @@ Each publish node contains:
   identity used for destination uniqueness and replay checks;
 - `desired-publish-state`, present only for families that need planner-owned
   desired target-side state;
-- `projection`, normalized to the selected target family.
+- `projection`, normalized to the selected target family;
+- `attestation`, present and required only for `github-release` nodes.
 
 Current-scope normalized `resolved-publish-identity` shapes are:
 
@@ -408,6 +409,13 @@ Current-scope normalized `projection` shapes are:
 | `npm`            | `package-name?: <string>`                                                                                             |
 | `nuget`, `pypi`  | `final-distribution-filenames-by-artifact-id: { <artifact-id>: <string> }`                                            |
 | `rubygems`       | `{}`                                                                                                                  |
+
+Current-scope normalized `attestation` shapes are:
+
+| Resolved family                    | Plan `attestation` shape           |
+| ---------------------------------- | ---------------------------------- |
+| `github-release`                   | `signer-workflow: <full-identity>` |
+| `npm`, `nuget`, `pypi`, `rubygems` | omitted                            |
 
 For GitHub Release, descriptor-side `projection.asset-labels` keys are resolved
 from descriptor-local `artifact.id` handles into plan artifact IDs before the

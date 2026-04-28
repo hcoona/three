@@ -853,7 +853,7 @@ positive `tag-result`.
         "dotnet-planner-metadata-input-artifact-name": null,
         "dotnet-planner-metadata-artifact-name": null,
         "execution-sets-artifact-name": "...",
-        "entry-publish-handoff-artifact-name": null,
+        "entry-publish-handoff-artifact-name": "release-entry-publish-handoff-v1-123-1-...",
         "tag-result-artifact-name": null,
         "build-result-artifact-names": [],
         "publish-result-artifact-names": [],
