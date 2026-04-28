@@ -149,15 +149,13 @@ Examples of disallowed behavior:
   semantics; the workflow does not introduce a repo-specific cancellation model.
 - The first delivery scope does not require a repo-defined supersession model
   across release requests.
-- If GitHub Actions native concurrency controls conveniently support canceling
-  an older in-progress run for the same workflow entry point and the same
-  commit, the workflow may adopt that behavior.
-- For this optional native-cancellation rule, duplicate means the same workflow
-  entry point and the same commit, regardless of project subset selection or
-  other release inputs.
-- If native duplicate-run cancellation is used, ordinary cancelled status is
-  sufficient; no distinct superseded status is required.
-- When a release is cancelled, whether manually or by native duplicate-run
+- First delivery uses native GitHub Actions concurrency only for conservative
+  same-entry serialization with `cancel-in-progress: false`; it does not use
+  native duplicate-run cancellation.
+- The first-delivery concurrency key is the selected top-level entry workflow,
+  not the resolved commit or project subset. Finer-grained duplicate detection is
+  successor scope.
+- When a release is cancelled, whether manually or by ordinary platform
   cancellation, it must stop the remaining unpublished targets while leaving
   already published results visible for manual follow-up.
 - `buddy` and `official` use the same visible handling rules for failure,

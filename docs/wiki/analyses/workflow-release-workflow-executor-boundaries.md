@@ -124,8 +124,10 @@ selectors that can run in reusable workflow jobs, and returns only
 entry-workflow-bound publish selectors plus reusable-hosted receipt locations to
 its caller. The top-level entry workflow then schedules those returned selectors
 in entry-hosted jobs and performs final receipt aggregation after those jobs
-complete. Lower-layer YAML may split these logical steps across one or more
-reusable jobs, but it must preserve the topology boundary described here.
+complete. The top-level entry workflow's workflow-level concurrency group covers
+this full sequence from run creation through final completion. Lower-layer YAML
+may split these logical steps across one or more reusable jobs, but it must
+preserve the topology boundary described here.
 
 1. `authorize-entry` job
     - stays in the control plane;
@@ -815,18 +817,18 @@ The following concerns are explicitly control-plane-owned:
   triggering actor is allowed to start the selected profile; in current scope,
   `official` must fail before planning unless the triggering actor has at least
   repository `maintain`, and this check stays distinct from later approval;
-- **concurrency**: exactly one top-level entry continuation boundary sets the
-  duplicate-run concurrency key, using the already frozen workflow-entry-point
-  plus commit rule; child reusable workflows, matrix rows, publish jobs, and
-  report jobs do not reuse that group;
+- **concurrency**: each top-level entry workflow sets one workflow-level
+  concurrency group using a literal entry-workflow key, with
+  `cancel-in-progress: false`; child reusable workflows, matrix rows, publish
+  jobs, and report jobs do not reuse that group;
 - **selected-commit pinning**: only the control plane resolves the operator-
   selected branch/tag ref into the authoritative `commit-sha`, and every later
   planner, build, publish, and tag job must stay pinned to that same commit;
 - **cancellation**: manual operator cancellation and ordinary platform
   cancellation use native GitHub workflow cancellation semantics and ordinary
   cancelled status; current scope does not adopt repo-defined duplicate-run
-  auto-cancellation, and duplicate same-entry same-commit runs are serialized
-  with `cancel-in-progress: false`;
+  auto-cancellation, and same-entry workflow runs are serialized with
+  `cancel-in-progress: false`;
 - **tagging**: the planner resolves the final project-scoped `release-tag`,
   but the control plane creates or verifies each distinct selected Git tag once
   per run only when the selected plan contains at least one GitHub Release
