@@ -544,9 +544,13 @@ on it. Free-form adapter messages belong in `details`, not in the `code` field.
 Conditional fields are omitted when not applicable; they are not serialized as
 `null`. For `REQ_EXTERNAL_TARGET_DISABLED` and
 `REQ_EXTERNAL_TOPOLOGY_BLOCKED`, no plan artifact is published, so
-`publish-node-id` may be omitted if the implementation has not assigned the
-opaque plan ID before the readiness gate, but `project-id`,
-`target-instance-snapshot-id`, and `resolved-publish-identity` must be present.
+`publish-node-id` must still be present whenever the current-scope topology or
+live-enable gate runs after the in-memory plan has materialized the affected
+publish node. `project-id`, `target-instance-snapshot-id`, and
+`resolved-publish-identity` must also be present for those current-scope gate
+failures. A future pre-node validation gate that fails before any publish node ID
+exists must use a non-`publish-node` diagnostic scope instead of omitting the
+field from a materialized publish-node diagnostic.
 For `REQ_EXTERNAL_TARGET_DISABLED`, `details` must also include the required
 enablement token. For `REQ_EXTERNAL_TOPOLOGY_BLOCKED`, `details` must identify
 the blocked registry family and the unsupported workflow topology.
@@ -1598,13 +1602,14 @@ Planner adapters may use public registry reads and the least-privilege
 distinct gates. The entry workflow must first verify that the actor has
 `maintain+` repository permission for `official`, while `buddy` continues to
 require `write+`. Passing that authorization check does not approve deployment:
-each live side-effect job still waits for the protected `release` environment
-when the selected run can mutate tags, GitHub Release, GitHub Packages, or an
-external registry.
+for `official`, each live side-effect job still waits for the protected
+`release` environment when the selected run can mutate tags, GitHub Release,
+GitHub Packages, or an external registry. Current-scope `buddy` live jobs must
+not attach the protected `release` environment as an approval gate.
 
-The GitHub environment named `release` attaches directly to jobs that can perform
-live side effects, not to a separate approval-only job. Current scope has no
-standalone approval job. Attach `environment: release` to:
+For `official`, the GitHub environment named `release` attaches directly to jobs
+that can perform live side effects, not to a separate approval-only job. Current
+scope has no standalone approval job. Attach `environment: release` only to:
 
 - `ensure-tag`, only when it may create release tags for active GitHub Release
   publish nodes; read-only tag verification does not need the environment; and
@@ -1861,7 +1866,9 @@ contract-validation, readiness, workflow, or job evidence instead.
 The matrix may live in test fixtures or generated CI output. It does not need to
 become a new operator-facing release record. A missing row for any first-
 delivery scenario is an acceptance-coverage gap before declaring the workflow
-implementation complete, but it does not reopen design or block initial coding.
+design ready for implementation. The implementation may choose whether the
+matrix is represented as fixtures or generated CI output, but it must not defer
+the required first-delivery scenario rows into implementation-owned scope.
 
 ## 11. Implementation-Owned Boundaries
 
