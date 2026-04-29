@@ -29,6 +29,7 @@ members = [
   "src/public/lib/nbgv-python",
   "src/public/lib/three-workflow-release-contracts",
   "src/public/lib/three-workflow-release-authoring",
+  "src/public/lib/three-workflow-release-metadata",
   "src/public/lib/three-workflow-release-planner",
   "src/sample/nbgv-hatch-demo",
 ]
@@ -37,6 +38,7 @@ members = [
 nbgv-python = { workspace = true }
 three-workflow-release-contracts = { workspace = true }
 three-workflow-release-authoring = { workspace = true }
+three-workflow-release-metadata = { workspace = true }
 three-workflow-release-planner = { workspace = true }
 
 [tool.pyrefly]
@@ -56,6 +58,7 @@ project-includes = [
   "src/public/lib/nbgv-python",
   "src/public/lib/three-workflow-release-contracts",
   "src/public/lib/three-workflow-release-authoring",
+  "src/public/lib/three-workflow-release-metadata",
   "src/public/lib/three-workflow-release-planner",
   "src/sample/nbgv-hatch-demo",
 ]
