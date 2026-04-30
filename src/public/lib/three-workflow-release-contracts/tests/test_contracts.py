@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from three_workflow_release_contracts import (
+    REGISTERED_BUILD_DIAGNOSTIC_CODES,
     REGISTERED_DIAGNOSTIC_CODES,
     ArtifactNameInputs,
     ContractValidationError,
@@ -56,6 +57,7 @@ def test_registered_diagnostic_vocabulary_is_exposed() -> None:
     """Expose the frozen planner diagnostic code vocabulary to callers."""
     assert "REQ_INVALID_INPUT" in REGISTERED_DIAGNOSTIC_CODES
     assert "PLAN_INTERNAL_INVARIANT" in REGISTERED_DIAGNOSTIC_CODES
+    assert "BUILD_CHECKOUT_FAILED" in REGISTERED_BUILD_DIAGNOSTIC_CODES
 
 
 def test_dotnet_metadata_requires_metadata_input_context() -> None:
@@ -99,6 +101,109 @@ def test_wrong_kind_is_rejected() -> None:
     document["kind"] = "publish-receipt"
     with pytest.raises(ContractValidationError):
         validate_contract(document)
+
+
+@pytest.mark.parametrize(
+    ("scope_kind", "key", "bad_value"),
+    [
+        ("project", "project-id", ""),
+        ("variant", "variant-id", None),
+        ("artifact", "artifact-id", 7),
+    ],
+)
+def test_build_diagnostic_scope_ids_must_be_non_empty_strings(
+    scope_kind: str,
+    key: str,
+    bad_value: object,
+) -> None:
+    """Reject invalid build diagnostic scope identity values."""
+    document = _load(VALID_ROOT / "build-diagnostics.json")
+    diagnostic = document["diagnostics"][0]
+    assert isinstance(diagnostic, dict)
+    diagnostic["scope-kind"] = scope_kind
+    diagnostic["project-id"] = "example"
+    if scope_kind in {"variant", "artifact"}:
+        diagnostic["variant-id"] = "variant/package"
+    if scope_kind == "artifact":
+        diagnostic["artifact-id"] = "artifact/wheel"
+    diagnostic[key] = bad_value
+    with pytest.raises(ContractValidationError):
+        validate_contract(document)
+
+
+@pytest.mark.parametrize(
+    "scope_kind",
+    ["project", "variant", "artifact"],
+)
+def test_build_diagnostic_accepts_valid_scope_ids(scope_kind: str) -> None:
+    """Accept non-empty build diagnostic scope identity strings."""
+    document = _load(VALID_ROOT / "build-diagnostics.json")
+    diagnostic = document["diagnostics"][0]
+    assert isinstance(diagnostic, dict)
+    diagnostic["scope-kind"] = scope_kind
+    diagnostic["project-id"] = "example"
+    if scope_kind in {"variant", "artifact"}:
+        diagnostic["variant-id"] = "variant/package"
+    if scope_kind == "artifact":
+        diagnostic["artifact-id"] = "artifact/wheel"
+    validate_contract(document)
+
+
+def test_build_diagnostic_request_scope_omits_narrower_ids() -> None:
+    """Reject project/variant/artifact IDs on request-scoped diagnostics."""
+    document = _load(VALID_ROOT / "build-diagnostics.json")
+    diagnostic = document["diagnostics"][0]
+    assert isinstance(diagnostic, dict)
+    diagnostic["project-id"] = "example"
+    with pytest.raises(ContractValidationError):
+        validate_contract(document)
+
+
+@pytest.mark.parametrize(
+    ("scope_kind", "extra_key"),
+    [
+        ("project", "variant-id"),
+        ("project", "artifact-id"),
+        ("variant", "artifact-id"),
+    ],
+)
+def test_build_diagnostic_rejects_too_narrow_scope_ids(
+    scope_kind: str,
+    extra_key: str,
+) -> None:
+    """Reject IDs narrower than the declared build diagnostic scope."""
+    document = _load(VALID_ROOT / "build-diagnostics.json")
+    diagnostic = document["diagnostics"][0]
+    assert isinstance(diagnostic, dict)
+    diagnostic["scope-kind"] = scope_kind
+    diagnostic["project-id"] = "example"
+    if scope_kind == "variant":
+        diagnostic["variant-id"] = "variant/package"
+    diagnostic[extra_key] = f"{extra_key}/unexpected"
+    with pytest.raises(ContractValidationError):
+        validate_contract(document)
+
+
+@pytest.mark.parametrize("bad_plan_id", ["", 123])
+def test_build_diagnostic_plan_id_must_be_non_empty_string(
+    bad_plan_id: object,
+) -> None:
+    """Reject invalid optional build diagnostic plan IDs."""
+    document = _load(VALID_ROOT / "build-diagnostics.json")
+    diagnostic = document["diagnostics"][0]
+    assert isinstance(diagnostic, dict)
+    diagnostic["plan-id"] = bad_plan_id
+    with pytest.raises(ContractValidationError):
+        validate_contract(document)
+
+
+def test_build_diagnostic_accepts_valid_plan_id() -> None:
+    """Accept a non-empty optional build diagnostic plan ID."""
+    document = _load(VALID_ROOT / "build-diagnostics.json")
+    diagnostic = document["diagnostics"][0]
+    assert isinstance(diagnostic, dict)
+    diagnostic["plan-id"] = "plan/example"
+    validate_contract(document)
 
 
 def test_official_planner_request_cannot_force() -> None:

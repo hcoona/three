@@ -1,0 +1,16 @@
+{
+  "api-version": "three.release.build-diagnostics/v1alpha1",
+  "diagnostics": [
+    {
+      "api-version": "three.release.build-diagnostic/v1alpha1",
+      "blocking": true,
+      "code": "BUILD_UNKNOWN",
+      "details": {},
+      "kind": "build-diagnostic",
+      "message": "unknown",
+      "phase": "execution",
+      "scope-kind": "request"
+    }
+  ],
+  "kind": "build-diagnostics"
+}

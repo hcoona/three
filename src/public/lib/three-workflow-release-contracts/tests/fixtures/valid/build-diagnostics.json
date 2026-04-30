@@ -1,0 +1,20 @@
+{
+  "api-version": "three.release.build-diagnostics/v1alpha1",
+  "diagnostics": [
+    {
+      "api-version": "three.release.build-diagnostic/v1alpha1",
+      "blocking": true,
+      "code": "BUILD_CHECKOUT_FAILED",
+      "details": {
+        "actual": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "kind": "build-diagnostic",
+      "message": "checkout HEAD does not match build commit",
+      "phase": "materialization",
+      "plan-id": "plan/example",
+      "scope-kind": "request"
+    }
+  ],
+  "kind": "build-diagnostics"
+}

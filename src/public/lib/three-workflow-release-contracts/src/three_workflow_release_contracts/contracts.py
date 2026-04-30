@@ -43,6 +43,14 @@ _REGISTERED_CODES = {
 }
 REGISTERED_DIAGNOSTIC_CODES = frozenset(_REGISTERED_CODES)
 """Registered planner diagnostic code vocabulary for v1alpha1 contracts."""
+_BUILD_DIAGNOSTIC_CODES = {
+    "BUILD_FAILED",
+    "BUILD_INVALID_INPUT",
+    "BUILD_CHECKOUT_FAILED",
+    "BUILD_OUTPUT_INVALID",
+}
+REGISTERED_BUILD_DIAGNOSTIC_CODES = frozenset(_BUILD_DIAGNOSTIC_CODES)
+"""Registered build diagnostic code vocabulary for v1alpha1 contracts."""
 _PHASES = {"validation", "query", "normalization", "classification"}
 _SCOPE_KINDS = {"request", "project", "publish-node"}
 _PROFILES = {"buddy", "official"}
@@ -458,6 +466,7 @@ def validate_contract(
         "entry-publish-handoff": _entry_handoff,
         "build-request": _build_request,
         "build-result": _build_result,
+        "build-diagnostics": _build_diagnostics,
         "tag-result": _tag_result,
         "publish-request": _publish_request,
         "publish-result": _publish_result,
@@ -1893,6 +1902,102 @@ def _build_result(validator: _Validator, document: JsonObject) -> None:
     if artifacts is not None:
         for artifact_id, artifact in artifacts.items():
             _artifact_receipt(validator, artifact, f"$.artifacts.{artifact_id}")
+
+
+def _build_diagnostics(validator: _Validator, document: JsonObject) -> None:
+    """Validate `build-diagnostics.json`."""
+    obj = _header(
+        validator,
+        document,
+        "$",
+        api_version="three.release.build-diagnostics/v1alpha1",
+        kind="build-diagnostics",
+        required={"diagnostics"},
+    )
+    if obj is None:
+        return
+    diagnostics = validator.array(obj.get("diagnostics"), "$.diagnostics")
+    if diagnostics is None:
+        return
+    if len(diagnostics) == 0:
+        validator.error("$.diagnostics", "must be non-empty")
+    for index, diagnostic in enumerate(diagnostics):
+        _build_diagnostic(validator, diagnostic, f"$.diagnostics[{index}]")
+
+
+def _build_diagnostic(
+    validator: _Validator,
+    value: object,
+    path: str,
+) -> None:
+    """Validate one build diagnostic."""
+    required = {
+        "api-version",
+        "kind",
+        "code",
+        "message",
+        "phase",
+        "scope-kind",
+        "blocking",
+        "details",
+    }
+    optional = {"plan-id", "project-id", "variant-id", "artifact-id"}
+    obj = validator.mapping(value, path, required, optional)
+    if obj is None:
+        return
+    if obj.get("api-version") != "three.release.build-diagnostic/v1alpha1":
+        validator.error(
+            f"{path}.api-version",
+            "must be three.release.build-diagnostic/v1alpha1",
+        )
+    if obj.get("kind") != "build-diagnostic":
+        validator.error(f"{path}.kind", "must be build-diagnostic")
+    validator.enum(obj.get("code"), f"{path}.code", _BUILD_DIAGNOSTIC_CODES)
+    validator.string(obj.get("message"), f"{path}.message")
+    validator.enum(
+        obj.get("phase"),
+        f"{path}.phase",
+        {"validation", "materialization", "execution", "receipt"},
+    )
+    validator.enum(
+        obj.get("scope-kind"),
+        f"{path}.scope-kind",
+        {"request", "project", "variant", "artifact"},
+    )
+    validator.boolean(obj.get("blocking"), f"{path}.blocking")
+    if not isinstance(obj.get("details"), Mapping):
+        validator.error(f"{path}.details", "must be an object")
+    if "plan-id" in obj:
+        validator.string(obj.get("plan-id"), f"{path}.plan-id")
+    _build_diagnostic_scope(validator, obj, path)
+
+
+def _build_diagnostic_scope(
+    validator: _Validator,
+    obj: JsonObject,
+    path: str,
+) -> None:
+    """Validate build diagnostic scope identity fields."""
+    scope = obj.get("scope-kind")
+    for key in ("project-id", "variant-id", "artifact-id"):
+        if key in obj:
+            validator.string(obj.get(key), f"{path}.{key}")
+    if scope in {"project", "variant", "artifact"} and "project-id" not in obj:
+        validator.error(f"{path}.project-id", "is required for this scope-kind")
+    if scope in {"variant", "artifact"} and "variant-id" not in obj:
+        validator.error(f"{path}.variant-id", "is required for this scope-kind")
+    if scope == "artifact" and "artifact-id" not in obj:
+        validator.error(f"{path}.artifact-id", "is required for artifact scope")
+    forbidden_by_scope = {
+        "request": ("project-id", "variant-id", "artifact-id"),
+        "project": ("variant-id", "artifact-id"),
+        "variant": ("artifact-id",),
+    }
+    for key in forbidden_by_scope.get(str(scope), ()):
+        if key in obj:
+            validator.error(
+                f"{path}.{key}", "must be omitted for this scope-kind"
+            )
 
 
 def _tag_result(validator: _Validator, document: JsonObject) -> None:

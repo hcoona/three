@@ -10,6 +10,7 @@ from three_workflow_release_contracts.artifact_names import (
     safe_id,
 )
 from three_workflow_release_contracts.contracts import (
+    REGISTERED_BUILD_DIAGNOSTIC_CODES,
     REGISTERED_DIAGNOSTIC_CODES,
     ContractValidationError,
     ValidationIssue,
@@ -17,6 +18,7 @@ from three_workflow_release_contracts.contracts import (
 )
 
 __all__ = [
+    "REGISTERED_BUILD_DIAGNOSTIC_CODES",
     "REGISTERED_DIAGNOSTIC_CODES",
     "ArtifactNameInputs",
     "ContractValidationError",
