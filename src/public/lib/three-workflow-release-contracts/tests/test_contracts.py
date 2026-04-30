@@ -242,6 +242,42 @@ def test_publish_request_artifact_set_must_match_node_members() -> None:
         validate_contract(document)
 
 
+def test_publish_request_requires_explicit_publish_node_id() -> None:
+    """Publish requests carry the exact publish node identifier."""
+    document = _load(VALID_ROOT / "publish-request.json")
+    del document["publish-node-id"]
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    assert "publish-node-id" in str(error.value)
+
+
+def test_publish_request_node_id_must_be_project_member() -> None:
+    """The publish node id must identify one project publish node."""
+    document = _load(VALID_ROOT / "publish-request.json")
+    document["publish-node-id"] = "publish-node/missing"
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    assert "publish-node-ids" in str(error.value)
+
+
+def test_publish_request_node_id_must_match_embedded_node() -> None:
+    """The request id is bound to the embedded publish-node payload."""
+    document = _load(VALID_ROOT / "publish-request.json")
+    document["publish-node"]["publish-node-id"] = "publish-node/nuget"
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    assert "publish-node.publish-node-id" in str(error.value)
+
+
+def test_github_release_request_requires_asset_attestation_outputs() -> None:
+    """GitHub Release requests carry actions/attest outputs per asset."""
+    document = _load(VALID_ROOT / "publish-request.json")
+    del document["github-release-asset-attestations"]["artifact/symbols"]
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    assert "github-release-asset-attestations" in str(error.value)
+
+
 def test_artifact_names_follow_low_level_patterns() -> None:
     """Verify deterministic artifact naming helpers."""
     inputs = ArtifactNameInputs(

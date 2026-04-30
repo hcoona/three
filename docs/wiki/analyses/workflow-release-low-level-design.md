@@ -1766,6 +1766,10 @@ Publish executor responsibilities:
 - `replace-authoritative`: converge the same-tag prerelease to the frozen
   official intent, including final release state, asset names, asset labels, and
   content-equivalent asset bytes.
+- Before emitting a positive `publish-result.json`, verify every uploaded asset
+  with GitHub Artifact Attestations using the planner-frozen
+  `attestation.signer-workflow` and selected `commit-sha`; fail closed if any
+  planned asset lacks a matching subject name and SHA-256 digest.
 
 Identity conformance:
 

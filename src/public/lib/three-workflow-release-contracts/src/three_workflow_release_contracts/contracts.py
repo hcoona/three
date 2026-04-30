@@ -970,7 +970,11 @@ def _plan_graph(  # noqa: C901
     if nodes is not None:
         for node_id, node in nodes.items():
             _publish_node(
-                validator, node, f"{path}.publish-nodes.{node_id}", families
+                validator,
+                node,
+                f"{path}.publish-nodes.{node_id}",
+                families,
+                expected_node_id=node_id,
             )
 
 
@@ -1398,12 +1402,14 @@ def _publish_node(
     value: object,
     path: str,
     target_families: Mapping[str, str],
+    expected_node_id: str | None = None,
 ) -> None:
     """Validate a normalized publish node."""
     obj = validator.mapping(
         value,
         path,
         {
+            "publish-node-id",
             "project-id",
             "profile",
             "descriptor-target-index",
@@ -1417,6 +1423,16 @@ def _publish_node(
     )
     if obj is None:
         return
+    validator.string(obj.get("publish-node-id"), f"{path}.publish-node-id")
+    if (
+        expected_node_id is not None
+        and isinstance(obj.get("publish-node-id"), str)
+        and obj["publish-node-id"] != expected_node_id
+    ):
+        validator.error(
+            f"{path}.publish-node-id",
+            "must match the containing publish node id",
+        )
     validator.string(obj.get("project-id"), f"{path}.project-id")
     validator.enum(obj.get("profile"), f"{path}.profile", _PROFILES)
     validator.integer(
@@ -2058,16 +2074,34 @@ def _publish_request(validator: _Validator, document: JsonObject) -> None:
             "plan-id",
             "profile",
             "commit-sha",
+            "publish-node-id",
             "project",
             "publish-node",
             "target-instance-snapshot",
             "artifacts",
         },
+        optional={"github-release-asset-attestations"},
     )
     if obj is None:
         return
     _common_plan_fields(validator, obj, "$", publish=True)
+    validator.string(obj.get("publish-node-id"), "$.publish-node-id")
     _project_snapshot(validator, obj.get("project"), "$.project")
+    project = obj.get("project")
+    if isinstance(project, Mapping):
+        publish_node_ids = validator.string_array(
+            project.get("publish-node-ids"),
+            "$.project.publish-node-ids",
+        )
+        if (
+            isinstance(obj.get("publish-node-id"), str)
+            and publish_node_ids is not None
+            and obj["publish-node-id"] not in publish_node_ids
+        ):
+            validator.error(
+                "$.publish-node-id",
+                "must be listed in $.project.publish-node-ids",
+            )
     snapshot = obj.get("target-instance-snapshot")
     family = (
         _target_snapshot(validator, snapshot, "$.target-instance-snapshot")
@@ -2080,6 +2114,11 @@ def _publish_request(validator: _Validator, document: JsonObject) -> None:
         node,
         "$.publish-node",
         {str(snapshot_id): family},
+        expected_node_id=(
+            str(obj["publish-node-id"])
+            if isinstance(obj.get("publish-node-id"), str)
+            else None
+        ),
     )
     if (
         isinstance(node, Mapping)
@@ -2121,6 +2160,13 @@ def _publish_request(validator: _Validator, document: JsonObject) -> None:
             set(node.get("artifact-ids", [])),
             "$.artifacts",
         )
+        _github_release_asset_attestations(
+            validator,
+            obj,
+            "$.github-release-asset-attestations",
+            family,
+            set(node.get("artifact-ids", [])),
+        )
 
 
 def _publish_result(validator: _Validator, document: JsonObject) -> None:
@@ -2134,6 +2180,42 @@ def _publish_result(validator: _Validator, document: JsonObject) -> None:
     )
     if obj is not None:
         validator.enum(obj.get("outcome"), "$.outcome", {"published"})
+
+
+def _github_release_asset_attestations(
+    validator: _Validator,
+    request: JsonObject,
+    path: str,
+    family: str,
+    artifact_ids: set[object],
+) -> None:
+    """Validate actions/attest outputs carried by a GitHub Release request."""
+    value = request.get("github-release-asset-attestations")
+    if family != "github-release":
+        if value is not None:
+            validator.error(path, "must be omitted outside github-release")
+        return
+    outputs = _map(validator, value, path)
+    if outputs is None:
+        return
+    _require_exact_keys(validator, outputs, artifact_ids, path)
+    for artifact_id, payload in outputs.items():
+        item_path = f"{path}.{artifact_id}"
+        item = validator.mapping(
+            payload,
+            item_path,
+            {"attestation-id", "attestation-url", "bundle-path"},
+            {"storage-record-ids"},
+        )
+        if item is None:
+            continue
+        for field in ("attestation-id", "attestation-url", "bundle-path"):
+            validator.string(item.get(field), f"{item_path}.{field}")
+        if "storage-record-ids" in item:
+            validator.string(
+                item.get("storage-record-ids"),
+                f"{item_path}.storage-record-ids",
+            )
 
 
 def _skip_result(validator: _Validator, document: JsonObject) -> None:

@@ -97,6 +97,13 @@ def _publish_nodes(plan: Mapping[str, object]) -> Mapping[str, object]:
     return cast("Mapping[str, object]", graph["publish-nodes"])
 
 
+def _assert_publish_nodes_embed_ids(plan: Mapping[str, object]) -> None:
+    """Assert every publish node snapshot carries its containing id."""
+    for node_id, node in _publish_nodes(plan).items():
+        payload = cast("Mapping[str, object]", node)
+        assert payload["publish-node-id"] == node_id
+
+
 def _remote_observations(
     plan: Mapping[str, object],
     overrides: Mapping[str, RemoteObservation] | None = None,
@@ -189,6 +196,7 @@ def test_nbgv_python_uses_checked_in_pyproject_version() -> None:
     """Resolve nbgv-python from pyproject.toml without NBGV metadata."""
     result = _plan(["nbgv-python"])
     validate_contract(result.plan)
+    _assert_publish_nodes_embed_ids(result.plan)
     envelope = cast("Mapping[str, object]", result.plan["envelope"])
     projects = cast("Mapping[str, object]", envelope["projects"])
     project = cast("Mapping[str, object]", projects["nbgv-python"])
@@ -289,9 +297,7 @@ def test_nbgv_python_pypi_backend_runs_at_requested_commit(
         out_dir.mkdir(parents=True, exist_ok=True)
         build_cwd = Path(cast("Path", kwargs["cwd"]))
         version = (
-            "7.8.9.dev1"
-            if build_cwd == requested_checkout
-            else "9.9.9.dev1"
+            "7.8.9.dev1" if build_cwd == requested_checkout else "9.9.9.dev1"
         )
         (out_dir / f"nbgv_python-{version}-py3-none-any.whl").write_text(
             "",
@@ -391,14 +397,14 @@ def test_exact_satisfied_routes_to_skip_selector() -> None:
     snapshot = validate_authoring(REPO_ROOT)
     result = plan_release(
         snapshot,
-            PlannerInputs(
-                request=_request(["nbgv-python"]),
-                repo_root=REPO_ROOT,
-                remote_observations=_remote_observations(
-                    first.plan, {node_id: "exact-satisfied"}
-                ),
+        PlannerInputs(
+            request=_request(["nbgv-python"]),
+            repo_root=REPO_ROOT,
+            remote_observations=_remote_observations(
+                first.plan, {node_id: "exact-satisfied"}
             ),
-        )
+        ),
+    )
     skip_nodes = cast(
         "Sequence[str]",
         result.execution_sets["skip-satisfied-publish-node-ids"],
@@ -470,14 +476,14 @@ def test_official_partial_github_release_replaces_authoritatively() -> None:
     node_id = _github_release_node_id(first.plan)
     result = plan_release(
         snapshot,
-            PlannerInputs(
-                request=_request(["nbgv-python"], profile="official"),
-                repo_root=REPO_ROOT,
-                remote_observations=_remote_observations(
-                    first.plan, {node_id: "partial"}
-                ),
+        PlannerInputs(
+            request=_request(["nbgv-python"], profile="official"),
+            repo_root=REPO_ROOT,
+            remote_observations=_remote_observations(
+                first.plan, {node_id: "partial"}
             ),
-        )
+        ),
+    )
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     assert node["publish-mode"] == "replace-authoritative"
 
@@ -1267,8 +1273,7 @@ def test_pypi_build_system_nbgv_identity_uses_backend_normalized_version(
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (
-            out_dir
-            / "hcoona_release_smoke-1.0.0b5+gabcdef-py3-none-any.whl"
+            out_dir / "hcoona_release_smoke-1.0.0b5+gabcdef-py3-none-any.whl"
         ).write_text(
             "",
             encoding="utf-8",
@@ -1334,9 +1339,7 @@ def test_pypi_build_system_nbgv_name_reads_requested_commit_pyproject(
             )
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
-        wheel = out_dir / (
-            "requested_smoke-1.0.0b5+gabcdef-py3-none-any.whl"
-        )
+        wheel = out_dir / ("requested_smoke-1.0.0b5+gabcdef-py3-none-any.whl")
         wheel.write_text("", encoding="utf-8")
         (out_dir / "requested_smoke-1.0.0b5+gabcdef.tar.gz").write_text(
             "",
@@ -1620,9 +1623,7 @@ def test_pypi_wheel_only_publish_does_not_require_sdist(
         "Mapping[str, str]",
         projection["final-distribution-filenames-by-artifact-id"],
     )
-    assert list(names.values()) == [
-        "nbgv_python-2.1.0.dev1-py3-none-any.whl"
-    ]
+    assert list(names.values()) == ["nbgv_python-2.1.0.dev1-py3-none-any.whl"]
 
 
 def test_github_release_wheel_only_asset_does_not_require_sdist(
@@ -1728,9 +1729,7 @@ def test_github_release_wheel_only_asset_does_not_require_sdist(
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     projection = cast("Mapping[str, object]", node["projection"])
     names = cast("Mapping[str, str]", projection["asset-names-by-artifact-id"])
-    assert list(names.values()) == [
-        "nbgv_python-2.1.0.dev1-py3-none-any.whl"
-    ]
+    assert list(names.values()) == ["nbgv_python-2.1.0.dev1-py3-none-any.whl"]
 
 
 def test_dotnet_metadata_boundary_fails_closed_when_missing() -> None:

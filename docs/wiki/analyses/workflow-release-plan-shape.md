@@ -437,6 +437,12 @@ successor topology moves GitHub Release attestation to another workflow, that
 topology must freeze its corresponding full signer workflow identity in the plan
 before any proof lookup can be considered admissible.
 
+Every serialized publish node carries an embedded `publish-node-id` equal to its
+key in `graph.publish-nodes`. Publish request materialization must copy both the
+top-level selected `publish-node-id` and the embedded node snapshot, and contract
+validation rejects any mismatch so an executor cannot report one node id while
+executing another node payload.
+
 Current-scope GitHub Release asset-name derivation is closed and descriptor-
 independent:
 

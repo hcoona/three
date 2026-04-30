@@ -33,6 +33,18 @@
     }
   },
   "commit-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "github-release-asset-attestations": {
+    "artifact/package": {
+      "attestation-id": "att-1",
+      "attestation-url": "https://github.com/hcoona/three/attestations/1",
+      "bundle-path": "attestations/Example.1.2.3.nupkg.json"
+    },
+    "artifact/symbols": {
+      "attestation-id": "att-2",
+      "attestation-url": "https://github.com/hcoona/three/attestations/2",
+      "bundle-path": "attestations/Example.1.2.3.snupkg.json"
+    }
+  },
   "kind": "publish-request",
   "plan-id": "plan/abc123",
   "profile": "buddy",
@@ -79,11 +91,13 @@
     },
     "publish-disposition": "publish",
     "publish-mode": "create-only",
+    "publish-node-id": "publish-node/gh",
     "resolved-publish-identity": {
       "release-tag": "release/example/v1.2.3"
     },
     "target-instance-snapshot-id": "github-release/public"
   },
+  "publish-node-id": "publish-node/gh",
   "target-instance-snapshot": {
     "capabilities": {
       "credential-posture": "github-token",

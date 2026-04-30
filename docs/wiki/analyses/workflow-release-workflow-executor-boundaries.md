@@ -530,11 +530,12 @@ exact top-level fields:
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `api-version: three.release.publish-request/v1alpha1` | control-plane materialization                                                                             |
 | `kind: publish-request`                               | control-plane materialization                                                                             |
-| `plan-id`, `profile`, `commit-sha`                    | plan envelope                                                                                             |
+| `plan-id`, `profile`, `commit-sha`, `publish-node-id` | plan envelope plus the selected graph publish-node key                                                    |
 | `project` snapshot                                    | `envelope.projects[project-id]`                                                                           |
-| `publish-node` snapshot                               | `graph.publish-nodes[publish-node-id]`                                                                    |
+| `publish-node` snapshot                               | `graph.publish-nodes[publish-node-id]`; its embedded `publish-node-id` must match the top-level key       |
 | `target-instance-snapshot`                            | referenced `graph.target-instance-snapshots[*]`                                                           |
 | `artifacts` map keyed by `artifact-id`                | frozen artifact metadata from the plan plus receipt-proved file path, digest, and size from build results |
+| `github-release-asset-attestations`                   | GitHub Release only: `actions/attest@v4` outputs for every planned asset                                  |
 
 Entry-hosted publish units are not a forked executor contract. The top-level
 entry workflow downloads the same frozen plan artifact and referenced
@@ -617,7 +618,9 @@ or as an additive merge with the prior buddy asset set. When a
 exactly: only planner-authorized buddy `FORCE` replay arrives as
 `overwrite-mutable`; same-tag GitHub Release prerelease-to-release promotion
 arrives as `replace-authoritative`; and every other same-identity mutable replay
-case fails during planning and therefore must not reach the executor. When the
+case fails during planning and therefore must not reach the executor. For
+`replace-authoritative`, the final release-state convergence mutation, including
+clearing `prerelease`, must occur after asset replacement completes. When the
 frozen publish node also carries GitHub Release
 `desired-publish-state.release-state`, the executor must honor that state
 exactly rather than inferring prerelease versus release from the workflow
@@ -734,6 +737,7 @@ path segments. `byte-size` is a non-negative integer.
     "plan-id": "<plan-id>",
     "profile": "buddy|official",
     "commit-sha": "<40-hex-sha>",
+    "publish-node-id": "<publish-node-id>",
     "project": <envelope.projects[project-id] object>,
     "publish-node": <graph.publish-nodes[publish-node-id] object>,
     "target-instance-snapshot": <graph.target-instance-snapshots[target-instance-snapshot-id] object>,
@@ -744,6 +748,13 @@ path segments. `byte-size` is a non-negative integer.
             "bundle-relative-path": "<build-result artifact bundle-relative-path>",
             "sha256": "<build-result artifact sha256>",
             "byte-size": 123
+        }
+    },
+    "github-release-asset-attestations": {
+        "<artifact-id>": {
+            "attestation-id": "<actions/attest output>",
+            "attestation-url": "<actions/attest output>",
+            "bundle-path": "<actions/attest output>"
         }
     }
 }
@@ -757,6 +768,11 @@ publish executor, the control plane must verify that the file at `input-path`
 matches the carried `sha256` and `byte-size`. The receipt-derived
 `bundle-relative-path`, `sha256`, and `byte-size` fields use the same validation
 rules as `build-result`.
+For GitHub Release publish requests,
+`github-release-asset-attestations` must contain exactly the same artifact IDs
+and carries the `actions/attest@v4` outputs that the executor verifies against
+the staged asset files before any GitHub Release mutation and before emitting
+`publish-result.json`.
 
 `publish-result.json`:
 

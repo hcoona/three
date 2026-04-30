@@ -364,6 +364,7 @@ class _PlanBuilder:
         if disposition is None:
             return None
         node: Json = {
+            "publish-node-id": node_id,
             "project-id": project.project_id,
             "profile": self.inputs.request["profile"],
             "descriptor-target-index": index,
@@ -512,9 +513,8 @@ class _PlanBuilder:
     def _is_blocked_buddy_force(
         self, project: ProjectDescriptor, version: str
     ) -> bool:
-        if (
-            self.inputs.request["profile"] != "buddy"
-            or not _request_force(self.inputs.request)
+        if self.inputs.request["profile"] != "buddy" or not _request_force(
+            self.inputs.request
         ):
             return False
         frozen = self.inputs.official_frozen_versions
@@ -534,11 +534,13 @@ class _PlanBuilder:
             )
             return True
         frozen_versions = frozen[project.project_id]
-        if isinstance(frozen_versions, str) or not isinstance(
-            frozen_versions, Sequence
-        ) or any(
-            not isinstance(item, str) or not item
-            for item in frozen_versions
+        if (
+            isinstance(frozen_versions, str)
+            or not isinstance(frozen_versions, Sequence)
+            or any(
+                not isinstance(item, str) or not item
+                for item in frozen_versions
+            )
         ):
             self.diagnostics.append(
                 _diagnostic(
@@ -1019,10 +1021,10 @@ class _PlanBuilder:
     ) -> Mapping[str, str] | None:
         wheels = sorted(path.name for path in build_dir.glob("*.whl"))
         sdists = sorted(path.name for path in build_dir.glob("*.tar.gz"))
-        if len(wheels) != 1 or (
-            "sdist" in expected_kinds and len(sdists) != 1
-        ) or (
-            "sdist" not in expected_kinds and len(sdists) > 1
+        if (
+            len(wheels) != 1
+            or ("sdist" in expected_kinds and len(sdists) != 1)
+            or ("sdist" not in expected_kinds and len(sdists) > 1)
         ):
             self._record_pypi_filename_failure(
                 project,
