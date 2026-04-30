@@ -97,9 +97,9 @@ def test_npm_executor_verifies_tarball_and_uses_provenance() -> None:
         )
 
         validate_contract(result)
-        assert calls.commands == [
-            ["npm", "publish", str(package), "--provenance"]
-        ]
+        assert calls.commands[0][:2] == ["npm", "publish"]
+        assert Path(calls.commands[0][2]).name == package.name
+        assert calls.commands[0][3:] == ["--provenance"]
     finally:
         _reset_scratch(scratch)
 
@@ -261,14 +261,14 @@ def test_rubygems_executor_pushes_github_packages_host(
                 (
                     "gem",
                     "specification",
-                    str(package),
+                    "*",
                     "name",
                     "--yaml",
                 ): "--- example\n",
                 (
                     "gem",
                     "specification",
-                    str(package),
+                    "*",
                     "version",
                     "--yaml",
                 ): "--- 1.2.3\n",
@@ -289,8 +289,9 @@ def test_rubygems_executor_pushes_github_packages_host(
             "push",
             "--host",
             "https://rubygems.pkg.github.com/hcoona",
-            str(package),
+            calls.commands[-1][4],
         ]
+        assert Path(calls.commands[-1][4]).name == package.name
         assert calls.envs[-1] == {"GEM_HOST_API_KEY": "Bearer github-token"}
     finally:
         _reset_scratch(scratch)
@@ -321,14 +322,14 @@ def test_rubygems_github_packages_requires_github_token(
                 (
                     "gem",
                     "specification",
-                    str(package),
+                    "*",
                     "name",
                     "--yaml",
                 ): "--- example\n",
                 (
                     "gem",
                     "specification",
-                    str(package),
+                    "*",
                     "version",
                     "--yaml",
                 ): "--- 1.2.3\n",
@@ -373,14 +374,14 @@ def test_rubygems_org_executor_uses_oidc_token_exchange(
                 (
                     "gem",
                     "specification",
-                    str(package),
+                    "*",
                     "name",
                     "--yaml",
                 ): "--- example\n",
                 (
                     "gem",
                     "specification",
-                    str(package),
+                    "*",
                     "version",
                     "--yaml",
                 ): "--- 1.2.3\n",
@@ -406,8 +407,9 @@ def test_rubygems_org_executor_uses_oidc_token_exchange(
             "push",
             "--host",
             "https://rubygems.org",
-            str(package),
+            calls.commands[-1][4],
         ]
+        assert Path(calls.commands[-1][4]).name == package.name
         assert calls.envs[-1] == {"GEM_HOST_API_KEY": "short-lived-token"}
         evidence = result["evidence"]
         assert isinstance(evidence, dict)
@@ -850,7 +852,11 @@ class _Calls:
         self.envs.append(dict(env) if env is not None else None)
         stdout = ""
         for prefix, response in self.responses.items():
-            if tuple(command[: len(prefix)]) == prefix:
+            actual = tuple(command[: len(prefix)])
+            if len(actual) == len(prefix) and all(
+                expected in {"*", value}
+                for expected, value in zip(prefix, actual, strict=True)
+            ):
                 stdout = response
                 break
         else:
@@ -895,6 +901,16 @@ def _request(  # noqa: PLR0913
     elif owner is not None:
         destination["owner"] = owner
     data = artifact_path.read_bytes()
+    if (
+        family in {"nuget", "pypi", "npm", "rubygems"}
+        and "final-distribution-filenames-by-artifact-id" not in projection
+    ):
+        projection = {
+            **projection,
+            "final-distribution-filenames-by-artifact-id": {
+                artifact_id: artifact_path.name
+            },
+        }
     request: dict[str, Any] = {
         "api-version": "three.release.publish-request/v1alpha1",
         "kind": "publish-request",

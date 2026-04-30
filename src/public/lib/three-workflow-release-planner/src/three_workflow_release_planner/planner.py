@@ -686,7 +686,7 @@ class _PlanBuilder:
         )
         return None
 
-    def _projection(  # noqa: PLR0911
+    def _projection(
         self,
         project: ProjectDescriptor,
         target: TargetUsage,
@@ -729,13 +729,13 @@ class _PlanBuilder:
                 "asset-names-by-artifact-id": dict(sorted(names.items())),
                 "asset-labels-by-artifact-id": dict(sorted(labels.items())),
             }
-        if instance.family in {"nuget", "pypi"}:
+        if instance.family in {"nuget", "pypi", "npm", "rubygems"}:
             filenames = self._final_distribution_filenames(
                 project, version, artifact_ids, instance
             )
             if filenames is None:
                 return None
-            if any(value is None for value in filenames.values()):
+            if any(not value for value in filenames.values()):
                 self.diagnostics.append(
                     _diagnostic(
                         "PYPI_FILENAME_COMPUTE_FAILED"
@@ -750,18 +750,15 @@ class _PlanBuilder:
                     )
                 )
                 return None
-            return {
+            projection: dict[str, object] = {
                 "final-distribution-filenames-by-artifact-id": dict(
                     sorted(filenames.items())
                 )
             }
-        if instance.family == "npm":
             projected = target.projection.get("package-name")
-            return (
-                {"package-name": projected}
-                if isinstance(projected, str)
-                else {}
-            )
+            if instance.family == "npm" and isinstance(projected, str):
+                projection["package-name"] = projected
+            return projection
         return {}
 
     def _final_distribution_filenames(

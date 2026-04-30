@@ -680,7 +680,6 @@ depending on. Current-scope extensibility fields are:
 | ------------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Planner diagnostics      | `details`                    | Adapter-specific machine context belongs under `details`.                                                |
 | Publish and skip results | `evidence`                   | Small family-specific receipt evidence belongs under `evidence`.                                         |
-| Immutable proof wrapper  | additional provenance fields | Extra control-plane provenance may be added only if proof lookup still applies the minimum checks below. |
 
 The boundary documents define complete request and result object shapes for the
 current `v1alpha1` handoff. In particular, `planner-request`,
@@ -1113,16 +1112,18 @@ Minimum shape:
 }
 ```
 
-The control plane may add more provenance fields, but planner proof lookup must
-ignore a proof unless all of these checks pass:
+Group 7 does not allow root extensions on `immutable-proof.json`. Planner proof
+lookup rejects wrappers with unknown root fields before admissibility checks, and
+must ignore a proof unless all of these checks pass:
 
 1. artifact exists and is not expired;
 2. `run.live` is true;
 3. `run.dry-run` and `run.validation-only` are false;
 4. `run.head-sha` matches the selected `commit-sha`;
 5. binding equals the current planner-frozen immutable-proof member binding;
-6. referenced `build-result` exists and maps the same `artifact-id` to the same
-   digest and byte size;
+6. referenced `build-result` artifact name/id resolves to a closed receipt input
+   for the current plan, project, and variant, and that receipt maps the same
+   `artifact-id` to the same digest and byte size;
 7. all admissible proof artifacts for the same binding collapse to one digest.
 
 If multiple admissible proofs for one binding have different digests, proof is
@@ -1438,8 +1439,8 @@ falling back to source-tree or registry discovery.
 Before any live upload starts, each package-registry publish executor must:
 
 1. locate the receipted file for every planned `artifact-id` in the publish node;
-2. apply only planner-frozen filename materialization rules for registries whose
-   final distribution filename is part of the plan;
+2. apply only planner-frozen final distribution filenames from the target
+   projection;
 3. read package metadata from the concrete file that will be uploaded;
 4. verify package name and version against the planner-frozen
    `publish-node.resolved-publish-identity` under the family equivalence rules;
@@ -1580,6 +1581,9 @@ Planner adapter responsibilities:
 
 - Resolve the package identity from an explicit descriptor target projection
   override when present; otherwise use `package.json` `name`.
+- Freeze the final packed tarball filename in
+  `projection.final-distribution-filenames-by-artifact-id` for immutable replay
+  comparison.
 - Require current-scope npmjs package names to match the produced package
   identity. Do not project an unscoped npmjs package into an owner-scoped GitHub
   Packages name unless a target-specific artifact or transform receipt explicitly
@@ -1700,6 +1704,9 @@ Planner adapter responsibilities:
 - Resolve release versions through build-system-integrated NBGV for every Ruby
   project in current scope; the gemspec must fail closed when NBGV cannot provide
   `SemVer2` rather than falling back to a static source-tree version.
+- Freeze the gem file name in
+  `projection.final-distribution-filenames-by-artifact-id` for immutable replay
+  comparison.
 - Use the RubyGems.org API for version and digest observation.
 
 Publish executor responsibilities:
@@ -1830,8 +1837,9 @@ Publish executor responsibilities:
 Identity conformance:
 
 - The executor must compare the concrete package metadata to the
-  planner-frozen `resolved-publish-identity` and target projection. A GitHub
-  Packages host requirement does not permit unmodeled package renaming.
+  planner-frozen `resolved-publish-identity` and target projection, including
+  final distribution filenames for immutable registry targets. A GitHub Packages
+  host requirement does not permit unmodeled package renaming.
 - The projected `npm/github-packages` path for `hexo-renderer-asciidoc` remains
   out of first-delivery live scope because the npmjs tarball is unscoped while
   GitHub Packages npm would require an owner-scoped package identity. A future

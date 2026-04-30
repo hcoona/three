@@ -216,13 +216,14 @@ def test_official_planner_request_cannot_force() -> None:
     assert "official" in str(error.value)
 
 
-def test_immutable_proof_allows_registered_provenance_extension() -> None:
-    """The immutable proof wrapper may carry extra provenance fields."""
+def test_immutable_proof_rejects_root_extensions() -> None:
+    """The immutable proof wrapper is a closed contract."""
     document = _load(VALID_ROOT / "immutable-proof.json")
     document["transport-provenance"] = {
         "artifact-created-at": "2026-01-01T00:00:00Z"
     }
-    validate_contract(document)
+    with pytest.raises(ContractValidationError):
+        validate_contract(document)
 
 
 def test_github_asset_proof_requires_full_signer_workflow() -> None:

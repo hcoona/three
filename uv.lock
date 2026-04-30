@@ -22,6 +22,7 @@ members = [
     "three-workflow-release-contracts",
     "three-workflow-release-metadata",
     "three-workflow-release-planner",
+    "three-workflow-release-proof",
     "three-workflow-release-publish",
     "transcribe",
 ]
@@ -3362,6 +3363,25 @@ requires-dist = [
     { name = "three-workflow-release-authoring", editable = "src/public/lib/three-workflow-release-authoring" },
     { name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.3.4" }]
+
+[[package]]
+name = "three-workflow-release-proof"
+version = "0.1.0"
+source = { editable = "src/public/lib/three-workflow-release-proof" }
+dependencies = [
+    { name = "three-workflow-release-contracts" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" }]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.3.4" }]

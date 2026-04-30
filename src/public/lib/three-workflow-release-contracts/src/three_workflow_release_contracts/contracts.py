@@ -1563,7 +1563,7 @@ def _projection(
                 "asset names must be unique",
             )
         return
-    if family in {"nuget", "pypi"}:
+    if family in {"nuget", "pypi", "rubygems"}:
         obj = validator.mapping(
             value, path, {"final-distribution-filenames-by-artifact-id"}
         )
@@ -1581,9 +1581,28 @@ def _projection(
             )
         return
     if family == "npm":
-        obj = validator.mapping(value, path, set(), {"package-name"})
-        if obj is not None and "package-name" in obj:
-            validator.string(obj.get("package-name"), f"{path}.package-name")
+        obj = validator.mapping(
+            value,
+            path,
+            {"final-distribution-filenames-by-artifact-id"},
+            {"package-name"},
+        )
+        if obj is not None:
+            filenames = _string_map(
+                validator,
+                obj.get("final-distribution-filenames-by-artifact-id"),
+                f"{path}.final-distribution-filenames-by-artifact-id",
+            )
+            _require_exact_keys(
+                validator,
+                filenames,
+                set(artifact_ids),
+                f"{path}.final-distribution-filenames-by-artifact-id",
+            )
+            if "package-name" in obj:
+                validator.string(
+                    obj.get("package-name"), f"{path}.package-name"
+                )
         return
     validator.mapping(value, path, set())
 
@@ -2292,7 +2311,6 @@ def _immutable_proof(validator: _Validator, document: JsonObject) -> None:
             "run",
             "artifact",
         },
-        allow_extra=True,
     )
     if obj is None:
         return

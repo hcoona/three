@@ -907,6 +907,12 @@ def test_npm_package_name_reads_requested_commit_package_json(
     identity = cast("Mapping[str, str]", node["resolved-publish-identity"])
     assert identity["package-name"] == "requested-npm-name"
     assert identity["package-name"] != "hexo-renderer-asciidoc"
+    projection = cast("Mapping[str, object]", node["projection"])
+    filenames = cast(
+        "Mapping[str, str]",
+        projection["final-distribution-filenames-by-artifact-id"],
+    )
+    assert list(filenames.values()) == ["requested-npm-name-3.1.0-beta.1.tgz"]
 
 
 def test_rubygems_metadata_uses_requested_commit_backend(
@@ -968,6 +974,12 @@ def test_rubygems_metadata_uses_requested_commit_backend(
     assert saw_requested_checkout
     assert identity == {"package-name": gem_name, "version": gem_version}
     assert identity["version"] != raw_version
+    projection = cast("Mapping[str, object]", node["projection"])
+    filenames = cast(
+        "Mapping[str, str]",
+        projection["final-distribution-filenames-by-artifact-id"],
+    )
+    assert list(filenames.values()) == [gem_file]
 
     github_node_id = _github_release_node_id(result.plan)
     github_node = cast(
