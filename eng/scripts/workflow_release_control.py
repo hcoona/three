@@ -429,8 +429,8 @@ def _cmd_artifact_name(args: argparse.Namespace) -> int:
 def _cmd_write_planner_request(args: argparse.Namespace) -> int:
     requested = json.loads(args.requested_project_ids_json)
     document = {
-        "api-version": "three.release.request/v1alpha1",
-        "kind": "release-request",
+        "api-version": "three.release.planner-request/v1alpha1",
+        "kind": "planner-request",
         "profile": args.profile,
         "commit-sha": args.commit_sha,
         "requested-project-ids": requested,
