@@ -240,6 +240,27 @@ local python_linters = new Mapping<String, Step> {
   }
 }
 
+local workflow_release_validation = new Mapping<String, Step> {
+  local workflow_release_files =
+    List(
+      ".github/workflows/release-*.yml",
+      "eng/release/**",
+      "eng/scripts/workflow_release_control.py",
+      "eng/scripts/workflow_release_acceptance_gate.py",
+      "src/**/three.release.yml",
+      "src/public/lib/three-workflow-release-*/**",
+      "tests/test_workflow_release_control.py",
+      "tests/fixtures/workflow-release-acceptance-matrix.json",
+    )
+
+  ["workflow-release-control-tests"] {
+    profiles = List("small")
+    glob = workflow_release_files
+    check =
+      "python eng/scripts/hk_exec.py uv run python eng/scripts/workflow_release_acceptance_gate.py"
+  }
+}
+
 local dotenv_linter = new Mapping<String, Step> {
   ["dotenv-linter"] = (Steps.dotenv_linter) {
     profiles = List("small")
@@ -316,6 +337,7 @@ local all_steps = new Mapping<String, Step> {
   // ...dotnet_linters
   ...javascript_typescript_linters
   ...python_linters
+  ...workflow_release_validation
   ...dotenv_linter
   ...code_generation_guard
 }

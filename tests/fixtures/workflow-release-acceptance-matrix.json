@@ -1,0 +1,5357 @@
+{
+  "api-version": "three.release.acceptance-matrix/v1alpha1",
+  "kind": "workflow-release-acceptance-matrix",
+  "source": "docs/wiki/analyses/workflow-release-low-level-design.md#10-acceptance-traceability",
+  "evidence-columns": [
+    "descriptor-or-catalog",
+    "plan",
+    "execution-set-selectors",
+    "request-result-or-receipt",
+    "registry-or-readiness",
+    "workflow-conclusion"
+  ],
+  "rows": [
+    {
+      "id": "confirmed-scope-descriptor-coverage",
+      "scenario": "Confirmed-scope descriptor coverage",
+      "fixture-anchor": "confirmed-scope descriptor set",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/private/app/qidian-novel-downloader/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/private/app/vscode-copilot-telegram-hook/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/app/ImageOcclusionEditor/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/app/PhiFailureDetector.Console/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/app/markdown-hybrid-search-mcp/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/CircularList/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/Memoization.Generators/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/Memoization/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/MicrosoftExtensions.Logging.MSTest/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/MicrosoftExtensions.Logging.Xunit/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/PhiFailureDetector/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/WebHdfs.Extensions.FileProviders/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/asciidoctor-latexmath/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/hexo-renderer-asciidoc/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/steam-account-history-to-csv/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_unfiltered_first_delivery_plan_includes_confirmed_scope_projects"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_acceptance_matrix_fixture_tracks_design_scenarios"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_nbgv_python_uses_checked_in_pyproject_version"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_acceptance_matrix_fixture_tracks_design_scenarios"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_nbgv_python_uses_checked_in_pyproject_version"
+          }
+        ]
+      }
+    },
+    {
+      "id": "descriptor-discovery-and-invalid-descriptor-fail-closed",
+      "scenario": "Descriptor discovery and invalid descriptor fail closed",
+      "fixture-anchor": "src/public/lib/nbgv-python/three.release.yml",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "target-catalog-validation-fails-closed",
+      "scenario": "Target catalog validation fails closed",
+      "fixture-anchor": "eng/release/target-instances.yml",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "eng/release/target-instances.yml"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "unknown-requested-project-id-fails-closed",
+      "scenario": "Unknown requested project ID fails closed",
+      "fixture-anchor": "src/public/lib/nbgv-python/three.release.yml",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "closed-cross-job-json-contract-validation",
+      "scenario": "Closed cross-job JSON contract validation",
+      "fixture-anchor": "contract fixture suite",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/invalid/release-plan-extra-root.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_contracts.py::test_valid_fixtures_match_frozen_contracts"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/invalid/release-plan-wrong-api-version.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_contracts.py::test_invalid_fixtures_are_rejected"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/invalid/execution-sets-selector-mismatch.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_contracts.py::test_invalid_fixtures_are_rejected"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-request.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-request.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_contracts.py::test_valid_fixtures_match_frozen_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/planner-diagnostics.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_contracts.py::test_invalid_fixtures_are_rejected"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/invalid/release-report-missing-completed-handoff-name.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_contracts.py::test_invalid_fixtures_are_rejected"
+          }
+        ]
+      }
+    },
+    {
+      "id": "csharp-library-package-build-and-release",
+      "scenario": "C# library package build and release",
+      "fixture-anchor": "src/public/lib/Hjg.Pngcs/",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_windows_build_variant_steps_pin_bash_shell"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_windows_build_variant_steps_pin_bash_shell"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ]
+      }
+    },
+    {
+      "id": "github-packages-nuget-publication-and-token-isolation",
+      "scenario": "GitHub Packages NuGet publication and token isolation",
+      "fixture-anchor": "src/public/lib/Hjg.Pngcs/",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_nuget_executor_pushes_github_packages_source"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "live-gate",
+            "value": "github-packages-live-publication"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_nuget_executor_pushes_github_packages_source"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "live-gate",
+            "value": "github-packages-live-publication"
+          }
+        ]
+      }
+    },
+    {
+      "id": "csharp-app-binary-release",
+      "scenario": "C# app binary release",
+      "fixture-anchor": "src/private/app/qidian-novel-downloader/",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/private/app/qidian-novel-downloader/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_windows_build_variant_steps_pin_bash_shell"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_windows_build_variant_steps_pin_bash_shell"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ]
+      }
+    },
+    {
+      "id": "csharp-app-inno-installer-release",
+      "scenario": "C# app Inno installer release",
+      "fixture-anchor": "src/public/app/ImageOcclusionEditor/",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/app/ImageOcclusionEditor/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_windows_build_variant_steps_pin_bash_shell"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_windows_build_variant_steps_pin_bash_shell"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ]
+      }
+    },
+    {
+      "id": "python-package-including-nbgv-python",
+      "scenario": "Python package including `nbgv-python`",
+      "fixture-anchor": "src/public/lib/nbgv-python/",
+      "validation-mode": "ci-and-manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_nbgv_python_uses_checked_in_pyproject_version"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_python_executor_receipts_wheel_and_sdist"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_nbgv_python_uses_checked_in_pyproject_version"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_python_executor_receipts_wheel_and_sdist"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ]
+      }
+    },
+    {
+      "id": "python-normal-nbgv-hatch-package",
+      "scenario": "Python normal NBGV/Hatch package",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke/",
+      "validation-mode": "ci-and-manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_pypi_build_system_nbgv_identity_uses_backend_normalized_version"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_python_executor_receipts_wheel_and_sdist"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_pypi_build_system_nbgv_identity_uses_backend_normalized_version"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_python_executor_receipts_wheel_and_sdist"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ]
+      }
+    },
+    {
+      "id": "first-delivery-pypi-official-publish",
+      "scenario": "First-delivery PyPI official publish",
+      "fixture-anchor": "official PyPI fixture",
+      "validation-mode": "manual-live-gated",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_pypi_executor_verifies_identity_and_uses_uv_trusted_publish"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_external_oidc_enablement_routes_entry_publish"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-oidc-live-enable-token"
+          },
+          {
+            "type": "live-gate",
+            "value": "pypi-trusted-publisher"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_pypi_executor_verifies_identity_and_uses_uv_trusted_publish"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_external_oidc_enablement_routes_entry_publish"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-oidc-live-enable-token"
+          },
+          {
+            "type": "live-gate",
+            "value": "pypi-trusted-publisher"
+          }
+        ]
+      }
+    },
+    {
+      "id": "node-package-build-and-github-release",
+      "scenario": "Node package build and GitHub Release",
+      "fixture-anchor": "src/public/lib/hexo-renderer-asciidoc/",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/hexo-renderer-asciidoc/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_npm_executor_verifies_tarball_and_uses_provenance"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_npm_executor_verifies_tarball_and_uses_provenance"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ]
+      }
+    },
+    {
+      "id": "npmjs-entry-hosted-trusted-publication",
+      "scenario": "npmjs entry-hosted trusted publication",
+      "fixture-anchor": "src/public/lib/hexo-renderer-asciidoc/",
+      "validation-mode": "manual-live-gated",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/hexo-renderer-asciidoc/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_npm_executor_verifies_tarball_and_uses_provenance"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_external_oidc_enablement_routes_entry_publish"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-oidc-live-enable-token"
+          },
+          {
+            "type": "live-gate",
+            "value": "npmjs-trusted-publisher"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_npm_executor_verifies_tarball_and_uses_provenance"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_external_oidc_enablement_routes_entry_publish"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-oidc-live-enable-token"
+          },
+          {
+            "type": "live-gate",
+            "value": "npmjs-trusted-publisher"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ruby-gem-build-and-github-release",
+      "scenario": "Ruby gem build and GitHub Release",
+      "fixture-anchor": "src/public/lib/asciidoctor-latexmath/",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/asciidoctor-latexmath/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_rubygems_executor_pushes_github_packages_host"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_rubygems_executor_pushes_github_packages_host"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ]
+      }
+    },
+    {
+      "id": "github-packages-rubygems-publication-and-token-isolation",
+      "scenario": "GitHub Packages RubyGems publication and token isolation",
+      "fixture-anchor": "src/public/lib/asciidoctor-latexmath/",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/asciidoctor-latexmath/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_rubygems_executor_pushes_github_packages_host"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "live-gate",
+            "value": "github-packages-live-publication"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_rubygems_executor_pushes_github_packages_host"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "live-gate",
+            "value": "github-packages-live-publication"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rubygems-org-reusable-workflow-bound-trusted-publication",
+      "scenario": "RubyGems.org reusable-workflow-bound trusted publication",
+      "fixture-anchor": "src/public/lib/asciidoctor-latexmath/",
+      "validation-mode": "manual-live-gated",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/asciidoctor-latexmath/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_rubygems_executor_pushes_github_packages_host"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-oidc-live-enable-token"
+          },
+          {
+            "type": "live-gate",
+            "value": "rubygems-trusted-publisher"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_rubygems_executor_pushes_github_packages_host"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-oidc-live-enable-token"
+          },
+          {
+            "type": "live-gate",
+            "value": "rubygems-trusted-publisher"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mixed-topology-graph",
+      "scenario": "Mixed-topology graph",
+      "fixture-anchor": "synthetic mixed-topology plan",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_external_oidc_enablement_routes_entry_publish"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_external_oidc_enablement_routes_entry_publish"
+          }
+        ]
+      }
+    },
+    {
+      "id": "package-registry-profile-coexistence-fail-closed-rule",
+      "scenario": "Package-registry profile coexistence fail-closed rule",
+      "fixture-anchor": "synthetic registry identity fixtures",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-authoring/tests/test_authoring.py::test_static_coexistence_conflict_uses_descriptor_diagnostic"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-authoring/tests/test_authoring.py::test_static_coexistence_conflict_uses_descriptor_diagnostic"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-authoring/tests/test_authoring.py::test_static_coexistence_conflict_uses_descriptor_diagnostic"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-authoring/tests/test_authoring.py::test_static_coexistence_conflict_uses_descriptor_diagnostic"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-authoring/tests/test_authoring.py::test_static_coexistence_conflict_uses_descriptor_diagnostic"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "package-metadata-mismatch-fails-closed",
+      "scenario": "Package metadata mismatch fails closed",
+      "fixture-anchor": "mocked registry adapter fixtures",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_identity_mismatch_fails_before_publish"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_identity_mismatch_fails_before_publish"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_nuget_executor_rejects_unpublished_snupkg"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_identity_mismatch_fails_before_publish"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_identity_mismatch_fails_before_publish"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_nuget_executor_rejects_unpublished_snupkg"
+          }
+        ]
+      }
+    },
+    {
+      "id": "multi-project-dispatch",
+      "scenario": "Multi-project dispatch",
+      "fixture-anchor": "multi-project dispatch fixture",
+      "validation-mode": "ci-and-manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_acceptance_matrix_fixture_tracks_design_scenarios"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_acceptance_matrix_fixture_tracks_design_scenarios"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dry-run-with-default-no-build",
+      "scenario": "Dry-run with default no build",
+      "fixture-anchor": "dry-run control-plane fixture",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_dry_run_acceptance_control_plane_has_no_side_effect_matrix"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_dry_run_acceptance_control_plane_has_no_side_effect_matrix"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_dry_run_acceptance_control_plane_has_no_side_effect_matrix"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          }
+        ]
+      }
+    },
+    {
+      "id": "zero-target-or-all-skip-no-side-effect-live-run",
+      "scenario": "Zero-target or all-skip no-side-effect live run",
+      "fixture-anchor": "zero-target and all-skip fixtures",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets-empty.json"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_publish_handoff_is_closed_for_empty_selectors"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_tolerates_missing_dry_run_publish_tags"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_zero_target_acceptance_has_no_side_effect_gates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_all_skip_acceptance_emits_only_skip_receipts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_publish_handoff_is_closed_for_empty_selectors"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_tolerates_missing_dry_run_publish_tags"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_zero_target_acceptance_has_no_side_effect_gates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_all_skip_acceptance_emits_only_skip_receipts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_publish_handoff_is_closed_for_empty_selectors"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_tolerates_missing_dry_run_publish_tags"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_zero_target_acceptance_has_no_side_effect_gates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_all_skip_acceptance_emits_only_skip_receipts"
+          }
+        ]
+      }
+    },
+    {
+      "id": "validation-build-receipts-are-not-immutable-proof",
+      "scenario": "Validation-build receipts are not immutable proof",
+      "fixture-anchor": "validation-build fixture",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_validation_build_acceptance_records_build_without_publish_proof"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_validation_build_acceptance_records_build_without_publish_proof"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_validation_build_acceptance_records_build_without_publish_proof"
+          }
+        ]
+      }
+    },
+    {
+      "id": "build-proof-lookup-and-reuse-limits",
+      "scenario": "Build proof lookup and reuse limits",
+      "fixture-anchor": "proof lookup fixture",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/immutable-proof.json"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_exact_satisfied_routes_to_skip_selector"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-proof/tests/test_proof.py::test_immutable_classification_detects_exact_and_partial_states"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_validation_only_immutable_proof_rejection_emits_no_outputs"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_proof_documents_generate_named_immutable_proofs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_proof_upload_matrix_precomputes_final_artifact_uploads"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_exact_satisfied_routes_to_skip_selector"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-proof/tests/test_proof.py::test_immutable_classification_requires_admissible_digest_proof"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-proof/tests/test_proof.py::test_immutable_classification_ignores_non_admissible_wrappers"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_validation_only_immutable_proof_rejection_emits_no_outputs"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_proof_documents_generate_named_immutable_proofs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_proof_upload_matrix_precomputes_final_artifact_uploads"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_exact_satisfied_routes_to_skip_selector"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-proof/tests/test_proof.py::test_immutable_classification_requires_admissible_digest_proof"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-proof/tests/test_proof.py::test_immutable_classification_ignores_non_admissible_wrappers"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_validation_only_immutable_proof_rejection_emits_no_outputs"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rerun-after-partial-success",
+      "scenario": "Rerun after partial success",
+      "fixture-anchor": "partial-success rerun fixture",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          }
+        ]
+      }
+    },
+    {
+      "id": "github-release-tag-atomicity",
+      "scenario": "GitHub Release tag atomicity",
+      "fixture-anchor": "multi-tag mocked GitHub API fixture",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_fails_existing_tag_conflicts_in_dry_run"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_is_atomic_for_mixed_missing_and_conflicting_tags"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_fails_existing_tag_conflicts_in_dry_run"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_fails_non_missing_tag_lookup_errors"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_is_atomic_for_mixed_missing_and_conflicting_tags"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_fails_existing_tag_conflicts_in_dry_run"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_fails_non_missing_tag_lookup_errors"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_no_side_effect_acceptance_rows_match_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ensure_tags_is_atomic_for_mixed_missing_and_conflicting_tags"
+          }
+        ]
+      }
+    },
+    {
+      "id": "github-release-asset-content-equivalence",
+      "scenario": "GitHub Release asset content equivalence",
+      "fixture-anchor": "GitHub Release proof fixture",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/github-release-asset-proof.json"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_proof_documents_generate_named_github_release_asset_proofs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_prepare_attestation_uses_planned_asset_names"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_proof_documents_generate_named_github_release_asset_proofs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_prepare_attestation_uses_planned_asset_names"
+          }
+        ]
+      }
+    },
+    {
+      "id": "buddy-to-official-promotion",
+      "scenario": "Buddy to official promotion",
+      "fixture-anchor": "same-commit promotion fixture",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_reports_combine_reusable_and_entry_publish_conclusions"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_reports_combine_reusable_and_entry_publish_conclusions"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-workflow-manual-live-run"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          }
+        ]
+      }
+    },
+    {
+      "id": "buddy-force-rejected-after-official-freeze",
+      "scenario": "Buddy force rejected after official freeze",
+      "fixture-anchor": "official-freeze fixture",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direct-official-publication",
+      "scenario": "Direct official publication",
+      "fixture-anchor": "direct official GitHub Release fixture",
+      "validation-mode": "manual-live-gated",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_workflows_pass_dispatch_pinned_sha"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_workflows_pass_dispatch_pinned_sha"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          }
+        ]
+      }
+    },
+    {
+      "id": "immutable-partial-replay",
+      "scenario": "Immutable partial replay",
+      "fixture-anchor": "immutable partial registry fixture",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/planner-diagnostics.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_proof_documents_generate_named_immutable_proofs"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_proof_documents_generate_named_immutable_proofs"
+          }
+        ]
+      }
+    },
+    {
+      "id": "external-oidc-topology-blocked",
+      "scenario": "External OIDC topology blocked",
+      "fixture-anchor": "unsupported external OIDC topology fixture",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "external-target-disabled",
+      "scenario": "External target disabled",
+      "fixture-anchor": "external OIDC disabled fixture",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_gate_requires_live_enablement_token"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_gate_requires_live_enablement_token"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_gate_requires_live_enablement_token"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_gate_requires_live_enablement_token"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_gate_requires_live_enablement_token"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "external-trusted-publisher-misconfiguration-fails-closed",
+      "scenario": "External trusted-publisher misconfiguration fails closed",
+      "fixture-anchor": "misconfigured trusted-publisher fixture",
+      "validation-mode": "manual-live-gated",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "src/public/lib/nbgv-python/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_external_oidc_enablement_routes_entry_publish"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-oidc-live-enable-token"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-trusted-publisher-policy"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_live_external_oidc_enablement_routes_entry_publish"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-oidc-live-enable-token"
+          },
+          {
+            "type": "live-gate",
+            "value": "external-trusted-publisher-policy"
+          }
+        ]
+      }
+    },
+    {
+      "id": "invalid-external-oidc-live-enable-allowlist-fails-closed",
+      "scenario": "Invalid external OIDC live-enable allowlist fails closed",
+      "fixture-anchor": "invalid live-enable allowlist fixture",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_plan_gate_writes_invalid_oidc_allowlist_diagnostics"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_plan_gate_writes_invalid_oidc_allowlist_diagnostics"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_plan_gate_writes_invalid_oidc_allowlist_diagnostics"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_plan_gate_writes_invalid_oidc_allowlist_diagnostics"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_plan_gate_writes_invalid_oidc_allowlist_diagnostics"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "entry-actor-authorization-fails-closed",
+      "scenario": "Entry actor authorization fails closed",
+      "fixture-anchor": "entry actor authorization fixture",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "invalid-entry-input-rejection",
+      "scenario": "Invalid entry input rejection",
+      "fixture-anchor": "entry input fixture",
+      "validation-mode": "ci-fixture",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "trusted-workflow-ref-gate",
+      "scenario": "Trusted workflow-ref gate",
+      "fixture-anchor": "trusted-ref fixture",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "absent-artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "absent-artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "tag-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-request.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "skip-result.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "immutable-proof.json"
+          },
+          {
+            "type": "absent-artifact",
+            "value": "github-release-asset-proof.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "planner-diagnostics.json"
+          },
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_fail_closed_gates_emit_diagnostics_without_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dispatch-sha-pinning",
+      "scenario": "Dispatch SHA pinning",
+      "fixture-anchor": "dispatch ref pinning fixture",
+      "validation-mode": "ci-mocked",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": "tests/test_workflow_release_control.py"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_normalize_entry_uses_dispatch_pinned_sha"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_workflows_pass_dispatch_pinned_sha"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_normalize_entry_uses_dispatch_pinned_sha"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_workflows_pass_dispatch_pinned_sha"
+          }
+        ]
+      }
+    },
+    {
+      "id": "same-entry-workflow-level-concurrency-serialization",
+      "scenario": "Same-entry workflow-level concurrency serialization",
+      "fixture-anchor": "workflow structure fixture",
+      "validation-mode": "ci-structure",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": ".github/workflows/release-buddy.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_workflows_pass_dispatch_pinned_sha"
+          },
+          {
+            "type": "live-gate",
+            "value": "workflow-concurrency-group"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_workflows_pass_dispatch_pinned_sha"
+          },
+          {
+            "type": "live-gate",
+            "value": "workflow-concurrency-group"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cancellation-and-report-best-effort",
+      "scenario": "Cancellation and report best effort",
+      "fixture-anchor": "workflow cancellation integration fixture",
+      "validation-mode": "manual-live",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": ".github/workflows/release-official.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_reports_use_orchestrator_stage_conclusion_outputs"
+          },
+          {
+            "type": "live-gate",
+            "value": "github-actions-manual-cancellation"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_entry_reports_use_orchestrator_stage_conclusion_outputs"
+          },
+          {
+            "type": "live-gate",
+            "value": "github-actions-manual-cancellation"
+          }
+        ]
+      }
+    },
+    {
+      "id": "official-authorization-and-environment-approval-distinction",
+      "scenario": "Official authorization and environment approval distinction",
+      "fixture-anchor": "protected environment integration fixture",
+      "validation-mode": "manual-live-gated",
+      "evidence": {
+        "descriptor-or-catalog": [
+          {
+            "type": "path",
+            "value": ".github/workflows/release-official.yml"
+          },
+          {
+            "type": "path",
+            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
+          }
+        ],
+        "plan": [
+          {
+            "type": "artifact",
+            "value": "release-plan.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-plan.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          }
+        ],
+        "execution-set-selectors": [
+          {
+            "type": "artifact",
+            "value": "execution-sets.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/execution-sets.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_matrix_outputs_partition_reusable_publish_permission_classes"
+          }
+        ],
+        "request-result-or-receipt": [
+          {
+            "type": "artifact",
+            "value": "build-result.json"
+          },
+          {
+            "type": "artifact",
+            "value": "publish-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/build-result.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/publish-result.json"
+          }
+        ],
+        "registry-or-readiness": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_reusable_publish_jobs_use_topology_scoped_permissions"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_hidden_release_artifact_uploads_are_included"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_buddy_entry_external_oidc_publish_permissions_are_minimal"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "official-maintain-authorization"
+          }
+        ],
+        "workflow-conclusion": [
+          {
+            "type": "artifact",
+            "value": "release-report.json"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid/release-report.json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_report_derives_failed_build_and_publish_ids_from_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_buddy_entry_external_oidc_publish_permissions_are_minimal"
+          },
+          {
+            "type": "live-gate",
+            "value": "release-environment-required-review"
+          },
+          {
+            "type": "live-gate",
+            "value": "official-maintain-authorization"
+          }
+        ]
+      }
+    }
+  ],
+  "live-gates": {
+    "release-workflow-manual-live-run": {
+      "owner": "release operator",
+      "evidence": "GitHub Actions run record for release-buddy.yml or release-official.yml"
+    },
+    "github-packages-live-publication": {
+      "owner": "GitHub Packages registry",
+      "evidence": "registry package/version observation"
+    },
+    "release-environment-required-review": {
+      "owner": "GitHub environment release",
+      "evidence": "required reviewer approval on environment-bound live job"
+    },
+    "external-oidc-live-enable-token": {
+      "owner": "repository variable THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS",
+      "evidence": "target#project#package token present for enabled official external publish"
+    },
+    "pypi-trusted-publisher": {
+      "owner": "PyPI project settings",
+      "evidence": "trusted publisher bound to hcoona/three release-official.yml release environment"
+    },
+    "npmjs-trusted-publisher": {
+      "owner": "npm package trusted publisher settings",
+      "evidence": "trusted publisher bound to hcoona/three release-official.yml release environment"
+    },
+    "rubygems-trusted-publisher": {
+      "owner": "RubyGems.org trusted publisher settings",
+      "evidence": "trusted publisher bound to release-publish-node.yml release environment"
+    },
+    "external-trusted-publisher-policy": {
+      "owner": "external registry owner settings",
+      "evidence": "registry trusted-publisher policy matches planned workflow identity and environment"
+    },
+    "workflow-concurrency-group": {
+      "owner": "GitHub Actions workflow syntax",
+      "evidence": "entry workflow concurrency group three-release:<workflow file> with cancel-in-progress false"
+    },
+    "github-actions-manual-cancellation": {
+      "owner": "GitHub Actions run state",
+      "evidence": "cancelled workflow run conclusion and retained positive artifacts"
+    },
+    "official-maintain-authorization": {
+      "owner": "GitHub repository collaborators API",
+      "evidence": "triggering actor has maintain or admin permission before official planning"
+    }
+  }
+}

@@ -6,17 +6,29 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import subprocess
+import sys
 from copy import deepcopy
 from itertools import pairwise
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
+from three_workflow_release_authoring import validate_authoring
 from three_workflow_release_contracts import (
     ArtifactNameInputs,
     artifact_name,
     validate_contract,
 )
+from three_workflow_release_planner import PlannerInputs, plan_release
+from three_workflow_release_proof import (
+    ProofError,
+    classify_immutable_observations,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
@@ -24,10 +36,165 @@ FIXTURES = (
     REPO_ROOT
     / "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid"
 )
+ACCEPTANCE_MATRIX = (
+    REPO_ROOT / "tests/fixtures/workflow-release-acceptance-matrix.json"
+)
+LOW_LEVEL_DESIGN = (
+    REPO_ROOT / "docs/wiki/analyses/workflow-release-low-level-design.md"
+)
+ACCEPTANCE_GATE = REPO_ROOT / "eng/scripts/workflow_release_acceptance_gate.py"
 SCRATCH = REPO_ROOT / ".pytest-workflow-release-control"
+GIT = shutil.which("git")
 SHA_B = "b" * 64
 SHA_C = "c" * 64
 SIGNER_WORKFLOW = "hcoona/three/.github/workflows/release-publish-node.yml"
+FORBIDDEN_FAIL_CLOSED_OUTPUTS = {
+    "release-plan.json",
+    "execution-sets.json",
+    "build-result.json",
+    "tag-result.json",
+    "publish-request.json",
+    "publish-result.json",
+    "skip-result.json",
+    "immutable-proof.json",
+    "github-release-asset-proof.json",
+}
+PRE_PLAN_FAIL_CLOSED_IDS = {
+    "descriptor-discovery-and-invalid-descriptor-fail-closed",
+    "target-catalog-validation-fails-closed",
+    "unknown-requested-project-id-fails-closed",
+    "package-registry-profile-coexistence-fail-closed-rule",
+    "buddy-force-rejected-after-official-freeze",
+    "external-oidc-topology-blocked",
+    "external-target-disabled",
+    "invalid-external-oidc-live-enable-allowlist-fails-closed",
+    "entry-actor-authorization-fails-closed",
+    "invalid-entry-input-rejection",
+    "trusted-workflow-ref-gate",
+}
+FAIL_CLOSED_ARTIFACT_CONTRACTS = {
+    row_id: {
+        "allowed": {"planner-diagnostics.json", "release-report.json"},
+        "absent": FORBIDDEN_FAIL_CLOSED_OUTPUTS,
+    }
+    for row_id in PRE_PLAN_FAIL_CLOSED_IDS
+} | {
+    "package-metadata-mismatch-fails-closed": {
+        "allowed": {
+            "release-plan.json",
+            "execution-sets.json",
+            "build-result.json",
+            "publish-request.json",
+            "release-report.json",
+        },
+        "absent": {
+            "tag-result.json",
+            "publish-result.json",
+            "skip-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        },
+    },
+    "immutable-partial-replay": {
+        "allowed": {
+            "release-plan.json",
+            "execution-sets.json",
+            "planner-diagnostics.json",
+            "release-report.json",
+        },
+        "absent": {
+            "build-result.json",
+            "tag-result.json",
+            "publish-request.json",
+            "publish-result.json",
+            "skip-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        },
+    },
+    "external-trusted-publisher-misconfiguration-fails-closed": {
+        "allowed": {
+            "release-plan.json",
+            "execution-sets.json",
+            "build-result.json",
+            "publish-request.json",
+            "release-report.json",
+        },
+        "absent": {
+            "tag-result.json",
+            "publish-result.json",
+            "skip-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        },
+    },
+}
+NO_SIDE_EFFECT_ARTIFACT_CONTRACTS = {
+    "dry-run-with-default-no-build": {
+        "allowed": {
+            "release-plan.json",
+            "execution-sets.json",
+            "release-report.json",
+        },
+        "absent": {
+            "build-result.json",
+            "tag-result.json",
+            "publish-request.json",
+            "publish-result.json",
+            "skip-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        },
+    },
+    "zero-target-or-all-skip-no-side-effect-live-run": {
+        "allowed": {
+            "release-plan.json",
+            "execution-sets.json",
+            "skip-result.json",
+            "release-report.json",
+        },
+        "absent": {
+            "build-result.json",
+            "tag-result.json",
+            "publish-request.json",
+            "publish-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        },
+    },
+    "validation-build-receipts-are-not-immutable-proof": {
+        "allowed": {
+            "release-plan.json",
+            "execution-sets.json",
+            "build-result.json",
+            "release-report.json",
+        },
+        "absent": {
+            "tag-result.json",
+            "publish-request.json",
+            "publish-result.json",
+            "skip-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        },
+    },
+    "github-release-tag-atomicity": {
+        "allowed": {
+            "release-plan.json",
+            "execution-sets.json",
+            "build-result.json",
+            "release-report.json",
+        },
+        "absent": {
+            "tag-result.json",
+            "publish-request.json",
+            "publish-result.json",
+            "skip-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        },
+    },
+}
 
 spec = importlib.util.spec_from_file_location(
     "workflow_release_control", SCRIPT
@@ -36,6 +203,14 @@ assert spec is not None
 control = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(control)
+
+gate_spec = importlib.util.spec_from_file_location(
+    "workflow_release_acceptance_gate", ACCEPTANCE_GATE
+)
+assert gate_spec is not None
+acceptance_gate = importlib.util.module_from_spec(gate_spec)
+assert gate_spec.loader is not None
+gate_spec.loader.exec_module(acceptance_gate)
 
 
 def _load(name: str) -> dict[str, object]:
@@ -53,6 +228,405 @@ def _release_workflow_paths() -> list[Path]:
     return sorted((REPO_ROOT / ".github/workflows").glob("release-*.yml"))
 
 
+def _acceptance_matrix() -> dict[str, object]:
+    """Load the workflow-release acceptance matrix fixture."""
+    return json.loads(ACCEPTANCE_MATRIX.read_text(encoding="utf-8"))
+
+
+def _design_acceptance_scenarios() -> list[str]:
+    """Extract Section 10 scenario names from the low-level design table."""
+    lines = LOW_LEVEL_DESIGN.read_text(encoding="utf-8").splitlines()
+    scenarios: list[str] = []
+    in_table = False
+    for line in lines:
+        if line.startswith("| Scenario "):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if not line.startswith("| "):
+            if scenarios:
+                break
+            continue
+        if line.startswith("| ---"):
+            continue
+        scenarios.append(line.split("|", maxsplit=2)[1].strip())
+    return scenarios
+
+
+def _all_test_nodeids() -> set[str]:
+    """Return all pytest function nodeids in the repository."""
+    nodeids: set[str] = set()
+    for test_file in sorted(REPO_ROOT.rglob("test*.py")):
+        if any(
+            part
+            in {
+                ".git",
+                ".pytest-workflow-release-control",
+                ".three-workflow-release-planner",
+                ".venv",
+                "node_modules",
+            }
+            for part in test_file.parts
+        ):
+            continue
+        relative = test_file.relative_to(REPO_ROOT).as_posix()
+        text = test_file.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if line.startswith("def test_"):
+                name = line.split("(", maxsplit=1)[0].removeprefix("def ")
+                nodeids.add(f"{relative}::{name}")
+    return nodeids
+
+
+def _matrix_test_nodeids(matrix: dict[str, object]) -> set[str]:
+    """Return pytest nodeids referenced by acceptance matrix evidence."""
+    nodeids: set[str] = set()
+    for row in matrix["rows"]:
+        for references in row["evidence"].values():
+            for reference in references:
+                if reference["type"] == "test":
+                    nodeids.add(reference["value"])
+    return nodeids
+
+
+def _confirmed_scope_descriptor_paths() -> list[str]:
+    """Return current confirmed-scope descriptor files."""
+    public = sorted(
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "src/public").rglob("three.release.yml")
+    )
+    private = [
+        "src/private/app/qidian-novel-downloader/three.release.yml",
+        "src/private/app/vscode-copilot-telegram-hook/three.release.yml",
+    ]
+    return sorted(public + private)
+
+
+def _confirmed_scope_project_ids() -> list[str]:
+    """Return project ids declared by confirmed-scope descriptors."""
+    project_ids: list[str] = []
+    for descriptor in _confirmed_scope_descriptor_paths():
+        document = yaml.safe_load(
+            (REPO_ROOT / descriptor).read_text(encoding="utf-8")
+        )
+        project_ids.append(document["project"]["id"])
+    return sorted(project_ids)
+
+
+def _dotnet_metadata_for_planner_input(
+    metadata_input: dict[str, object],
+) -> dict[str, object]:
+    """Return deterministic .NET planner metadata for acceptance planning."""
+    projects = metadata_input["projects"]
+    assert isinstance(projects, dict)
+    metadata_projects: dict[str, object] = {}
+    for project_id, project in projects.items():
+        assert isinstance(project, dict)
+        entry = {
+            "descriptor-path": project["descriptor-path"],
+            "primary-manifest-path": project["primary-manifest-path"],
+            "resolved-version": "1.2.3",
+        }
+        if project.get("requires-package-id") is True:
+            entry["package-id"] = str(project_id).replace("-", ".").title()
+        metadata_projects[str(project_id)] = entry
+    return {
+        "api-version": "three.release.dotnet-planner-metadata/v1alpha1",
+        "kind": "dotnet-planner-metadata",
+        "commit-sha": metadata_input["commit-sha"],
+        "projects": metadata_projects,
+    }
+
+
+def _copy_authoring_repo(destination: Path) -> None:
+    """Copy tracked authoring inputs into an isolated git worktree."""
+    assert GIT is not None
+    paths = subprocess.run(  # noqa: S603
+        [
+            GIT,
+            "ls-files",
+            "-z",
+            "src/public",
+            "src/private/app/qidian-novel-downloader",
+            "src/private/app/vscode-copilot-telegram-hook",
+            "eng/release",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+    ).stdout.decode("utf-8")
+    for relative in (item for item in paths.split("\0") if item):
+        source = REPO_ROOT / relative
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    subprocess.run(  # noqa: S603
+        [GIT, "init", "--quiet"],
+        cwd=destination,
+        check=True,
+    )
+    subprocess.run(  # noqa: S603
+        [GIT, "add", "src", "eng/release"],
+        cwd=destination,
+        check=True,
+    )
+
+
+def _assert_forbidden_outputs_absent(root: Path) -> None:
+    """Assert fail-closed flows did not create downstream release outputs."""
+    present = sorted(
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and path.name in FORBIDDEN_FAIL_CLOSED_OUTPUTS
+    )
+    assert present == []
+
+
+def _diagnostic_codes(path: Path) -> list[str]:
+    """Read diagnostic codes from a planner diagnostics document."""
+    document = json.loads(path.read_text(encoding="utf-8"))
+    validate_contract(document)
+    return [diagnostic["code"] for diagnostic in document["diagnostics"]]
+
+
+def _run_authoring_validate(
+    repo_root: Path, diagnostics_out: Path
+) -> subprocess.CompletedProcess[object]:
+    """Run the authoring validator against an isolated repository."""
+    return subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            "-m",
+            "three_workflow_release_authoring.cli",
+            "validate",
+            "--repo-root",
+            str(repo_root),
+            "--diagnostics-out",
+            str(diagnostics_out),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+
+
+def _validate_mutated_authoring_repo(
+    scratch: Path,
+    case_name: str,
+    mutate: Callable[[Path], None],
+    expected_code: str,
+) -> None:
+    """Mutate an isolated repo and assert authoring fails before outputs."""
+    repo_root = scratch / f"{case_name}-repo"
+    _copy_authoring_repo(repo_root)
+    mutate(repo_root)
+    diagnostics = scratch / case_name / "planner-diagnostics.json"
+    diagnostics.parent.mkdir()
+
+    result = _run_authoring_validate(repo_root, diagnostics)
+
+    assert result.returncode == 1
+    assert diagnostics.is_file()
+    assert expected_code in _diagnostic_codes(diagnostics)
+    _assert_forbidden_outputs_absent(diagnostics.parent)
+
+
+def _mutate_descriptor_extra_field(repo_root: Path) -> None:
+    """Add an unsupported descriptor field."""
+    descriptor = repo_root / "src/public/lib/nbgv-python/three.release.yml"
+    document = yaml.safe_load(descriptor.read_text(encoding="utf-8"))
+    document["unexpected-field"] = "must fail closed"
+    descriptor.write_text(
+        yaml.safe_dump(document, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _mutate_catalog_schema(repo_root: Path) -> None:
+    """Break target catalog schema shape."""
+    catalog = repo_root / "eng/release/target-instances.yml"
+    document = yaml.safe_load(catalog.read_text(encoding="utf-8"))
+    document["families"] = []
+    catalog.write_text(
+        yaml.safe_dump(document, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _mutate_missing_catalog_ref(repo_root: Path) -> None:
+    """Point a descriptor target to a missing catalog entry."""
+    descriptor = repo_root / "src/public/lib/nbgv-python/three.release.yml"
+    document = yaml.safe_load(descriptor.read_text(encoding="utf-8"))
+    document["profiles"]["official"]["targets"][1]["uses"] = (
+        "pypi/does-not-exist"
+    )
+    descriptor.write_text(
+        yaml.safe_dump(document, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _mutate_profile_coexistence_conflict(repo_root: Path) -> None:
+    """Make buddy and official resolve to the same package-registry target."""
+    descriptor = repo_root / "src/public/lib/nbgv-python/three.release.yml"
+    document = yaml.safe_load(descriptor.read_text(encoding="utf-8"))
+    document["profiles"]["buddy"]["targets"].append(
+        {"uses": "pypi/pypi", "artifacts": ["wheel", "sdist"]}
+    )
+    descriptor.write_text(
+        yaml.safe_dump(document, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _external_oidc_plan_and_sets(
+    topology: str = "external-oidc-entry-workflow",
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Return a valid plan/execution-set pair with an active OIDC target."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    plan["envelope"]["profile"] = "official"
+    execution_sets["active-publish-node-ids"] = ["publish-node/nuget"]
+    execution_sets["publish-intent-node-ids"] = ["publish-node/nuget"]
+    execution_sets["selected-github-release-publish-node-ids"] = []
+    execution_sets["active-github-release-publish-node-ids"] = []
+    execution_sets["skip-satisfied-publish-node-ids"] = []
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    execution_sets["active-publish-selectors"][topology] = [
+        "publish-node/nuget"
+    ]
+    snapshot = deepcopy(
+        plan["graph"]["target-instance-snapshots"]["nuget/github-packages"]
+    )
+    snapshot["catalog-ref"] = "pypi/pypi"
+    snapshot["contract"]["id"] = "pypi-publish"
+    snapshot["destination"] = {"host": "pypi.org"}
+    snapshot["family"] = "pypi"
+    snapshot["instance-id"] = "pypi"
+    snapshot["capabilities"]["credential-posture"] = "oidc"
+    snapshot["capabilities"]["name-uniqueness-scope"] = "package-name"
+    snapshot["capabilities"]["publish-topology"] = topology
+    snapshot["contract"] = deepcopy(
+        plan["graph"]["target-instance-snapshots"]["github-release/public"][
+            "contract"
+        ]
+    )
+    snapshot["contract"]["id"] = "pypi-publish"
+    snapshot["contract"]["allowed-artifact-tuples"] = [
+        {
+            "role": "primary-package",
+            "kind-family": "package",
+            "concrete-kind": "wheel",
+        },
+        {
+            "role": "primary-package",
+            "kind-family": "package",
+            "concrete-kind": "sdist",
+        },
+    ]
+    snapshot["contract"]["aggregate-rules"] = {
+        "min-artifact-count": 1,
+        "max-artifact-count": 2,
+        "cross-variant-policy": "forbid",
+        "tuple-rules": [
+            {
+                "role": "primary-package",
+                "kind-family": "package",
+                "concrete-kind": "wheel",
+                "min-count": 1,
+                "max-count": 1,
+            },
+            {
+                "role": "primary-package",
+                "kind-family": "package",
+                "concrete-kind": "sdist",
+                "min-count": 0,
+                "max-count": 1,
+            },
+        ],
+    }
+    plan["graph"]["target-instance-snapshots"]["pypi/pypi"] = snapshot
+    plan["graph"]["artifacts"]["artifact/package"]["concrete-kind"] = "wheel"
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["publish-disposition"] = "publish"
+    node["publish-mode"] = "create-only"
+    node["target-instance-snapshot-id"] = "pypi/pypi"
+    return plan, execution_sets
+
+
+def _run_plan_gate_case(
+    case_dir: Path,
+    plan: dict[str, object],
+    execution_sets: dict[str, object],
+    enablement: str,
+    expected_code: str,
+) -> None:
+    """Run the plan gate and assert it emits diagnostics only."""
+    case_dir.mkdir(parents=True)
+    plan_path = case_dir / "plan-input.json"
+    sets_path = case_dir / "sets-input.json"
+    diagnostics_path = case_dir / "planner-diagnostics.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+    result = control._cmd_plan_gate(
+        control.argparse.Namespace(
+            plan=str(plan_path),
+            execution_sets=str(sets_path),
+            enabled_external_oidc_targets=enablement,
+            diagnostics_out=str(diagnostics_path),
+        )
+    )
+
+    assert result == 1
+    assert diagnostics_path.is_file()
+    assert expected_code in _diagnostic_codes(diagnostics_path)
+    _assert_forbidden_outputs_absent(case_dir)
+
+
+def _run_normalize_entry_case(
+    case_dir: Path,
+    expected_codes: set[str],
+    *,
+    overrides: dict[str, str] | None = None,
+) -> None:
+    """Run entry normalization and assert it emits diagnostics only."""
+    case_dir.mkdir(parents=True)
+    metadata = case_dir / "entry-metadata.json"
+    diagnostics = case_dir / "planner-diagnostics.json"
+    inputs = {
+        "profile": "official",
+        "dry_run": "true",
+        "validation_build": "false",
+        "force": "false",
+    } | (overrides or {})
+
+    result = control._cmd_normalize_entry(
+        control.argparse.Namespace(
+            profile=inputs["profile"],
+            repository="hcoona/three",
+            actor="candidate",
+            ref="refs/heads/main",
+            ref_name="main",
+            ref_type="branch",
+            pinned_sha=SHA_B,
+            requested_project_ids="",
+            dry_run=inputs["dry_run"],
+            validation_build=inputs["validation_build"],
+            force=inputs["force"],
+            metadata_out=str(metadata),
+            diagnostics_out=str(diagnostics),
+            github_output=str(case_dir / "github-output.txt"),
+        )
+    )
+
+    assert result == 1
+    assert not metadata.exists()
+    assert expected_codes <= set(_diagnostic_codes(diagnostics))
+    _assert_forbidden_outputs_absent(case_dir)
+
+
 def _step_block(workflow: str, step_name: str) -> str:
     """Return the YAML block for one named workflow step."""
     start = workflow.index(f"      - name: {step_name}\n")
@@ -60,6 +634,580 @@ def _step_block(workflow: str, step_name: str) -> str:
     if end == -1:
         end = len(workflow)
     return workflow[start:end]
+
+
+def test_acceptance_matrix_fixture_tracks_design_scenarios() -> None:
+    """Acceptance fixture must cover every required design matrix row."""
+    matrix = _acceptance_matrix()
+    design_scenarios = _design_acceptance_scenarios()
+    rows = matrix["rows"]
+    assert isinstance(rows, list)
+
+    assert matrix["api-version"] == ("three.release.acceptance-matrix/v1alpha1")
+    assert matrix["kind"] == "workflow-release-acceptance-matrix"
+    assert [row["scenario"] for row in rows] == design_scenarios
+    assert len({row["id"] for row in rows}) == len(rows)
+
+
+def test_acceptance_matrix_rows_are_ci_actionable() -> None:
+    """Every acceptance row links to concrete executable evidence."""
+    matrix = _acceptance_matrix()
+    columns = matrix["evidence-columns"]
+    assert columns == [
+        "descriptor-or-catalog",
+        "plan",
+        "execution-set-selectors",
+        "request-result-or-receipt",
+        "registry-or-readiness",
+        "workflow-conclusion",
+    ]
+    allowed_modes = {
+        "ci-fixture",
+        "ci-structure",
+        "ci-mocked",
+        "ci-and-manual-live",
+        "manual-live",
+        "manual-live-gated",
+    }
+    valid_artifacts = {path.name for path in (FIXTURES).glob("*.json")} | {
+        "github-release-asset-proof.json",
+        "immutable-proof.json",
+        "execution-sets.json",
+    }
+    test_nodeids = _all_test_nodeids()
+    live_gates = matrix["live-gates"]
+    assert isinstance(live_gates, dict)
+
+    for row in matrix["rows"]:
+        assert row["validation-mode"] in allowed_modes
+        assert row["fixture-anchor"]
+        evidence = row["evidence"]
+        assert set(evidence) == set(columns)
+        for column in columns:
+            references = evidence[column]
+            assert isinstance(references, list)
+            assert references
+            for reference in references:
+                assert isinstance(reference, dict)
+                assert set(reference) == {"type", "value"}
+                ref_type = reference["type"]
+                value = reference["value"]
+                assert isinstance(value, str)
+                assert value != "required"
+                if ref_type == "path":
+                    assert (REPO_ROOT / value).exists(), (row["id"], column)
+                elif ref_type == "test":
+                    assert value in test_nodeids, (row["id"], column, value)
+                elif ref_type in {"artifact", "absent-artifact"}:
+                    assert value in valid_artifacts, (row["id"], column)
+                elif ref_type == "workflow":
+                    assert (REPO_ROOT / value).is_file(), (row["id"], column)
+                elif ref_type == "live-gate":
+                    assert value in live_gates, (row["id"], column, value)
+                    assert live_gates[value]["owner"]
+                    assert live_gates[value]["evidence"]
+                else:
+                    raise AssertionError((row["id"], column, ref_type))
+
+
+def test_acceptance_matrix_test_nodeids_are_collected_by_gate() -> None:
+    """HK acceptance gate must execute every matrix test evidence nodeid."""
+    matrix = _acceptance_matrix()
+    gate_nodeids = set(acceptance_gate._collect_test_nodeids(matrix))
+    mandatory_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator",
+        "tests/test_workflow_release_control.py::"
+        "test_hk_runs_focused_workflow_release_validation",
+    }
+
+    assert _matrix_test_nodeids(matrix)
+    for nodeid in _matrix_test_nodeids(matrix):
+        assert nodeid in _all_test_nodeids()
+        assert nodeid in gate_nodeids
+    assert mandatory_nodeids <= gate_nodeids
+
+
+def test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator() -> (
+    None
+):
+    """Acceptance gate treats matrix test evidence as positional nodeids."""
+    malicious = {
+        "rows": [
+            {
+                "evidence": {
+                    "registry-or-readiness": [
+                        {"type": "test", "value": "--collect-only"}
+                    ]
+                }
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="option-like"):
+        acceptance_gate._collect_test_nodeids(malicious)
+
+    command = acceptance_gate._pytest_command(
+        [
+            "tests/test_workflow_release_control.py::test_normalize_project_ids_trims_splits_deduplicates_and_sorts"
+        ]
+    )
+    separator_index = command.index("--")
+    assert command[separator_index - 1] == "--import-mode=importlib"
+    assert command[separator_index + 1].startswith("tests/")
+
+
+def test_confirmed_scope_descriptor_matrix_matches_current_descriptors() -> (
+    None
+):
+    """Confirmed-scope acceptance row enumerates every descriptor root."""
+    matrix = _acceptance_matrix()
+    row = next(
+        item
+        for item in matrix["rows"]
+        if item["id"] == "confirmed-scope-descriptor-coverage"
+    )
+    descriptor_paths = sorted(
+        reference["value"]
+        for reference in row["evidence"]["descriptor-or-catalog"]
+        if reference["type"] == "path"
+        and reference["value"].endswith("/three.release.yml")
+    )
+
+    assert descriptor_paths == _confirmed_scope_descriptor_paths()
+
+
+def test_unfiltered_first_delivery_plan_includes_confirmed_scope_projects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unfiltered planning selects every confirmed first-delivery project."""
+    commit_sha = "a" * 40
+    snapshot = validate_authoring(REPO_ROOT)
+    expected_project_ids = _confirmed_scope_project_ids()
+    metadata_input = snapshot.dotnet_metadata_input(commit_sha)
+    dotnet_metadata = _dotnet_metadata_for_planner_input(metadata_input)
+
+    assert expected_project_ids == sorted(snapshot.projects)
+
+    def fake_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command = Path(str(args[0])).name
+        if len(args) > 2 and args[1] == "show":
+            relative = str(args[2]).split(":", maxsplit=1)[1]
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                (REPO_ROOT / relative).read_text(encoding="utf-8"),
+                "",
+            )
+        if "worktree" in args:
+            if "add" in args:
+                Path(str(args[-2])).mkdir(parents=True, exist_ok=True)
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if command == "dotnet" and "nbgv" in args:
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"SemVer2": "1.2.3"}), ""
+            )
+        if command == "uv" and "build" in args:
+            out_dir = Path(str(args[args.index("--out-dir") + 1]))
+            out_dir.mkdir(parents=True, exist_ok=True)
+            release_root = str(args[-1])
+            package, version = {
+                "src/public/lib/hcoona-release-smoke": (
+                    "hcoona_release_smoke",
+                    "1.2.3",
+                ),
+                "src/public/lib/nbgv-python": (
+                    "nbgv_python",
+                    "2.1.0.dev1",
+                ),
+            }[release_root]
+            (out_dir / f"{package}-{version}-py3-none-any.whl").write_text(
+                "",
+                encoding="utf-8",
+            )
+            (out_dir / f"{package}-{version}.tar.gz").write_text(
+                "",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if command == "ruby":
+            metadata = {
+                "name": "asciidoctor-latexmath",
+                "version": "1.2.3",
+                "file_name": "asciidoctor-latexmath-1.2.3.gem",
+            }
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps(metadata), ""
+            )
+        message = f"unexpected planner subprocess: {args}"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+    try:
+        result = plan_release(
+            snapshot,
+            PlannerInputs(
+                request={
+                    "api-version": "three.release.planner-request/v1alpha1",
+                    "kind": "planner-request",
+                    "profile": "buddy",
+                    "commit-sha": commit_sha,
+                    "requested-project-ids": [],
+                    "request-flags": {"force": False},
+                },
+                repo_root=REPO_ROOT,
+                dry_run=True,
+                dotnet_metadata=dotnet_metadata,
+            ),
+        )
+    finally:
+        shutil.rmtree(
+            REPO_ROOT / ".three-workflow-release-planner",
+            ignore_errors=True,
+        )
+
+    envelope = result.plan["envelope"]
+    assert isinstance(envelope, dict)
+    projects = envelope["projects"]
+    assert isinstance(projects, dict)
+    assert envelope["requested-project-ids"] == []
+    assert envelope["selected-project-ids"] == expected_project_ids
+    assert sorted(projects) == expected_project_ids
+
+
+def test_fail_closed_acceptance_rows_match_phase_artifact_contracts() -> None:
+    """Fail-closed acceptance rows declare only phase-allowed artifacts."""
+    matrix = _acceptance_matrix()
+    fail_closed_ids = {
+        row["id"]
+        for row in matrix["rows"]
+        if any(
+            marker in row["scenario"].lower()
+            for marker in (
+                "fail closed",
+                "fail-closed",
+                "fails closed",
+                "blocked",
+                "disabled",
+                "rejected",
+                "trusted workflow-ref",
+                "invalid entry",
+                "authorization fails closed",
+                "metadata mismatch",
+                "partial replay",
+            )
+        )
+    }
+
+    assert fail_closed_ids == set(FAIL_CLOSED_ARTIFACT_CONTRACTS)
+    for row in matrix["rows"]:
+        contract = FAIL_CLOSED_ARTIFACT_CONTRACTS.get(row["id"])
+        if contract is None:
+            continue
+        references = [
+            reference
+            for column in row["evidence"].values()
+            for reference in column
+        ]
+        positive_artifacts = {
+            reference["value"]
+            for reference in references
+            if reference["type"] == "artifact"
+        }
+        absent_artifacts = {
+            reference["value"]
+            for reference in references
+            if reference["type"] == "absent-artifact"
+        }
+        positive_paths = {
+            Path(reference["value"]).name
+            for reference in references
+            if reference["type"] == "path"
+        }
+
+        assert positive_artifacts <= contract["allowed"]
+        assert absent_artifacts >= contract["absent"]
+        assert positive_artifacts.isdisjoint(contract["absent"])
+        assert positive_paths.isdisjoint(contract["absent"])
+        if row["id"] in PRE_PLAN_FAIL_CLOSED_IDS:
+            assert "planner-diagnostics.json" in positive_artifacts
+            assert "release-report.json" in positive_artifacts
+            assert "release-report.json" not in absent_artifacts
+
+
+def test_no_side_effect_acceptance_rows_match_artifact_contracts() -> None:
+    """No-side-effect rows must not cite downstream live-output evidence."""
+    matrix = _acceptance_matrix()
+    for row in matrix["rows"]:
+        contract = NO_SIDE_EFFECT_ARTIFACT_CONTRACTS.get(row["id"])
+        if contract is None:
+            continue
+        references = [
+            reference
+            for column in row["evidence"].values()
+            for reference in column
+        ]
+        positive_artifacts = {
+            reference["value"]
+            for reference in references
+            if reference["type"] == "artifact"
+        }
+        absent_artifacts = {
+            reference["value"]
+            for reference in references
+            if reference["type"] == "absent-artifact"
+        }
+        positive_paths = {
+            Path(reference["value"]).name
+            for reference in references
+            if reference["type"] == "path"
+        }
+
+        assert positive_artifacts <= contract["allowed"]
+        assert absent_artifacts >= contract["absent"]
+        assert positive_artifacts.isdisjoint(contract["absent"])
+        assert positive_paths.isdisjoint(contract["absent"])
+
+
+def test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs() -> (
+    None
+):
+    """Real invalid commands fail before downstream outputs."""
+    scratch = SCRATCH / "fail-closed-flows"
+    if scratch.exists():
+        shutil.rmtree(scratch)
+    scratch.mkdir(parents=True)
+
+    _validate_mutated_authoring_repo(
+        scratch,
+        "invalid-descriptor",
+        _mutate_descriptor_extra_field,
+        "DESC_SCHEMA_INVALID",
+    )
+    _validate_mutated_authoring_repo(
+        scratch,
+        "invalid-catalog",
+        _mutate_catalog_schema,
+        "CATALOG_SCHEMA_INVALID",
+    )
+    _validate_mutated_authoring_repo(
+        scratch,
+        "missing-catalog-ref",
+        _mutate_missing_catalog_ref,
+        "CATALOG_REF_NOT_FOUND",
+    )
+    _validate_mutated_authoring_repo(
+        scratch,
+        "profile-coexistence-conflict",
+        _mutate_profile_coexistence_conflict,
+        "DESC_STATIC_INVALID",
+    )
+
+    unknown_project = scratch / "unknown-project"
+    unknown_project.mkdir()
+    request = unknown_project / "planner-request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "api-version": "three.release.planner-request/v1alpha1",
+                "kind": "planner-request",
+                "profile": "buddy",
+                "commit-sha": SHA_B,
+                "requested-project-ids": ["nbgv-python", "missing-project"],
+                "request-flags": {"force": False},
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    unknown_project_diag = unknown_project / "planner-diagnostics.json"
+    unknown_project_result = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            "-m",
+            "three_workflow_release_planner.cli",
+            "plan",
+            "--repo-root",
+            str(REPO_ROOT),
+            "--request",
+            str(request),
+            "--plan-out",
+            str(unknown_project / "release-plan.json"),
+            "--execution-sets-out",
+            str(unknown_project / "execution-sets.json"),
+            "--diagnostics-out",
+            str(unknown_project_diag),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    assert unknown_project_result.returncode == 1
+    assert unknown_project_diag.is_file()
+    assert "REQ_PROJECT_NOT_FOUND" in _diagnostic_codes(unknown_project_diag)
+    _assert_forbidden_outputs_absent(unknown_project)
+
+
+def test_pre_plan_fail_closed_acceptance_allows_final_report_only() -> None:
+    """Pre-plan failures still render only report and diagnostics artifacts."""
+    scratch = SCRATCH / "pre-plan-report"
+    report_path = scratch / "release-report.json"
+    diagnostics_path = scratch / "planner-diagnostics.json"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        diagnostics_path.write_text(
+            json.dumps(
+                {
+                    "api-version": "three.release.planner-diagnostics/v1alpha1",
+                    "kind": "planner-diagnostics",
+                    "diagnostics": [
+                        {
+                            "api-version": (
+                                "three.release.planner-diagnostic/v1alpha1"
+                            ),
+                            "kind": "planner-diagnostic",
+                            "code": "REQ_PROJECT_NOT_FOUND",
+                            "message": "requested project is not releasable",
+                            "phase": "validation",
+                            "scope-kind": "request",
+                            "blocking": True,
+                            "details": {"project-id": "missing-project"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_report(
+                control.argparse.Namespace(
+                    repository="hcoona/three",
+                    workflow="Release Buddy",
+                    run_id=123,
+                    attempt=4,
+                    head_sha=SHA_B,
+                    profile="buddy",
+                    dry_run="false",
+                    validation_build="false",
+                    out=str(report_path),
+                    plan="",
+                    execution_sets="",
+                    diagnostics=str(diagnostics_path),
+                    artifacts_root="",
+                    authorize_conclusion="success",
+                    validate_conclusion="success",
+                    metadata_conclusion="skipped",
+                    plan_conclusion="failure",
+                    build_conclusion="skipped",
+                    tag_conclusion="skipped",
+                    publish_conclusion="skipped",
+                )
+            )
+            == 0
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert report["run"]["conclusion"] == "failure"
+        assert report["plan"]["plan-id"] is None
+        assert report["plan"]["selected-project-ids"] is None
+        _assert_forbidden_outputs_absent(scratch)
+        assert report_path.is_file()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """External OIDC gates fail before publishing downstream artifacts."""
+    scratch = SCRATCH / "external-oidc-fail-closed"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        plan, execution_sets = _external_oidc_plan_and_sets()
+        _run_plan_gate_case(
+            scratch / "disabled",
+            plan,
+            execution_sets,
+            "",
+            "REQ_EXTERNAL_TARGET_DISABLED",
+        )
+
+        plan, execution_sets = _external_oidc_plan_and_sets()
+        _run_plan_gate_case(
+            scratch / "invalid-allowlist",
+            plan,
+            execution_sets,
+            "not-a-valid-token",
+            "REQ_INVALID_INPUT",
+        )
+
+        plan, execution_sets = _external_oidc_plan_and_sets()
+        monkeypatch.setattr(
+            control,
+            "_TOPOLOGIES",
+            (
+                "github-token",
+                "external-oidc-caller-workflow",
+                "external-oidc-reusable-workflow",
+            ),
+        )
+        _run_plan_gate_case(
+            scratch / "blocked-topology",
+            plan,
+            execution_sets,
+            "",
+            "REQ_EXTERNAL_TOPOLOGY_BLOCKED",
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_entry_fail_closed_gates_emit_diagnostics_without_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Entry authorization, input, and ref gates fail before planning."""
+    scratch = SCRATCH / "entry-fail-closed"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        monkeypatch.setattr(control, "_actor_permission", lambda *_: "read")
+        monkeypatch.setattr(
+            control,
+            "_resolve_ref",
+            lambda *_: (SHA_B, {"object-type": "commit"}),
+        )
+        monkeypatch.setattr(control, "_trusted_ref", lambda *_: True)
+        _run_normalize_entry_case(
+            scratch / "unauthorized",
+            {"REQ_ACTOR_UNAUTHORIZED"},
+        )
+
+        monkeypatch.setattr(control, "_actor_permission", lambda *_: "maintain")
+        _run_normalize_entry_case(
+            scratch / "invalid-input",
+            {"REQ_INVALID_INPUT", "REQ_FORCE_FOR_OFFICIAL"},
+            overrides={
+                "dry_run": "false",
+                "validation_build": "true",
+                "force": "true",
+            },
+        )
+
+        monkeypatch.setattr(control, "_trusted_ref", lambda *_: False)
+        _run_normalize_entry_case(
+            scratch / "untrusted-ref",
+            {"REQ_UNTRUSTED_WORKFLOW_REF"},
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_normalize_project_ids_trims_splits_deduplicates_and_sorts() -> None:
@@ -236,6 +1384,646 @@ def test_matrix_outputs_route_non_dotnet_variants_to_ubuntu() -> None:
     plan["envelope"]["projects"]["example"]["ecosystem"] = "python"
 
     assert control._variant_runner(plan, "variant/v1") == "ubuntu-latest"
+
+
+def test_dry_run_acceptance_control_plane_has_no_side_effect_matrix() -> None:
+    """Dry-run control plane emits closed no-side-effect CI evidence."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets-empty.json")
+    output = SCRATCH / "dry-run-output.txt"
+    handoff_path = SCRATCH / "entry-publish-handoff.json"
+    artifacts_root = SCRATCH / "artifacts"
+    report_path = SCRATCH / "release-report.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    try:
+        plan_path = SCRATCH / "release-plan.json"
+        sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        assert (
+            control._cmd_matrix_outputs(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    run_id=123,
+                    attempt=4,
+                    github_output=str(output),
+                )
+            )
+            == 0
+        )
+        values = dict(
+            line.split("=", 1)
+            for line in output.read_text(encoding="utf-8").splitlines()
+        )
+        assert values["has_variants"] == "false"
+        assert values["has_reusable_publish"] == "false"
+        assert values["has_entry_publish"] == "false"
+        assert values["has_active_github_release"] == "false"
+        assert values["has_live_side_effects"] == "false"
+        assert values["variant_matrix"] == "[]"
+
+        assert (
+            control._cmd_entry_publish_handoff(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    run_id=123,
+                    attempt=4,
+                    out=str(handoff_path),
+                )
+            )
+            == 0
+        )
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        validate_contract(handoff)
+        assert handoff["entry-publish-node-ids"] == []
+
+        for artifact_value in (
+            "plan_artifact_name",
+            "execution_sets_artifact_name",
+            "entry_publish_handoff_artifact_name",
+        ):
+            (artifacts_root / values[artifact_value]).mkdir(parents=True)
+        assert (
+            control._cmd_report(
+                control.argparse.Namespace(
+                    repository="hcoona/three",
+                    workflow="Release Buddy",
+                    run_id=123,
+                    attempt=4,
+                    head_sha=SHA_B,
+                    profile="buddy",
+                    dry_run="true",
+                    validation_build="false",
+                    out=str(report_path),
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    diagnostics="",
+                    artifacts_root=str(artifacts_root),
+                    authorize_conclusion="success",
+                    validate_conclusion="success",
+                    metadata_conclusion="skipped",
+                    plan_conclusion="success",
+                    build_conclusion="skipped",
+                    tag_conclusion="skipped",
+                    publish_conclusion="skipped",
+                )
+            )
+            == 0
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert report["run"]["conclusion"] == "success"
+        assert report["counts"]["active-variants"] == 0
+        assert report["counts"]["active-publish-nodes"] == 0
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_live_zero_target_acceptance_has_no_side_effect_gates() -> None:
+    """Live zero-target plans skip every active side-effect gate."""
+    plan = _load("release-plan.json")
+    execution_sets = deepcopy(_load("execution-sets-empty.json"))
+    execution_sets["dry-run"] = False
+    output = SCRATCH / "live-zero-target-output.txt"
+    report_path = SCRATCH / "live-zero-target-report.json"
+    artifacts_root = SCRATCH / "live-zero-target-artifacts"
+    workflow = _workflow("release-orchestrate.yml")
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    try:
+        plan_path = SCRATCH / "release-plan.json"
+        sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        assert (
+            control._cmd_matrix_outputs(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    run_id=123,
+                    attempt=4,
+                    github_output=str(output),
+                )
+            )
+            == 0
+        )
+        values = dict(
+            line.split("=", 1)
+            for line in output.read_text(encoding="utf-8").splitlines()
+        )
+        assert values["has_variants"] == "false"
+        assert values["has_reusable_publish"] == "false"
+        assert values["has_entry_publish"] == "false"
+        assert values["has_active_github_release"] == "false"
+        assert values["has_skip_results"] == "false"
+        assert values["has_live_side_effects"] == "false"
+        assert values["variant_matrix"] == "[]"
+
+        environment_block_start = workflow.index(
+            "  ensure-tag-with-environment:\n"
+        )
+        environment_block_end = workflow.index(
+            "\n  ensure-tag-without-environment:\n",
+            environment_block_start,
+        )
+        environment_block = workflow[
+            environment_block_start:environment_block_end
+        ]
+        assert "has-active-github-release == 'true'" in environment_block
+
+        for artifact_value in (
+            "plan_artifact_name",
+            "execution_sets_artifact_name",
+            "entry_publish_handoff_artifact_name",
+        ):
+            (artifacts_root / values[artifact_value]).mkdir(parents=True)
+        assert (
+            control._cmd_report(
+                control.argparse.Namespace(
+                    repository="hcoona/three",
+                    workflow="Release Official",
+                    run_id=123,
+                    attempt=4,
+                    head_sha=SHA_B,
+                    profile="official",
+                    dry_run="false",
+                    validation_build="false",
+                    out=str(report_path),
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    diagnostics="",
+                    artifacts_root=str(artifacts_root),
+                    authorize_conclusion="success",
+                    validate_conclusion="success",
+                    metadata_conclusion="success",
+                    plan_conclusion="success",
+                    build_conclusion="skipped",
+                    tag_conclusion="skipped",
+                    publish_conclusion="skipped",
+                )
+            )
+            == 0
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert report["counts"]["active-variants"] == 0
+        assert report["counts"]["active-publish-nodes"] == 0
+        assert report["artifacts"]["build-result-artifact-names"] == []
+        assert report["artifacts"]["tag-result-artifact-name"] is None
+        assert report["artifacts"]["publish-result-artifact-names"] == []
+        assert report["artifacts"]["skip-result-artifact-names"] == []
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_live_all_skip_acceptance_emits_only_skip_receipts() -> None:
+    """Live all-skip plans may emit skip receipts but no side-effect outputs."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    plan["graph"]["publish-nodes"]["publish-node/gh"]["publish-disposition"] = (
+        "skip-satisfied"
+    )
+    execution_sets["active-variant-ids"] = []
+    execution_sets["active-publish-node-ids"] = []
+    execution_sets["active-github-release-publish-node-ids"] = []
+    execution_sets["publish-intent-node-ids"] = []
+    execution_sets["skip-satisfied-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/nuget",
+    ]
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    output = SCRATCH / "live-all-skip-output.txt"
+    manifest = SCRATCH / "skip-manifest.json"
+    artifacts_root = SCRATCH / "live-all-skip-artifacts"
+    report_path = SCRATCH / "live-all-skip-report.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    try:
+        plan_path = SCRATCH / "release-plan.json"
+        sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        assert (
+            control._cmd_matrix_outputs(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    run_id=123,
+                    attempt=4,
+                    github_output=str(output),
+                )
+            )
+            == 0
+        )
+        values = dict(
+            line.split("=", 1)
+            for line in output.read_text(encoding="utf-8").splitlines()
+        )
+        assert values["has_variants"] == "false"
+        assert values["has_reusable_publish"] == "false"
+        assert values["has_entry_publish"] == "false"
+        assert values["has_active_github_release"] == "false"
+        assert values["has_skip_results"] == "true"
+        assert values["has_live_side_effects"] == "false"
+
+        assert (
+            control._cmd_skip_results(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    run_id=123,
+                    attempt=4,
+                    out_dir=str(artifacts_root),
+                    manifest_out=str(manifest),
+                )
+            )
+            == 0
+        )
+        skip_names = json.loads(manifest.read_text(encoding="utf-8"))[
+            "skip-result-artifact-names"
+        ]
+        assert len(skip_names) == 2
+        for name in skip_names:
+            skip_result = json.loads(
+                (artifacts_root / name / "skip-result.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            validate_contract(skip_result)
+            assert skip_result["outcome"] == "skip-satisfied"
+
+        for artifact_value in (
+            "plan_artifact_name",
+            "execution_sets_artifact_name",
+            "entry_publish_handoff_artifact_name",
+        ):
+            (artifacts_root / values[artifact_value]).mkdir(parents=True)
+        assert (
+            control._cmd_report(
+                control.argparse.Namespace(
+                    repository="hcoona/three",
+                    workflow="Release Official",
+                    run_id=123,
+                    attempt=4,
+                    head_sha=SHA_B,
+                    profile="official",
+                    dry_run="false",
+                    validation_build="false",
+                    out=str(report_path),
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    diagnostics="",
+                    artifacts_root=str(artifacts_root),
+                    authorize_conclusion="success",
+                    validate_conclusion="success",
+                    metadata_conclusion="success",
+                    plan_conclusion="success",
+                    build_conclusion="skipped",
+                    tag_conclusion="skipped",
+                    publish_conclusion="skipped",
+                )
+            )
+            == 0
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert report["counts"]["active-variants"] == 0
+        assert report["counts"]["active-publish-nodes"] == 0
+        assert sorted(report["artifacts"]["skip-result-artifact-names"]) == (
+            sorted(skip_names)
+        )
+        assert report["artifacts"]["build-result-artifact-names"] == []
+        assert report["artifacts"]["tag-result-artifact-name"] is None
+        assert report["artifacts"]["publish-result-artifact-names"] == []
+        for output_name in (
+            "build-result.json",
+            "tag-result.json",
+            "publish-request.json",
+            "publish-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        ):
+            assert not (SCRATCH / output_name).exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_validation_build_acceptance_records_build_without_publish_proof() -> (
+    None
+):
+    """Validation build evidence stops at build receipts, never proofs."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    artifacts_root = SCRATCH / "validation-build-artifacts"
+    matrix_output = SCRATCH / "validation-build-matrix-output.txt"
+    report_path = SCRATCH / "validation-build-report.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    try:
+        plan_path = SCRATCH / "release-plan.json"
+        sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+        assert (
+            control._cmd_matrix_outputs(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    run_id=123,
+                    attempt=4,
+                    github_output=str(matrix_output),
+                )
+            )
+            == 0
+        )
+        matrix_values = dict(
+            line.split("=", 1)
+            for line in matrix_output.read_text(encoding="utf-8").splitlines()
+        )
+        for artifact_value in (
+            "plan_artifact_name",
+            "execution_sets_artifact_name",
+            "entry_publish_handoff_artifact_name",
+        ):
+            (artifacts_root / matrix_values[artifact_value]).mkdir(parents=True)
+
+        build_result_name = artifact_name(
+            "build-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                plan_id=plan["envelope"]["plan-id"],
+                variant_id=execution_sets["active-variant-ids"][0],
+            ),
+        )
+        build_result_dir = artifacts_root / build_result_name
+        build_result_dir.mkdir(parents=True)
+        shutil.copy2(FIXTURES / "build-result.json", build_result_dir)
+
+        assert (
+            control._cmd_report(
+                control.argparse.Namespace(
+                    repository="hcoona/three",
+                    workflow="Release Official",
+                    run_id=123,
+                    attempt=4,
+                    head_sha=SHA_B,
+                    profile="official",
+                    dry_run="true",
+                    validation_build="true",
+                    out=str(report_path),
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    diagnostics="",
+                    artifacts_root=str(artifacts_root),
+                    authorize_conclusion="success",
+                    validate_conclusion="success",
+                    metadata_conclusion="success",
+                    plan_conclusion="success",
+                    build_conclusion="success",
+                    tag_conclusion="skipped",
+                    publish_conclusion="skipped",
+                )
+            )
+            == 0
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert report["run"]["validation-build"] is True
+        assert report["artifacts"]["build-result-artifact-names"] == [
+            build_result_name
+        ]
+        assert report["artifacts"]["tag-result-artifact-name"] is None
+        assert report["artifacts"]["publish-result-artifact-names"] == []
+        assert report["artifacts"]["skip-result-artifact-names"] == []
+        for output_name in (
+            "publish-request.json",
+            "publish-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        ):
+            assert not (SCRATCH / output_name).exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_validation_only_immutable_proof_rejection_emits_no_outputs() -> None:
+    """Validation-only proof wrappers are rejected before reuse outputs."""
+    scratch = SCRATCH / "validation-only-proof-rejection"
+    plan = _load("release-plan.json")
+    proof = deepcopy(_load("immutable-proof.json"))
+    proof["run"]["validation-only"] = True
+    remote_members = {
+        "publish-node/nuget": [
+            {
+                "filename": "Example.1.2.3.nupkg",
+                "sha256": (
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                ),
+            }
+        ]
+    }
+    build_result_receipts = [
+        {
+            "build-result-artifact-name": ("release-build-result-v1-123-1-abc"),
+            "build-result-artifact-id": 123,
+            "build-result": _load("build-result.json"),
+        }
+    ]
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        with pytest.raises(ProofError) as error:
+            classify_immutable_observations(
+                plan=plan,
+                remote_members=remote_members,
+                proofs=[proof],
+                build_result_receipts=build_result_receipts,
+            )
+
+        assert error.value.code == "IMMUTABLE_PROOF_UNAVAILABLE"
+        _assert_forbidden_outputs_absent(scratch)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_live_external_oidc_enablement_routes_entry_publish() -> None:
+    """Enabled official external OIDC targets reach the entry workflow path."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    plan["envelope"]["profile"] = "official"
+    execution_sets["active-publish-node-ids"] = ["publish-node/nuget"]
+    execution_sets["publish-intent-node-ids"] = ["publish-node/nuget"]
+    execution_sets["selected-github-release-publish-node-ids"] = []
+    execution_sets["active-github-release-publish-node-ids"] = []
+    execution_sets["skip-satisfied-publish-node-ids"] = []
+    execution_sets["active-publish-selectors"]["github-token"] = []
+    execution_sets["active-publish-selectors"][
+        "external-oidc-entry-workflow"
+    ] = ["publish-node/nuget"]
+    snapshot = deepcopy(
+        plan["graph"]["target-instance-snapshots"]["nuget/github-packages"]
+    )
+    snapshot["catalog-ref"] = "pypi/pypi"
+    snapshot["contract"]["id"] = "pypi-publish"
+    snapshot["destination"] = {"host": "pypi.org"}
+    snapshot["family"] = "pypi"
+    snapshot["instance-id"] = "pypi"
+    snapshot["capabilities"]["credential-posture"] = "oidc"
+    snapshot["capabilities"]["name-uniqueness-scope"] = "package-name"
+    snapshot["capabilities"]["publish-topology"] = (
+        "external-oidc-entry-workflow"
+    )
+    snapshot["contract"] = deepcopy(
+        plan["graph"]["target-instance-snapshots"]["github-release/public"][
+            "contract"
+        ]
+    )
+    snapshot["contract"]["id"] = "pypi-publish"
+    snapshot["contract"]["allowed-artifact-tuples"] = [
+        {
+            "role": "primary-package",
+            "kind-family": "package",
+            "concrete-kind": "wheel",
+        },
+        {
+            "role": "primary-package",
+            "kind-family": "package",
+            "concrete-kind": "sdist",
+        },
+    ]
+    snapshot["contract"]["aggregate-rules"] = {
+        "min-artifact-count": 1,
+        "max-artifact-count": 2,
+        "cross-variant-policy": "forbid",
+        "tuple-rules": [
+            {
+                "role": "primary-package",
+                "kind-family": "package",
+                "concrete-kind": "wheel",
+                "min-count": 1,
+                "max-count": 1,
+            },
+            {
+                "role": "primary-package",
+                "kind-family": "package",
+                "concrete-kind": "sdist",
+                "min-count": 0,
+                "max-count": 1,
+            },
+        ],
+    }
+    plan["graph"]["target-instance-snapshots"]["pypi/pypi"] = snapshot
+    plan["graph"]["artifacts"]["artifact/package"]["concrete-kind"] = "wheel"
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["publish-disposition"] = "publish"
+    node["publish-mode"] = "create-only"
+    node["target-instance-snapshot-id"] = "pypi/pypi"
+    enablement = "pypi/pypi#example#Example"
+    output = SCRATCH / "entry-matrix-output.txt"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    try:
+        plan_path = SCRATCH / "release-plan.json"
+        sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        assert (
+            control._cmd_plan_gate(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    enabled_external_oidc_targets=enablement,
+                    diagnostics_out=str(SCRATCH / "planner-diagnostics.json"),
+                )
+            )
+            == 0
+        )
+        assert (
+            control._cmd_matrix_outputs(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    run_id=123,
+                    attempt=4,
+                    github_output=str(output),
+                )
+            )
+            == 0
+        )
+        values = dict(
+            line.split("=", 1)
+            for line in output.read_text(encoding="utf-8").splitlines()
+        )
+        assert values["entry_publish_node_ids"] == '["publish-node/nuget"]'
+        assert values["has_entry_publish"] == "true"
+        assert values["reusable_publish_node_ids"] == "[]"
+        assert values["has_reusable_publish"] == "false"
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_download_publish_inputs_uses_handoff_declared_artifact_names(
+    monkeypatch,
+) -> None:
+    """Entry-hosted publish downloads only the exact handoff build inputs."""
+    plan = _load("release-plan.json")
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    execution_sets["active-publish-selectors"]["github-token"] = []
+    execution_sets["active-publish-selectors"][
+        "external-oidc-entry-workflow"
+    ] = ["publish-node/gh"]
+    handoff = control._entry_publish_handoff(plan, execution_sets, 123, 4)
+    calls = []
+    monkeypatch.setattr(
+        control,
+        "_download_artifact",
+        lambda repository, run_id, name, destination: calls.append(
+            (repository, run_id, name, destination.as_posix())
+        ),
+    )
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    try:
+        plan_path = SCRATCH / "release-plan.json"
+        handoff_path = SCRATCH / "entry-publish-handoff.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+
+        assert (
+            control._cmd_download_publish_inputs(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    handoff=str(handoff_path),
+                    publish_node_id="publish-node/gh",
+                    run_id=123,
+                    attempt=4,
+                    repository="hcoona/three",
+                    build_results_dir=str(SCRATCH / "build-results"),
+                    bundles_dir=str(SCRATCH / "bundles"),
+                )
+            )
+            == 0
+        )
+
+        expected = handoff["publish-inputs-by-node-id"]["publish-node/gh"]
+        assert [call[2] for call in calls] == (
+            expected["build-result-artifact-names"]
+            + expected["build-bundle-artifact-names"]
+        )
+        assert all(call[0] == "hcoona/three" for call in calls)
+        assert all(call[1] == 123 for call in calls)
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
 def test_ensure_tags_tolerates_missing_dry_run_publish_tags(
@@ -471,6 +2259,109 @@ def test_ensure_tags_fails_existing_tag_conflicts_in_dry_run(
                     out=str(SCRATCH / "tag-result.json"),
                 )
             )
+        for output_name in (
+            "tag-result.json",
+            "publish-request.json",
+            "publish-result.json",
+            "skip-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        ):
+            assert not (SCRATCH / output_name).exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_ensure_tags_is_atomic_for_mixed_missing_and_conflicting_tags(
+    monkeypatch,
+) -> None:
+    """A later conflict prevents earlier active tag creation."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    missing_node_id = "publish-node/gh-missing"
+    conflict_node_id = "publish-node/gh-conflict"
+    plan["graph"]["publish-nodes"][missing_node_id] = deepcopy(
+        plan["graph"]["publish-nodes"]["publish-node/gh"]
+    )
+    plan["graph"]["publish-nodes"][missing_node_id]["publish-node-id"] = (
+        missing_node_id
+    )
+    plan["graph"]["publish-nodes"][missing_node_id][
+        "resolved-publish-identity"
+    ] = {"release-tag": "release/example/aaa-missing"}
+    plan["graph"]["publish-nodes"][conflict_node_id] = deepcopy(
+        plan["graph"]["publish-nodes"]["publish-node/gh"]
+    )
+    plan["graph"]["publish-nodes"][conflict_node_id]["publish-node-id"] = (
+        conflict_node_id
+    )
+    plan["graph"]["publish-nodes"][conflict_node_id][
+        "resolved-publish-identity"
+    ] = {"release-tag": "release/example/zzz-conflict"}
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        missing_node_id,
+        conflict_node_id,
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        missing_node_id,
+        conflict_node_id,
+    ]
+    execution_sets["active-publish-node-ids"] = [
+        missing_node_id,
+        conflict_node_id,
+    ]
+    execution_sets["publish-intent-node-ids"] = [
+        missing_node_id,
+        conflict_node_id,
+    ]
+    execution_sets["active-publish-selectors"]["github-token"] = [
+        missing_node_id,
+        conflict_node_id,
+    ]
+    execution_sets["skip-satisfied-publish-node-ids"] = []
+    gh_calls = []
+
+    def fake_remote_tag_commit(_repository: str, tag: str) -> str | None:
+        if tag.endswith("-missing"):
+            return None
+        if tag.endswith("-conflict"):
+            return SHA_C
+        raise AssertionError(tag)
+
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, "_remote_tag_commit", fake_remote_tag_commit)
+    monkeypatch.setattr(
+        control,
+        "_gh_api",
+        lambda *args, **kwargs: gh_calls.append((args, kwargs)),
+    )
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="points to"):
+            control._cmd_ensure_tags(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    repository="hcoona/three",
+                    out=str(SCRATCH / "tag-result.json"),
+                )
+            )
+        assert gh_calls == []
+        for output_name in (
+            "tag-result.json",
+            "publish-request.json",
+            "publish-result.json",
+            "skip-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        ):
+            assert not (SCRATCH / output_name).exists()
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
@@ -1552,3 +3443,23 @@ def test_entry_workflows_stage_and_upload_deterministic_proofs() -> None:
         assert "steps.staged.outputs.present == 'true'" in workflow
         assert "name: ${{ matrix.proof.staging-artifact-name }}" in workflow
         assert "name: ${{ matrix.proof.name }}" in workflow
+
+
+def test_hk_runs_focused_workflow_release_validation() -> None:
+    """HK must run focused control-plane tests for release workflow changes."""
+    hk_config = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
+
+    assert "workflow-release-control-tests" in hk_config
+    assert ".github/workflows/release-*.yml" in hk_config
+    assert "eng/release/**" in hk_config
+    assert "eng/scripts/workflow_release_control.py" in hk_config
+    assert "eng/scripts/workflow_release_acceptance_gate.py" in hk_config
+    assert "src/**/three.release.yml" in hk_config
+    assert "src/public/lib/three-workflow-release-*/**" in hk_config
+    assert "tests/test_workflow_release_control.py" in hk_config
+    assert "tests/fixtures/workflow-release-acceptance-matrix.json" in hk_config
+    assert (
+        "uv run python eng/scripts/workflow_release_acceptance_gate.py"
+        in hk_config
+    )
+    assert "actionlint" in hk_config
