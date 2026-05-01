@@ -719,6 +719,8 @@ def test_acceptance_matrix_test_nodeids_are_collected_by_gate() -> None:
         "test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator",
         "tests/test_workflow_release_control.py::"
         "test_hk_runs_focused_workflow_release_validation",
+        "tests/test_workflow_release_control.py::"
+        "test_official_entry_publish_sets_up_npm_trusted_runtime",
     }
 
     assert _matrix_test_nodeids(matrix)
@@ -3244,6 +3246,36 @@ def test_buddy_entry_external_oidc_publish_permissions_are_minimal() -> None:
             "actions": "read",
             "id-token": "write",
         }
+
+
+def test_official_entry_publish_sets_up_npm_trusted_runtime() -> None:
+    """Official entry-hosted npm publish must not rely on runner defaults."""
+    workflow = yaml.safe_load(_workflow("release-official.yml"))
+    steps = workflow["jobs"]["publish-entry"]["steps"]
+
+    setup_index, setup_step = next(
+        (index, step)
+        for index, step in enumerate(steps)
+        if step.get("uses") == "actions/setup-node@v4"
+    )
+    guard_index, guard_step = next(
+        (index, step)
+        for index, step in enumerate(steps)
+        if step.get("name") == "Ensure npm trusted publishing support"
+    )
+    publish_index = next(
+        index
+        for index, step in enumerate(steps)
+        if "uv run three-workflow-release-publish publish"
+        in str(step.get("run", ""))
+    )
+
+    assert setup_index < guard_index < publish_index
+    assert setup_step["with"]["node-version"] == "24"
+    guard_run = guard_step["run"]
+    assert "npm install --global npm@^11.5.1" in guard_run
+    assert "const required = [11, 5, 1];" in guard_run
+    assert "process.exit(1);" in guard_run
 
 
 def test_entry_publish_gate_ignores_reusable_publish_result() -> None:

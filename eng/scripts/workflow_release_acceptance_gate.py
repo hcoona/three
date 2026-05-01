@@ -31,6 +31,8 @@ def _collect_test_nodeids(document: dict[str, Any]) -> list[str]:
         "test_hk_runs_focused_workflow_release_validation",
         "tests/test_workflow_release_control.py::"
         "test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator",
+        "tests/test_workflow_release_control.py::"
+        "test_official_entry_publish_sets_up_npm_trusted_runtime",
     }
     for row in document["rows"]:
         for references in row["evidence"].values():

@@ -72,7 +72,9 @@ def test_pypi_executor_verifies_identity_and_uses_uv_trusted_publish() -> None:
         _reset_scratch(scratch)
 
 
-def test_npm_executor_verifies_tarball_and_uses_provenance() -> None:
+def test_npm_executor_verifies_tarball_and_uses_provenance(
+    tmp_path: Path,
+) -> None:
     """Publish npm tarballs with provenance enabled."""
     scratch = REPO_ROOT / ".publish-executor-npm-test"
     _reset_scratch(scratch)
@@ -94,6 +96,7 @@ def test_npm_executor_verifies_tarball_and_uses_provenance() -> None:
             REPO_ROOT,
             runner=calls.runner,
             check_commit=False,
+            work_dir=tmp_path / "work",
         )
 
         validate_contract(result)
@@ -238,6 +241,7 @@ def test_nuget_executor_rejects_unpublished_snupkg() -> None:
 
 def test_rubygems_executor_pushes_github_packages_host(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Publish RubyGems package to GitHub Packages."""
     scratch = REPO_ROOT / ".publish-executor-rubygems-test"
@@ -281,6 +285,7 @@ def test_rubygems_executor_pushes_github_packages_host(
             REPO_ROOT,
             runner=calls.runner,
             check_commit=False,
+            work_dir=tmp_path / "work",
         )
 
         validate_contract(result)
@@ -299,6 +304,7 @@ def test_rubygems_executor_pushes_github_packages_host(
 
 def test_rubygems_github_packages_requires_github_token(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Refuse GitHub Packages RubyGems publish without GITHUB_TOKEN."""
     scratch = REPO_ROOT / ".publish-executor-rubygems-token-test"
@@ -343,6 +349,7 @@ def test_rubygems_github_packages_requires_github_token(
                 REPO_ROOT,
                 runner=calls.runner,
                 check_commit=False,
+                work_dir=tmp_path / "work",
             )
         assert not any(
             command[:2] == ["gem", "push"] for command in calls.commands
@@ -353,6 +360,7 @@ def test_rubygems_github_packages_requires_github_token(
 
 def test_rubygems_org_executor_uses_oidc_token_exchange(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Publish to RubyGems.org with a short-lived trusted-publisher token."""
     scratch = REPO_ROOT / ".publish-executor-rubygems-org-test"
@@ -399,6 +407,7 @@ def test_rubygems_org_executor_uses_oidc_token_exchange(
             REPO_ROOT,
             runner=calls.runner,
             check_commit=False,
+            work_dir=tmp_path / "work",
         )
 
         validate_contract(result)
@@ -776,7 +785,7 @@ def test_digest_mismatch_fails_before_publish() -> None:
         _reset_scratch(scratch)
 
 
-def test_identity_mismatch_fails_before_publish() -> None:
+def test_identity_mismatch_fails_before_publish(tmp_path: Path) -> None:
     """Refuse to publish when package metadata differs from frozen identity."""
     scratch = REPO_ROOT / ".publish-executor-identity-test"
     _reset_scratch(scratch)
@@ -797,7 +806,11 @@ def test_identity_mismatch_fails_before_publish() -> None:
             PublishExecutorError, match="does not match frozen name"
         ):
             execute_publish(
-                request, REPO_ROOT, runner=calls.runner, check_commit=False
+                request,
+                REPO_ROOT,
+                runner=calls.runner,
+                check_commit=False,
+                work_dir=tmp_path / "work",
             )
         assert calls.commands == []
     finally:

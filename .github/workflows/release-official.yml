@@ -134,6 +134,34 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Install Node.js for npm trusted publishing
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Ensure npm trusted publishing support
+        run: |
+          npm install --global npm@^11.5.1
+          node --version
+          npm_version="$(npm --version)"
+          echo "npm $npm_version"
+          NPM_VERSION="$npm_version" node -e '
+            const actual = process.env.NPM_VERSION.split(".").map(Number);
+            const required = [11, 5, 1];
+            if (
+              actual.length < required.length ||
+              actual.some(Number.isNaN) ||
+              actual[0] < required[0] ||
+              (actual[0] === required[0] && actual[1] < required[1]) ||
+              (
+                actual[0] === required[0] &&
+                actual[1] === required[1] &&
+                actual[2] < required[2]
+              )
+            ) {
+              console.error("npm " + process.env.NPM_VERSION + " is older than 11.5.1");
+              process.exit(1);
+            }
+          '
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.orchestrate.outputs.plan-artifact-name }}
