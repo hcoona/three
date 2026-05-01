@@ -97,7 +97,6 @@ jobs:
       actions: read
       id-token: write
       attestations: write
-      artifact-metadata: write
     with:
       profile: official
       commit-sha: ${{ needs.authorize-entry.outputs.commit-sha }}

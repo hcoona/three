@@ -561,7 +561,6 @@ jobs:
       actions: read
       id-token: write
       attestations: write
-      artifact-metadata: write
     with:
       commit-sha: ${{ inputs.commit-sha }}
       plan-artifact-name: ${{ needs.plan.outputs.plan-artifact-name }}

@@ -48,7 +48,6 @@ jobs:
       actions: read
       id-token: write
       attestations: write
-      artifact-metadata: write
     outputs:
       publish-result-artifact-name: ${{ steps.name.outputs.publish_result_artifact_name }}
       has-proofs: ${{ steps.proofs.outputs.has_proofs }}
@@ -190,7 +189,6 @@ jobs:
       actions: read
       id-token: write
       attestations: write
-      artifact-metadata: write
     outputs:
       publish-result-artifact-name: ${{ steps.name.outputs.publish_result_artifact_name }}
       has-proofs: ${{ steps.proofs.outputs.has_proofs }}
