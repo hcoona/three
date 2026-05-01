@@ -3,7 +3,15 @@ name = "hcoona-three-monorepo"
 version = "0.0.0-dev"
 description = "Root uv workspace manifest for the Three monorepo."
 authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
-dependencies = []
+dependencies = [
+    "three-workflow-release-authoring",
+    "three-workflow-release-build",
+    "three-workflow-release-contracts",
+    "three-workflow-release-metadata",
+    "three-workflow-release-planner",
+    "three-workflow-release-proof",
+    "three-workflow-release-publish",
+]
 readme = "README.md"
 requires-python = ">= 3.13"
 license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
@@ -39,13 +47,13 @@ members = [
 
 [tool.uv.sources]
 nbgv-python = { workspace = true }
-three-workflow-release-contracts = { workspace = true }
 three-workflow-release-authoring = { workspace = true }
 three-workflow-release-build = { workspace = true }
+three-workflow-release-contracts = { workspace = true }
 three-workflow-release-metadata = { workspace = true }
 three-workflow-release-planner = { workspace = true }
-three-workflow-release-publish = { workspace = true }
 three-workflow-release-proof = { workspace = true }
+three-workflow-release-publish = { workspace = true }
 
 [tool.pyrefly]
 # Keep type-check coverage aligned with the root uv workspace membership.
