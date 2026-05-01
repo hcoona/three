@@ -676,10 +676,10 @@ section names an extensibility field. Implementations must not add arbitrary
 root-level fields that downstream jobs or tests could accidentally start
 depending on. Current-scope extensibility fields are:
 
-| Object family            | Extensibility field          | Rule                                                                                                     |
-| ------------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Planner diagnostics      | `details`                    | Adapter-specific machine context belongs under `details`.                                                |
-| Publish and skip results | `evidence`                   | Small family-specific receipt evidence belongs under `evidence`.                                         |
+| Object family            | Extensibility field | Rule                                                             |
+| ------------------------ | ------------------- | ---------------------------------------------------------------- |
+| Planner diagnostics      | `details`           | Adapter-specific machine context belongs under `details`.        |
+| Publish and skip results | `evidence`          | Small family-specific receipt evidence belongs under `evidence`. |
 
 The boundary documents define complete request and result object shapes for the
 current `v1alpha1` handoff. In particular, `planner-request`,
@@ -2302,3 +2302,4 @@ sources:
 - [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md)
 - [Workflow Release Deferred PyPI Multi-Wheel Support](./workflow-release-deferred-pypi-multi-wheel-support.md)
 - [Workflow Release Low-Level Design Rebaseline Recommendation](./workflow-release-low-level-design-rebaseline-recommendation.md)
+- [Workflow Release Operator Rollout Runbook](./workflow-release-operator-rollout.md)

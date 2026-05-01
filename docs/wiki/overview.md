@@ -139,6 +139,12 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   codes, JSON handoff files, artifact and immutable-proof naming,
   registry-adapter obligations, GitHub permission boundaries, tag orchestration,
   and acceptance traceability.
+- The operator rollout runbook now records the final gate before real testing:
+  complete Group 10 local and acceptance validation, run the final global
+  overview checks, manually configure the protected `release` environment and
+  registry trusted publishers, then progress from dry-run to validation-build,
+  zero-target or all-skip, GitHub-hosted live, and one-token-at-a-time external
+  OIDC live tests.
 
 ## Open Questions
 
@@ -162,5 +168,6 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
 - [Workflow Release Plan Shape](./analyses/workflow-release-plan-shape.md)
 - [Workflow Release Workflow and Executor Boundaries](./analyses/workflow-release-workflow-executor-boundaries.md)
 - [Workflow Release Low-Level Design](./analyses/workflow-release-low-level-design.md)
+- [Workflow Release Operator Rollout Runbook](./analyses/workflow-release-operator-rollout.md)
 - [Workflow Release OIDC Publish Topology Research](./analyses/workflow-release-oidc-publish-topology.md)
 - [Workflow Release Deferred PyPI Multi-Wheel Support](./analyses/workflow-release-deferred-pypi-multi-wheel-support.md)
