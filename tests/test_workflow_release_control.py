@@ -3106,7 +3106,10 @@ def test_skip_only_tag_verification_is_read_only_without_environment() -> None:
 
 
 def test_reusable_publish_jobs_use_topology_scoped_permissions() -> None:
-    """Reusable publish classes must not receive unrelated write grants."""
+    """Reusable publish permissions stay scoped.
+
+    Reusable workflow callers grant the required superset for GitHub validation.
+    """
     publish = yaml.safe_load(_workflow("release-publish-node.yml"))
     orchestrate = yaml.safe_load(_workflow("release-orchestrate.yml"))
 
@@ -3115,7 +3118,6 @@ def test_reusable_publish_jobs_use_topology_scoped_permissions() -> None:
         "actions": "read",
         "id-token": "write",
         "attestations": "write",
-        "artifact-metadata": "write",
     }
     github_packages_permissions = {
         "contents": "read",
@@ -3164,10 +3166,17 @@ def test_reusable_publish_jobs_use_topology_scoped_permissions() -> None:
                 for step in publish["jobs"][job_id]["steps"]
             )
 
+    reusable_caller_permissions = {
+        "contents": "write",
+        "packages": "write",
+        "actions": "read",
+        "id-token": "write",
+        "attestations": "write",
+    }
     expected_orchestrator_permissions = {
-        "publish-reusable-github-release": github_release_permissions,
-        "publish-reusable-github-packages": github_packages_permissions,
-        "publish-reusable-external-oidc": external_oidc_permissions,
+        "publish-reusable-github-release": reusable_caller_permissions,
+        "publish-reusable-github-packages": reusable_caller_permissions,
+        "publish-reusable-external-oidc": reusable_caller_permissions,
     }
     for job_id, permissions in expected_orchestrator_permissions.items():
         job = orchestrate["jobs"][job_id]

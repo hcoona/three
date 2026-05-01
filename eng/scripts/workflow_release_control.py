@@ -16,11 +16,19 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from three_workflow_release_contracts import (
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+for _WORKSPACE_SRC in (
+    _REPO_ROOT / "src/public/lib/three-workflow-release-contracts/src",
+    _REPO_ROOT / "src/public/lib/three-workflow-release-proof/src",
+):
+    if _WORKSPACE_SRC.is_dir():
+        sys.path.insert(0, str(_WORKSPACE_SRC))
+
+from three_workflow_release_contracts import (  # noqa: E402
     ContractValidationError,
     validate_contract,
 )
-from three_workflow_release_contracts.artifact_names import (
+from three_workflow_release_contracts.artifact_names import (  # noqa: E402
     ArtifactNameInputs,
     artifact_name,
     github_release_asset_binding_json,
@@ -598,7 +606,10 @@ def _cmd_download_publish_inputs(args: argparse.Namespace) -> int:
         )
     for name in expected["build-result-artifact-names"]:
         _download_artifact(
-            args.repository, args.run_id, name, Path(args.build_results_dir) / name
+            args.repository,
+            args.run_id,
+            name,
+            Path(args.build_results_dir) / name,
         )
     for name in expected["build-bundle-artifact-names"]:
         _download_artifact(
@@ -639,8 +650,10 @@ def _cmd_prepare_attestation(args: argparse.Namespace) -> int:
         json.dumps(artifact_ids, separators=(",", ":")) + "\n", encoding="utf-8"
     )
     lines = []
-    asset_names = request["publish-node"].get("projection", {}).get(
-        "asset-names-by-artifact-id", {}
+    asset_names = (
+        request["publish-node"]
+        .get("projection", {})
+        .get("asset-names-by-artifact-id", {})
     )
     for artifact_id in artifact_ids:
         entry = request["artifacts"][artifact_id]
@@ -796,7 +809,9 @@ def _cmd_ensure_tags(args: argparse.Namespace) -> int:
         requirement = tags.setdefault(
             tag, {"can-create": False, "requires-existing": False}
         )
-        requirement["can-create"] = requirement["can-create"] or node_id in active
+        requirement["can-create"] = (
+            requirement["can-create"] or node_id in active
+        )
         requirement["requires-existing"] = (
             requirement["requires-existing"]
             or node.get("publish-disposition") != "publish"
@@ -989,10 +1004,9 @@ def _publish_permission_class(plan: Json, publish_node_id: str) -> str:
     if target.get("family") == "github-release":
         return "github-release"
     destination_host = target.get("destination", {}).get("host", "")
-    if (
-        target.get("instance-id") == "github-packages"
-        or destination_host.endswith("pkg.github.com")
-    ):
+    if target.get(
+        "instance-id"
+    ) == "github-packages" or destination_host.endswith("pkg.github.com"):
         return "github-packages"
     msg = (
         "unsupported reusable publish permission class for "
@@ -1026,7 +1040,9 @@ def _entry_publish_handoff(
 ) -> Json:
     plan_id = str(plan["envelope"]["plan-id"])
     entry_node_ids = sorted(
-        execution_sets["active-publish-selectors"]["external-oidc-entry-workflow"]
+        execution_sets["active-publish-selectors"][
+            "external-oidc-entry-workflow"
+        ]
     )
     inputs = {
         node_id: _publish_input_names(plan, node_id, run_id, attempt)
@@ -1303,7 +1319,9 @@ def _proof_documents(
             build_result = _read_json(
                 build_results_dir / build_result_name / "build-result.json"
             )
-            build_result_artifact_id = artifact_ids_by_name.get(build_result_name)
+            build_result_artifact_id = artifact_ids_by_name.get(
+                build_result_name
+            )
             if not isinstance(build_result_artifact_id, int):
                 msg = f"missing Actions artifact id for {build_result_name}"
                 raise TypeError(msg)
