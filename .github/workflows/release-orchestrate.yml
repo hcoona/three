@@ -148,6 +148,7 @@ jobs:
       - name: Collect .NET metadata
         shell: bash
         run: |
+          dotnet tool restore
           mkdir -p .three-workflow-release/metadata
           uv run three-workflow-release-metadata dotnet \
             --repo-root . \
