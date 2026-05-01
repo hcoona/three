@@ -1,0 +1,355 @@
+name: Release Official
+run-name: Release official by @${{ github.triggering_actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      requested-project-ids:
+        description: Optional comma or newline separated project IDs. Empty means all releasable projects.
+        required: false
+        type: string
+        default: ''
+      dry-run:
+        description: Run planning and validation without tag or publish side effects.
+        required: true
+        type: boolean
+        default: true
+      validation-build:
+        description: In dry-run mode, also run validation-only builds.
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: three-release:release-official.yml
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  authorize-entry:
+    name: Authorize official release entry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit-sha: ${{ steps.authorize.outputs.commit_sha }}
+      requested-project-ids-json: ${{ steps.authorize.outputs.requested_project_ids_json }}
+      dry-run: ${{ steps.authorize.outputs.dry_run }}
+      validation-build: ${{ steps.authorize.outputs.validation_build }}
+      force: ${{ steps.authorize.outputs.force }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - name: Authorize and pin dispatch ref
+        id: authorize
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ACTOR: ${{ github.triggering_actor }}
+          RELEASE_DRY_RUN: ${{ inputs.dry-run }}
+          RELEASE_PINNED_SHA: ${{ github.sha }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_REQUESTED_PROJECT_IDS: ${{ inputs.requested-project-ids }}
+          RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
+        run: |
+          mkdir -p .three-workflow-release/entry
+          uv run python eng/scripts/workflow_release_control.py normalize-entry \
+            --profile official \
+            --repository "$RELEASE_REPOSITORY" \
+            --actor "$RELEASE_ACTOR" \
+            --ref "$RELEASE_REF" \
+            --ref-name "$RELEASE_REF_NAME" \
+            --ref-type "$RELEASE_REF_TYPE" \
+            --pinned-sha "$RELEASE_PINNED_SHA" \
+            --requested-project-ids "$RELEASE_REQUESTED_PROJECT_IDS" \
+            --dry-run "$RELEASE_DRY_RUN" \
+            --validation-build "$RELEASE_VALIDATION_BUILD" \
+            --force false \
+            --metadata-out .three-workflow-release/entry/entry-metadata.json \
+            --diagnostics-out .three-workflow-release/entry/planner-diagnostics.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload authorization diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-planner-diagnostics-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .three-workflow-release/entry/planner-diagnostics.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
+  orchestrate:
+    name: Orchestrate official release
+    needs: authorize-entry
+    uses: ./.github/workflows/release-orchestrate.yml
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    with:
+      profile: official
+      commit-sha: ${{ needs.authorize-entry.outputs.commit-sha }}
+      requested-project-ids-json: ${{ needs.authorize-entry.outputs.requested-project-ids-json }}
+      dry-run: ${{ needs.authorize-entry.outputs.dry-run == 'true' }}
+      validation-build: ${{ needs.authorize-entry.outputs.validation-build == 'true' }}
+      force: false
+      release-environment: release
+      enabled-external-oidc-targets: ${{ vars.THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS }}
+
+  publish-entry:
+    name: Publish entry-hosted node
+    needs:
+      - authorize-entry
+      - orchestrate
+    if: ${{ always() && needs.orchestrate.outputs.entry-publish-node-ids != '' && needs.orchestrate.outputs.entry-publish-node-ids != '[]' && needs.orchestrate.outputs.plan-artifact-name != '' && needs.orchestrate.outputs.entry-publish-handoff-artifact-name != '' && needs.orchestrate.outputs.validate-conclusion == 'success' && (needs.orchestrate.outputs.metadata-conclusion == 'success' || needs.orchestrate.outputs.metadata-conclusion == 'skipped') && needs.orchestrate.outputs.plan-conclusion == 'success' && (needs.orchestrate.outputs.build-conclusion == 'success' || needs.orchestrate.outputs.build-conclusion == 'skipped') && (needs.orchestrate.outputs.tag-conclusion == 'success' || needs.orchestrate.outputs.tag-conclusion == 'skipped') }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        publish-node-id: ${{ fromJson(needs.orchestrate.outputs.entry-publish-node-ids) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize-entry.outputs.commit-sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.orchestrate.outputs.plan-artifact-name }}
+          path: .three-workflow-release/plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.orchestrate.outputs.entry-publish-handoff-artifact-name }}
+          path: .three-workflow-release/handoff
+      - name: Download handoff-declared build inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py download-publish-inputs \
+            --plan .three-workflow-release/plan/release-plan.json \
+            --handoff .three-workflow-release/handoff/entry-publish-handoff.json \
+            --publish-node-id '${{ matrix.publish-node-id }}' \
+            --run-id '${{ github.run_id }}' \
+            --attempt '${{ github.run_attempt }}' \
+            --repository '${{ github.repository }}' \
+            --build-results-dir .three-workflow-release/build-results \
+            --bundles-dir .three-workflow-release/bundles
+      - name: Materialize entry-hosted publish request
+        run: |
+          uv run python eng/scripts/workflow_release_control.py publish-request \
+            --plan .three-workflow-release/plan/release-plan.json \
+            --publish-node-id '${{ matrix.publish-node-id }}' \
+            --run-id '${{ github.run_id }}' \
+            --attempt '${{ github.run_attempt }}' \
+            --build-results-dir .three-workflow-release/build-results \
+            --bundles-dir .three-workflow-release/bundles \
+            --handoff .three-workflow-release/handoff/entry-publish-handoff.json \
+            --out .three-workflow-release/publish-request.json
+      - name: Execute entry-hosted publish node
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run three-workflow-release-publish publish \
+            --repo-root . \
+            --request .three-workflow-release/publish-request.json \
+            --result-out .three-workflow-release/publish-result.json \
+            --work-dir .three-workflow-release/publish-work
+      - name: Compute publish result artifact name
+        id: publish_name
+        run: |
+          uv run python eng/scripts/workflow_release_control.py artifact-name \
+            --kind publish-result \
+            --run-id '${{ github.run_id }}' \
+            --attempt '${{ github.run_attempt }}' \
+            --plan-id "$(jq -r '.plan-id' .three-workflow-release/publish-result.json)" \
+            --publish-node-id '${{ matrix.publish-node-id }}' \
+            --output-name publish_result_artifact_name \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Generate proof artifacts
+        id: proofs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py generate-proofs \
+            --plan .three-workflow-release/plan/release-plan.json \
+            --publish-request .three-workflow-release/publish-request.json \
+            --publish-result .three-workflow-release/publish-result.json \
+            --publish-node-id '${{ matrix.publish-node-id }}' \
+            --run-id '${{ github.run_id }}' \
+            --attempt '${{ github.run_attempt }}' \
+            --repository '${{ github.repository }}' \
+            --workflow '${{ github.workflow }}' \
+            --head-sha '${{ needs.authorize-entry.outputs.commit-sha }}' \
+            --build-results-dir .three-workflow-release/build-results \
+            --out-dir .three-workflow-release/proofs \
+            --manifest-out .three-workflow-release/proof-manifest.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload proof staging
+        if: ${{ steps.proofs.outputs.has_proofs == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-staging-${{ steps.publish_name.outputs.publish_result_artifact_name }}
+          path: .three-workflow-release/proofs
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.publish_name.outputs.publish_result_artifact_name }}
+          path: .three-workflow-release/publish-result.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  upload-entry-proofs:
+    name: Upload entry proof artifact
+    needs:
+      - orchestrate
+      - publish-entry
+    if: ${{ always() && needs.orchestrate.outputs.has-entry-proofs == 'true' && (needs.publish-entry.result == 'success' || needs.publish-entry.result == 'failure') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        proof: ${{ fromJson(needs.orchestrate.outputs.entry-proof-matrix) }}
+    steps:
+      - uses: actions/download-artifact@v4
+        id: download
+        continue-on-error: true
+        with:
+          name: ${{ matrix.proof.staging-artifact-name }}
+          path: .three-workflow-release/proofs
+      - name: Check staged proof
+        id: staged
+        env:
+          PROOF_FILE: ${{ matrix.proof.file }}
+        run: |
+          if [ -f ".three-workflow-release/proofs/$PROOF_FILE" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: ${{ steps.staged.outputs.present == 'true' }}
+        with:
+          name: ${{ matrix.proof.name }}
+          path: .three-workflow-release/proofs/${{ matrix.proof.file }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  report:
+    name: Report official release
+    needs:
+      - authorize-entry
+      - orchestrate
+      - publish-entry
+      - upload-entry-proofs
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: .three-workflow-release/artifacts
+      - name: Render report
+        env:
+          RELEASE_DRY_RUN: ${{ inputs.dry-run }}
+          RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
+          RELEASE_VALIDATE_CONCLUSION: ${{ needs.orchestrate.outputs.validate-conclusion }}
+          RELEASE_METADATA_CONCLUSION: ${{ needs.orchestrate.outputs.metadata-conclusion }}
+          RELEASE_PLAN_CONCLUSION: ${{ needs.orchestrate.outputs.plan-conclusion }}
+          RELEASE_BUILD_CONCLUSION: ${{ needs.orchestrate.outputs.build-conclusion }}
+          RELEASE_TAG_CONCLUSION: ${{ needs.orchestrate.outputs.tag-conclusion }}
+          RELEASE_REUSABLE_PUBLISH_CONCLUSION: ${{ needs.orchestrate.outputs.publish-conclusion }}
+          RELEASE_ENTRY_PUBLISH_CONCLUSION: ${{ needs.publish-entry.result }}
+        run: |
+          plan_path="$(find .three-workflow-release/artifacts -path '*/release-plan.json' -print -quit || true)"
+          sets_path="$(find .three-workflow-release/artifacts -path '*/execution-sets.json' -print -quit || true)"
+          diag_path="$(find .three-workflow-release/artifacts -path '*/planner-diagnostics.json' -print -quit || true)"
+          head_sha='${{ needs.authorize-entry.outputs.commit-sha }}'
+          if [ -z "$head_sha" ]; then head_sha='${{ github.sha }}'; fi
+          validate_conclusion="${RELEASE_VALIDATE_CONCLUSION:-skipped}"
+          metadata_conclusion="${RELEASE_METADATA_CONCLUSION:-skipped}"
+          plan_conclusion="${RELEASE_PLAN_CONCLUSION:-skipped}"
+          build_conclusion="${RELEASE_BUILD_CONCLUSION:-skipped}"
+          tag_conclusion="${RELEASE_TAG_CONCLUSION:-skipped}"
+          reusable_publish_conclusion="${RELEASE_REUSABLE_PUBLISH_CONCLUSION:-skipped}"
+          entry_publish_conclusion="${RELEASE_ENTRY_PUBLISH_CONCLUSION:-skipped}"
+          publish_conclusion=skipped
+          for conclusion in "$reusable_publish_conclusion" "$entry_publish_conclusion"; do
+            if [ "$conclusion" = "failure" ]; then
+              publish_conclusion=failure
+              break
+            fi
+            if [ "$conclusion" = "cancelled" ] && [ "$publish_conclusion" != "failure" ]; then
+              publish_conclusion=cancelled
+            fi
+            if [ "$conclusion" = "success" ] && [ "$publish_conclusion" = "skipped" ]; then
+              publish_conclusion=success
+            fi
+          done
+          uv run python eng/scripts/workflow_release_control.py report \
+            --repository '${{ github.repository }}' \
+            --workflow '${{ github.workflow }}' \
+            --run-id '${{ github.run_id }}' \
+            --attempt '${{ github.run_attempt }}' \
+            --head-sha "$head_sha" \
+            --profile official \
+            --dry-run "$RELEASE_DRY_RUN" \
+            --validation-build "$RELEASE_VALIDATION_BUILD" \
+            --plan "$plan_path" \
+            --execution-sets "$sets_path" \
+            --diagnostics "$diag_path" \
+            --artifacts-root .three-workflow-release/artifacts \
+            --authorize-conclusion '${{ needs.authorize-entry.result }}' \
+            --validate-conclusion "$validate_conclusion" \
+            --metadata-conclusion "$metadata_conclusion" \
+            --plan-conclusion "$plan_conclusion" \
+            --build-conclusion "$build_conclusion" \
+            --tag-conclusion "$tag_conclusion" \
+            --publish-conclusion "$publish_conclusion" \
+            --out .three-workflow-release/release-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-report-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .three-workflow-release/release-report.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30

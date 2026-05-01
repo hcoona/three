@@ -1,0 +1,122 @@
+name: Release Build Variant
+
+on:
+  workflow_call:
+    inputs:
+      commit-sha:
+        required: true
+        type: string
+      plan-artifact-name:
+        required: true
+        type: string
+      variant-id:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      run-id:
+        required: true
+        type: string
+      run-attempt:
+        required: true
+        type: string
+    outputs:
+      bundle-artifact-name:
+        value: ${{ jobs.build.outputs.bundle-artifact-name }}
+      build-result-artifact-name:
+        value: ${{ jobs.build.outputs.build-result-artifact-name }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    name: Build ${{ inputs.variant-id }}
+    runs-on: ${{ inputs.runner }}
+    outputs:
+      bundle-artifact-name: ${{ steps.names.outputs.bundle_artifact_name }}
+      build-result-artifact-name: ${{ steps.names.outputs.build_result_artifact_name }}
+    steps:
+      - name: Check out selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit-sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - name: Download release plan
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.plan-artifact-name }}
+          path: .three-workflow-release/plan
+
+      - name: Compute artifact names
+        id: names
+        env:
+          RELEASE_RUN_ATTEMPT: ${{ inputs.run-attempt }}
+          RELEASE_RUN_ID: ${{ inputs.run-id }}
+          RELEASE_VARIANT_ID: ${{ inputs.variant-id }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py artifact-name \
+            --kind variant-bundle \
+            --run-id "$RELEASE_RUN_ID" \
+            --attempt "$RELEASE_RUN_ATTEMPT" \
+            --plan-id "$(jq -r '.envelope["plan-id"]' .three-workflow-release/plan/release-plan.json)" \
+            --variant-id "$RELEASE_VARIANT_ID" \
+            --output-name bundle_artifact_name \
+            --github-output "$GITHUB_OUTPUT"
+          uv run python eng/scripts/workflow_release_control.py artifact-name \
+            --kind build-result \
+            --run-id "$RELEASE_RUN_ID" \
+            --attempt "$RELEASE_RUN_ATTEMPT" \
+            --plan-id "$(jq -r '.envelope["plan-id"]' .three-workflow-release/plan/release-plan.json)" \
+            --variant-id "$RELEASE_VARIANT_ID" \
+            --output-name build_result_artifact_name \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Materialize build request
+        env:
+          RELEASE_VARIANT_ID: ${{ inputs.variant-id }}
+        shell: bash
+        run: |
+          mkdir -p .three-workflow-release/build
+          uv run python eng/scripts/workflow_release_control.py build-request \
+            --plan .three-workflow-release/plan/release-plan.json \
+            --variant-id "$RELEASE_VARIANT_ID" \
+            --out .three-workflow-release/build/build-request.json
+
+      - name: Execute build unit
+        shell: bash
+        run: |
+          uv run three-workflow-release-build build \
+            --repo-root . \
+            --request .three-workflow-release/build/build-request.json \
+            --bundle-dir .three-workflow-release/build/bundle \
+            --result-out .three-workflow-release/build/build-result.json \
+            --diagnostics-out .three-workflow-release/build/build-diagnostics.json
+
+      - name: Upload build bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.bundle_artifact_name }}
+          path: .three-workflow-release/build/bundle
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build result
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.build_result_artifact_name }}
+          path: .three-workflow-release/build/build-result.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
