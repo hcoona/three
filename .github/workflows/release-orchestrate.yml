@@ -247,6 +247,7 @@ jobs:
           RELEASE_DRY_RUN: ${{ inputs.dry-run }}
           RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
         run: |
+          dotnet tool restore
           metadata_args=()
           if [ -f .three-workflow-release/metadata/dotnet-planner-metadata.json ]; then
             metadata_args=(--dotnet-metadata .three-workflow-release/metadata/dotnet-planner-metadata.json)
