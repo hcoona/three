@@ -558,6 +558,7 @@ jobs:
     uses: ./.github/workflows/release-publish-node.yml
     permissions:
       contents: write
+      packages: write
       actions: read
       id-token: write
       attestations: write
@@ -585,9 +586,11 @@ jobs:
         publish-node-id: ${{ fromJson(needs.plan.outputs.reusable-github-packages-publish-node-ids) }}
     uses: ./.github/workflows/release-publish-node.yml
     permissions:
-      contents: read
+      contents: write
       packages: write
       actions: read
+      id-token: write
+      attestations: write
     with:
       commit-sha: ${{ inputs.commit-sha }}
       plan-artifact-name: ${{ needs.plan.outputs.plan-artifact-name }}
@@ -612,9 +615,11 @@ jobs:
         publish-node-id: ${{ fromJson(needs.plan.outputs.reusable-external-oidc-publish-node-ids) }}
     uses: ./.github/workflows/release-publish-node.yml
     permissions:
-      contents: read
+      contents: write
+      packages: write
       actions: read
       id-token: write
+      attestations: write
     with:
       commit-sha: ${{ inputs.commit-sha }}
       plan-artifact-name: ${{ needs.plan.outputs.plan-artifact-name }}
