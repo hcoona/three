@@ -1117,15 +1117,47 @@ def _require_single_kind(
 
 
 def _validate_npm_pack_json(stdout: str) -> None:
-    """Require npm pack --json to emit a non-empty JSON array."""
-    try:
-        payload = json.loads(stdout)
-    except json.JSONDecodeError as exc:
-        msg = "npm pack --json emitted invalid JSON"
-        raise BuildExecutorError(msg) from exc
-    if not isinstance(payload, list) or not payload:
-        msg = "npm pack --json emitted no package entries"
-        raise BuildExecutorError(msg)
+    """Require npm pack --json to emit a valid, non-empty package array."""
+    _extract_npm_pack_json(stdout)
+
+
+def _extract_npm_pack_json(stdout: str) -> list[object]:
+    """Extract the npm pack JSON array from script-noisy stdout."""
+    decoder = json.JSONDecoder()
+    for offset, char in enumerate(stdout):
+        if char != "[":
+            continue
+        with suppress(json.JSONDecodeError):
+            payload, _ = decoder.raw_decode(stdout[offset:])
+            if _is_npm_pack_payload(payload):
+                return payload
+    excerpt = _diagnostic_excerpt(stdout)
+    msg = (
+        "npm pack --json emitted no valid package entries; "
+        f"stdout excerpt: {excerpt}"
+    )
+    raise BuildExecutorError(msg)
+
+
+def _is_npm_pack_payload(value: object) -> bool:
+    """Return whether a decoded value has the npm pack --json result shape."""
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(
+            isinstance(entry, Mapping)
+            and isinstance(entry.get("filename"), str)
+            for entry in value
+        )
+    )
+
+
+def _diagnostic_excerpt(text: str, *, limit: int = 240) -> str:
+    """Return a compact excerpt suitable for error diagnostics."""
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact or "<empty>"
+    return f"{compact[:limit]}..."
 
 
 def _validate_package_versions(

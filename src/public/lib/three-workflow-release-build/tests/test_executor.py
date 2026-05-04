@@ -1175,6 +1175,40 @@ def test_node_executor_requires_npm_json_and_one_tarball() -> None:
         _remove_tree_scratch(scratch)
 
 
+def test_node_pack_json_accepts_script_noisy_stdout() -> None:
+    """Accept pnpm/npm script logs around the pack JSON payload."""
+    validate_pack_json = vars(executor_module)["_validate_npm_pack_json"]
+    validate_pack_json(
+        "\n> example@1.2.3 prepack\n> node prepack.mjs\n"
+        '[{"filename":"example-1.2.3.tgz"}]\n'
+        "> example@1.2.3 postpack\n> node postpack.mjs\n"
+    )
+
+
+def test_node_pack_json_skips_unrelated_json_array() -> None:
+    """Skip decodable arrays that are not npm pack entries."""
+    validate_pack_json = vars(executor_module)["_validate_npm_pack_json"]
+    validate_pack_json(
+        '["debug"]\n'
+        "> example@1.2.3 prepack\n"
+        '[{"filename":"example-1.2.3.tgz"}]\n'
+    )
+
+
+def test_node_pack_json_rejects_unrelated_array_without_valid_payload() -> None:
+    """Reject lifecycle log arrays when the npm pack payload is absent."""
+    validate_pack_json = vars(executor_module)["_validate_npm_pack_json"]
+    with pytest.raises(BuildExecutorError, match="no valid package entries"):
+        validate_pack_json('["debug"]\n[{"name":"example-1.2.3.tgz"}')
+
+
+def test_node_pack_json_failure_includes_stdout_excerpt() -> None:
+    """Report a compact stdout excerpt when pack JSON cannot be found."""
+    validate_pack_json = vars(executor_module)["_validate_npm_pack_json"]
+    with pytest.raises(BuildExecutorError, match="stdout excerpt:"):
+        validate_pack_json("> example@1.2.3 prepack\nnot json\n")
+
+
 def test_node_workspace_runner_installs_pnpm_dependencies() -> None:
     """Use corepack and pnpm for projects covered by a root pnpm workspace."""
     scratch = REPO_ROOT / ".build-executor-node-pnpm-workspace-test"

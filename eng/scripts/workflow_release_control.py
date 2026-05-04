@@ -990,8 +990,49 @@ def _variant_runner(plan: Json, variant_id: str) -> str:
     variant = plan["graph"]["variants"][variant_id]
     project = plan["envelope"]["projects"][variant["project-id"]]
     if project["ecosystem"] == "dotnet":
+        if _dotnet_variant_has_executable_artifact(plan, variant):
+            runner = _runner_for_variant_dimensions(variant.get("dimensions"))
+            if runner is not None:
+                return runner
         return "windows-latest"
     return "ubuntu-latest"
+
+
+def _dotnet_variant_has_executable_artifact(plan: Json, variant: Json) -> bool:
+    artifact_ids = variant.get("artifact-ids")
+    if not isinstance(artifact_ids, list):
+        return False
+    artifacts = plan["graph"]["artifacts"]
+    return any(
+        isinstance(artifact_id, str)
+        and artifacts[artifact_id].get("concrete-kind") == "executable"
+        for artifact_id in artifact_ids
+    )
+
+
+def _runner_for_variant_dimensions(dimensions: object) -> str | None:
+    if not isinstance(dimensions, dict):
+        return None
+    os_value = dimensions.get("os")
+    if isinstance(os_value, str):
+        runner = _runner_for_os_token(os_value)
+        if runner is not None:
+            return runner
+    rid = dimensions.get("rid")
+    if isinstance(rid, str):
+        return _runner_for_os_token(rid.split("-", 1)[0])
+    return None
+
+
+def _runner_for_os_token(value: str) -> str | None:
+    normalized = value.casefold()
+    if normalized in {"windows", "win"}:
+        return "windows-latest"
+    if normalized == "linux":
+        return "ubuntu-latest"
+    if normalized in {"macos", "osx"}:
+        return "macos-latest"
+    return None
 
 
 def _publish_permission_class(plan: Json, publish_node_id: str) -> str:

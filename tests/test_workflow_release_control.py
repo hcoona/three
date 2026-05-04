@@ -1388,6 +1388,40 @@ def test_matrix_outputs_route_non_dotnet_variants_to_ubuntu() -> None:
     assert control._variant_runner(plan, "variant/v1") == "ubuntu-latest"
 
 
+def test_dotnet_executable_linux_variant_uses_ubuntu_runner() -> None:
+    """NativeAOT Linux executable variants must build on Linux."""
+    plan = _dotnet_executable_runner_plan({"rid": "linux-x64"})
+
+    assert control._variant_runner(plan, "variant/v1") == "ubuntu-latest"
+
+
+def test_dotnet_executable_windows_variant_uses_windows_runner() -> None:
+    """NativeAOT Windows executable variants continue to build on Windows."""
+    plan = _dotnet_executable_runner_plan({"rid": "win-x64"})
+
+    assert control._variant_runner(plan, "variant/v1") == "windows-latest"
+
+
+def _dotnet_executable_runner_plan(
+    dimensions: dict[str, str],
+) -> dict[str, object]:
+    plan = deepcopy(_load("release-plan.json"))
+    plan["graph"]["variants"]["variant/v1"]["dimensions"] = dimensions
+    plan["graph"]["variants"]["variant/v1"]["artifact-ids"] = ["artifact/exe"]
+    plan["graph"]["artifacts"] = {
+        "artifact/exe": {
+            "concrete-kind": "executable",
+            "descriptor-handle": "app-binary",
+            "kind-family": "binary",
+            "produced-from-artifact-ids": [],
+            "project-id": "example",
+            "role": "primary-binary",
+            "variant-id": "variant/v1",
+        }
+    }
+    return plan
+
+
 def test_dry_run_acceptance_control_plane_has_no_side_effect_matrix() -> None:
     """Dry-run control plane emits closed no-side-effect CI evidence."""
     plan = _load("release-plan.json")
