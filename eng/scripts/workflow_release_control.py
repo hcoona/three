@@ -1304,6 +1304,8 @@ def _publish_request(
             "sha256": receipt["sha256"],
             "byte-size": receipt["byte-size"],
         }
+        if "archive" in receipt:
+            artifacts[artifact_id]["archive"] = receipt["archive"]
     return {
         "api-version": "three.release.publish-request/v1alpha1",
         "kind": "publish-request",

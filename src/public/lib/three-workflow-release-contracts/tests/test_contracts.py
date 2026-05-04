@@ -36,6 +36,26 @@ def metadata_input_fixture() -> dict[str, Any]:
     return _load(VALID_ROOT / "dotnet-planner-metadata-input.json")
 
 
+def _make_artifact_executable(artifact: dict[str, Any]) -> None:
+    """Mutate a build-request artifact fixture into an executable artifact."""
+    artifact["role"] = "primary-binary"
+    artifact["kind-family"] = "binary"
+    artifact["concrete-kind"] = "executable"
+
+
+def _add_companion(
+    artifact: dict[str, Any], companion_path: str = "*.dbg"
+) -> None:
+    """Attach one companion declaration to a build-request artifact fixture."""
+    artifact["companions"] = [
+        {
+            "path": companion_path,
+            "role": "debug-symbol",
+            "required": False,
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     "fixture", sorted(VALID_ROOT.glob("*.json")), ids=lambda path: path.name
 )
@@ -147,6 +167,64 @@ def test_build_diagnostic_accepts_valid_scope_ids(scope_kind: str) -> None:
     if scope_kind == "artifact":
         diagnostic["artifact-id"] = "artifact/wheel"
     validate_contract(document)
+
+
+@pytest.mark.parametrize(
+    "companion_path",
+    ["*.dbg", "playwright.sh"],
+)
+def test_build_request_accepts_root_level_companion_paths(
+    companion_path: str,
+) -> None:
+    """Accept root-level executable companion paths and globs."""
+    document = _load(VALID_ROOT / "build-request.json")
+    artifact = document["artifacts"]["artifact/package"]
+    assert isinstance(artifact, dict)
+    _make_artifact_executable(artifact)
+    _add_companion(artifact, companion_path)
+    validate_contract(document)
+
+
+def test_build_request_rejects_companions_on_non_executable_artifacts() -> None:
+    """Reject companion declarations on package artifacts."""
+    document = _load(VALID_ROOT / "build-request.json")
+    artifact = document["artifacts"]["artifact/package"]
+    assert isinstance(artifact, dict)
+    _add_companion(artifact)
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    message = str(error.value)
+    assert "companions" in message
+    assert "executable" in message
+
+
+@pytest.mark.parametrize(
+    "companion_path",
+    [
+        "",
+        ".",
+        "..",
+        "**",
+        "../secret",
+        "/secret",
+        "C:/secret",
+        "C:secret",
+        "nested/file.dbg",
+        r"nested\file.dbg",
+    ],
+)
+def test_build_request_rejects_unsafe_companion_paths(
+    companion_path: str,
+) -> None:
+    """Reject companion paths that could escape root-level output matching."""
+    document = _load(VALID_ROOT / "build-request.json")
+    artifact = document["artifacts"]["artifact/package"]
+    assert isinstance(artifact, dict)
+    _make_artifact_executable(artifact)
+    _add_companion(artifact, companion_path)
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    assert "companions[0].path" in str(error.value)
 
 
 def test_build_diagnostic_request_scope_omits_narrower_ids() -> None:

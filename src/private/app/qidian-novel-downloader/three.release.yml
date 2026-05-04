@@ -29,6 +29,10 @@ variants:
         role: primary-binary
         kind-family: binary
         concrete-kind: executable
+        companions:
+          - path: playwright.sh
+            role: runtime-helper
+            required: true
   - id: osx-x64
     dimensions:
       os: macos
@@ -38,6 +42,10 @@ variants:
         role: primary-binary
         kind-family: binary
         concrete-kind: executable
+        companions:
+          - path: playwright.sh
+            role: runtime-helper
+            required: true
 
 profiles:
   buddy:

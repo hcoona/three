@@ -74,6 +74,20 @@ class _ArtifactSlot:
     role: str
     kind_family: str
     concrete_kind: str
+    companions: tuple[_ArtifactCompanion, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ArtifactCompanion:
+    path: str
+    role: str
+    required: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _ProducedArtifact:
+    path: Path
+    receipt_extra: Json | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,7 +437,7 @@ def _mkdir_output_work_dir(path: Path) -> None:
 
 
 def _receipt_produced_artifacts(
-    produced: Mapping[str, Path],
+    produced: Mapping[str, Path | _ProducedArtifact],
     dist_dir: Path,
     bundle_dir: Path,
 ) -> dict[str, Json]:
@@ -431,7 +445,13 @@ def _receipt_produced_artifacts(
     receipts: dict[str, Json] = {}
     used_paths: set[str] = set()
     for artifact_id in sorted(produced):
-        produced_path = produced[artifact_id]
+        produced_entry = produced[artifact_id]
+        if isinstance(produced_entry, _ProducedArtifact):
+            produced_path = produced_entry.path
+            receipt_extra = produced_entry.receipt_extra
+        else:
+            produced_path = produced_entry
+            receipt_extra = None
         if not produced_path.is_file():
             msg = f"artifact {artifact_id!r} was not produced as one file"
             raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
@@ -441,7 +461,9 @@ def _receipt_produced_artifacts(
             msg = f"duplicate bundle-relative path {relative!r}"
             raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
         used_paths.add(relative)
-        receipts[artifact_id] = _artifact_receipt(destination, relative)
+        receipts[artifact_id] = _artifact_receipt(
+            destination, relative, receipt_extra
+        )
     return receipts
 
 
@@ -767,7 +789,7 @@ def _dotnet_publish_executable(
     manifest: Path,
     output_root: Path,
     runner: Runner,
-) -> dict[str, Path]:
+) -> dict[str, Path | _ProducedArtifact]:
     """Run dotnet publish for one single-file executable artifact."""
     _require_single_kind(artifacts, "executable")
     variant = _mapping(request["variant"], "variant")
@@ -797,8 +819,14 @@ def _dotnet_publish_executable(
         version_property,
     ]
     _run_checked(command, manifest.parent, runner)
-    candidates = tuple(_executable_candidates(output, rid))
-    return _match_outputs(artifacts, {"executable": candidates})
+    companion_patterns = tuple(
+        companion.path
+        for artifact in artifacts
+        for companion in artifact.companions
+    )
+    candidates = tuple(_executable_candidates(output, rid, companion_patterns))
+    produced = _match_outputs(artifacts, {"executable": candidates})
+    return _archive_executable_artifacts(produced, artifacts, output, request)
 
 
 def _dotnet_inno_setup(context: _BuildContext) -> dict[str, Path]:
@@ -882,6 +910,189 @@ def _match_outputs(
     return produced
 
 
+def _archive_executable_artifacts(
+    produced: Mapping[str, Path],
+    artifacts: Sequence[_ArtifactSlot],
+    output: Path,
+    request: Mapping[str, object],
+) -> dict[str, Path | _ProducedArtifact]:
+    """Package executable artifacts plus declared companions as one archive."""
+    slots = {slot.artifact_id: slot for slot in artifacts}
+    archived: dict[str, Path | _ProducedArtifact] = {}
+    for artifact_id, primary in produced.items():
+        slot = slots[artifact_id]
+        companions = _declared_companion_files(output, primary, slot)
+        if not slot.companions:
+            archived[artifact_id] = primary
+            continue
+        archive_path = output / _executable_archive_filename(request)
+        members = [
+            (archive_name, path)
+            for archive_name, path, _companion in companions
+        ]
+        members.append((primary.name, primary))
+        _write_deterministic_zip(archive_path, members)
+        companion_receipts = [
+            _archive_member_receipt(
+                member_path,
+                companion_path,
+                role=companion.role,
+                required=companion.required,
+            )
+            for member_path, companion_path, companion in companions
+        ]
+        archived[artifact_id] = _ProducedArtifact(
+            archive_path,
+            {
+                "archive": {
+                    "format": "zip",
+                    "primary-executable": _archive_member_receipt(
+                        primary.name, primary, role="primary-binary"
+                    ),
+                    "companions": companion_receipts,
+                }
+            },
+        )
+    return archived
+
+
+def _executable_archive_filename(request: Mapping[str, object]) -> str:
+    """Return the planner-frozen GitHub asset name for executable archives."""
+    project = _mapping(request["project"], "project")
+    variant = _mapping(request["variant"], "variant")
+    dimensions = _mapping(variant["dimensions"], "variant.dimensions")
+    return (
+        f"{variant['project-id']}-"
+        f"{project['resolved-version']}-"
+        f"{_variant_token(dimensions)}.zip"
+    )
+
+
+def _variant_token(dimensions: Mapping[str, object]) -> str:
+    """Return the planner variant token rendered from variant dimensions."""
+    if not dimensions:
+        return "default"
+    return "-".join(str(value) for _, value in sorted(dimensions.items()))
+
+
+def _declared_companion_files(
+    output: Path,
+    primary: Path,
+    slot: _ArtifactSlot,
+) -> list[tuple[str, Path, _ArtifactCompanion]]:
+    """Resolve descriptor-declared executable companion files."""
+    companions: list[tuple[str, Path, _ArtifactCompanion]] = []
+    used_archive_paths = {primary.name}
+    for companion in slot.companions:
+        matches = sorted(
+            path
+            for path in _safe_companion_glob(output, companion.path)
+            if path.is_file() and path != primary
+        )
+        if not matches and companion.required:
+            msg = (
+                f"required executable companion {companion.path!r} "
+                f"for artifact {slot.artifact_id!r} was not produced"
+            )
+            raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+        if len(matches) > 1:
+            msg = (
+                f"executable companion {companion.path!r} "
+                f"for artifact {slot.artifact_id!r} matched "
+                f"{len(matches)} files"
+            )
+            raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+        for path in matches:
+            archive_path = path.name
+            if archive_path in used_archive_paths:
+                msg = f"duplicate executable archive member {archive_path!r}"
+                raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+            used_archive_paths.add(archive_path)
+            companions.append((archive_path, path, companion))
+    return companions
+
+
+def _safe_companion_glob(output: Path, pattern: str) -> tuple[Path, ...]:
+    """Return glob matches that remain inside the publish output root."""
+    root = output.resolve()
+    matches: list[Path] = []
+    for path in output.glob(pattern):
+        resolved = path.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            msg = (
+                f"executable companion pattern {pattern!r} matched "
+                f"path outside output root: {path}"
+            )
+            raise BuildExecutorError(
+                msg,
+                code="BUILD_OUTPUT_INVALID",
+                details={
+                    "pattern": pattern,
+                    "output-root": root.as_posix(),
+                    "matched-path": resolved.as_posix(),
+                },
+            ) from exc
+        matches.append(path)
+    return tuple(matches)
+
+
+def _write_deterministic_zip(
+    archive_path: Path, members: Sequence[tuple[str, Path]]
+) -> None:
+    """Write a stable zip archive with root-level members."""
+    try:
+        with zipfile.ZipFile(
+            archive_path,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as archive:
+            for archive_name, source in sorted(members):
+                info = zipfile.ZipInfo(archive_name)
+                info.date_time = (1980, 1, 1, 0, 0, 0)
+                mode = source.stat().st_mode & 0o777
+                info.external_attr = (stat.S_IFREG | mode) << 16
+                archive.writestr(info, source.read_bytes())
+    except (OSError, zipfile.BadZipFile) as exc:
+        msg = f"executable archive could not be written: {exc}"
+        raise BuildExecutorError(
+            msg,
+            code="BUILD_OUTPUT_INVALID",
+            phase="receipt",
+            details={"path": archive_path.as_posix(), "error": str(exc)},
+        ) from exc
+
+
+def _archive_member_receipt(
+    archive_path: str,
+    path: Path,
+    *,
+    role: str,
+    required: bool | None = None,
+) -> Json:
+    """Return hash metadata for one file inside an executable archive."""
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        msg = f"archive member {path} could not be read for receipt: {exc}"
+        raise BuildExecutorError(
+            msg,
+            code="BUILD_OUTPUT_INVALID",
+            phase="receipt",
+            details={"path": path.as_posix(), "error": str(exc)},
+        ) from exc
+    receipt: Json = {
+        "path": archive_path,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "byte-size": len(data),
+        "role": role,
+    }
+    if required is not None:
+        receipt["required"] = required
+    return receipt
+
+
 def _artifact_slots(request: Mapping[str, object]) -> tuple[_ArtifactSlot, ...]:
     """Return artifact fulfillment slots from a validated build request."""
     artifacts = _mapping(request["artifacts"], "artifacts")
@@ -894,9 +1105,31 @@ def _artifact_slots(request: Mapping[str, object]) -> tuple[_ArtifactSlot, ...]:
                 role=str(entry["role"]),
                 kind_family=str(entry["kind-family"]),
                 concrete_kind=str(entry["concrete-kind"]),
+                companions=_artifact_companions(entry, artifact_id),
             )
         )
     return tuple(slots)
+
+
+def _artifact_companions(
+    artifact: Mapping[str, object], artifact_id: str
+) -> tuple[_ArtifactCompanion, ...]:
+    """Return normalized executable companion declarations."""
+    raw = artifact.get("companions", [])
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        msg = f"artifact {artifact_id!r} companions must be an array"
+        raise BuildExecutorError(msg, code="BUILD_INVALID_INPUT")
+    companions: list[_ArtifactCompanion] = []
+    for index, item in enumerate(raw):
+        entry = _mapping(item, f"artifacts.{artifact_id}.companions[{index}]")
+        companions.append(
+            _ArtifactCompanion(
+                path=str(entry["path"]),
+                role=str(entry["role"]),
+                required=bool(entry["required"]),
+            )
+        )
+    return tuple(companions)
 
 
 def _variant_id_from_request(request: Mapping[str, object]) -> str:
@@ -1117,15 +1350,15 @@ def _require_single_kind(
 
 
 def _validate_npm_pack_json(stdout: str) -> None:
-    """Require npm pack --json to emit a valid, non-empty package array."""
+    """Require npm/pnpm pack --json to emit a valid package entry."""
     _extract_npm_pack_json(stdout)
 
 
-def _extract_npm_pack_json(stdout: str) -> list[object]:
-    """Extract the npm pack JSON array from script-noisy stdout."""
+def _extract_npm_pack_json(stdout: str) -> object:
+    """Extract the npm/pnpm pack JSON payload from script-noisy stdout."""
     decoder = json.JSONDecoder()
     for offset, char in enumerate(stdout):
-        if char != "[":
+        if char not in "[{":
             continue
         with suppress(json.JSONDecodeError):
             payload, _ = decoder.raw_decode(stdout[offset:])
@@ -1140,14 +1373,30 @@ def _extract_npm_pack_json(stdout: str) -> list[object]:
 
 
 def _is_npm_pack_payload(value: object) -> bool:
-    """Return whether a decoded value has the npm pack --json result shape."""
-    return (
-        isinstance(value, list)
-        and bool(value)
-        and all(
-            isinstance(entry, Mapping)
-            and isinstance(entry.get("filename"), str)
-            for entry in value
+    """Return whether a decoded value has an npm/pnpm pack result shape."""
+    if isinstance(value, list):
+        return bool(value) and all(_is_npm_pack_entry(entry) for entry in value)
+    return _is_npm_pack_entry(value)
+
+
+def _is_npm_pack_entry(value: object) -> bool:
+    """Return whether a decoded object is a package pack entry."""
+    if not isinstance(value, Mapping):
+        return False
+    filename = value.get("filename")
+    if not isinstance(filename, str) or not filename.endswith(".tgz"):
+        return False
+    return any(
+        key in value
+        for key in (
+            "name",
+            "version",
+            "integrity",
+            "shasum",
+            "files",
+            "size",
+            "unpackedSize",
+            "entryCount",
         )
     )
 
@@ -1691,10 +1940,17 @@ def _npm_match_candidate_names(names: set[str]) -> set[str]:
     return candidates
 
 
-def _executable_candidates(output: Path, rid: str) -> list[Path]:
+def _executable_candidates(
+    output: Path, rid: str, companion_patterns: Sequence[str] = ()
+) -> list[Path]:
     """Return candidate single-file executable outputs."""
     if rid.startswith("win-"):
-        return [path for path in output.glob("*.exe") if path.is_file()]
+        return [
+            path
+            for path in output.glob("*.exe")
+            if path.is_file()
+            and not _matches_any_companion(path.name, companion_patterns)
+        ]
     candidates: list[Path] = []
     ignored_suffixes = {
         ".config",
@@ -1706,7 +1962,11 @@ def _executable_candidates(output: Path, rid: str) -> list[Path]:
         ".xml",
     }
     for path in output.iterdir():
-        if not path.is_file() or path.suffix in ignored_suffixes:
+        if (
+            not path.is_file()
+            or path.suffix in ignored_suffixes
+            or _matches_any_companion(path.name, companion_patterns)
+        ):
             continue
         if path.suffix == "":
             candidates.append(path)
@@ -1715,6 +1975,11 @@ def _executable_candidates(output: Path, rid: str) -> list[Path]:
         if mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
             candidates.append(path)
     return candidates
+
+
+def _matches_any_companion(name: str, patterns: Sequence[str]) -> bool:
+    """Return whether an output name matches a companion declaration."""
+    return any(fnmatchcase(name, pattern) for pattern in patterns)
 
 
 def _copy_to_dist(source: Path, dist_dir: Path) -> Path:
@@ -1752,7 +2017,9 @@ def _safe_filename(name: str) -> str:
     return sanitized or "artifact"
 
 
-def _artifact_receipt(path: Path, relative: str) -> Json:
+def _artifact_receipt(
+    path: Path, relative: str, extra: Mapping[str, object] | None = None
+) -> Json:
     """Return the closed receipt entry for one file."""
     try:
         data = path.read_bytes()
@@ -1764,11 +2031,14 @@ def _artifact_receipt(path: Path, relative: str) -> Json:
             phase="receipt",
             details={"path": path.as_posix(), "error": str(exc)},
         ) from exc
-    return {
+    receipt: Json = {
         "bundle-relative-path": relative,
         "sha256": hashlib.sha256(data).hexdigest(),
         "byte-size": len(data),
     }
+    if extra:
+        receipt.update(extra)
+    return receipt
 
 
 def _remove_tree(path: Path) -> None:

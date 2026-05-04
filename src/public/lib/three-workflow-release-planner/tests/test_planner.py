@@ -1570,6 +1570,7 @@ def test_pypi_wheel_only_publish_does_not_require_sdist(
                         "wheel",
                         (),
                         "package",
+                        (),
                     ),
                 ),
             ),
@@ -1673,6 +1674,7 @@ def test_github_release_wheel_only_asset_does_not_require_sdist(
                         wheel.concrete_kind,
                         wheel.produced_from,
                         wheel.variant_id,
+                        wheel.companions,
                     ),
                     Artifact(
                         sdist.id,
@@ -1681,6 +1683,7 @@ def test_github_release_wheel_only_asset_does_not_require_sdist(
                         sdist.concrete_kind,
                         sdist.produced_from,
                         sdist.variant_id,
+                        sdist.companions,
                     ),
                 ),
             ),

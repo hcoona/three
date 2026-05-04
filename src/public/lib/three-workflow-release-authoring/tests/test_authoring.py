@@ -27,6 +27,9 @@ REPO_ROOT = Path(__file__).parents[5]
 CATALOG = REPO_ROOT / "eng/release/target-instances.yml"
 NBGV_DESCRIPTOR = REPO_ROOT / "src/public/lib/nbgv-python/three.release.yml"
 HJG_DESCRIPTOR = REPO_ROOT / "src/public/lib/Hjg.Pngcs/three.release.yml"
+QIDIAN_DESCRIPTOR = (
+    REPO_ROOT / "src/private/app/qidian-novel-downloader/three.release.yml"
+)
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -529,6 +532,42 @@ def test_missing_required_package_tuple_is_diagnostic_not_crash() -> None:
     assert any(
         issue.code == "DESC_STATIC_INVALID"
         and "required artifact tuple count" in issue.message
+        for issue in error.value.issues
+    )
+
+
+@pytest.mark.parametrize("companion_path", ["*.dbg", "playwright.sh"])
+def test_descriptor_accepts_root_level_companion_paths(
+    companion_path: str,
+) -> None:
+    """Accept root-level executable companion paths and globs."""
+    document = _load_yaml(QIDIAN_DESCRIPTOR)
+    companion = document["variants"][1]["artifacts"][0]["companions"][0]
+    companion["path"] = companion_path
+    validate_project_descriptor_document(
+        "src/private/app/qidian-novel-downloader/three.release.yml",
+        document,
+        tracked_files=_tracked_files(),
+    )
+
+
+@pytest.mark.parametrize("companion_path", ["C:secret", ".", "..", "**"])
+def test_descriptor_rejects_unsafe_companion_paths(
+    companion_path: str,
+) -> None:
+    """Reject companion paths that are not safe root-level output matches."""
+    document = _load_yaml(QIDIAN_DESCRIPTOR)
+    companion = document["variants"][1]["artifacts"][0]["companions"][0]
+    companion["path"] = companion_path
+    with pytest.raises(AuthoringValidationError) as error:
+        validate_project_descriptor_document(
+            "src/private/app/qidian-novel-downloader/three.release.yml",
+            document,
+            tracked_files=_tracked_files(),
+        )
+    assert any(
+        issue.code == "DESC_SCHEMA_INVALID"
+        and issue.path.endswith(".companions[0].path")
         for issue in error.value.issues
     )
 

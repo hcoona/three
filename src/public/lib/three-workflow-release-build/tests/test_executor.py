@@ -30,13 +30,15 @@ REPO_ROOT = Path(__file__).parents[5]
 SHA = "a" * 40
 
 
-def _request(
+def _request(  # noqa: PLR0913
     scratch: Path,
     *,
     ecosystem: str,
     artifacts: Mapping[str, tuple[str, str, str]],
     dimensions: Mapping[str, str] | None = None,
     project_id: str = "example",
+    resolved_version: str = "1.2.3",
+    companions: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
 ) -> dict[str, Any]:
     """Create one closed build request rooted under scratch."""
     release_root = scratch / project_id
@@ -64,7 +66,7 @@ def _request(
             .relative_to(REPO_ROOT)
             .as_posix(),
             "release-root": release_root.relative_to(REPO_ROOT).as_posix(),
-            "resolved-version": "1.2.3",
+            "resolved-version": resolved_version,
             "source": {
                 "primary-manifest-path": manifest.relative_to(
                     REPO_ROOT
@@ -82,15 +84,14 @@ def _request(
             "artifact-ids": artifact_ids,
         },
         "artifacts": {
-            artifact_id: {
-                "project-id": project_id,
-                "variant-id": "variant/package",
-                "descriptor-handle": artifact_id.rsplit("/", 1)[-1],
-                "role": role,
-                "kind-family": kind_family,
-                "concrete-kind": concrete_kind,
-                "produced-from-artifact-ids": [],
-            }
+            artifact_id: _artifact_request_entry(
+                artifact_id,
+                project_id,
+                role,
+                kind_family,
+                concrete_kind,
+                companions,
+            )
             for artifact_id, (
                 role,
                 kind_family,
@@ -100,6 +101,29 @@ def _request(
     }
     validate_contract(request)
     return request
+
+
+def _artifact_request_entry(  # noqa: PLR0913
+    artifact_id: str,
+    project_id: str,
+    role: str,
+    kind_family: str,
+    concrete_kind: str,
+    companions: Mapping[str, Sequence[Mapping[str, object]]] | None,
+) -> dict[str, Any]:
+    """Create one build-request artifact entry."""
+    entry: dict[str, Any] = {
+        "project-id": project_id,
+        "variant-id": "variant/package",
+        "descriptor-handle": artifact_id.rsplit("/", 1)[-1],
+        "role": role,
+        "kind-family": kind_family,
+        "concrete-kind": concrete_kind,
+        "produced-from-artifact-ids": [],
+    }
+    if companions and artifact_id in companions:
+        entry["companions"] = [dict(item) for item in companions[artifact_id]]
+    return entry
 
 
 def test_python_executor_receipts_wheel_and_sdist() -> None:
@@ -1098,6 +1122,350 @@ def test_dotnet_executable_accepts_extensionless_non_windows_candidate() -> (
         _remove_tree_scratch(scratch)
 
 
+def test_dotnet_executable_archives_declared_companions() -> None:
+    """Receipt a single archive containing an executable and companions."""
+    scratch = REPO_ROOT / ".build-executor-dotnet-exe-companion-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            dimensions={"rid": "linux-x64"},
+            artifacts={
+                "artifact/exe": ("primary-binary", "binary", "executable"),
+            },
+            companions={
+                "artifact/exe": [
+                    {
+                        "path": "*.dbg",
+                        "role": "debug-symbol",
+                        "required": False,
+                    }
+                ]
+            },
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            out_dir = Path(args[args.index("--output") + 1])
+            exe = out_dir / "example"
+            exe.write_bytes(b"binary")
+            exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+            (out_dir / "example.dbg").write_bytes(b"debug")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        receipt = _result_artifacts(result)["artifact/exe"]
+        assert isinstance(receipt, dict)
+        assert (
+            receipt["bundle-relative-path"]
+            == "dist/example-1.2.3-linux-x64.zip"
+        )
+        archive = receipt["archive"]
+        assert isinstance(archive, dict)
+        primary = archive["primary-executable"]
+        assert isinstance(primary, dict)
+        assert primary["path"] == "example"
+        assert primary["sha256"] == hashlib.sha256(b"binary").hexdigest()
+        companions = archive["companions"]
+        assert isinstance(companions, list)
+        assert companions == [
+            {
+                "path": "example.dbg",
+                "sha256": hashlib.sha256(b"debug").hexdigest(),
+                "byte-size": 5,
+                "role": "debug-symbol",
+                "required": False,
+            }
+        ]
+        with zipfile.ZipFile(
+            scratch / "bundle" / "dist/example-1.2.3-linux-x64.zip"
+        ) as zf:
+            assert zf.namelist() == ["example", "example.dbg"]
+            assert zf.read("example") == b"binary"
+            assert zf.read("example.dbg") == b"debug"
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_dotnet_executable_archive_name_uses_planner_convention() -> None:
+    """Name companion archives from project id, version, and variant token."""
+    scratch = REPO_ROOT / ".build-executor-dotnet-exe-asset-name-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            project_id="release-tool",
+            resolved_version="4.5.6",
+            dimensions={"rid": "linux-x64"},
+            artifacts={
+                "artifact/exe": ("primary-binary", "binary", "executable"),
+            },
+            companions={
+                "artifact/exe": [
+                    {
+                        "path": "*.dbg",
+                        "role": "debug-symbol",
+                        "required": False,
+                    }
+                ]
+            },
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            out_dir = Path(args[args.index("--output") + 1])
+            exe = out_dir / "renamed-host"
+            exe.write_bytes(b"binary")
+            exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+            (out_dir / "renamed-host.dbg").write_bytes(b"debug")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        receipt = _result_artifacts(result)["artifact/exe"]
+        assert isinstance(receipt, dict)
+        expected = "dist/release-tool-4.5.6-linux-x64.zip"
+        assert receipt["bundle-relative-path"] == expected
+        archive = receipt["archive"]
+        assert isinstance(archive, dict)
+        primary = archive["primary-executable"]
+        assert isinstance(primary, dict)
+        assert primary["path"] == "renamed-host"
+        companions = archive["companions"]
+        assert isinstance(companions, list)
+        assert companions[0]["path"] == "renamed-host.dbg"
+        assert not (
+            scratch / "bundle" / "dist/renamed-host-linux-x64.zip"
+        ).exists()
+        with zipfile.ZipFile(scratch / "bundle" / expected) as zf:
+            assert zf.namelist() == ["renamed-host", "renamed-host.dbg"]
+            assert zf.read("renamed-host") == b"binary"
+            assert zf.read("renamed-host.dbg") == b"debug"
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_dotnet_executable_archives_when_optional_companion_absent() -> None:
+    """Archive executables when optional declared companions match no files."""
+    scratch = REPO_ROOT / ".build-executor-dotnet-exe-empty-companion-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            dimensions={"rid": "linux-x64"},
+            artifacts={
+                "artifact/exe": ("primary-binary", "binary", "executable"),
+            },
+            companions={
+                "artifact/exe": [
+                    {
+                        "path": "*.dbg",
+                        "role": "debug-symbol",
+                        "required": False,
+                    }
+                ]
+            },
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            out_dir = Path(args[args.index("--output") + 1])
+            exe = out_dir / "example"
+            exe.write_bytes(b"binary")
+            exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        receipt = _result_artifacts(result)["artifact/exe"]
+        assert isinstance(receipt, dict)
+        assert (
+            receipt["bundle-relative-path"]
+            == "dist/example-1.2.3-linux-x64.zip"
+        )
+        archive = receipt["archive"]
+        assert isinstance(archive, dict)
+        primary = archive["primary-executable"]
+        assert isinstance(primary, dict)
+        assert primary["path"] == "example"
+        assert primary["sha256"] == hashlib.sha256(b"binary").hexdigest()
+        assert archive["companions"] == []
+        with zipfile.ZipFile(
+            scratch / "bundle" / "dist/example-1.2.3-linux-x64.zip"
+        ) as zf:
+            assert zf.namelist() == ["example"]
+            assert zf.read("example") == b"binary"
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_dotnet_executable_rejects_escaped_companion_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not archive companion matches outside the publish output root."""
+    scratch = REPO_ROOT / ".build-executor-dotnet-exe-escaped-companion-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            dimensions={"rid": "linux-x64"},
+            artifacts={
+                "artifact/exe": ("primary-binary", "binary", "executable"),
+            },
+        )
+        artifact = request["artifacts"]["artifact/exe"]
+        assert isinstance(artifact, dict)
+        artifact["companions"] = [
+            {
+                "path": "../escaped.dbg",
+                "role": "debug-symbol",
+                "required": False,
+            }
+        ]
+        monkeypatch.setattr(
+            executor_module, "validate_contract", lambda _: None
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            out_dir = Path(args[args.index("--output") + 1])
+            exe = out_dir / "example"
+            exe.write_bytes(b"binary")
+            exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+            (out_dir.parent / "escaped.dbg").write_bytes(b"debug")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with pytest.raises(
+            BuildExecutorError, match="outside output root"
+        ) as error:
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+        assert error.value.code == "BUILD_OUTPUT_INVALID"
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_dotnet_executable_missing_required_companion_fails() -> None:
+    """Fail when a required descriptor-declared companion is absent."""
+    scratch = REPO_ROOT / ".build-executor-dotnet-exe-missing-companion-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            dimensions={"rid": "linux-x64"},
+            artifacts={
+                "artifact/exe": ("primary-binary", "binary", "executable"),
+            },
+            companions={
+                "artifact/exe": [
+                    {
+                        "path": "playwright.sh",
+                        "role": "runtime-helper",
+                        "required": True,
+                    }
+                ]
+            },
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            out_dir = Path(args[args.index("--output") + 1])
+            (out_dir / "example").write_bytes(b"binary")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with pytest.raises(
+            BuildExecutorError, match="required executable companion"
+        ):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_dotnet_executable_undeclared_companion_remains_unexpected() -> None:
+    """Do not hide companion-like files unless the descriptor declares them."""
+    scratch = REPO_ROOT / ".build-executor-dotnet-exe-unexpected-companion-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            dimensions={"rid": "linux-x64"},
+            artifacts={
+                "artifact/exe": ("primary-binary", "binary", "executable"),
+            },
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            out_dir = Path(args[args.index("--output") + 1])
+            (out_dir / "example").write_bytes(b"binary")
+            dbg = out_dir / "example.dbg"
+            dbg.write_bytes(b"debug")
+            dbg.chmod(dbg.stat().st_mode | stat.S_IXUSR)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with pytest.raises(BuildExecutorError, match="found 2"):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+    finally:
+        _remove_tree_scratch(scratch)
+
+
 def test_node_executor_requires_npm_json_and_one_tarball() -> None:
     """Run npm build and pack, then validate tarball content."""
     scratch = REPO_ROOT / ".build-executor-node-test"
@@ -1154,7 +1522,18 @@ def test_node_executor_requires_npm_json_and_one_tarball() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [
+                        {
+                            "filename": "example-1.2.3.tgz",
+                            "name": "example",
+                            "version": "1.2.3",
+                        }
+                    ]
+                ),
+                "",
             )
 
         result = execute_build(
@@ -1180,7 +1559,7 @@ def test_node_pack_json_accepts_script_noisy_stdout() -> None:
     validate_pack_json = vars(executor_module)["_validate_npm_pack_json"]
     validate_pack_json(
         "\n> example@1.2.3 prepack\n> node prepack.mjs\n"
-        '[{"filename":"example-1.2.3.tgz"}]\n'
+        '[{"filename":"example-1.2.3.tgz","name":"example"}]\n'
         "> example@1.2.3 postpack\n> node postpack.mjs\n"
     )
 
@@ -1191,7 +1570,7 @@ def test_node_pack_json_skips_unrelated_json_array() -> None:
     validate_pack_json(
         '["debug"]\n'
         "> example@1.2.3 prepack\n"
-        '[{"filename":"example-1.2.3.tgz"}]\n'
+        '[{"filename":"example-1.2.3.tgz","version":"1.2.3"}]\n'
     )
 
 
@@ -1200,6 +1579,24 @@ def test_node_pack_json_rejects_unrelated_array_without_valid_payload() -> None:
     validate_pack_json = vars(executor_module)["_validate_npm_pack_json"]
     with pytest.raises(BuildExecutorError, match="no valid package entries"):
         validate_pack_json('["debug"]\n[{"name":"example-1.2.3.tgz"}')
+
+
+def test_node_pack_json_rejects_filename_only_array() -> None:
+    """Reject filename-only arrays that are not npm pack entries."""
+    validate_pack_json = vars(executor_module)["_validate_npm_pack_json"]
+    with pytest.raises(BuildExecutorError, match="no valid package entries"):
+        validate_pack_json('[{"filename":"example-1.2.3.tgz"}]\n')
+
+
+def test_node_pack_json_accepts_pnpm_object_with_noisy_stdout() -> None:
+    """Accept pnpm 10 object-shaped pack JSON among lifecycle logs."""
+    validate_pack_json = vars(executor_module)["_validate_npm_pack_json"]
+    validate_pack_json(
+        "> example@1.2.3 prepack\n"
+        '{"name":"example","version":"1.2.3","filename":"example-1.2.3.tgz",'
+        '"files":[{"path":"package.json"}]}\n'
+        "> example@1.2.3 postpack\n"
+    )
 
 
 def test_node_pack_json_failure_includes_stdout_excerpt() -> None:
@@ -1340,7 +1737,12 @@ def test_node_executor_fails_on_missing_tarball_entrypoint() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         with pytest.raises(BuildExecutorError, match="missing declared"):
@@ -1413,7 +1815,12 @@ def test_node_executor_uses_post_build_files_manifest() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         result = execute_build(
@@ -1488,7 +1895,12 @@ def test_node_executor_rejects_missing_post_build_files_manifest() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         with pytest.raises(BuildExecutorError, match="missing declared"):
@@ -1549,7 +1961,12 @@ def test_node_executor_uses_packaged_files_manifest_after_lifecycle() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         result = execute_build(
@@ -1612,7 +2029,12 @@ def test_node_executor_rejects_missing_packaged_files_manifest() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         with pytest.raises(BuildExecutorError, match="missing declared"):
@@ -1678,7 +2100,12 @@ def test_node_executor_accepts_files_double_star_glob() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         result = execute_build(
@@ -1746,7 +2173,12 @@ def test_node_executor_rejects_missing_files_double_star_glob() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         with pytest.raises(BuildExecutorError, match="missing declared"):
@@ -1812,7 +2244,12 @@ def test_node_executor_accepts_files_brace_glob() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         result = execute_build(
@@ -1880,7 +2317,12 @@ def test_node_executor_accepts_files_directory_glob() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         result = execute_build(
@@ -1948,7 +2390,12 @@ def test_node_executor_rejects_missing_files_directory_glob() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         with pytest.raises(BuildExecutorError, match="missing declared"):
@@ -2014,7 +2461,12 @@ def test_node_executor_accepts_files_posix_character_class_glob() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         result = execute_build(
@@ -2080,7 +2532,12 @@ def test_node_executor_rejects_missing_files_posix_class_glob() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         with pytest.raises(BuildExecutorError, match="missing declared"):
@@ -2146,7 +2603,12 @@ def test_node_executor_accepts_files_trailing_double_star() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         result = execute_build(
@@ -2212,7 +2674,12 @@ def test_node_executor_rejects_missing_files_trailing_double_star() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         with pytest.raises(BuildExecutorError, match="missing declared"):
@@ -2278,7 +2745,12 @@ def test_node_executor_fails_on_version_mismatch() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-9.9.9.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-9.9.9.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         with pytest.raises(BuildExecutorError, match="frozen version"):
@@ -2345,7 +2817,12 @@ def test_node_executor_accepts_semver_equivalent_versions() -> None:
                 },
             )
             return subprocess.CompletedProcess(
-                args, 0, json.dumps([{"filename": "example-1.2.3.tgz"}]), ""
+                args,
+                0,
+                json.dumps(
+                    [{"filename": "example-1.2.3.tgz", "name": "example"}]
+                ),
+                "",
             )
 
         result = execute_build(

@@ -10,11 +10,11 @@
       },
       "FileSignatures": {
         "type": "Direct",
-        "requested": "[5.3.0, )",
-        "resolved": "5.3.0",
-        "contentHash": "f1fUeIlNAXGMZFyu7trtCApfkIEzJpUC+05z1LefGt/d03iki6VUZTb+g/mSL+n1CKcTQpGVZNAovOevERmdcg==",
+        "requested": "[7.1.0, )",
+        "resolved": "7.1.0",
+        "contentHash": "w+RDtc1mo6nHjdeS4cbXs2MYrXZtHwTdAyVsOGcm/TYS7VIFjS6TCzKiqXrxQripyoBPM55aaoRUyOcn6yaj/Q==",
         "dependencies": {
-          "OpenMcdf": "2.3.1"
+          "OpenMcdf": "3.1.3"
         }
       },
       "IO.Github.Hcoona.Pngcs": {
@@ -104,8 +104,8 @@
       },
       "OpenMcdf": {
         "type": "Transitive",
-        "resolved": "2.3.1",
-        "contentHash": "2Otbtp5FsIkdtWn4904oftoyOigllM/Auz2V7qIpxNaK+MC1C2ENjNXL3/ZdKWFLOs24/Bi/lYOE254C7s3Pgw=="
+        "resolved": "3.1.3",
+        "contentHash": "TJTdAIhyqx8LUfF2PnrhXCjuUiKVi19zUNe7FzO1skd0zyJFur44KGxLFEosl1KrKQzsFCxTMTQE8VFkXIHMZQ=="
       },
       "ShimSkiaSharp": {
         "type": "Transitive",

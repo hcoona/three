@@ -301,6 +301,15 @@ class _PlanBuilder:
                         for item in artifact.produced_from
                     ],
                 }
+                if artifact.companions:
+                    self.artifacts[artifact_id]["companions"] = [
+                        {
+                            "path": companion.path,
+                            "role": companion.role,
+                            "required": companion.required,
+                        }
+                        for companion in artifact.companions
+                    ]
             project_variant_ids.append(variant_id)
         for index, target in enumerate(
             project.profiles[str(self.inputs.request["profile"])]
@@ -1060,7 +1069,7 @@ class _PlanBuilder:
             )
         )
 
-    def _artifact_filename(  # noqa: PLR0911
+    def _artifact_filename(  # noqa: C901, PLR0911
         self,
         project: ProjectDescriptor,
         artifact_id: str,
@@ -1095,6 +1104,8 @@ class _PlanBuilder:
         variant = self.variants[str(artifact["variant-id"])]
         token = _variant_token(variant["dimensions"])
         if concrete == "executable":
+            if artifact.get("companions"):
+                return f"{project.project_id}-{version}-{token}.zip"
             suffix = ".exe" if "windows" in token else ""
             return f"{project.project_id}-{version}-{token}{suffix}"
         if concrete == "inno-setup":

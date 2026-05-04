@@ -29,6 +29,10 @@ variants:
         role: primary-binary
         kind-family: binary
         concrete-kind: executable
+        companions:
+          - path: vscode-copilot-telegram-hook.dbg
+            role: debug-symbol
+            required: false
 
 profiles:
   buddy:

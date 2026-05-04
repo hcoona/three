@@ -885,13 +885,17 @@ def _final_distribution_names(
 
 
 def _artifact_receipt(value: Mapping[str, object]) -> Json:
-    return {
+    receipt: Json = {
         "bundle-relative-path": _string(
             value.get("bundle-relative-path"), "bundle-relative-path"
         ),
         "sha256": _string(value.get("sha256"), "sha256"),
         "byte-size": _int(value.get("byte-size"), "byte-size"),
     }
+    archive = value.get("archive")
+    if isinstance(archive, Mapping):
+        receipt["archive"] = dict(archive)
+    return receipt
 
 
 def _require_live_run(run: Mapping[str, object]) -> None:

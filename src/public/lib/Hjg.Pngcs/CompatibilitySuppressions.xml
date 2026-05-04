@@ -162,4 +162,18 @@
     <Right>lib/netstandard2.1/Hjg.Pngcs.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0012</DiagnosticId>
+    <Target>M:Hjg.Pngcs.Zlib.AZlibInputStream.getImplementationId</Target>
+    <Left>lib/netstandard2.0/Hjg.Pngcs.dll</Left>
+    <Right>lib/netstandard2.0/Hjg.Pngcs.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0012</DiagnosticId>
+    <Target>M:Hjg.Pngcs.Zlib.AZlibOutputStream.getImplementationId</Target>
+    <Left>lib/netstandard2.0/Hjg.Pngcs.dll</Left>
+    <Right>lib/netstandard2.0/Hjg.Pngcs.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
 </Suppressions>

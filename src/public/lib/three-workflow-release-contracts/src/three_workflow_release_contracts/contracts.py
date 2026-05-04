@@ -11,7 +11,8 @@ type JsonObject = Mapping[str, object]
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
-_WINDOWS_DRIVE_ABSOLUTE_RE = re.compile(r"^[A-Za-z]:($|/)")
+_WINDOWS_DRIVE_ABSOLUTE_RE = re.compile(r"^[A-Za-z]:($|[\\/])")
+_WINDOWS_DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:")
 _SIGNER_WORKFLOW_RE = re.compile(
     r"^(?:[A-Za-z0-9.-]+/)?[A-Za-z0-9_.-]+/"
     r"[A-Za-z0-9_.-]+/\.github/workflows/[^/]+\.ya?ml$",
@@ -1007,6 +1008,7 @@ def _artifact(validator: _Validator, value: object, path: str) -> None:
             "concrete-kind",
             "produced-from-artifact-ids",
         },
+        optional={"companions"},
     )
     if obj is None:
         return
@@ -1023,6 +1025,54 @@ def _artifact(validator: _Validator, value: object, path: str) -> None:
         obj.get("produced-from-artifact-ids"),
         f"{path}.produced-from-artifact-ids",
     )
+    companions = obj.get("companions")
+    if companions is not None and obj.get("concrete-kind") != "executable":
+        validator.error(
+            f"{path}.companions",
+            "are only valid for executable artifacts",
+        )
+    _artifact_companions(validator, companions, f"{path}.companions")
+
+
+def _artifact_companions(
+    validator: _Validator, value: object, path: str
+) -> None:
+    """Validate executable companion declarations on artifacts."""
+    if value is None:
+        return
+    items = validator.array(value, path)
+    if items is None:
+        return
+    for index, item in enumerate(items):
+        item_path = f"{path}[{index}]"
+        obj = validator.mapping(item, item_path, {"path", "role", "required"})
+        if obj is None:
+            continue
+        companion_path = obj.get("path")
+        if validator.string(companion_path, f"{item_path}.path"):
+            _root_level_companion_path(
+                validator, str(companion_path), f"{item_path}.path"
+            )
+        validator.string(obj.get("role"), f"{item_path}.role")
+        validator.boolean(obj.get("required"), f"{item_path}.required")
+
+
+def _root_level_companion_path(
+    validator: _Validator, value: str, path: str
+) -> None:
+    """Validate a descriptor-root output companion path or glob."""
+    if (
+        value.startswith("/")
+        or "\\" in value
+        or "/" in value
+        or _WINDOWS_DRIVE_PATH_RE.match(value)
+    ):
+        validator.error(
+            path, "must be a root-level relative companion path or glob"
+        )
+        return
+    if value in {".", "..", "**"}:
+        validator.error(path, "must not be dot, dot-dot, or recursive glob")
 
 
 def _target_snapshot(
@@ -2162,6 +2212,7 @@ def _publish_request(validator: _Validator, document: JsonObject) -> None:
                     "sha256",
                     "byte-size",
                 },
+                optional={"archive"},
             )
             if entry is not None:
                 _artifact(validator, entry.get("artifact"), f"{path}.artifact")
@@ -2597,7 +2648,10 @@ def _common_plan_fields(
 def _artifact_receipt(validator: _Validator, value: object, path: str) -> None:
     """Validate a build-result artifact receipt entry."""
     obj = validator.mapping(
-        value, path, {"bundle-relative-path", "sha256", "byte-size"}
+        value,
+        path,
+        {"bundle-relative-path", "sha256", "byte-size"},
+        optional={"archive"},
     )
     if obj is not None:
         _artifact_receipt_fields(validator, obj, path)
@@ -2618,6 +2672,57 @@ def _artifact_receipt_fields(
     ):
         validator.error(f"{path}.sha256", "must be a lowercase 64-hex digest")
     validator.integer(obj.get("byte-size"), f"{path}.byte-size", minimum=0)
+    _artifact_archive_receipt(validator, obj.get("archive"), f"{path}.archive")
+
+
+def _artifact_archive_receipt(
+    validator: _Validator, value: object, path: str
+) -> None:
+    """Validate archive member receipt metadata."""
+    if value is None:
+        return
+    obj = validator.mapping(
+        value, path, {"format", "primary-executable", "companions"}
+    )
+    if obj is None:
+        return
+    validator.enum(obj.get("format"), f"{path}.format", {"zip"})
+    _archive_member_receipt(
+        validator, obj.get("primary-executable"), f"{path}.primary-executable"
+    )
+    companions = validator.array(obj.get("companions"), f"{path}.companions")
+    if companions is not None:
+        for index, item in enumerate(companions):
+            _archive_member_receipt(
+                validator, item, f"{path}.companions[{index}]", companion=True
+            )
+
+
+def _archive_member_receipt(
+    validator: _Validator,
+    value: object,
+    path: str,
+    *,
+    companion: bool = False,
+) -> None:
+    """Validate one archive member's path/hash/role metadata."""
+    required = {"path", "sha256", "byte-size", "role"}
+    optional = {"required"} if companion else None
+    obj = validator.mapping(value, path, required, optional=optional)
+    if obj is None:
+        return
+    member_path = obj.get("path")
+    if validator.string(member_path, f"{path}.path"):
+        _relative_path(validator, str(member_path), f"{path}.path")
+    digest = obj.get("sha256")
+    if validator.string(digest, f"{path}.sha256") and not _DIGEST_RE.match(
+        str(digest)
+    ):
+        validator.error(f"{path}.sha256", "must be a lowercase 64-hex digest")
+    validator.integer(obj.get("byte-size"), f"{path}.byte-size", minimum=0)
+    validator.string(obj.get("role"), f"{path}.role")
+    if companion:
+        validator.boolean(obj.get("required"), f"{path}.required")
 
 
 def _proof_run(validator: _Validator, value: object, path: str) -> None:

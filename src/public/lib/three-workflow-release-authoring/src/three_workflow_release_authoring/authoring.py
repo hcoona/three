@@ -26,6 +26,7 @@ _NPM_NAME_RE = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$")
 _PYPI_NAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
 _GITHUB_SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _GEM_NAME_RE = re.compile(r"^[a-z0-9._-]+$")
+_WINDOWS_DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:")
 type _ArtifactTuple = tuple[str, str, str]
 type _VariantDimensions = tuple[tuple[str, str], ...]
 type _SemanticArtifact = tuple[_VariantDimensions, _ArtifactTuple]
@@ -380,6 +381,15 @@ class AuthoringValidationError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class Companion:
+    """Normalized executable companion declaration."""
+
+    path: str
+    role: str
+    required: bool
+
+
+@dataclass(frozen=True, slots=True)
 class Artifact:
     """Normalized descriptor artifact declaration."""
 
@@ -389,6 +399,7 @@ class Artifact:
     concrete_kind: str
     produced_from: tuple[str, ...]
     variant_id: str
+    companions: tuple[Companion, ...]
 
     @property
     def tuple_key(self) -> tuple[str, str, str]:
@@ -998,6 +1009,12 @@ def _variant_item(
         "artifact tuple",
     )
     for artifact in artifacts:
+        if artifact.companions and artifact.concrete_kind != "executable":
+            issues.add(
+                "DESC_SCHEMA_INVALID",
+                f"{path}.artifacts.{artifact.id}.companions",
+                "companions are only valid for executable artifacts",
+            )
         for source_id in artifact.produced_from:
             if source_id not in {item.id for item in artifacts}:
                 issues.add(
@@ -1021,7 +1038,7 @@ def _artifact_item(
         path,
         issues,
         "DESC_SCHEMA_INVALID",
-        optional={"produced-from"},
+        optional={"produced-from", "companions"},
     )
     artifact_id = _required_string(obj, "id", path, issues)
     _canonical_id(artifact_id, f"{path}.id", issues)
@@ -1042,9 +1059,81 @@ def _artifact_item(
             source_id = _string(item, f"{path}.produced-from[{index}]", issues)
             _canonical_id(source_id, f"{path}.produced-from[{index}]", issues)
             produced_from.append(source_id)
+    companions = _companion_items(obj.get("companions", []), path, issues)
     return Artifact(
-        artifact_id, role, family, concrete, tuple(produced_from), variant_id
+        artifact_id,
+        role,
+        family,
+        concrete,
+        tuple(produced_from),
+        variant_id,
+        tuple(companions),
     )
+
+
+def _companion_items(
+    value: object, path: str, issues: _IssueCollector
+) -> list[Companion]:
+    """Validate and normalize executable companion declarations."""
+    items = _array(value, f"{path}.companions", issues)
+    companions: list[Companion] = []
+    if items is None:
+        return companions
+    seen: list[str] = []
+    for index, item in enumerate(items):
+        item_path = f"{path}.companions[{index}]"
+        obj = _mapping(item, item_path, issues, "DESC_SCHEMA_INVALID")
+        if obj is None:
+            continue
+        _exact_keys(
+            obj,
+            {"path", "role"},
+            item_path,
+            issues,
+            "DESC_SCHEMA_INVALID",
+            optional={"required"},
+        )
+        companion_path = _required_string(obj, "path", item_path, issues)
+        role = _required_string(obj, "role", item_path, issues)
+        required = obj.get("required", True)
+        if not isinstance(required, bool):
+            issues.add(
+                "DESC_SCHEMA_INVALID",
+                f"{item_path}.required",
+                "must be a boolean",
+            )
+            required = True
+        _root_level_companion_path(companion_path, f"{item_path}.path", issues)
+        _canonical_id(role, f"{item_path}.role", issues)
+        seen.append(companion_path)
+        companions.append(Companion(companion_path, role, bool(required)))
+    _duplicates(seen, f"{path}.companions", issues, "companion path")
+    return companions
+
+
+def _root_level_companion_path(
+    value: str, path: str, issues: _IssueCollector
+) -> None:
+    """Validate a descriptor-root output companion path or glob."""
+    if (
+        not value
+        or value.startswith("/")
+        or "\\" in value
+        or "/" in value
+        or _WINDOWS_DRIVE_PATH_RE.match(value)
+    ):
+        issues.add(
+            "DESC_SCHEMA_INVALID",
+            path,
+            "must be a non-empty root-level relative path or glob",
+        )
+        return
+    if value in {".", "..", "**"}:
+        issues.add(
+            "DESC_SCHEMA_INVALID",
+            path,
+            "must not be dot, dot-dot, or recursive glob",
+        )
 
 
 def _profiles_block(
