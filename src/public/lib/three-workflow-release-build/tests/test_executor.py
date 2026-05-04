@@ -19,6 +19,7 @@ from three_workflow_release_build import (
     build_diagnostics_document,
     execute_build,
 )
+from three_workflow_release_build import executor as executor_module
 from three_workflow_release_build.cli import main as cli_main
 from three_workflow_release_contracts import validate_contract
 
@@ -725,6 +726,45 @@ def test_python_executor_accepts_pep440_equivalent_versions() -> None:
         _remove_tree_scratch(scratch)
 
 
+def test_python_executor_accepts_normalized_nbgv_semver_version() -> None:
+    """Accept Python PEP 440 metadata matching an NBGV SemVer2 version."""
+    scratch = REPO_ROOT / ".build-executor-python-nbgv-version-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="python",
+            artifacts={
+                "artifact/wheel": ("primary-package", "package", "wheel"),
+            },
+        )
+        request["project"]["resolved-version"] = "1.0.0-beta.256.gc482c26"
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            out_dir = Path(args[args.index("--out-dir") + 1])
+            _write_python_wheel(
+                out_dir / "example-1.0.0b256+gc482c26-py3-none-any.whl",
+                "1.0.0b256+gc482c26",
+            )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        assert set(_result_artifacts(result)) == {"artifact/wheel"}
+    finally:
+        _remove_tree_scratch(scratch)
+
+
 def test_dotnet_pack_uses_frozen_version_and_symbols() -> None:
     """Run dotnet pack with frozen version and symbol package output."""
     scratch = REPO_ROOT / ".build-executor-dotnet-pack-test"
@@ -982,16 +1022,64 @@ def test_dotnet_executable_requires_one_single_file_candidate() -> None:
                 "artifact/exe": ("primary-binary", "binary", "executable"),
             },
         )
+        calls: list[tuple[str, ...]] = []
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append(tuple(args))
+            out_dir = Path(args[args.index("--output") + 1])
+            exe = out_dir / "example"
+            exe.write_bytes(b"binary")
+            exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+            (out_dir / "example.dll").write_bytes(b"dll")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        assert "-p:PublishTrimmed=false" not in calls[0]
+        receipt = _result_artifacts(result)["artifact/exe"]
+        assert isinstance(receipt, dict)
+        assert receipt["bundle-relative-path"] == "dist/example"
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_dotnet_executable_accepts_extensionless_non_windows_candidate() -> (
+    None
+):
+    """Receipt cross-RID extensionless executables without Unix mode bits."""
+    scratch = REPO_ROOT / ".build-executor-dotnet-cross-rid-exe-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            dimensions={"rid": "linux-x64"},
+            artifacts={
+                "artifact/exe": ("primary-binary", "binary", "executable"),
+            },
+        )
 
         def runner(
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
             out_dir = Path(args[args.index("--output") + 1])
-            exe = out_dir / "example"
-            exe.write_bytes(b"binary")
-            exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+            (out_dir / "example").write_bytes(b"binary")
             (out_dir / "example.dll").write_bytes(b"dll")
+            (out_dir / "example.deps.json").write_bytes(b"deps")
+            (out_dir / "example.runtimeconfig.json").write_bytes(b"config")
+            (out_dir / "example.pdb").write_bytes(b"pdb")
+            (out_dir / "example.xml").write_bytes(b"xml")
             return subprocess.CompletedProcess(args, 0, "", "")
 
         result = execute_build(
@@ -1037,13 +1125,13 @@ def test_node_executor_requires_npm_json_and_one_tarball() -> None:
             ),
             encoding="utf-8",
         )
-        calls: list[tuple[str, ...]] = []
+        calls: list[tuple[tuple[str, ...], Path]] = []
 
         def runner(
             args: Sequence[str],
-            _cwd: Path,
+            cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            calls.append(tuple(args))
+            calls.append((tuple(args), cwd))
             if args[1:3] == ["run", "build"]:
                 return subprocess.CompletedProcess(args, 0, "", "")
             out_dir = Path(args[args.index("--pack-destination") + 1])
@@ -1078,9 +1166,92 @@ def test_node_executor_requires_npm_json_and_one_tarball() -> None:
         )
 
         validate_contract(result)
-        assert calls[0][1:3] == ("run", "build")
-        assert calls[1][1:3] == ("pack", "--json")
+        assert calls[0][0][1:3] == ("run", "build")
+        assert calls[0][1] == project_root
+        assert calls[1][0][1:3] == ("pack", "--json")
+        assert calls[1][1] == project_root
         assert set(_result_artifacts(result)) == {"artifact/npm"}
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_workspace_runner_installs_pnpm_dependencies() -> None:
+    """Use corepack and pnpm for projects covered by a root pnpm workspace."""
+    scratch = REPO_ROOT / ".build-executor-node-pnpm-workspace-test"
+    _remove_tree_scratch(scratch)
+    try:
+        project_root = scratch / "packages" / "example"
+        project_root.mkdir(parents=True)
+        (scratch / "pnpm-lock.yaml").write_text(
+            "lockfileVersion: '9.0'\n",
+            encoding="utf-8",
+        )
+        (scratch / "pnpm-workspace.yaml").write_text(
+            "packages:\n  - packages/*\n",
+            encoding="utf-8",
+        )
+        calls: list[tuple[str, ...]] = []
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append(tuple(args))
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        build_context = vars(executor_module)["_BuildContext"]
+        prepare_runner = vars(executor_module)["_prepare_node_package_runner"]
+        context = build_context(
+            request={},
+            artifacts=(),
+            project_root=project_root,
+            manifest=project_root / "package.json",
+            output_root=scratch / "out",
+            runner=runner,
+            repo_root=scratch,
+        )
+
+        package_runner = prepare_runner(context)
+
+        assert [call[1:] for call in calls] == [
+            ("enable", "pnpm"),
+            ("install", "--frozen-lockfile"),
+        ]
+        assert Path(package_runner.args[0]).name == "pnpm"
+        assert package_runner.args[1:] == (
+            "--dir",
+            project_root.as_posix(),
+        )
+        assert package_runner.cwd == scratch
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_pnpm_workspace_globs_match_path_segments() -> None:
+    """Keep pnpm '*' matching to one path segment while '**' crosses them."""
+    scratch = REPO_ROOT / ".build-executor-node-pnpm-glob-test"
+    _remove_tree_scratch(scratch)
+    try:
+        (scratch / "poc" / "foo").mkdir(parents=True)
+        (scratch / "poc" / "foo" / "bar").mkdir()
+        (scratch / "deep" / "foo" / "bar").mkdir(parents=True)
+        (scratch / "pnpm-lock.yaml").write_text(
+            "lockfileVersion: '9.0'\n",
+            encoding="utf-8",
+        )
+        (scratch / "pnpm-workspace.yaml").write_text(
+            "packages:\n  - poc/*\n  - deep/**\n",
+            encoding="utf-8",
+        )
+        is_workspace_project = vars(executor_module)[
+            "_is_pnpm_workspace_project"
+        ]
+
+        assert is_workspace_project(scratch, scratch / "poc" / "foo")
+        assert not is_workspace_project(
+            scratch, scratch / "poc" / "foo" / "bar"
+        )
+        assert is_workspace_project(scratch, scratch / "deep" / "foo" / "bar")
     finally:
         _remove_tree_scratch(scratch)
 

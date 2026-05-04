@@ -14,8 +14,11 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from email.parser import Parser
+from fnmatch import fnmatchcase
 from pathlib import Path
 
+from nbgv_python.errors import NbgvVersionNormalizationError
+from nbgv_python.versioning import normalize_version_field
 from packaging.version import InvalidVersion, Version
 from three_workflow_release_contracts import (
     ContractValidationError,
@@ -82,6 +85,12 @@ class _BuildContext:
     output_root: Path
     runner: Runner
     repo_root: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _NodePackageRunner:
+    args: tuple[str, ...]
+    cwd: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -550,16 +559,20 @@ def _node_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
         raise BuildExecutorError(msg)
     output = context.output_root / "node"
     _mkdir_output_work_dir(output)
-    npm = shutil.which("npm") or "npm"
-    _run_checked([npm, "run", "build"], context.project_root, context.runner)
+    package_runner = _prepare_node_package_runner(context)
+    _run_checked(
+        [*package_runner.args, "run", "build"],
+        package_runner.cwd,
+        context.runner,
+    )
     command = [
-        npm,
+        *package_runner.args,
         "pack",
         "--json",
         "--pack-destination",
         output.as_posix(),
     ]
-    result = _run_checked(command, context.project_root, context.runner)
+    result = _run_checked(command, package_runner.cwd, context.runner)
     _validate_npm_pack_json(result.stdout)
     produced = _match_outputs(
         context.artifacts,
@@ -573,6 +586,88 @@ def _node_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
             context.project_root,
         )
     return produced
+
+
+def _prepare_node_package_runner(context: _BuildContext) -> _NodePackageRunner:
+    """Install pnpm workspace dependencies and return package command prefix."""
+    if _is_pnpm_workspace_project(context.repo_root, context.project_root):
+        corepack = shutil.which("corepack") or "corepack"
+        pnpm = shutil.which("pnpm") or "pnpm"
+        _run_checked(
+            [corepack, "enable", "pnpm"], context.repo_root, context.runner
+        )
+        _run_checked(
+            [pnpm, "install", "--frozen-lockfile"],
+            context.repo_root,
+            context.runner,
+        )
+        return _NodePackageRunner(
+            (pnpm, "--dir", context.project_root.as_posix()),
+            context.repo_root,
+        )
+    npm = shutil.which("npm") or "npm"
+    return _NodePackageRunner((npm,), context.project_root)
+
+
+def _is_pnpm_workspace_project(repo_root: Path, project_root: Path) -> bool:
+    """Return whether a project is covered by the root pnpm workspace."""
+    workspace = repo_root / "pnpm-workspace.yaml"
+    lockfile = repo_root / "pnpm-lock.yaml"
+    if not workspace.is_file() or not lockfile.is_file():
+        return False
+    try:
+        relative = project_root.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        return False
+    relative_posix = relative.as_posix()
+    try:
+        lines = workspace.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        msg = f"pnpm workspace manifest could not be read: {exc}"
+        raise BuildExecutorError(msg) from exc
+    in_packages = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "packages:":
+            in_packages = True
+            continue
+        if not in_packages:
+            continue
+        if (
+            stripped
+            and not stripped.startswith("-")
+            and not line.startswith(" ")
+        ):
+            break
+        if not stripped.startswith("-"):
+            continue
+        pattern = stripped[1:].strip().strip("'\"")
+        if pattern and _pnpm_workspace_pattern_matches(relative_posix, pattern):
+            return True
+    return False
+
+
+def _pnpm_workspace_pattern_matches(relative_posix: str, pattern: str) -> bool:
+    """Match pnpm workspace package globs against a relative project path."""
+    path_segments = relative_posix.strip("/").split("/")
+    pattern_segments = pattern.strip("/").split("/")
+
+    def match_from(path_index: int, pattern_index: int) -> bool:
+        if pattern_index == len(pattern_segments):
+            return path_index == len(path_segments)
+        pattern_segment = pattern_segments[pattern_index]
+        if pattern_segment == "**":
+            return match_from(path_index, pattern_index + 1) or (
+                path_index < len(path_segments)
+                and match_from(path_index + 1, pattern_index)
+            )
+        return (
+            path_index < len(path_segments)
+            and fnmatchcase(path_segments[path_index], pattern_segment)
+            and match_from(path_index + 1, pattern_index + 1)
+        )
+
+    return match_from(0, 0)
 
 
 def _ruby_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
@@ -699,7 +794,6 @@ def _dotnet_publish_executable(
         output.as_posix(),
         "--nologo",
         "-p:PublishSingleFile=true",
-        "-p:PublishTrimmed=false",
         version_property,
     ]
     _run_checked(command, manifest.parent, runner)
@@ -1172,8 +1266,16 @@ def _versions_match(
 def _python_versions_match(observed: str, frozen: str) -> bool:
     """Compare Python package versions by PEP 440 identity."""
     try:
-        return Version(observed) == Version(frozen)
-    except InvalidVersion as exc:
+        observed_normalized = normalize_version_field(
+            observed,
+            field="observed",
+        )
+        frozen_normalized = normalize_version_field(
+            frozen,
+            field="frozen",
+        )
+        return Version(observed_normalized) == Version(frozen_normalized)
+    except (InvalidVersion, NbgvVersionNormalizationError) as exc:
         msg = "Python package version is not PEP 440 compatible"
         raise BuildExecutorError(msg) from exc
 
@@ -1562,9 +1664,20 @@ def _executable_candidates(output: Path, rid: str) -> list[Path]:
     if rid.startswith("win-"):
         return [path for path in output.glob("*.exe") if path.is_file()]
     candidates: list[Path] = []
-    ignored_suffixes = {".dll", ".json", ".pdb", ".xml", ".deps"}
+    ignored_suffixes = {
+        ".config",
+        ".deps",
+        ".dll",
+        ".json",
+        ".pdb",
+        ".runtimeconfig",
+        ".xml",
+    }
     for path in output.iterdir():
         if not path.is_file() or path.suffix in ignored_suffixes:
+            continue
+        if path.suffix == "":
+            candidates.append(path)
             continue
         mode = path.stat().st_mode
         if mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):

@@ -3310,6 +3310,7 @@ name = "three-workflow-release-build"
 version = "0.1.0"
 source = { editable = "src/public/lib/three-workflow-release-build" }
 dependencies = [
+    { name = "nbgv-python" },
     { name = "packaging" },
     { name = "three-workflow-release-contracts" },
 ]
@@ -3321,6 +3322,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "nbgv-python", editable = "src/public/lib/nbgv-python" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" },
 ]

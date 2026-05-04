@@ -2911,6 +2911,7 @@ def test_windows_build_variant_steps_pin_bash_shell() -> None:
     for step_name in (
         "Compute artifact names",
         "Materialize build request",
+        "Restore local .NET tools",
         "Execute build unit",
     ):
         block = _step_block(workflow, step_name)
@@ -2918,6 +2919,21 @@ def test_windows_build_variant_steps_pin_bash_shell() -> None:
         shell_index = block.index("        shell: bash\n")
         run_index = block.index("        run: |")
         assert shell_index < run_index
+
+
+def test_build_variant_restores_tools_and_uploads_failure_diagnostics() -> None:
+    """Build variants retain diagnostics and restore local tools."""
+    workflow = _workflow("release-build-variant.yml")
+
+    restore_block = _step_block(workflow, "Restore local .NET tools")
+    assert "dotnet tool restore" in restore_block
+    assert "[ -f .config/dotnet-tools.json ]" in restore_block
+
+    diagnostics_block = _step_block(workflow, "Upload build diagnostics")
+    assert "        if: failure()\n" in diagnostics_block
+    assert "actions/upload-artifact@v4" in diagnostics_block
+    assert "build-diagnostics.json" in diagnostics_block
+    assert "if-no-files-found: ignore" in diagnostics_block
 
 
 def test_workflow_helper_invocations_use_uv_workspace_python() -> None:

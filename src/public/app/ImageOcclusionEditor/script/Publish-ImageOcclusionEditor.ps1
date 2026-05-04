@@ -105,10 +105,28 @@ if (Test-Path -LiteralPath $lockFile) {
 $cmdLine = 'dotnet ' + ($publishArgs -join ' ')
 Write-Verbose "Run: $cmdLine"
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-& dotnet @publishArgs
-$exit = $LASTEXITCODE
+try {
+    $previousNativePreference = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+    $publishOutput = & dotnet @publishArgs 2>&1
+    $exit = $LASTEXITCODE
+}
+finally {
+    $PSNativeCommandUseErrorActionPreference = $previousNativePreference
+}
 $stopwatch.Stop()
+foreach ($line in $publishOutput) {
+    Write-Information ($line.ToString())
+}
 if ($exit -ne 0) {
+    Write-Error "dotnet publish command failed: $cmdLine" -ErrorAction Continue
+    Write-Error "dotnet publish exit code: $exit" -ErrorAction Continue
+    if ($publishOutput) {
+        Write-Error "dotnet publish combined stdout/stderr:" -ErrorAction Continue
+        foreach ($line in $publishOutput) {
+            Write-Error ($line.ToString()) -ErrorAction Continue
+        }
+    }
     throw "dotnet publish failed, exit code: $exit"
 }
 Write-Information ("Publish done in {0}s" -f [Math]::Round($stopwatch.Elapsed.TotalSeconds, 2))
