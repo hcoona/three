@@ -163,7 +163,12 @@ function Invoke-CycloneDX {
     )
 
     $cmds = @(
+        @{
+            File = 'dotnet'
+            Arguments = @('tool', 'run', 'dotnet-CycloneDX', '--') + $cdxArguments
+        },
         @{ File = 'dotnet-CycloneDX'; Arguments = $cdxArguments },
+        @{ File = 'dotnet'; Arguments = @('dotnet-CycloneDX') + $cdxArguments },
         @{ File = 'dotnet'; Arguments = @('CycloneDX') + $cdxArguments }
     )
 
@@ -182,7 +187,7 @@ function Invoke-CycloneDX {
     }
 
     if (-not $succeeded) {
-        throw "Failed to run CycloneDX CLI. Ensure 'dotnet tool install --global CycloneDX' has been executed."
+        throw "Failed to run CycloneDX CLI. Ensure 'dotnet tool restore' has been executed."
     }
 
     $bomPath = Join-Path $OutDir 'bom.json'

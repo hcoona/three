@@ -536,7 +536,10 @@ def test_missing_required_package_tuple_is_diagnostic_not_crash() -> None:
     )
 
 
-@pytest.mark.parametrize("companion_path", ["*.dbg", "playwright.sh"])
+@pytest.mark.parametrize(
+    "companion_path",
+    ["*.dbg", "playwright.ps1", "playwright.sh"],
+)
 def test_descriptor_accepts_root_level_companion_paths(
     companion_path: str,
 ) -> None:

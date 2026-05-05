@@ -30,7 +30,7 @@ variants:
         kind-family: binary
         concrete-kind: executable
         companions:
-          - path: playwright.sh
+          - path: playwright.ps1
             role: runtime-helper
             required: true
   - id: osx-x64
@@ -43,7 +43,7 @@ variants:
         kind-family: binary
         concrete-kind: executable
         companions:
-          - path: playwright.sh
+          - path: playwright.ps1
             role: runtime-helper
             required: true
 

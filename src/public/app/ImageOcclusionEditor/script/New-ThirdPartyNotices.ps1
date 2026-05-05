@@ -18,8 +18,8 @@
     Output file path (default: THIRD-PARTY-NOTICES.TXT at the repository root).
 
 .NOTES
-    Requires the CycloneDX .NET tool to be installed locally.
-    Prefer the command "dotnet-CycloneDX"; if unavailable, fall back to "dotnet CycloneDX".
+    Requires the CycloneDX .NET local tool manifest to be restored.
+    Prefer "dotnet tool run dotnet-CycloneDX"; if unavailable, fall back to direct commands.
 #>
 param(
     [string]$Project = "ImageOcclusionEditorWinUI3\ImageOcclusionEditorWinUI3.csproj",

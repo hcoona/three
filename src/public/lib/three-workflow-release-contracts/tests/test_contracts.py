@@ -171,7 +171,7 @@ def test_build_diagnostic_accepts_valid_scope_ids(scope_kind: str) -> None:
 
 @pytest.mark.parametrize(
     "companion_path",
-    ["*.dbg", "playwright.sh"],
+    ["*.dbg", "playwright.ps1", "playwright.sh"],
 )
 def test_build_request_accepts_root_level_companion_paths(
     companion_path: str,

@@ -1123,7 +1123,7 @@ def test_dotnet_executable_accepts_extensionless_non_windows_candidate() -> (
 
 
 def test_dotnet_executable_archives_declared_companions() -> None:
-    """Receipt a single archive containing an executable and companions."""
+    """Exclude declared companions from candidates and receipt an archive."""
     scratch = REPO_ROOT / ".build-executor-dotnet-exe-companion-test"
     _remove_tree_scratch(scratch)
     try:
@@ -1140,7 +1140,12 @@ def test_dotnet_executable_archives_declared_companions() -> None:
                         "path": "*.dbg",
                         "role": "debug-symbol",
                         "required": False,
-                    }
+                    },
+                    {
+                        "path": "playwright.ps1",
+                        "role": "runtime-helper",
+                        "required": True,
+                    },
                 ]
             },
         )
@@ -1154,6 +1159,9 @@ def test_dotnet_executable_archives_declared_companions() -> None:
             exe.write_bytes(b"binary")
             exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
             (out_dir / "example.dbg").write_bytes(b"debug")
+            helper = out_dir / "playwright.ps1"
+            helper.write_bytes(b"helper")
+            helper.chmod(helper.stat().st_mode | stat.S_IXUSR)
             return subprocess.CompletedProcess(args, 0, "", "")
 
         result = execute_build(
@@ -1186,14 +1194,26 @@ def test_dotnet_executable_archives_declared_companions() -> None:
                 "byte-size": 5,
                 "role": "debug-symbol",
                 "required": False,
-            }
+            },
+            {
+                "path": "playwright.ps1",
+                "sha256": hashlib.sha256(b"helper").hexdigest(),
+                "byte-size": 6,
+                "role": "runtime-helper",
+                "required": True,
+            },
         ]
         with zipfile.ZipFile(
             scratch / "bundle" / "dist/example-1.2.3-linux-x64.zip"
         ) as zf:
-            assert zf.namelist() == ["example", "example.dbg"]
+            assert zf.namelist() == [
+                "example",
+                "example.dbg",
+                "playwright.ps1",
+            ]
             assert zf.read("example") == b"binary"
             assert zf.read("example.dbg") == b"debug"
+            assert zf.read("playwright.ps1") == b"helper"
     finally:
         _remove_tree_scratch(scratch)
 
