@@ -636,6 +636,46 @@ def test_github_release_requires_attestation_bundle_file() -> None:
         _reset_scratch(scratch)
 
 
+def test_github_release_rejects_publish_without_attached_attestations() -> None:
+    """Final GitHub Release publish cannot proceed from a base request."""
+    scratch = REPO_ROOT / ".publish-executor-github-missing-attestation-test"
+    _reset_scratch(scratch)
+    try:
+        package = scratch / "input" / "Example.1.2.3.nupkg"
+        _write_nuget_package(package, "Example", "1.2.3")
+        request = _request(
+            family="github-release",
+            host="github",
+            owner="hcoona",
+            artifact_path=package,
+            concrete_kind="nuget",
+            identity={"release-tag": "release/example/v1.2.3"},
+            projection={
+                "asset-names-by-artifact-id": {
+                    "artifact/package": package.name,
+                },
+                "asset-labels-by-artifact-id": {},
+            },
+            desired_state={"release-state": "prerelease"},
+        )
+        del request["github-release-asset-attestations"]
+        validate_contract(request)
+        calls = _Calls()
+
+        with pytest.raises(PublishExecutorError, match="asset attestations"):
+            execute_publish(
+                request,
+                REPO_ROOT,
+                runner=calls.runner,
+                check_commit=False,
+                work_dir=scratch / "work",
+            )
+
+        assert calls.commands == []
+    finally:
+        _reset_scratch(scratch)
+
+
 def test_github_release_rejects_invalid_attestation_bundle_path() -> None:
     """Refuse unsafe repo-relative attestation bundle paths."""
     scratch = REPO_ROOT / ".publish-executor-github-attestation-invalid-test"

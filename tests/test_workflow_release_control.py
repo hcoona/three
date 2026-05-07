@@ -2581,8 +2581,9 @@ def test_publish_request_materializes_build_receipts() -> None:
     """Construct a publish request from build-result artifacts."""
     plan = _load("release-plan.json")
     build_result = _load("build-result.json")
-    build_dir = SCRATCH / "build-results"
-    bundle_dir = SCRATCH / "bundles"
+    scratch = SCRATCH.relative_to(REPO_ROOT)
+    build_dir = scratch / "build-results"
+    bundle_dir = scratch / "bundles"
     shutil.rmtree(SCRATCH, ignore_errors=True)
     try:
         build_name = artifact_name(
@@ -2610,6 +2611,8 @@ def test_publish_request_materializes_build_receipts() -> None:
 
         assert request["kind"] == "publish-request"
         assert request["publish-node-id"] == "publish-node/gh"
+        assert "github-release-asset-attestations" not in request
+        validate_contract(request)
         package = request["artifacts"]["artifact/package"]
         assert package["bundle-relative-path"] == "dist/Example.1.2.3.nupkg"
         bundle_name = artifact_name(

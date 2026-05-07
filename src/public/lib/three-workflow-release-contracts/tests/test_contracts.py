@@ -348,10 +348,27 @@ def test_publish_request_node_id_must_match_embedded_node() -> None:
     assert "publish-node.publish-node-id" in str(error.value)
 
 
-def test_github_release_request_requires_asset_attestation_outputs() -> None:
-    """GitHub Release requests carry actions/attest outputs per asset."""
+def test_github_release_base_request_may_omit_attestations() -> None:
+    """Base GitHub Release requests precede attestations."""
+    document = _load(VALID_ROOT / "publish-request.json")
+    del document["github-release-asset-attestations"]
+
+    validate_contract(document)
+
+
+def test_github_release_request_rejects_partial_attestations() -> None:
+    """Attached GitHub Release attestations must cover every asset."""
     document = _load(VALID_ROOT / "publish-request.json")
     del document["github-release-asset-attestations"]["artifact/symbols"]
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    assert "github-release-asset-attestations" in str(error.value)
+
+
+def test_github_release_request_rejects_wrong_asset_attestation_shape() -> None:
+    """Attached GitHub Release attestations must remain an object."""
+    document = _load(VALID_ROOT / "publish-request.json")
+    document["github-release-asset-attestations"] = []
     with pytest.raises(ContractValidationError) as error:
         validate_contract(document)
     assert "github-release-asset-attestations" in str(error.value)

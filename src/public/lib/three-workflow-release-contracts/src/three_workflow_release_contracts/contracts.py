@@ -2262,8 +2262,10 @@ def _github_release_asset_attestations(
     """Validate actions/attest outputs carried by a GitHub Release request."""
     value = request.get("github-release-asset-attestations")
     if family != "github-release":
-        if value is not None:
+        if "github-release-asset-attestations" in request:
             validator.error(path, "must be omitted outside github-release")
+        return
+    if "github-release-asset-attestations" not in request:
         return
     outputs = _map(validator, value, path)
     if outputs is None:

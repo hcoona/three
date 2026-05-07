@@ -129,7 +129,48 @@ def _validate_request(request: Mapping[str, object]) -> Mapping[str, object]:
             phase="validation",
             details={"validation-error": str(exc)},
         ) from exc
+    _require_github_release_asset_attestations(request)
     return request
+
+
+def _require_github_release_asset_attestations(
+    request: Mapping[str, object],
+) -> None:
+    """Fail closed when GitHub Release attestations are absent."""
+    snapshot = _mapping(request["target-instance-snapshot"])
+    if snapshot.get("family") != "github-release":
+        return
+    if "github-release-asset-attestations" not in request:
+        msg = (
+            "GitHub Release publish request is missing attached "
+            "asset attestations"
+        )
+        raise PublishExecutorError(
+            msg,
+            code="PUBLISH_INVALID_INPUT",
+            phase="validation",
+            details={"field": "github-release-asset-attestations"},
+        )
+    outputs = _mapping(request["github-release-asset-attestations"])
+    node = _mapping(request["publish-node"])
+    expected = set(_mapping(request["artifacts"]).keys())
+    node_artifacts = node.get("artifact-ids")
+    if isinstance(node_artifacts, Sequence) and not isinstance(
+        node_artifacts, str
+    ):
+        expected = {str(artifact_id) for artifact_id in node_artifacts}
+    if set(outputs) != expected:
+        msg = "GitHub Release publish request has incomplete asset attestations"
+        raise PublishExecutorError(
+            msg,
+            code="PUBLISH_INVALID_INPUT",
+            phase="validation",
+            details={
+                "field": "github-release-asset-attestations",
+                "expected-artifact-ids": sorted(expected),
+                "actual-artifact-ids": sorted(outputs),
+            },
+        )
 
 
 def _check_commit(
