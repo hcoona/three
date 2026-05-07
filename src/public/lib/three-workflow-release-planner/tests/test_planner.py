@@ -117,6 +117,30 @@ def _remote_observations(
     return observations
 
 
+def _dotnet_metadata(snapshot: AuthoringSnapshot) -> dict[str, object]:
+    """Return valid synthetic .NET metadata for planner tests."""
+    metadata_input = snapshot.dotnet_metadata_input(SHA)
+    projects = cast(
+        "Mapping[str, Mapping[str, object]]", metadata_input["projects"]
+    )
+    metadata_projects: dict[str, object] = {}
+    for project_id, project in projects.items():
+        entry = {
+            "descriptor-path": project["descriptor-path"],
+            "primary-manifest-path": project["primary-manifest-path"],
+            "resolved-version": "1.2.3",
+        }
+        if project["requires-package-id"] is True:
+            entry["package-id"] = project_id
+        metadata_projects[project_id] = entry
+    return {
+        "api-version": "three.release.dotnet-planner-metadata/v1alpha1",
+        "kind": "dotnet-planner-metadata",
+        "commit-sha": SHA,
+        "projects": metadata_projects,
+    }
+
+
 def _github_release_node_id(plan: Mapping[str, object]) -> str:
     """Return the GitHub Release publish node id from a plan object."""
     return _publish_node_id_for_family(plan, "github-release")
@@ -442,6 +466,40 @@ def test_official_github_release_conflicting_replay_fails_closed() -> None:
     assert error.value.diagnostics[0]["code"] == "REMOTE_CONFLICTING"
 
 
+def test_official_github_release_absent_observation_plans_new_publication() -> (
+    None
+):
+    """Official absent GitHub Release observation plans create-only publish."""
+    snapshot = validate_authoring(REPO_ROOT)
+    first = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], profile="official"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    node_id = _github_release_node_id(first.plan)
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], profile="official"),
+            repo_root=REPO_ROOT,
+            remote_observations=_remote_observations(
+                first.plan, {node_id: "absent"}
+            ),
+        ),
+    )
+
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    assert node["publish-disposition"] == "publish"
+    assert node["publish-mode"] == "create-only"
+    assert (
+        node_id
+        in result.execution_sets["active-github-release-publish-node-ids"]
+    )
+
+
 def test_buddy_force_github_release_conflicting_replay_fails_closed() -> None:
     """Buddy force conflicting GitHub Release replay fails closed."""
     first = _plan(["nbgv-python"])
@@ -462,8 +520,8 @@ def test_buddy_force_github_release_conflicting_replay_fails_closed() -> None:
     assert error.value.diagnostics[0]["code"] == "REMOTE_CONFLICTING"
 
 
-def test_official_partial_github_release_replaces_authoritatively() -> None:
-    """Official partial GitHub Release replay uses replace-authoritative."""
+def test_official_partial_github_release_fails_closed() -> None:
+    """Official partial GitHub Release replay fails closed."""
     snapshot = validate_authoring(REPO_ROOT)
     first = plan_release(
         snapshot,
@@ -474,18 +532,50 @@ def test_official_partial_github_release_replaces_authoritatively() -> None:
         ),
     )
     node_id = _github_release_node_id(first.plan)
+    with pytest.raises(PlannerError) as error:
+        plan_release(
+            snapshot,
+            PlannerInputs(
+                request=_request(["nbgv-python"], profile="official"),
+                repo_root=REPO_ROOT,
+                remote_observations=_remote_observations(
+                    first.plan, {node_id: "partial"}
+                ),
+            ),
+        )
+    assert error.value.diagnostics[0]["code"] == "REMOTE_CONFLICTING"
+    assert error.value.diagnostics[0]["details"] == {
+        "remote-observation": "partial"
+    }
+
+
+def test_circular_list_github_release_absent_plans_successfully() -> None:
+    """Circular-list GitHub Release absent observation plans create-only."""
+    snapshot = validate_authoring(REPO_ROOT)
+    first = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["circular-list"], profile="official"),
+            repo_root=REPO_ROOT,
+            dotnet_metadata=_dotnet_metadata(snapshot),
+            dry_run=True,
+        ),
+    )
+    node_id = _github_release_node_id(first.plan)
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["nbgv-python"], profile="official"),
+            request=_request(["circular-list"], profile="official"),
             repo_root=REPO_ROOT,
-            remote_observations=_remote_observations(
-                first.plan, {node_id: "partial"}
-            ),
+            dotnet_metadata=_dotnet_metadata(snapshot),
+            remote_observations={node_id: "absent"},
         ),
     )
+
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
-    assert node["publish-mode"] == "replace-authoritative"
+    assert node["publish-disposition"] == "publish"
+    assert node["publish-mode"] == "create-only"
+    assert node_id in result.execution_sets["active-publish-node-ids"]
 
 
 def test_buddy_force_partial_github_release_overwrites_mutable() -> None:

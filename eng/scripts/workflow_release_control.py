@@ -69,6 +69,7 @@ def main() -> int:
     _add_attach_attestation(subparsers)
     _add_generate_proofs(subparsers)
     _add_skip_results(subparsers)
+    _add_observe_remote_publications(subparsers)
     _add_ensure_tags(subparsers)
     _add_report(subparsers)
     args = parser.parse_args()
@@ -271,6 +272,17 @@ def _add_ensure_tags(
     parser.add_argument("--repository", required=True)
     parser.add_argument("--out", required=True)
     parser.set_defaults(func=_cmd_ensure_tags)
+
+
+def _add_observe_remote_publications(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("observe-remote-publications")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--diagnostics-out", required=True)
+    parser.set_defaults(func=_cmd_observe_remote_publications)
 
 
 def _add_report(
@@ -795,6 +807,41 @@ def _cmd_skip_results(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
+    plan = _read_json(Path(args.plan))
+    diagnostics: list[Json] = []
+    observations: dict[str, str] = {}
+    for node_id, node in sorted(plan["graph"]["publish-nodes"].items()):
+        snapshot_id = node["target-instance-snapshot-id"]
+        snapshot = plan["graph"]["target-instance-snapshots"][snapshot_id]
+        if snapshot["family"] != "github-release":
+            continue
+        try:
+            observations[node_id] = _observe_github_release_publication(
+                args.repository,
+                str(plan["envelope"]["commit-sha"]),
+                node,
+            )
+        except (RuntimeError, TypeError) as exc:
+            diagnostics.append(
+                _publish_node_diagnostic(
+                    "REMOTE_CLASSIFICATION_FAILED",
+                    "remote publication lookup failed",
+                    node_id,
+                    node,
+                    snapshot_id,
+                    details={"error": str(exc)},
+                )
+            )
+    if diagnostics:
+        _write_json(
+            Path(args.diagnostics_out), _diagnostics_document(diagnostics)
+        )
+        return 1
+    _write_json(Path(args.out), observations)
+    return 0
+
+
 def _cmd_ensure_tags(args: argparse.Namespace) -> int:
     plan = _read_json(Path(args.plan))
     execution_sets = _read_json(Path(args.execution_sets))
@@ -983,6 +1030,23 @@ def _external_oidc_diagnostics(
                     },
                 )
             )
+            continue
+        diagnostics.append(
+            _publish_node_diagnostic(
+                "REMOTE_CLASSIFICATION_FAILED",
+                "authoritative remote observation is unsupported for selected "
+                "official external OIDC target",
+                node_id,
+                node,
+                snapshot_id,
+                details={
+                    "remote-observation": "unsupported",
+                    "target-family": snapshot["family"],
+                    "target-instance-ref": snapshot_id,
+                    "publish-topology": topology,
+                },
+            )
+        )
     return diagnostics
 
 
@@ -1849,6 +1913,87 @@ def _remote_tag_commit(repository: str, tag: str) -> str | None:
         raise RuntimeError(msg)
     msg = f"existing tag {tag!r} points to unsupported object type {obj['type']!r}"
     raise RuntimeError(msg)
+
+
+def _observe_github_release_publication(
+    repository: str,
+    commit_sha: str,
+    node: Json,
+) -> str:
+    identity = node["resolved-publish-identity"]
+    tag = str(identity["release-tag"])
+    tag_commit = _remote_tag_commit(repository, tag)
+    if tag_commit is not None and tag_commit != commit_sha:
+        return "conflicting"
+    release = _github_release_by_tag(repository, tag)
+    if release is None:
+        return "absent"
+    if tag_commit is None:
+        return "conflicting"
+    return _classify_github_release_payload(release, node)
+
+
+def _classify_github_release_payload(release: Json, node: Json) -> str:
+    desired = node.get("desired-publish-state", {})
+    desired_prerelease = (
+        isinstance(desired, Mapping)
+        and desired.get("release-state") == "prerelease"
+    )
+    actual_prerelease = release.get("prerelease")
+    if actual_prerelease is None:
+        actual_prerelease = release.get("isPrerelease")
+    if not isinstance(actual_prerelease, bool):
+        return "conflicting"
+    planned_assets = _planned_github_release_assets(node)
+    actual_assets = _observed_github_release_assets(release)
+    if planned_assets is None or actual_assets is None:
+        return "conflicting"
+    if (
+        actual_prerelease == desired_prerelease
+        and actual_assets == planned_assets
+    ):
+        return "exact-satisfied"
+    return "partial"
+
+
+def _planned_github_release_assets(node: Json) -> set[str] | None:
+    projection = node.get("projection")
+    if not isinstance(projection, Mapping):
+        return None
+    planned_assets_by_id = projection.get("asset-names-by-artifact-id")
+    if not isinstance(planned_assets_by_id, Mapping):
+        return None
+    return {str(value) for value in planned_assets_by_id.values()}
+
+
+def _observed_github_release_assets(release: Json) -> set[str] | None:
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        return None
+    actual_assets: set[str] = set()
+    for asset in assets:
+        if not isinstance(asset, Mapping) or not isinstance(
+            asset.get("name"), str
+        ):
+            return None
+        actual_assets.add(str(asset["name"]))
+    return actual_assets
+
+
+def _github_release_by_tag(repository: str, tag: str) -> Json | None:
+    try:
+        payload = _gh_api(
+            repository,
+            f"repos/{repository}/releases/tags/{urllib.parse.quote(tag, safe='/')}",
+        )
+    except RuntimeError as exc:
+        if _is_github_not_found_error(exc):
+            return None
+        raise
+    if not isinstance(payload, dict):
+        msg = f"release lookup for {tag!r} returned non-object payload"
+        raise TypeError(msg)
+    return payload
 
 
 def _is_github_not_found_error(exc: RuntimeError) -> bool:

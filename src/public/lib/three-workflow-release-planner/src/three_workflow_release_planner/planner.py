@@ -591,6 +591,8 @@ class _PlanBuilder:
             return True
         if observations is not None and node_id in observations:
             return True
+        if _is_external_oidc_instance(instance):
+            return True
         self.diagnostics.append(
             _diagnostic(
                 "REMOTE_CLASSIFICATION_FAILED",
@@ -1168,7 +1170,9 @@ class _PlanBuilder:
             return None
         observations = self.inputs.remote_observations
         observation = (
-            "absent" if observations is None else observations[node_id]
+            "absent"
+            if observations is None or node_id not in observations
+            else observations[node_id]
         )
         if observation == "exact-satisfied":
             return ("skip-satisfied", None)
@@ -1225,7 +1229,21 @@ class _PlanBuilder:
             and instance.family == "github-release"
             and self.inputs.request["profile"] == "official"
         ):
-            return ("publish", "replace-authoritative")
+            self.diagnostics.append(
+                _diagnostic(
+                    "REMOTE_CONFLICTING",
+                    "classification",
+                    "publish-node",
+                    "GitHub Release partial publication requires manual "
+                    "reconciliation before official replay",
+                    project_id=project.project_id,
+                    publish_node_id=node_id,
+                    target_instance_snapshot_id=instance.catalog_ref,
+                    resolved_publish_identity=dict(identity),
+                    details={"remote-observation": observation},
+                )
+            )
+            return None
         if (
             observation == "partial"
             and self.inputs.request["profile"] == "buddy"
@@ -1617,6 +1635,10 @@ def _node_artifact_ids(node: Mapping[str, object]) -> list[str]:
     if isinstance(artifact_ids, list):
         return [item for item in artifact_ids if isinstance(item, str)]
     return []
+
+
+def _is_external_oidc_instance(instance: TargetInstance) -> bool:
+    return instance.capabilities.get("credential-posture") == "oidc"
 
 
 def _plan_id(

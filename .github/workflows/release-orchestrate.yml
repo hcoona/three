@@ -244,6 +244,7 @@ jobs:
           path: .three-workflow-release/metadata
       - name: Run planner
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_DRY_RUN: ${{ inputs.dry-run }}
           RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
         run: |
@@ -259,10 +260,28 @@ jobs:
           if [ "$RELEASE_VALIDATION_BUILD" = 'true' ]; then
             dry_args+=(--validation-build)
           fi
+          remote_args=()
+          if [ "$RELEASE_DRY_RUN" != 'true' ]; then
+            uv run three-workflow-release-planner plan \
+              --repo-root . \
+              --request .three-workflow-release/plan/planner-request.json \
+              "${metadata_args[@]}" \
+              --plan-out .three-workflow-release/plan/bootstrap-release-plan.json \
+              --execution-sets-out .three-workflow-release/plan/bootstrap-execution-sets.json \
+              --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json \
+              --dry-run
+            uv run python eng/scripts/workflow_release_control.py observe-remote-publications \
+              --plan .three-workflow-release/plan/bootstrap-release-plan.json \
+              --repository '${{ github.repository }}' \
+              --out .three-workflow-release/plan/remote-observations.json \
+              --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json
+            remote_args=(--remote-observations .three-workflow-release/plan/remote-observations.json)
+          fi
           uv run three-workflow-release-planner plan \
             --repo-root . \
             --request .three-workflow-release/plan/planner-request.json \
             "${metadata_args[@]}" \
+            "${remote_args[@]}" \
             --plan-out .three-workflow-release/plan/release-plan.json \
             --execution-sets-out .three-workflow-release/plan/execution-sets.json \
             --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json \

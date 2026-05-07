@@ -1153,6 +1153,15 @@ def test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs(
         )
 
         plan, execution_sets = _external_oidc_plan_and_sets()
+        _run_plan_gate_case(
+            scratch / "unsupported-observation",
+            plan,
+            execution_sets,
+            "pypi/pypi#example#Example",
+            "REMOTE_CLASSIFICATION_FAILED",
+        )
+
+        plan, execution_sets = _external_oidc_plan_and_sets()
         monkeypatch.setattr(
             control,
             "_TOPOLOGIES",
@@ -1963,7 +1972,6 @@ def test_live_external_oidc_enablement_routes_entry_publish() -> None:
     node["publish-disposition"] = "publish"
     node["publish-mode"] = "create-only"
     node["target-instance-snapshot-id"] = "pypi/pypi"
-    enablement = "pypi/pypi#example#Example"
     output = SCRATCH / "entry-matrix-output.txt"
     shutil.rmtree(SCRATCH, ignore_errors=True)
     SCRATCH.mkdir()
@@ -1973,17 +1981,6 @@ def test_live_external_oidc_enablement_routes_entry_publish() -> None:
         plan_path.write_text(json.dumps(plan), encoding="utf-8")
         sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
 
-        assert (
-            control._cmd_plan_gate(
-                control.argparse.Namespace(
-                    plan=str(plan_path),
-                    execution_sets=str(sets_path),
-                    enabled_external_oidc_targets=enablement,
-                    diagnostics_out=str(SCRATCH / "planner-diagnostics.json"),
-                )
-            )
-            == 0
-        )
         assert (
             control._cmd_matrix_outputs(
                 control.argparse.Namespace(
@@ -2106,6 +2103,105 @@ def test_ensure_tags_tolerates_missing_dry_run_publish_tags(
         assert gh_calls == []
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_observe_remote_publications_classifies_missing_github_release_absent(
+    monkeypatch,
+) -> None:
+    """Missing GitHub Release publication writes explicit absent observation."""
+    plan = deepcopy(_load("release-plan.json"))
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: None)
+    monkeypatch.setattr(control, "_github_release_by_tag", lambda *_: None)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        observations = json.loads(out.read_text(encoding="utf-8"))
+        assert observations == {"publish-node/gh": "absent"}
+        assert not diagnostics.exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_observe_remote_publications_fails_closed_on_lookup_errors(
+    monkeypatch,
+) -> None:
+    """Remote lookup errors become planner diagnostics instead of absent."""
+    plan = deepcopy(_load("release-plan.json"))
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(
+        control,
+        "_remote_tag_commit",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("HTTP 503")),
+    )
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        assert _diagnostic_codes(diagnostics) == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_github_release_observation_preserves_partial_and_conflicting_states(
+    monkeypatch,
+) -> None:
+    """Existing partial/conflicting GitHub Release states are not absent."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_B)
+
+    assert (
+        control._observe_github_release_publication("hcoona/three", SHA_C, node)
+        == "conflicting"
+    )
+
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "assets": [{"name": "Example.1.2.3.nupkg"}],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication("hcoona/three", SHA_C, node)
+        == "partial"
+    )
 
 
 def test_ensure_tags_fails_missing_skip_satisfied_tags(monkeypatch) -> None:
@@ -2902,6 +2998,25 @@ def test_external_oidc_gate_requires_live_enablement_token() -> None:
     )
 
 
+def test_external_oidc_gate_blocks_unsupported_remote_observation() -> None:
+    """Enabled external OIDC targets fail closed without observation support."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+
+    diagnostics = control._external_oidc_diagnostics(
+        plan, execution_sets, "pypi/pypi#example#Example"
+    )
+
+    assert [diagnostic["code"] for diagnostic in diagnostics] == [
+        "REMOTE_CLASSIFICATION_FAILED"
+    ]
+    assert diagnostics[0]["message"] == (
+        "authoritative remote observation is unsupported for selected official "
+        "external OIDC target"
+    )
+    assert diagnostics[0]["details"]["remote-observation"] == "unsupported"
+    assert diagnostics[0]["details"]["target-family"] == "pypi"
+
+
 def test_plan_gate_writes_invalid_oidc_allowlist_diagnostics() -> None:
     """Invalid live-enable allowlists populate planner diagnostics artifact."""
     plan = deepcopy(_load("release-plan.json"))
@@ -3153,6 +3268,21 @@ def test_skip_only_tag_verification_is_read_only_without_environment() -> None:
     assert "      contents: write\n" not in verify_block
     assert "has-active-github-release == 'true'" in active_block
     assert "      contents: write\n" in active_block
+
+
+def test_live_planner_observes_remote_publications_before_final_plan() -> None:
+    """Live planning observes remotes before final plan."""
+    workflow = _workflow("release-orchestrate.yml")
+    run_block = _step_block(workflow, "Run planner")
+
+    bootstrap = run_block.index("bootstrap-release-plan.json")
+    observe = run_block.index("observe-remote-publications")
+    final = run_block.rindex("--remote-observations")
+    assert bootstrap < observe < final
+    assert "GH_TOKEN: ${{ github.token }}" in run_block
+    assert "if [ \"$RELEASE_DRY_RUN\" != 'true' ]; then" in run_block
+    assert "--dry-run" in run_block[:observe]
+    assert ".three-workflow-release/plan/remote-observations.json" in run_block
 
 
 def test_reusable_publish_jobs_use_topology_scoped_permissions() -> None:
