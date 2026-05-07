@@ -440,6 +440,60 @@ def test_exact_satisfied_routes_to_skip_selector() -> None:
     assert node_id not in publish_nodes
 
 
+def test_pypi_exact_satisfied_routes_to_skip_selector() -> None:
+    """Model exact-satisfied PyPI versions as immutable replay skips."""
+    snapshot = validate_authoring(REPO_ROOT)
+    first = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], profile="official"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    node_id = _publish_node_id_for_family(first.plan, "pypi")
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], profile="official"),
+            repo_root=REPO_ROOT,
+            remote_observations=_remote_observations(
+                first.plan, {node_id: "exact-satisfied"}
+            ),
+        ),
+    )
+
+    assert node_id in result.execution_sets["skip-satisfied-publish-node-ids"]
+    assert node_id not in result.execution_sets["publish-intent-node-ids"]
+
+
+def test_live_pypi_without_remote_observation_remains_gateable() -> None:
+    """External OIDC targets without observations remain gate-controlled."""
+    snapshot = validate_authoring(REPO_ROOT)
+    bootstrap = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], profile="official"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    pypi_node_id = _publish_node_id_for_family(bootstrap.plan, "pypi")
+    observations = _remote_observations(bootstrap.plan)
+    del observations[pypi_node_id]
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], profile="official"),
+            repo_root=REPO_ROOT,
+            remote_observations=observations,
+        ),
+    )
+
+    assert pypi_node_id in result.execution_sets["publish-intent-node-ids"]
+    assert pypi_node_id in result.execution_sets["active-publish-node-ids"]
+
+
 def test_official_github_release_conflicting_replay_fails_closed() -> None:
     """Official conflicting GitHub Release replay fails closed."""
     snapshot = validate_authoring(REPO_ROOT)

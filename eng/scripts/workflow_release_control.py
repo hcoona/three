@@ -7,11 +7,15 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import http.client
 import json
 import os
+import re
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
+import urllib.request
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -50,6 +54,7 @@ _TOPOLOGIES = (
     "external-oidc-caller-workflow",
     "external-oidc-reusable-workflow",
 )
+_PYPI_JSON_TIMEOUT_SECONDS = 15
 
 
 def main() -> int:
@@ -135,6 +140,7 @@ def _add_plan_gate(
     parser = subparsers.add_parser("plan-gate")
     parser.add_argument("--plan", required=True)
     parser.add_argument("--execution-sets", required=True)
+    parser.add_argument("--remote-observations")
     parser.add_argument("--enabled-external-oidc-targets", default="")
     parser.add_argument("--diagnostics-out", required=True)
     parser.set_defaults(func=_cmd_plan_gate)
@@ -279,6 +285,8 @@ def _add_observe_remote_publications(
 ) -> None:
     parser = subparsers.add_parser("observe-remote-publications")
     parser.add_argument("--plan", required=True)
+    parser.add_argument("--execution-sets")
+    parser.add_argument("--enabled-external-oidc-targets", default="")
     parser.add_argument("--repository", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--diagnostics-out", required=True)
@@ -456,11 +464,19 @@ def _cmd_write_planner_request(args: argparse.Namespace) -> int:
 def _cmd_plan_gate(args: argparse.Namespace) -> int:
     plan = _read_json(Path(args.plan))
     execution_sets = _read_json(Path(args.execution_sets))
+    remote_observations = (
+        _read_json(Path(args.remote_observations))
+        if getattr(args, "remote_observations", None)
+        else None
+    )
     validate_contract(plan)
     validate_contract(execution_sets)
     try:
         diagnostics = _external_oidc_diagnostics(
-            plan, execution_sets, args.enabled_external_oidc_targets
+            plan,
+            execution_sets,
+            args.enabled_external_oidc_targets,
+            remote_observations,
         )
     except RuntimeError as exc:
         diagnostics_document = _diagnostics_from_error(exc)
@@ -809,30 +825,65 @@ def _cmd_skip_results(args: argparse.Namespace) -> int:
 
 def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
     plan = _read_json(Path(args.plan))
+    execution_sets = (
+        _read_json(Path(args.execution_sets))
+        if getattr(args, "execution_sets", None)
+        else None
+    )
+    try:
+        enabled = _normalize_enablement(
+            getattr(args, "enabled_external_oidc_targets", ""), plan
+        )
+    except RuntimeError as exc:
+        diagnostics_document = _diagnostics_from_error(exc)
+        if diagnostics_document is None:
+            raise
+        _write_json(Path(args.diagnostics_out), diagnostics_document)
+        sys.stderr.write(json.dumps(diagnostics_document) + "\n")
+        return 1
     diagnostics: list[Json] = []
     observations: dict[str, str] = {}
     for node_id, node in sorted(plan["graph"]["publish-nodes"].items()):
         snapshot_id = node["target-instance-snapshot-id"]
         snapshot = plan["graph"]["target-instance-snapshots"][snapshot_id]
-        if snapshot["family"] != "github-release":
-            continue
-        try:
-            observations[node_id] = _observe_github_release_publication(
-                args.repository,
-                str(plan["envelope"]["commit-sha"]),
-                node,
-            )
-        except (RuntimeError, TypeError) as exc:
-            diagnostics.append(
-                _publish_node_diagnostic(
-                    "REMOTE_CLASSIFICATION_FAILED",
-                    "remote publication lookup failed",
-                    node_id,
+        if snapshot["family"] == "github-release":
+            try:
+                observations[node_id] = _observe_github_release_publication(
+                    args.repository,
+                    str(plan["envelope"]["commit-sha"]),
                     node,
-                    snapshot_id,
-                    details={"error": str(exc)},
                 )
-            )
+            except (RuntimeError, TypeError) as exc:
+                diagnostics.append(
+                    _publish_node_diagnostic(
+                        "REMOTE_CLASSIFICATION_FAILED",
+                        "remote publication lookup failed",
+                        node_id,
+                        node,
+                        snapshot_id,
+                        details={"error": str(exc)},
+                    )
+                )
+            continue
+        if _supports_pypi_remote_observation(
+            snapshot
+        ) and _requires_live_external_remote_observation(
+            node_id, node, snapshot_id, snapshot, execution_sets, enabled
+        ):
+            try:
+                observations[node_id] = _observe_pypi_publication(node)
+            except (RuntimeError, TypeError, ValueError) as exc:
+                diagnostics.append(
+                    _publish_node_diagnostic(
+                        "REMOTE_CLASSIFICATION_FAILED",
+                        "remote publication lookup failed",
+                        node_id,
+                        node,
+                        snapshot_id,
+                        details={"error": str(exc)},
+                    )
+                )
+            continue
     if diagnostics:
         _write_json(
             Path(args.diagnostics_out), _diagnostics_document(diagnostics)
@@ -978,7 +1029,10 @@ def _cmd_report(args: argparse.Namespace) -> int:
 
 
 def _external_oidc_diagnostics(
-    plan: Json, execution_sets: Json, enablement: str
+    plan: Json,
+    execution_sets: Json,
+    enablement: str,
+    remote_observations: Mapping[str, Any] | None = None,
 ) -> list[Json]:
     if plan["envelope"]["profile"] != "official":
         return []
@@ -1027,6 +1081,31 @@ def _external_oidc_diagnostics(
                         "target-instance-ref": snapshot_id,
                         "project-id": node["project-id"],
                         "resolved-publish-identity": identity,
+                    },
+                )
+            )
+            continue
+        if _supports_remote_observation(snapshot):
+            if not _supports_pypi_remote_observation(snapshot):
+                continue
+            if (
+                remote_observations is not None
+                and node_id in remote_observations
+            ):
+                continue
+            diagnostics.append(
+                _publish_node_diagnostic(
+                    "REMOTE_CLASSIFICATION_FAILED",
+                    "authoritative remote observation is missing for selected "
+                    "official external OIDC target",
+                    node_id,
+                    node,
+                    snapshot_id,
+                    details={
+                        "remote-observation": "missing",
+                        "target-family": snapshot["family"],
+                        "target-instance-ref": snapshot_id,
+                        "publish-topology": topology,
                     },
                 )
             )
@@ -1931,6 +2010,150 @@ def _observe_github_release_publication(
     if tag_commit is None:
         return "conflicting"
     return _classify_github_release_payload(release, node)
+
+
+def _observe_pypi_publication(node: Json) -> str:
+    identity = node.get("resolved-publish-identity")
+    if not isinstance(identity, Mapping):
+        msg = "PyPI publish node is missing resolved-publish-identity"
+        raise TypeError(msg)
+    package_name = identity.get("package-name")
+    version = identity.get("version")
+    if not isinstance(package_name, str) or not package_name:
+        msg = "PyPI publish identity is missing package-name"
+        raise TypeError(msg)
+    if not isinstance(version, str) or not version:
+        msg = "PyPI publish identity is missing version"
+        raise TypeError(msg)
+    payload = _pypi_project_json(package_name)
+    if payload is None:
+        return "absent"
+    releases = payload.get("releases")
+    if not isinstance(releases, Mapping):
+        msg = f"PyPI JSON API payload for {package_name!r} is missing releases"
+        raise TypeError(msg)
+    if version not in releases:
+        return "absent"
+    files = releases[version]
+    if not isinstance(files, list):
+        msg = (
+            f"PyPI JSON API payload for {package_name!r} version {version!r} "
+            "has malformed release files"
+        )
+        raise TypeError(msg)
+    return "exact-satisfied"
+
+
+def _pypi_project_json(package_name: str) -> Json | None:
+    normalized = _pep503_name(package_name)
+    url = (
+        f"https://pypi.org/pypi/{urllib.parse.quote(normalized, safe='')}/json"
+    )
+    request = urllib.request.Request(  # noqa: S310
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "three-workflow-release-control/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(  # noqa: S310
+            request, timeout=_PYPI_JSON_TIMEOUT_SECONDS
+        ) as response:
+            status = response.getcode()
+            if status != 200:
+                msg = (
+                    f"PyPI JSON API request failed for package "
+                    f"{normalized!r}: HTTP {status}"
+                )
+                raise RuntimeError(msg)
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        msg = (
+            f"PyPI JSON API request failed for package {normalized!r}: "
+            f"HTTP {exc.code}"
+        )
+        raise RuntimeError(msg) from exc
+    except urllib.error.URLError as exc:
+        msg = (
+            f"PyPI JSON API request failed for package {normalized!r}: "
+            f"{exc.reason}"
+        )
+        raise RuntimeError(msg) from exc
+    except http.client.HTTPException as exc:
+        msg = f"PyPI JSON API request failed for package {normalized!r}: {exc}"
+        raise RuntimeError(msg) from exc
+    except OSError as exc:
+        msg = f"PyPI JSON API request failed for package {normalized!r}: {exc}"
+        raise RuntimeError(msg) from exc
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        msg = (
+            f"PyPI JSON API returned invalid JSON for package {normalized!r}: "
+            f"{exc}"
+        )
+        raise RuntimeError(msg) from exc
+    if not isinstance(payload, dict):
+        msg = f"PyPI JSON API returned non-object payload for {normalized!r}"
+        raise TypeError(msg)
+    return payload
+
+
+def _supports_remote_observation(snapshot: Mapping[str, Any]) -> bool:
+    return snapshot.get("family") == "github-release" or (
+        _supports_pypi_remote_observation(snapshot)
+    )
+
+
+def _supports_pypi_remote_observation(snapshot: Mapping[str, Any]) -> bool:
+    destination = snapshot.get("destination")
+    return (
+        snapshot.get("family") == "pypi"
+        and isinstance(destination, Mapping)
+        and destination.get("host") == "pypi.org"
+    )
+
+
+def _requires_live_external_remote_observation(
+    node_id: str,
+    node: Mapping[str, Any],
+    snapshot_id: str,
+    snapshot: Mapping[str, Any],
+    execution_sets: Mapping[str, Any] | None,
+    enabled: set[str],
+) -> bool:
+    if execution_sets is None:
+        return True
+    candidates_key = (
+        "publish-intent-node-ids"
+        if execution_sets.get("dry-run")
+        else "active-publish-node-ids"
+    )
+    candidates = execution_sets.get(candidates_key, [])
+    required = node_id in candidates
+    capabilities = snapshot.get("capabilities")
+    if (
+        required
+        and isinstance(capabilities, Mapping)
+        and capabilities.get("credential-posture") == "oidc"
+    ):
+        identity = node.get("resolved-publish-identity")
+        package_name = (
+            identity.get("package-name")
+            if isinstance(identity, Mapping)
+            else None
+        )
+        if isinstance(package_name, str) and package_name:
+            token = f"{snapshot_id}#{node.get('project-id')}#{package_name}"
+            required = token in enabled
+    return required
+
+
+def _pep503_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def _classify_github_release_payload(release: Json, node: Json) -> str:

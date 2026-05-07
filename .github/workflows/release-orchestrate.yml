@@ -245,6 +245,7 @@ jobs:
       - name: Run planner
         env:
           GH_TOKEN: ${{ github.token }}
+          ENABLED_EXTERNAL_OIDC_TARGETS: ${{ inputs.enabled-external-oidc-targets }}
           RELEASE_DRY_RUN: ${{ inputs.dry-run }}
           RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
         run: |
@@ -272,6 +273,8 @@ jobs:
               --dry-run
             uv run python eng/scripts/workflow_release_control.py observe-remote-publications \
               --plan .three-workflow-release/plan/bootstrap-release-plan.json \
+              --execution-sets .three-workflow-release/plan/bootstrap-execution-sets.json \
+              --enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS" \
               --repository '${{ github.repository }}' \
               --out .three-workflow-release/plan/remote-observations.json \
               --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json
@@ -290,9 +293,14 @@ jobs:
         env:
           ENABLED_EXTERNAL_OIDC_TARGETS: ${{ inputs.enabled-external-oidc-targets }}
         run: |
+          remote_args=()
+          if [ -f .three-workflow-release/plan/remote-observations.json ]; then
+            remote_args=(--remote-observations .three-workflow-release/plan/remote-observations.json)
+          fi
           uv run python eng/scripts/workflow_release_control.py plan-gate \
             --plan .three-workflow-release/plan/release-plan.json \
             --execution-sets .three-workflow-release/plan/execution-sets.json \
+            "${remote_args[@]}" \
             --enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS" \
             --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json
       - name: Derive workflow outputs

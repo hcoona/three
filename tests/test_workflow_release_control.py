@@ -555,6 +555,66 @@ def _external_oidc_plan_and_sets(
     return plan, execution_sets
 
 
+def _pypi_only_observation_plan() -> dict[str, object]:
+    """Return a plan containing only the PyPI publish node for observation."""
+    plan, _ = _external_oidc_plan_and_sets()
+    pypi_node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    pypi_snapshot = plan["graph"]["target-instance-snapshots"]["pypi/pypi"]
+    plan["graph"]["publish-nodes"] = {"publish-node/nuget": pypi_node}
+    plan["graph"]["target-instance-snapshots"] = {"pypi/pypi": pypi_snapshot}
+    return plan
+
+
+def _unsupported_rubygems_oidc_plan_and_sets() -> tuple[
+    dict[str, object], dict[str, object]
+]:
+    """Return a valid active external OIDC plan for an unsupported registry."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    snapshot = plan["graph"]["target-instance-snapshots"].pop("pypi/pypi")
+    snapshot["catalog-ref"] = "rubygems/rubygems-org"
+    snapshot["contract"]["id"] = "rubygems-publish"
+    snapshot["destination"] = {"host": "rubygems.org"}
+    snapshot["family"] = "rubygems"
+    snapshot["instance-id"] = "rubygems-org"
+    snapshot["capabilities"]["publish-topology"] = (
+        "external-oidc-reusable-workflow"
+    )
+    snapshot["contract"]["allowed-artifact-tuples"] = [
+        {
+            "role": "primary-package",
+            "kind-family": "package",
+            "concrete-kind": "rubygem",
+        }
+    ]
+    snapshot["contract"]["aggregate-rules"] = {
+        "min-artifact-count": 1,
+        "max-artifact-count": 1,
+        "cross-variant-policy": "forbid",
+        "tuple-rules": [
+            {
+                "role": "primary-package",
+                "kind-family": "package",
+                "concrete-kind": "rubygem",
+                "min-count": 1,
+                "max-count": 1,
+            }
+        ],
+    }
+    plan["graph"]["target-instance-snapshots"]["rubygems/rubygems-org"] = (
+        snapshot
+    )
+    plan["graph"]["artifacts"]["artifact/package"]["concrete-kind"] = "rubygem"
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["target-instance-snapshot-id"] = "rubygems/rubygems-org"
+    execution_sets["active-publish-selectors"][
+        "external-oidc-entry-workflow"
+    ] = []
+    execution_sets["active-publish-selectors"][
+        "external-oidc-reusable-workflow"
+    ] = ["publish-node/nuget"]
+    return plan, execution_sets
+
+
 def _run_plan_gate_case(
     case_dir: Path,
     plan: dict[str, object],
@@ -1152,12 +1212,12 @@ def test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs(
             "REQ_INVALID_INPUT",
         )
 
-        plan, execution_sets = _external_oidc_plan_and_sets()
+        plan, execution_sets = _unsupported_rubygems_oidc_plan_and_sets()
         _run_plan_gate_case(
             scratch / "unsupported-observation",
             plan,
             execution_sets,
-            "pypi/pypi#example#Example",
+            "rubygems/rubygems-org#example#Example",
             "REMOTE_CLASSIFICATION_FAILED",
         )
 
@@ -2175,6 +2235,358 @@ def test_observe_remote_publications_fails_closed_on_lookup_errors(
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
+def test_pypi_missing_package_observation_plans_first_publish(
+    monkeypatch,
+) -> None:
+    """Missing PyPI project/version emits absent and passes live OIDC gate."""
+    plan = _pypi_only_observation_plan()
+    full_plan, execution_sets = _external_oidc_plan_and_sets()
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, "_pypi_project_json", lambda _: None)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        assert json.loads(out.read_text(encoding="utf-8")) == {
+            "publish-node/nuget": "absent"
+        }
+        assert not diagnostics.exists()
+
+        plan_path = SCRATCH / "full-plan.json"
+        sets_path = SCRATCH / "execution-sets.json"
+        gate_diagnostics = SCRATCH / "gate-diagnostics.json"
+        plan_path.write_text(json.dumps(full_plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+        assert (
+            control._cmd_plan_gate(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    remote_observations=str(out),
+                    enabled_external_oidc_targets="pypi/pypi#example#Example",
+                    diagnostics_out=str(gate_diagnostics),
+                )
+            )
+            == 0
+        )
+        assert not gate_diagnostics.exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_disabled_pypi_observation_skips_lookup_failure(monkeypatch) -> None:
+    """Disabled PyPI OIDC targets are not queried during bootstrap.
+
+    Observation failures for disabled nodes must not fail planning.
+    """
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fail_pypi(_: str) -> dict[str, object]:
+        pytest.fail("disabled target must not be queried")
+
+    monkeypatch.setattr(control, "_pypi_project_json", fail_pypi)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        observations = json.loads(out.read_text(encoding="utf-8"))
+        assert observations == {"publish-node/gh": "absent"}
+        assert "publish-node/nuget" not in observations
+        assert not diagnostics.exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_inactive_pypi_observation_skips_lookup_failure(monkeypatch) -> None:
+    """Inactive PyPI OIDC targets are not queried during bootstrap.
+
+    Observation failures for inactive nodes must not fail planning.
+    """
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    execution_sets["publish-intent-node-ids"] = []
+    execution_sets["active-publish-node-ids"] = []
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fail_pypi(_: str) -> dict[str, object]:
+        pytest.fail("inactive target must not be queried")
+
+    monkeypatch.setattr(control, "_pypi_project_json", fail_pypi)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets=("pypi/pypi#example#Example"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        observations = json.loads(out.read_text(encoding="utf-8"))
+        assert observations == {"publish-node/gh": "absent"}
+        assert "publish-node/nuget" not in observations
+        assert not diagnostics.exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_enabled_pypi_gate_requires_observation() -> None:
+    """Enabled PyPI OIDC targets require explicit observation evidence."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_plan_gate(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    remote_observations="",
+                    enabled_external_oidc_targets=("pypi/pypi#example#Example"),
+                    diagnostics_out=str(diagnostics := SCRATCH / "d.json"),
+                )
+            )
+            == 1
+        )
+        assert _diagnostic_codes(diagnostics) == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_pypi_existing_exact_version_observation_is_skip_satisfied(
+    monkeypatch,
+) -> None:
+    """Existing PyPI package/version maps to exact-satisfied replay."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {"releases": {"1.2.3": [{"filename": "example-1.2.3.whl"}]}},
+    )
+
+    assert control._observe_pypi_publication(node) == "exact-satisfied"
+
+
+def test_pypi_missing_version_observation_is_absent(monkeypatch) -> None:
+    """Existing PyPI project without requested version remains publishable."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {"releases": {"9.9.9": [{"filename": "example-9.9.9.whl"}]}},
+    )
+
+    assert control._observe_pypi_publication(node) == "absent"
+
+
+def test_pypi_api_failure_observation_fails_closed(monkeypatch) -> None:
+    """PyPI API failures become clear fail-closed diagnostics."""
+    plan = _pypi_only_observation_plan()
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fail_pypi(_: str) -> dict[str, object]:
+        message = "PyPI JSON API request failed for package 'example': HTTP 503"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(control, "_pypi_project_json", fail_pypi)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+        assert (
+            "PyPI JSON API request failed"
+            in document["diagnostics"][0]["details"]["error"]
+        )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("urlopen_result", "expected_error"),
+    [
+        (TimeoutError("timed out"), "timed out"),
+        (OSError("socket closed"), "socket closed"),
+    ],
+)
+def test_pypi_network_errors_observation_fails_closed(
+    monkeypatch,
+    urlopen_result,
+    expected_error,
+) -> None:
+    """PyPI socket failures become planner diagnostics instead of tracebacks."""
+    plan = _pypi_only_observation_plan()
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fail_urlopen(*_, **__):
+        raise urlopen_result
+
+    monkeypatch.setattr(control.urllib.request, "urlopen", fail_urlopen)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+        assert (
+            "PyPI JSON API request failed"
+            in document["diagnostics"][0]["details"]["error"]
+        )
+        assert expected_error in document["diagnostics"][0]["details"]["error"]
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_pypi_response_read_error_observation_fails_closed(
+    monkeypatch,
+) -> None:
+    """PyPI protocol read failures use the planner diagnostic path."""
+    plan = _pypi_only_observation_plan()
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    class FailingReadResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def getcode(self):
+            return 200
+
+        def read(self):
+            partial = b"partial"
+            raise control.http.client.IncompleteRead(partial)
+
+    monkeypatch.setattr(
+        control.urllib.request,
+        "urlopen",
+        lambda *_, **__: FailingReadResponse(),
+    )
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+        assert (
+            "PyPI JSON API request failed"
+            in document["diagnostics"][0]["details"]["error"]
+        )
+        assert (
+            "IncompleteRead" in document["diagnostics"][0]["details"]["error"]
+        )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
 def test_github_release_observation_preserves_partial_and_conflicting_states(
     monkeypatch,
 ) -> None:
@@ -3003,10 +3415,10 @@ def test_external_oidc_gate_requires_live_enablement_token() -> None:
 
 def test_external_oidc_gate_blocks_unsupported_remote_observation() -> None:
     """Enabled external OIDC targets fail closed without observation support."""
-    plan, execution_sets = _external_oidc_plan_and_sets()
+    plan, execution_sets = _unsupported_rubygems_oidc_plan_and_sets()
 
     diagnostics = control._external_oidc_diagnostics(
-        plan, execution_sets, "pypi/pypi#example#Example"
+        plan, execution_sets, "rubygems/rubygems-org#example#Example"
     )
 
     assert [diagnostic["code"] for diagnostic in diagnostics] == [
@@ -3017,7 +3429,7 @@ def test_external_oidc_gate_blocks_unsupported_remote_observation() -> None:
         "external OIDC target"
     )
     assert diagnostics[0]["details"]["remote-observation"] == "unsupported"
-    assert diagnostics[0]["details"]["target-family"] == "pypi"
+    assert diagnostics[0]["details"]["target-family"] == "rubygems"
 
 
 def test_plan_gate_writes_invalid_oidc_allowlist_diagnostics() -> None:
@@ -3277,15 +3689,33 @@ def test_live_planner_observes_remote_publications_before_final_plan() -> None:
     """Live planning observes remotes before final plan."""
     workflow = _workflow("release-orchestrate.yml")
     run_block = _step_block(workflow, "Run planner")
+    gate_block = _step_block(workflow, "Apply live external OIDC gate")
 
     bootstrap = run_block.index("bootstrap-release-plan.json")
     observe = run_block.index("observe-remote-publications")
     final = run_block.rindex("--remote-observations")
     assert bootstrap < observe < final
     assert "GH_TOKEN: ${{ github.token }}" in run_block
+    assert (
+        "ENABLED_EXTERNAL_OIDC_TARGETS: "
+        "${{ inputs.enabled-external-oidc-targets }}" in run_block
+    )
     assert "if [ \"$RELEASE_DRY_RUN\" != 'true' ]; then" in run_block
     assert "--dry-run" in run_block[:observe]
+    assert (
+        "--execution-sets "
+        ".three-workflow-release/plan/bootstrap-execution-sets.json"
+        in run_block
+    )
+    assert (
+        '--enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS"'
+        in run_block
+    )
     assert ".three-workflow-release/plan/remote-observations.json" in run_block
+    assert (
+        "--remote-observations "
+        ".three-workflow-release/plan/remote-observations.json" in gate_block
+    )
 
 
 def test_reusable_publish_jobs_use_topology_scoped_permissions() -> None:
