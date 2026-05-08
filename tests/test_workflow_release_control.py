@@ -580,7 +580,7 @@ def _unsupported_rubygems_oidc_plan_and_sets() -> tuple[
     snapshot = plan["graph"]["target-instance-snapshots"].pop("pypi/pypi")
     snapshot["catalog-ref"] = "rubygems/rubygems-org"
     snapshot["contract"]["id"] = "rubygems-publish"
-    snapshot["destination"] = {"host": "rubygems.org"}
+    snapshot["destination"] = {"host": "rubygems.example"}
     snapshot["family"] = "rubygems"
     snapshot["instance-id"] = "rubygems-org"
     snapshot["capabilities"]["publish-topology"] = (
@@ -620,6 +620,41 @@ def _unsupported_rubygems_oidc_plan_and_sets() -> tuple[
         "external-oidc-reusable-workflow"
     ] = ["publish-node/nuget"]
     return plan, execution_sets
+
+
+def _public_registry_observation_plan(family: str) -> dict[str, object]:
+    """Return a plan containing only one public registry publish node."""
+    plan = _pypi_only_observation_plan()
+    if family == "pypi":
+        return plan
+    snapshot = plan["graph"]["target-instance-snapshots"].pop("pypi/pypi")
+    if family == "nuget":
+        snapshot["catalog-ref"] = "nuget/nuget-org"
+        snapshot["destination"] = {"host": "nuget.org"}
+        snapshot["family"] = "nuget"
+        snapshot["instance-id"] = "nuget-org"
+        snapshot["contract"]["id"] = "nuget-publish"
+    elif family == "npm":
+        snapshot["catalog-ref"] = "npm/npmjs"
+        snapshot["destination"] = {"host": "registry.npmjs.org"}
+        snapshot["family"] = "npm"
+        snapshot["instance-id"] = "npmjs"
+        snapshot["contract"]["id"] = "npm-publish"
+    elif family == "rubygems":
+        snapshot["catalog-ref"] = "rubygems/rubygems-org"
+        snapshot["destination"] = {"host": "rubygems.org"}
+        snapshot["family"] = "rubygems"
+        snapshot["instance-id"] = "rubygems-org"
+        snapshot["contract"]["id"] = "rubygems-publish"
+    else:
+        msg = f"unknown registry family {family!r}"
+        raise AssertionError(msg)
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["target-instance-snapshot-id"] = snapshot["catalog-ref"]
+    plan["graph"]["target-instance-snapshots"] = {
+        snapshot["catalog-ref"]: snapshot
+    }
+    return plan
 
 
 def _run_plan_gate_case(
@@ -1223,12 +1258,12 @@ def test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs(
             "REQ_INVALID_INPUT",
         )
 
-        plan, execution_sets = _unsupported_rubygems_oidc_plan_and_sets()
+        plan, execution_sets = _external_oidc_plan_and_sets()
         _run_plan_gate_case(
-            scratch / "unsupported-observation",
+            scratch / "missing-observation",
             plan,
             execution_sets,
-            "rubygems/rubygems-org#example#Example",
+            "pypi/pypi#example#Example",
             "REMOTE_CLASSIFICATION_FAILED",
         )
 
@@ -2620,6 +2655,288 @@ def test_pypi_missing_version_observation_is_absent(monkeypatch) -> None:
     )
 
     assert control._observe_pypi_publication(node) == "absent"
+
+
+@pytest.mark.parametrize(
+    ("family", "payload_attr", "missing_payload", "existing_payload"),
+    [
+        (
+            "nuget",
+            "_nuget_versions_json",
+            None,
+            {"versions": ["1.2.3"]},
+        ),
+        (
+            "npm",
+            "_npm_package_json",
+            None,
+            {"versions": {"1.2.3": {"name": "Example"}}},
+        ),
+        (
+            "rubygems",
+            "_rubygems_versions_json",
+            None,
+            [{"number": "1.2.3", "platform": "ruby"}],
+        ),
+    ],
+)
+def test_public_registry_missing_and_existing_observations(
+    monkeypatch,
+    family,
+    payload_attr,
+    missing_payload,
+    existing_payload,
+) -> None:
+    """NuGet, npm, and RubyGems map absent/exact versions deterministically."""
+    plan = _public_registry_observation_plan(family)
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    observe = getattr(control, f"_observe_{family}_publication")
+
+    monkeypatch.setattr(control, payload_attr, lambda _: missing_payload)
+    assert observe(node) == "absent"
+
+    monkeypatch.setattr(control, payload_attr, lambda _: existing_payload)
+    assert observe(node) == "exact-satisfied"
+
+
+@pytest.mark.parametrize(
+    ("planned", "remote_versions"),
+    [
+        ("1", ["1.0.0"]),
+        ("1.0", ["1.0.0"]),
+        ("1.0.0.0", ["1.0.0"]),
+        ("01.002.0003", ["1.2.3"]),
+        ("1.0.7+r3456", ["1.0.7"]),
+        ("1.0.7-alpha.BETA", ["1.0.7-ALPHA.beta"]),
+    ],
+)
+def test_nuget_observation_uses_normalized_version_identity(
+    monkeypatch,
+    planned,
+    remote_versions,
+) -> None:
+    """NuGet flat-container observation compares normalized identities."""
+    plan = _public_registry_observation_plan("nuget")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["resolved-publish-identity"]["version"] = planned
+    monkeypatch.setattr(
+        control,
+        "_nuget_versions_json",
+        lambda _: {"versions": remote_versions},
+    )
+
+    assert control._observe_nuget_publication(node) == "exact-satisfied"
+
+
+@pytest.mark.parametrize(
+    ("planned", "remote_versions"),
+    [
+        ("1.0.0-alpha.01", ["1.0.0-alpha.1"]),
+        ("1.0.0+abc", ["1.0.1"]),
+    ],
+)
+def test_nuget_observation_preserves_non_identity_differences(
+    monkeypatch,
+    planned,
+    remote_versions,
+) -> None:
+    """NuGet observation preserves prerelease identifiers and releases."""
+    plan = _public_registry_observation_plan("nuget")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["resolved-publish-identity"]["version"] = planned
+    monkeypatch.setattr(
+        control,
+        "_nuget_versions_json",
+        lambda _: {"versions": remote_versions},
+    )
+
+    assert control._observe_nuget_publication(node) == "absent"
+
+
+@pytest.mark.parametrize(
+    ("planned", "remote_versions"),
+    [
+        ("1.0..0", ["1.0.0"]),
+        ("1.0.0+", ["1.0.0"]),
+        ("1.0.0-", ["1.0.0"]),
+        ("1.0.0", ["1.0..0"]),
+    ],
+)
+def test_nuget_invalid_version_observation_fails_closed(
+    monkeypatch,
+    planned,
+    remote_versions,
+) -> None:
+    """Invalid or ambiguous NuGet versions fail closed instead of absent."""
+    plan = _public_registry_observation_plan("nuget")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["resolved-publish-identity"]["version"] = planned
+    monkeypatch.setattr(
+        control,
+        "_nuget_versions_json",
+        lambda _: {"versions": remote_versions},
+    )
+
+    with pytest.raises(ValueError, match="NuGet version"):
+        control._observe_nuget_publication(node)
+
+
+def test_nuget_invalid_planned_version_fails_closed_before_absent_remote(
+    monkeypatch,
+) -> None:
+    """Invalid planned NuGet versions fail closed even when remote is absent."""
+    plan = _public_registry_observation_plan("nuget")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["resolved-publish-identity"]["version"] = "1.0..0"
+    monkeypatch.setattr(control, "_nuget_versions_json", lambda _: None)
+
+    with pytest.raises(ValueError, match="NuGet version"):
+        control._observe_nuget_publication(node)
+
+
+@pytest.mark.parametrize(
+    ("family", "payload_attr", "existing_payload"),
+    [
+        ("nuget", "_nuget_versions_json", {"versions": ["9.9.9"]}),
+        ("npm", "_npm_package_json", {"versions": {"9.9.9": {}}}),
+        (
+            "rubygems",
+            "_rubygems_versions_json",
+            [{"number": "9.9.9", "platform": "ruby"}],
+        ),
+    ],
+)
+def test_public_registry_missing_version_observation_is_absent(
+    monkeypatch,
+    family,
+    payload_attr,
+    existing_payload,
+) -> None:
+    """Existing public registry package without requested version is absent."""
+    plan = _public_registry_observation_plan(family)
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    observe = getattr(control, f"_observe_{family}_publication")
+
+    monkeypatch.setattr(control, payload_attr, lambda _: existing_payload)
+
+    assert observe(node) == "absent"
+
+
+@pytest.mark.parametrize(
+    ("family", "payload_attr", "malformed_payload"),
+    [
+        ("nuget", "_nuget_versions_json", {"versions": [1]}),
+        ("nuget", "_nuget_versions_json", {"versions": ["1.0..0"]}),
+        ("npm", "_npm_package_json", {"versions": []}),
+        ("rubygems", "_rubygems_versions_json", [{"created_at": "today"}]),
+    ],
+)
+def test_public_registry_malformed_observation_fails_closed(
+    monkeypatch,
+    family,
+    payload_attr,
+    malformed_payload,
+) -> None:
+    """Partial or ambiguous public registry payloads fail closed."""
+    plan = _public_registry_observation_plan(family)
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, payload_attr, lambda _: malformed_payload)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("family", "enablement"),
+    [
+        ("nuget", "nuget/nuget-org#example#Example"),
+        ("npm", "npm/npmjs#example#Example"),
+        ("rubygems", "rubygems/rubygems-org#example#Example"),
+    ],
+)
+def test_disabled_and_inactive_public_registry_observation_skips_lookup_failure(
+    monkeypatch,
+    family,
+    enablement,
+) -> None:
+    """Disabled or inactive public registry OIDC targets are not queried."""
+    plan = _public_registry_observation_plan(family)
+    _, execution_sets = _external_oidc_plan_and_sets()
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fail_observer(*_) -> str:
+        pytest.fail("disabled or inactive target must not be queried")
+
+    monkeypatch.setattr(
+        control, "_observe_public_registry_publication", fail_observer
+    )
+    try:
+        plan_path = SCRATCH / "plan.json"
+        sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    enabled_external_oidc_targets="",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+        assert json.loads(out.read_text(encoding="utf-8")) == {}
+
+        out.unlink()
+        execution_sets["active-publish-node-ids"] = []
+        execution_sets["publish-intent-node-ids"] = []
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    enabled_external_oidc_targets=enablement,
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+        assert json.loads(out.read_text(encoding="utf-8")) == {}
+        assert not diagnostics.exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
 def test_pypi_api_failure_observation_fails_closed(monkeypatch) -> None:

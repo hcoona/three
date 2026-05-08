@@ -56,7 +56,12 @@ _TOPOLOGIES = (
     "external-oidc-caller-workflow",
     "external-oidc-reusable-workflow",
 )
-_PYPI_JSON_TIMEOUT_SECONDS = 15
+_REGISTRY_JSON_TIMEOUT_SECONDS = 15
+_NUGET_IDENTITY_NUMERIC_PARTS = 3
+_NUGET_MAX_NUMERIC_PARTS = 4
+_NUGET_VERSION_PART_RE = re.compile(r"^[0-9]+$")
+_NUGET_PRERELEASE_PART_RE = re.compile(r"^[0-9A-Za-z-]+$")
+_NUGET_BUILD_METADATA_PART_RE = re.compile(r"^[0-9A-Za-z-]+$")
 _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset(
     {
         "hcoona-release-smoke-github-packages",
@@ -900,13 +905,15 @@ def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
                     )
                 )
             continue
-        if _supports_pypi_remote_observation(
+        if _supports_public_registry_remote_observation(
             snapshot
         ) and _requires_live_external_remote_observation(
             node_id, node, snapshot_id, snapshot, execution_sets, enabled
         ):
             try:
-                observations[node_id] = _observe_pypi_publication(node)
+                observations[node_id] = _observe_public_registry_publication(
+                    node, snapshot
+                )
             except (RuntimeError, TypeError, ValueError) as exc:
                 diagnostics.append(
                     _publish_node_diagnostic(
@@ -1124,8 +1131,6 @@ def _external_oidc_diagnostics(
             )
             continue
         if _supports_remote_observation(snapshot):
-            if not _supports_pypi_remote_observation(snapshot):
-                continue
             if (
                 remote_observations is not None
                 and node_id in remote_observations
@@ -2179,18 +2184,7 @@ def _observe_github_release_publication(
 
 
 def _observe_pypi_publication(node: Json) -> str:
-    identity = node.get("resolved-publish-identity")
-    if not isinstance(identity, Mapping):
-        msg = "PyPI publish node is missing resolved-publish-identity"
-        raise TypeError(msg)
-    package_name = identity.get("package-name")
-    version = identity.get("version")
-    if not isinstance(package_name, str) or not package_name:
-        msg = "PyPI publish identity is missing package-name"
-        raise TypeError(msg)
-    if not isinstance(version, str) or not version:
-        msg = "PyPI publish identity is missing version"
-        raise TypeError(msg)
+    package_name, version = _package_publish_identity(node, "PyPI")
     payload = _pypi_project_json(package_name)
     if payload is None:
         return "absent"
@@ -2210,11 +2204,190 @@ def _observe_pypi_publication(node: Json) -> str:
     return "exact-satisfied"
 
 
+def _observe_nuget_publication(node: Json) -> str:
+    package_name, version = _package_publish_identity(node, "NuGet")
+    planned_version = _nuget_version_key(version)
+    payload = _nuget_versions_json(package_name)
+    if payload is None:
+        return "absent"
+    versions = payload.get("versions")
+    if not isinstance(versions, list) or not all(
+        isinstance(item, str) and item for item in versions
+    ):
+        msg = (
+            f"NuGet flat-container payload for {package_name!r} "
+            "is missing valid versions"
+        )
+        raise TypeError(msg)
+    observed = {_nuget_version_key(item) for item in versions}
+    if planned_version in observed:
+        return "exact-satisfied"
+    return "absent"
+
+
+def _observe_npm_publication(node: Json) -> str:
+    package_name, version = _package_publish_identity(node, "npm")
+    payload = _npm_package_json(package_name)
+    if payload is None:
+        return "absent"
+    versions = payload.get("versions")
+    if not isinstance(versions, Mapping):
+        msg = f"npm registry payload for {package_name!r} is missing versions"
+        raise TypeError(msg)
+    if version in versions:
+        return "exact-satisfied"
+    return "absent"
+
+
+def _observe_rubygems_publication(node: Json) -> str:
+    package_name, version = _package_publish_identity(node, "RubyGems")
+    payload = _rubygems_versions_json(package_name)
+    if payload is None:
+        return "absent"
+    if not isinstance(payload, list):
+        msg = (
+            f"RubyGems versions API payload for {package_name!r} is not a list"
+        )
+        raise TypeError(msg)
+    for item in payload:
+        if not isinstance(item, Mapping):
+            msg = (
+                f"RubyGems versions API payload for {package_name!r} "
+                "contains a malformed version item"
+            )
+            raise TypeError(msg)
+        number = item.get("number")
+        if not isinstance(number, str) or not number:
+            msg = (
+                f"RubyGems versions API payload for {package_name!r} "
+                "contains a version item without number"
+            )
+            raise TypeError(msg)
+        if number == version:
+            return "exact-satisfied"
+    return "absent"
+
+
+def _observe_public_registry_publication(
+    node: Json, snapshot: Mapping[str, Any]
+) -> str:
+    family = snapshot.get("family")
+    if family == "pypi":
+        return _observe_pypi_publication(node)
+    if family == "nuget":
+        return _observe_nuget_publication(node)
+    if family == "npm":
+        return _observe_npm_publication(node)
+    if family == "rubygems":
+        return _observe_rubygems_publication(node)
+    msg = f"unsupported public registry family for observation: {family!r}"
+    raise RuntimeError(msg)
+
+
+def _package_publish_identity(
+    node: Json, registry_name: str
+) -> tuple[str, str]:
+    identity = node.get("resolved-publish-identity")
+    if not isinstance(identity, Mapping):
+        msg = (
+            f"{registry_name} publish node is missing resolved-publish-identity"
+        )
+        raise TypeError(msg)
+    package_name = identity.get("package-name")
+    version = identity.get("version")
+    if not isinstance(package_name, str) or not package_name:
+        msg = f"{registry_name} publish identity is missing package-name"
+        raise TypeError(msg)
+    if not isinstance(version, str) or not version:
+        msg = f"{registry_name} publish identity is missing version"
+        raise TypeError(msg)
+    return package_name, version
+
+
 def _pypi_project_json(package_name: str) -> Json | None:
     normalized = _pep503_name(package_name)
     url = (
         f"https://pypi.org/pypi/{urllib.parse.quote(normalized, safe='')}/json"
     )
+    payload = _registry_json_request(
+        url,
+        api_name="PyPI JSON API",
+        subject=f"package {normalized!r}",
+    )
+    if payload is None:
+        return None
+    if not isinstance(payload, dict):
+        msg = f"PyPI JSON API returned non-object payload for {normalized!r}"
+        raise TypeError(msg)
+    return payload
+
+
+def _nuget_versions_json(package_name: str) -> Json | None:
+    normalized = package_name.lower()
+    url = (
+        "https://api.nuget.org/v3-flatcontainer/"
+        f"{urllib.parse.quote(normalized, safe='')}/index.json"
+    )
+    payload = _registry_json_request(
+        url,
+        api_name="NuGet flat-container API",
+        subject=f"package {normalized!r}",
+    )
+    if payload is None:
+        return None
+    if not isinstance(payload, dict):
+        msg = (
+            f"NuGet flat-container API returned non-object payload for "
+            f"{normalized!r}"
+        )
+        raise TypeError(msg)
+    return payload
+
+
+def _npm_package_json(package_name: str) -> Json | None:
+    url = (
+        "https://registry.npmjs.org/"
+        f"{urllib.parse.quote(package_name, safe='')}"
+    )
+    payload = _registry_json_request(
+        url,
+        api_name="npm registry API",
+        subject=f"package {package_name!r}",
+    )
+    if payload is None:
+        return None
+    if not isinstance(payload, dict):
+        msg = (
+            f"npm registry API returned non-object payload for {package_name!r}"
+        )
+        raise TypeError(msg)
+    return payload
+
+
+def _rubygems_versions_json(package_name: str) -> list[Any] | None:
+    url = (
+        "https://rubygems.org/api/v1/versions/"
+        f"{urllib.parse.quote(package_name, safe='')}.json"
+    )
+    payload = _registry_json_request(
+        url,
+        api_name="RubyGems versions API",
+        subject=f"gem {package_name!r}",
+    )
+    if payload is None:
+        return None
+    if not isinstance(payload, list):
+        msg = f"RubyGems versions API returned non-list payload for {package_name!r}"
+        raise TypeError(msg)
+    return payload
+
+
+def _registry_json_request(
+    url: str,
+    *,
+    api_name: str,
+    subject: str,
+) -> object | None:
     request = urllib.request.Request(  # noqa: S310
         url,
         headers={
@@ -2224,53 +2397,54 @@ def _pypi_project_json(package_name: str) -> Json | None:
     )
     try:
         with urllib.request.urlopen(  # noqa: S310
-            request, timeout=_PYPI_JSON_TIMEOUT_SECONDS
+            request, timeout=_REGISTRY_JSON_TIMEOUT_SECONDS
         ) as response:
             status = response.getcode()
             if status != 200:
-                msg = (
-                    f"PyPI JSON API request failed for package "
-                    f"{normalized!r}: HTTP {status}"
-                )
+                msg = f"{api_name} request failed for {subject}: HTTP {status}"
                 raise RuntimeError(msg)
             raw = response.read()
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return None
-        msg = (
-            f"PyPI JSON API request failed for package {normalized!r}: "
-            f"HTTP {exc.code}"
-        )
+        msg = f"{api_name} request failed for {subject}: HTTP {exc.code}"
         raise RuntimeError(msg) from exc
     except urllib.error.URLError as exc:
-        msg = (
-            f"PyPI JSON API request failed for package {normalized!r}: "
-            f"{exc.reason}"
-        )
+        msg = f"{api_name} request failed for {subject}: {exc.reason}"
         raise RuntimeError(msg) from exc
     except http.client.HTTPException as exc:
-        msg = f"PyPI JSON API request failed for package {normalized!r}: {exc}"
+        msg = f"{api_name} request failed for {subject}: {exc}"
         raise RuntimeError(msg) from exc
     except OSError as exc:
-        msg = f"PyPI JSON API request failed for package {normalized!r}: {exc}"
+        msg = f"{api_name} request failed for {subject}: {exc}"
         raise RuntimeError(msg) from exc
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        msg = (
-            f"PyPI JSON API returned invalid JSON for package {normalized!r}: "
-            f"{exc}"
-        )
+        msg = f"{api_name} returned invalid JSON for {subject}: {exc}"
         raise RuntimeError(msg) from exc
-    if not isinstance(payload, dict):
-        msg = f"PyPI JSON API returned non-object payload for {normalized!r}"
-        raise TypeError(msg)
     return payload
 
 
 def _supports_remote_observation(snapshot: Mapping[str, Any]) -> bool:
     return snapshot.get("family") == "github-release" or (
-        _supports_pypi_remote_observation(snapshot)
+        _supports_public_registry_remote_observation(snapshot)
+    )
+
+
+def _supports_public_registry_remote_observation(
+    snapshot: Mapping[str, Any],
+) -> bool:
+    destination = snapshot.get("destination")
+    if not isinstance(destination, Mapping):
+        return False
+    family = snapshot.get("family")
+    host = destination.get("host")
+    return (
+        (family == "pypi" and host == "pypi.org")
+        or (family == "nuget" and host == "nuget.org")
+        or (family == "npm" and host == "registry.npmjs.org")
+        or (family == "rubygems" and host == "rubygems.org")
     )
 
 
@@ -2320,6 +2494,60 @@ def _requires_live_external_remote_observation(
 
 def _pep503_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _nuget_version_key(version: str) -> str:
+    if version != version.strip():
+        msg = f"NuGet version has surrounding whitespace: {version!r}"
+        raise ValueError(msg)
+    public_version, metadata_separator, metadata = version.partition("+")
+    if metadata_separator:
+        _validate_nuget_identifiers(
+            metadata,
+            _NUGET_BUILD_METADATA_PART_RE,
+            "build metadata",
+            version,
+        )
+    release, prerelease_separator, prerelease = public_version.partition("-")
+    release_parts = release.split(".")
+    if not 1 <= len(release_parts) <= _NUGET_MAX_NUMERIC_PARTS or not all(
+        _NUGET_VERSION_PART_RE.fullmatch(part) for part in release_parts
+    ):
+        msg = (
+            f"NuGet version has invalid numeric release components: {version!r}"
+        )
+        raise ValueError(msg)
+    normalized_numbers = [str(int(part)) for part in release_parts]
+    while len(normalized_numbers) < _NUGET_IDENTITY_NUMERIC_PARTS:
+        normalized_numbers.append("0")
+    if (
+        len(normalized_numbers) == _NUGET_MAX_NUMERIC_PARTS
+        and normalized_numbers[3] == "0"
+    ):
+        normalized_numbers.pop()
+    normalized = ".".join(normalized_numbers)
+    if not prerelease_separator:
+        return normalized
+    prerelease_parts = _validate_nuget_identifiers(
+        prerelease,
+        _NUGET_PRERELEASE_PART_RE,
+        "prerelease",
+        version,
+    )
+    return f"{normalized}-{'.'.join(part.lower() for part in prerelease_parts)}"
+
+
+def _validate_nuget_identifiers(
+    value: str,
+    pattern: re.Pattern[str],
+    label: str,
+    version: str,
+) -> list[str]:
+    parts = value.split(".")
+    if not value or not all(pattern.fullmatch(part) for part in parts):
+        msg = f"NuGet version has invalid {label} identifiers: {version!r}"
+        raise ValueError(msg)
+    return parts
 
 
 def _classify_github_release_payload(release: Json, node: Json) -> str:
