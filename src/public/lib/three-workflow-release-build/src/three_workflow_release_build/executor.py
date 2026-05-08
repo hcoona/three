@@ -754,8 +754,8 @@ def _dotnet_pack(
         "--output",
         output.as_posix(),
         "--nologo",
-        "--version",
-        frozen_version,
+        f"-p:PackageVersion={frozen_version}",
+        f"-p:WorkflowReleaseFrozenPackageVersion={frozen_version}",
     ]
     if any(slot.concrete_kind == "snupkg" for slot in context.artifacts):
         command.extend(

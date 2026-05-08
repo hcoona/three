@@ -826,7 +826,8 @@ def test_dotnet_pack_uses_frozen_version_and_symbols() -> None:
         assert calls[0][1] == "pack"
         assert "-p:IncludeSymbols=true" in calls[0]
         assert "-p:SymbolPackageFormat=snupkg" in calls[0]
-        assert calls[0][calls[0].index("--version") + 1] == "1.2.3"
+        assert "-p:PackageVersion=1.2.3" in calls[0]
+        assert "-p:WorkflowReleaseFrozenPackageVersion=1.2.3" in calls[0]
         assert set(_result_artifacts(result)) == {
             "artifact/nuget",
             "artifact/snupkg",
@@ -939,6 +940,53 @@ def test_dotnet_pack_accepts_nuget_normalized_version_match() -> None:
         )
 
         validate_contract(result)
+        assert set(_result_artifacts(result)) == {"artifact/nuget"}
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_dotnet_pack_passes_planner_semver2_prerelease_version() -> None:
+    """Pass the frozen planner SemVer2 identity as NuGet PackageVersion."""
+    scratch = REPO_ROOT / ".build-executor-dotnet-nbgv-semver2-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            artifacts={
+                "artifact/nuget": ("primary-package", "package", "nuget"),
+            },
+            resolved_version="1.0.0-beta.253.gac1659d",
+        )
+        calls: list[tuple[str, ...]] = []
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append(tuple(args))
+            out_dir = Path(args[args.index("--output") + 1])
+            _write_nuget_package(
+                out_dir / "Example.1.0.0-beta.253.gac1659d.nupkg",
+                "1.0.0-beta.253.gac1659d",
+            )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        assert "-p:PackageVersion=1.0.0-beta.253.gac1659d" in calls[0]
+        assert (
+            "-p:WorkflowReleaseFrozenPackageVersion=1.0.0-beta.253.gac1659d"
+            in calls[0]
+        )
+        assert "--version" not in calls[0]
         assert set(_result_artifacts(result)) == {"artifact/nuget"}
     finally:
         _remove_tree_scratch(scratch)

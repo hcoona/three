@@ -28,7 +28,7 @@
   "author": "Shuai Zhang <zhangshuai.ustc@gmail.com>",
   "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=24.0.0"
   },
   "devDependencies": {
     "nerdbank-gitversioning": "^3.7.91"

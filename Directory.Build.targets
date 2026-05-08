@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <Target
+    Name="WorkflowReleaseSupplyFrozenNuGetManifestVersion"
+    AfterTargets="GetBuildVersion"
+    BeforeTargets="GenerateNuspec"
+    Condition="'$(WorkflowReleaseFrozenPackageVersion)' != ''">
+    <PropertyGroup>
+      <PackageVersion>$(WorkflowReleaseFrozenPackageVersion)</PackageVersion>
+      <NuGetPackageVersion>$(WorkflowReleaseFrozenPackageVersion)</NuGetPackageVersion>
+    </PropertyGroup>
+  </Target>
+</Project>

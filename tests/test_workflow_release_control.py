@@ -3689,6 +3689,27 @@ def test_build_variant_restores_tools_and_uploads_failure_diagnostics() -> None:
     assert "if-no-files-found: ignore" in diagnostics_block
 
 
+def test_build_variant_sets_up_node_24_for_npm_smoke_builds() -> None:
+    """Reusable validation builds must not rely on runner-default Node.js."""
+    workflow = yaml.safe_load(_workflow("release-build-variant.yml"))
+    steps = workflow["jobs"]["build"]["steps"]
+
+    setup_index, setup_step = next(
+        (index, step)
+        for index, step in enumerate(steps)
+        if step.get("name") == "Install Node.js for npm builds"
+    )
+    build_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Execute build unit"
+    )
+
+    assert setup_index < build_index
+    assert setup_step["uses"] == "actions/setup-node@v4"
+    assert setup_step["with"]["node-version"] == "24"
+
+
 def test_workflow_helper_invocations_use_uv_workspace_python() -> None:
     """Release workflows invoke helper with workspace packages available."""
     workflows = REPO_ROOT / ".github/workflows"
