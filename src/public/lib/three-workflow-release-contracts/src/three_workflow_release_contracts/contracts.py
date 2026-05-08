@@ -2509,6 +2509,7 @@ def _report_run(validator: _Validator, value: object, path: str) -> None:
             "profile",
             "dry-run",
             "validation-build",
+            "canary-override-non-public-ref",
             "conclusion",
         },
     )
@@ -2521,6 +2522,10 @@ def _report_run(validator: _Validator, value: object, path: str) -> None:
     validator.integer(obj.get("run-attempt"), f"{path}.run-attempt", minimum=0)
     validator.boolean(obj.get("dry-run"), f"{path}.dry-run")
     validator.boolean(obj.get("validation-build"), f"{path}.validation-build")
+    validator.boolean(
+        obj.get("canary-override-non-public-ref"),
+        f"{path}.canary-override-non-public-ref",
+    )
 
 
 def _report_plan(validator: _Validator, value: object, path: str) -> None:

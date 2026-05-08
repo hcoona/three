@@ -53,6 +53,7 @@
   },
   "run": {
     "conclusion": "success",
+    "canary-override-non-public-ref": false,
     "dry-run": false,
     "head-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "profile": "buddy",

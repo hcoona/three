@@ -19,6 +19,11 @@ on:
         required: true
         type: boolean
         default: false
+      canary-override-non-public-ref:
+        description: Break-glass canary override for hcoona-release-smoke official live validation from a non-public ref.
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: three-release:release-official.yml
@@ -39,6 +44,7 @@ jobs:
       dry-run: ${{ steps.authorize.outputs.dry_run }}
       validation-build: ${{ steps.authorize.outputs.validation_build }}
       force: ${{ steps.authorize.outputs.force }}
+      canary-override-non-public-ref: ${{ steps.authorize.outputs.canary_override_non_public_ref }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,6 +66,7 @@ jobs:
           RELEASE_REPOSITORY: ${{ github.repository }}
           RELEASE_REQUESTED_PROJECT_IDS: ${{ inputs.requested-project-ids }}
           RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
+          RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF: ${{ inputs.canary-override-non-public-ref }}
         run: |
           mkdir -p .three-workflow-release/entry
           uv run python eng/scripts/workflow_release_control.py normalize-entry \
@@ -73,6 +80,7 @@ jobs:
             --requested-project-ids "$RELEASE_REQUESTED_PROJECT_IDS" \
             --dry-run "$RELEASE_DRY_RUN" \
             --validation-build "$RELEASE_VALIDATION_BUILD" \
+            --canary-override-non-public-ref "$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" \
             --force false \
             --metadata-out .three-workflow-release/entry/entry-metadata.json \
             --diagnostics-out .three-workflow-release/entry/planner-diagnostics.json \
@@ -319,6 +327,7 @@ jobs:
         env:
           RELEASE_DRY_RUN: ${{ inputs.dry-run }}
           RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
+          RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF: ${{ inputs.canary-override-non-public-ref }}
           RELEASE_VALIDATE_CONCLUSION: ${{ needs.orchestrate.outputs.validate-conclusion }}
           RELEASE_METADATA_CONCLUSION: ${{ needs.orchestrate.outputs.metadata-conclusion }}
           RELEASE_PLAN_CONCLUSION: ${{ needs.orchestrate.outputs.plan-conclusion }}
@@ -361,6 +370,7 @@ jobs:
             --profile official \
             --dry-run "$RELEASE_DRY_RUN" \
             --validation-build "$RELEASE_VALIDATION_BUILD" \
+            --canary-override-non-public-ref "$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" \
             --plan "$plan_path" \
             --execution-sets "$sets_path" \
             --diagnostics "$diag_path" \

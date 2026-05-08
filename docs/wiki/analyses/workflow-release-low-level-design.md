@@ -222,12 +222,13 @@ that also grants `id-token: write`; that OIDC permission is scoped to
 Both entry workflows should expose the same operator-facing input shape except
 for `force`, which is valid only on `buddy`.
 
-| Input                   | Type    | Owner         | Meaning                                                                                        |
-| ----------------------- | ------- | ------------- | ---------------------------------------------------------------------------------------------- |
-| `requested-project-ids` | string  | control plane | Optional comma or newline separated project IDs. Empty means all in-scope releasable projects. |
-| `dry-run`               | boolean | control plane | Run planning and non-publish validation without tag or live publish side effects.              |
-| `validation-build`      | boolean | control plane | Valid only when `dry-run` is true. Runs build units for validation-only receipt output.        |
-| `force`                 | boolean | `buddy` only  | Planner-facing `request-flags.force` for allowed `buddy` overwrite cases.                      |
+| Input                            | Type    | Owner           | Meaning                                                                                        |
+| -------------------------------- | ------- | --------------- | ---------------------------------------------------------------------------------------------- |
+| `requested-project-ids`          | string  | control plane   | Optional comma or newline separated project IDs. Empty means all in-scope releasable projects. |
+| `dry-run`                        | boolean | control plane   | Run planning and non-publish validation without tag or live publish side effects.              |
+| `validation-build`               | boolean | control plane   | Valid only when `dry-run` is true. Runs build units for validation-only receipt output.        |
+| `force`                          | boolean | `buddy` only    | Planner-facing `request-flags.force` for allowed `buddy` overwrite cases.                      |
+| `canary-override-non-public-ref` | boolean | `official` only | Default false break-glass live-validation override for allowlisted canary projects only.       |
 
 The selected commit is not a text input. The operator selects the workflow ref in
 the GitHub UI, and the control plane resolves that ref once to the exact
@@ -256,7 +257,15 @@ Input normalization rules:
    the planner request.
 2. Reject `force: true` for `official` before planner execution.
 3. Reject `validation-build: true` unless `dry-run: true`.
-4. Keep `dry-run` and `validation-build` outside the planner request and plan
+4. For `official`, reject the run before planner execution unless the selected
+   GitHub ref matches the selected project NBGV `publicReleaseRefSpec`.
+   `buddy` is not restricted by this official-only public-ref guard.
+5. Keep the `canary-override-non-public-ref` break-glass input defaulted to
+   `false`; when `true`, allow only the explicit `hcoona-release-smoke` canary
+   project to proceed from a non-public ref. This override is audit-visible in
+   workflow inputs and release reports and does not bypass the protected
+   `release` environment on live side-effect jobs.
+6. Keep `dry-run` and `validation-build` outside the planner request and plan
    envelope so they do not enter whole-release rerun identity.
 
 If a pre-planner input rule rejects the run after workflow input normalization
@@ -549,31 +558,31 @@ The CLI must fail closed:
 The middle-layer contract freezes the diagnostic object shape but not the code
 vocabulary. Current scope should start with this minimum code registry:
 
-| Code                            | Phase            | Scope          | Meaning                                                                                                                   |
-| ------------------------------- | ---------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `REQ_INVALID_INPUT`             | `validation`     | `request`      | Control-plane release input could not be normalized, including workflow dispatch inputs and release enablement variables. |
-| `REQ_FORCE_FOR_OFFICIAL`        | `validation`     | `request`      | `request-flags.force` was true for `profile: official`.                                                                   |
-| `REQ_PROJECT_NOT_FOUND`         | `validation`     | `project`      | An explicitly requested project ID was not an in-scope releasable project.                                                |
-| `DESC_SCHEMA_INVALID`           | `validation`     | `project`      | A project descriptor failed file-schema validation.                                                                       |
-| `DESC_STATIC_INVALID`           | `validation`     | `project`      | Descriptor passed syntax but failed static repo validation.                                                               |
-| `CATALOG_SCHEMA_INVALID`        | `validation`     | `request`      | The shared target-instance catalog failed schema or static validation.                                                    |
-| `CATALOG_REF_NOT_FOUND`         | `validation`     | `project`      | A descriptor target reference did not resolve to exactly one catalog target instance.                                     |
-| `VERSION_AUTHORITY_FAILED`      | `normalization`  | `project`      | The planner could not resolve the project-scoped version identity.                                                        |
-| `DOTNET_METADATA_FAILED`        | `normalization`  | `project`      | The Windows metadata helper could not evaluate or emit required metadata for a validated .NET project manifest.           |
-| `PUBLISH_IDENTITY_CONFLICT`     | `normalization`  | `project`      | Resolved package-registry identities violate current-scope profile coexistence rules after deferred metadata resolution.  |
-| `PYPI_FILENAME_COMPUTE_FAILED`  | `normalization`  | `publish-node` | Planner-time PyPI filename computation failed or produced an unexpected member set.                                       |
-| `REMOTE_QUERY_FAILED`           | `query`          | `publish-node` | Destination query failed after bounded retry.                                                                             |
-| `REMOTE_NORMALIZATION_FAILED`   | `normalization`  | `publish-node` | Raw destination state could not be normalized for the target family.                                                      |
-| `REMOTE_CLASSIFICATION_FAILED`  | `classification` | `publish-node` | Normalized destination state could not be reduced to one remote-observation class.                                        |
-| `IMMUTABLE_PROOF_UNAVAILABLE`   | `classification` | `publish-node` | Required prior build digest proof was absent, expired, ambiguous, or conflicting.                                         |
-| `IMMUTABLE_PARTIAL_UNSUPPORTED` | `classification` | `publish-node` | Same-identity immutable remote state was a proved partial subset, which current scope fails closed.                       |
-| `REMOTE_CONFLICTING`            | `classification` | `publish-node` | Same-identity remote state conflicts with the frozen publish intent.                                                      |
-| `OFFICIAL_FROZEN_VERSION`       | `classification` | `project`      | A `buddy FORCE` request targeted a project/version already frozen by official GitHub Release.                             |
-| `REQ_ACTOR_UNAUTHORIZED`        | `validation`     | `request`      | The triggering actor did not have the required repository permission for the selected profile.                            |
-| `REQ_UNTRUSTED_WORKFLOW_REF`    | `validation`     | `request`      | The selected workflow ref was not a trusted protected release ref for current-scope release runs.                         |
-| `REQ_EXTERNAL_TARGET_DISABLED`  | `validation`     | `publish-node` | A selected live official external OIDC registry target was not present in the live-enable allowlist.                      |
-| `REQ_EXTERNAL_TOPOLOGY_BLOCKED` | `validation`     | `publish-node` | A selected live official external OIDC registry target cannot run through the current workflow topology.                  |
-| `PLAN_INTERNAL_INVARIANT`       | `validation`     | `request`      | Planner detected an impossible internal state after validation should have prevented it.                                  |
+| Code                            | Phase            | Scope                  | Meaning                                                                                                                                                 |
+| ------------------------------- | ---------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REQ_INVALID_INPUT`             | `validation`     | `request`              | Control-plane release input could not be normalized, including workflow dispatch inputs and release enablement variables.                               |
+| `REQ_FORCE_FOR_OFFICIAL`        | `validation`     | `request`              | `request-flags.force` was true for `profile: official`.                                                                                                 |
+| `REQ_PROJECT_NOT_FOUND`         | `validation`     | `project`              | An explicitly requested project ID was not an in-scope releasable project.                                                                              |
+| `DESC_SCHEMA_INVALID`           | `validation`     | `project`              | A project descriptor failed file-schema validation.                                                                                                     |
+| `DESC_STATIC_INVALID`           | `validation`     | `project`              | Descriptor passed syntax but failed static repo validation.                                                                                             |
+| `CATALOG_SCHEMA_INVALID`        | `validation`     | `request`              | The shared target-instance catalog failed schema or static validation.                                                                                  |
+| `CATALOG_REF_NOT_FOUND`         | `validation`     | `project`              | A descriptor target reference did not resolve to exactly one catalog target instance.                                                                   |
+| `VERSION_AUTHORITY_FAILED`      | `normalization`  | `project`              | The planner could not resolve the project-scoped version identity.                                                                                      |
+| `DOTNET_METADATA_FAILED`        | `normalization`  | `project`              | The Windows metadata helper could not evaluate or emit required metadata for a validated .NET project manifest.                                         |
+| `PUBLISH_IDENTITY_CONFLICT`     | `normalization`  | `project`              | Resolved package-registry identities violate current-scope profile coexistence rules after deferred metadata resolution.                                |
+| `PYPI_FILENAME_COMPUTE_FAILED`  | `normalization`  | `publish-node`         | Planner-time PyPI filename computation failed or produced an unexpected member set.                                                                     |
+| `REMOTE_QUERY_FAILED`           | `query`          | `publish-node`         | Destination query failed after bounded retry.                                                                                                           |
+| `REMOTE_NORMALIZATION_FAILED`   | `normalization`  | `publish-node`         | Raw destination state could not be normalized for the target family.                                                                                    |
+| `REMOTE_CLASSIFICATION_FAILED`  | `classification` | `publish-node`         | Normalized destination state could not be reduced to one remote-observation class.                                                                      |
+| `IMMUTABLE_PROOF_UNAVAILABLE`   | `classification` | `publish-node`         | Required prior build digest proof was absent, expired, ambiguous, or conflicting.                                                                       |
+| `IMMUTABLE_PARTIAL_UNSUPPORTED` | `classification` | `publish-node`         | Same-identity immutable remote state was a proved partial subset, which current scope fails closed.                                                     |
+| `REMOTE_CONFLICTING`            | `classification` | `publish-node`         | Same-identity remote state conflicts with the frozen publish intent.                                                                                    |
+| `OFFICIAL_FROZEN_VERSION`       | `classification` | `project`              | A `buddy FORCE` request targeted a project/version already frozen by official GitHub Release.                                                           |
+| `REQ_ACTOR_UNAUTHORIZED`        | `validation`     | `request`              | The triggering actor did not have the required repository permission for the selected profile.                                                          |
+| `REQ_UNTRUSTED_WORKFLOW_REF`    | `validation`     | `request` or `project` | The selected workflow ref was not a trusted protected release ref, or an `official` ref did not match the selected project NBGV `publicReleaseRefSpec`. |
+| `REQ_EXTERNAL_TARGET_DISABLED`  | `validation`     | `publish-node`         | A selected live official external OIDC registry target was not present in the live-enable allowlist.                                                    |
+| `REQ_EXTERNAL_TOPOLOGY_BLOCKED` | `validation`     | `publish-node`         | A selected live official external OIDC registry target cannot run through the current workflow topology.                                                |
+| `PLAN_INTERNAL_INVARIANT`       | `validation`     | `request`              | Planner detected an impossible internal state after validation should have prevented it.                                                                |
 
 New planner diagnostic codes may be added by implementation, but every new code
 must be registered in this page or in a successor registry before tests depend
@@ -840,6 +849,7 @@ positive `tag-result`.
         "profile": "buddy",
         "dry-run": false,
         "validation-build": false,
+        "canary-override-non-public-ref": false,
         "conclusion": "success"
     },
     "plan": {
@@ -1549,6 +1559,19 @@ Live mutation boundary:
   missing/mismatched trusted publisher setup, surface as live readiness or
   publish failures described in Sections 8 and 9 rather than as planner remote
   observation results.
+- Official PyPI OIDC canary run
+  [25522559257](https://github.com/hcoona/three/actions/runs/25522559257)
+  reached entry-hosted PyPI trusted publishing and was rejected upstream because
+  PyPI does not allow the planned local-version identifier
+  `1.0.0b256+gf0e0c47` on public PyPI. Classify that run as a workflow failure,
+  not a successful publication: the PyPI project still returned 404 after the
+  run, while GitHub tag/release/proof side effects had already been created.
+  Treat the failure as positive evidence that the official entry-hosted OIDC
+  path reached PyPI, then keep the official non-public-ref guard described in
+  Section 4. The break-glass canary override may intentionally reproduce this
+  upstream rejection for `hcoona-release-smoke` from a development ref until a
+  true public-ref canary is used; do not change Python version normalization in
+  response to this canary result.
 
 ### npmjs
 

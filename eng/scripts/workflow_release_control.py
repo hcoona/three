@@ -20,6 +20,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 for _WORKSPACE_SRC in (
     _REPO_ROOT / "src/public/lib/three-workflow-release-contracts/src",
@@ -55,6 +57,7 @@ _TOPOLOGIES = (
     "external-oidc-reusable-workflow",
 )
 _PYPI_JSON_TIMEOUT_SECONDS = 15
+_OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset({"hcoona-release-smoke"})
 
 
 def main() -> int:
@@ -98,6 +101,7 @@ def _add_normalize_entry(
     parser.add_argument("--dry-run", required=True)
     parser.add_argument("--validation-build", required=True)
     parser.add_argument("--force", default="false")
+    parser.add_argument("--canary-override-non-public-ref", default="false")
     parser.add_argument("--metadata-out", required=True)
     parser.add_argument("--diagnostics-out", required=True)
     parser.add_argument("--github-output")
@@ -307,6 +311,7 @@ def _add_report(
     )
     parser.add_argument("--dry-run", required=True)
     parser.add_argument("--validation-build", required=True)
+    parser.add_argument("--canary-override-non-public-ref", default="false")
     parser.add_argument("--out", required=True)
     parser.add_argument("--plan", default="")
     parser.add_argument("--execution-sets", default="")
@@ -327,6 +332,7 @@ def _cmd_normalize_entry(args: argparse.Namespace) -> int:
     dry_run = _parse_bool(args.dry_run)
     validation_build = _parse_bool(args.validation_build)
     force = _parse_bool(args.force)
+    canary_override = _parse_bool(args.canary_override_non_public_ref)
     if validation_build and not dry_run:
         diagnostics.append(
             _diagnostic(
@@ -345,6 +351,25 @@ def _cmd_normalize_entry(args: argparse.Namespace) -> int:
                 "request",
                 "force is not valid for official releases",
                 {},
+            )
+        )
+    requested = _normalize_project_ids(args.requested_project_ids)
+    if args.profile == "official":
+        diagnostics.extend(
+            _official_public_ref_diagnostics(
+                args.ref,
+                requested,
+                canary_override=canary_override,
+            )
+        )
+    elif canary_override:
+        diagnostics.append(
+            _diagnostic(
+                "REQ_INVALID_INPUT",
+                "validation",
+                "request",
+                "canary non-public-ref override is valid only for official releases",
+                {"input": "canary-override-non-public-ref"},
             )
         )
     permission = _actor_permission(args.repository, args.actor)
@@ -395,7 +420,6 @@ def _cmd_normalize_entry(args: argparse.Namespace) -> int:
         _write_json(Path(args.diagnostics_out), document)
         _write_outputs(args.github_output, {"authorized": "false"})
         return 1
-    requested = _normalize_project_ids(args.requested_project_ids)
     metadata = {
         "api-version": "three.release.entry-metadata/v1alpha1",
         "kind": "entry-metadata",
@@ -410,6 +434,7 @@ def _cmd_normalize_entry(args: argparse.Namespace) -> int:
         "dry-run": dry_run,
         "validation-build": validation_build,
         "force": force,
+        "canary-override-non-public-ref": canary_override,
     }
     _write_json(Path(args.metadata_out), metadata)
     _write_outputs(
@@ -423,6 +448,7 @@ def _cmd_normalize_entry(args: argparse.Namespace) -> int:
             "dry_run": _bool_str(dry_run),
             "validation_build": _bool_str(validation_build),
             "force": _bool_str(force),
+            "canary_override_non_public_ref": _bool_str(canary_override),
         },
     )
     return 0
@@ -989,6 +1015,9 @@ def _cmd_report(args: argparse.Namespace) -> int:
             "profile": args.profile,
             "dry-run": _parse_bool(args.dry_run),
             "validation-build": _parse_bool(args.validation_build),
+            "canary-override-non-public-ref": _parse_bool(
+                args.canary_override_non_public_ref
+            ),
             "conclusion": _overall_conclusion(args),
         },
         "plan": {"plan-id": plan_id, "selected-project-ids": selected_projects},
@@ -1820,6 +1849,8 @@ def _append_summary(report: Json) -> None:
         "",
         f"Conclusion: `{report['run']['conclusion']}`",
         f"Plan: `{report['plan']['plan-id']}`",
+        "Canary non-public-ref override: "
+        f"`{_bool_str(report['run']['canary-override-non-public-ref'])}`",
         "",
         "| Count | Value |",
         "| --- | ---: |",
@@ -1906,6 +1937,132 @@ def _trusted_ref(repository: str, ref_type: str, ref_name: str) -> bool:
         except RuntimeError:
             return False
     return _tag_has_active_ruleset(repository, ref_name)
+
+
+def _official_public_ref_diagnostics(
+    full_ref: str,
+    requested_project_ids: Sequence[str],
+    *,
+    canary_override: bool,
+) -> list[Json]:
+    projects = _release_project_public_ref_specs()
+    selected_ids = (
+        list(requested_project_ids)
+        if requested_project_ids
+        else sorted(projects)
+    )
+    diagnostics: list[Json] = []
+    unknown_ids = [
+        project_id for project_id in selected_ids if project_id not in projects
+    ]
+    for project_id in unknown_ids:
+        diagnostics.append(
+            _diagnostic(
+                "REQ_PROJECT_NOT_FOUND",
+                "validation",
+                "project",
+                f"requested project {project_id!r} is not an in-scope releasable project",
+                {"requested-project-id": project_id},
+                project_id=project_id,
+            )
+        )
+    selected_known = [
+        project_id for project_id in selected_ids if project_id in projects
+    ]
+    disallowed = [
+        project_id
+        for project_id in selected_known
+        if not _matches_public_release_ref_spec(full_ref, projects[project_id])
+    ]
+    if not disallowed:
+        if (
+            canary_override
+            and set(selected_ids) - _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS
+        ):
+            diagnostics.append(_canary_override_scope_diagnostic(selected_ids))
+        return diagnostics
+    if canary_override:
+        if set(selected_ids) <= _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS:
+            return diagnostics
+        diagnostics.append(_canary_override_scope_diagnostic(selected_ids))
+        return diagnostics
+    for project_id in disallowed:
+        diagnostics.append(
+            _diagnostic(
+                "REQ_UNTRUSTED_WORKFLOW_REF",
+                "validation",
+                "project",
+                "official release ref does not match the project's NBGV publicReleaseRefSpec",
+                {
+                    "ref": full_ref,
+                    "publicReleaseRefSpec": projects[project_id],
+                    "canary-override-non-public-ref": False,
+                },
+                project_id=project_id,
+            )
+        )
+    return diagnostics
+
+
+def _canary_override_scope_diagnostic(project_ids: Sequence[str]) -> Json:
+    return _diagnostic(
+        "REQ_INVALID_INPUT",
+        "validation",
+        "request",
+        "canary non-public-ref override is allowlisted only for hcoona-release-smoke",
+        {
+            "requested-project-ids": sorted(project_ids),
+            "allowed-project-ids": sorted(
+                _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS
+            ),
+            "canary-override-non-public-ref": True,
+        },
+    )
+
+
+def _release_project_public_ref_specs() -> dict[str, list[str]]:
+    projects: dict[str, list[str]] = {}
+    for descriptor in sorted(_REPO_ROOT.glob("src/**/three.release.yml")):
+        document = yaml.safe_load(descriptor.read_text(encoding="utf-8"))
+        if not isinstance(document, Mapping):
+            continue
+        project = document.get("project")
+        if not isinstance(project, Mapping) or not isinstance(
+            project.get("id"), str
+        ):
+            continue
+        spec = _nearest_public_release_ref_spec(descriptor.parent)
+        projects[str(project["id"])] = spec
+    return projects
+
+
+def _nearest_public_release_ref_spec(project_dir: Path) -> list[str]:
+    for current in (project_dir, *_repo_relative_parents(project_dir)):
+        version_json = current / "version.json"
+        if not version_json.is_file():
+            continue
+        document = json.loads(version_json.read_text(encoding="utf-8"))
+        spec = document.get("publicReleaseRefSpec")
+        if isinstance(spec, list) and all(
+            isinstance(item, str) for item in spec
+        ):
+            return list(spec)
+    return []
+
+
+def _repo_relative_parents(path: Path) -> list[Path]:
+    parents: list[Path] = []
+    current = path
+    while current != _REPO_ROOT and _REPO_ROOT in current.parents:
+        current = current.parent
+        parents.append(current)
+    return parents
+
+
+def _matches_public_release_ref_spec(
+    full_ref: str, patterns: Sequence[str]
+) -> bool:
+    return any(re.fullmatch(pattern, full_ref) for pattern in patterns)
 
 
 def _tag_has_active_ruleset(repository: str, tag_name: str) -> bool:

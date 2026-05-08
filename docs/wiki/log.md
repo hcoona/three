@@ -430,3 +430,11 @@ This file is the append-only chronological record of wiki activity.
   overview, index, and deferred PyPI multi-wheel issue record.
 - Reconfirmed that future PyPI multi-wheel or cross-variant wheel support remains
   out of current scope and separate from current live PyPI support.
+
+## [2026-05-08] query | Record PyPI OIDC canary outcome
+
+- Updated the workflow release low-level design with the failed PyPI OIDC canary
+  evidence from run 25522559257.
+- Classified the run as workflow failure but positive official PyPI OIDC
+  publish-path evidence, and documented the official public-ref guard plus
+  hcoona-release-smoke canary override policy.

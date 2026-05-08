@@ -675,6 +675,9 @@ def _run_normalize_entry_case(
             dry_run=inputs["dry_run"],
             validation_build=inputs["validation_build"],
             force=inputs["force"],
+            canary_override_non_public_ref=inputs.get(
+                "canary_override_non_public_ref", "false"
+            ),
             metadata_out=str(metadata),
             diagnostics_out=str(diagnostics),
             github_output=str(case_dir / "github-output.txt"),
@@ -1160,6 +1163,7 @@ def test_pre_plan_fail_closed_acceptance_allows_final_report_only() -> None:
                     profile="buddy",
                     dry_run="false",
                     validation_build="false",
+                    canary_override_non_public_ref="false",
                     out=str(report_path),
                     plan="",
                     execution_sets="",
@@ -1290,6 +1294,170 @@ def test_normalize_project_ids_trims_splits_deduplicates_and_sorts() -> None:
     ]
 
 
+def _authorize_entry(
+    monkeypatch: pytest.MonkeyPatch,
+    inputs: dict[str, str],
+) -> tuple[int, dict[str, object] | None, dict[str, object] | None]:
+    """Run entry authorization with GitHub API calls mocked as successful."""
+    output = SCRATCH / "entry-output.txt"
+    metadata = SCRATCH / "entry-metadata.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, "_actor_permission", lambda *_: "maintain")
+    monkeypatch.setattr(
+        control,
+        "_resolve_ref",
+        lambda *_: (SHA_B, {"object-type": "commit"}),
+    )
+    monkeypatch.setattr(control, "_trusted_ref", lambda *_: True)
+    result = control._cmd_normalize_entry(
+        control.argparse.Namespace(
+            profile=inputs["profile"],
+            repository="hcoona/three",
+            actor="maintainer",
+            ref=inputs["ref"],
+            ref_name=inputs["ref_name"],
+            ref_type=inputs["ref_type"],
+            pinned_sha=SHA_B,
+            requested_project_ids=inputs["requested_project_ids"],
+            dry_run="false",
+            validation_build="false",
+            force="false",
+            canary_override_non_public_ref=inputs[
+                "canary_override_non_public_ref"
+            ],
+            metadata_out=str(metadata),
+            diagnostics_out=str(diagnostics),
+            github_output=str(output),
+        )
+    )
+    metadata_doc = (
+        json.loads(metadata.read_text(encoding="utf-8"))
+        if metadata.exists()
+        else None
+    )
+    diagnostics_doc = (
+        json.loads(diagnostics.read_text(encoding="utf-8"))
+        if diagnostics.exists()
+        else None
+    )
+    return result, metadata_doc, diagnostics_doc
+
+
+def test_official_default_rejects_non_public_release_ref(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Official releases fail closed outside publicReleaseRefSpec."""
+    try:
+        result, metadata, diagnostics = _authorize_entry(
+            monkeypatch,
+            {
+                "profile": "official",
+                "ref": "refs/heads/dev/workflow-canary",
+                "ref_name": "dev/workflow-canary",
+                "ref_type": "branch",
+                "requested_project_ids": "hcoona-release-smoke",
+                "canary_override_non_public_ref": "false",
+            },
+        )
+
+        assert result == 1
+        assert metadata is None
+        assert diagnostics is not None
+        assert _diagnostic_codes(SCRATCH / "planner-diagnostics.json") == [
+            "REQ_UNTRUSTED_WORKFLOW_REF"
+        ]
+        diagnostic = diagnostics["diagnostics"][0]
+        assert diagnostic["project-id"] == "hcoona-release-smoke"
+        assert diagnostic["details"]["canary-override-non-public-ref"] is False
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_official_canary_override_allows_allowlisted_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break-glass official canary override is limited but permits smoke."""
+    try:
+        result, metadata, diagnostics = _authorize_entry(
+            monkeypatch,
+            {
+                "profile": "official",
+                "ref": "refs/heads/dev/workflow-canary",
+                "ref_name": "dev/workflow-canary",
+                "ref_type": "branch",
+                "requested_project_ids": "hcoona-release-smoke",
+                "canary_override_non_public_ref": "true",
+            },
+        )
+
+        assert result == 0
+        assert diagnostics is None
+        assert metadata is not None
+        assert metadata["requested-project-ids"] == ["hcoona-release-smoke"]
+        assert metadata["canary-override-non-public-ref"] is True
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_official_canary_override_rejects_non_allowlisted_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break-glass official canary override is not a general release bypass."""
+    try:
+        result, metadata, diagnostics = _authorize_entry(
+            monkeypatch,
+            {
+                "profile": "official",
+                "ref": "refs/heads/dev/workflow-canary",
+                "ref_name": "dev/workflow-canary",
+                "ref_type": "branch",
+                "requested_project_ids": "nbgv-python",
+                "canary_override_non_public_ref": "true",
+            },
+        )
+
+        assert result == 1
+        assert metadata is None
+        assert diagnostics is not None
+        assert _diagnostic_codes(SCRATCH / "planner-diagnostics.json") == [
+            "REQ_INVALID_INPUT"
+        ]
+        diagnostic = diagnostics["diagnostics"][0]
+        assert diagnostic["details"]["canary-override-non-public-ref"] is True
+        assert diagnostic["details"]["allowed-project-ids"] == [
+            "hcoona-release-smoke"
+        ]
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_buddy_entry_is_not_restricted_by_public_release_ref(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Buddy dispatch remains allowed from trusted non-public release refs."""
+    try:
+        result, metadata, diagnostics = _authorize_entry(
+            monkeypatch,
+            {
+                "profile": "buddy",
+                "ref": "refs/heads/dev/workflow-canary",
+                "ref_name": "dev/workflow-canary",
+                "ref_type": "branch",
+                "requested_project_ids": "hcoona-release-smoke",
+                "canary_override_non_public_ref": "false",
+            },
+        )
+
+        assert result == 0
+        assert diagnostics is None
+        assert metadata is not None
+        assert metadata["profile"] == "buddy"
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
 def test_normalize_entry_uses_dispatch_pinned_sha(monkeypatch) -> None:
     """Entry metadata uses github.sha, not a later ref resolution."""
     pinned_sha = "1" * 40
@@ -1320,6 +1488,7 @@ def test_normalize_entry_uses_dispatch_pinned_sha(monkeypatch) -> None:
                 dry_run="true",
                 validation_build="false",
                 force="false",
+                canary_override_non_public_ref="false",
                 metadata_out=str(metadata),
                 diagnostics_out=str(diagnostics),
                 github_output=str(output),
@@ -1563,6 +1732,7 @@ def test_dry_run_acceptance_control_plane_has_no_side_effect_matrix() -> None:
                     profile="buddy",
                     dry_run="true",
                     validation_build="false",
+                    canary_override_non_public_ref="false",
                     out=str(report_path),
                     plan=str(plan_path),
                     execution_sets=str(sets_path),
@@ -1658,6 +1828,7 @@ def test_live_zero_target_acceptance_has_no_side_effect_gates() -> None:
                     profile="official",
                     dry_run="false",
                     validation_build="false",
+                    canary_override_non_public_ref="false",
                     out=str(report_path),
                     plan=str(plan_path),
                     execution_sets=str(sets_path),
@@ -1781,6 +1952,7 @@ def test_live_all_skip_acceptance_emits_only_skip_receipts() -> None:
                     profile="official",
                     dry_run="false",
                     validation_build="false",
+                    canary_override_non_public_ref="true",
                     out=str(report_path),
                     plan=str(plan_path),
                     execution_sets=str(sets_path),
@@ -1799,6 +1971,7 @@ def test_live_all_skip_acceptance_emits_only_skip_receipts() -> None:
         )
         report = json.loads(report_path.read_text(encoding="utf-8"))
         validate_contract(report)
+        assert report["run"]["canary-override-non-public-ref"] is True
         assert report["counts"]["active-variants"] == 0
         assert report["counts"]["active-publish-nodes"] == 0
         assert sorted(report["artifacts"]["skip-result-artifact-names"]) == (
@@ -1883,6 +2056,7 @@ def test_validation_build_acceptance_records_build_without_publish_proof() -> (
                     profile="official",
                     dry_run="true",
                     validation_build="true",
+                    canary_override_non_public_ref="false",
                     out=str(report_path),
                     plan=str(plan_path),
                     execution_sets=str(sets_path),
@@ -3117,6 +3291,7 @@ def test_report_derives_failed_build_and_publish_ids_from_receipts() -> None:
                 profile="buddy",
                 dry_run="false",
                 validation_build="false",
+                canary_override_non_public_ref="false",
                 out=str(report_path),
                 plan=str(SCRATCH / "plan.json"),
                 execution_sets=str(SCRATCH / "execution-sets.json"),
@@ -3582,6 +3757,18 @@ def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
         if workflow_name == "release-buddy.yml":
             assert "RELEASE_FORCE: ${{ inputs.force }}" in normalize_block
             assert '--force "$RELEASE_FORCE" \\' in run_script
+            assert (
+                "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" not in normalize_block
+            )
+        else:
+            assert (
+                "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF: "
+                "${{ inputs.canary-override-non-public-ref }}"
+            ) in normalize_block
+            assert (
+                "--canary-override-non-public-ref "
+                '"$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" \\'
+            ) in run_script
         assert (
             '--requested-project-ids "$RELEASE_REQUESTED_PROJECT_IDS" \\'
             in run_script
@@ -3591,6 +3778,28 @@ def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
         assert '--repository "$RELEASE_REPOSITORY" \\' in run_script
         assert '--actor "$RELEASE_ACTOR" \\' in run_script
         assert '--ref "$RELEASE_REF" \\' in run_script
+
+
+def test_official_canary_override_is_visible_and_environment_gated() -> None:
+    """Official canary override is explicit and does not bypass release env."""
+    workflow = yaml.safe_load(_workflow("release-official.yml"))
+    raw = _workflow("release-official.yml")
+    report_block = _step_block(raw, "Render report")
+
+    dispatch = workflow[True]["workflow_dispatch"]["inputs"]
+    override = dispatch["canary-override-non-public-ref"]
+    assert override["default"] is False
+    assert "hcoona-release-smoke" in override["description"]
+    assert "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" in report_block
+    assert (
+        "--canary-override-non-public-ref "
+        '"$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" \\'
+    ) in report_block
+    assert workflow["jobs"]["publish-entry"]["environment"] == "release"
+    assert (
+        workflow["jobs"]["orchestrate"]["with"]["release-environment"]
+        == "${{ inputs.dry-run == false && 'release' || '' }}"
+    )
 
 
 def test_release_shell_steps_use_env_for_workflow_inputs_and_vars() -> None:
