@@ -4461,6 +4461,40 @@ def test_official_entry_publish_sets_up_npm_trusted_runtime() -> None:
     assert "process.exit(1);" in guard_run
 
 
+def test_entry_publish_sets_up_nuget_trusted_publishing() -> None:
+    """Entry-hosted NuGet.org publish must use NuGet trusted publishing."""
+    for workflow_name in ("release-official.yml", "release-buddy.yml"):
+        workflow = yaml.safe_load(_workflow(workflow_name))
+        steps = workflow["jobs"]["publish-entry"]["steps"]
+
+        detect_index, detect_step = next(
+            (index, step)
+            for index, step in enumerate(steps)
+            if step.get("name") == "Detect NuGet.org trusted publishing"
+        )
+        login_index, login_step = next(
+            (index, step)
+            for index, step in enumerate(steps)
+            if step.get("uses") == "NuGet/login@v1"
+        )
+        publish_index, publish_step = next(
+            (index, step)
+            for index, step in enumerate(steps)
+            if "uv run three-workflow-release-publish publish"
+            in str(step.get("run", ""))
+        )
+
+        assert detect_index < login_index < publish_index
+        assert "nuget.org" in detect_step["run"]
+        assert login_step["if"] == (
+            "${{ steps.nuget_trusted_publishing.outputs.required == 'true' }}"
+        )
+        assert login_step["with"]["user"] == "${{ secrets.NUGET_USER }}"
+        assert publish_step["env"]["NUGET_API_KEY"] == (
+            "${{ steps.nuget_login.outputs.NUGET_API_KEY }}"
+        )
+
+
 def test_entry_publish_gate_ignores_reusable_publish_result() -> None:
     """Entry-hosted publish can proceed after reusable publish fails."""
     for workflow_name in ("release-official.yml", "release-buddy.yml"):

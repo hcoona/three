@@ -201,10 +201,26 @@ jobs:
             --bundles-dir .three-workflow-release/bundles \
             --handoff .three-workflow-release/handoff/entry-publish-handoff.json \
             --out .three-workflow-release/publish-request.json
+      - name: Detect NuGet.org trusted publishing
+        id: nuget_trusted_publishing
+        run: |
+          host="$(jq -r '."target-instance-snapshot".destination.host // ""' .three-workflow-release/publish-request.json)"
+          if [ "$host" = "nuget.org" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: NuGet.org trusted publishing login
+        if: ${{ steps.nuget_trusted_publishing.outputs.required == 'true' }}
+        id: nuget_login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
       - name: Execute entry-hosted publish node
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
+          NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
         run: |
           uv run three-workflow-release-publish publish \
             --repo-root . \

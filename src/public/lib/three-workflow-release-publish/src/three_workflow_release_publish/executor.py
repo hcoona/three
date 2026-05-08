@@ -1097,10 +1097,57 @@ def _publish_nuget(
         _mapping(request["target-instance-snapshot"])["destination"]
     )
     host = str(destination["host"])
-    if host != "nuget.pkg.github.com":
-        msg = f"unsupported NuGet registry host: {host!r}"
-        raise PublishExecutorError(msg, code="PUBLISH_UNSUPPORTED_TARGET")
     package = _nuget_primary_artifact(artifacts)
+    if host == "nuget.org":
+        return _publish_nuget_org(package, repo_root, runner)
+    if host == "nuget.pkg.github.com":
+        return _publish_github_packages_nuget(
+            package,
+            artifacts,
+            destination,
+            repo_root,
+            runner,
+        )
+    msg = f"unsupported NuGet registry host: {host!r}"
+    raise PublishExecutorError(msg, code="PUBLISH_UNSUPPORTED_TARGET")
+
+
+def _publish_nuget_org(
+    package: _ArtifactInput,
+    repo_root: Path,
+    runner: Runner,
+) -> Json:
+    """Publish a NuGet package to NuGet.org using a trusted-publishing token."""
+    source = "https://api.nuget.org/v3/index.json"
+    token = os.environ.get("NUGET_API_KEY")
+    if not token:
+        msg = "NUGET_API_KEY from NuGet/login is required for NuGet.org publish"
+        raise PublishExecutorError(
+            msg, code="PUBLISH_AUTH_FAILED", phase="validation"
+        )
+    command = [
+        shutil.which("dotnet") or "dotnet",
+        "nuget",
+        "push",
+        package.upload_path.as_posix(),
+        "--source",
+        source,
+        "--api-key",
+        token,
+        "--skip-duplicate",
+    ]
+    _run_checked(command, repo_root, runner)
+    return {"package-filename": package.upload_path.name, "source": source}
+
+
+def _publish_github_packages_nuget(
+    package: _ArtifactInput,
+    artifacts: Sequence[_ArtifactInput],
+    destination: Mapping[str, object],
+    repo_root: Path,
+    runner: Runner,
+) -> Json:
+    """Publish a NuGet package to GitHub Packages."""
     if any(artifact.concrete_kind == "snupkg" for artifact in artifacts):
         msg = (
             "GitHub Packages NuGet symbols (.snupkg) publication is not "

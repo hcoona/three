@@ -153,6 +153,92 @@ def test_nuget_executor_pushes_github_packages_source(
         _reset_scratch(scratch)
 
 
+def test_nuget_executor_pushes_nuget_org_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Publish NuGet package to NuGet.org with trusted-publishing token."""
+    scratch = REPO_ROOT / ".publish-executor-nuget-org-test"
+    _reset_scratch(scratch)
+    try:
+        monkeypatch.setenv("NUGET_API_KEY", "nuget-token")
+        package = scratch / "input" / "Example.1.2.3.nupkg"
+        _write_nuget_package(package, "Example", "1.2.3")
+        request = _request(
+            family="nuget",
+            host="nuget.org",
+            artifact_path=package,
+            concrete_kind="nuget",
+            identity={"package-name": "example", "version": "1.2.3.0"},
+            projection={
+                "final-distribution-filenames-by-artifact-id": {
+                    "artifact/package": package.name,
+                },
+            },
+        )
+        calls = _Calls()
+
+        result = execute_publish(
+            request,
+            REPO_ROOT,
+            runner=calls.runner,
+            check_commit=False,
+            work_dir=scratch / "work",
+        )
+
+        validate_contract(result)
+        assert calls.commands[0][:3] == ["dotnet", "nuget", "push"]
+        assert Path(calls.commands[0][3]).name == package.name
+        assert calls.commands[0][4:] == [
+            "--source",
+            "https://api.nuget.org/v3/index.json",
+            "--api-key",
+            "nuget-token",
+            "--skip-duplicate",
+        ]
+        assert result["evidence"]["source"] == (
+            "https://api.nuget.org/v3/index.json"
+        )
+    finally:
+        _reset_scratch(scratch)
+
+
+def test_nuget_org_requires_trusted_publishing_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Refuse NuGet.org publish before NuGet/login provides an API key."""
+    scratch = REPO_ROOT / ".publish-executor-nuget-org-token-test"
+    _reset_scratch(scratch)
+    try:
+        monkeypatch.delenv("NUGET_API_KEY", raising=False)
+        package = scratch / "input" / "Example.1.2.3.nupkg"
+        _write_nuget_package(package, "Example", "1.2.3")
+        request = _request(
+            family="nuget",
+            host="nuget.org",
+            artifact_path=package,
+            concrete_kind="nuget",
+            identity={"package-name": "example", "version": "1.2.3.0"},
+            projection={
+                "final-distribution-filenames-by-artifact-id": {
+                    "artifact/package": package.name,
+                },
+            },
+        )
+        calls = _Calls()
+
+        with pytest.raises(PublishExecutorError, match="NUGET_API_KEY"):
+            execute_publish(
+                request,
+                REPO_ROOT,
+                runner=calls.runner,
+                check_commit=False,
+                work_dir=scratch / "work",
+            )
+        assert calls.commands == []
+    finally:
+        _reset_scratch(scratch)
+
+
 def test_nuget_github_packages_requires_github_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
