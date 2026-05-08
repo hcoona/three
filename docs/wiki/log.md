@@ -438,3 +438,13 @@ This file is the append-only chronological record of wiki activity.
 - Classified the run as workflow failure but positive official PyPI OIDC
   publish-path evidence, and documented the official public-ref guard plus
   hcoona-release-smoke canary override policy.
+
+## [2026-05-08] query | Defer official PyPI success acceptance
+
+- Recorded that official Python smoke full-success PyPI acceptance is deferred
+  until all other validation is complete and the workflow changes have merged to
+  `main`.
+- Clarified that prior official break-glass development-ref runs are positive
+  OIDC path evidence only because PyPI rejected local-version identifiers.
+- Noted that the buddy Python smoke has passed and that the final official PyPI
+  success run must use a proper NBGV public release ref after merge.

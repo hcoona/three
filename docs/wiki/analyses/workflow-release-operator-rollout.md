@@ -116,6 +116,24 @@ suite. The HK step `workflow-release-control-tests` runs that gate when release
 workflow, descriptor, control-script, workflow-release package, matrix, or
 control-test files are touched.
 
+### Deferred Official PyPI Full-Success Acceptance
+
+The official Python smoke full-success PyPI acceptance item is intentionally
+deferred, not forgotten. Continue all other local, CI, dry-run, GitHub-hosted,
+and non-PyPI validation without treating final PyPI publication success as a
+current blocker. The buddy Python smoke has passed.
+
+Previous official break-glass development-ref runs reached PyPI trusted
+publishing, but PyPI rejected the uploads because public PyPI does not accept
+local-version identifiers produced from non-public refs. Treat those runs as
+positive evidence for the official entry-hosted OIDC path only, not as final
+PyPI publish success.
+
+After these workflow changes are merged to `main` and all other validation is
+complete, run the official full-success PyPI validation from a proper NBGV
+public release ref. That post-merge run is the required acceptance evidence for
+real PyPI publication success.
+
 ## Staged Validation Order
 
 Use this order. Do not skip ahead after a failure.
@@ -142,7 +160,9 @@ Use this order. Do not skip ahead after a failure.
    the expected live jobs.
 7. **Single-target live external OIDC path**: enable exactly one external OIDC
    token and run one selected project. Confirm the token-requesting job is hosted
-   by the expected workflow identity for that registry.
+   by the expected workflow identity for that registry. Defer the official
+   Python smoke full-success PyPI variant of this stage until the post-merge
+   public-ref acceptance window described above.
 8. **Broader live rollout**: add external OIDC tokens one package at a time. Keep
    each run small enough that a failed target can be diagnosed from one plan,
    report, and registry response.

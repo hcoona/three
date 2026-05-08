@@ -56,6 +56,12 @@ supporting assets in `../raw/`.
   dispatch, dry-run, rerun including immutable-target partial-success replay,
   cancellation, approval boundaries, and GitHub Packages publication when that
   target is in scope.
+- The official Python smoke full-success PyPI acceptance remains required but is
+  intentionally deferred until all other validation is complete and these
+  workflow changes have merged to `main`; after that merge, run it from a
+  proper NBGV public release ref. Prior break-glass development-ref runs are
+  positive OIDC path evidence only because PyPI rejected their local versions;
+  the buddy Python smoke has already passed.
 - GitHub-native workflow and approval history is currently considered
   sufficient audit evidence; no extra repo-owned release-record artifact is
   required.
