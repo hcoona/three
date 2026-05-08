@@ -183,6 +183,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      packages: read
     outputs:
       plan-id: ${{ steps.outputs.outputs.plan_id }}
       plan-artifact-name: ${{ steps.outputs.outputs.plan_artifact_name }}

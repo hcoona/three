@@ -721,6 +721,80 @@ def test_circular_list_github_release_absent_plans_successfully() -> None:
     assert node_id in result.execution_sets["active-publish-node-ids"]
 
 
+def test_github_packages_nuget_absent_observation_plans_first_publish() -> None:
+    """GitHub Packages NuGet absent observation plans create-only publish."""
+    snapshot = validate_authoring(REPO_ROOT)
+    metadata = _dotnet_metadata(snapshot)
+    first = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-github-packages"], profile="official"
+            ),
+            repo_root=REPO_ROOT,
+            dotnet_metadata=metadata,
+            dry_run=True,
+        ),
+    )
+    node_id = _publish_node_id_for_family(first.plan, "nuget")
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-github-packages"], profile="official"
+            ),
+            repo_root=REPO_ROOT,
+            dotnet_metadata=metadata,
+            remote_observations=_remote_observations(
+                first.plan, {node_id: "absent"}
+            ),
+        ),
+    )
+
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    assert node["target-instance-snapshot-id"] == "nuget/github-packages"
+    assert node["publish-disposition"] == "publish"
+    assert node["publish-mode"] == "create-only"
+    assert node_id in result.execution_sets["active-publish-node-ids"]
+
+
+def test_github_packages_nuget_exact_observation_skips_replay() -> None:
+    """GitHub Packages NuGet exact observation maps to skip-satisfied."""
+    snapshot = validate_authoring(REPO_ROOT)
+    metadata = _dotnet_metadata(snapshot)
+    first = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-github-packages"], profile="official"
+            ),
+            repo_root=REPO_ROOT,
+            dotnet_metadata=metadata,
+            dry_run=True,
+        ),
+    )
+    node_id = _publish_node_id_for_family(first.plan, "nuget")
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-github-packages"], profile="official"
+            ),
+            repo_root=REPO_ROOT,
+            dotnet_metadata=metadata,
+            remote_observations=_remote_observations(
+                first.plan, {node_id: "exact-satisfied"}
+            ),
+        ),
+    )
+
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    assert node["target-instance-snapshot-id"] == "nuget/github-packages"
+    assert node["publish-disposition"] == "skip-satisfied"
+    assert node_id in result.execution_sets["skip-satisfied-publish-node-ids"]
+    assert node_id not in result.execution_sets["active-publish-node-ids"]
+
+
 def test_buddy_force_partial_github_release_overwrites_mutable() -> None:
     """Buddy force partial GitHub Release replay uses overwrite-mutable."""
     first = _plan(["nbgv-python"])

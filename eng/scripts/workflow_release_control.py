@@ -886,46 +886,31 @@ def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
     for node_id, node in sorted(plan["graph"]["publish-nodes"].items()):
         snapshot_id = node["target-instance-snapshot-id"]
         snapshot = plan["graph"]["target-instance-snapshots"][snapshot_id]
-        if snapshot["family"] == "github-release":
-            try:
-                observations[node_id] = _observe_github_release_publication(
-                    args.repository,
-                    str(plan["envelope"]["commit-sha"]),
+        try:
+            observation = _maybe_observe_remote_publication(
+                args.repository,
+                str(plan["envelope"]["commit-sha"]),
+                node_id,
+                node,
+                snapshot_id,
+                snapshot,
+                execution_sets,
+                enabled,
+            )
+        except (RuntimeError, TypeError, ValueError) as exc:
+            diagnostics.append(
+                _publish_node_diagnostic(
+                    "REMOTE_CLASSIFICATION_FAILED",
+                    "remote publication lookup failed",
+                    node_id,
                     node,
+                    snapshot_id,
+                    details={"error": str(exc)},
                 )
-            except (RuntimeError, TypeError) as exc:
-                diagnostics.append(
-                    _publish_node_diagnostic(
-                        "REMOTE_CLASSIFICATION_FAILED",
-                        "remote publication lookup failed",
-                        node_id,
-                        node,
-                        snapshot_id,
-                        details={"error": str(exc)},
-                    )
-                )
+            )
             continue
-        if _supports_public_registry_remote_observation(
-            snapshot
-        ) and _requires_live_external_remote_observation(
-            node_id, node, snapshot_id, snapshot, execution_sets, enabled
-        ):
-            try:
-                observations[node_id] = _observe_public_registry_publication(
-                    node, snapshot
-                )
-            except (RuntimeError, TypeError, ValueError) as exc:
-                diagnostics.append(
-                    _publish_node_diagnostic(
-                        "REMOTE_CLASSIFICATION_FAILED",
-                        "remote publication lookup failed",
-                        node_id,
-                        node,
-                        snapshot_id,
-                        details={"error": str(exc)},
-                    )
-                )
-            continue
+        if observation is not None:
+            observations[node_id] = observation
     if diagnostics:
         _write_json(
             Path(args.diagnostics_out), _diagnostics_document(diagnostics)
@@ -933,6 +918,35 @@ def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
         return 1
     _write_json(Path(args.out), observations)
     return 0
+
+
+def _maybe_observe_remote_publication(
+    repository: str,
+    commit_sha: str,
+    node_id: str,
+    node: Json,
+    snapshot_id: str,
+    snapshot: Mapping[str, Any],
+    execution_sets: Mapping[str, Any] | None,
+    enabled: set[str],
+) -> str | None:
+    if snapshot["family"] == "github-release":
+        return _observe_github_release_publication(repository, commit_sha, node)
+    if _supports_github_packages_nuget_remote_observation(
+        snapshot
+    ) and _requires_live_github_token_remote_observation(
+        node_id, execution_sets
+    ):
+        return _observe_github_packages_nuget_publication(
+            repository, node, snapshot
+        )
+    if _supports_public_registry_remote_observation(
+        snapshot
+    ) and _requires_live_external_remote_observation(
+        node_id, node, snapshot_id, snapshot, execution_sets, enabled
+    ):
+        return _observe_public_registry_publication(node, snapshot)
+    return None
 
 
 def _cmd_ensure_tags(args: argparse.Namespace) -> int:
@@ -2225,6 +2239,40 @@ def _observe_nuget_publication(node: Json) -> str:
     return "absent"
 
 
+def _observe_github_packages_nuget_publication(
+    repository: str, node: Json, snapshot: Mapping[str, Any]
+) -> str:
+    package_name, version = _package_publish_identity(
+        node, "GitHub Packages NuGet"
+    )
+    planned_version = _nuget_version_key(version)
+    owner = _github_packages_owner(repository, snapshot)
+    package = _github_packages_nuget_package(repository, owner, package_name)
+    remote_package_name = str(package["name"])
+    versions = _github_packages_nuget_versions(
+        repository, owner, remote_package_name
+    )
+    observed: set[str] = set()
+    for item in versions:
+        if not isinstance(item, Mapping):
+            msg = (
+                "GitHub Packages NuGet versions API returned a malformed "
+                f"version item for {remote_package_name!r}"
+            )
+            raise TypeError(msg)
+        version_name = item.get("name")
+        if not isinstance(version_name, str) or not version_name:
+            msg = (
+                "GitHub Packages NuGet versions API returned a version item "
+                f"without name for {remote_package_name!r}"
+            )
+            raise TypeError(msg)
+        observed.add(_nuget_version_key(version_name))
+    if planned_version in observed:
+        return "exact-satisfied"
+    return "absent"
+
+
 def _observe_npm_publication(node: Json) -> str:
     package_name, version = _package_publish_identity(node, "npm")
     payload = _npm_package_json(package_name)
@@ -2302,6 +2350,101 @@ def _package_publish_identity(
         msg = f"{registry_name} publish identity is missing version"
         raise TypeError(msg)
     return package_name, version
+
+
+def _github_packages_owner(repository: str, snapshot: Mapping[str, Any]) -> str:
+    destination = snapshot.get("destination")
+    owner = (
+        destination.get("owner") if isinstance(destination, Mapping) else None
+    )
+    if isinstance(owner, str) and owner:
+        return owner
+    repo_owner, _, _ = repository.partition("/")
+    if repo_owner:
+        return repo_owner
+    msg = "GitHub Packages NuGet target is missing destination owner"
+    raise TypeError(msg)
+
+
+def _github_packages_owner_endpoint_prefix(repository: str, owner: str) -> str:
+    repo_owner, separator, repo_name = repository.partition("/")
+    if separator and owner == repo_owner:
+        payload = _gh_api(
+            repository,
+            f"repos/{urllib.parse.quote(repo_owner, safe='')}/"
+            f"{urllib.parse.quote(repo_name, safe='')}",
+        )
+        owner_payload = (
+            payload.get("owner") if isinstance(payload, Mapping) else None
+        )
+        owner_type = (
+            owner_payload.get("type")
+            if isinstance(owner_payload, Mapping)
+            else None
+        )
+    else:
+        payload = _gh_api(
+            repository, f"users/{urllib.parse.quote(owner, safe='')}"
+        )
+        owner_type = (
+            payload.get("type") if isinstance(payload, Mapping) else None
+        )
+    if owner_type == "Organization":
+        return f"orgs/{urllib.parse.quote(owner, safe='')}"
+    if owner_type == "User":
+        return f"users/{urllib.parse.quote(owner, safe='')}"
+    msg = (
+        f"GitHub Packages owner {owner!r} has unsupported or missing "
+        f"GitHub owner type {owner_type!r}"
+    )
+    raise TypeError(msg)
+
+
+def _github_packages_nuget_package(
+    repository: str, owner: str, package_name: str
+) -> Mapping[str, Any]:
+    prefix = _github_packages_owner_endpoint_prefix(repository, owner)
+    endpoint = (
+        f"{prefix}/packages/nuget/{urllib.parse.quote(package_name, safe='')}"
+    )
+    try:
+        payload = _gh_api(repository, endpoint)
+    except RuntimeError as exc:
+        if _is_github_not_found_error(exc):
+            msg = (
+                f"GitHub Packages NuGet package {package_name!r} for owner "
+                f"{owner!r} is not visible to the current GitHub API token; "
+                "absence cannot be proven from a 404/listing miss. Grant the "
+                "workflow repository Actions/read access to the package, or "
+                "use a token/API path with authoritative package read access."
+            )
+            raise RuntimeError(msg) from exc
+        raise
+    if not isinstance(payload, Mapping):
+        msg = (
+            "GitHub Packages package API returned a malformed package "
+            f"payload for {package_name!r}"
+        )
+        raise TypeError(msg)
+    remote_name = payload.get("name")
+    if not isinstance(remote_name, str) or not remote_name:
+        msg = (
+            "GitHub Packages package API returned a package payload without "
+            f"name for {package_name!r}"
+        )
+        raise TypeError(msg)
+    return payload
+
+
+def _github_packages_nuget_versions(
+    repository: str, owner: str, package_name: str
+) -> list[Any]:
+    prefix = _github_packages_owner_endpoint_prefix(repository, owner)
+    endpoint = (
+        f"{prefix}/packages/nuget/"
+        f"{urllib.parse.quote(package_name, safe='')}/versions?per_page=100"
+    )
+    return _gh_api_paginated(repository, endpoint)
 
 
 def _pypi_project_json(package_name: str) -> Json | None:
@@ -2429,6 +2572,18 @@ def _registry_json_request(
 def _supports_remote_observation(snapshot: Mapping[str, Any]) -> bool:
     return snapshot.get("family") == "github-release" or (
         _supports_public_registry_remote_observation(snapshot)
+        or _supports_github_packages_nuget_remote_observation(snapshot)
+    )
+
+
+def _supports_github_packages_nuget_remote_observation(
+    snapshot: Mapping[str, Any],
+) -> bool:
+    destination = snapshot.get("destination")
+    return (
+        snapshot.get("family") == "nuget"
+        and isinstance(destination, Mapping)
+        and destination.get("host") == "nuget.pkg.github.com"
     )
 
 
@@ -2490,6 +2645,21 @@ def _requires_live_external_remote_observation(
             token = f"{snapshot_id}#{node.get('project-id')}#{package_name}"
             required = token in enabled
     return required
+
+
+def _requires_live_github_token_remote_observation(
+    node_id: str,
+    execution_sets: Mapping[str, Any] | None,
+) -> bool:
+    if execution_sets is None:
+        return True
+    candidates_key = (
+        "publish-intent-node-ids"
+        if execution_sets.get("dry-run")
+        else "active-publish-node-ids"
+    )
+    candidates = execution_sets.get(candidates_key, [])
+    return node_id in candidates
 
 
 def _pep503_name(name: str) -> str:
@@ -2644,7 +2814,41 @@ def _gh_api(
         raise RuntimeError(msg)
     if not result.stdout.strip():
         return {}
-    return json.loads(result.stdout)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        msg = f"gh api returned invalid JSON for {endpoint}: {exc}"
+        raise RuntimeError(msg) from exc
+
+
+def _gh_api_paginated(repository: str, endpoint: str) -> list[Any]:
+    env = os.environ.copy()
+    if "GH_TOKEN" not in env and "GITHUB_TOKEN" in env:
+        env["GH_TOKEN"] = env["GITHUB_TOKEN"]
+    result = subprocess.run(
+        ["gh", "api", endpoint, "--paginate", "--slurp"],
+        cwd=Path.cwd(),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        msg = f"gh api failed for {endpoint}: {result.stderr.strip()}"
+        raise RuntimeError(msg)
+    if not result.stdout.strip():
+        return []
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        msg = f"gh api returned invalid JSON for {endpoint}: {exc}"
+        raise RuntimeError(msg) from exc
+    if not isinstance(payload, list):
+        msg = f"gh api returned non-list payload for {endpoint}"
+        raise TypeError(msg)
+    if all(isinstance(page, list) for page in payload):
+        return [item for page in payload for item in page]
+    return payload
 
 
 def _publish_node_diagnostic(

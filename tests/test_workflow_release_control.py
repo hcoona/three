@@ -657,6 +657,29 @@ def _public_registry_observation_plan(family: str) -> dict[str, object]:
     return plan
 
 
+def _github_packages_nuget_observation_plan() -> dict[str, object]:
+    """Return a plan containing only one GitHub Packages NuGet publish node."""
+    plan = _public_registry_observation_plan("nuget")
+    snapshot = plan["graph"]["target-instance-snapshots"].pop("nuget/nuget-org")
+    snapshot["catalog-ref"] = "nuget/github-packages"
+    snapshot["destination"] = {
+        "host": "nuget.pkg.github.com",
+        "owner": "hcoona",
+    }
+    snapshot["instance-id"] = "github-packages"
+    snapshot["capabilities"]["credential-posture"] = "github-token"
+    snapshot["capabilities"]["name-uniqueness-scope"] = (
+        "package-name-with-owner"
+    )
+    snapshot["capabilities"]["publish-topology"] = "github-token"
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["target-instance-snapshot-id"] = "nuget/github-packages"
+    plan["graph"]["target-instance-snapshots"] = {
+        "nuget/github-packages": snapshot
+    }
+    return plan
+
+
 def _run_plan_gate_case(
     case_dir: Path,
     plan: dict[str, object],
@@ -2393,6 +2416,9 @@ def test_observe_remote_publications_classifies_missing_github_release_absent(
 ) -> None:
     """Missing GitHub Release publication writes explicit absent observation."""
     plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["publish-intent-node-ids"] = ["publish-node/gh"]
     out = SCRATCH / "remote-observations.json"
     diagnostics = SCRATCH / "planner-diagnostics.json"
     shutil.rmtree(SCRATCH, ignore_errors=True)
@@ -2401,11 +2427,16 @@ def test_observe_remote_publications_classifies_missing_github_release_absent(
     monkeypatch.setattr(control, "_github_release_by_tag", lambda *_: None)
     try:
         (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
 
         assert (
             control._cmd_observe_remote_publications(
                 control.argparse.Namespace(
                     plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
                     repository="hcoona/three",
                     out=str(out),
                     diagnostics_out=str(diagnostics),
@@ -2426,6 +2457,9 @@ def test_observe_remote_publications_fails_closed_on_lookup_errors(
 ) -> None:
     """Remote lookup errors become planner diagnostics instead of absent."""
     plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["publish-intent-node-ids"] = ["publish-node/gh"]
     out = SCRATCH / "remote-observations.json"
     diagnostics = SCRATCH / "planner-diagnostics.json"
     shutil.rmtree(SCRATCH, ignore_errors=True)
@@ -2437,11 +2471,16 @@ def test_observe_remote_publications_fails_closed_on_lookup_errors(
     )
     try:
         (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
 
         assert (
             control._cmd_observe_remote_publications(
                 control.argparse.Namespace(
                     plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
                     repository="hcoona/three",
                     out=str(out),
                     diagnostics_out=str(diagnostics),
@@ -2697,6 +2736,204 @@ def test_public_registry_missing_and_existing_observations(
 
     monkeypatch.setattr(control, payload_attr, lambda _: existing_payload)
     assert observe(node) == "exact-satisfied"
+
+
+def test_github_packages_nuget_missing_version_and_existing_observations(
+    monkeypatch,
+) -> None:
+    """Visible GitHub Packages NuGet versions map to absent/exact states."""
+    plan = _github_packages_nuget_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    observed_endpoints: list[str] = []
+
+    def fake_gh_api(*args, **_kwargs):
+        endpoint = args[1]
+        observed_endpoints.append(endpoint)
+        if endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        if endpoint == "orgs/hcoona/packages/nuget/Example":
+            return {"name": "Example"}
+        raise AssertionError(endpoint)
+
+    def missing_version_paginated(*args, **_kwargs):
+        observed_endpoints.append(args[1])
+        return [{"name": "9.9.9"}]
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(control, "_gh_api_paginated", missing_version_paginated)
+
+    assert (
+        control._observe_github_packages_nuget_publication(
+            "hcoona/three",
+            node,
+            plan["graph"]["target-instance-snapshots"]["nuget/github-packages"],
+        )
+        == "absent"
+    )
+    assert observed_endpoints == [
+        "repos/hcoona/three",
+        "orgs/hcoona/packages/nuget/Example",
+        "repos/hcoona/three",
+        "orgs/hcoona/packages/nuget/Example/versions?per_page=100",
+    ]
+
+    def existing_paginated(*args, **_kwargs):
+        endpoint = args[1]
+        if (
+            endpoint
+            == "orgs/hcoona/packages/nuget/Example/versions?per_page=100"
+        ):
+            return [{"name": "1.2.3"}]
+        raise AssertionError(endpoint)
+
+    monkeypatch.setattr(control, "_gh_api_paginated", existing_paginated)
+
+    assert (
+        control._observe_github_packages_nuget_publication(
+            "hcoona/three",
+            node,
+            plan["graph"]["target-instance-snapshots"]["nuget/github-packages"],
+        )
+        == "exact-satisfied"
+    )
+
+
+def test_github_packages_nuget_invisible_package_fails_closed(
+    monkeypatch,
+) -> None:
+    """Package 404/listing ambiguity is not classified as absent."""
+    plan = _github_packages_nuget_observation_plan()
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fake_gh_api(*args, **_kwargs):
+        endpoint = args[1]
+        if endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        if endpoint == "orgs/hcoona/packages/nuget/Example":
+            message = f"gh api failed for {endpoint}: HTTP 404"
+            raise RuntimeError(message)
+        raise AssertionError(endpoint)
+
+    def fail_paginated(*args, **_kwargs):
+        message = f"owner package listing must not be used: {args[1]}"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(control, "_gh_api_paginated", fail_paginated)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+        error = document["diagnostics"][0]["details"]["error"]
+        assert "is not visible to the current GitHub API token" in error
+        assert "Actions/read access" in error
+        assert "absence cannot be proven" in error
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_github_packages_nuget_api_failure_observation_fails_closed(
+    monkeypatch,
+) -> None:
+    """GitHub Packages API failures become clear fail-closed diagnostics."""
+    plan = _github_packages_nuget_observation_plan()
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fail_gh_api(*_args, **_kwargs):
+        message = "gh api failed for repos/hcoona/three: HTTP 403"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(control, "_gh_api", fail_gh_api)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+        assert "gh api failed" in document["diagnostics"][0]["details"]["error"]
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_inactive_github_packages_nuget_observation_skips_lookup_failure(
+    monkeypatch,
+) -> None:
+    """Inactive GitHub Packages NuGet nodes are not queried."""
+    plan = _github_packages_nuget_observation_plan()
+    _, execution_sets = _external_oidc_plan_and_sets()
+    execution_sets["active-publish-node-ids"] = []
+    execution_sets["publish-intent-node-ids"] = []
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fail_observer(*_) -> str:
+        pytest.fail("inactive GitHub Packages target must not be queried")
+
+    monkeypatch.setattr(
+        control, "_observe_github_packages_nuget_publication", fail_observer
+    )
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        assert json.loads(out.read_text(encoding="utf-8")) == {}
+        assert not diagnostics.exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
 @pytest.mark.parametrize(
@@ -4261,6 +4498,10 @@ def test_live_planner_observes_remote_publications_before_final_plan() -> None:
         "ENABLED_EXTERNAL_OIDC_TARGETS: "
         "${{ inputs.enabled-external-oidc-targets }}" in run_block
     )
+    plan_job_start = workflow.index("  plan:\n")
+    plan_steps_start = workflow.index("    steps:\n", plan_job_start)
+    plan_header = workflow[plan_job_start:plan_steps_start]
+    assert "      packages: read\n" in plan_header
     assert "if [ \"$RELEASE_DRY_RUN\" != 'true' ]; then" in run_block
     assert "--dry-run" in run_block[:observe]
     assert (
