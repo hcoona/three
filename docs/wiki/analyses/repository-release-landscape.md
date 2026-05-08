@@ -12,7 +12,7 @@ The clearest current patterns are:
   `Microsoft.Build.Artifacts`;
 - `hexo-renderer-asciidoc` is the clearest currently publishable Node.js
   package, while Python now has both a normal build-system-integrated NBGV path
-  (`hcoona-release-smoke`) and one named current-scope special-support path
+  (`hcoona-release-smoke-pypi`) plus dedicated ecosystem smoke paths and one named current-scope special-support path
   (`nbgv-python`, whose authoritative version comes from its checked-in
   `pyproject.toml`);
 - buddy and official channels already exist in policy scripts, but not yet as
@@ -49,11 +49,11 @@ This analysis assumes the intended future release shape is:
 
 ### Python
 
-| Scope                                      | Findings                                                                           | Release Signals                                                                                                                                                                                                                                   |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/public/lib`                           | `nbgv-python` and `hcoona-release-smoke` are the public library workspace members. | `hcoona-release-smoke` demonstrates the normal Hatch plus build-system-integrated NBGV path, while `nbgv-python` is the one named current-scope special-support exception whose authoritative version comes from its checked-in `pyproject.toml`. |
-| `src/public/app`                           | `markdown-hybrid-search-mcp`.                                                      | Lives under `public/app` but is still marked `Private :: Do Not Upload`.                                                                                                                                                                          |
-| `src/private/app`, `src/lab`, `src/sample` | 10 additional workspace members.                                                   | All inspected manifests are internal-facing or explicitly `Private :: Do Not Upload`.                                                                                                                                                             |
+| Scope                                      | Findings                                                                           | Release Signals                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/public/lib`                           | `nbgv-python` and `hcoona-release-smoke` are the public library workspace members. | `hcoona-release-smoke` is retained only as a legacy generic canary. Dedicated `hcoona-release-smoke-*` projects now cover live acceptance for GitHub Release, NuGet, npm, PyPI, RubyGems, and GitHub Packages; `nbgv-python` remains the named special-support exception whose authoritative version comes from its checked-in `pyproject.toml`. |
+| `src/public/app`                           | `markdown-hybrid-search-mcp`.                                                      | Lives under `public/app` but is still marked `Private :: Do Not Upload`.                                                                                                                                                                                                                                                                         |
+| `src/private/app`, `src/lab`, `src/sample` | 10 additional workspace members.                                                   | All inspected manifests are internal-facing or explicitly `Private :: Do Not Upload`.                                                                                                                                                                                                                                                            |
 
 ### JS/TS
 

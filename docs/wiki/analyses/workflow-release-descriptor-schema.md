@@ -662,14 +662,11 @@ For current .NET package projects, the repo-wide MSBuild configuration emits a
 portable `.snupkg` alongside `.nupkg` when a packable library is packed. Project
 descriptors for such package variants should therefore declare both the primary
 NuGet artifact and the symbol artifact. GitHub Release target usages may carry
-both package files as release assets. GitHub Packages NuGet buddy target usages
-may model both artifacts during implementation, but live GitHub Packages
-publication must only require `.snupkg` after the implementation verifies that
-GitHub Packages can publish and observe symbol-package members with the same
-fail-closed replay guarantees as `.nupkg`. If that verification fails, the live
-GitHub Packages package-registry target should be narrowed to the reliably
-observable `.nupkg` member while `.snupkg` remains modeled as GitHub Release
-evidence. NuGet.org target usages should likewise reference both artifacts when
+both package files as release assets. Current-scope GitHub Packages NuGet live
+publication is official-only, and the official GitHub Packages target publishes
+only the reliably observable `.nupkg` member while `.snupkg` remains modeled as
+GitHub Release evidence. NuGet.org target usages should likewise reference both
+artifacts when
 the release includes NuGet symbol publication, because `.snupkg` is the modern
 separate symbol-package format. That in turn requires the planner's NuGet.org
 adapter to implement and test symbol-package remote observation before first live
@@ -914,17 +911,20 @@ profiles:
         targets:
             - uses: github-release/public
               artifacts: [nuget, snupkg]
-            - uses: nuget/github-packages
-              artifacts: [nuget]
     official:
         targets:
             - uses: github-release/public
               artifacts: [nuget, snupkg]
+            - uses: nuget/github-packages
+              artifacts: [nuget]
 ```
 
-First delivery intentionally publishes only the primary `.nupkg` member to
-GitHub Packages NuGet. It keeps `.snupkg` modeled for GitHub Release evidence and
-omits `nuget/nuget-org` until the deferred `.snupkg` observation path is
+First delivery intentionally allows only the protected `official` profile to
+publish the primary `.nupkg` member to GitHub Packages NuGet. The `buddy`
+profile remains limited to GitHub Release evidence so it cannot mutate the same
+immutable GitHub Packages package identity without the official protected
+environment. The descriptor keeps `.snupkg` modeled for GitHub Release evidence
+and omits `nuget/nuget-org` until the deferred `.snupkg` observation path is
 documented and tested.
 
 ### Public .NET app descriptor excerpt

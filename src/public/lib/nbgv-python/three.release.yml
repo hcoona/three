@@ -33,5 +33,3 @@ profiles:
     targets:
       - uses: github-release/public
         artifacts: [wheel, sdist]
-      - uses: pypi/pypi
-        artifacts: [wheel, sdist]

@@ -57,7 +57,16 @@ _TOPOLOGIES = (
     "external-oidc-reusable-workflow",
 )
 _PYPI_JSON_TIMEOUT_SECONDS = 15
-_OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset({"hcoona-release-smoke"})
+_OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset(
+    {
+        "hcoona-release-smoke-github-packages",
+        "hcoona-release-smoke-github-release",
+        "hcoona-release-smoke-npm",
+        "hcoona-release-smoke-nuget",
+        "hcoona-release-smoke-pypi",
+        "hcoona-release-smoke-rubygems",
+    }
+)
 
 
 def main() -> int:
@@ -2009,7 +2018,7 @@ def _canary_override_scope_diagnostic(project_ids: Sequence[str]) -> Json:
         "REQ_INVALID_INPUT",
         "validation",
         "request",
-        "canary non-public-ref override is allowlisted only for hcoona-release-smoke",
+        "canary non-public-ref override is allowlisted only for dedicated release-smoke projects",
         {
             "requested-project-ids": sorted(project_ids),
             "allowed-project-ids": sorted(

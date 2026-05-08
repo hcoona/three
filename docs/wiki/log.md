@@ -448,3 +448,7 @@ This file is the append-only chronological record of wiki activity.
   OIDC path evidence only because PyPI rejected local-version identifiers.
 - Noted that the buddy Python smoke has passed and that the final official PyPI
   success run must use a proper NBGV public release ref after merge.
+
+## [2026-05-08] query | Dedicated Release-Smoke Projects
+
+Updated the workflow-release design notes to move live acceptance away from the legacy generic `hcoona-release-smoke` package and onto dedicated `hcoona-release-smoke-*` projects for GitHub Release, NuGet, npm, PyPI, RubyGems, and GitHub Packages.

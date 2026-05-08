@@ -84,6 +84,30 @@
           },
           {
             "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-github-packages/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-github-release/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-npm/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-nuget/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-rubygems/three.release.yml"
+          },
+          {
+            "type": "path",
             "value": "src/public/lib/hexo-renderer-asciidoc/three.release.yml"
           },
           {
@@ -666,13 +690,13 @@
     {
       "id": "csharp-library-package-build-and-release",
       "scenario": "C# library package build and release",
-      "fixture-anchor": "src/public/lib/Hjg.Pngcs/",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-nuget/",
       "validation-mode": "manual-live",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-nuget/three.release.yml"
           },
           {
             "type": "path",
@@ -769,14 +793,14 @@
     },
     {
       "id": "github-packages-nuget-publication-and-token-isolation",
-      "scenario": "GitHub Packages NuGet publication and token isolation",
-      "fixture-anchor": "src/public/lib/Hjg.Pngcs/",
+      "scenario": "GitHub Packages NuGet official publication and token isolation",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-github-packages/",
       "validation-mode": "manual-live",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-github-packages/three.release.yml"
           },
           {
             "type": "path",
@@ -1202,13 +1226,13 @@
     {
       "id": "python-normal-nbgv-hatch-package",
       "scenario": "Python normal NBGV/Hatch package",
-      "fixture-anchor": "src/public/lib/hcoona-release-smoke/",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-pypi/",
       "validation-mode": "ci-and-manual-live",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/hcoona-release-smoke/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
           },
           {
             "type": "path",
@@ -1314,13 +1338,13 @@
     {
       "id": "first-delivery-pypi-official-publish",
       "scenario": "First-delivery PyPI official publish",
-      "fixture-anchor": "official PyPI fixture",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-pypi/",
       "validation-mode": "manual-live-gated",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/nbgv-python/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
           },
           {
             "type": "path",
@@ -1442,13 +1466,13 @@
     {
       "id": "node-package-build-and-github-release",
       "scenario": "Node package build and GitHub Release",
-      "fixture-anchor": "src/public/lib/hexo-renderer-asciidoc/",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-npm/",
       "validation-mode": "manual-live",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/hexo-renderer-asciidoc/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-npm/three.release.yml"
           },
           {
             "type": "path",
@@ -1546,13 +1570,13 @@
     {
       "id": "npmjs-entry-hosted-trusted-publication",
       "scenario": "npmjs entry-hosted trusted publication",
-      "fixture-anchor": "src/public/lib/hexo-renderer-asciidoc/",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-npm/",
       "validation-mode": "manual-live-gated",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/hexo-renderer-asciidoc/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-npm/three.release.yml"
           },
           {
             "type": "path",
@@ -1674,13 +1698,13 @@
     {
       "id": "ruby-gem-build-and-github-release",
       "scenario": "Ruby gem build and GitHub Release",
-      "fixture-anchor": "src/public/lib/asciidoctor-latexmath/",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-rubygems/",
       "validation-mode": "manual-live",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/asciidoctor-latexmath/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-rubygems/three.release.yml"
           },
           {
             "type": "path",
@@ -1776,15 +1800,15 @@
       }
     },
     {
-      "id": "github-packages-rubygems-publication-and-token-isolation",
-      "scenario": "GitHub Packages RubyGems publication and token isolation",
-      "fixture-anchor": "src/public/lib/asciidoctor-latexmath/",
+      "id": "github-packages-dedicated-smoke-publication-and-token-isolation",
+      "scenario": "GitHub Packages NuGet dedicated smoke publication and token isolation",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-github-packages/",
       "validation-mode": "manual-live",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/asciidoctor-latexmath/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-github-packages/three.release.yml"
           },
           {
             "type": "path",
@@ -1848,7 +1872,7 @@
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_rubygems_executor_pushes_github_packages_host"
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_nuget_executor_pushes_github_packages_source"
           },
           {
             "type": "test",
@@ -1874,7 +1898,7 @@
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_rubygems_executor_pushes_github_packages_host"
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_nuget_executor_pushes_github_packages_source"
           },
           {
             "type": "test",
@@ -1890,13 +1914,13 @@
     {
       "id": "rubygems-org-reusable-workflow-bound-trusted-publication",
       "scenario": "RubyGems.org reusable-workflow-bound trusted publication",
-      "fixture-anchor": "src/public/lib/asciidoctor-latexmath/",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-rubygems/",
       "validation-mode": "manual-live-gated",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/asciidoctor-latexmath/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-rubygems/three.release.yml"
           },
           {
             "type": "path",
@@ -2128,7 +2152,7 @@
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-nuget/three.release.yml"
           },
           {
             "type": "path",
@@ -3202,7 +3226,7 @@
     {
       "id": "github-release-tag-atomicity",
       "scenario": "GitHub Release tag atomicity",
-      "fixture-anchor": "multi-tag mocked GitHub API fixture",
+      "fixture-anchor": "multi-tag mocked GitHub API fixture; dedicated smoke project src/public/lib/hcoona-release-smoke-github-release/",
       "validation-mode": "ci-mocked",
       "evidence": {
         "descriptor-or-catalog": [
@@ -3350,7 +3374,7 @@
     {
       "id": "github-release-asset-content-equivalence",
       "scenario": "GitHub Release asset content equivalence",
-      "fixture-anchor": "GitHub Release proof fixture",
+      "fixture-anchor": "GitHub Release proof fixture; dedicated smoke project src/public/lib/hcoona-release-smoke-github-release/",
       "validation-mode": "ci-mocked",
       "evidence": {
         "descriptor-or-catalog": [
@@ -3706,13 +3730,13 @@
     {
       "id": "direct-official-publication",
       "scenario": "Direct official publication",
-      "fixture-anchor": "direct official GitHub Release fixture",
+      "fixture-anchor": "direct official GitHub Release smoke fixture",
       "validation-mode": "manual-live-gated",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-github-release/three.release.yml"
           },
           {
             "type": "path",
@@ -5315,7 +5339,7 @@
     },
     "github-packages-live-publication": {
       "owner": "GitHub Packages registry",
-      "evidence": "registry package/version observation"
+      "evidence": "registry package/version observation from protected official publication"
     },
     "release-environment-required-review": {
       "owner": "GitHub environment release",

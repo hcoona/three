@@ -206,6 +206,22 @@ def _fake_git_show_json(
     return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
 
 
+def _fake_nbgv_get_version(
+    args: Sequence[str],
+    *,
+    semver2: str,
+) -> subprocess.CompletedProcess[str] | None:
+    """Handle requested-commit NBGV version queries in subprocess fakes."""
+    if "get-version" not in args:
+        return None
+    return subprocess.CompletedProcess(
+        args,
+        0,
+        json.dumps({"SemVer2": semver2}),
+        "",
+    )
+
+
 def _remove_flat_scratch(path: Path) -> None:
     """Remove planner test scratch directories containing only files."""
     if not path.exists():
@@ -262,6 +278,8 @@ version = "7.8.9.dev1"
             )
         if handled := _fake_git_worktree(args):
             return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+            return handled
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "nbgv_python-7.8.9.dev1-py3-none-any.whl").write_text(
@@ -306,8 +324,8 @@ def test_nbgv_python_pypi_backend_runs_at_requested_commit(
         nonlocal requested_checkout
         if handled := _fake_git_show_pyproject(
             args,
-            name="nbgv-python",
-            version="7.8.9.dev1",
+            name="hcoona-release-smoke-pypi",
+            version=None,
         ):
             return handled
         if "worktree" in args and "add" in args:
@@ -316,6 +334,8 @@ def test_nbgv_python_pypi_backend_runs_at_requested_commit(
             return subprocess.CompletedProcess(args, 0, "", "")
         if handled := _fake_git_worktree(args):
             return handled
+        if handled := _fake_nbgv_get_version(args, semver2="7.8.9-dev.1"):
+            return handled
         assert requested_checkout is not None
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -323,11 +343,12 @@ def test_nbgv_python_pypi_backend_runs_at_requested_commit(
         version = (
             "7.8.9.dev1" if build_cwd == requested_checkout else "9.9.9.dev1"
         )
-        (out_dir / f"nbgv_python-{version}-py3-none-any.whl").write_text(
+        package_stem = "hcoona_release_smoke_pypi"
+        (out_dir / f"{package_stem}-{version}-py3-none-any.whl").write_text(
             "",
             encoding="utf-8",
         )
-        (out_dir / f"nbgv_python-{version}.tar.gz").write_text(
+        (out_dir / f"{package_stem}-{version}.tar.gz").write_text(
             "",
             encoding="utf-8",
         )
@@ -340,7 +361,7 @@ def test_nbgv_python_pypi_backend_runs_at_requested_commit(
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["nbgv-python"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -440,13 +461,47 @@ def test_exact_satisfied_routes_to_skip_selector() -> None:
     assert node_id not in publish_nodes
 
 
-def test_pypi_exact_satisfied_routes_to_skip_selector() -> None:
+def test_pypi_exact_satisfied_routes_to_skip_selector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Model exact-satisfied PyPI versions as immutable replay skips."""
     snapshot = validate_authoring(REPO_ROOT)
+
+    def fake_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        if handled := _fake_git_show_pyproject(
+            args,
+            name="hcoona-release-smoke-pypi",
+            version=None,
+        ):
+            return handled
+        if handled := _fake_git_worktree(args):
+            return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+            return handled
+        out_dir = Path(args[args.index("--out-dir") + 1])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        package_stem = "hcoona_release_smoke_pypi"
+        (out_dir / f"{package_stem}-2.1.0.dev1-py3-none-any.whl").write_text(
+            "",
+            encoding="utf-8",
+        )
+        (out_dir / f"{package_stem}-2.1.0.dev1.tar.gz").write_text(
+            "",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
     first = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["nbgv-python"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -455,7 +510,7 @@ def test_pypi_exact_satisfied_routes_to_skip_selector() -> None:
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["nbgv-python"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             remote_observations=_remote_observations(
                 first.plan, {node_id: "exact-satisfied"}
@@ -467,13 +522,47 @@ def test_pypi_exact_satisfied_routes_to_skip_selector() -> None:
     assert node_id not in result.execution_sets["publish-intent-node-ids"]
 
 
-def test_live_pypi_without_remote_observation_remains_gateable() -> None:
+def test_live_pypi_without_remote_observation_remains_gateable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """External OIDC targets without observations remain gate-controlled."""
     snapshot = validate_authoring(REPO_ROOT)
+
+    def fake_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        if handled := _fake_git_show_pyproject(
+            args,
+            name="hcoona-release-smoke-pypi",
+            version=None,
+        ):
+            return handled
+        if handled := _fake_git_worktree(args):
+            return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+            return handled
+        out_dir = Path(args[args.index("--out-dir") + 1])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        package_stem = "hcoona_release_smoke_pypi"
+        (out_dir / f"{package_stem}-2.1.0.dev1-py3-none-any.whl").write_text(
+            "",
+            encoding="utf-8",
+        )
+        (out_dir / f"{package_stem}-2.1.0.dev1.tar.gz").write_text(
+            "",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
     bootstrap = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["nbgv-python"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -484,7 +573,7 @@ def test_live_pypi_without_remote_observation_remains_gateable() -> None:
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["nbgv-python"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             remote_observations=observations,
         ),
@@ -1023,7 +1112,7 @@ def test_npm_package_name_reads_requested_commit_package_json(
     ) -> subprocess.CompletedProcess[str]:
         if handled := _fake_git_show_json(
             args,
-            path="src/public/lib/hexo-renderer-asciidoc/package.json",
+            path="src/public/lib/hcoona-release-smoke-npm/package.json",
             payload={"name": "requested-npm-name"},
         ):
             return handled
@@ -1041,7 +1130,7 @@ def test_npm_package_name_reads_requested_commit_package_json(
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["hexo-renderer-asciidoc"], profile="official"),
+            request=_request(["hcoona-release-smoke-npm"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -1050,7 +1139,7 @@ def test_npm_package_name_reads_requested_commit_package_json(
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     identity = cast("Mapping[str, str]", node["resolved-publish-identity"])
     assert identity["package-name"] == "requested-npm-name"
-    assert identity["package-name"] != "hexo-renderer-asciidoc"
+    assert identity["package-name"] != "hcoona-release-smoke-npm"
     projection = cast("Mapping[str, object]", node["projection"])
     filenames = cast(
         "Mapping[str, str]",
@@ -1107,7 +1196,9 @@ def test_rubygems_metadata_uses_requested_commit_backend(
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["asciidoctor-latexmath"], profile="official"),
+            request=_request(
+                ["hcoona-release-smoke-rubygems"], profile="official"
+            ),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -1216,6 +1307,8 @@ def test_pypi_filenames_are_taken_from_build_backend(
             return handled
         if handled := _fake_git_worktree(args):
             return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+            return handled
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "nbgv_python-2.1.0.dev1-py3-none-any.whl").write_text(
@@ -1235,7 +1328,7 @@ def test_pypi_filenames_are_taken_from_build_backend(
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["nbgv-python"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -1272,6 +1365,8 @@ def test_pypi_rejects_platform_specific_wheel(
             return handled
         if handled := _fake_git_worktree(args):
             return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+            return handled
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (
@@ -1294,7 +1389,9 @@ def test_pypi_rejects_platform_specific_wheel(
         plan_release(
             snapshot,
             PlannerInputs(
-                request=_request(["nbgv-python"], profile="official"),
+                request=_request(
+                    ["hcoona-release-smoke-pypi"], profile="official"
+                ),
                 repo_root=REPO_ROOT,
             ),
         )
@@ -1319,6 +1416,8 @@ def test_pypi_package_name_reads_requested_commit_pyproject(
             return handled
         if handled := _fake_git_worktree(args):
             return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+            return handled
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "requested_name-2.1.0.dev1-py3-none-any.whl").write_text(
@@ -1338,7 +1437,7 @@ def test_pypi_package_name_reads_requested_commit_pyproject(
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["nbgv-python"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -1368,6 +1467,8 @@ def test_pypi_dotted_package_name_matches_wheel_normalization(
             return handled
         if handled := _fake_git_worktree(args):
             return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+            return handled
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "requested_name-2.1.0.dev1-py3-none-any.whl").write_text(
@@ -1387,7 +1488,7 @@ def test_pypi_dotted_package_name_matches_wheel_normalization(
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["nbgv-python"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -1413,7 +1514,7 @@ def test_pypi_build_system_nbgv_identity_uses_backend_normalized_version(
     ) -> subprocess.CompletedProcess[str]:
         if handled := _fake_git_show_pyproject(
             args,
-            name="hcoona-release-smoke",
+            name="hcoona-release-smoke-pypi",
             version=None,
         ):
             return handled
@@ -1429,12 +1530,15 @@ def test_pypi_build_system_nbgv_identity_uses_backend_normalized_version(
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (
-            out_dir / "hcoona_release_smoke-1.0.0b5+gabcdef-py3-none-any.whl"
+            out_dir
+            / "hcoona_release_smoke_pypi-1.0.0b5+gabcdef-py3-none-any.whl"
         ).write_text(
             "",
             encoding="utf-8",
         )
-        (out_dir / "hcoona_release_smoke-1.0.0b5+gabcdef.tar.gz").write_text(
+        (
+            out_dir / "hcoona_release_smoke_pypi-1.0.0b5+gabcdef.tar.gz"
+        ).write_text(
             "",
             encoding="utf-8",
         )
@@ -1447,7 +1551,7 @@ def test_pypi_build_system_nbgv_identity_uses_backend_normalized_version(
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["hcoona-release-smoke"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -1463,8 +1567,8 @@ def test_pypi_build_system_nbgv_identity_uses_backend_normalized_version(
         projection["final-distribution-filenames-by-artifact-id"],
     )
     assert {
-        "hcoona_release_smoke-1.0.0b5+gabcdef-py3-none-any.whl",
-        "hcoona_release_smoke-1.0.0b5+gabcdef.tar.gz",
+        "hcoona_release_smoke_pypi-1.0.0b5+gabcdef-py3-none-any.whl",
+        "hcoona_release_smoke_pypi-1.0.0b5+gabcdef.tar.gz",
     } <= set(names.values())
 
 
@@ -1510,7 +1614,7 @@ def test_pypi_build_system_nbgv_name_reads_requested_commit_pyproject(
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["hcoona-release-smoke"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -1519,7 +1623,7 @@ def test_pypi_build_system_nbgv_name_reads_requested_commit_pyproject(
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     identity = cast("Mapping[str, str]", node["resolved-publish-identity"])
     assert identity["package-name"] == "requested-smoke"
-    assert identity["package-name"] != "hcoona-release-smoke"
+    assert identity["package-name"] != "hcoona-release-smoke-pypi"
 
 
 def test_pypi_build_system_nbgv_backend_runs_at_requested_commit(
@@ -1536,7 +1640,7 @@ def test_pypi_build_system_nbgv_backend_runs_at_requested_commit(
         nonlocal requested_checkout
         if handled := _fake_git_show_pyproject(
             args,
-            name="hcoona-release-smoke",
+            name="hcoona-release-smoke-pypi",
             version=None,
         ):
             return handled
@@ -1562,12 +1666,14 @@ def test_pypi_build_system_nbgv_backend_runs_at_requested_commit(
             version = "1.0.0b5+grequested"
         else:
             version = "9.9.9+ambient"
-        wheel = out_dir / f"hcoona_release_smoke-{version}-py3-none-any.whl"
+        wheel = (
+            out_dir / f"hcoona_release_smoke_pypi-{version}-py3-none-any.whl"
+        )
         wheel.write_text(
             "",
             encoding="utf-8",
         )
-        (out_dir / f"hcoona_release_smoke-{version}.tar.gz").write_text(
+        (out_dir / f"hcoona_release_smoke_pypi-{version}.tar.gz").write_text(
             "",
             encoding="utf-8",
         )
@@ -1580,7 +1686,7 @@ def test_pypi_build_system_nbgv_backend_runs_at_requested_commit(
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["hcoona-release-smoke"], profile="official"),
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
             repo_root=REPO_ROOT,
             dry_run=True,
         ),
@@ -1610,6 +1716,8 @@ def test_pypi_filename_compute_failure_fails_closed(
             return handled
         if handled := _fake_git_worktree(args):
             return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+            return handled
         out_dir = Path(args[args.index("--out-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "nbgv_python-2.1.0.dev1-py3-none-any.whl").write_text(
@@ -1626,7 +1734,9 @@ def test_pypi_filename_compute_failure_fails_closed(
         plan_release(
             snapshot,
             PlannerInputs(
-                request=_request(["nbgv-python"], profile="official"),
+                request=_request(
+                    ["hcoona-release-smoke-pypi"], profile="official"
+                ),
                 repo_root=REPO_ROOT,
             ),
         )
@@ -1645,7 +1755,7 @@ def test_pypi_checkout_failure_uses_pypi_diagnostic(
     ) -> subprocess.CompletedProcess[str]:
         if handled := _fake_git_show_pyproject(
             args,
-            name="hcoona-release-smoke",
+            name="hcoona-release-smoke-pypi",
             version=None,
         ):
             return handled
@@ -1672,7 +1782,9 @@ def test_pypi_checkout_failure_uses_pypi_diagnostic(
         plan_release(
             snapshot,
             PlannerInputs(
-                request=_request(["hcoona-release-smoke"], profile="official"),
+                request=_request(
+                    ["hcoona-release-smoke-pypi"], profile="official"
+                ),
                 repo_root=REPO_ROOT,
             ),
         )
@@ -1686,7 +1798,7 @@ def test_pypi_wheel_only_publish_does_not_require_sdist(
 ) -> None:
     """PyPI publish planning allows the optional sdist to be absent."""
     base = validate_authoring(REPO_ROOT)
-    source = base.projects["nbgv-python"]
+    source = base.projects["hcoona-release-smoke-pypi"]
     pypi_usage = next(
         usage
         for usage in source.profiles["official"]
@@ -1749,6 +1861,8 @@ def test_pypi_wheel_only_publish_does_not_require_sdist(
         ):
             return handled
         if handled := _fake_git_worktree(args):
+            return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
             return handled
         assert "--sdist" not in args
         out_dir = Path(args[args.index("--out-dir") + 1])

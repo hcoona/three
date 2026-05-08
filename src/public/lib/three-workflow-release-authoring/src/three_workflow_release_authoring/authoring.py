@@ -83,6 +83,30 @@ _FROZEN_DESCRIPTOR_IDENTITY_BY_ROOT = {
         "hcoona-release-smoke",
         "pyproject.toml",
     ),
+    "src/public/lib/hcoona-release-smoke-github-packages": (
+        "hcoona-release-smoke-github-packages",
+        "hcoona-release-smoke-github-packages.csproj",
+    ),
+    "src/public/lib/hcoona-release-smoke-github-release": (
+        "hcoona-release-smoke-github-release",
+        "hcoona-release-smoke-github-release.csproj",
+    ),
+    "src/public/lib/hcoona-release-smoke-npm": (
+        "hcoona-release-smoke-npm",
+        "package.json",
+    ),
+    "src/public/lib/hcoona-release-smoke-nuget": (
+        "hcoona-release-smoke-nuget",
+        "hcoona-release-smoke-nuget.csproj",
+    ),
+    "src/public/lib/hcoona-release-smoke-pypi": (
+        "hcoona-release-smoke-pypi",
+        "pyproject.toml",
+    ),
+    "src/public/lib/hcoona-release-smoke-rubygems": (
+        "hcoona-release-smoke-rubygems",
+        "hcoona-release-smoke-rubygems.gemspec",
+    ),
     "src/public/lib/hexo-renderer-asciidoc": (
         "hexo-renderer-asciidoc",
         "package.json",
@@ -161,6 +185,52 @@ _PYTHON_ARTIFACTS = {
         "pypi/pypi": _DEFAULT_PYTHON_PACKAGE,
     },
 }
+_PYTHON_GITHUB_RELEASE_ARTIFACTS = {
+    "buddy": {"github-release/public": _DEFAULT_PYTHON_PACKAGE},
+    "official": {"github-release/public": _DEFAULT_PYTHON_PACKAGE},
+}
+_NPM_GITHUB_RELEASE_ARTIFACTS = {
+    "buddy": {"github-release/public": _DEFAULT_NPM_PACKAGE},
+    "official": {"github-release/public": _DEFAULT_NPM_PACKAGE},
+}
+_RUBYGEMS_GITHUB_RELEASE_ARTIFACTS = {
+    "buddy": {"github-release/public": _DEFAULT_RUBYGEMS_PACKAGE},
+    "official": {"github-release/public": _DEFAULT_RUBYGEMS_PACKAGE},
+}
+_NUGET_ORG_ARTIFACTS = {
+    "buddy": {"github-release/public": _DEFAULT_NUGET_PACKAGE},
+    "official": {
+        "github-release/public": _DEFAULT_NUGET_PACKAGE,
+        "nuget/nuget-org": (
+            (_D_DEFAULT, ("primary-package", "package", "nuget")),
+        ),
+    },
+}
+_NPMJS_ARTIFACTS = {
+    "buddy": {"github-release/public": _DEFAULT_NPM_PACKAGE},
+    "official": {
+        "github-release/public": _DEFAULT_NPM_PACKAGE,
+        "npm/npmjs": _DEFAULT_NPM_PACKAGE,
+    },
+}
+_RUBYGEMS_ORG_ARTIFACTS = {
+    "buddy": {"github-release/public": _DEFAULT_RUBYGEMS_PACKAGE},
+    "official": {
+        "github-release/public": _DEFAULT_RUBYGEMS_PACKAGE,
+        "rubygems/rubygems-org": _DEFAULT_RUBYGEMS_PACKAGE,
+    },
+}
+_GITHUB_PACKAGES_NUGET_ARTIFACTS = {
+    "buddy": {
+        "github-release/public": _DEFAULT_NUGET_PACKAGE,
+    },
+    "official": {
+        "github-release/public": _DEFAULT_NUGET_PACKAGE,
+        "nuget/github-packages": (
+            (_D_DEFAULT, ("primary-package", "package", "nuget")),
+        ),
+    },
+}
 _INSTALLER_ARTIFACTS = {
     "buddy": {"github-release/public": _WIN_X64_INSTALLER},
     "official": {"github-release/public": _WIN_X64_INSTALLER},
@@ -175,24 +245,33 @@ _TWO_EXECUTABLE_ARTIFACTS = {
     "official": {"github-release/public": _TWO_EXECUTABLES},
 }
 _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
-    "asciidoctor-latexmath": {
-        "buddy": frozenset(
-            {"github-release/public", "rubygems/github-packages"}
+    "asciidoctor-latexmath": _GITHUB_RELEASE_ONLY_TARGETS,
+    "circular-list": _GITHUB_RELEASE_ONLY_TARGETS,
+    "hcoona-release-smoke": _ZERO_TARGETS,
+    "hcoona-release-smoke-github-packages": {
+        "buddy": frozenset({"github-release/public"}),
+        "official": frozenset(
+            {"github-release/public", "nuget/github-packages"}
         ),
+    },
+    "hcoona-release-smoke-github-release": _GITHUB_RELEASE_ONLY_TARGETS,
+    "hcoona-release-smoke-npm": {
+        "buddy": frozenset({"github-release/public"}),
+        "official": frozenset({"github-release/public", "npm/npmjs"}),
+    },
+    "hcoona-release-smoke-nuget": {
+        "buddy": frozenset({"github-release/public"}),
+        "official": frozenset({"github-release/public", "nuget/nuget-org"}),
+    },
+    "hcoona-release-smoke-pypi": _GITHUB_RELEASE_AND_PYPI_TARGETS,
+    "hcoona-release-smoke-rubygems": {
+        "buddy": frozenset({"github-release/public"}),
         "official": frozenset(
             {"github-release/public", "rubygems/rubygems-org"}
         ),
     },
-    "circular-list": _GITHUB_RELEASE_ONLY_TARGETS,
-    "hcoona-release-smoke": _GITHUB_RELEASE_AND_PYPI_TARGETS,
-    "hexo-renderer-asciidoc": {
-        "buddy": frozenset({"github-release/public"}),
-        "official": frozenset({"github-release/public", "npm/npmjs"}),
-    },
-    "hjg-pngcs": {
-        "buddy": frozenset({"github-release/public", "nuget/github-packages"}),
-        "official": frozenset({"github-release/public"}),
-    },
+    "hexo-renderer-asciidoc": _GITHUB_RELEASE_ONLY_TARGETS,
+    "hjg-pngcs": _GITHUB_RELEASE_ONLY_TARGETS,
     "image-occlusion-editor": _GITHUB_RELEASE_ONLY_TARGETS,
     "markdown-hybrid-search-mcp": _ZERO_TARGETS,
     "memoization": _GITHUB_RELEASE_ONLY_TARGETS,
@@ -202,7 +281,7 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
     "microsoft-extensions-options-dedup-change-extensions": (
         _GITHUB_RELEASE_ONLY_TARGETS
     ),
-    "nbgv-python": _GITHUB_RELEASE_AND_PYPI_TARGETS,
+    "nbgv-python": _GITHUB_RELEASE_ONLY_TARGETS,
     "phi-failure-detector": _GITHUB_RELEASE_ONLY_TARGETS,
     "phi-failure-detector-console": _ZERO_TARGETS,
     "qidian-novel-downloader": _GITHUB_RELEASE_ONLY_TARGETS,
@@ -211,34 +290,17 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
     "webhdfs-extensions-file-providers": _GITHUB_RELEASE_ONLY_TARGETS,
 }
 _FROZEN_TARGET_ARTIFACT_SEMANTICS_BY_PROJECT_ID = {
-    "asciidoctor-latexmath": {
-        "buddy": {
-            "github-release/public": _DEFAULT_RUBYGEMS_PACKAGE,
-            "rubygems/github-packages": _DEFAULT_RUBYGEMS_PACKAGE,
-        },
-        "official": {
-            "github-release/public": _DEFAULT_RUBYGEMS_PACKAGE,
-            "rubygems/rubygems-org": _DEFAULT_RUBYGEMS_PACKAGE,
-        },
-    },
+    "asciidoctor-latexmath": _RUBYGEMS_GITHUB_RELEASE_ARTIFACTS,
     "circular-list": _GITHUB_RELEASE_ARTIFACTS,
-    "hcoona-release-smoke": _PYTHON_ARTIFACTS,
-    "hexo-renderer-asciidoc": {
-        "buddy": {"github-release/public": _DEFAULT_NPM_PACKAGE},
-        "official": {
-            "github-release/public": _DEFAULT_NPM_PACKAGE,
-            "npm/npmjs": _DEFAULT_NPM_PACKAGE,
-        },
-    },
-    "hjg-pngcs": {
-        "buddy": {
-            "github-release/public": _DEFAULT_NUGET_PACKAGE,
-            "nuget/github-packages": (
-                (_D_DEFAULT, ("primary-package", "package", "nuget")),
-            ),
-        },
-        "official": {"github-release/public": _DEFAULT_NUGET_PACKAGE},
-    },
+    "hcoona-release-smoke": _NO_ARTIFACTS,
+    "hcoona-release-smoke-github-packages": _GITHUB_PACKAGES_NUGET_ARTIFACTS,
+    "hcoona-release-smoke-github-release": _GITHUB_RELEASE_ARTIFACTS,
+    "hcoona-release-smoke-npm": _NPMJS_ARTIFACTS,
+    "hcoona-release-smoke-nuget": _NUGET_ORG_ARTIFACTS,
+    "hcoona-release-smoke-pypi": _PYTHON_ARTIFACTS,
+    "hcoona-release-smoke-rubygems": _RUBYGEMS_ORG_ARTIFACTS,
+    "hexo-renderer-asciidoc": _NPM_GITHUB_RELEASE_ARTIFACTS,
+    "hjg-pngcs": _GITHUB_RELEASE_ARTIFACTS,
     "image-occlusion-editor": _INSTALLER_ARTIFACTS,
     "markdown-hybrid-search-mcp": _NO_ARTIFACTS,
     "memoization": _GITHUB_RELEASE_ARTIFACTS,
@@ -248,7 +310,7 @@ _FROZEN_TARGET_ARTIFACT_SEMANTICS_BY_PROJECT_ID = {
     "microsoft-extensions-options-dedup-change-extensions": (
         _GITHUB_RELEASE_ARTIFACTS
     ),
-    "nbgv-python": _PYTHON_ARTIFACTS,
+    "nbgv-python": _PYTHON_GITHUB_RELEASE_ARTIFACTS,
     "phi-failure-detector": _GITHUB_RELEASE_ARTIFACTS,
     "phi-failure-detector-console": _NO_ARTIFACTS,
     "qidian-novel-downloader": _THREE_EXECUTABLE_ARTIFACTS,

@@ -8,6 +8,7 @@ members = [
     "factorio-cycle-calculator",
     "git-commit-heatmap",
     "hcoona-release-smoke",
+    "hcoona-release-smoke-pypi",
     "hcoona-three-monorepo",
     "html-sm-processor",
     "llm-text-splitter",
@@ -1045,6 +1046,10 @@ wheels = [
 [[package]]
 name = "hcoona-release-smoke"
 source = { editable = "src/public/lib/hcoona-release-smoke" }
+
+[[package]]
+name = "hcoona-release-smoke-pypi"
+source = { editable = "src/public/lib/hcoona-release-smoke-pypi" }
 
 [[package]]
 name = "hcoona-three-monorepo"

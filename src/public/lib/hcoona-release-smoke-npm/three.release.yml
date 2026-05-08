@@ -1,0 +1,36 @@
+api-version: three.release/v1alpha1
+kind: project
+
+project:
+  id: hcoona-release-smoke-npm
+  display-name: hcoona-release-smoke-npm
+  ecosystem: node
+  release-kind: lib
+
+source:
+  primary-manifest: package.json
+  auxiliary-inputs:
+    - scripts/build.mjs
+    - scripts/nbgv-version.mjs
+    - src/index.js
+
+variants:
+  - id: package
+    dimensions: {}
+    artifacts:
+      - id: npm-package
+        role: primary-package
+        kind-family: package
+        concrete-kind: npm-package
+
+profiles:
+  buddy:
+    targets:
+      - uses: github-release/public
+        artifacts: [npm-package]
+  official:
+    targets:
+      - uses: github-release/public
+        artifacts: [npm-package]
+      - uses: npm/npmjs
+        artifacts: [npm-package]

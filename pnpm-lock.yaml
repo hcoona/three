@@ -69,6 +69,12 @@ importers:
         specifier: ^7.0.0-dev.20260411.1
         version: 7.0.0-dev.20260411.1
 
+  src/public/lib/hcoona-release-smoke-npm:
+    devDependencies:
+      nerdbank-gitversioning:
+        specifier: ^3.7.91
+        version: 3.9.50
+
   src/public/lib/hexo-renderer-asciidoc:
     dependencies:
       asciidoctor:

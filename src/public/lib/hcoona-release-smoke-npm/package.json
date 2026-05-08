@@ -1,0 +1,36 @@
+{
+  "name": "hcoona-release-smoke-npm",
+  "version": "0.0.0-placeholder",
+  "description": "Smoke-test package for validating the Three monorepo npm release workflow.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ./scripts/nbgv-version.mjs stamp && node ./scripts/build.mjs",
+    "prepack": "node ./scripts/nbgv-version.mjs stamp",
+    "postpack": "node ./scripts/nbgv-version.mjs reset",
+    "version:stamp": "node ./scripts/nbgv-version.mjs stamp",
+    "version:reset": "node ./scripts/nbgv-version.mjs reset"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hcoona/three.git"
+  },
+  "keywords": [
+    "release",
+    "smoke",
+    "workflow",
+    "npm"
+  ],
+  "author": "Shuai Zhang <zhangshuai.ustc@gmail.com>",
+  "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "devDependencies": {
+    "nerdbank-gitversioning": "^3.7.91"
+  }
+}

@@ -340,12 +340,15 @@ def _dotnet_metadata_for_planner_input(
 
 
 def _copy_authoring_repo(destination: Path) -> None:
-    """Copy tracked authoring inputs into an isolated git worktree."""
+    """Copy authoring candidate inputs into an isolated git worktree."""
     assert GIT is not None
     paths = subprocess.run(  # noqa: S603
         [
             GIT,
             "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
             "-z",
             "src/public",
             "src/private/app/qidian-novel-downloader",
@@ -455,7 +458,9 @@ def _mutate_catalog_schema(repo_root: Path) -> None:
 
 def _mutate_missing_catalog_ref(repo_root: Path) -> None:
     """Point a descriptor target to a missing catalog entry."""
-    descriptor = repo_root / "src/public/lib/nbgv-python/three.release.yml"
+    descriptor = (
+        repo_root / "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
+    )
     document = yaml.safe_load(descriptor.read_text(encoding="utf-8"))
     document["profiles"]["official"]["targets"][1]["uses"] = (
         "pypi/does-not-exist"
@@ -468,7 +473,9 @@ def _mutate_missing_catalog_ref(repo_root: Path) -> None:
 
 def _mutate_profile_coexistence_conflict(repo_root: Path) -> None:
     """Make buddy and official resolve to the same package-registry target."""
-    descriptor = repo_root / "src/public/lib/nbgv-python/three.release.yml"
+    descriptor = (
+        repo_root / "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
+    )
     document = yaml.safe_load(descriptor.read_text(encoding="utf-8"))
     document["profiles"]["buddy"]["targets"].append(
         {"uses": "pypi/pypi", "artifacts": ["wheel", "sdist"]}
@@ -880,8 +887,8 @@ def test_unfiltered_first_delivery_plan_includes_confirmed_scope_projects(
             out_dir.mkdir(parents=True, exist_ok=True)
             release_root = str(args[-1])
             package, version = {
-                "src/public/lib/hcoona-release-smoke": (
-                    "hcoona_release_smoke",
+                "src/public/lib/hcoona-release-smoke-pypi": (
+                    "hcoona_release_smoke_pypi",
                     "1.2.3",
                 ),
                 "src/public/lib/nbgv-python": (
@@ -1357,7 +1364,7 @@ def test_official_default_rejects_non_public_release_ref(
                 "ref": "refs/heads/dev/workflow-canary",
                 "ref_name": "dev/workflow-canary",
                 "ref_type": "branch",
-                "requested_project_ids": "hcoona-release-smoke",
+                "requested_project_ids": "hcoona-release-smoke-pypi",
                 "canary_override_non_public_ref": "false",
             },
         )
@@ -1369,7 +1376,7 @@ def test_official_default_rejects_non_public_release_ref(
             "REQ_UNTRUSTED_WORKFLOW_REF"
         ]
         diagnostic = diagnostics["diagnostics"][0]
-        assert diagnostic["project-id"] == "hcoona-release-smoke"
+        assert diagnostic["project-id"] == "hcoona-release-smoke-pypi"
         assert diagnostic["details"]["canary-override-non-public-ref"] is False
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
@@ -1387,7 +1394,7 @@ def test_official_canary_override_allows_allowlisted_project(
                 "ref": "refs/heads/dev/workflow-canary",
                 "ref_name": "dev/workflow-canary",
                 "ref_type": "branch",
-                "requested_project_ids": "hcoona-release-smoke",
+                "requested_project_ids": "hcoona-release-smoke-pypi",
                 "canary_override_non_public_ref": "true",
             },
         )
@@ -1395,7 +1402,9 @@ def test_official_canary_override_allows_allowlisted_project(
         assert result == 0
         assert diagnostics is None
         assert metadata is not None
-        assert metadata["requested-project-ids"] == ["hcoona-release-smoke"]
+        assert metadata["requested-project-ids"] == [
+            "hcoona-release-smoke-pypi"
+        ]
         assert metadata["canary-override-non-public-ref"] is True
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
@@ -1427,7 +1436,12 @@ def test_official_canary_override_rejects_non_allowlisted_project(
         diagnostic = diagnostics["diagnostics"][0]
         assert diagnostic["details"]["canary-override-non-public-ref"] is True
         assert diagnostic["details"]["allowed-project-ids"] == [
-            "hcoona-release-smoke"
+            "hcoona-release-smoke-github-packages",
+            "hcoona-release-smoke-github-release",
+            "hcoona-release-smoke-npm",
+            "hcoona-release-smoke-nuget",
+            "hcoona-release-smoke-pypi",
+            "hcoona-release-smoke-rubygems",
         ]
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
@@ -1445,7 +1459,7 @@ def test_buddy_entry_is_not_restricted_by_public_release_ref(
                 "ref": "refs/heads/dev/workflow-canary",
                 "ref_name": "dev/workflow-canary",
                 "ref_type": "branch",
-                "requested_project_ids": "hcoona-release-smoke",
+                "requested_project_ids": "hcoona-release-smoke-pypi",
                 "canary_override_non_public_ref": "false",
             },
         )
@@ -3789,7 +3803,7 @@ def test_official_canary_override_is_visible_and_environment_gated() -> None:
     dispatch = workflow[True]["workflow_dispatch"]["inputs"]
     override = dispatch["canary-override-non-public-ref"]
     assert override["default"] is False
-    assert "hcoona-release-smoke" in override["description"]
+    assert "hcoona-release-smoke-*" in override["description"]
     assert "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" in report_block
     assert (
         "--canary-override-non-public-ref "

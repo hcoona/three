@@ -1,14 +1,12 @@
 # hcoona-release-smoke
 
-`hcoona-release-smoke` is a tiny public package used to validate the Three
-monorepo's Python release workflow.
+`hcoona-release-smoke` is the legacy generic smoke package that previously validated early PyPI and GitHub Release canaries.
 
-It exists so the repository has one intentionally minimal Python package that
-can exercise:
+Do not use this generic project as a future live-acceptance target. Use the dedicated ecosystem smoke projects instead:
 
-- build-system-integrated NBGV versioning through `nbgv-python`;
-- pure-Python wheel and source distribution publication;
-- end-to-end workflow-release smoke checks for PyPI-oriented paths.
-
-This package is intentionally small and stable. It is not positioned as a
-general-purpose end-user library.
+- `hcoona-release-smoke-github-release`
+- `hcoona-release-smoke-nuget`
+- `hcoona-release-smoke-npm`
+- `hcoona-release-smoke-pypi`
+- `hcoona-release-smoke-rubygems`
+- `hcoona-release-smoke-github-packages`

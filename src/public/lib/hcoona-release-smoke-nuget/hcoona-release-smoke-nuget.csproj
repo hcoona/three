@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>Hcoona.ReleaseSmoke.Nuget</PackageId>
+    <PackageDescription>Minimal smoke package for validating the Three nuget release workflow path.</PackageDescription>
+    <PackageTags>release smoke workflow nuget</PackageTags>
+    <NoWarn>$(NoWarn);SA1633</NoWarn>
+  </PropertyGroup>
+</Project>

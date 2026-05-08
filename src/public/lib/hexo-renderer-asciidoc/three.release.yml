@@ -36,5 +36,3 @@ profiles:
     targets:
       - uses: github-release/public
         artifacts: [npm-package]
-      - uses: npm/npmjs
-        artifacts: [npm-package]

@@ -20,7 +20,7 @@ on:
         type: boolean
         default: false
       canary-override-non-public-ref:
-        description: Break-glass canary override for hcoona-release-smoke official live validation from a non-public ref.
+        description: Break-glass canary override for dedicated hcoona-release-smoke-* official live validation from a non-public ref.
         required: true
         type: boolean
         default: false

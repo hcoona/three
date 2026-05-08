@@ -26,11 +26,7 @@ profiles:
     targets:
       - uses: github-release/public
         artifacts: [gem]
-      - uses: rubygems/github-packages
-        artifacts: [gem]
   official:
     targets:
       - uses: github-release/public
-        artifacts: [gem]
-      - uses: rubygems/rubygems-org
         artifacts: [gem]

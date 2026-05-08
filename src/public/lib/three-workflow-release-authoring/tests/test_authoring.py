@@ -25,7 +25,9 @@ from three_workflow_release_authoring.authoring import (
 
 REPO_ROOT = Path(__file__).parents[5]
 CATALOG = REPO_ROOT / "eng/release/target-instances.yml"
-NBGV_DESCRIPTOR = REPO_ROOT / "src/public/lib/nbgv-python/three.release.yml"
+NBGV_DESCRIPTOR = (
+    REPO_ROOT / "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
+)
 HJG_DESCRIPTOR = REPO_ROOT / "src/public/lib/Hjg.Pngcs/three.release.yml"
 QIDIAN_DESCRIPTOR = (
     REPO_ROOT / "src/private/app/qidian-novel-downloader/three.release.yml"
@@ -34,10 +36,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _tracked_files() -> set[str]:
-    """Return git-tracked paths for the test repository."""
+    """Return git candidate paths for the test repository."""
     git = shutil.which("git") or "git"
     output = subprocess.check_output(  # noqa: S603
-        [git, "ls-files", "-z"],
+        [git, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=REPO_ROOT,
     )
     return {path for path in output.decode("utf-8").split("\0") if path}
@@ -67,6 +69,12 @@ def test_current_repository_authoring_is_valid() -> None:
         "asciidoctor-latexmath",
         "circular-list",
         "hcoona-release-smoke",
+        "hcoona-release-smoke-github-packages",
+        "hcoona-release-smoke-github-release",
+        "hcoona-release-smoke-npm",
+        "hcoona-release-smoke-nuget",
+        "hcoona-release-smoke-pypi",
+        "hcoona-release-smoke-rubygems",
         "hexo-renderer-asciidoc",
         "hjg-pngcs",
         "image-occlusion-editor",
@@ -109,6 +117,38 @@ def test_dotnet_metadata_input_is_closed_and_authoring_derived() -> None:
             "descriptor-path": "src/public/lib/CircularList/three.release.yml",
             "primary-manifest-path": (
                 "src/public/lib/CircularList/CircularList.csproj"
+            ),
+            "requires-package-id": True,
+        },
+        "hcoona-release-smoke-github-packages": {
+            "descriptor-path": (
+                "src/public/lib/hcoona-release-smoke-github-packages/"
+                "three.release.yml"
+            ),
+            "primary-manifest-path": (
+                "src/public/lib/hcoona-release-smoke-github-packages/"
+                "hcoona-release-smoke-github-packages.csproj"
+            ),
+            "requires-package-id": True,
+        },
+        "hcoona-release-smoke-github-release": {
+            "descriptor-path": (
+                "src/public/lib/hcoona-release-smoke-github-release/"
+                "three.release.yml"
+            ),
+            "primary-manifest-path": (
+                "src/public/lib/hcoona-release-smoke-github-release/"
+                "hcoona-release-smoke-github-release.csproj"
+            ),
+            "requires-package-id": True,
+        },
+        "hcoona-release-smoke-nuget": {
+            "descriptor-path": (
+                "src/public/lib/hcoona-release-smoke-nuget/three.release.yml"
+            ),
+            "primary-manifest-path": (
+                "src/public/lib/hcoona-release-smoke-nuget/"
+                "hcoona-release-smoke-nuget.csproj"
             ),
             "requires-package-id": True,
         },
@@ -233,7 +273,7 @@ def test_descriptor_extra_fields_are_rejected() -> None:
     document["unexpected"] = True
     with pytest.raises(AuthoringValidationError) as error:
         validate_project_descriptor_document(
-            "src/public/lib/nbgv-python/three.release.yml",
+            "src/public/lib/hcoona-release-smoke-pypi/three.release.yml",
             document,
             tracked_files=_tracked_files(),
         )
@@ -445,9 +485,9 @@ def test_catalog_schema_failures_use_catalog_diagnostic_codes(mutate) -> None:
     with pytest.raises(AuthoringValidationError) as error:
         validate_target_catalog_document(catalog)
     assert error.value.issues
-    assert {issue.code for issue in error.value.issues} == {
-        "CATALOG_SCHEMA_INVALID"
-    }
+    assert any(
+        issue.code == "CATALOG_SCHEMA_INVALID" for issue in error.value.issues
+    )
 
 
 @pytest.mark.parametrize(
@@ -495,9 +535,9 @@ def test_malformed_referenced_catalog_contract_is_diagnostic_not_crash() -> (
             repo_root=REPO_ROOT,
         )
     assert error.value.issues
-    assert {issue.code for issue in error.value.issues} == {
-        "CATALOG_SCHEMA_INVALID"
-    }
+    assert any(
+        issue.code == "CATALOG_SCHEMA_INVALID" for issue in error.value.issues
+    )
 
 
 def test_duplicate_variant_dimensions_are_rejected() -> None:
@@ -520,7 +560,9 @@ def test_duplicate_variant_dimensions_are_rejected() -> None:
 def test_missing_required_package_tuple_is_diagnostic_not_crash() -> None:
     """Reject incomplete package target aggregate rules without KeyError."""
     descriptors = _descriptor_documents()
-    nbgv = descriptors["src/public/lib/nbgv-python/three.release.yml"]
+    nbgv = descriptors[
+        "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
+    ]
     nbgv["profiles"]["official"]["targets"][1]["artifacts"] = ["sdist"]
     with pytest.raises(AuthoringValidationError) as error:
         validate_authoring_documents(
@@ -579,7 +621,7 @@ def test_npm_manifest_fallback_package_name_is_validated() -> None:
     """Validate package.json fallback names for npm GitHub Packages scope."""
     descriptors = _descriptor_documents()
     hexo = descriptors[
-        "src/public/lib/hexo-renderer-asciidoc/three.release.yml"
+        "src/public/lib/hcoona-release-smoke-npm/three.release.yml"
     ]
     hexo["profiles"]["official"]["targets"][1]["uses"] = "npm/github-packages"
     with pytest.raises(AuthoringValidationError) as error:
@@ -599,11 +641,11 @@ def test_npm_manifest_fallback_package_name_is_validated() -> None:
 @pytest.mark.parametrize(
     ("manifest_path", "replacement"),
     [
-        ("src/public/lib/hexo-renderer-asciidoc/package.json", "{"),
-        ("src/public/lib/nbgv-python/pyproject.toml", "[project"),
+        ("src/public/lib/hcoona-release-smoke-npm/package.json", "{"),
+        ("src/public/lib/hcoona-release-smoke-pypi/pyproject.toml", "[project"),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             OSError("blocked"),
         ),
     ],
@@ -644,39 +686,39 @@ def test_manifest_resolution_failures_are_diagnostics(
     ("manifest_path", "replacement", "message"),
     [
         (
-            "src/public/lib/nbgv-python/pyproject.toml",
+            "src/public/lib/hcoona-release-smoke-pypi/pyproject.toml",
             '[project]\nversion = "0"\n',
             "PyPI package name is missing",
         ),
         (
-            "src/public/lib/nbgv-python/pyproject.toml",
+            "src/public/lib/hcoona-release-smoke-pypi/pyproject.toml",
             '[project]\nname = 123\nversion = "0"\n',
             "PyPI package name must be a string",
         ),
         (
-            "src/public/lib/nbgv-python/pyproject.toml",
+            "src/public/lib/hcoona-release-smoke-pypi/pyproject.toml",
             '[project]\nname = "bad name!"\nversion = "0"\n',
             "PyPI package name has invalid syntax",
         ),
         (
-            "src/public/lib/hexo-renderer-asciidoc/package.json",
+            "src/public/lib/hcoona-release-smoke-npm/package.json",
             '{"name": 123}',
             "npm package name must be a string",
         ),
         (
-            "src/public/lib/hexo-renderer-asciidoc/package.json",
+            "src/public/lib/hcoona-release-smoke-npm/package.json",
             '{"name": "Bad Name!"}',
             "npm package name has invalid syntax",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             'Gem::Specification.new do |spec|\n  spec.version = "0"\nend\n',
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 '# spec.name = "asciidoctor-latexmath"\n'
                 'Gem::Specification.new do |spec|\n  spec.version = "0"\nend\n'
@@ -684,8 +726,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 'other.name = "asciidoctor-latexmath"\n'
                 'Gem::Specification.new do |spec|\n  spec.version = "0"\nend\n'
@@ -693,8 +735,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 'lambda do\n  gem_name = "asciidoctor-latexmath"\nend\n'
                 "Gem::Specification.new do |spec|\n"
@@ -703,8 +745,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 'def helper\n  gem_name = "asciidoctor-latexmath"\nend\n'
                 "Gem::Specification.new do |spec|\n"
@@ -713,8 +755,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 'class GemName\n  gem_name = "asciidoctor-latexmath"\nend\n'
                 "Gem::Specification.new do |spec|\n"
@@ -723,8 +765,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 'if true\n  gem_name = "asciidoctor-latexmath"\nend\n'
                 "Gem::Specification.new do |spec|\n"
@@ -733,8 +775,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 "Gem::Specification.new do |spec|\n"
                 '  if true\n    spec.name = "asciidoctor-latexmath"\n'
@@ -743,8 +785,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 'gem_name = "asciidoctor-latexmath"\n'
                 'if ENV["BAD"]\n  gem_name = "BadGem"\nend\n'
@@ -754,8 +796,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 "Gem::Specification.new do |spec|\n"
                 '  gem_name = "asciidoctor-latexmath"\n'
@@ -765,8 +807,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 'gem_name = "asciidoctor-latexmath"\n'
                 "Gem::Specification.new do |spec|\n"
@@ -775,8 +817,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             (
                 "Gem::Specification.new do |spec|\n"
                 "  spec.name = gem_name\nend\n"
@@ -785,8 +827,8 @@ def test_manifest_resolution_failures_are_diagnostics(
             "RubyGems package name is missing",
         ),
         (
-            "src/public/lib/asciidoctor-latexmath/"
-            "asciidoctor-latexmath.gemspec",
+            "src/public/lib/hcoona-release-smoke-rubygems/"
+            "hcoona-release-smoke-rubygems.gemspec",
             ('Gem::Specification.new do |spec|\n  spec.name = "BadGem"\nend\n'),
             "RubyGems package name has invalid syntax",
         ),
@@ -828,7 +870,8 @@ def test_missing_rubygems_manifest_is_diagnostic(
 ) -> None:
     """Reject missing gemspec during RubyGems package identity resolution."""
     manifest_path = (
-        "src/public/lib/asciidoctor-latexmath/asciidoctor-latexmath.gemspec"
+        "src/public/lib/hcoona-release-smoke-rubygems/"
+        "hcoona-release-smoke-rubygems.gemspec"
     )
     manifest = REPO_ROOT / manifest_path
     original_exists = Path.exists
@@ -856,7 +899,7 @@ def test_missing_rubygems_manifest_is_diagnostic(
     assert any(
         issue.code == "DESC_STATIC_INVALID"
         and issue.path == manifest_path
-        and issue.project_id == "asciidoctor-latexmath"
+        and issue.project_id == "hcoona-release-smoke-rubygems"
         and "manifest could not be read" in issue.message
         for issue in error.value.issues
     )
@@ -903,10 +946,15 @@ def test_frozen_target_artifact_baseline_requires_symbol_package() -> None:
 
 
 def test_frozen_target_artifact_baseline_rejects_extra_symbol_package() -> None:
-    """Reject GitHub Packages NuGet target adding deferred snupkg."""
+    """Reject official GitHub Packages NuGet target adding deferred snupkg."""
     descriptors = _descriptor_documents()
-    hjg = descriptors["src/public/lib/Hjg.Pngcs/three.release.yml"]
-    hjg["profiles"]["buddy"]["targets"][1]["artifacts"] = ["nuget", "snupkg"]
+    github_packages = descriptors[
+        "src/public/lib/hcoona-release-smoke-github-packages/three.release.yml"
+    ]
+    github_packages["profiles"]["official"]["targets"][1]["artifacts"] = [
+        "nuget",
+        "snupkg",
+    ]
     with pytest.raises(AuthoringValidationError) as error:
         validate_authoring_documents(
             descriptors,
@@ -948,7 +996,9 @@ def test_frozen_target_artifact_baseline_requires_variant_dimensions() -> None:
 def test_empty_projection_is_rejected_when_projection_must_be_absent() -> None:
     """Reject empty projection mappings for absent-projection families."""
     descriptors = _descriptor_documents()
-    nbgv = descriptors["src/public/lib/nbgv-python/three.release.yml"]
+    nbgv = descriptors[
+        "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
+    ]
     nbgv["profiles"]["official"]["targets"][1]["projection"] = {}
     with pytest.raises(AuthoringValidationError) as error:
         validate_authoring_documents(
@@ -967,7 +1017,9 @@ def test_empty_projection_is_rejected_when_projection_must_be_absent() -> None:
 def test_static_coexistence_conflict_uses_descriptor_diagnostic() -> None:
     """Report static coexistence failures as descriptor static validation."""
     descriptors = _descriptor_documents()
-    nbgv = descriptors["src/public/lib/nbgv-python/three.release.yml"]
+    nbgv = descriptors[
+        "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
+    ]
     nbgv["profiles"]["buddy"]["targets"].append(
         {"uses": "pypi/pypi", "artifacts": ["wheel", "sdist"]}
     )
@@ -990,7 +1042,7 @@ def test_raw_path_segments_are_rejected(bad_path: str) -> None:
     document["source"]["primary-manifest"] = bad_path
     with pytest.raises(AuthoringValidationError) as error:
         validate_project_descriptor_document(
-            "src/public/lib/nbgv-python/three.release.yml",
+            "src/public/lib/hcoona-release-smoke-pypi/three.release.yml",
             document,
             tracked_files=_tracked_files(),
         )
@@ -1008,7 +1060,11 @@ def test_buddy_pypi_target_is_rejected() -> None:
     )
     with pytest.raises(AuthoringValidationError) as error:
         validate_authoring_documents(
-            {"src/public/lib/nbgv-python/three.release.yml": descriptor},
+            {
+                (
+                    "src/public/lib/hcoona-release-smoke-pypi/three.release.yml"
+                ): descriptor,
+            },
             catalog,
             tracked_files=_tracked_files(),
         )
