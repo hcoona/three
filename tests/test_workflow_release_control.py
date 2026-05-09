@@ -2851,6 +2851,354 @@ def test_github_packages_nuget_invisible_package_fails_closed(
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
+def test_github_packages_nuget_canary_first_publish_404_is_absent(
+    monkeypatch,
+    capsys,
+) -> None:
+    """Official smoke bootstrap can treat package 404 as absent."""
+    plan = _github_packages_nuget_observation_plan()
+    plan["envelope"]["profile"] = "official"
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["project-id"] = "hcoona-release-smoke-github-packages"
+    node["resolved-publish-identity"]["package-name"] = (
+        "Hcoona.ReleaseSmoke.GithubPackages"
+    )
+    execution_sets = {
+        "dry-run": True,
+        "active-publish-node-ids": [],
+        "publish-intent-node-ids": ["publish-node/nuget"],
+    }
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fake_gh_api(*args, **_kwargs):
+        endpoint = args[1]
+        if endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        if (
+            endpoint
+            == "orgs/hcoona/packages/nuget/Hcoona.ReleaseSmoke.GithubPackages"
+        ):
+            message = f"gh api failed for {endpoint}: HTTP 404"
+            raise RuntimeError(message)
+        raise AssertionError(endpoint)
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    canary_override_non_public_ref="true",
+                    release_environment="release",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        assert json.loads(out.read_text(encoding="utf-8")) == {
+            "publish-node/nuget": "absent"
+        }
+        assert not diagnostics.exists()
+        assert (
+            "GitHub Packages 404 treated as absent under canary "
+            "first-publish override"
+        ) in capsys.readouterr().err
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_github_packages_nuget_canary_first_publish_active_publish_fails_closed(
+    monkeypatch,
+) -> None:
+    """The 404 exception is limited to bootstrap dry-run observation."""
+    plan = _github_packages_nuget_observation_plan()
+    plan["envelope"]["profile"] = "official"
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["project-id"] = "hcoona-release-smoke-github-packages"
+    node["resolved-publish-identity"]["package-name"] = (
+        "Hcoona.ReleaseSmoke.GithubPackages"
+    )
+    execution_sets = {
+        "dry-run": False,
+        "active-publish-node-ids": ["publish-node/nuget"],
+        "publish-intent-node-ids": ["publish-node/nuget"],
+    }
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fake_gh_api(*args, **_kwargs):
+        endpoint = args[1]
+        if endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        if (
+            endpoint
+            == "orgs/hcoona/packages/nuget/Hcoona.ReleaseSmoke.GithubPackages"
+        ):
+            message = f"gh api failed for {endpoint}: HTTP 404"
+            raise RuntimeError(message)
+        raise AssertionError(endpoint)
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    canary_override_non_public_ref="true",
+                    release_environment="release",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+        error = document["diagnostics"][0]["details"]["error"]
+        assert "Hcoona.ReleaseSmoke.GithubPackages" in error
+        assert "absence cannot be proven" in error
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_github_packages_nuget_canary_first_publish_other_package_fails_closed(
+    monkeypatch,
+) -> None:
+    """The canary 404 exception is scoped to the dedicated package identity."""
+    plan = _github_packages_nuget_observation_plan()
+    plan["envelope"]["profile"] = "official"
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["project-id"] = "hcoona-release-smoke-github-packages"
+    node["resolved-publish-identity"]["package-name"] = "Different.Package"
+    execution_sets = {
+        "dry-run": True,
+        "active-publish-node-ids": [],
+        "publish-intent-node-ids": ["publish-node/nuget"],
+    }
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fake_gh_api(*args, **_kwargs):
+        endpoint = args[1]
+        if endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        if endpoint == "orgs/hcoona/packages/nuget/Different.Package":
+            message = f"gh api failed for {endpoint}: HTTP 404"
+            raise RuntimeError(message)
+        raise AssertionError(endpoint)
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    canary_override_non_public_ref="true",
+                    release_environment="release",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+        error = document["diagnostics"][0]["details"]["error"]
+        assert "Different.Package" in error
+        assert "absence cannot be proven" in error
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("profile", "canary_override", "release_environment", "dry_run"),
+    [
+        ("official", "false", "release", False),
+        ("official", "false", "release", True),
+        ("preview", "true", "release", False),
+        ("official", "true", "", False),
+        ("official", "true", "", True),
+    ],
+)
+def test_github_packages_nuget_canary_first_publish_requires_all_guardrails(
+    monkeypatch,
+    profile,
+    canary_override,
+    release_environment,
+    dry_run,
+) -> None:
+    """The package allowlist alone cannot downgrade package 404 to absent."""
+    plan = _github_packages_nuget_observation_plan()
+    plan["envelope"]["profile"] = profile
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["project-id"] = "hcoona-release-smoke-github-packages"
+    node["resolved-publish-identity"]["package-name"] = (
+        "hcoona.releasesmoke.githubpackages"
+    )
+    execution_sets = {
+        "dry-run": dry_run,
+        "active-publish-node-ids": [] if dry_run else ["publish-node/nuget"],
+        "publish-intent-node-ids": ["publish-node/nuget"],
+    }
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fake_gh_api(*args, **_kwargs):
+        endpoint = args[1]
+        if endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        if (
+            endpoint
+            == "orgs/hcoona/packages/nuget/hcoona.releasesmoke.githubpackages"
+        ):
+            message = f"gh api failed for {endpoint}: HTTP 404"
+            raise RuntimeError(message)
+        raise AssertionError(endpoint)
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    canary_override_non_public_ref=canary_override,
+                    release_environment=release_environment,
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+        assert (
+            "absence cannot be proven"
+            in document["diagnostics"][0]["details"]["error"]
+        )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_github_packages_nuget_canary_override_keeps_auth_errors_fail_closed(
+    monkeypatch,
+    status,
+) -> None:
+    """The canary first-publish exception never downgrades auth failures."""
+    plan = _github_packages_nuget_observation_plan()
+    plan["envelope"]["profile"] = "official"
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["project-id"] = "hcoona-release-smoke-github-packages"
+    node["resolved-publish-identity"]["package-name"] = (
+        "Hcoona.ReleaseSmoke.GithubPackages"
+    )
+    execution_sets = {
+        "dry-run": False,
+        "active-publish-node-ids": ["publish-node/nuget"],
+        "publish-intent-node-ids": ["publish-node/nuget"],
+    }
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fail_gh_api(*args, **_kwargs):
+        endpoint = args[1]
+        if endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        message = f"gh api failed for {endpoint}: HTTP {status}"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(control, "_gh_api", fail_gh_api)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    canary_override_non_public_ref="true",
+                    release_environment="release",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 1
+        )
+
+        assert not out.exists()
+        document = json.loads(diagnostics.read_text(encoding="utf-8"))
+        assert [item["code"] for item in document["diagnostics"]] == [
+            "REMOTE_CLASSIFICATION_FAILED"
+        ]
+        assert (
+            f"HTTP {status}" in document["diagnostics"][0]["details"]["error"]
+        )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
 def test_github_packages_nuget_api_failure_observation_fails_closed(
     monkeypatch,
 ) -> None:
@@ -4389,6 +4737,12 @@ def test_official_canary_override_is_visible_and_environment_gated() -> None:
         workflow["jobs"]["orchestrate"]["with"]["release-environment"]
         == "${{ inputs.dry-run == false && 'release' || '' }}"
     )
+    assert workflow["jobs"]["orchestrate"]["with"][
+        "canary-override-non-public-ref"
+    ] == (
+        "${{ needs.authorize-entry.outputs."
+        "canary-override-non-public-ref == 'true' }}"
+    )
 
 
 def test_release_shell_steps_use_env_for_workflow_inputs_and_vars() -> None:
@@ -4498,6 +4852,11 @@ def test_live_planner_observes_remote_publications_before_final_plan() -> None:
         "ENABLED_EXTERNAL_OIDC_TARGETS: "
         "${{ inputs.enabled-external-oidc-targets }}" in run_block
     )
+    assert (
+        "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF: "
+        "${{ inputs.canary-override-non-public-ref }}" in run_block
+    )
+    assert "RELEASE_ENVIRONMENT: ${{ inputs.release-environment }}" in run_block
     plan_job_start = workflow.index("  plan:\n")
     plan_steps_start = workflow.index("    steps:\n", plan_job_start)
     plan_header = workflow[plan_job_start:plan_steps_start]
@@ -4513,6 +4872,11 @@ def test_live_planner_observes_remote_publications_before_final_plan() -> None:
         '--enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS"'
         in run_block
     )
+    assert (
+        "--canary-override-non-public-ref "
+        '"$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF"' in run_block
+    )
+    assert '--release-environment "$RELEASE_ENVIRONMENT"' in run_block
     assert ".three-workflow-release/plan/remote-observations.json" in run_block
     assert (
         "--remote-observations "

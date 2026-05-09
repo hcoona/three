@@ -113,6 +113,7 @@ jobs:
       validation-build: ${{ needs.authorize-entry.outputs.validation-build == 'true' }}
       force: false
       release-environment: ${{ inputs.dry-run == false && 'release' || '' }}
+      canary-override-non-public-ref: ${{ needs.authorize-entry.outputs.canary-override-non-public-ref == 'true' }}
       enabled-external-oidc-targets: ${{ vars.THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS }}
 
   publish-entry:

@@ -25,6 +25,10 @@ on:
         required: false
         type: string
         default: ''
+      canary-override-non-public-ref:
+        required: false
+        type: boolean
+        default: false
       enabled-external-oidc-targets:
         required: false
         type: string
@@ -247,7 +251,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ENABLED_EXTERNAL_OIDC_TARGETS: ${{ inputs.enabled-external-oidc-targets }}
+          RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF: ${{ inputs.canary-override-non-public-ref }}
           RELEASE_DRY_RUN: ${{ inputs.dry-run }}
+          RELEASE_ENVIRONMENT: ${{ inputs.release-environment }}
           RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
         run: |
           dotnet tool restore
@@ -276,6 +282,8 @@ jobs:
               --plan .three-workflow-release/plan/bootstrap-release-plan.json \
               --execution-sets .three-workflow-release/plan/bootstrap-execution-sets.json \
               --enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS" \
+              --canary-override-non-public-ref "$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" \
+              --release-environment "$RELEASE_ENVIRONMENT" \
               --repository '${{ github.repository }}' \
               --out .three-workflow-release/plan/remote-observations.json \
               --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json

@@ -72,6 +72,14 @@ _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset(
         "hcoona-release-smoke-rubygems",
     }
 )
+_GITHUB_PACKAGES_NUGET_FIRST_PUBLISH_CANARY_PROJECTS = frozenset(
+    {"hcoona-release-smoke-github-packages"}
+)
+_GITHUB_PACKAGES_NUGET_FIRST_PUBLISH_CANARY_PACKAGES = {
+    "hcoona-release-smoke-github-packages": frozenset(
+        {"hcoona.releasesmoke.githubpackages"}
+    )
+}
 
 
 def main() -> int:
@@ -305,6 +313,8 @@ def _add_observe_remote_publications(
     parser.add_argument("--plan", required=True)
     parser.add_argument("--execution-sets")
     parser.add_argument("--enabled-external-oidc-targets", default="")
+    parser.add_argument("--canary-override-non-public-ref", default="false")
+    parser.add_argument("--release-environment", default="")
     parser.add_argument("--repository", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--diagnostics-out", required=True)
@@ -896,6 +906,13 @@ def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
                 snapshot,
                 execution_sets,
                 enabled,
+                canary_override=_parse_bool(
+                    getattr(args, "canary_override_non_public_ref", "false")
+                ),
+                release_environment=str(
+                    getattr(args, "release_environment", "") or ""
+                ),
+                profile=str(plan["envelope"].get("profile", "")),
             )
         except (RuntimeError, TypeError, ValueError) as exc:
             diagnostics.append(
@@ -929,6 +946,10 @@ def _maybe_observe_remote_publication(
     snapshot: Mapping[str, Any],
     execution_sets: Mapping[str, Any] | None,
     enabled: set[str],
+    *,
+    canary_override: bool = False,
+    release_environment: str = "",
+    profile: str = "",
 ) -> str | None:
     if snapshot["family"] == "github-release":
         return _observe_github_release_publication(repository, commit_sha, node)
@@ -938,7 +959,17 @@ def _maybe_observe_remote_publication(
         node_id, execution_sets
     ):
         return _observe_github_packages_nuget_publication(
-            repository, node, snapshot
+            repository,
+            node,
+            snapshot,
+            canary_first_publish_override=_github_packages_nuget_first_publish_override_allowed(
+                node_id,
+                node,
+                execution_sets,
+                canary_override=canary_override,
+                release_environment=release_environment,
+                profile=profile,
+            ),
         )
     if _supports_public_registry_remote_observation(
         snapshot
@@ -2240,14 +2271,26 @@ def _observe_nuget_publication(node: Json) -> str:
 
 
 def _observe_github_packages_nuget_publication(
-    repository: str, node: Json, snapshot: Mapping[str, Any]
+    repository: str,
+    node: Json,
+    snapshot: Mapping[str, Any],
+    *,
+    canary_first_publish_override: bool = False,
 ) -> str:
     package_name, version = _package_publish_identity(
         node, "GitHub Packages NuGet"
     )
     planned_version = _nuget_version_key(version)
     owner = _github_packages_owner(repository, snapshot)
-    package = _github_packages_nuget_package(repository, owner, package_name)
+    package = _github_packages_nuget_package(
+        repository,
+        owner,
+        package_name,
+        canary_first_publish_override=canary_first_publish_override,
+        project_id=str(node.get("project-id", "")),
+    )
+    if package is None:
+        return "absent"
     remote_package_name = str(package["name"])
     versions = _github_packages_nuget_versions(
         repository, owner, remote_package_name
@@ -2401,8 +2444,13 @@ def _github_packages_owner_endpoint_prefix(repository: str, owner: str) -> str:
 
 
 def _github_packages_nuget_package(
-    repository: str, owner: str, package_name: str
-) -> Mapping[str, Any]:
+    repository: str,
+    owner: str,
+    package_name: str,
+    *,
+    canary_first_publish_override: bool = False,
+    project_id: str = "",
+) -> Mapping[str, Any] | None:
     prefix = _github_packages_owner_endpoint_prefix(repository, owner)
     endpoint = (
         f"{prefix}/packages/nuget/{urllib.parse.quote(package_name, safe='')}"
@@ -2411,12 +2459,22 @@ def _github_packages_nuget_package(
         payload = _gh_api(repository, endpoint)
     except RuntimeError as exc:
         if _is_github_not_found_error(exc):
+            if canary_first_publish_override:
+                sys.stderr.write(
+                    "GitHub Packages 404 treated as absent under canary "
+                    "first-publish override: "
+                    f"project-id={project_id!r}, package-name={package_name!r}, "
+                    f"owner={owner!r}\n"
+                )
+                return None
             msg = (
                 f"GitHub Packages NuGet package {package_name!r} for owner "
                 f"{owner!r} is not visible to the current GitHub API token; "
                 "absence cannot be proven from a 404/listing miss. Grant the "
                 "workflow repository Actions/read access to the package, or "
-                "use a token/API path with authoritative package read access."
+                "use a token/API path with authoritative package read access. "
+                "Only the dedicated official smoke/canary first-publish path "
+                "may treat this 404 as absent."
             )
             raise RuntimeError(msg) from exc
         raise
@@ -2434,6 +2492,57 @@ def _github_packages_nuget_package(
         )
         raise TypeError(msg)
     return payload
+
+
+def _github_packages_nuget_first_publish_override_allowed(
+    node_id: str,
+    node: Mapping[str, Any],
+    execution_sets: Mapping[str, Any] | None,
+    *,
+    canary_override: bool,
+    release_environment: str,
+    profile: str,
+) -> bool:
+    """Constrain GitHub Packages 404-as-absent to the official canary path."""
+    project_id = node.get("project-id")
+    package_name = _github_packages_nuget_first_publish_package_name(node)
+    allowed_packages = (
+        _GITHUB_PACKAGES_NUGET_FIRST_PUBLISH_CANARY_PACKAGES.get(project_id)
+        if isinstance(project_id, str)
+        else None
+    )
+    publish_intent_node_ids: Sequence[Any] = ()
+    if execution_sets is not None:
+        candidate_node_ids = execution_sets.get("publish-intent-node-ids", [])
+        if not isinstance(candidate_node_ids, str) and isinstance(
+            candidate_node_ids, Sequence
+        ):
+            publish_intent_node_ids = candidate_node_ids
+    return (
+        canary_override
+        and profile == "official"
+        and isinstance(project_id, str)
+        and project_id in _GITHUB_PACKAGES_NUGET_FIRST_PUBLISH_CANARY_PROJECTS
+        and package_name is not None
+        and allowed_packages is not None
+        and package_name.casefold() in allowed_packages
+        and execution_sets is not None
+        and execution_sets.get("dry-run") is True
+        and node_id in publish_intent_node_ids
+        and release_environment == "release"
+    )
+
+
+def _github_packages_nuget_first_publish_package_name(
+    node: Mapping[str, Any],
+) -> str | None:
+    identity = node.get("resolved-publish-identity")
+    if not isinstance(identity, Mapping):
+        return None
+    package_name = identity.get("package-name")
+    if not isinstance(package_name, str) or not package_name:
+        return None
+    return package_name
 
 
 def _github_packages_nuget_versions(
@@ -2653,13 +2762,21 @@ def _requires_live_github_token_remote_observation(
 ) -> bool:
     if execution_sets is None:
         return True
+    return node_id in _remote_observation_publish_candidate_ids(execution_sets)
+
+
+def _remote_observation_publish_candidate_ids(
+    execution_sets: Mapping[str, Any],
+) -> Sequence[Any]:
     candidates_key = (
         "publish-intent-node-ids"
         if execution_sets.get("dry-run")
         else "active-publish-node-ids"
     )
     candidates = execution_sets.get(candidates_key, [])
-    return node_id in candidates
+    if isinstance(candidates, str):
+        return []
+    return candidates if isinstance(candidates, Sequence) else []
 
 
 def _pep503_name(name: str) -> str:
