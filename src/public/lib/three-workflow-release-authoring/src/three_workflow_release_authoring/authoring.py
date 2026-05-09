@@ -198,7 +198,12 @@ _RUBYGEMS_GITHUB_RELEASE_ARTIFACTS = {
     "official": {"github-release/public": _DEFAULT_RUBYGEMS_PACKAGE},
 }
 _NUGET_ORG_ARTIFACTS = {
-    "buddy": {"github-release/public": _DEFAULT_NUGET_PACKAGE},
+    "buddy": {
+        "github-release/public": _DEFAULT_NUGET_PACKAGE,
+        "nuget/github-packages": (
+            (_D_DEFAULT, ("primary-package", "package", "nuget")),
+        ),
+    },
     "official": {
         "github-release/public": _DEFAULT_NUGET_PACKAGE,
         "nuget/nuget-org": (
@@ -207,14 +212,20 @@ _NUGET_ORG_ARTIFACTS = {
     },
 }
 _NPMJS_ARTIFACTS = {
-    "buddy": {"github-release/public": _DEFAULT_NPM_PACKAGE},
+    "buddy": {
+        "github-release/public": _DEFAULT_NPM_PACKAGE,
+        "npm/github-packages": _DEFAULT_NPM_PACKAGE,
+    },
     "official": {
         "github-release/public": _DEFAULT_NPM_PACKAGE,
         "npm/npmjs": _DEFAULT_NPM_PACKAGE,
     },
 }
 _RUBYGEMS_ORG_ARTIFACTS = {
-    "buddy": {"github-release/public": _DEFAULT_RUBYGEMS_PACKAGE},
+    "buddy": {
+        "github-release/public": _DEFAULT_RUBYGEMS_PACKAGE,
+        "rubygems/github-packages": _DEFAULT_RUBYGEMS_PACKAGE,
+    },
     "official": {
         "github-release/public": _DEFAULT_RUBYGEMS_PACKAGE,
         "rubygems/rubygems-org": _DEFAULT_RUBYGEMS_PACKAGE,
@@ -223,6 +234,9 @@ _RUBYGEMS_ORG_ARTIFACTS = {
 _GITHUB_PACKAGES_NUGET_ARTIFACTS = {
     "buddy": {
         "github-release/public": _DEFAULT_NUGET_PACKAGE,
+        "nuget/github-packages": (
+            (_D_DEFAULT, ("primary-package", "package", "nuget")),
+        ),
     },
     "official": {
         "github-release/public": _DEFAULT_NUGET_PACKAGE,
@@ -249,23 +263,25 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
     "circular-list": _GITHUB_RELEASE_ONLY_TARGETS,
     "hcoona-release-smoke": _ZERO_TARGETS,
     "hcoona-release-smoke-github-packages": {
-        "buddy": frozenset({"github-release/public"}),
+        "buddy": frozenset({"github-release/public", "nuget/github-packages"}),
         "official": frozenset(
             {"github-release/public", "nuget/github-packages"}
         ),
     },
     "hcoona-release-smoke-github-release": _GITHUB_RELEASE_ONLY_TARGETS,
     "hcoona-release-smoke-npm": {
-        "buddy": frozenset({"github-release/public"}),
+        "buddy": frozenset({"github-release/public", "npm/github-packages"}),
         "official": frozenset({"github-release/public", "npm/npmjs"}),
     },
     "hcoona-release-smoke-nuget": {
-        "buddy": frozenset({"github-release/public"}),
+        "buddy": frozenset({"github-release/public", "nuget/github-packages"}),
         "official": frozenset({"github-release/public", "nuget/nuget-org"}),
     },
     "hcoona-release-smoke-pypi": _GITHUB_RELEASE_AND_PYPI_TARGETS,
     "hcoona-release-smoke-rubygems": {
-        "buddy": frozenset({"github-release/public"}),
+        "buddy": frozenset(
+            {"github-release/public", "rubygems/github-packages"}
+        ),
         "official": frozenset(
             {"github-release/public", "rubygems/rubygems-org"}
         ),
@@ -373,7 +389,7 @@ _CAPABILITY_ASSIGNMENTS = {
         "mutability": "immutable",
         "name-uniqueness-scope": "package-name-with-owner",
         "version-uniqueness-rule": "package-name-plus-version",
-        "profile-coexistence-rule": "requires-distinct-name",
+        "profile-coexistence-rule": "same-name-allowed",
         "credential-posture": "github-token",
         "publish-topology": "github-token",
     },
@@ -397,7 +413,7 @@ _CAPABILITY_ASSIGNMENTS = {
         "mutability": "immutable",
         "name-uniqueness-scope": "package-name-with-owner",
         "version-uniqueness-rule": "package-name-plus-version",
-        "profile-coexistence-rule": "requires-distinct-name",
+        "profile-coexistence-rule": "same-name-allowed",
         "credential-posture": "github-token",
         "publish-topology": "github-token",
     },
@@ -413,7 +429,7 @@ _CAPABILITY_ASSIGNMENTS = {
         "mutability": "immutable",
         "name-uniqueness-scope": "package-name-with-owner",
         "version-uniqueness-rule": "package-name-plus-version",
-        "profile-coexistence-rule": "requires-distinct-name",
+        "profile-coexistence-rule": "same-name-allowed",
         "credential-posture": "github-token",
         "publish-topology": "github-token",
     },
@@ -1564,6 +1580,11 @@ def _validate_project_set(
     for project in projects_by_path.values():
         _validate_frozen_descriptor_identity(project, issues)
         _validate_frozen_profile_targets(project, issues)
+        if any(
+            artifact.concrete_kind == "npm-package"
+            for artifact in project.artifacts_by_id.values()
+        ):
+            _manifest_npm_name(project, repo_root, issues)
         _validate_descriptor_targets(
             project, catalog, issues, repo_root=repo_root
         )
@@ -2052,7 +2073,12 @@ def _validate_static_coexistence(
                     instance.destination.get("owner"),
                     name,
                 )
-                if identity in seen and seen[identity] != profile:
+                rule = instance.capabilities.get("profile-coexistence-rule")
+                if (
+                    rule == "requires-distinct-name"
+                    and identity in seen
+                    and seen[identity] != profile
+                ):
                     issues.add(
                         "DESC_STATIC_INVALID",
                         project.descriptor_path,

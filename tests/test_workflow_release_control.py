@@ -513,6 +513,9 @@ def _external_oidc_plan_and_sets(
     snapshot["instance-id"] = "pypi"
     snapshot["capabilities"]["credential-posture"] = "oidc"
     snapshot["capabilities"]["name-uniqueness-scope"] = "package-name"
+    snapshot["capabilities"]["profile-coexistence-rule"] = (
+        "requires-distinct-name"
+    )
     snapshot["capabilities"]["publish-topology"] = topology
     snapshot["contract"] = deepcopy(
         plan["graph"]["target-instance-snapshots"]["github-release/public"][
@@ -671,6 +674,7 @@ def _github_packages_nuget_observation_plan() -> dict[str, object]:
     snapshot["capabilities"]["name-uniqueness-scope"] = (
         "package-name-with-owner"
     )
+    snapshot["capabilities"]["profile-coexistence-rule"] = "same-name-allowed"
     snapshot["capabilities"]["publish-topology"] = "github-token"
     node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
     node["target-instance-snapshot-id"] = "nuget/github-packages"
@@ -2230,6 +2234,9 @@ def test_live_external_oidc_enablement_routes_entry_publish() -> None:
     snapshot["instance-id"] = "pypi"
     snapshot["capabilities"]["credential-posture"] = "oidc"
     snapshot["capabilities"]["name-uniqueness-scope"] = "package-name"
+    snapshot["capabilities"]["profile-coexistence-rule"] = (
+        "requires-distinct-name"
+    )
     snapshot["capabilities"]["publish-topology"] = (
         "external-oidc-entry-workflow"
     )
@@ -2900,6 +2907,105 @@ def test_github_packages_nuget_canary_first_publish_404_is_absent(
                     enabled_external_oidc_targets="",
                     canary_override_non_public_ref="true",
                     release_environment="release",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        assert json.loads(out.read_text(encoding="utf-8")) == {
+            "publish-node/nuget": "absent"
+        }
+        assert not diagnostics.exists()
+        assert (
+            "GitHub Packages 404 treated as absent under canary "
+            "first-publish override"
+        ) in capsys.readouterr().err
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("family", "host", "catalog_ref", "project_id", "package_name", "endpoint"),
+    [
+        (
+            "npm",
+            "npm.pkg.github.com",
+            "npm/github-packages",
+            "hcoona-release-smoke-npm",
+            "@hcoona/hcoona-release-smoke-npm",
+            "orgs/hcoona/packages/npm/%40hcoona%2Fhcoona-release-smoke-npm",
+        ),
+        (
+            "rubygems",
+            "rubygems.pkg.github.com",
+            "rubygems/github-packages",
+            "hcoona-release-smoke-rubygems",
+            "hcoona-release-smoke-rubygems",
+            "orgs/hcoona/packages/rubygems/hcoona-release-smoke-rubygems",
+        ),
+    ],
+)
+def test_github_packages_buddy_first_publish_404_is_absent(  # noqa: PLR0913
+    monkeypatch,
+    capsys,
+    family,
+    host,
+    catalog_ref,
+    project_id,
+    package_name,
+    endpoint,
+) -> None:
+    """Buddy smoke bootstrap treats allowlisted package 404 as absent."""
+    plan = _github_packages_nuget_observation_plan()
+    plan["envelope"]["profile"] = "buddy"
+    snapshot = plan["graph"]["target-instance-snapshots"].pop(
+        "nuget/github-packages"
+    )
+    snapshot["catalog-ref"] = catalog_ref
+    snapshot["destination"]["host"] = host
+    snapshot["family"] = family
+    plan["graph"]["target-instance-snapshots"][catalog_ref] = snapshot
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["project-id"] = project_id
+    node["target-instance-snapshot-id"] = catalog_ref
+    node["resolved-publish-identity"]["package-name"] = package_name
+    execution_sets = {
+        "dry-run": True,
+        "active-publish-node-ids": [],
+        "publish-intent-node-ids": ["publish-node/nuget"],
+    }
+    out = SCRATCH / "remote-observations.json"
+    diagnostics = SCRATCH / "planner-diagnostics.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+
+    def fake_gh_api(*args, **_kwargs):
+        actual_endpoint = args[1]
+        if actual_endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        if actual_endpoint == endpoint:
+            message = f"gh api failed for {actual_endpoint}: HTTP 404"
+            raise RuntimeError(message)
+        raise AssertionError(actual_endpoint)
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    canary_override_non_public_ref="false",
+                    release_environment="",
                     repository="hcoona/three",
                     out=str(out),
                     diagnostics_out=str(diagnostics),

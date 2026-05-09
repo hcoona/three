@@ -506,16 +506,16 @@ In current-scope `v1alpha1`, the capability tuple is also constrained by the
 resolved family plus destination host. Static validation must require exactly
 the following assignments:
 
-| Family           | Destination discriminator                      | Required capabilities                                                                                                                                                                                                   | Required publish topology                           |
-| ---------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `github-release` | `host: github`, `owner: hcoona`, `repo: three` | `mutability: mutable-prerelease`; `name-uniqueness-scope: release-tag`; `version-uniqueness-rule: tag`; `profile-coexistence-rule: not-applicable`; `credential-posture: github-token`                                  | `publish-topology: github-token`                    |
-| `nuget`          | `host: nuget.org`                              | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    | `publish-topology: external-oidc-entry-workflow`    |
-| `nuget`          | `host: nuget.pkg.github.com`                   | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: github-token` | `publish-topology: github-token`                    |
-| `pypi`           | `host: pypi.org`                               | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    | `publish-topology: external-oidc-entry-workflow`    |
-| `npm`            | `host: registry.npmjs.org`                     | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    | `publish-topology: external-oidc-entry-workflow`    |
-| `npm`            | `host: npm.pkg.github.com`                     | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: github-token` | `publish-topology: github-token`                    |
-| `rubygems`       | `host: rubygems.org`                           | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`                    | `publish-topology: external-oidc-reusable-workflow` |
-| `rubygems`       | `host: rubygems.pkg.github.com`                | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: github-token` | `publish-topology: github-token`                    |
+| Family           | Destination discriminator                      | Required capabilities                                                                                                                                                                                              | Required publish topology                           |
+| ---------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| `github-release` | `host: github`, `owner: hcoona`, `repo: three` | `mutability: mutable-prerelease`; `name-uniqueness-scope: release-tag`; `version-uniqueness-rule: tag`; `profile-coexistence-rule: not-applicable`; `credential-posture: github-token`                             | `publish-topology: github-token`                    |
+| `nuget`          | `host: nuget.org`                              | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-entry-workflow`    |
+| `nuget`          | `host: nuget.pkg.github.com`                   | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: same-name-allowed`; `credential-posture: github-token` | `publish-topology: github-token`                    |
+| `pypi`           | `host: pypi.org`                               | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-entry-workflow`    |
+| `npm`            | `host: registry.npmjs.org`                     | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-entry-workflow`    |
+| `npm`            | `host: npm.pkg.github.com`                     | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: same-name-allowed`; `credential-posture: github-token` | `publish-topology: github-token`                    |
+| `rubygems`       | `host: rubygems.org`                           | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-reusable-workflow` |
+| `rubygems`       | `host: rubygems.pkg.github.com`                | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: same-name-allowed`; `credential-posture: github-token` | `publish-topology: github-token`                    |
 
 This closes the current-scope author-time rules that are otherwise only implied
 by the frozen baseline:
@@ -529,14 +529,18 @@ by the frozen baseline:
   `external-oidc-caller-workflow`, or `external-oidc-reusable-workflow`;
 - the topology assignments follow the registry research in
   [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md).
-- all current-scope package-registry hosts must use
+- public external package-registry hosts use
   `profile-coexistence-rule: requires-distinct-name`, so same-registry same-name
   `buddy` and `official` publication stays forbidden; author-time validation
   enforces this when the published name is statically resolvable, while NuGet
   checks that require evaluated `PackageId` run after the Windows
   `dotnet-metadata` handoff;
-- `same-name-allowed` and `replaceable` remain out of scope for all current-scope
-  package-registry target instances.
+- GitHub Packages target instances use
+  `profile-coexistence-rule: same-name-allowed` deliberately for release-smoke
+  projects so buddy can exercise GitHub Packages with the same package identity
+  as the external official registry path;
+- `replaceable` remains out of scope for all current-scope package-registry target
+  instances.
 
 For that coexistence check, validation computes the resolved published package
 identity from the target family, destination host, optional destination owner,

@@ -107,6 +107,126 @@ def test_npm_executor_verifies_tarball_and_uses_provenance(
         _reset_scratch(scratch)
 
 
+def test_npm_executor_publishes_scoped_npmjs_package_publicly(
+    tmp_path: Path,
+) -> None:
+    """Publish scoped npmjs packages with public access."""
+    scratch = REPO_ROOT / ".publish-executor-npm-scoped-test"
+    _reset_scratch(scratch)
+    try:
+        package = scratch / "input" / "hcoona-example-1.2.3.tgz"
+        _write_npm_tarball(package, "@hcoona/example", "1.2.3")
+        request = _request(
+            family="npm",
+            host="registry.npmjs.org",
+            artifact_path=package,
+            concrete_kind="npm-package",
+            identity={"package-name": "@hcoona/example", "version": "1.2.3"},
+            projection={},
+        )
+        calls = _Calls()
+
+        execute_publish(
+            request,
+            REPO_ROOT,
+            runner=calls.runner,
+            check_commit=False,
+            work_dir=tmp_path / "work",
+        )
+
+        assert calls.commands[0][:2] == ["npm", "publish"]
+        assert Path(calls.commands[0][2]).name == package.name
+        assert calls.commands[0][3:] == [
+            "--provenance",
+            "--access",
+            "public",
+        ]
+    finally:
+        _reset_scratch(scratch)
+
+
+def test_npm_executor_publishes_github_packages_with_github_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Publish npm packages to GitHub Packages using github-token auth."""
+    scratch = REPO_ROOT / ".publish-executor-npm-gpr-test"
+    _reset_scratch(scratch)
+    try:
+        monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+        package = scratch / "input" / "hcoona-example-1.2.3.tgz"
+        _write_npm_tarball(package, "@hcoona/example", "1.2.3")
+        request = _request(
+            family="npm",
+            host="npm.pkg.github.com",
+            owner="hcoona",
+            artifact_path=package,
+            concrete_kind="npm-package",
+            identity={"package-name": "@hcoona/example", "version": "1.2.3"},
+            projection={},
+        )
+        calls = _Calls()
+
+        result = execute_publish(
+            request,
+            REPO_ROOT,
+            runner=calls.runner,
+            check_commit=False,
+            work_dir=tmp_path / "work",
+        )
+
+        validate_contract(result)
+        assert calls.commands[0][:2] == ["npm", "publish"]
+        assert Path(calls.commands[0][2]).name == package.name
+        assert calls.commands[0][3:] == [
+            "--registry",
+            "https://npm.pkg.github.com",
+        ]
+        assert calls.envs[0] == {
+            "NODE_AUTH_TOKEN": "github-token",
+            "npm_config_//npm.pkg.github.com/:_authToken": "github-token",
+            "npm_config_always_auth": "true",
+        }
+        assert result["evidence"]["registry"] == "npm.pkg.github.com"
+    finally:
+        _reset_scratch(scratch)
+
+
+def test_npm_github_packages_requires_github_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Refuse GitHub Packages npm publish without GITHUB_TOKEN."""
+    scratch = REPO_ROOT / ".publish-executor-npm-gpr-token-test"
+    _reset_scratch(scratch)
+    try:
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        package = scratch / "input" / "hcoona-example-1.2.3.tgz"
+        _write_npm_tarball(package, "@hcoona/example", "1.2.3")
+        request = _request(
+            family="npm",
+            host="npm.pkg.github.com",
+            owner="hcoona",
+            artifact_path=package,
+            concrete_kind="npm-package",
+            identity={"package-name": "@hcoona/example", "version": "1.2.3"},
+            projection={},
+        )
+        calls = _Calls()
+
+        with pytest.raises(PublishExecutorError, match="GITHUB_TOKEN"):
+            execute_publish(
+                request,
+                REPO_ROOT,
+                runner=calls.runner,
+                check_commit=False,
+                work_dir=tmp_path / "work",
+            )
+        assert calls.commands == []
+    finally:
+        _reset_scratch(scratch)
+
+
 def test_nuget_executor_pushes_github_packages_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1188,7 +1308,7 @@ def _capabilities(family: str, host: str) -> dict[str, str]:
             "mutability": "immutable",
             "name-uniqueness-scope": "package-name-with-owner",
             "version-uniqueness-rule": "package-name-plus-version",
-            "profile-coexistence-rule": "requires-distinct-name",
+            "profile-coexistence-rule": "same-name-allowed",
             "credential-posture": "github-token",
             "publish-topology": "github-token",
         }

@@ -167,7 +167,7 @@
           "credential-posture": "github-token",
           "mutability": "immutable",
           "name-uniqueness-scope": "package-name-with-owner",
-          "profile-coexistence-rule": "requires-distinct-name",
+          "profile-coexistence-rule": "same-name-allowed",
           "publish-topology": "github-token",
           "version-uniqueness-rule": "package-name-plus-version"
         },

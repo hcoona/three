@@ -624,6 +624,9 @@ def test_npm_manifest_fallback_package_name_is_validated() -> None:
         "src/public/lib/hcoona-release-smoke-npm/three.release.yml"
     ]
     hexo["profiles"]["official"]["targets"][1]["uses"] = "npm/github-packages"
+    hexo["profiles"]["official"]["targets"][1]["projection"] = {
+        "package-name": "hcoona-release-smoke-npm"
+    }
     with pytest.raises(AuthoringValidationError) as error:
         validate_authoring_documents(
             descriptors,

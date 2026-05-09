@@ -1295,7 +1295,7 @@ def _registry_capabilities(family: str, host: str) -> dict[str, str] | None:
             "immutable",
             "package-name-with-owner",
             "package-name-plus-version",
-            "requires-distinct-name",
+            "same-name-allowed",
             "github-token",
             "github-token",
         )

@@ -1062,27 +1062,41 @@ def _publish_npm(
     repo_root: Path,
     runner: Runner,
 ) -> Json:
-    """Publish one npm tarball to npmjs."""
+    """Publish one npm tarball to npmjs or GitHub Packages."""
     _require_single_artifact(artifacts, "npm-package")
     host = str(
         _mapping(_mapping(request["target-instance-snapshot"])["destination"])[
             "host"
         ]
     )
-    if host != "registry.npmjs.org":
+    package_path = artifacts[0].upload_path
+    command = [shutil.which("npm") or "npm", "publish", package_path.as_posix()]
+    env = None
+    if host == "registry.npmjs.org":
+        command.append("--provenance")
+        identity = _mapping(
+            _mapping(request["publish-node"])["resolved-publish-identity"]
+        )
+        package_name = str(identity["package-name"])
+        if package_name.startswith("@"):
+            command.extend(["--access", "public"])
+    elif host == "npm.pkg.github.com":
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            msg = "GITHUB_TOKEN is required for GitHub Packages npm publish"
+            raise PublishExecutorError(
+                msg, code="PUBLISH_AUTH_FAILED", phase="validation"
+            )
+        command.extend(["--registry", "https://npm.pkg.github.com"])
+        env = {
+            "NODE_AUTH_TOKEN": token,
+            "npm_config_//npm.pkg.github.com/:_authToken": token,
+            "npm_config_always_auth": "true",
+        }
+    else:
         msg = f"unsupported npm registry host: {host!r}"
         raise PublishExecutorError(msg, code="PUBLISH_UNSUPPORTED_TARGET")
-    package_path = artifacts[0].upload_path
-    _run_checked(
-        [
-            shutil.which("npm") or "npm",
-            "publish",
-            package_path.as_posix(),
-            "--provenance",
-        ],
-        repo_root,
-        runner,
-    )
+    _run_checked(command, repo_root, runner, env=env)
     return {"package-filename": package_path.name, "registry": host}
 
 

@@ -28,9 +28,15 @@ profiles:
     targets:
       - uses: github-release/public
         artifacts: [npm-package]
+      - uses: npm/github-packages
+        artifacts: [npm-package]
+        projection:
+          package-name: '@hcoona/hcoona-release-smoke-npm'
   official:
     targets:
       - uses: github-release/public
         artifacts: [npm-package]
       - uses: npm/npmjs
         artifacts: [npm-package]
+        projection:
+          package-name: '@hcoona/hcoona-release-smoke-npm'

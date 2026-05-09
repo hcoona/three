@@ -715,6 +715,10 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_smoke_projects_plan_github_packages_publish"
           }
         ],
         "execution-set-selectors": [
@@ -765,6 +769,10 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
           }
         ],
         "workflow-conclusion": [
@@ -787,13 +795,17 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
           }
         ]
       }
     },
     {
       "id": "github-packages-nuget-publication-and-token-isolation",
-      "scenario": "GitHub Packages NuGet official publication and token isolation",
+      "scenario": "GitHub Packages NuGet smoke publication and token isolation",
       "fixture-anchor": "src/public/lib/hcoona-release-smoke-github-packages/",
       "validation-mode": "manual-live",
       "evidence": {
@@ -819,6 +831,10 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_smoke_projects_plan_github_packages_publish"
           }
         ],
         "execution-set-selectors": [
@@ -872,7 +888,11 @@
           },
           {
             "type": "live-gate",
-            "value": "github-packages-live-publication"
+            "value": "official-github-packages-live-publication"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
           }
         ],
         "workflow-conclusion": [
@@ -898,7 +918,11 @@
           },
           {
             "type": "live-gate",
-            "value": "github-packages-live-publication"
+            "value": "official-github-packages-live-publication"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
           }
         ]
       }
@@ -1491,6 +1515,10 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_smoke_projects_plan_github_packages_publish"
           }
         ],
         "execution-set-selectors": [
@@ -1541,6 +1569,14 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_github_packages_buddy_first_publish_404_is_absent"
           }
         ],
         "workflow-conclusion": [
@@ -1563,6 +1599,10 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
           }
         ]
       }
@@ -1723,6 +1763,10 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_smoke_projects_plan_github_packages_publish"
           }
         ],
         "execution-set-selectors": [
@@ -1773,6 +1817,14 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_github_packages_buddy_first_publish_404_is_absent"
           }
         ],
         "workflow-conclusion": [
@@ -1795,13 +1847,17 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
           }
         ]
       }
     },
     {
       "id": "github-packages-dedicated-smoke-publication-and-token-isolation",
-      "scenario": "GitHub Packages NuGet dedicated smoke publication and token isolation",
+      "scenario": "GitHub Packages NuGet dedicated smoke publication and token isolation for both profiles",
       "fixture-anchor": "src/public/lib/hcoona-release-smoke-github-packages/",
       "validation-mode": "manual-live",
       "evidence": {
@@ -1827,6 +1883,10 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_smoke_projects_plan_github_packages_publish"
           }
         ],
         "execution-set-selectors": [
@@ -1880,7 +1940,11 @@
           },
           {
             "type": "live-gate",
-            "value": "github-packages-live-publication"
+            "value": "official-github-packages-live-publication"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
           }
         ],
         "workflow-conclusion": [
@@ -1906,7 +1970,11 @@
           },
           {
             "type": "live-gate",
-            "value": "github-packages-live-publication"
+            "value": "official-github-packages-live-publication"
+          },
+          {
+            "type": "live-gate",
+            "value": "buddy-github-packages-live-publication"
           }
         ]
       }
@@ -5337,9 +5405,13 @@
       "owner": "release operator",
       "evidence": "GitHub Actions run record for release-buddy.yml or release-official.yml"
     },
-    "github-packages-live-publication": {
+    "official-github-packages-live-publication": {
       "owner": "GitHub Packages registry",
       "evidence": "registry package/version observation from protected official publication"
+    },
+    "buddy-github-packages-live-publication": {
+      "owner": "GitHub Packages registry",
+      "evidence": "fresh post-commit registry package/version observations from release-buddy.yml for NuGet, npm, RubyGems, and dedicated GitHub Packages smoke identities; prior official or old-design GitHub Packages evidence is not sufficient"
     },
     "release-environment-required-review": {
       "owner": "GitHub environment release",

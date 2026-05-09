@@ -39,7 +39,7 @@ families:
           mutability: immutable
           name-uniqueness-scope: package-name-with-owner
           version-uniqueness-rule: package-name-plus-version
-          profile-coexistence-rule: requires-distinct-name
+          profile-coexistence-rule: same-name-allowed
           credential-posture: github-token
           publish-topology: github-token
   pypi:
@@ -77,7 +77,7 @@ families:
           mutability: immutable
           name-uniqueness-scope: package-name-with-owner
           version-uniqueness-rule: package-name-plus-version
-          profile-coexistence-rule: requires-distinct-name
+          profile-coexistence-rule: same-name-allowed
           credential-posture: github-token
           publish-topology: github-token
   rubygems:
@@ -102,6 +102,6 @@ families:
           mutability: immutable
           name-uniqueness-scope: package-name-with-owner
           version-uniqueness-rule: package-name-plus-version
-          profile-coexistence-rule: requires-distinct-name
+          profile-coexistence-rule: same-name-allowed
           credential-posture: github-token
           publish-topology: github-token

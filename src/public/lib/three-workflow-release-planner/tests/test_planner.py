@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -795,6 +796,69 @@ def test_github_packages_nuget_exact_observation_skips_replay() -> None:
     assert node_id not in result.execution_sets["active-publish-node-ids"]
 
 
+@pytest.mark.parametrize(
+    ("project_id", "target_id", "package_name"),
+    [
+        (
+            "hcoona-release-smoke-github-packages",
+            "nuget/github-packages",
+            "Hcoona.ReleaseSmoke.GithubPackages",
+        ),
+        (
+            "hcoona-release-smoke-nuget",
+            "nuget/github-packages",
+            "Hcoona.ReleaseSmoke.Nuget",
+        ),
+        (
+            "hcoona-release-smoke-npm",
+            "npm/github-packages",
+            "@hcoona/hcoona-release-smoke-npm",
+        ),
+        (
+            "hcoona-release-smoke-rubygems",
+            "rubygems/github-packages",
+            "hcoona-release-smoke-rubygems",
+        ),
+    ],
+)
+def test_buddy_smoke_projects_plan_github_packages_publish(
+    project_id: str, target_id: str, package_name: str
+) -> None:
+    """Buddy smoke plans include supported GitHub Packages targets."""
+    snapshot = validate_authoring(REPO_ROOT)
+    dotnet_metadata = _dotnet_metadata(snapshot)
+    dotnet_projects = cast(
+        "dict[str, dict[str, object]]", dotnet_metadata["projects"]
+    )
+    dotnet_projects["hcoona-release-smoke-github-packages"]["package-id"] = (
+        "Hcoona.ReleaseSmoke.GithubPackages"
+    )
+    dotnet_projects["hcoona-release-smoke-nuget"]["package-id"] = (
+        "Hcoona.ReleaseSmoke.Nuget"
+    )
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request([project_id], profile="buddy"),
+            repo_root=REPO_ROOT,
+            dotnet_metadata=dotnet_metadata,
+            dry_run=True,
+        ),
+    )
+
+    matching_nodes = [
+        cast("Mapping[str, object]", node)
+        for node in _publish_nodes(result.plan).values()
+        if node["target-instance-snapshot-id"] == target_id
+    ]
+
+    assert len(matching_nodes) == 1
+    assert matching_nodes[0]["profile"] == "buddy"
+    assert matching_nodes[0]["resolved-publish-identity"]["package-name"] == (
+        package_name
+    )
+
+
 def test_buddy_force_partial_github_release_overwrites_mutable() -> None:
     """Buddy force partial GitHub Release replay uses overwrite-mutable."""
     first = _plan(["nbgv-python"])
@@ -1179,6 +1243,26 @@ def test_npm_package_name_reads_requested_commit_package_json(
 ) -> None:
     """Resolve npm package identity from the requested commit."""
     snapshot = validate_authoring(REPO_ROOT)
+    project = snapshot.projects["hcoona-release-smoke-npm"]
+    official_targets = tuple(
+        replace(target, projection={}, projection_present=False)
+        if target.uses == "npm/npmjs"
+        else target
+        for target in project.profiles["official"]
+    )
+    snapshot = replace(
+        snapshot,
+        projects={
+            **snapshot.projects,
+            "hcoona-release-smoke-npm": replace(
+                project,
+                profiles={
+                    **project.profiles,
+                    "official": official_targets,
+                },
+            ),
+        },
+    )
 
     def fake_run(
         args: list[str],

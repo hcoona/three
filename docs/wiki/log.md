@@ -452,3 +452,10 @@ This file is the append-only chronological record of wiki activity.
 ## [2026-05-08] query | Dedicated Release-Smoke Projects
 
 Updated the workflow-release design notes to move live acceptance away from the legacy generic `hcoona-release-smoke` package and onto dedicated `hcoona-release-smoke-*` projects for GitHub Release, NuGet, npm, PyPI, RubyGems, and GitHub Packages.
+
+## [2026-05-09] query | Update smoke GitHub Packages buddy policy
+
+- Recorded that GitHub Packages targets now deliberately allow same-name buddy
+  and official smoke package identities.
+- Updated the workflow release design notes for NuGet, npm, RubyGems, and the
+  dedicated GitHub Packages smoke package buddy publication paths.

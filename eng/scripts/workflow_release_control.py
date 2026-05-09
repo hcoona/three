@@ -72,13 +72,23 @@ _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset(
         "hcoona-release-smoke-rubygems",
     }
 )
-_GITHUB_PACKAGES_NUGET_FIRST_PUBLISH_CANARY_PROJECTS = frozenset(
-    {"hcoona-release-smoke-github-packages"}
+_GITHUB_PACKAGES_FIRST_PUBLISH_CANARY_PROJECTS = frozenset(
+    {
+        "hcoona-release-smoke-github-packages",
+        "hcoona-release-smoke-npm",
+        "hcoona-release-smoke-nuget",
+        "hcoona-release-smoke-rubygems",
+    }
 )
-_GITHUB_PACKAGES_NUGET_FIRST_PUBLISH_CANARY_PACKAGES = {
+_GITHUB_PACKAGES_FIRST_PUBLISH_CANARY_PACKAGES = {
     "hcoona-release-smoke-github-packages": frozenset(
         {"hcoona.releasesmoke.githubpackages"}
-    )
+    ),
+    "hcoona-release-smoke-nuget": frozenset({"hcoona.releasesmoke.nuget"}),
+    "hcoona-release-smoke-npm": frozenset({"@hcoona/hcoona-release-smoke-npm"}),
+    "hcoona-release-smoke-rubygems": frozenset(
+        {"hcoona-release-smoke-rubygems"}
+    ),
 }
 
 
@@ -953,16 +963,16 @@ def _maybe_observe_remote_publication(
 ) -> str | None:
     if snapshot["family"] == "github-release":
         return _observe_github_release_publication(repository, commit_sha, node)
-    if _supports_github_packages_nuget_remote_observation(
+    if _supports_github_packages_remote_observation(
         snapshot
     ) and _requires_live_github_token_remote_observation(
         node_id, execution_sets
     ):
-        return _observe_github_packages_nuget_publication(
+        return _observe_github_packages_publication(
             repository,
             node,
             snapshot,
-            canary_first_publish_override=_github_packages_nuget_first_publish_override_allowed(
+            canary_first_publish_override=_github_packages_first_publish_override_allowed(
                 node_id,
                 node,
                 execution_sets,
@@ -2316,6 +2326,58 @@ def _observe_github_packages_nuget_publication(
     return "absent"
 
 
+def _observe_github_packages_publication(
+    repository: str,
+    node: Json,
+    snapshot: Mapping[str, Any],
+    *,
+    canary_first_publish_override: bool = False,
+) -> str:
+    family = str(snapshot.get("family"))
+    if family == "nuget":
+        return _observe_github_packages_nuget_publication(
+            repository,
+            node,
+            snapshot,
+            canary_first_publish_override=canary_first_publish_override,
+        )
+    package_name, version = _package_publish_identity(
+        node, f"GitHub Packages {family}"
+    )
+    owner = _github_packages_owner(repository, snapshot)
+    package = _github_packages_package(
+        repository,
+        owner,
+        family,
+        package_name,
+        canary_first_publish_override=canary_first_publish_override,
+        project_id=str(node.get("project-id", "")),
+    )
+    if package is None:
+        return "absent"
+    remote_package_name = str(package["name"])
+    versions = _github_packages_versions(
+        repository, owner, family, remote_package_name
+    )
+    for item in versions:
+        if not isinstance(item, Mapping):
+            msg = (
+                f"GitHub Packages {family} versions API returned a malformed "
+                f"version item for {remote_package_name!r}"
+            )
+            raise TypeError(msg)
+        version_name = item.get("name")
+        if not isinstance(version_name, str) or not version_name:
+            msg = (
+                f"GitHub Packages {family} versions API returned a version item "
+                f"without name for {remote_package_name!r}"
+            )
+            raise TypeError(msg)
+        if version_name == version:
+            return "exact-satisfied"
+    return "absent"
+
+
 def _observe_npm_publication(node: Json) -> str:
     package_name, version = _package_publish_identity(node, "npm")
     payload = _npm_package_json(package_name)
@@ -2451,9 +2513,29 @@ def _github_packages_nuget_package(
     canary_first_publish_override: bool = False,
     project_id: str = "",
 ) -> Mapping[str, Any] | None:
+    return _github_packages_package(
+        repository,
+        owner,
+        "nuget",
+        package_name,
+        canary_first_publish_override=canary_first_publish_override,
+        project_id=project_id,
+    )
+
+
+def _github_packages_package(
+    repository: str,
+    owner: str,
+    package_type: str,
+    package_name: str,
+    *,
+    canary_first_publish_override: bool = False,
+    project_id: str = "",
+) -> Mapping[str, Any] | None:
     prefix = _github_packages_owner_endpoint_prefix(repository, owner)
     endpoint = (
-        f"{prefix}/packages/nuget/{urllib.parse.quote(package_name, safe='')}"
+        f"{prefix}/packages/{urllib.parse.quote(package_type, safe='')}/"
+        f"{urllib.parse.quote(package_name, safe='')}"
     )
     try:
         payload = _gh_api(repository, endpoint)
@@ -2464,17 +2546,17 @@ def _github_packages_nuget_package(
                     "GitHub Packages 404 treated as absent under canary "
                     "first-publish override: "
                     f"project-id={project_id!r}, package-name={package_name!r}, "
-                    f"owner={owner!r}\n"
+                    f"owner={owner!r}, package-type={package_type!r}\n"
                 )
                 return None
             msg = (
-                f"GitHub Packages NuGet package {package_name!r} for owner "
-                f"{owner!r} is not visible to the current GitHub API token; "
-                "absence cannot be proven from a 404/listing miss. Grant the "
-                "workflow repository Actions/read access to the package, or "
-                "use a token/API path with authoritative package read access. "
-                "Only the dedicated official smoke/canary first-publish path "
-                "may treat this 404 as absent."
+                f"GitHub Packages {package_type} package {package_name!r} "
+                f"for owner {owner!r} is not visible to the current GitHub "
+                "API token; absence cannot be proven from a 404/listing miss. "
+                "Grant the workflow repository Actions/read access to the "
+                "package, or use a token/API path with authoritative package "
+                "read access. Only the dedicated smoke/canary first-publish "
+                "path may treat this 404 as absent."
             )
             raise RuntimeError(msg) from exc
         raise
@@ -2494,7 +2576,7 @@ def _github_packages_nuget_package(
     return payload
 
 
-def _github_packages_nuget_first_publish_override_allowed(
+def _github_packages_first_publish_override_allowed(
     node_id: str,
     node: Mapping[str, Any],
     execution_sets: Mapping[str, Any] | None,
@@ -2505,9 +2587,9 @@ def _github_packages_nuget_first_publish_override_allowed(
 ) -> bool:
     """Constrain GitHub Packages 404-as-absent to the official canary path."""
     project_id = node.get("project-id")
-    package_name = _github_packages_nuget_first_publish_package_name(node)
+    package_name = _github_packages_first_publish_package_name(node)
     allowed_packages = (
-        _GITHUB_PACKAGES_NUGET_FIRST_PUBLISH_CANARY_PACKAGES.get(project_id)
+        _GITHUB_PACKAGES_FIRST_PUBLISH_CANARY_PACKAGES.get(project_id)
         if isinstance(project_id, str)
         else None
     )
@@ -2518,22 +2600,27 @@ def _github_packages_nuget_first_publish_override_allowed(
             candidate_node_ids, Sequence
         ):
             publish_intent_node_ids = candidate_node_ids
+    if (
+        not isinstance(project_id, str)
+        or project_id not in _GITHUB_PACKAGES_FIRST_PUBLISH_CANARY_PROJECTS
+        or package_name is None
+        or allowed_packages is None
+        or package_name.casefold() not in allowed_packages
+        or execution_sets is None
+        or execution_sets.get("dry-run") is not True
+        or node_id not in publish_intent_node_ids
+    ):
+        return False
+    if profile == "buddy":
+        return True
     return (
         canary_override
         and profile == "official"
-        and isinstance(project_id, str)
-        and project_id in _GITHUB_PACKAGES_NUGET_FIRST_PUBLISH_CANARY_PROJECTS
-        and package_name is not None
-        and allowed_packages is not None
-        and package_name.casefold() in allowed_packages
-        and execution_sets is not None
-        and execution_sets.get("dry-run") is True
-        and node_id in publish_intent_node_ids
         and release_environment == "release"
     )
 
 
-def _github_packages_nuget_first_publish_package_name(
+def _github_packages_first_publish_package_name(
     node: Mapping[str, Any],
 ) -> str | None:
     identity = node.get("resolved-publish-identity")
@@ -2551,6 +2638,17 @@ def _github_packages_nuget_versions(
     prefix = _github_packages_owner_endpoint_prefix(repository, owner)
     endpoint = (
         f"{prefix}/packages/nuget/"
+        f"{urllib.parse.quote(package_name, safe='')}/versions?per_page=100"
+    )
+    return _gh_api_paginated(repository, endpoint)
+
+
+def _github_packages_versions(
+    repository: str, owner: str, package_type: str, package_name: str
+) -> list[Any]:
+    prefix = _github_packages_owner_endpoint_prefix(repository, owner)
+    endpoint = (
+        f"{prefix}/packages/{urllib.parse.quote(package_type, safe='')}/"
         f"{urllib.parse.quote(package_name, safe='')}/versions?per_page=100"
     )
     return _gh_api_paginated(repository, endpoint)
@@ -2681,18 +2779,24 @@ def _registry_json_request(
 def _supports_remote_observation(snapshot: Mapping[str, Any]) -> bool:
     return snapshot.get("family") == "github-release" or (
         _supports_public_registry_remote_observation(snapshot)
-        or _supports_github_packages_nuget_remote_observation(snapshot)
+        or _supports_github_packages_remote_observation(snapshot)
     )
 
 
-def _supports_github_packages_nuget_remote_observation(
+def _supports_github_packages_remote_observation(
     snapshot: Mapping[str, Any],
 ) -> bool:
     destination = snapshot.get("destination")
+    github_hosts = {
+        "nuget": "nuget.pkg.github.com",
+        "npm": "npm.pkg.github.com",
+        "rubygems": "rubygems.pkg.github.com",
+    }
+    family = snapshot.get("family")
     return (
-        snapshot.get("family") == "nuget"
+        isinstance(family, str)
         and isinstance(destination, Mapping)
-        and destination.get("host") == "nuget.pkg.github.com"
+        and destination.get("host") == github_hosts.get(family)
     )
 
 
