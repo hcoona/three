@@ -859,6 +859,90 @@ def test_buddy_smoke_projects_plan_github_packages_publish(
     )
 
 
+@pytest.mark.parametrize("profile", ["buddy", "official"])
+def test_nuget_rejects_deferred_package_id_coexistence_conflict(
+    profile: str,
+) -> None:
+    """Reject NuGet buddy/official conflicts once PackageId is known."""
+    base = validate_authoring(REPO_ROOT)
+    source = base.projects["hcoona-release-smoke-nuget"]
+    official_nuget = next(
+        usage
+        for usage in source.profiles["official"]
+        if usage.uses == "nuget/nuget-org"
+    )
+    project = replace(
+        source,
+        project_id="nuget-coexistence-conflict",
+        display_name="NuGet Coexistence Conflict",
+        profiles={
+            "buddy": (official_nuget,),
+            "official": (official_nuget,),
+        },
+    )
+    snapshot = AuthoringSnapshot(
+        descriptor_api_version=base.descriptor_api_version,
+        catalog_path=base.catalog_path,
+        projects={project.project_id: project},
+        target_instances=base.target_instances,
+    )
+    dotnet_metadata = _dotnet_metadata(snapshot)
+    dotnet_projects = cast(
+        "dict[str, dict[str, object]]", dotnet_metadata["projects"]
+    )
+    dotnet_projects[project.project_id]["package-id"] = "Shared.Package"
+
+    with pytest.raises(PlannerError) as error:
+        plan_release(
+            snapshot,
+            PlannerInputs(
+                request=_request([project.project_id], profile=profile),
+                repo_root=REPO_ROOT,
+                dotnet_metadata=dotnet_metadata,
+                dry_run=True,
+            ),
+        )
+
+    diagnostic = error.value.diagnostics[0]
+    assert diagnostic["code"] == "PUBLISH_IDENTITY_CONFLICT"
+    details = cast("Mapping[str, object]", diagnostic["details"])
+    assert details["package-name"] == "Shared.Package"
+    assert details["target"] == "nuget/nuget-org"
+
+
+@pytest.mark.parametrize("profile", ["buddy", "official"])
+def test_github_packages_same_name_allowed_profile_coexistence(
+    profile: str,
+) -> None:
+    """Allow buddy and official to share GitHub Packages identities."""
+    snapshot = validate_authoring(REPO_ROOT)
+    dotnet_metadata = _dotnet_metadata(snapshot)
+    dotnet_projects = cast(
+        "dict[str, dict[str, object]]", dotnet_metadata["projects"]
+    )
+    dotnet_projects["hcoona-release-smoke-github-packages"]["package-id"] = (
+        "Hcoona.ReleaseSmoke.GithubPackages"
+    )
+
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-github-packages"], profile=profile
+            ),
+            repo_root=REPO_ROOT,
+            dotnet_metadata=dotnet_metadata,
+            dry_run=True,
+        ),
+    )
+
+    node_id = _publish_node_id_for_family(result.plan, "nuget")
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    identity = cast("Mapping[str, object]", node["resolved-publish-identity"])
+    assert node["target-instance-snapshot-id"] == "nuget/github-packages"
+    assert identity["package-name"] == "Hcoona.ReleaseSmoke.GithubPackages"
+
+
 def test_buddy_force_partial_github_release_overwrites_mutable() -> None:
     """Buddy force partial GitHub Release replay uses overwrite-mutable."""
     first = _plan(["nbgv-python"])

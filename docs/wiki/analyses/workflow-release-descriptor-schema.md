@@ -537,8 +537,11 @@ by the frozen baseline:
   `dotnet-metadata` handoff;
 - GitHub Packages target instances use
   `profile-coexistence-rule: same-name-allowed` deliberately for release-smoke
-  projects so buddy can exercise GitHub Packages with the same package identity
-  as the external official registry path;
+  targets that publish GitHub Packages from both profiles with the same package
+  identity. In the current smoke matrix, that both-profile same-identity shape
+  belongs only to the dedicated GitHub Packages smoke target; ecosystem smoke
+  projects use GitHub Packages in `buddy` and their public registries in
+  `official`;
 - `replaceable` remains out of scope for all current-scope package-registry target
   instances.
 
@@ -546,13 +549,16 @@ For that coexistence check, validation computes the resolved published package
 identity from the target family, destination host, optional destination owner,
 and the published package name after applying any allowed descriptor-side
 projection or manifest-owned name. Two target usages from the same project but
-different profiles may not resolve to the same package-registry identity tuple,
-even if they reference different catalog `instance-id` values. Author-time static
-validation performs this rejection only for families whose published names are
-available without deferred ecosystem evaluation. For NuGet, author-time
-validation derives the `requires-package-id` handoff and defers any
-`PackageId`-dependent coexistence rejection until `dotnet-metadata` has emitted
-the Windows-evaluated `package-id`.
+different profiles may not resolve to the same package-registry identity tuple
+when the resolved target instance capability is
+`profile-coexistence-rule: requires-distinct-name`, even if they reference
+different catalog `instance-id` values. Author-time static validation performs
+this rejection only for target usages whose resolved capability requires
+distinct names and whose published names are available without deferred
+ecosystem evaluation. For NuGet, author-time validation derives the
+`requires-package-id` handoff and defers any `PackageId`-dependent coexistence
+rejection until `dotnet-metadata` has emitted the Windows-evaluated
+`package-id`.
 
 ## Ownership Boundaries
 
@@ -666,9 +672,11 @@ For current .NET package projects, the repo-wide MSBuild configuration emits a
 portable `.snupkg` alongside `.nupkg` when a packable library is packed. Project
 descriptors for such package variants should therefore declare both the primary
 NuGet artifact and the symbol artifact. GitHub Release target usages may carry
-both package files as release assets. Current-scope GitHub Packages NuGet live
-publication is official-only, and the official GitHub Packages target publishes
-only the reliably observable `.nupkg` member while `.snupkg` remains modeled as
+both package files as release assets. Current-scope release-smoke NuGet projects
+publish `nuget/github-packages` in `buddy` and `nuget/nuget-org` in `official`;
+only the dedicated GitHub Packages smoke target publishes GitHub Packages from
+both profiles with the same identity. GitHub Packages NuGet targets publish only
+the reliably observable `.nupkg` member while `.snupkg` remains modeled as
 GitHub Release evidence. NuGet.org target usages should likewise reference both
 artifacts when
 the release includes NuGet symbol publication, because `.snupkg` is the modern
@@ -758,12 +766,18 @@ Examples:
   package-registry identity tuple (family, destination.host, destination.owner?,
   published-name) after combining descriptor data with statically available
   manifest-owned default names and any npm `projection.package-name` override;
-- because every current-scope package-registry target instance uses
+- for resolved target instances with
   `profile-coexistence-rule: requires-distinct-name`, static validation must
   reject any one-project `buddy`/`official` pair that resolves to the same
-  package-registry identity tuple without deferred ecosystem evaluation. NuGet
-  pairs whose equality depends on evaluated `PackageId` are rejected by the
-  planner after the Windows metadata handoff, not during author-time validation.
+  package-registry identity tuple without deferred ecosystem evaluation. Target
+  instances marked `profile-coexistence-rule: same-name-allowed`, including the
+  current GitHub Packages instances, allow such pairs; this is what permits the
+  dedicated GitHub Packages smoke descriptor to publish
+  `nuget/github-packages` from both `buddy` and `official` with the same
+  package identity. NuGet pairs whose equality depends on evaluated `PackageId`
+  are rejected by the planner after the Windows metadata handoff when the
+  resolved target instance requires distinct names, not during author-time
+  validation.
 
 This is the right layer for CI linting of checked-in authoring files.
 
@@ -919,17 +933,47 @@ profiles:
         targets:
             - uses: github-release/public
               artifacts: [nuget, snupkg]
+```
+
+This non-smoke project excerpt intentionally keeps first-delivery `hjg-pngcs`
+publishing GitHub Release-only in both profiles. Real package-registry
+publication for `hjg-pngcs`, including NuGet.org and GitHub Packages, is
+deferred until that package path is explicitly brought into scope. Current
+release-smoke coverage uses dedicated smoke projects for live package-registry
+publication; for ecosystems GitHub Packages supports, smoke descriptors publish
+GitHub Packages in `buddy` while the `official` target remains the ecosystem
+public registry:
+
+- NuGet smoke: `buddy` publishes `nuget/github-packages`; `official` publishes
+  `nuget/nuget-org`.
+- npm smoke: `buddy` publishes `npm/github-packages`; `official` publishes
+  `npm/npmjs`.
+- RubyGems smoke: `buddy` publishes `rubygems/github-packages`; `official`
+  publishes `rubygems/rubygems-org`.
+
+The both-profile same-identity GitHub Packages case applies only to the
+dedicated GitHub Packages smoke descriptor:
+
+```yaml
+profiles:
+    buddy:
+        targets:
+            - uses: github-release/public
+              artifacts: [nuget]
+            - uses: nuget/github-packages
+              artifacts: [nuget]
+    official:
+        targets:
+            - uses: github-release/public
+              artifacts: [nuget]
             - uses: nuget/github-packages
               artifacts: [nuget]
 ```
 
-First delivery intentionally allows only the protected `official` profile to
-publish the primary `.nupkg` member to GitHub Packages NuGet. The `buddy`
-profile remains limited to GitHub Release evidence so it cannot mutate the same
-immutable GitHub Packages package identity without the official protected
-environment. The descriptor keeps `.snupkg` modeled for GitHub Release evidence
-and omits `nuget/nuget-org` until the deferred `.snupkg` observation path is
-documented and tested.
+The non-smoke excerpt keeps `.snupkg` modeled for GitHub Release evidence. Smoke
+NuGet descriptors that publish to NuGet.org must keep the public registry path in
+`official`, rather than treating all GitHub-Packages-supported ecosystems as
+both-profile GitHub Packages publications.
 
 ### Public .NET app descriptor excerpt
 

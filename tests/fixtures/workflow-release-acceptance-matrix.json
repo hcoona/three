@@ -690,13 +690,13 @@
     {
       "id": "csharp-library-package-build-and-release",
       "scenario": "C# library package build and release",
-      "fixture-anchor": "src/public/lib/hcoona-release-smoke-nuget/",
+      "fixture-anchor": "src/public/lib/Hjg.Pngcs/",
       "validation-mode": "manual-live",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/hcoona-release-smoke-nuget/three.release.yml"
+            "value": "src/public/lib/Hjg.Pngcs/three.release.yml"
           },
           {
             "type": "path",
@@ -718,7 +718,7 @@
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_smoke_projects_plan_github_packages_publish"
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_dotnet_metadata_boundary_fails_closed_when_missing"
           }
         ],
         "execution-set-selectors": [
@@ -769,10 +769,6 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
-          },
-          {
-            "type": "live-gate",
-            "value": "buddy-github-packages-live-publication"
           }
         ],
         "workflow-conclusion": [
@@ -795,10 +791,6 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
-          },
-          {
-            "type": "live-gate",
-            "value": "buddy-github-packages-live-publication"
           }
         ]
       }
@@ -2246,6 +2238,14 @@
           },
           {
             "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_nuget_rejects_deferred_package_id_coexistence_conflict"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_github_packages_same_name_allowed_profile_coexistence"
+          },
+          {
+            "type": "test",
             "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
           }
         ],
@@ -2261,6 +2261,14 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-authoring/tests/test_authoring.py::test_static_coexistence_conflict_uses_descriptor_diagnostic"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_nuget_rejects_deferred_package_id_coexistence_conflict"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_github_packages_same_name_allowed_profile_coexistence"
           },
           {
             "type": "test",
@@ -2306,6 +2314,14 @@
           },
           {
             "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_nuget_rejects_deferred_package_id_coexistence_conflict"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_github_packages_same_name_allowed_profile_coexistence"
+          },
+          {
+            "type": "test",
             "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
           }
         ],
@@ -2317,6 +2333,14 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-authoring/tests/test_authoring.py::test_static_coexistence_conflict_uses_descriptor_diagnostic"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_nuget_rejects_deferred_package_id_coexistence_conflict"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_github_packages_same_name_allowed_profile_coexistence"
           },
           {
             "type": "test",
@@ -2339,6 +2363,14 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-authoring/tests/test_authoring.py::test_static_coexistence_conflict_uses_descriptor_diagnostic"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_nuget_rejects_deferred_package_id_coexistence_conflict"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_github_packages_same_name_allowed_profile_coexistence"
           },
           {
             "type": "test",

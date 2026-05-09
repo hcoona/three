@@ -61,7 +61,7 @@ envelope:
                 version-authority-kind: build-system-nbgv
             resolved-version: 1.2.3
             variant-ids: [variant/...]
-            publish-node-ids: [publish-node/release, publish-node/package]
+            publish-node-ids: [publish-node/release]
 graph:
     variants:
         variant/...:
@@ -106,20 +106,6 @@ graph:
                 asset-labels-by-artifact-id: {}
             attestation:
                 signer-workflow: hcoona/three/.github/workflows/release-publish-node.yml
-        publish-node/package:
-            project-id: hjg-pngcs
-            profile: buddy
-            descriptor-target-index: 1
-            target-instance-snapshot-id: nuget/github-packages
-            artifact-ids: [artifact/package]
-            publish-disposition: publish
-            publish-mode: create-only
-            resolved-publish-identity:
-                package-name: IO.Github.Hcoona.Pngcs
-                version: 1.2.3
-            projection:
-                final-distribution-filenames-by-artifact-id:
-                    artifact/package: IO.Github.Hcoona.Pngcs.1.2.3.nupkg
     target-instance-snapshots:
         github-release/public:
             family: github-release
@@ -206,44 +192,6 @@ graph:
                 name-uniqueness-scope: release-tag
                 version-uniqueness-rule: tag
                 profile-coexistence-rule: not-applicable
-                credential-posture: github-token
-                publish-topology: github-token
-        nuget/github-packages:
-            family: nuget
-            instance-id: github-packages
-            catalog-ref: nuget/github-packages
-            contract:
-                id: nuget-publish
-                allowed-artifact-tuples:
-                    - role: primary-package
-                      kind-family: package
-                      concrete-kind: nuget
-                    - role: symbols
-                      kind-family: package
-                      concrete-kind: snupkg
-                aggregate-rules:
-                    min-artifact-count: 1
-                    max-artifact-count: 2
-                    cross-variant-policy: forbid
-                    tuple-rules:
-                        - role: primary-package
-                          kind-family: package
-                          concrete-kind: nuget
-                          min-count: 1
-                          max-count: 1
-                        - role: symbols
-                          kind-family: package
-                          concrete-kind: snupkg
-                          min-count: 0
-                          max-count: 1
-            destination:
-                host: nuget.pkg.github.com
-                owner: hcoona
-            capabilities:
-                mutability: immutable
-                name-uniqueness-scope: package-name-with-owner
-                version-uniqueness-rule: package-name-plus-version
-                profile-coexistence-rule: requires-distinct-name
                 credential-posture: github-token
                 publish-topology: github-token
 ```

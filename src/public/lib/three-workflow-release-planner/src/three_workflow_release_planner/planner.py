@@ -205,6 +205,9 @@ class _PlanBuilder:
 
     def build(self) -> PlanningResult:
         """Build and return validated planner outputs."""
+        self._validate_profile_coexistence()
+        if self.diagnostics:
+            raise PlannerError(self.diagnostics)
         for project_id in self.selected_project_ids:
             self._add_project(self.snapshot.projects[project_id])
         if self.diagnostics:
@@ -241,6 +244,115 @@ class _PlanBuilder:
         }
         execution_sets = self._execution_sets(plan_id)
         return PlanningResult(plan=plan, execution_sets=execution_sets)
+
+    def _validate_profile_coexistence(self) -> None:
+        """Reject deferred package identity conflicts between profiles."""
+        selected_profile = str(self.inputs.request["profile"])
+        reported: set[tuple[str, str, str, str]] = set()
+        for project_id in self.selected_project_ids:
+            project = self.snapshot.projects[project_id]
+            for selected_target in project.profiles[selected_profile]:
+                selected_instance = self.snapshot.target_instances[
+                    selected_target.uses
+                ]
+                if (
+                    selected_instance.family == "github-release"
+                    or selected_instance.capabilities.get(
+                        "profile-coexistence-rule"
+                    )
+                    != "requires-distinct-name"
+                ):
+                    continue
+                selected_identity = self._profile_coexistence_identity(
+                    project, selected_target, selected_instance
+                )
+                if selected_identity is None:
+                    continue
+                for (
+                    other_profile,
+                    other_instance,
+                    package_name,
+                ) in self._profile_coexistence_conflicts(
+                    project,
+                    selected_profile,
+                    selected_instance,
+                    selected_identity,
+                ):
+                    report_key = (
+                        project.project_id,
+                        selected_profile,
+                        selected_target.uses,
+                        other_profile,
+                    )
+                    if report_key in reported:
+                        continue
+                    reported.add(report_key)
+                    self.diagnostics.append(
+                        _diagnostic(
+                            "PUBLISH_IDENTITY_CONFLICT",
+                            "normalization",
+                            "project",
+                            "buddy and official resolve the same "
+                            "package-registry identity",
+                            project_id=project.project_id,
+                            details={
+                                "profile": selected_profile,
+                                "target": selected_instance.catalog_ref,
+                                "conflicting-profile": other_profile,
+                                "conflicting-target": (
+                                    other_instance.catalog_ref
+                                ),
+                                "family": selected_instance.family,
+                                "destination": dict(
+                                    selected_instance.destination
+                                ),
+                                "package-name": package_name,
+                            },
+                        )
+                    )
+
+    def _profile_coexistence_identity(
+        self,
+        project: ProjectDescriptor,
+        target: TargetUsage,
+        instance: TargetInstance,
+    ) -> tuple[str, object, object, str] | None:
+        package_name = self._package_name(project, target, instance)
+        if package_name is None:
+            return None
+        return _coexistence_identity(instance, package_name)
+
+    def _profile_coexistence_conflicts(
+        self,
+        project: ProjectDescriptor,
+        selected_profile: str,
+        selected_instance: TargetInstance,
+        selected_identity: tuple[str, object, object, str],
+    ) -> list[tuple[str, TargetInstance, str]]:
+        conflicts: list[tuple[str, TargetInstance, str]] = []
+        for other_profile, targets in project.profiles.items():
+            if other_profile == selected_profile:
+                continue
+            for other_target in targets:
+                other_instance = self.snapshot.target_instances[
+                    other_target.uses
+                ]
+                if _registry_key(other_instance) != _registry_key(
+                    selected_instance
+                ):
+                    continue
+                other_name = self._package_name(
+                    project, other_target, other_instance
+                )
+                if (
+                    other_name is not None
+                    and _coexistence_identity(other_instance, other_name)
+                    == selected_identity
+                ):
+                    conflicts.append(
+                        (other_profile, other_instance, other_name)
+                    )
+        return conflicts
 
     def _add_project(self, project: ProjectDescriptor) -> None:
         version = self._resolved_version(project)
@@ -1628,6 +1740,23 @@ def _request_project_ids(request: Mapping[str, object]) -> list[str]:
         if isinstance(requested, list)
         else []
     )
+
+
+def _registry_key(instance: TargetInstance) -> tuple[str, object, object]:
+    return (
+        instance.family,
+        instance.destination.get("host"),
+        instance.destination.get("owner"),
+    )
+
+
+def _coexistence_identity(
+    instance: TargetInstance, package_name: str
+) -> tuple[str, object, object, str]:
+    name = (
+        package_name.casefold() if instance.family == "nuget" else package_name
+    )
+    return (*_registry_key(instance), name)
 
 
 def _node_artifact_ids(node: Mapping[str, object]) -> list[str]:
