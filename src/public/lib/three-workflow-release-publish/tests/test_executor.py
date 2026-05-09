@@ -145,6 +145,49 @@ def test_npm_executor_publishes_scoped_npmjs_package_publicly(
         _reset_scratch(scratch)
 
 
+def test_npm_executor_publishes_prerelease_npmjs_package_with_dist_tag(
+    tmp_path: Path,
+) -> None:
+    """Publish prerelease npmjs packages with an explicit dist-tag."""
+    scratch = REPO_ROOT / ".publish-executor-npm-prerelease-test"
+    _reset_scratch(scratch)
+    try:
+        package = scratch / "input" / "hcoona-example-1.0.0-beta.255.tgz"
+        _write_npm_tarball(package, "@hcoona/example", "1.0.0-beta.255")
+        request = _request(
+            family="npm",
+            host="registry.npmjs.org",
+            artifact_path=package,
+            concrete_kind="npm-package",
+            identity={
+                "package-name": "@hcoona/example",
+                "version": "1.0.0-beta.255",
+            },
+            projection={},
+        )
+        calls = _Calls()
+
+        execute_publish(
+            request,
+            REPO_ROOT,
+            runner=calls.runner,
+            check_commit=False,
+            work_dir=tmp_path / "work",
+        )
+
+        assert calls.commands[0][:2] == ["npm", "publish"]
+        assert Path(calls.commands[0][2]).name == package.name
+        assert calls.commands[0][3:] == [
+            "--provenance",
+            "--tag",
+            "beta",
+            "--access",
+            "public",
+        ]
+    finally:
+        _reset_scratch(scratch)
+
+
 def test_npm_executor_publishes_github_packages_with_github_token(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

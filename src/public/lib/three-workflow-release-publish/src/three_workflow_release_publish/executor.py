@@ -1078,6 +1078,9 @@ def _publish_npm(
             _mapping(request["publish-node"])["resolved-publish-identity"]
         )
         package_name = str(identity["package-name"])
+        version = str(identity["version"])
+        if tag := _npm_prerelease_dist_tag(version):
+            command.extend(["--tag", tag])
         if package_name.startswith("@"):
             command.extend(["--access", "public"])
     elif host == "npm.pkg.github.com":
@@ -1098,6 +1101,26 @@ def _publish_npm(
         raise PublishExecutorError(msg, code="PUBLISH_UNSUPPORTED_TARGET")
     _run_checked(command, repo_root, runner, env=env)
     return {"package-filename": package_path.name, "registry": host}
+
+
+def _npm_prerelease_dist_tag(version: str) -> str | None:
+    """Return the npm dist-tag for a prerelease version."""
+    public_version = version.strip().split("+", 1)[0]
+    _release, separator, prerelease = public_version.partition("-")
+    if not separator:
+        return None
+    tag = prerelease.split(".", 1)[0]
+    if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z-]*", tag):
+        msg = (
+            "npm prerelease version has invalid dist-tag identifier: "
+            f"{version!r}"
+        )
+        raise PublishExecutorError(
+            msg,
+            code="PUBLISH_INVALID_IDENTITY",
+            phase="validation",
+        )
+    return "prerelease" if tag.isdecimal() else tag
 
 
 def _publish_nuget(
