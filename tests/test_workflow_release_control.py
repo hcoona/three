@@ -684,6 +684,24 @@ def _github_packages_nuget_observation_plan() -> dict[str, object]:
     return plan
 
 
+def _single_active_oidc_execution_sets(
+    topology: str = "external-oidc-entry-workflow",
+) -> dict[str, object]:
+    """Return sets with only the fixture package publish node active."""
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    execution_sets["active-publish-node-ids"] = ["publish-node/nuget"]
+    execution_sets["publish-intent-node-ids"] = ["publish-node/nuget"]
+    execution_sets["selected-github-release-publish-node-ids"] = []
+    execution_sets["active-github-release-publish-node-ids"] = []
+    execution_sets["skip-satisfied-publish-node-ids"] = []
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    execution_sets["active-publish-selectors"][topology] = [
+        "publish-node/nuget"
+    ]
+    return execution_sets
+
+
 def _run_plan_gate_case(
     case_dir: Path,
     plan: dict[str, object],
@@ -4627,6 +4645,76 @@ def test_external_oidc_gate_blocks_unsupported_remote_observation() -> None:
     )
     assert diagnostics[0]["details"]["remote-observation"] == "unsupported"
     assert diagnostics[0]["details"]["target-family"] == "rubygems"
+
+
+def test_single_selected_oidc_plan_ignores_extra_known_npm_token() -> None:
+    """Selected RubyGems-only plans allow unrelated known OIDC npm tokens."""
+    plan = _public_registry_observation_plan("rubygems")
+    plan["envelope"]["profile"] = "official"
+    execution_sets = _single_active_oidc_execution_sets()
+
+    diagnostics = control._external_oidc_diagnostics(
+        plan,
+        execution_sets,
+        (
+            "rubygems/rubygems-org#example#Example,"
+            "npm/npmjs#hcoona-release-smoke-npm#"
+            "@hcoona/hcoona-release-smoke-npm"
+        ),
+        {"publish-node/nuget": "absent"},
+    )
+
+    assert diagnostics == []
+
+
+def test_oidc_allowlist_unknown_target_ref_fails_closed() -> None:
+    """Unknown target refs are rejected even when token shape is valid."""
+    plan = _public_registry_observation_plan("rubygems")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        control._normalize_enablement("unknown/target#example#Example", plan)
+
+    diagnostics = json.loads(str(exc_info.value))["diagnostics"]
+    assert diagnostics[0]["code"] == "REQ_INVALID_INPUT"
+    assert diagnostics[0]["details"] == {
+        "token": "unknown/target#example#Example"
+    }
+
+
+def test_oidc_allowlist_known_non_oidc_target_ref_fails_closed() -> None:
+    """Known target refs using non-OIDC credentials are rejected."""
+    plan = _public_registry_observation_plan("rubygems")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        control._normalize_enablement(
+            "nuget/github-packages#example#Example", plan
+        )
+
+    diagnostics = json.loads(str(exc_info.value))["diagnostics"]
+    assert diagnostics[0]["code"] == "REQ_INVALID_INPUT"
+    assert diagnostics[0]["details"] == {
+        "token": "nuget/github-packages#example#Example"
+    }
+
+
+def test_oidc_allowlist_preserves_scoped_npm_package_tokens() -> None:
+    """Scoped npm package names keep their slash during token matching."""
+    plan = _public_registry_observation_plan("npm")
+    plan["envelope"]["profile"] = "official"
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["resolved-publish-identity"]["package-name"] = (
+        "@hcoona/hcoona-release-smoke-npm"
+    )
+    execution_sets = _single_active_oidc_execution_sets()
+
+    diagnostics = control._external_oidc_diagnostics(
+        plan,
+        execution_sets,
+        "npm/npmjs#example#@hcoona/hcoona-release-smoke-npm",
+        {"publish-node/nuget": "absent"},
+    )
+
+    assert diagnostics == []
 
 
 def test_plan_gate_writes_invalid_oidc_allowlist_diagnostics() -> None:

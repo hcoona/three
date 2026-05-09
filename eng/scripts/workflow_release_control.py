@@ -1449,13 +1449,7 @@ def _workflow_artifact_ids_by_name(repository: str, run_id: int) -> Json:
 
 
 def _normalize_enablement(value: str, plan: Json) -> set[str]:
-    known_oidc = {
-        snapshot_id
-        for snapshot_id, snapshot in plan["graph"][
-            "target-instance-snapshots"
-        ].items()
-        if snapshot["capabilities"]["credential-posture"] == "oidc"
-    }
+    known_oidc = _known_oidc_target_instance_refs()
     tokens = sorted(
         {
             item.strip()
@@ -1480,6 +1474,21 @@ def _normalize_enablement(value: str, plan: Json) -> set[str]:
             )
             raise RuntimeError(json.dumps(_diagnostics_document([diag])))
     return set(tokens)
+
+
+def _known_oidc_target_instance_refs() -> set[str]:
+    catalog = yaml.safe_load(
+        (_REPO_ROOT / "eng/release/target-instances.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    families = catalog.get("families", {})
+    return {
+        f"{family_id}/{instance['id']}"
+        for family_id, family in families.items()
+        for instance in family.get("instances", [])
+        if instance.get("capabilities", {}).get("credential-posture") == "oidc"
+    }
 
 
 def _diagnostics_from_error(error: RuntimeError) -> Json | None:
