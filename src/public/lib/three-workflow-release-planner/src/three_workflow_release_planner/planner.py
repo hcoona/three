@@ -380,9 +380,11 @@ class _PlanBuilder:
                     {
                         "project-id": project.project_id,
                         "variant-id": variant_id,
+                        "descriptor-handle": artifact.id,
                         "role": artifact.role,
                         "kind-family": artifact.kind_family,
                         "concrete-kind": artifact.concrete_kind,
+                        "projection": dict(sorted(artifact.projection.items())),
                     },
                 )
                 self.artifact_ids_by_descriptor[
@@ -412,6 +414,7 @@ class _PlanBuilder:
                         ]
                         for item in artifact.produced_from
                     ],
+                    "projection": dict(sorted(artifact.projection.items())),
                 }
                 if artifact.companions:
                     self.artifacts[artifact_id]["companions"] = [
@@ -780,12 +783,7 @@ class _PlanBuilder:
             if name is not None:
                 return _pep503_name(name)
         if instance.family == "npm":
-            projected = target.projection.get("package-name")
-            name = (
-                projected
-                if isinstance(projected, str)
-                else self._package_json_name(project)
-            )
+            name = self._npm_target_package_name(project, target)
             if isinstance(name, str) and _NPM_NAME_RE.match(name):
                 return name
         if instance.family == "rubygems":
@@ -809,7 +807,22 @@ class _PlanBuilder:
         )
         return None
 
-    def _projection(
+    def _npm_target_package_name(
+        self, project: ProjectDescriptor, target: TargetUsage
+    ) -> str | None:
+        """Resolve npm package name, preferring artifact-level projection."""
+        if len(target.artifacts) == 1:
+            artifact = project.artifacts_by_id.get(target.artifacts[0])
+            if artifact is not None:
+                projected = artifact.projection.get("package-name")
+                if isinstance(projected, str):
+                    return projected
+        projected = target.projection.get("package-name")
+        if isinstance(projected, str):
+            return projected
+        return self._package_json_name(project)
+
+    def _projection(  # noqa: C901
         self,
         project: ProjectDescriptor,
         target: TargetUsage,
@@ -878,9 +891,10 @@ class _PlanBuilder:
                     sorted(filenames.items())
                 )
             }
-            projected = target.projection.get("package-name")
-            if instance.family == "npm" and isinstance(projected, str):
-                projection["package-name"] = projected
+            if instance.family == "npm":
+                projected = self._npm_target_package_name(project, target)
+                if isinstance(projected, str):
+                    projection["package-name"] = projected
             return projection
         return {}
 
@@ -1208,7 +1222,7 @@ class _PlanBuilder:
             )
             return names.get("sdist") if names is not None else None
         if concrete == "npm-package" and package_name:
-            base = package_name.split("/", maxsplit=1)[-1]
+            base = _npm_pack_filename_base(package_name)
             return f"{base}-{version}.tgz"
         if concrete == "rubygem" and package_name:
             if project.version_authority_kind == "build-system-nbgv":
@@ -1251,6 +1265,13 @@ class _PlanBuilder:
             ),
             None,
         )
+        projected = artifact.get("projection")
+        if (
+            family == "npm"
+            and isinstance(projected, Mapping)
+            and isinstance(projected.get("package-name"), str)
+        ):
+            return str(projected["package-name"])
         if target is None:
             if family == "pypi":
                 name = self._pyproject_name(project)
@@ -1885,3 +1906,10 @@ def diagnostics_document_unchecked(
         "kind": "planner-diagnostics",
         "diagnostics": [dict(item) for item in diagnostics],
     }
+
+
+def _npm_pack_filename_base(package_name: str) -> str:
+    """Return the npm pack filename base for a package name."""
+    if package_name.startswith("@") and "/" in package_name:
+        return package_name[1:].replace("/", "-")
+    return package_name

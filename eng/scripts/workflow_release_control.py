@@ -67,29 +67,12 @@ _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset(
         "hcoona-release-smoke-github-packages",
         "hcoona-release-smoke-github-release",
         "hcoona-release-smoke-npm",
+        "hcoona-release-smoke-npm-dual",
         "hcoona-release-smoke-nuget",
         "hcoona-release-smoke-pypi",
         "hcoona-release-smoke-rubygems",
     }
 )
-_GITHUB_PACKAGES_FIRST_PUBLISH_CANARY_PROJECTS = frozenset(
-    {
-        "hcoona-release-smoke-github-packages",
-        "hcoona-release-smoke-npm",
-        "hcoona-release-smoke-nuget",
-        "hcoona-release-smoke-rubygems",
-    }
-)
-_GITHUB_PACKAGES_FIRST_PUBLISH_CANARY_PACKAGES = {
-    "hcoona-release-smoke-github-packages": frozenset(
-        {"hcoona.releasesmoke.githubpackages"}
-    ),
-    "hcoona-release-smoke-nuget": frozenset({"hcoona.releasesmoke.nuget"}),
-    "hcoona-release-smoke-npm": frozenset({"@hcoona/hcoona-release-smoke-npm"}),
-    "hcoona-release-smoke-rubygems": frozenset(
-        {"hcoona-release-smoke-rubygems"}
-    ),
-}
 
 
 def main() -> int:
@@ -664,10 +647,7 @@ def _cmd_build_request(args: argparse.Namespace) -> int:
     envelope = plan["envelope"]
     variant = plan["graph"]["variants"][args.variant_id]
     project_id = variant["project-id"]
-    artifacts = {
-        artifact_id: plan["graph"]["artifacts"][artifact_id]
-        for artifact_id in variant["artifact-ids"]
-    }
+    artifacts = _build_request_artifacts(plan, variant)
     request = {
         "api-version": "three.release.build-request/v1alpha1",
         "kind": "build-request",
@@ -681,6 +661,97 @@ def _cmd_build_request(args: argparse.Namespace) -> int:
     validate_contract(request)
     _write_json(Path(args.out), request)
     return 0
+
+
+def _build_request_artifacts(
+    plan: Mapping[str, Any], variant: Mapping[str, Any]
+) -> Json:
+    """Materialize build-request artifacts with effective build projections."""
+    graph = _mapping(plan["graph"], "graph")
+    plan_artifacts = _mapping(graph["artifacts"], "graph.artifacts")
+    artifacts = {
+        str(artifact_id): dict(
+            _mapping(
+                plan_artifacts[artifact_id], f"graph.artifacts.{artifact_id}"
+            )
+        )
+        for artifact_id in variant["artifact-ids"]
+    }
+    _materialize_npm_build_projections(graph, artifacts)
+    return artifacts
+
+
+def _materialize_npm_build_projections(
+    graph: Mapping[str, Any], artifacts: Json
+) -> None:
+    """Apply legacy single-artifact npm target projection to build artifacts."""
+    target_snapshots = _mapping(
+        graph["target-instance-snapshots"], "graph.target-instance-snapshots"
+    )
+    effective_names: dict[str, str] = {}
+    sources: dict[str, str] = {}
+    for node_id, raw_node in _mapping(
+        graph["publish-nodes"], "graph.publish-nodes"
+    ).items():
+        node = _mapping(raw_node, f"graph.publish-nodes.{node_id}")
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            target_snapshots[snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        if snapshot.get("family") != "npm":
+            continue
+        node_artifact_ids = [
+            item
+            for item in node.get("artifact-ids", [])
+            if isinstance(item, str)
+        ]
+        relevant = [
+            artifact_id
+            for artifact_id in node_artifact_ids
+            if artifact_id in artifacts
+        ]
+        if not relevant:
+            continue
+        projection = _mapping(
+            node.get("projection", {}), "publish-node.projection"
+        )
+        package_name = projection.get("package-name")
+        if not isinstance(package_name, str):
+            continue
+        if len(node_artifact_ids) != 1:
+            msg = (
+                f"npm package-name projection for publish node {node_id!r} "
+                "references multiple artifacts; use artifact-level projection"
+            )
+            raise ValueError(msg)
+        artifact_id = relevant[0]
+        artifact_projection = _mapping(
+            artifacts[artifact_id].get("projection", {}),
+            f"artifacts.{artifact_id}.projection",
+        )
+        if isinstance(artifact_projection.get("package-name"), str):
+            continue
+        previous = effective_names.get(artifact_id)
+        if previous is not None and previous != package_name:
+            msg = (
+                f"conflicting npm package-name projections for artifact "
+                f"{artifact_id!r}: {previous!r} from {sources[artifact_id]!r} "
+                f"and {package_name!r} from {node_id!r}; use distinct "
+                "artifact-level projections"
+            )
+            raise ValueError(msg)
+        effective_names[artifact_id] = package_name
+        sources[artifact_id] = str(node_id)
+    for artifact_id, package_name in effective_names.items():
+        projection = dict(
+            _mapping(
+                artifacts[artifact_id].get("projection", {}),
+                f"artifacts.{artifact_id}.projection",
+            )
+        )
+        projection["package-name"] = package_name
+        artifacts[artifact_id]["projection"] = projection
 
 
 def _cmd_download_publish_inputs(args: argparse.Namespace) -> int:
@@ -916,13 +987,6 @@ def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
                 snapshot,
                 execution_sets,
                 enabled,
-                canary_override=_parse_bool(
-                    getattr(args, "canary_override_non_public_ref", "false")
-                ),
-                release_environment=str(
-                    getattr(args, "release_environment", "") or ""
-                ),
-                profile=str(plan["envelope"].get("profile", "")),
             )
         except (RuntimeError, TypeError, ValueError) as exc:
             diagnostics.append(
@@ -956,10 +1020,6 @@ def _maybe_observe_remote_publication(
     snapshot: Mapping[str, Any],
     execution_sets: Mapping[str, Any] | None,
     enabled: set[str],
-    *,
-    canary_override: bool = False,
-    release_environment: str = "",
-    profile: str = "",
 ) -> str | None:
     if snapshot["family"] == "github-release":
         return _observe_github_release_publication(repository, commit_sha, node)
@@ -972,14 +1032,6 @@ def _maybe_observe_remote_publication(
             repository,
             node,
             snapshot,
-            canary_first_publish_override=_github_packages_first_publish_override_allowed(
-                node_id,
-                node,
-                execution_sets,
-                canary_override=canary_override,
-                release_environment=release_environment,
-                profile=profile,
-            ),
         )
     if _supports_public_registry_remote_observation(
         snapshot
@@ -2293,8 +2345,6 @@ def _observe_github_packages_nuget_publication(
     repository: str,
     node: Json,
     snapshot: Mapping[str, Any],
-    *,
-    canary_first_publish_override: bool = False,
 ) -> str:
     package_name, version = _package_publish_identity(
         node, "GitHub Packages NuGet"
@@ -2305,8 +2355,6 @@ def _observe_github_packages_nuget_publication(
         repository,
         owner,
         package_name,
-        canary_first_publish_override=canary_first_publish_override,
-        project_id=str(node.get("project-id", "")),
     )
     if package is None:
         return "absent"
@@ -2339,8 +2387,6 @@ def _observe_github_packages_publication(
     repository: str,
     node: Json,
     snapshot: Mapping[str, Any],
-    *,
-    canary_first_publish_override: bool = False,
 ) -> str:
     family = str(snapshot.get("family"))
     if family == "nuget":
@@ -2348,7 +2394,6 @@ def _observe_github_packages_publication(
             repository,
             node,
             snapshot,
-            canary_first_publish_override=canary_first_publish_override,
         )
     package_name, version = _package_publish_identity(
         node, f"GitHub Packages {family}"
@@ -2359,8 +2404,6 @@ def _observe_github_packages_publication(
         owner,
         family,
         package_name,
-        canary_first_publish_override=canary_first_publish_override,
-        project_id=str(node.get("project-id", "")),
     )
     if package is None:
         return "absent"
@@ -2518,17 +2561,12 @@ def _github_packages_nuget_package(
     repository: str,
     owner: str,
     package_name: str,
-    *,
-    canary_first_publish_override: bool = False,
-    project_id: str = "",
 ) -> Mapping[str, Any] | None:
     return _github_packages_package(
         repository,
         owner,
         "nuget",
         package_name,
-        canary_first_publish_override=canary_first_publish_override,
-        project_id=project_id,
     )
 
 
@@ -2537,9 +2575,6 @@ def _github_packages_package(
     owner: str,
     package_type: str,
     package_name: str,
-    *,
-    canary_first_publish_override: bool = False,
-    project_id: str = "",
 ) -> Mapping[str, Any] | None:
     prefix = _github_packages_owner_endpoint_prefix(repository, owner)
     endpoint = (
@@ -2550,24 +2585,13 @@ def _github_packages_package(
         payload = _gh_api(repository, endpoint)
     except RuntimeError as exc:
         if _is_github_not_found_error(exc):
-            if canary_first_publish_override:
-                sys.stderr.write(
-                    "GitHub Packages 404 treated as absent under canary "
-                    "first-publish override: "
-                    f"project-id={project_id!r}, package-name={package_name!r}, "
-                    f"owner={owner!r}, package-type={package_type!r}\n"
-                )
-                return None
-            msg = (
-                f"GitHub Packages {package_type} package {package_name!r} "
-                f"for owner {owner!r} is not visible to the current GitHub "
-                "API token; absence cannot be proven from a 404/listing miss. "
-                "Grant the workflow repository Actions/read access to the "
-                "package, or use a token/API path with authoritative package "
-                "read access. Only the dedicated smoke/canary first-publish "
-                "path may treat this 404 as absent."
+            sys.stderr.write(
+                "GitHub Packages 404 treated as absent; publish remains the "
+                "authority for permissions and conflicts: "
+                f"package-name={package_name!r}, owner={owner!r}, "
+                f"package-type={package_type!r}\n"
             )
-            raise RuntimeError(msg) from exc
+            return None
         raise
     if not isinstance(payload, Mapping):
         msg = (
@@ -2583,62 +2607,6 @@ def _github_packages_package(
         )
         raise TypeError(msg)
     return payload
-
-
-def _github_packages_first_publish_override_allowed(
-    node_id: str,
-    node: Mapping[str, Any],
-    execution_sets: Mapping[str, Any] | None,
-    *,
-    canary_override: bool,
-    release_environment: str,
-    profile: str,
-) -> bool:
-    """Constrain GitHub Packages 404-as-absent to the official canary path."""
-    project_id = node.get("project-id")
-    package_name = _github_packages_first_publish_package_name(node)
-    allowed_packages = (
-        _GITHUB_PACKAGES_FIRST_PUBLISH_CANARY_PACKAGES.get(project_id)
-        if isinstance(project_id, str)
-        else None
-    )
-    publish_intent_node_ids: Sequence[Any] = ()
-    if execution_sets is not None:
-        candidate_node_ids = execution_sets.get("publish-intent-node-ids", [])
-        if not isinstance(candidate_node_ids, str) and isinstance(
-            candidate_node_ids, Sequence
-        ):
-            publish_intent_node_ids = candidate_node_ids
-    if (
-        not isinstance(project_id, str)
-        or project_id not in _GITHUB_PACKAGES_FIRST_PUBLISH_CANARY_PROJECTS
-        or package_name is None
-        or allowed_packages is None
-        or package_name.casefold() not in allowed_packages
-        or execution_sets is None
-        or execution_sets.get("dry-run") is not True
-        or node_id not in publish_intent_node_ids
-    ):
-        return False
-    if profile == "buddy":
-        return True
-    return (
-        canary_override
-        and profile == "official"
-        and release_environment == "release"
-    )
-
-
-def _github_packages_first_publish_package_name(
-    node: Mapping[str, Any],
-) -> str | None:
-    identity = node.get("resolved-publish-identity")
-    if not isinstance(identity, Mapping):
-        return None
-    package_name = identity.get("package-name")
-    if not isinstance(package_name, str) or not package_name:
-        return None
-    return package_name
 
 
 def _github_packages_nuget_versions(
@@ -3168,6 +3136,13 @@ def _read_json(path: Path) -> Json:
         msg = f"{path} must contain a JSON object"
         raise TypeError(msg)
     return payload
+
+
+def _mapping(value: object, path: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        msg = f"{path} must be a JSON object"
+        raise TypeError(msg)
+    return value
 
 
 def _read_optional_json(value: str) -> Json | None:

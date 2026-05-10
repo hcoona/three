@@ -1008,7 +1008,7 @@ def _artifact(validator: _Validator, value: object, path: str) -> None:
             "concrete-kind",
             "produced-from-artifact-ids",
         },
-        optional={"companions"},
+        optional={"companions", "projection"},
     )
     if obj is None:
         return
@@ -1032,6 +1032,18 @@ def _artifact(validator: _Validator, value: object, path: str) -> None:
             "are only valid for executable artifacts",
         )
     _artifact_companions(validator, companions, f"{path}.companions")
+    projection = obj.get("projection")
+    if projection is not None:
+        _artifact_projection(validator, projection, f"{path}.projection")
+
+
+def _artifact_projection(
+    validator: _Validator, value: object, path: str
+) -> None:
+    """Validate plan/build artifact-level projection metadata."""
+    obj = validator.mapping(value, path, set(), {"package-name"})
+    if obj is not None and "package-name" in obj:
+        validator.string(obj.get("package-name"), f"{path}.package-name")
 
 
 def _artifact_companions(

@@ -2,21 +2,17 @@ api-version: three.release/v1alpha1
 kind: project
 
 project:
-  id: hexo-renderer-asciidoc
-  display-name: hexo-renderer-asciidoc
+  id: hcoona-release-smoke-npm-dual
+  display-name: hcoona-release-smoke-npm-dual
   ecosystem: node
   release-kind: lib
 
 source:
   primary-manifest: package.json
   auxiliary-inputs:
-    - CHANGELOG.md
-    - LICENSE
-    - README.npm.md
+    - scripts/build.mjs
     - scripts/nbgv-version.mjs
-    - scripts/npm-readme.cjs
-    - scripts/sync-licenses.mjs
-    - tsdown.config.ts
+    - src/index.js
 
 variants:
   - id: package
@@ -27,13 +23,13 @@ variants:
         kind-family: package
         concrete-kind: npm-package
         projection:
-          package-name: hexo-renderer-asciidoc
+          package-name: hcoona-release-smoke-npm-dual
       - id: npm-package-github
         role: primary-package
         kind-family: package
         concrete-kind: npm-package
         projection:
-          package-name: "@hcoona/hexo-renderer-asciidoc"
+          package-name: '@hcoona/hcoona-release-smoke-npm-dual'
 
 profiles:
   buddy:

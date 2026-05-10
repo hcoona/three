@@ -459,3 +459,19 @@ Updated the workflow-release design notes to move live acceptance away from the 
   and official smoke package identities.
 - Updated the workflow release design notes for NuGet, npm, RubyGems, and the
   dedicated GitHub Packages smoke package buddy publication paths.
+
+## [2026-05-10] design | Simplify GitHub Packages 404 observation
+
+- Recorded that GitHub Packages package API 404 during planner-time remote
+  observation is normalized to `absent`.
+- Clarified that the publish executor remains authoritative for permission and
+  conflict failures, while non-404 observation errors still fail hard.
+
+## [2026-05-10] design | Document npm dual-artifact projection
+
+- Updated the descriptor schema to allow artifact-level npm
+  `projection.package-name` and the duplicate npm artifact tuple exception when
+  projected package names are distinct.
+- Updated the plan shape to freeze artifact-level npm projection, per-artifact
+  npm final distribution filenames, projected npm tarballs in build bundles, and
+  identity-verification-only npm publication.

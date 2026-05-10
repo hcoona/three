@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -93,6 +93,10 @@ _FROZEN_DESCRIPTOR_IDENTITY_BY_ROOT = {
     ),
     "src/public/lib/hcoona-release-smoke-npm": (
         "hcoona-release-smoke-npm",
+        "package.json",
+    ),
+    "src/public/lib/hcoona-release-smoke-npm-dual": (
+        "hcoona-release-smoke-npm-dual",
         "package.json",
     ),
     "src/public/lib/hcoona-release-smoke-nuget": (
@@ -273,6 +277,10 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
         "buddy": frozenset({"github-release/public", "npm/github-packages"}),
         "official": frozenset({"github-release/public", "npm/npmjs"}),
     },
+    "hcoona-release-smoke-npm-dual": {
+        "buddy": frozenset({"github-release/public", "npm/github-packages"}),
+        "official": frozenset({"github-release/public", "npm/npmjs"}),
+    },
     "hcoona-release-smoke-nuget": {
         "buddy": frozenset({"github-release/public", "nuget/github-packages"}),
         "official": frozenset({"github-release/public", "nuget/nuget-org"}),
@@ -286,7 +294,10 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
             {"github-release/public", "rubygems/rubygems-org"}
         ),
     },
-    "hexo-renderer-asciidoc": _GITHUB_RELEASE_ONLY_TARGETS,
+    "hexo-renderer-asciidoc": {
+        "buddy": frozenset({"github-release/public", "npm/github-packages"}),
+        "official": frozenset({"github-release/public", "npm/npmjs"}),
+    },
     "hjg-pngcs": _GITHUB_RELEASE_ONLY_TARGETS,
     "image-occlusion-editor": _GITHUB_RELEASE_ONLY_TARGETS,
     "markdown-hybrid-search-mcp": _ZERO_TARGETS,
@@ -312,10 +323,11 @@ _FROZEN_TARGET_ARTIFACT_SEMANTICS_BY_PROJECT_ID = {
     "hcoona-release-smoke-github-packages": _GITHUB_PACKAGES_NUGET_ARTIFACTS,
     "hcoona-release-smoke-github-release": _GITHUB_RELEASE_ARTIFACTS,
     "hcoona-release-smoke-npm": _NPMJS_ARTIFACTS,
+    "hcoona-release-smoke-npm-dual": _NPMJS_ARTIFACTS,
     "hcoona-release-smoke-nuget": _NUGET_ORG_ARTIFACTS,
     "hcoona-release-smoke-pypi": _PYTHON_ARTIFACTS,
     "hcoona-release-smoke-rubygems": _RUBYGEMS_ORG_ARTIFACTS,
-    "hexo-renderer-asciidoc": _NPM_GITHUB_RELEASE_ARTIFACTS,
+    "hexo-renderer-asciidoc": _NPMJS_ARTIFACTS,
     "hjg-pngcs": _GITHUB_RELEASE_ARTIFACTS,
     "image-occlusion-editor": _INSTALLER_ARTIFACTS,
     "markdown-hybrid-search-mcp": _NO_ARTIFACTS,
@@ -478,6 +490,7 @@ class Artifact:
     produced_from: tuple[str, ...]
     variant_id: str
     companions: tuple[Companion, ...]
+    projection: Mapping[str, object] = field(default_factory=dict)
 
     @property
     def tuple_key(self) -> tuple[str, str, str]:
@@ -1080,12 +1093,7 @@ def _variant_item(
             )
             if artifact is not None:
                 artifacts.append(artifact)
-    _duplicates(
-        [artifact.tuple_key for artifact in artifacts],
-        f"{path}.artifacts",
-        issues,
-        "artifact tuple",
-    )
+    _validate_duplicate_artifact_tuples(artifacts, f"{path}.artifacts", issues)
     for artifact in artifacts:
         if artifact.companions and artifact.concrete_kind != "executable":
             issues.add(
@@ -1116,7 +1124,7 @@ def _artifact_item(
         path,
         issues,
         "DESC_SCHEMA_INVALID",
-        optional={"produced-from", "companions"},
+        optional={"produced-from", "companions", "projection"},
     )
     artifact_id = _required_string(obj, "id", path, issues)
     _canonical_id(artifact_id, f"{path}.id", issues)
@@ -1138,6 +1146,23 @@ def _artifact_item(
             _canonical_id(source_id, f"{path}.produced-from[{index}]", issues)
             produced_from.append(source_id)
     companions = _companion_items(obj.get("companions", []), path, issues)
+    projection = _artifact_projection(obj.get("projection", {}), path, issues)
+    if projection and (role, family, concrete) != (
+        "primary-package",
+        "package",
+        "npm-package",
+    ):
+        issues.add(
+            "DESC_SCHEMA_INVALID",
+            f"{path}.projection",
+            "artifact projection is only valid for npm-package artifacts",
+        )
+    elif isinstance(projection.get("package-name"), str):
+        _npm_name(
+            str(projection["package-name"]),
+            f"{path}.projection.package-name",
+            issues,
+        )
     return Artifact(
         artifact_id,
         role,
@@ -1146,7 +1171,58 @@ def _artifact_item(
         tuple(produced_from),
         variant_id,
         tuple(companions),
+        projection,
     )
+
+
+def _artifact_projection(
+    value: object, path: str, issues: _IssueCollector
+) -> Mapping[str, object]:
+    """Validate artifact-level projection metadata."""
+    projection = _mapping(
+        value, f"{path}.projection", issues, "DESC_SCHEMA_INVALID"
+    )
+    if projection is None:
+        return {}
+    _exact_keys(
+        projection,
+        set(),
+        f"{path}.projection",
+        issues,
+        "DESC_SCHEMA_INVALID",
+        optional={"package-name"},
+    )
+    package_name = projection.get("package-name")
+    if package_name is not None:
+        _string(package_name, f"{path}.projection.package-name", issues)
+    return projection
+
+
+def _validate_duplicate_artifact_tuples(
+    artifacts: Sequence[Artifact], path: str, issues: _IssueCollector
+) -> None:
+    """Reject duplicate artifact tuples except distinct projected npm names."""
+    groups: dict[tuple[str, str, str], list[Artifact]] = {}
+    for artifact in artifacts:
+        groups.setdefault(artifact.tuple_key, []).append(artifact)
+    for tuple_key, group in groups.items():
+        if len(group) <= 1:
+            continue
+        package_names = [
+            artifact.projection.get("package-name") for artifact in group
+        ]
+        if (
+            tuple_key == ("primary-package", "package", "npm-package")
+            and all(isinstance(name, str) and name for name in package_names)
+            and len(set(package_names)) == len(package_names)
+        ):
+            continue
+        _duplicates(
+            [artifact.tuple_key for artifact in group],
+            path,
+            issues,
+            "artifact tuple",
+        )
 
 
 def _companion_items(
@@ -1859,6 +1935,8 @@ def _validate_projection(  # noqa: PLR0913
 ) -> None:
     """Validate family-specific descriptor projection data."""
     projection = target.projection
+    if instance.family == "npm":
+        projection = _effective_npm_projection(target, artifacts)
     if instance.family == "github-release":
         _github_release_projection(project, target, projection, path, issues)
     elif instance.family == "npm":
@@ -1911,6 +1989,18 @@ def _github_release_projection(
                 project_id=project.project_id,
             )
         _string(label, f"{path}.projection.asset-labels.{key}", issues)
+
+
+def _effective_npm_projection(
+    target: TargetUsage, artifacts: Sequence[Artifact]
+) -> Mapping[str, object]:
+    """Return target-level projection with artifact-level npm overrides."""
+    if len(artifacts) == 1 and artifacts[0].projection.get("package-name"):
+        return {
+            **target.projection,
+            "package-name": artifacts[0].projection["package-name"],
+        }
+    return target.projection
 
 
 def _npm_projection(  # noqa: PLR0913

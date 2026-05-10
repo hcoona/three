@@ -96,6 +96,10 @@
           },
           {
             "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-npm-dual/three.release.yml"
+          },
+          {
+            "type": "path",
             "value": "src/public/lib/hcoona-release-smoke-nuget/three.release.yml"
           },
           {
@@ -1568,7 +1572,7 @@
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_github_packages_buddy_first_publish_404_is_absent"
+            "value": "tests/test_workflow_release_control.py::test_github_packages_package_404_is_absent_for_supported_families"
           }
         ],
         "workflow-conclusion": [
@@ -1600,15 +1604,15 @@
       }
     },
     {
-      "id": "npmjs-entry-hosted-trusted-publication",
-      "scenario": "npmjs entry-hosted trusted publication",
-      "fixture-anchor": "src/public/lib/hcoona-release-smoke-npm/",
+      "id": "dual-npmjs-entry-hosted-trusted-publication",
+      "scenario": "Dual npmjs entry-hosted trusted publication",
+      "fixture-anchor": "src/public/lib/hcoona-release-smoke-npm-dual/",
       "validation-mode": "manual-live-gated",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": "src/public/lib/hcoona-release-smoke-npm/three.release.yml"
+            "value": "src/public/lib/hcoona-release-smoke-npm-dual/three.release.yml"
           },
           {
             "type": "path",
@@ -1816,7 +1820,7 @@
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_github_packages_buddy_first_publish_404_is_absent"
+            "value": "tests/test_workflow_release_control.py::test_github_packages_package_404_is_absent_for_supported_families"
           }
         ],
         "workflow-conclusion": [

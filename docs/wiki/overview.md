@@ -81,9 +81,11 @@ supporting assets in `../raw/`.
   in-scope discovery, project-local `variants[].id` handle uniqueness plus
   descriptor-local rejection of duplicate semantic variant `dimensions` sets,
   variant-local rejection of duplicate semantic artifact identity tuples
-  regardless of differing `artifact.id` handles, author-time resolution of
-  `source` file paths to real checked-in files under each release root, a
-  closed current-scope mapping from `project.ecosystem` to allowed
+  regardless of differing `artifact.id` handles except for npm dual-artifact
+  tuples that declare distinct artifact-level `projection.package-name`
+  values, author-time resolution of `source` file paths to real checked-in
+  files under each release root, a closed current-scope mapping from
+  `project.ecosystem` to allowed
   `source.primary-manifest` types, catalog references, the current-scope
   catalog contract vocabulary, family-specific destination shapes including
   host-specific GitHub Packages instances inside the NuGet, npm, and RubyGems
@@ -135,6 +137,9 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   runs require an early control-plane `maintain+` authorization check distinct
   from later approval, and immutable proof reuse is guaranteed only within the
   default GitHub Actions artifact retention window.
+- For GitHub Packages remote observation, a package API 404 is treated as
+  `absent`; the later publish operation is the authority for permission or
+  conflict failures, while non-404 observation errors still fail hard.
 - The lower-layer design handoff now freezes the implementation seams that affect
   registry configuration and replay safety: stable workflow filenames for trusted
   publishing, first-delivery live PyPI publication through

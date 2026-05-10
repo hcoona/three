@@ -39,6 +39,7 @@ def _request(  # noqa: PLR0913
     project_id: str = "example",
     resolved_version: str = "1.2.3",
     companions: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
+    projections: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict[str, Any]:
     """Create one closed build request rooted under scratch."""
     release_root = scratch / project_id
@@ -91,6 +92,7 @@ def _request(  # noqa: PLR0913
                 kind_family,
                 concrete_kind,
                 companions,
+                projections,
             )
             for artifact_id, (
                 role,
@@ -110,6 +112,7 @@ def _artifact_request_entry(  # noqa: PLR0913
     kind_family: str,
     concrete_kind: str,
     companions: Mapping[str, Sequence[Mapping[str, object]]] | None,
+    projections: Mapping[str, Mapping[str, object]] | None,
 ) -> dict[str, Any]:
     """Create one build-request artifact entry."""
     entry: dict[str, Any] = {
@@ -123,6 +126,8 @@ def _artifact_request_entry(  # noqa: PLR0913
     }
     if companions and artifact_id in companions:
         entry["companions"] = [dict(item) for item in companions[artifact_id]]
+    if projections and artifact_id in projections:
+        entry["projection"] = dict(projections[artifact_id])
     return entry
 
 
@@ -1618,6 +1623,510 @@ def test_node_executor_requires_npm_json_and_one_tarball() -> None:
         assert calls[1][0][1:3] == ("pack", "--json")
         assert calls[1][1] == project_root
         assert set(_result_artifacts(result)) == {"artifact/npm"}
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_executor_packs_each_projected_npm_artifact() -> None:
+    """Pack one built npm project once per artifact-level package projection."""
+    scratch = REPO_ROOT / ".build-executor-node-projection-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            artifacts={
+                "artifact/npm": ("primary-package", "package", "npm-package"),
+                "artifact/npm-github": (
+                    "primary-package",
+                    "package",
+                    "npm-package",
+                ),
+            },
+            projections={
+                "artifact/npm": {"package-name": "example"},
+                "artifact/npm-github": {"package-name": "@hcoona/example"},
+            },
+        )
+        project_root = scratch / "example"
+        manifest = project_root / "package.json"
+        original_package_json = (
+            b'{"scripts":{"build":"node build.mjs"},'
+            b'"main":"./dist/index.cjs","version":"1.2.3",'
+            b'"name":"example"}\n'
+        )
+        built_package_json = (
+            b'{\n  "main": "./dist/index.cjs",\n'
+            b'  "name": "example",\n'
+            b'  "scripts": {\n    "build": "node build.mjs"\n  },\n'
+            b'  "version": "1.2.3+build"\n}\n'
+        )
+        manifest.write_bytes(original_package_json)
+        packed_names: list[str] = []
+
+        def runner(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == project_root
+            if args[1:3] == ["run", "build"]:
+                manifest.write_bytes(built_package_json)
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if not packed_names:
+                assert manifest.read_bytes() == built_package_json
+            current = json.loads(manifest.read_text(encoding="utf-8"))
+            name = current["name"]
+            filename = f"{name.removeprefix('@').replace('/', '-')}-1.2.3.tgz"
+            out_dir = Path(args[args.index("--pack-destination") + 1])
+            _write_npm_tarball(
+                out_dir / filename,
+                {
+                    "package/package.json": json.dumps(
+                        {
+                            "name": name,
+                            "version": "1.2.3",
+                            "main": "./dist/index.cjs",
+                        }
+                    ).encode(),
+                    "package/dist/index.cjs": b"module.exports = {};",
+                },
+            )
+            packed_names.append(name)
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    [{"filename": filename, "name": name, "version": "1.2.3"}]
+                ),
+                "",
+            )
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        assert packed_names == ["example", "@hcoona/example"]
+        assert manifest.read_bytes() == original_package_json
+        receipts = _result_artifacts(result)
+        assert {
+            Path(
+                cast("Mapping[str, object]", receipt)["bundle-relative-path"]
+            ).name
+            for receipt in receipts.values()
+        } == {"example-1.2.3.tgz", "hcoona-example-1.2.3.tgz"}
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_executor_rejects_projected_tarball_with_rewritten_name() -> None:
+    """Reject tarballs whose lifecycle scripts undo package-name projection."""
+    scratch = REPO_ROOT / ".build-executor-node-projection-name-mismatch-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            artifacts={
+                "artifact/npm-github": (
+                    "primary-package",
+                    "package",
+                    "npm-package",
+                ),
+            },
+            projections={
+                "artifact/npm-github": {"package-name": "@hcoona/example"},
+            },
+        )
+        project_root = scratch / "example"
+        manifest = project_root / "package.json"
+        manifest.write_bytes(
+            b'{"scripts":{"build":"node build.mjs"},'
+            b'"version":"1.2.3","name":"example"}\n'
+        )
+
+        def runner(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == project_root
+            if args[1:3] == ["run", "build"]:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            assert (
+                json.loads(manifest.read_text(encoding="utf-8"))["name"]
+                == "@hcoona/example"
+            )
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "name": "example",
+                        "scripts": {"build": "node build.mjs"},
+                        "version": "1.2.3",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out_dir = Path(args[args.index("--pack-destination") + 1])
+            _write_npm_tarball(
+                out_dir / "example-1.2.3.tgz",
+                {
+                    "package/package.json": json.dumps(
+                        {
+                            "name": "example",
+                            "version": "1.2.3",
+                        }
+                    ).encode(),
+                },
+            )
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    [
+                        {
+                            "filename": "example-1.2.3.tgz",
+                            "name": "example",
+                            "version": "1.2.3",
+                        }
+                    ]
+                ),
+                "",
+            )
+
+        with pytest.raises(BuildExecutorError, match="package name"):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_executor_rejects_unprojected_tarball_with_rewritten_name() -> (
+    None
+):
+    """Reject tarballs with lifecycle-rewritten manifest-fallback names."""
+    scratch = REPO_ROOT / ".build-executor-node-manifest-name-mismatch-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            artifacts={
+                "artifact/npm": ("primary-package", "package", "npm-package"),
+            },
+        )
+        project_root = scratch / "example"
+        manifest = project_root / "package.json"
+        manifest.write_bytes(
+            b'{"scripts":{"build":"node build.mjs"},'
+            b'"version":"1.2.3","name":"example"}\n'
+        )
+
+        def runner(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == project_root
+            if args[1:3] == ["run", "build"]:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "name": "renamed",
+                        "scripts": {"build": "node build.mjs"},
+                        "version": "1.2.3",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out_dir = Path(args[args.index("--pack-destination") + 1])
+            _write_npm_tarball(
+                out_dir / "renamed-1.2.3.tgz",
+                {
+                    "package/package.json": json.dumps(
+                        {
+                            "name": "renamed",
+                            "version": "1.2.3",
+                        }
+                    ).encode(),
+                },
+            )
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    [
+                        {
+                            "filename": "renamed-1.2.3.tgz",
+                            "name": "renamed",
+                            "version": "1.2.3",
+                        }
+                    ]
+                ),
+                "",
+            )
+
+        with pytest.raises(BuildExecutorError, match="package name"):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_executor_isolates_colliding_npm_pack_filenames() -> None:
+    """Pack distinct npm package identities whose tarball filenames collide."""
+    scratch = REPO_ROOT / ".build-executor-node-pack-collision-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            artifacts={
+                "artifact/hcoona-example": (
+                    "primary-package",
+                    "package",
+                    "npm-package",
+                ),
+                "artifact/scoped-hcoona-example": (
+                    "primary-package",
+                    "package",
+                    "npm-package",
+                ),
+            },
+            projections={
+                "artifact/hcoona-example": {"package-name": "hcoona-example"},
+                "artifact/scoped-hcoona-example": {
+                    "package-name": "@hcoona/example"
+                },
+            },
+        )
+        project_root = scratch / "example"
+        manifest = project_root / "package.json"
+        original_package_json = (
+            b'{"scripts":{"build":"node build.mjs"},'
+            b'"main":"./dist/index.cjs","version":"1.2.3",'
+            b'"name":"hcoona-example"}\n'
+        )
+        manifest.write_bytes(original_package_json)
+        pack_outputs: list[Path] = []
+        packed_names: list[str] = []
+
+        def runner(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == project_root
+            if args[1:3] == ["run", "build"]:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            current = json.loads(manifest.read_text(encoding="utf-8"))
+            name = current["name"]
+            filename = "hcoona-example-1.2.3.tgz"
+            out_dir = Path(args[args.index("--pack-destination") + 1])
+            assert out_dir not in pack_outputs
+            pack_outputs.append(out_dir)
+            packed_names.append(name)
+            _write_npm_tarball(
+                out_dir / filename,
+                {
+                    "package/package.json": json.dumps(
+                        {
+                            "name": name,
+                            "version": "1.2.3",
+                            "main": "./dist/index.cjs",
+                        }
+                    ).encode(),
+                    "package/dist/index.cjs": (
+                        f"module.exports = {name!r};".encode()
+                    ),
+                },
+            )
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    [{"filename": filename, "name": name, "version": "1.2.3"}]
+                ),
+                "",
+            )
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        assert packed_names == ["hcoona-example", "@hcoona/example"]
+        assert manifest.read_bytes() == original_package_json
+        receipts = _result_artifacts(result)
+        assert set(receipts) == {
+            "artifact/hcoona-example",
+            "artifact/scoped-hcoona-example",
+        }
+        relative_paths = [
+            cast("Mapping[str, str]", receipt)["bundle-relative-path"]
+            for receipt in receipts.values()
+        ]
+        assert len(set(relative_paths)) == len(relative_paths)
+        packaged_names = set()
+        for relative_path in relative_paths:
+            with tarfile.open(scratch / "bundle" / relative_path) as archive:
+                package_json = archive.extractfile("package/package.json")
+                assert package_json is not None
+                packaged_names.add(
+                    json.loads(package_json.read().decode())["name"]
+                )
+        assert packaged_names == {"hcoona-example", "@hcoona/example"}
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_executor_restores_manifest_bytes_after_pack_failure() -> None:
+    """Restore the exact npm manifest bytes when projected npm pack fails."""
+    scratch = REPO_ROOT / ".build-executor-node-projection-failure-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            artifacts={
+                "artifact/npm-github": (
+                    "primary-package",
+                    "package",
+                    "npm-package",
+                ),
+            },
+            projections={
+                "artifact/npm-github": {"package-name": "@hcoona/example"},
+            },
+        )
+        project_root = scratch / "example"
+        manifest = project_root / "package.json"
+        original_package_json = (
+            b'{\n  "version": "1.2.3",\n'
+            b'  "scripts": {"build": "node build.mjs"},\n'
+            b'  "name": "example"\n}\n'
+        )
+        built_package_json = (
+            b'{\n  "name": "example",\n'
+            b'  "scripts": {"build": "node build.mjs"},\n'
+            b'  "version": "1.2.3+build"\n}\n'
+        )
+        failed_pack_package_json = (
+            b'{\n  "name": "failed-pack-attempt",\n'
+            b'  "scripts": {"build": "node build.mjs"},\n'
+            b'  "version": "1.2.3+pack"\n}\n'
+        )
+        manifest.write_bytes(original_package_json)
+
+        def runner(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == project_root
+            if args[1:3] == ["run", "build"]:
+                manifest.write_bytes(built_package_json)
+                return subprocess.CompletedProcess(args, 0, "", "")
+            assert (
+                json.loads(manifest.read_text(encoding="utf-8"))["name"]
+                == "@hcoona/example"
+            )
+            manifest.write_bytes(failed_pack_package_json)
+            return subprocess.CompletedProcess(
+                args,
+                1,
+                "",
+                "simulated pack failure",
+            )
+
+        with pytest.raises(BuildExecutorError, match="simulated pack failure"):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+        assert manifest.read_bytes() == original_package_json
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_executor_restores_noop_projection_after_pack_failure() -> None:
+    """Restore no-op projected manifests after failed lifecycle mutation."""
+    scratch = REPO_ROOT / ".build-executor-node-noop-projection-failure-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            artifacts={
+                "artifact/npm": (
+                    "primary-package",
+                    "package",
+                    "npm-package",
+                ),
+            },
+            projections={
+                "artifact/npm": {"package-name": "example"},
+            },
+        )
+        project_root = scratch / "example"
+        manifest = project_root / "package.json"
+        original_package_json = (
+            b'{\n  "name": "example",\n'
+            b'  "scripts": {"build": "node build.mjs"},\n'
+            b'  "version": "1.2.3"\n}\n'
+        )
+        mutated_package_json = (
+            b'{\n  "name": "example",\n'
+            b'  "scripts": {"build": "node build.mjs"},\n'
+            b'  "version": "1.2.3+prepack"\n}\n'
+        )
+        manifest.write_bytes(original_package_json)
+
+        def runner(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == project_root
+            if args[1:3] == ["run", "build"]:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            assert manifest.read_bytes() == original_package_json
+            manifest.write_bytes(mutated_package_json)
+            return subprocess.CompletedProcess(
+                args,
+                1,
+                "",
+                "simulated prepack failure",
+            )
+
+        with pytest.raises(
+            BuildExecutorError, match="simulated prepack failure"
+        ):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+        assert manifest.read_bytes() == original_package_json
     finally:
         _remove_tree_scratch(scratch)
 

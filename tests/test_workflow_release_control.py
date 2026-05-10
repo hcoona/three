@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import shutil
 import subprocess
 import sys
+import tarfile
 from copy import deepcopy
 from itertools import pairwise
 from pathlib import Path
@@ -16,6 +18,7 @@ from typing import TYPE_CHECKING
 import pytest
 import yaml
 from three_workflow_release_authoring import validate_authoring
+from three_workflow_release_build import execute_build
 from three_workflow_release_contracts import (
     ArtifactNameInputs,
     artifact_name,
@@ -28,7 +31,7 @@ from three_workflow_release_proof import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
@@ -221,6 +224,16 @@ def _load(name: str) -> dict[str, object]:
 def _workflow(name: str) -> str:
     """Read one workflow file as text for structural assertions."""
     return (REPO_ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+
+
+def _write_npm_tarball(path: Path, entries: dict[str, bytes]) -> None:
+    """Write a minimal npm package tarball for build executor tests."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(path, "w:gz") as archive:
+        for name, data in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
 
 
 def _release_workflow_paths() -> list[Path]:
@@ -1519,6 +1532,7 @@ def test_official_canary_override_rejects_non_allowlisted_project(
             "hcoona-release-smoke-github-packages",
             "hcoona-release-smoke-github-release",
             "hcoona-release-smoke-npm",
+            "hcoona-release-smoke-npm-dual",
             "hcoona-release-smoke-nuget",
             "hcoona-release-smoke-pypi",
             "hcoona-release-smoke-rubygems",
@@ -2823,10 +2837,11 @@ def test_github_packages_nuget_missing_version_and_existing_observations(
     )
 
 
-def test_github_packages_nuget_invisible_package_fails_closed(
+def test_github_packages_nuget_package_404_is_absent(
     monkeypatch,
+    capsys,
 ) -> None:
-    """Package 404/listing ambiguity is not classified as absent."""
+    """GitHub Packages package 404 is classified as absent."""
     plan = _github_packages_nuget_observation_plan()
     out = SCRATCH / "remote-observations.json"
     diagnostics = SCRATCH / "planner-diagnostics.json"
@@ -2860,76 +2875,6 @@ def test_github_packages_nuget_invisible_package_fails_closed(
                     diagnostics_out=str(diagnostics),
                 )
             )
-            == 1
-        )
-
-        assert not out.exists()
-        document = json.loads(diagnostics.read_text(encoding="utf-8"))
-        assert [item["code"] for item in document["diagnostics"]] == [
-            "REMOTE_CLASSIFICATION_FAILED"
-        ]
-        error = document["diagnostics"][0]["details"]["error"]
-        assert "is not visible to the current GitHub API token" in error
-        assert "Actions/read access" in error
-        assert "absence cannot be proven" in error
-    finally:
-        shutil.rmtree(SCRATCH, ignore_errors=True)
-
-
-def test_github_packages_nuget_canary_first_publish_404_is_absent(
-    monkeypatch,
-    capsys,
-) -> None:
-    """Official smoke bootstrap can treat package 404 as absent."""
-    plan = _github_packages_nuget_observation_plan()
-    plan["envelope"]["profile"] = "official"
-    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
-    node["project-id"] = "hcoona-release-smoke-github-packages"
-    node["resolved-publish-identity"]["package-name"] = (
-        "Hcoona.ReleaseSmoke.GithubPackages"
-    )
-    execution_sets = {
-        "dry-run": True,
-        "active-publish-node-ids": [],
-        "publish-intent-node-ids": ["publish-node/nuget"],
-    }
-    out = SCRATCH / "remote-observations.json"
-    diagnostics = SCRATCH / "planner-diagnostics.json"
-    shutil.rmtree(SCRATCH, ignore_errors=True)
-    SCRATCH.mkdir()
-
-    def fake_gh_api(*args, **_kwargs):
-        endpoint = args[1]
-        if endpoint == "repos/hcoona/three":
-            return {"owner": {"login": "hcoona", "type": "Organization"}}
-        if (
-            endpoint
-            == "orgs/hcoona/packages/nuget/Hcoona.ReleaseSmoke.GithubPackages"
-        ):
-            message = f"gh api failed for {endpoint}: HTTP 404"
-            raise RuntimeError(message)
-        raise AssertionError(endpoint)
-
-    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
-    try:
-        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
-        (SCRATCH / "execution-sets.json").write_text(
-            json.dumps(execution_sets), encoding="utf-8"
-        )
-
-        assert (
-            control._cmd_observe_remote_publications(
-                control.argparse.Namespace(
-                    plan=str(SCRATCH / "plan.json"),
-                    execution_sets=str(SCRATCH / "execution-sets.json"),
-                    enabled_external_oidc_targets="",
-                    canary_override_non_public_ref="true",
-                    release_environment="release",
-                    repository="hcoona/three",
-                    out=str(out),
-                    diagnostics_out=str(diagnostics),
-                )
-            )
             == 0
         )
 
@@ -2937,10 +2882,9 @@ def test_github_packages_nuget_canary_first_publish_404_is_absent(
             "publish-node/nuget": "absent"
         }
         assert not diagnostics.exists()
-        assert (
-            "GitHub Packages 404 treated as absent under canary "
-            "first-publish override"
-        ) in capsys.readouterr().err
+        stderr = capsys.readouterr().err
+        assert "GitHub Packages 404 treated as absent" in stderr
+        assert "publish remains the authority" in stderr
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
@@ -2952,9 +2896,9 @@ def test_github_packages_nuget_canary_first_publish_404_is_absent(
             "npm",
             "npm.pkg.github.com",
             "npm/github-packages",
-            "hcoona-release-smoke-npm",
-            "@hcoona/hcoona-release-smoke-npm",
-            "orgs/hcoona/packages/npm/%40hcoona%2Fhcoona-release-smoke-npm",
+            "hexo-renderer-asciidoc",
+            "@hcoona/hexo-renderer-asciidoc",
+            "orgs/hcoona/packages/npm/%40hcoona%2Fhexo-renderer-asciidoc",
         ),
         (
             "rubygems",
@@ -2966,7 +2910,7 @@ def test_github_packages_nuget_canary_first_publish_404_is_absent(
         ),
     ],
 )
-def test_github_packages_buddy_first_publish_404_is_absent(  # noqa: PLR0913
+def test_github_packages_package_404_is_absent_for_supported_families(  # noqa: PLR0913
     monkeypatch,
     capsys,
     family,
@@ -2976,7 +2920,7 @@ def test_github_packages_buddy_first_publish_404_is_absent(  # noqa: PLR0913
     package_name,
     endpoint,
 ) -> None:
-    """Buddy smoke bootstrap treats allowlisted package 404 as absent."""
+    """GitHub Packages 404-as-absent is not limited to smoke packages."""
     plan = _github_packages_nuget_observation_plan()
     plan["envelope"]["profile"] = "buddy"
     snapshot = plan["graph"]["target-instance-snapshots"].pop(
@@ -2991,8 +2935,8 @@ def test_github_packages_buddy_first_publish_404_is_absent(  # noqa: PLR0913
     node["target-instance-snapshot-id"] = catalog_ref
     node["resolved-publish-identity"]["package-name"] = package_name
     execution_sets = {
-        "dry-run": True,
-        "active-publish-node-ids": [],
+        "dry-run": False,
+        "active-publish-node-ids": ["publish-node/nuget"],
         "publish-intent-node-ids": ["publish-node/nuget"],
     }
     out = SCRATCH / "remote-observations.json"
@@ -3037,233 +2981,18 @@ def test_github_packages_buddy_first_publish_404_is_absent(  # noqa: PLR0913
         }
         assert not diagnostics.exists()
         assert (
-            "GitHub Packages 404 treated as absent under canary "
-            "first-publish override"
-        ) in capsys.readouterr().err
-    finally:
-        shutil.rmtree(SCRATCH, ignore_errors=True)
-
-
-def test_github_packages_nuget_canary_first_publish_active_publish_fails_closed(
-    monkeypatch,
-) -> None:
-    """The 404 exception is limited to bootstrap dry-run observation."""
-    plan = _github_packages_nuget_observation_plan()
-    plan["envelope"]["profile"] = "official"
-    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
-    node["project-id"] = "hcoona-release-smoke-github-packages"
-    node["resolved-publish-identity"]["package-name"] = (
-        "Hcoona.ReleaseSmoke.GithubPackages"
-    )
-    execution_sets = {
-        "dry-run": False,
-        "active-publish-node-ids": ["publish-node/nuget"],
-        "publish-intent-node-ids": ["publish-node/nuget"],
-    }
-    out = SCRATCH / "remote-observations.json"
-    diagnostics = SCRATCH / "planner-diagnostics.json"
-    shutil.rmtree(SCRATCH, ignore_errors=True)
-    SCRATCH.mkdir()
-
-    def fake_gh_api(*args, **_kwargs):
-        endpoint = args[1]
-        if endpoint == "repos/hcoona/three":
-            return {"owner": {"login": "hcoona", "type": "Organization"}}
-        if (
-            endpoint
-            == "orgs/hcoona/packages/nuget/Hcoona.ReleaseSmoke.GithubPackages"
-        ):
-            message = f"gh api failed for {endpoint}: HTTP 404"
-            raise RuntimeError(message)
-        raise AssertionError(endpoint)
-
-    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
-    try:
-        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
-        (SCRATCH / "execution-sets.json").write_text(
-            json.dumps(execution_sets), encoding="utf-8"
-        )
-
-        assert (
-            control._cmd_observe_remote_publications(
-                control.argparse.Namespace(
-                    plan=str(SCRATCH / "plan.json"),
-                    execution_sets=str(SCRATCH / "execution-sets.json"),
-                    enabled_external_oidc_targets="",
-                    canary_override_non_public_ref="true",
-                    release_environment="release",
-                    repository="hcoona/three",
-                    out=str(out),
-                    diagnostics_out=str(diagnostics),
-                )
-            )
-            == 1
-        )
-
-        assert not out.exists()
-        document = json.loads(diagnostics.read_text(encoding="utf-8"))
-        assert [item["code"] for item in document["diagnostics"]] == [
-            "REMOTE_CLASSIFICATION_FAILED"
-        ]
-        error = document["diagnostics"][0]["details"]["error"]
-        assert "Hcoona.ReleaseSmoke.GithubPackages" in error
-        assert "absence cannot be proven" in error
-    finally:
-        shutil.rmtree(SCRATCH, ignore_errors=True)
-
-
-def test_github_packages_nuget_canary_first_publish_other_package_fails_closed(
-    monkeypatch,
-) -> None:
-    """The canary 404 exception is scoped to the dedicated package identity."""
-    plan = _github_packages_nuget_observation_plan()
-    plan["envelope"]["profile"] = "official"
-    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
-    node["project-id"] = "hcoona-release-smoke-github-packages"
-    node["resolved-publish-identity"]["package-name"] = "Different.Package"
-    execution_sets = {
-        "dry-run": True,
-        "active-publish-node-ids": [],
-        "publish-intent-node-ids": ["publish-node/nuget"],
-    }
-    out = SCRATCH / "remote-observations.json"
-    diagnostics = SCRATCH / "planner-diagnostics.json"
-    shutil.rmtree(SCRATCH, ignore_errors=True)
-    SCRATCH.mkdir()
-
-    def fake_gh_api(*args, **_kwargs):
-        endpoint = args[1]
-        if endpoint == "repos/hcoona/three":
-            return {"owner": {"login": "hcoona", "type": "Organization"}}
-        if endpoint == "orgs/hcoona/packages/nuget/Different.Package":
-            message = f"gh api failed for {endpoint}: HTTP 404"
-            raise RuntimeError(message)
-        raise AssertionError(endpoint)
-
-    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
-    try:
-        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
-        (SCRATCH / "execution-sets.json").write_text(
-            json.dumps(execution_sets), encoding="utf-8"
-        )
-
-        assert (
-            control._cmd_observe_remote_publications(
-                control.argparse.Namespace(
-                    plan=str(SCRATCH / "plan.json"),
-                    execution_sets=str(SCRATCH / "execution-sets.json"),
-                    enabled_external_oidc_targets="",
-                    canary_override_non_public_ref="true",
-                    release_environment="release",
-                    repository="hcoona/three",
-                    out=str(out),
-                    diagnostics_out=str(diagnostics),
-                )
-            )
-            == 1
-        )
-
-        assert not out.exists()
-        document = json.loads(diagnostics.read_text(encoding="utf-8"))
-        assert [item["code"] for item in document["diagnostics"]] == [
-            "REMOTE_CLASSIFICATION_FAILED"
-        ]
-        error = document["diagnostics"][0]["details"]["error"]
-        assert "Different.Package" in error
-        assert "absence cannot be proven" in error
-    finally:
-        shutil.rmtree(SCRATCH, ignore_errors=True)
-
-
-@pytest.mark.parametrize(
-    ("profile", "canary_override", "release_environment", "dry_run"),
-    [
-        ("official", "false", "release", False),
-        ("official", "false", "release", True),
-        ("preview", "true", "release", False),
-        ("official", "true", "", False),
-        ("official", "true", "", True),
-    ],
-)
-def test_github_packages_nuget_canary_first_publish_requires_all_guardrails(
-    monkeypatch,
-    profile,
-    canary_override,
-    release_environment,
-    dry_run,
-) -> None:
-    """The package allowlist alone cannot downgrade package 404 to absent."""
-    plan = _github_packages_nuget_observation_plan()
-    plan["envelope"]["profile"] = profile
-    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
-    node["project-id"] = "hcoona-release-smoke-github-packages"
-    node["resolved-publish-identity"]["package-name"] = (
-        "hcoona.releasesmoke.githubpackages"
-    )
-    execution_sets = {
-        "dry-run": dry_run,
-        "active-publish-node-ids": [] if dry_run else ["publish-node/nuget"],
-        "publish-intent-node-ids": ["publish-node/nuget"],
-    }
-    out = SCRATCH / "remote-observations.json"
-    diagnostics = SCRATCH / "planner-diagnostics.json"
-    shutil.rmtree(SCRATCH, ignore_errors=True)
-    SCRATCH.mkdir()
-
-    def fake_gh_api(*args, **_kwargs):
-        endpoint = args[1]
-        if endpoint == "repos/hcoona/three":
-            return {"owner": {"login": "hcoona", "type": "Organization"}}
-        if (
-            endpoint
-            == "orgs/hcoona/packages/nuget/hcoona.releasesmoke.githubpackages"
-        ):
-            message = f"gh api failed for {endpoint}: HTTP 404"
-            raise RuntimeError(message)
-        raise AssertionError(endpoint)
-
-    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
-    try:
-        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
-        (SCRATCH / "execution-sets.json").write_text(
-            json.dumps(execution_sets), encoding="utf-8"
-        )
-
-        assert (
-            control._cmd_observe_remote_publications(
-                control.argparse.Namespace(
-                    plan=str(SCRATCH / "plan.json"),
-                    execution_sets=str(SCRATCH / "execution-sets.json"),
-                    enabled_external_oidc_targets="",
-                    canary_override_non_public_ref=canary_override,
-                    release_environment=release_environment,
-                    repository="hcoona/three",
-                    out=str(out),
-                    diagnostics_out=str(diagnostics),
-                )
-            )
-            == 1
-        )
-
-        assert not out.exists()
-        document = json.loads(diagnostics.read_text(encoding="utf-8"))
-        assert [item["code"] for item in document["diagnostics"]] == [
-            "REMOTE_CLASSIFICATION_FAILED"
-        ]
-        assert (
-            "absence cannot be proven"
-            in document["diagnostics"][0]["details"]["error"]
+            "GitHub Packages 404 treated as absent" in capsys.readouterr().err
         )
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
 @pytest.mark.parametrize("status", [401, 403])
-def test_github_packages_nuget_canary_override_keeps_auth_errors_fail_closed(
+def test_github_packages_nuget_observation_keeps_auth_errors_fail_closed(
     monkeypatch,
     status,
 ) -> None:
-    """The canary first-publish exception never downgrades auth failures."""
+    """GitHub Packages observation never downgrades non-404 errors."""
     plan = _github_packages_nuget_observation_plan()
     plan["envelope"]["profile"] = "official"
     node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
@@ -4201,6 +3930,236 @@ def test_entry_proof_upload_matrix_precomputes_final_artifact_uploads() -> None:
         for entry in matrix
     )
     assert all(entry["file"] == f"{entry['name']}.json" for entry in matrix)
+
+
+def test_dual_artifact_npm_projection_flows_from_plan_to_pack(  # noqa: PLR0915
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Artifact-level npm projection drives distinct tarball identities."""
+    scratch = SCRATCH / "dual-npm-projection"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    snapshot = validate_authoring(REPO_ROOT)
+    commit_sha = "b" * 40
+
+    def fake_plan_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            '{"SemVer2": "1.2.3"}',
+            "",
+        )
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_plan_run,
+    )
+    try:
+        result = plan_release(
+            snapshot,
+            PlannerInputs(
+                request={
+                    "api-version": "three.release.planner-request/v1alpha1",
+                    "kind": "planner-request",
+                    "profile": "official",
+                    "commit-sha": commit_sha,
+                    "requested-project-ids": ["hcoona-release-smoke-npm-dual"],
+                    "request-flags": {"force": False},
+                },
+                repo_root=REPO_ROOT,
+                dry_run=True,
+            ),
+        )
+        plan = result.plan
+        project = plan["envelope"]["projects"]["hcoona-release-smoke-npm-dual"]
+        variant_id = project["variant-ids"][0]
+        plan_path = scratch / "release-plan.json"
+        request_path = scratch / "build-request.json"
+        plan_path.parent.mkdir(parents=True)
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_build_request(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    variant_id=variant_id,
+                    out=str(request_path),
+                )
+            )
+            == 0
+        )
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        artifact_ids = request["variant"]["artifact-ids"]
+        projections = {
+            artifact_id: request["artifacts"][artifact_id]["projection"]
+            for artifact_id in artifact_ids
+        }
+        assert projections == {
+            artifact_ids[0]: {"package-name": "hcoona-release-smoke-npm-dual"},
+            artifact_ids[1]: {
+                "package-name": "@hcoona/hcoona-release-smoke-npm-dual"
+            },
+        }
+
+        repo_root = scratch / "repo"
+        release_root = repo_root / request["project"]["release-root"]
+        shutil.copytree(
+            REPO_ROOT / request["project"]["release-root"],
+            release_root,
+        )
+        manifest = release_root / "package.json"
+        manifest_json = json.loads(manifest.read_text(encoding="utf-8"))
+        manifest_json["name"] = "hcoona-release-smoke-npm-dual"
+        manifest.write_text(json.dumps(manifest_json), encoding="utf-8")
+
+        def fake_build_run(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            if "run" in args and "build" in args:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if "pack" in args:
+                current = json.loads(manifest.read_text(encoding="utf-8"))
+                package_name = current["name"]
+                filename = (
+                    f"{package_name.removeprefix('@').replace('/', '-')}"
+                    "-1.2.3.tgz"
+                )
+                out_dir = Path(args[args.index("--pack-destination") + 1])
+                _write_npm_tarball(
+                    out_dir / filename,
+                    {
+                        "package/package.json": json.dumps(
+                            {
+                                "name": package_name,
+                                "version": "1.2.3",
+                                "main": "./dist/index.js",
+                                "files": ["dist", "README.md"],
+                            }
+                        ).encode(),
+                        "package/dist/index.js": b"export {};\n",
+                        "package/README.md": b"# Smoke\n",
+                    },
+                )
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    json.dumps(
+                        [
+                            {
+                                "filename": filename,
+                                "name": package_name,
+                                "version": "1.2.3",
+                            }
+                        ]
+                    ),
+                    "",
+                )
+            msg = f"unexpected command in {cwd}: {args}"
+            raise AssertionError(msg)
+
+        build_result = execute_build(
+            request,
+            repo_root,
+            scratch / "bundle",
+            runner=fake_build_run,
+            check_commit=False,
+        )
+
+        packaged_names = []
+        for artifact_id in artifact_ids:
+            receipt = build_result["artifacts"][artifact_id]
+            tarball = scratch / "bundle" / receipt["bundle-relative-path"]
+            with tarfile.open(tarball) as archive:
+                packaged = archive.extractfile("package/package.json")
+                assert packaged is not None
+                metadata = json.loads(packaged.read().decode("utf-8"))
+            assert metadata["version"] == "1.2.3"
+            packaged_names.append(metadata["name"])
+        assert packaged_names == [
+            "hcoona-release-smoke-npm-dual",
+            "@hcoona/hcoona-release-smoke-npm-dual",
+        ]
+        assert json.loads(manifest.read_text(encoding="utf-8"))["name"] == (
+            "hcoona-release-smoke-npm-dual"
+        )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_build_request_rejects_conflicting_target_npm_projections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shared npm artifacts cannot inherit different target projections."""
+    scratch = SCRATCH / "target-npm-conflict"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    snapshot = validate_authoring(REPO_ROOT)
+    commit_sha = "b" * 40
+
+    def fake_plan_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            '{"SemVer2": "1.2.3"}',
+            "",
+        )
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_plan_run,
+    )
+    try:
+        result = plan_release(
+            snapshot,
+            PlannerInputs(
+                request={
+                    "api-version": "three.release.planner-request/v1alpha1",
+                    "kind": "planner-request",
+                    "profile": "official",
+                    "commit-sha": commit_sha,
+                    "requested-project-ids": ["hcoona-release-smoke-npm"],
+                    "request-flags": {"force": False},
+                },
+                repo_root=REPO_ROOT,
+                dry_run=True,
+            ),
+        )
+        plan = deepcopy(result.plan)
+        project = plan["envelope"]["projects"]["hcoona-release-smoke-npm"]
+        variant_id = project["variant-ids"][0]
+        npm_node_id = next(
+            node_id
+            for node_id, node in plan["graph"]["publish-nodes"].items()
+            if plan["graph"]["target-instance-snapshots"][
+                node["target-instance-snapshot-id"]
+            ]["family"]
+            == "npm"
+        )
+        conflicting = deepcopy(plan["graph"]["publish-nodes"][npm_node_id])
+        conflicting["projection"]["package-name"] = "@hcoona/other-smoke"
+        plan["graph"]["publish-nodes"]["publish-node/conflicting-npm"] = (
+            conflicting
+        )
+        plan_path = scratch / "release-plan.json"
+        request_path = scratch / "build-request.json"
+        plan_path.parent.mkdir(parents=True)
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="conflicting npm package-name"):
+            control._cmd_build_request(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    variant_id=variant_id,
+                    out=str(request_path),
+                )
+            )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
 def test_publish_request_materializes_build_receipts() -> None:

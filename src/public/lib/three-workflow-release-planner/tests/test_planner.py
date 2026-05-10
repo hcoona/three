@@ -815,6 +815,11 @@ def test_github_packages_nuget_exact_observation_skips_replay() -> None:
             "@hcoona/hcoona-release-smoke-npm",
         ),
         (
+            "hcoona-release-smoke-npm-dual",
+            "npm/github-packages",
+            "@hcoona/hcoona-release-smoke-npm-dual",
+        ),
+        (
             "hcoona-release-smoke-rubygems",
             "rubygems/github-packages",
             "hcoona-release-smoke-rubygems",
@@ -1388,6 +1393,94 @@ def test_npm_package_name_reads_requested_commit_package_json(
         projection["final-distribution-filenames-by-artifact-id"],
     )
     assert list(filenames.values()) == ["requested-npm-name-3.1.0-beta.1.tgz"]
+
+
+def test_npm_dual_artifact_projection_selects_registry_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Plan distinct npm package identities and filenames for dual npm smoke."""
+    snapshot = validate_authoring(REPO_ROOT)
+
+    def fake_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        if len(args) > 1 and args[1] == "show":
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                '{"name": "hcoona-release-smoke-npm-dual"}',
+                "",
+            )
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            '{"SemVer2": "1.2.3-beta.4"}',
+            "",
+        )
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+
+    official = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-npm-dual"], profile="official"
+            ),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    buddy = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-npm-dual"], profile="buddy"
+            ),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+
+    official_npm = cast(
+        "Mapping[str, object]",
+        _publish_nodes(official.plan)[
+            _publish_node_id_for_family(official.plan, "npm")
+        ],
+    )
+    buddy_npm = cast(
+        "Mapping[str, object]",
+        _publish_nodes(buddy.plan)[
+            _publish_node_id_for_family(buddy.plan, "npm")
+        ],
+    )
+    assert official_npm["resolved-publish-identity"] == {
+        "package-name": "hcoona-release-smoke-npm-dual",
+        "version": "1.2.3-beta.4",
+    }
+    assert buddy_npm["resolved-publish-identity"] == {
+        "package-name": "@hcoona/hcoona-release-smoke-npm-dual",
+        "version": "1.2.3-beta.4",
+    }
+    official_projection = cast(
+        "Mapping[str, object]", official_npm["projection"]
+    )
+    buddy_projection = cast("Mapping[str, object]", buddy_npm["projection"])
+    assert list(
+        cast(
+            "Mapping[str, str]",
+            official_projection["final-distribution-filenames-by-artifact-id"],
+        ).values()
+    ) == ["hcoona-release-smoke-npm-dual-1.2.3-beta.4.tgz"]
+    assert list(
+        cast(
+            "Mapping[str, str]",
+            buddy_projection["final-distribution-filenames-by-artifact-id"],
+        ).values()
+    ) == ["hcoona-hcoona-release-smoke-npm-dual-1.2.3-beta.4.tgz"]
 
 
 def test_rubygems_metadata_uses_requested_commit_backend(

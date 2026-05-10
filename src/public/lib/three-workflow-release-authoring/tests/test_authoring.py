@@ -72,6 +72,7 @@ def test_current_repository_authoring_is_valid() -> None:
         "hcoona-release-smoke-github-packages",
         "hcoona-release-smoke-github-release",
         "hcoona-release-smoke-npm",
+        "hcoona-release-smoke-npm-dual",
         "hcoona-release-smoke-nuget",
         "hcoona-release-smoke-pypi",
         "hcoona-release-smoke-rubygems",
@@ -634,6 +635,49 @@ def test_npm_manifest_fallback_package_name_is_validated() -> None:
             tracked_files=_tracked_files(),
             repo_root=REPO_ROOT,
         )
+    assert any(
+        issue.code == "DESC_STATIC_INVALID"
+        and "scope must match" in issue.message
+        for issue in error.value.issues
+    )
+
+
+def test_artifact_level_npm_projection_allows_distinct_duplicate_tuples() -> (
+    None
+):
+    """Allow one variant to produce separate npm tarballs by package name."""
+    snapshot = validate_authoring(REPO_ROOT)
+    project = snapshot.projects["hcoona-release-smoke-npm-dual"]
+    artifacts = project.variants[0].artifacts
+
+    assert [artifact.id for artifact in artifacts] == [
+        "npm-package",
+        "npm-package-github",
+    ]
+    assert [artifact.projection["package-name"] for artifact in artifacts] == [
+        "hcoona-release-smoke-npm-dual",
+        "@hcoona/hcoona-release-smoke-npm-dual",
+    ]
+
+
+def test_artifact_level_npm_projection_validates_github_scope() -> None:
+    """Validate artifact-level package projection against GitHub Packages."""
+    descriptors = _descriptor_documents()
+    smoke = descriptors[
+        "src/public/lib/hcoona-release-smoke-npm-dual/three.release.yml"
+    ]
+    smoke["variants"][0]["artifacts"][1]["projection"]["package-name"] = (
+        "@wrong/hcoona-release-smoke-npm-dual"
+    )
+
+    with pytest.raises(AuthoringValidationError) as error:
+        validate_authoring_documents(
+            descriptors,
+            _load_yaml(CATALOG),
+            tracked_files=_tracked_files(),
+            repo_root=REPO_ROOT,
+        )
+
     assert any(
         issue.code == "DESC_STATIC_INVALID"
         and "scope must match" in issue.message

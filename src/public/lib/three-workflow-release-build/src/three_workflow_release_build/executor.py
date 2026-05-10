@@ -75,6 +75,7 @@ class _ArtifactSlot:
     kind_family: str
     concrete_kind: str
     companions: tuple[_ArtifactCompanion, ...]
+    projection: Mapping[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -570,9 +571,12 @@ def _python_build(
 
 
 def _node_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
-    """Build one npm package tarball."""
-    _require_single_kind(context.artifacts, "npm-package")
-    package_json = _load_npm_package_json(context.manifest)
+    """Build npm package tarballs for requested artifact slots."""
+    if {slot.concrete_kind for slot in context.artifacts} != {"npm-package"}:
+        msg = "node builds only support npm-package artifacts"
+        raise BuildExecutorError(msg)
+    original_manifest_bytes = _read_npm_package_json_bytes(context.manifest)
+    package_json = _parse_npm_package_json_bytes(original_manifest_bytes)
     scripts = package_json.get("scripts")
     if not isinstance(scripts, Mapping) or not isinstance(
         scripts.get("build"), str
@@ -582,32 +586,83 @@ def _node_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
     output = context.output_root / "node"
     _mkdir_output_work_dir(output)
     package_runner = _prepare_node_package_runner(context)
-    _run_checked(
-        [*package_runner.args, "run", "build"],
-        package_runner.cwd,
-        context.runner,
-    )
-    command = [
-        *package_runner.args,
-        "pack",
-        "--json",
-        "--pack-destination",
-        output.as_posix(),
-    ]
-    result = _run_checked(command, package_runner.cwd, context.runner)
-    _validate_npm_pack_json(result.stdout)
-    produced = _match_outputs(
-        context.artifacts,
-        {"npm-package": tuple(output.glob("*.tgz"))},
-    )
-    for path in produced.values():
-        _validate_npm_tarball(
-            path,
-            frozen_version,
+    try:
+        _run_checked(
+            [*package_runner.args, "run", "build"],
+            package_runner.cwd,
             context.runner,
-            context.project_root,
         )
-    return produced
+        produced: dict[str, Path] = {}
+        for index, slot in enumerate(
+            sorted(context.artifacts, key=lambda item: item.artifact_id)
+        ):
+            pack_output = (
+                output / f"{index:04d}-{_safe_filename(slot.artifact_id)}"
+            )
+            _mkdir_output_work_dir(pack_output)
+            produced_path, expected_package_name = _node_pack_artifact(
+                slot,
+                pack_output,
+                package_runner,
+                context,
+            )
+            _validate_npm_tarball(
+                produced_path,
+                expected_package_name,
+                frozen_version,
+                context.runner,
+                context.project_root,
+            )
+            produced[slot.artifact_id] = produced_path
+        return produced
+    finally:
+        _write_npm_package_json_bytes(context.manifest, original_manifest_bytes)
+
+
+def _node_pack_artifact(
+    slot: _ArtifactSlot,
+    output: Path,
+    package_runner: _NodePackageRunner,
+    context: _BuildContext,
+) -> tuple[Path, str]:
+    """Pack one npm artifact, applying package-name projection if present."""
+    projected = slot.projection.get("package-name")
+    original_manifest_bytes: bytes | None = None
+    projected_package_json: dict[str, object] | None = None
+    if isinstance(projected, str):
+        original_manifest_bytes = _read_npm_package_json_bytes(context.manifest)
+        package_json = _parse_npm_package_json_bytes(original_manifest_bytes)
+        if package_json.get("name") != projected:
+            projected_package_json = dict(package_json)
+            projected_package_json["name"] = projected
+    try:
+        if projected_package_json is not None:
+            _write_npm_package_json(context.manifest, projected_package_json)
+        expected_package_name = _read_effective_npm_package_name(
+            context.manifest
+        )
+        command = [
+            *package_runner.args,
+            "pack",
+            "--json",
+            "--pack-destination",
+            output.as_posix(),
+        ]
+        result = _run_checked(command, package_runner.cwd, context.runner)
+        _validate_npm_pack_json(result.stdout)
+    finally:
+        if original_manifest_bytes is not None:
+            _write_npm_package_json_bytes(
+                context.manifest, original_manifest_bytes
+            )
+    produced = list(output.glob("*.tgz"))
+    if len(produced) != 1:
+        msg = (
+            f"expected one npm pack output for {slot.artifact_id!r}, "
+            f"found {len(produced)}"
+        )
+        raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+    return produced[0], expected_package_name
 
 
 def _prepare_node_package_runner(context: _BuildContext) -> _NodePackageRunner:
@@ -1106,6 +1161,9 @@ def _artifact_slots(request: Mapping[str, object]) -> tuple[_ArtifactSlot, ...]:
                 kind_family=str(entry["kind-family"]),
                 concrete_kind=str(entry["concrete-kind"]),
                 companions=_artifact_companions(entry, artifact_id),
+                projection=dict(
+                    _mapping(entry.get("projection", {}), "projection")
+                ),
             )
         )
     return tuple(slots)
@@ -1651,6 +1709,51 @@ def _parse_rubygems_version_yaml(stdout: str) -> str | None:
     return None
 
 
+def _write_npm_package_json(
+    manifest: Path, package_json: Mapping[str, object]
+) -> None:
+    """Write package.json with stable formatting."""
+    try:
+        manifest.write_text(
+            json.dumps(package_json, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        msg = "npm package manifest could not be written"
+        raise BuildExecutorError(msg) from exc
+
+
+def _write_npm_package_json_bytes(manifest: Path, contents: bytes) -> None:
+    """Restore package.json from previously captured bytes."""
+    try:
+        manifest.write_bytes(contents)
+    except OSError as exc:
+        msg = "npm package manifest could not be written"
+        raise BuildExecutorError(msg) from exc
+
+
+def _read_npm_package_json_bytes(manifest: Path) -> bytes:
+    """Read package.json bytes for byte-identical restoration."""
+    try:
+        return manifest.read_bytes()
+    except OSError as exc:
+        msg = "npm package manifest could not be read as JSON"
+        raise BuildExecutorError(msg) from exc
+
+
+def _parse_npm_package_json_bytes(contents: bytes) -> Mapping[str, object]:
+    """Parse captured package.json bytes."""
+    try:
+        payload = json.loads(contents.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        msg = "npm package manifest could not be read as JSON"
+        raise BuildExecutorError(msg) from exc
+    if not isinstance(payload, Mapping):
+        msg = "npm package manifest must be a JSON object"
+        raise BuildExecutorError(msg)
+    return payload
+
+
 def _load_npm_package_json(manifest: Path) -> Mapping[str, object]:
     """Load and minimally validate the source package.json."""
     try:
@@ -1664,8 +1767,19 @@ def _load_npm_package_json(manifest: Path) -> Mapping[str, object]:
     return payload
 
 
+def _read_effective_npm_package_name(manifest: Path) -> str:
+    """Read the manifest package name that npm pack is expected to embed."""
+    package_json = _load_npm_package_json(manifest)
+    package_name = package_json.get("name")
+    if not isinstance(package_name, str):
+        msg = "npm package manifest name must be a string"
+        raise BuildExecutorError(msg)
+    return package_name
+
+
 def _validate_npm_tarball(
     package_path: Path,
+    expected_package_name: str,
     frozen_version: str,
     runner: Runner,
     cwd: Path,
@@ -1693,6 +1807,16 @@ def _validate_npm_tarball(
         raise BuildExecutorError(msg) from exc
     if not isinstance(packaged_json, Mapping):
         msg = "npm tarball package.json must be a JSON object"
+        raise BuildExecutorError(msg)
+    packaged_name = packaged_json.get("name")
+    if not isinstance(packaged_name, str):
+        msg = "npm tarball package.json name must be a string"
+        raise BuildExecutorError(msg)
+    if packaged_name != expected_package_name:
+        msg = (
+            f"npm package name {packaged_name!r} does not match "
+            f"effective package name {expected_package_name!r}"
+        )
         raise BuildExecutorError(msg)
     packaged_version = packaged_json.get("version")
     if not isinstance(packaged_version, str):

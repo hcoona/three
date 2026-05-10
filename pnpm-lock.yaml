@@ -75,6 +75,12 @@ importers:
         specifier: ^3.7.91
         version: 3.9.50
 
+  src/public/lib/hcoona-release-smoke-npm-dual:
+    devDependencies:
+      nerdbank-gitversioning:
+        specifier: ^3.7.91
+        version: 3.9.50
+
   src/public/lib/hexo-renderer-asciidoc:
     dependencies:
       asciidoctor:
