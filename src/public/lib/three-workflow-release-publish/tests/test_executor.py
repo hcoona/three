@@ -365,6 +365,70 @@ def test_nuget_executor_pushes_nuget_org_source(
         _reset_scratch(scratch)
 
 
+def test_nuget_org_executor_pushes_symbol_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Publish NuGet package and symbols to NuGet.org."""
+    scratch = REPO_ROOT / ".publish-executor-nuget-org-symbols-test"
+    _reset_scratch(scratch)
+    try:
+        monkeypatch.setenv("NUGET_API_KEY", "nuget-token")
+        package = scratch / "input" / "Example.1.2.3.nupkg"
+        symbols = scratch / "input" / "Example.1.2.3.snupkg"
+        _write_nuget_package(package, "Example", "1.2.3")
+        _write_nuget_package(symbols, "Example", "1.2.3")
+        request = _request(
+            family="nuget",
+            host="nuget.org",
+            artifact_path=package,
+            concrete_kind="nuget",
+            identity={"package-name": "example", "version": "1.2.3.0"},
+            projection={
+                "final-distribution-filenames-by-artifact-id": {
+                    "artifact/package": package.name,
+                },
+            },
+        )
+        _add_artifact(
+            request,
+            artifact_id="artifact/symbols",
+            artifact_path=symbols,
+            concrete_kind="snupkg",
+            role="symbols",
+        )
+        request["publish-node"]["projection"][
+            "final-distribution-filenames-by-artifact-id"
+        ]["artifact/symbols"] = symbols.name
+        validate_contract(request)
+        calls = _Calls()
+
+        result = execute_publish(
+            request,
+            REPO_ROOT,
+            runner=calls.runner,
+            check_commit=False,
+            work_dir=scratch / "work",
+        )
+
+        validate_contract(result)
+        assert [Path(command[3]).name for command in calls.commands] == [
+            package.name,
+            symbols.name,
+        ]
+        for command in calls.commands:
+            assert command[:3] == ["dotnet", "nuget", "push"]
+            assert command[4:] == [
+                "--source",
+                "https://api.nuget.org/v3/index.json",
+                "--api-key",
+                "nuget-token",
+                "--skip-duplicate",
+            ]
+        assert result["evidence"]["symbol-package-filename"] == symbols.name
+    finally:
+        _reset_scratch(scratch)
+
+
 def test_nuget_org_requires_trusted_publishing_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -440,11 +504,14 @@ def test_nuget_github_packages_requires_github_token(
         _reset_scratch(scratch)
 
 
-def test_nuget_executor_rejects_unpublished_snupkg() -> None:
-    """Fail closed when the planned NuGet artifact set includes symbols."""
+def test_github_packages_nuget_executor_pushes_symbol_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Publish NuGet package and symbols to GitHub Packages."""
     scratch = REPO_ROOT / ".publish-executor-nuget-symbols-test"
     _reset_scratch(scratch)
     try:
+        monkeypatch.setenv("GITHUB_TOKEN", "github-token")
         package = scratch / "input" / "Example.1.2.3.nupkg"
         symbols = scratch / "input" / "Example.1.2.3.snupkg"
         _write_nuget_package(package, "Example", "1.2.3")
@@ -467,7 +534,7 @@ def test_nuget_executor_rejects_unpublished_snupkg() -> None:
             artifact_id="artifact/symbols",
             artifact_path=symbols,
             concrete_kind="snupkg",
-            role="symbols-package",
+            role="symbols",
         )
         request["publish-node"]["projection"][
             "final-distribution-filenames-by-artifact-id"
@@ -475,15 +542,28 @@ def test_nuget_executor_rejects_unpublished_snupkg() -> None:
         validate_contract(request)
         calls = _Calls()
 
-        with pytest.raises(PublishExecutorError, match=r"\.snupkg"):
-            execute_publish(
-                request,
-                REPO_ROOT,
-                runner=calls.runner,
-                check_commit=False,
-                work_dir=scratch / "work",
-            )
-        assert calls.commands == []
+        result = execute_publish(
+            request,
+            REPO_ROOT,
+            runner=calls.runner,
+            check_commit=False,
+            work_dir=scratch / "work",
+        )
+
+        validate_contract(result)
+        assert [Path(command[3]).name for command in calls.commands] == [
+            package.name,
+            symbols.name,
+        ]
+        for command in calls.commands:
+            assert command[:3] == ["dotnet", "nuget", "push"]
+            assert command[4:] == [
+                "--source",
+                "https://nuget.pkg.github.com/hcoona/index.json",
+                "--api-key",
+                "github-token",
+            ]
+        assert result["evidence"]["symbol-package-filename"] == symbols.name
     finally:
         _reset_scratch(scratch)
 

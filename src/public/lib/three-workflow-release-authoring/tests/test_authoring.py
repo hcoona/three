@@ -979,8 +979,10 @@ def test_missing_rubygems_manifest_is_diagnostic(
 def test_frozen_profile_target_baseline_is_enforced() -> None:
     """Reject target instances outside the frozen per-project baseline."""
     descriptors = _descriptor_documents()
-    memoization = descriptors["src/public/lib/Memoization/three.release.yml"]
-    memoization["profiles"]["official"]["targets"].append(
+    github_release = descriptors[
+        "src/public/lib/hcoona-release-smoke-github-release/three.release.yml"
+    ]
+    github_release["profiles"]["official"]["targets"].append(
         {"uses": "nuget/nuget-org", "artifacts": ["nuget"]}
     )
     with pytest.raises(AuthoringValidationError) as error:
@@ -1016,15 +1018,14 @@ def test_frozen_target_artifact_baseline_requires_symbol_package() -> None:
     )
 
 
-def test_frozen_target_artifact_baseline_rejects_extra_symbol_package() -> None:
-    """Reject official GitHub Packages NuGet target adding deferred snupkg."""
+def test_frozen_target_artifact_baseline_requires_registry_symbols() -> None:
+    """Reject registry NuGet targets missing their snupkg member."""
     descriptors = _descriptor_documents()
     github_packages = descriptors[
         "src/public/lib/hcoona-release-smoke-github-packages/three.release.yml"
     ]
     github_packages["profiles"]["official"]["targets"][1]["artifacts"] = [
-        "nuget",
-        "snupkg",
+        "nuget"
     ]
     with pytest.raises(AuthoringValidationError) as error:
         validate_authoring_documents(

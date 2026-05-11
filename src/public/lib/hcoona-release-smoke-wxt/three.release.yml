@@ -30,6 +30,11 @@ variants:
         role: primary-package
         kind-family: package
         concrete-kind: browser-zip
+      - id: firefox-sources
+        role: sources
+        kind-family: archive
+        concrete-kind: sources-zip
+        produced-from: [firefox]
   - id: edge
     dimensions:
       browser: edge
@@ -43,8 +48,8 @@ profiles:
   buddy:
     targets:
       - uses: github-release/public
-        artifacts: [chrome, firefox, edge]
+        artifacts: [chrome, firefox, firefox-sources, edge]
   official:
     targets:
       - uses: github-release/public
-        artifacts: [chrome, firefox, edge]
+        artifacts: [chrome, firefox, firefox-sources, edge]

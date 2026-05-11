@@ -11,12 +11,46 @@ source:
   primary-manifest: PhiFailureDetector.ConsoleApp.csproj
 
 variants:
-  - id: app-binary
-    dimensions: {}
-    artifacts: []
+  - id: win-x64
+    dimensions:
+      os: windows
+      rid: win-x64
+    artifacts:
+      - id: app-binary-win-x64
+        role: primary-binary
+        kind-family: binary
+        concrete-kind: executable
+  - id: linux-x64
+    dimensions:
+      os: linux
+      rid: linux-x64
+    artifacts:
+      - id: app-binary-linux-x64
+        role: primary-binary
+        kind-family: binary
+        concrete-kind: executable
+  - id: osx-x64
+    dimensions:
+      os: macos
+      rid: osx-x64
+    artifacts:
+      - id: app-binary-osx-x64
+        role: primary-binary
+        kind-family: binary
+        concrete-kind: executable
 
 profiles:
   buddy:
-    targets: []
+    targets:
+      - uses: github-release/public
+        artifacts:
+          - app-binary-win-x64
+          - app-binary-linux-x64
+          - app-binary-osx-x64
   official:
-    targets: []
+    targets:
+      - uses: github-release/public
+        artifacts:
+          - app-binary-win-x64
+          - app-binary-linux-x64
+          - app-binary-osx-x64

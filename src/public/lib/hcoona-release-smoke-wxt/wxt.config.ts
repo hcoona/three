@@ -37,4 +37,8 @@ export default defineConfig({
     name: 'hcoona-release-smoke-wxt',
     version: manifestVersion,
   },
+  zip: {
+    artifactTemplate: '{{name}}-{{packageVersion}}-{{browser}}.zip',
+    sourcesTemplate: '{{name}}-{{packageVersion}}-sources.zip',
+  },
 });

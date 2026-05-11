@@ -41,7 +41,7 @@ _BROWSER_MAX_VERSION_PART = 65535
 _SUPPORTED_KINDS = {
     "dotnet": {"nuget", "snupkg", "executable", "inno-setup"},
     "python": {"wheel", "sdist"},
-    "node": {"npm-package", "browser-zip"},
+    "node": {"npm-package", "browser-zip", "sources-zip"},
     "ruby": {"rubygem"},
 }
 
@@ -577,7 +577,7 @@ def _python_build(
 def _node_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
     """Build npm package tarballs or browser extension zip artifacts."""
     kinds = {slot.concrete_kind for slot in context.artifacts}
-    if kinds == {"browser-zip"}:
+    if kinds in ({"browser-zip"}, {"browser-zip", "sources-zip"}):
         return _node_browser_zip_build(context)
     if kinds != {"npm-package"}:
         msg = f"unsupported node artifact kind set: {sorted(kinds)}"
@@ -628,19 +628,40 @@ def _node_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
 
 def _node_browser_zip_build(context: _BuildContext) -> dict[str, Path]:
     """Build one WXT browser extension zip for a browser-dimensioned variant."""
-    _require_single_kind(context.artifacts, "browser-zip")
-    if len(context.artifacts) != 1:
-        msg = "browser-zip node variants must request exactly one artifact"
+    browser_slots = [
+        slot
+        for slot in context.artifacts
+        if slot.concrete_kind == "browser-zip"
+    ]
+    source_slots = [
+        slot
+        for slot in context.artifacts
+        if slot.concrete_kind == "sources-zip"
+    ]
+    if (
+        len(browser_slots) != 1
+        or len(source_slots) > 1
+        or len(context.artifacts) != len(browser_slots) + len(source_slots)
+    ):
+        msg = "browser-zip node variants may request one optional sources-zip"
         raise BuildExecutorError(msg)
     original_manifest_bytes = _read_npm_package_json_bytes(context.manifest)
     package_json = _parse_npm_package_json_bytes(original_manifest_bytes)
     scripts = package_json.get("scripts")
-    if not isinstance(scripts, Mapping) or not isinstance(
-        scripts.get("build"), str
-    ):
-        msg = "browser-zip packages must declare an explicit build script"
-        raise BuildExecutorError(msg)
     browser = _browser_dimension(context.request)
+    if source_slots and browser != "firefox":
+        msg = (
+            "sources-zip browser extension artifacts are only valid for "
+            "firefox variants"
+        )
+        raise BuildExecutorError(msg)
+    build_script = _browser_zip_script_name(scripts, browser)
+    if build_script is None:
+        msg = (
+            "browser-zip packages must declare an explicit release zip or "
+            "build script"
+        )
+        raise BuildExecutorError(msg)
     output = context.output_root / "node-browser-zip"
     _mkdir_output_work_dir(output)
     package_runner = _prepare_node_package_runner(context)
@@ -654,36 +675,96 @@ def _node_browser_zip_build(context: _BuildContext) -> dict[str, Path]:
     )
     try:
         _run_checked(
-            [*package_runner.args, "run", "build"],
+            [*package_runner.args, "run", build_script],
             package_runner.cwd,
             context.runner,
         )
-        produced = _browser_zip_candidates(context.project_root, browser)
-        if len(produced) != 1:
+        produced_browser_zips = _browser_zip_candidates(
+            context.project_root, browser
+        )
+        if len(produced_browser_zips) != 1:
             msg = (
                 f"expected one browser zip output for {browser!r}, "
-                f"found {len(produced)}"
+                f"found {len(produced_browser_zips)}"
             )
             raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
-        _validate_browser_zip_manifest_version(produced[0], browser_version)
-        destination = output / _browser_zip_filename(context.request)
-        try:
-            shutil.copy2(produced[0], destination)
-        except OSError as exc:
-            msg = f"browser zip output could not be copied: {exc}"
-            raise BuildExecutorError(
-                msg,
-                code="BUILD_OUTPUT_INVALID",
-                phase="receipt",
-                details={
-                    "source": produced[0].as_posix(),
-                    "destination": destination.as_posix(),
-                    "error": str(exc),
-                },
-            ) from exc
-        return {context.artifacts[0].artifact_id: destination}
+        _validate_browser_zip_manifest_version(
+            produced_browser_zips[0], browser_version
+        )
+        browser_destination = _copy_browser_zip_output(
+            produced_browser_zips[0], output, context.request
+        )
+        produced = {
+            slot.artifact_id: browser_destination for slot in browser_slots
+        }
+        if source_slots:
+            produced_sources = _sources_zip_candidates(context.project_root)
+            if len(produced_sources) != 1:
+                msg = (
+                    "expected one sources zip output for firefox, "
+                    f"found {len(produced_sources)}"
+                )
+                raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+            sources_destination = _copy_sources_zip_output(
+                produced_sources[0], output, context.request
+            )
+            produced[source_slots[0].artifact_id] = sources_destination
+        return produced
     finally:
         _write_npm_package_json_bytes(context.manifest, original_manifest_bytes)
+
+
+def _copy_browser_zip_output(
+    source: Path, output: Path, request: Mapping[str, object]
+) -> Path:
+    """Copy a browser zip into the build output with its frozen asset name."""
+    return _copy_zip_output(
+        source, output / _browser_zip_filename(request), "browser zip"
+    )
+
+
+def _copy_sources_zip_output(
+    source: Path, output: Path, request: Mapping[str, object]
+) -> Path:
+    """Copy a sources zip into the build output with its frozen asset name."""
+    return _copy_zip_output(
+        source, output / _sources_zip_filename(request), "sources zip"
+    )
+
+
+def _copy_zip_output(source: Path, destination: Path, label: str) -> Path:
+    """Copy one WXT zip output into the build output directory."""
+    try:
+        shutil.copy2(source, destination)
+    except OSError as exc:
+        msg = f"{label} output could not be copied: {exc}"
+        raise BuildExecutorError(
+            msg,
+            code="BUILD_OUTPUT_INVALID",
+            phase="receipt",
+            details={
+                "source": source.as_posix(),
+                "destination": destination.as_posix(),
+                "error": str(exc),
+            },
+        ) from exc
+    return destination
+
+
+def _browser_zip_script_name(scripts: object, browser: str) -> str | None:
+    """Return the release script to build one WXT browser package."""
+    if not isinstance(scripts, Mapping):
+        return None
+    for candidate in (
+        f"workflow-release:zip:{browser}",
+        "workflow-release:zip" if browser == "chrome" else "",
+        f"zip:{browser}",
+        "zip" if browser == "chrome" else "",
+        "build",
+    ):
+        if candidate and isinstance(scripts.get(candidate), str):
+            return candidate
+    return None
 
 
 def _browser_dimension(request: Mapping[str, object]) -> str:
@@ -709,8 +790,22 @@ def _browser_zip_candidates(
         sorted(
             path
             for path in output_root.rglob("*.zip")
-            if path.is_file()
-            and path.stem.casefold().endswith(f"-{browser}")
+            if path.is_file() and path.stem.casefold().endswith(f"-{browser}")
+        )
+    )
+
+
+def _sources_zip_candidates(project_root: Path) -> tuple[Path, ...]:
+    """Return WXT source zip outputs."""
+    output_root = project_root / ".output"
+    if not output_root.is_dir():
+        msg = "sources-zip build did not produce a .output directory"
+        raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+    return tuple(
+        sorted(
+            path
+            for path in output_root.rglob("*.zip")
+            if path.is_file() and path.stem.casefold().endswith("-sources")
         )
     )
 
@@ -724,9 +819,7 @@ def _browser_extension_manifest_version(version: str) -> str:
         raise BuildExecutorError(msg, code="BUILD_INVALID_INPUT")
     release = [int(part) for part in parts]
     if not (
-        _BROWSER_MIN_VERSION_PARTS
-        <= len(release)
-        <= _BROWSER_MAX_VERSION_PARTS
+        _BROWSER_MIN_VERSION_PARTS <= len(release) <= _BROWSER_MAX_VERSION_PARTS
     ):
         msg = (
             "browser-zip resolved version must contain 2 to 4 numeric "
@@ -779,6 +872,13 @@ def _browser_zip_filename(request: Mapping[str, object]) -> str:
         f"{project['resolved-version']}-"
         f"{_variant_token(dimensions)}.zip"
     )
+
+
+def _sources_zip_filename(request: Mapping[str, object]) -> str:
+    """Return the planner-frozen GitHub asset name for source archives."""
+    project = _mapping(request["project"], "project")
+    variant = _mapping(request["variant"], "variant")
+    return f"{variant['project-id']}-{project['resolved-version']}-sources.zip"
 
 
 def _node_pack_artifact(

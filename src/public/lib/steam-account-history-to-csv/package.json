@@ -23,6 +23,9 @@
     "zip": "node ./scripts/nbgv-version.mjs run wxt zip",
     "zip:firefox": "node ./scripts/nbgv-version.mjs run wxt zip -b firefox",
     "zip:edge": "node ./scripts/nbgv-version.mjs run wxt zip -b edge",
+    "workflow-release:zip": "wxt zip",
+    "workflow-release:zip:firefox": "wxt zip -b firefox",
+    "workflow-release:zip:edge": "wxt zip -b edge",
     "version:stamp": "node ./scripts/nbgv-version.mjs stamp",
     "version:reset": "node ./scripts/nbgv-version.mjs reset",
     "version:preview": "node ./scripts/nbgv-version.mjs preview"

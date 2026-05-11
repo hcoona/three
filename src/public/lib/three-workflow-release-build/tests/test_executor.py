@@ -1709,6 +1709,132 @@ def test_node_browser_zip_executor_receipts_wxt_browser_package(
         _remove_tree_scratch(scratch)
 
 
+def test_node_browser_zip_executor_receipts_firefox_sources_zip() -> None:
+    """Run a WXT Firefox build and receipt browser plus sources zips."""
+    scratch = REPO_ROOT / ".build-executor-node-browser-sources-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            project_id="hcoona-release-smoke-wxt",
+            dimensions={"browser": "firefox"},
+            artifacts={
+                "artifact/firefox": (
+                    "primary-package",
+                    "package",
+                    "browser-zip",
+                ),
+                "artifact/firefox-sources": (
+                    "sources",
+                    "archive",
+                    "sources-zip",
+                ),
+            },
+        )
+        project_root = scratch / "hcoona-release-smoke-wxt"
+        (project_root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "hcoona-release-smoke-wxt",
+                    "version": "0.0.0",
+                    "scripts": {
+                        "build": "wxt zip",
+                        "workflow-release:zip:firefox": "wxt zip -b firefox",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        calls: list[tuple[tuple[str, ...], Path]] = []
+
+        def runner(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append((tuple(args), cwd))
+            output = project_root / ".output"
+            output.mkdir(exist_ok=True)
+            _write_browser_zip(
+                output / "hcoona-release-smoke-wxt-1.2.3-firefox.zip",
+                "1.2.3",
+            )
+            _write_browser_zip(
+                output / "hcoona-release-smoke-wxt-1.2.3-sources.zip",
+                "1.2.3",
+            )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        assert calls[0][0][1:3] == ("run", "workflow-release:zip:firefox")
+        artifacts = _result_artifacts(result)
+        assert artifacts["artifact/firefox"]["bundle-relative-path"] == (
+            "dist/hcoona-release-smoke-wxt-1.2.3-firefox.zip"
+        )
+        assert artifacts["artifact/firefox-sources"][
+            "bundle-relative-path"
+        ] == ("dist/hcoona-release-smoke-wxt-1.2.3-sources.zip")
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_browser_zip_executor_rejects_non_firefox_sources_zip() -> None:
+    """Reject WXT source zip artifacts outside the Firefox variant."""
+    scratch = REPO_ROOT / ".build-executor-node-browser-source-browser-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            project_id="hcoona-release-smoke-wxt",
+            dimensions={"browser": "chrome"},
+            artifacts={
+                "artifact/chrome": (
+                    "primary-package",
+                    "package",
+                    "browser-zip",
+                ),
+                "artifact/chrome-sources": (
+                    "sources",
+                    "archive",
+                    "sources-zip",
+                ),
+            },
+        )
+        project_root = scratch / "hcoona-release-smoke-wxt"
+        (project_root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "hcoona-release-smoke-wxt",
+                    "version": "0.0.0",
+                    "scripts": {"build": "wxt zip"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(BuildExecutorError, match="firefox variants"):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=lambda args, _cwd: subprocess.CompletedProcess(
+                    args, 0, "", ""
+                ),
+                check_commit=False,
+            )
+    finally:
+        _remove_tree_scratch(scratch)
+
+
 def test_node_browser_zip_executor_validates_manifest_version() -> None:
     """Reject browser zips whose manifest version is not the frozen release."""
     scratch = REPO_ROOT / ".build-executor-node-browser-version-test"

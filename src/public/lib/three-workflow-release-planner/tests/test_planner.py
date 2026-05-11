@@ -2375,6 +2375,7 @@ def test_wxt_browser_zip_projection_names_three_browser_assets(
         "hcoona-release-smoke-wxt-1.2.3-chrome.zip",
         "hcoona-release-smoke-wxt-1.2.3-edge.zip",
         "hcoona-release-smoke-wxt-1.2.3-firefox.zip",
+        "hcoona-release-smoke-wxt-1.2.3-sources.zip",
     ]
 
 

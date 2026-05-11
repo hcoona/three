@@ -3,15 +3,44 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
  */
 
+import { readFileSync } from 'node:fs';
 import { access, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ResolvedPublicFile, Wxt } from 'wxt';
 import { defineConfig } from 'wxt';
 
-import { getBrowserExtensionVersion, getVersionInfo } from './scripts/version-utils';
-
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+  version?: string;
+};
+
+function toBrowserManifestVersion(version: string): string {
+  const [numericCore] = version.split(/[+-]/, 1);
+  const parts = numericCore.split('.');
+  if (parts.length < 2 || parts.length > 4) {
+    throw new Error(`Version "${version}" must have 2 to 4 numeric parts for browser manifest stamping.`);
+  }
+
+  const parsed = parts.map((part) => {
+    if (!/^(0|[1-9]\d*)$/.test(part)) {
+      throw new Error(`Version part "${part}" is not a browser-compatible integer.`);
+    }
+    const value = Number.parseInt(part, 10);
+    if (value > 65535) {
+      throw new Error(`Version part "${part}" exceeds the browser manifest limit 65535.`);
+    }
+    return value;
+  });
+
+  while (parsed.length < 3) {
+    parsed.push(0);
+  }
+
+  return parsed.join('.');
+}
+
+const manifestVersion = toBrowserManifestVersion(packageJson.version ?? '0.0.0');
 
 async function pathExists(candidate: string): Promise<boolean> {
   try {
@@ -49,6 +78,7 @@ export default defineConfig({
 
   manifest: {
     name: 'Steam Account History to CSV',
+    version: manifestVersion,
   },
 
   zip: {
@@ -57,12 +87,6 @@ export default defineConfig({
   },
 
   hooks: {
-    'build:manifestGenerated': async (_wxt: Wxt, manifest) => {
-      // Chrome/Edge require a numeric dotted version. Use NBGV's SimpleVersion + VersionHeight.
-      const versionInfo = await getVersionInfo(projectRoot);
-      manifest.version = getBrowserExtensionVersion(versionInfo);
-    },
-
     'build:publicAssets': async (_wxt: Wxt, assets: ResolvedPublicFile[]) => {
       const monorepoRoot = await findMonorepoRoot(projectRoot);
       const licensesDir = path.join(monorepoRoot, 'LICENSES');

@@ -152,6 +152,14 @@ _GITHUB_RELEASE_AND_PYPI_TARGETS = {
     "buddy": frozenset({"github-release/public"}),
     "official": frozenset({"github-release/public", "pypi/pypi"}),
 }
+_GITHUB_RELEASE_AND_RUBYGEMS_ORG_TARGETS = {
+    "buddy": frozenset({"github-release/public", "rubygems/github-packages"}),
+    "official": frozenset({"github-release/public", "rubygems/rubygems-org"}),
+}
+_GITHUB_RELEASE_AND_NUGET_ORG_TARGETS = {
+    "buddy": frozenset({"github-release/public", "nuget/github-packages"}),
+    "official": frozenset({"github-release/public", "nuget/nuget-org"}),
+}
 _ZERO_TARGETS = {
     "buddy": frozenset(),
     "official": frozenset(),
@@ -166,6 +174,7 @@ _PYTHON_PACKAGE_TUPLES = (
 )
 _NPM_PACKAGE_TUPLES = (("primary-package", "package", "npm-package"),)
 _BROWSER_PACKAGE_TUPLES = (("primary-package", "package", "browser-zip"),)
+_SOURCES_ARCHIVE_TUPLES = (("sources", "archive", "sources-zip"),)
 _RUBYGEMS_PACKAGE_TUPLES = (("primary-package", "package", "rubygem"),)
 _INSTALLER_TUPLES = (("installer", "installer", "inno-setup"),)
 _ONE_EXECUTABLE_TUPLE = (("primary-binary", "binary", "executable"),)
@@ -193,6 +202,12 @@ _D_EDGE = (("browser", "edge"),)
 _THREE_BROWSER_ZIPS = (
     (_D_CHROME, _BROWSER_PACKAGE_TUPLES[0]),
     (_D_FIREFOX, _BROWSER_PACKAGE_TUPLES[0]),
+    (_D_EDGE, _BROWSER_PACKAGE_TUPLES[0]),
+)
+_THREE_BROWSER_ZIPS_WITH_FIREFOX_SOURCE = (
+    (_D_CHROME, _BROWSER_PACKAGE_TUPLES[0]),
+    (_D_FIREFOX, _BROWSER_PACKAGE_TUPLES[0]),
+    (_D_FIREFOX, _SOURCES_ARCHIVE_TUPLES[0]),
     (_D_EDGE, _BROWSER_PACKAGE_TUPLES[0]),
 )
 _LINUX_X64_EXECUTABLE = ((_D_LINUX_X64, _ONE_EXECUTABLE_TUPLE[0]),)
@@ -225,15 +240,11 @@ _RUBYGEMS_GITHUB_RELEASE_ARTIFACTS = {
 _NUGET_ORG_ARTIFACTS = {
     "buddy": {
         "github-release/public": _DEFAULT_NUGET_PACKAGE,
-        "nuget/github-packages": (
-            (_D_DEFAULT, ("primary-package", "package", "nuget")),
-        ),
+        "nuget/github-packages": _DEFAULT_NUGET_PACKAGE,
     },
     "official": {
         "github-release/public": _DEFAULT_NUGET_PACKAGE,
-        "nuget/nuget-org": (
-            (_D_DEFAULT, ("primary-package", "package", "nuget")),
-        ),
+        "nuget/nuget-org": _DEFAULT_NUGET_PACKAGE,
     },
 }
 _NPMJS_ARTIFACTS = {
@@ -259,15 +270,11 @@ _RUBYGEMS_ORG_ARTIFACTS = {
 _GITHUB_PACKAGES_NUGET_ARTIFACTS = {
     "buddy": {
         "github-release/public": _DEFAULT_NUGET_PACKAGE,
-        "nuget/github-packages": (
-            (_D_DEFAULT, ("primary-package", "package", "nuget")),
-        ),
+        "nuget/github-packages": _DEFAULT_NUGET_PACKAGE,
     },
     "official": {
         "github-release/public": _DEFAULT_NUGET_PACKAGE,
-        "nuget/github-packages": (
-            (_D_DEFAULT, ("primary-package", "package", "nuget")),
-        ),
+        "nuget/github-packages": _DEFAULT_NUGET_PACKAGE,
     },
 }
 _INSTALLER_ARTIFACTS = {
@@ -282,6 +289,12 @@ _BROWSER_ZIP_ARTIFACTS = {
     "buddy": {"github-release/public": _THREE_BROWSER_ZIPS},
     "official": {"github-release/public": _THREE_BROWSER_ZIPS},
 }
+_BROWSER_ZIP_WITH_SOURCE_ARTIFACTS = {
+    "buddy": {"github-release/public": _THREE_BROWSER_ZIPS_WITH_FIREFOX_SOURCE},
+    "official": {
+        "github-release/public": _THREE_BROWSER_ZIPS_WITH_FIREFOX_SOURCE
+    },
+}
 _NO_ARTIFACTS = {"buddy": {}, "official": {}}
 _THREE_EXECUTABLE_ARTIFACTS = {
     "buddy": {"github-release/public": _THREE_EXECUTABLES},
@@ -292,8 +305,8 @@ _TWO_EXECUTABLE_ARTIFACTS = {
     "official": {"github-release/public": _TWO_EXECUTABLES},
 }
 _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
-    "asciidoctor-latexmath": _GITHUB_RELEASE_ONLY_TARGETS,
-    "circular-list": _GITHUB_RELEASE_ONLY_TARGETS,
+    "asciidoctor-latexmath": _GITHUB_RELEASE_AND_RUBYGEMS_ORG_TARGETS,
+    "circular-list": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
     "hcoona-release-smoke": _ZERO_TARGETS,
     "hcoona-release-smoke-github-packages": {
         "buddy": frozenset({"github-release/public", "nuget/github-packages"}),
@@ -317,40 +330,37 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
         "official": frozenset({"github-release/public", "nuget/nuget-org"}),
     },
     "hcoona-release-smoke-pypi": _GITHUB_RELEASE_AND_PYPI_TARGETS,
-    "hcoona-release-smoke-rubygems": {
-        "buddy": frozenset(
-            {"github-release/public", "rubygems/github-packages"}
-        ),
-        "official": frozenset(
-            {"github-release/public", "rubygems/rubygems-org"}
-        ),
-    },
+    "hcoona-release-smoke-rubygems": _GITHUB_RELEASE_AND_RUBYGEMS_ORG_TARGETS,
     "hcoona-release-smoke-wxt": _GITHUB_RELEASE_ONLY_TARGETS,
     "hexo-renderer-asciidoc": {
         "buddy": frozenset({"github-release/public", "npm/github-packages"}),
         "official": frozenset({"github-release/public", "npm/npmjs"}),
     },
-    "hjg-pngcs": _GITHUB_RELEASE_ONLY_TARGETS,
+    "hjg-pngcs": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
     "image-occlusion-editor": _GITHUB_RELEASE_ONLY_TARGETS,
     "markdown-hybrid-search-mcp": _ZERO_TARGETS,
-    "memoization": _GITHUB_RELEASE_ONLY_TARGETS,
+    "memoization": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
     "memoization-generators": _ZERO_TARGETS,
-    "microsoft-extensions-logging-mstest": _GITHUB_RELEASE_ONLY_TARGETS,
-    "microsoft-extensions-logging-xunit": _GITHUB_RELEASE_ONLY_TARGETS,
+    "microsoft-extensions-logging-mstest": (
+        _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS
+    ),
+    "microsoft-extensions-logging-xunit": (
+        _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS
+    ),
     "microsoft-extensions-options-dedup-change-extensions": (
-        _GITHUB_RELEASE_ONLY_TARGETS
+        _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS
     ),
     "nbgv-python": _GITHUB_RELEASE_ONLY_TARGETS,
-    "phi-failure-detector": _GITHUB_RELEASE_ONLY_TARGETS,
-    "phi-failure-detector-console": _ZERO_TARGETS,
+    "phi-failure-detector": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
+    "phi-failure-detector-console": _GITHUB_RELEASE_ONLY_TARGETS,
     "qidian-novel-downloader": _GITHUB_RELEASE_ONLY_TARGETS,
-    "steam-account-history-to-csv": _ZERO_TARGETS,
+    "steam-account-history-to-csv": _GITHUB_RELEASE_ONLY_TARGETS,
     "vscode-copilot-telegram-hook": _GITHUB_RELEASE_ONLY_TARGETS,
-    "webhdfs-extensions-file-providers": _GITHUB_RELEASE_ONLY_TARGETS,
+    "webhdfs-extensions-file-providers": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
 }
 _FROZEN_TARGET_ARTIFACT_SEMANTICS_BY_PROJECT_ID = {
-    "asciidoctor-latexmath": _RUBYGEMS_GITHUB_RELEASE_ARTIFACTS,
-    "circular-list": _GITHUB_RELEASE_ARTIFACTS,
+    "asciidoctor-latexmath": _RUBYGEMS_ORG_ARTIFACTS,
+    "circular-list": _NUGET_ORG_ARTIFACTS,
     "hcoona-release-smoke": _NO_ARTIFACTS,
     "hcoona-release-smoke-dotnet-executable": (_WIN_X64_EXECUTABLE_ARTIFACTS),
     "hcoona-release-smoke-github-packages": _GITHUB_PACKAGES_NUGET_ARTIFACTS,
@@ -361,25 +371,25 @@ _FROZEN_TARGET_ARTIFACT_SEMANTICS_BY_PROJECT_ID = {
     "hcoona-release-smoke-nuget": _NUGET_ORG_ARTIFACTS,
     "hcoona-release-smoke-pypi": _PYTHON_ARTIFACTS,
     "hcoona-release-smoke-rubygems": _RUBYGEMS_ORG_ARTIFACTS,
-    "hcoona-release-smoke-wxt": _BROWSER_ZIP_ARTIFACTS,
+    "hcoona-release-smoke-wxt": _BROWSER_ZIP_WITH_SOURCE_ARTIFACTS,
     "hexo-renderer-asciidoc": _NPMJS_ARTIFACTS,
-    "hjg-pngcs": _GITHUB_RELEASE_ARTIFACTS,
+    "hjg-pngcs": _NUGET_ORG_ARTIFACTS,
     "image-occlusion-editor": _INSTALLER_ARTIFACTS,
     "markdown-hybrid-search-mcp": _NO_ARTIFACTS,
-    "memoization": _GITHUB_RELEASE_ARTIFACTS,
+    "memoization": _NUGET_ORG_ARTIFACTS,
     "memoization-generators": _NO_ARTIFACTS,
-    "microsoft-extensions-logging-mstest": _GITHUB_RELEASE_ARTIFACTS,
-    "microsoft-extensions-logging-xunit": _GITHUB_RELEASE_ARTIFACTS,
+    "microsoft-extensions-logging-mstest": _NUGET_ORG_ARTIFACTS,
+    "microsoft-extensions-logging-xunit": _NUGET_ORG_ARTIFACTS,
     "microsoft-extensions-options-dedup-change-extensions": (
-        _GITHUB_RELEASE_ARTIFACTS
+        _NUGET_ORG_ARTIFACTS
     ),
     "nbgv-python": _PYTHON_GITHUB_RELEASE_ARTIFACTS,
-    "phi-failure-detector": _GITHUB_RELEASE_ARTIFACTS,
-    "phi-failure-detector-console": _NO_ARTIFACTS,
+    "phi-failure-detector": _NUGET_ORG_ARTIFACTS,
+    "phi-failure-detector-console": _THREE_EXECUTABLE_ARTIFACTS,
     "qidian-novel-downloader": _THREE_EXECUTABLE_ARTIFACTS,
-    "steam-account-history-to-csv": _NO_ARTIFACTS,
+    "steam-account-history-to-csv": _BROWSER_ZIP_WITH_SOURCE_ARTIFACTS,
     "vscode-copilot-telegram-hook": _TWO_EXECUTABLE_ARTIFACTS,
-    "webhdfs-extensions-file-providers": _GITHUB_RELEASE_ARTIFACTS,
+    "webhdfs-extensions-file-providers": _NUGET_ORG_ARTIFACTS,
 }
 _PROJECT_ECOSYSTEMS = {"dotnet", "python", "node", "ruby"}
 _RELEASE_KINDS = {"lib", "app", "tool", "extension", "generator"}
@@ -401,6 +411,7 @@ _ALLOWED_TUPLES_BY_CONTRACT = {
         ("primary-package", "package", "sdist"),
         ("primary-package", "package", "npm-package"),
         ("primary-package", "package", "browser-zip"),
+        ("sources", "archive", "sources-zip"),
         ("primary-package", "package", "rubygem"),
         ("primary-binary", "binary", "executable"),
         ("installer", "installer", "inno-setup"),

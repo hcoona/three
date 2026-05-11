@@ -1136,7 +1136,7 @@ def _publish_nuget(
     host = str(destination["host"])
     package = _nuget_primary_artifact(artifacts)
     if host == "nuget.org":
-        return _publish_nuget_org(package, repo_root, runner)
+        return _publish_nuget_org(package, artifacts, repo_root, runner)
     if host == "nuget.pkg.github.com":
         return _publish_github_packages_nuget(
             package,
@@ -1151,6 +1151,7 @@ def _publish_nuget(
 
 def _publish_nuget_org(
     package: _ArtifactInput,
+    artifacts: Sequence[_ArtifactInput],
     repo_root: Path,
     runner: Runner,
 ) -> Json:
@@ -1162,19 +1163,32 @@ def _publish_nuget_org(
         raise PublishExecutorError(
             msg, code="PUBLISH_AUTH_FAILED", phase="validation"
         )
-    command = [
-        shutil.which("dotnet") or "dotnet",
-        "nuget",
-        "push",
-        package.upload_path.as_posix(),
-        "--source",
-        source,
-        "--api-key",
-        token,
-        "--skip-duplicate",
-    ]
-    _run_checked(command, repo_root, runner)
-    return {"package-filename": package.upload_path.name, "source": source}
+    symbols = next(
+        (item for item in artifacts if item.concrete_kind == "snupkg"), None
+    )
+    artifacts_to_push = [package]
+    if symbols is not None:
+        artifacts_to_push.append(symbols)
+    for artifact in artifacts_to_push:
+        command = [
+            shutil.which("dotnet") or "dotnet",
+            "nuget",
+            "push",
+            artifact.upload_path.as_posix(),
+            "--source",
+            source,
+            "--api-key",
+            token,
+            "--skip-duplicate",
+        ]
+        _run_checked(command, repo_root, runner)
+    evidence: Json = {
+        "package-filename": package.upload_path.name,
+        "source": source,
+    }
+    if symbols is not None:
+        evidence["symbol-package-filename"] = symbols.upload_path.name
+    return evidence
 
 
 def _publish_github_packages_nuget(
@@ -1185,14 +1199,6 @@ def _publish_github_packages_nuget(
     runner: Runner,
 ) -> Json:
     """Publish a NuGet package to GitHub Packages."""
-    if any(artifact.concrete_kind == "snupkg" for artifact in artifacts):
-        msg = (
-            "GitHub Packages NuGet symbols (.snupkg) publication is not "
-            "supported by the current publish adapter"
-        )
-        raise PublishExecutorError(
-            msg, code="PUBLISH_UNSUPPORTED_TARGET", phase="validation"
-        )
     source = f"https://nuget.pkg.github.com/{destination['owner']}/index.json"
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
@@ -1200,18 +1206,31 @@ def _publish_github_packages_nuget(
         raise PublishExecutorError(
             msg, code="PUBLISH_AUTH_FAILED", phase="validation"
         )
-    command = [
-        shutil.which("dotnet") or "dotnet",
-        "nuget",
-        "push",
-        package.upload_path.as_posix(),
-        "--source",
-        source,
-        "--api-key",
-        token,
-    ]
-    _run_checked(command, repo_root, runner)
-    return {"package-filename": package.upload_path.name, "source": source}
+    symbols = next(
+        (item for item in artifacts if item.concrete_kind == "snupkg"), None
+    )
+    artifacts_to_push = [package]
+    if symbols is not None:
+        artifacts_to_push.append(symbols)
+    for artifact in artifacts_to_push:
+        command = [
+            shutil.which("dotnet") or "dotnet",
+            "nuget",
+            "push",
+            artifact.upload_path.as_posix(),
+            "--source",
+            source,
+            "--api-key",
+            token,
+        ]
+        _run_checked(command, repo_root, runner)
+    evidence: Json = {
+        "package-filename": package.upload_path.name,
+        "source": source,
+    }
+    if symbols is not None:
+        evidence["symbol-package-filename"] = symbols.upload_path.name
+    return evidence
 
 
 def _publish_rubygems(

@@ -145,6 +145,13 @@
                 "concrete-kind": "browser-zip",
                 "min-count": 0,
                 "max-count": null
+              },
+              {
+                "role": "sources",
+                "kind-family": "archive",
+                "concrete-kind": "sources-zip",
+                "min-count": 0,
+                "max-count": null
               }
             ]
           },
@@ -163,6 +170,11 @@
               "role": "primary-package",
               "kind-family": "package",
               "concrete-kind": "browser-zip"
+            },
+            {
+              "role": "sources",
+              "kind-family": "archive",
+              "concrete-kind": "sources-zip"
             }
           ],
           "id": "github-release-assets"

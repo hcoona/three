@@ -1228,6 +1228,8 @@ class _PlanBuilder:
             variant = self.variants[str(artifact["variant-id"])]
             token = _variant_token(variant["dimensions"])
             return f"{project.project_id}-{version}-{token}.zip"
+        if concrete == "sources-zip":
+            return f"{project.project_id}-{version}-sources.zip"
         if concrete == "rubygem" and package_name:
             if project.version_authority_kind == "build-system-nbgv":
                 metadata = self._rubygems_metadata(project)

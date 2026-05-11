@@ -2516,7 +2516,7 @@
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_nuget_executor_rejects_unpublished_snupkg"
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_github_packages_nuget_executor_pushes_symbol_package"
           }
         ],
         "workflow-conclusion": [
@@ -2550,7 +2550,7 @@
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_nuget_executor_rejects_unpublished_snupkg"
+            "value": "src/public/lib/three-workflow-release-publish/tests/test_executor.py::test_github_packages_nuget_executor_pushes_symbol_package"
           }
         ]
       }
