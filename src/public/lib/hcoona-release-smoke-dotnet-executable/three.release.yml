@@ -1,0 +1,32 @@
+api-version: three.release/v1alpha1
+kind: project
+
+project:
+  id: hcoona-release-smoke-dotnet-executable
+  display-name: hcoona-release-smoke-dotnet-executable
+  ecosystem: dotnet
+  release-kind: app
+
+source:
+  primary-manifest: hcoona-release-smoke-dotnet-executable.csproj
+
+variants:
+  - id: win-x64
+    dimensions:
+      os: windows
+      rid: win-x64
+    artifacts:
+      - id: executable
+        role: primary-binary
+        kind-family: binary
+        concrete-kind: executable
+
+profiles:
+  buddy:
+    targets:
+      - uses: github-release/public
+        artifacts: [executable]
+  official:
+    targets:
+      - uses: github-release/public
+        artifacts: [executable]

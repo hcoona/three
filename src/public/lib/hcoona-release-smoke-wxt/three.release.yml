@@ -1,0 +1,50 @@
+api-version: three.release/v1alpha1
+kind: project
+
+project:
+  id: hcoona-release-smoke-wxt
+  display-name: hcoona-release-smoke-wxt
+  ecosystem: node
+  release-kind: extension
+
+source:
+  primary-manifest: package.json
+  auxiliary-inputs:
+    - entrypoints/background.ts
+    - wxt.config.ts
+
+variants:
+  - id: chrome
+    dimensions:
+      browser: chrome
+    artifacts:
+      - id: chrome
+        role: primary-package
+        kind-family: package
+        concrete-kind: browser-zip
+  - id: firefox
+    dimensions:
+      browser: firefox
+    artifacts:
+      - id: firefox
+        role: primary-package
+        kind-family: package
+        concrete-kind: browser-zip
+  - id: edge
+    dimensions:
+      browser: edge
+    artifacts:
+      - id: edge
+        role: primary-package
+        kind-family: package
+        concrete-kind: browser-zip
+
+profiles:
+  buddy:
+    targets:
+      - uses: github-release/public
+        artifacts: [chrome, firefox, edge]
+  official:
+    targets:
+      - uses: github-release/public
+        artifacts: [chrome, firefox, edge]

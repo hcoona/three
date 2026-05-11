@@ -1224,6 +1224,10 @@ class _PlanBuilder:
         if concrete == "npm-package" and package_name:
             base = _npm_pack_filename_base(package_name)
             return f"{base}-{version}.tgz"
+        if concrete == "browser-zip":
+            variant = self.variants[str(artifact["variant-id"])]
+            token = _variant_token(variant["dimensions"])
+            return f"{project.project_id}-{version}-{token}.zip"
         if concrete == "rubygem" and package_name:
             if project.version_authority_kind == "build-system-nbgv":
                 metadata = self._rubygems_metadata(project)

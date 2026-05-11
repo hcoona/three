@@ -138,6 +138,13 @@
                 "max-count": null,
                 "min-count": 0,
                 "role": "symbols"
+              },
+              {
+                "role": "primary-package",
+                "kind-family": "package",
+                "concrete-kind": "browser-zip",
+                "min-count": 0,
+                "max-count": null
               }
             ]
           },
@@ -151,6 +158,11 @@
               "concrete-kind": "snupkg",
               "kind-family": "package",
               "role": "symbols"
+            },
+            {
+              "role": "primary-package",
+              "kind-family": "package",
+              "concrete-kind": "browser-zip"
             }
           ],
           "id": "github-release-assets"

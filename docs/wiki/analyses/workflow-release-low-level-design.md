@@ -2207,6 +2207,11 @@ the descriptor or catalog input, emitted plan, execution-set selector, request o
 receipt artifact, external or GitHub registry observation, and final workflow
 conclusion where that column applies.
 
+Dedicated public smoke descriptors cover the missing GitHub Release build
+artifact shapes for .NET executable binaries, .NET Inno Setup installers, and
+WXT browser-extension zips for Chrome, Firefox, and Edge. Python application
+smoke coverage is intentionally skipped for now.
+
 The first-delivery PyPI official publish row remains required final acceptance
 evidence, but it is intentionally deferred until all other validation is green
 and these workflow changes have merged to `main`. Before that point, continue

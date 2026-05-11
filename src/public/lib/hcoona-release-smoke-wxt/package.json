@@ -1,0 +1,14 @@
+{
+  "name": "hcoona-release-smoke-wxt",
+  "version": "0.0.0",
+  "private": true,
+  "description": "WXT browser extension smoke project for GitHub Release browser zip artifacts.",
+  "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
+  "type": "module",
+  "scripts": {
+    "build": "wxt zip -b chrome && wxt zip -b firefox && wxt zip -b edge"
+  },
+  "devDependencies": {
+    "wxt": "0.20.25"
+  }
+}

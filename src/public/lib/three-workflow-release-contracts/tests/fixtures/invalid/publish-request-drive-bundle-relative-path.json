@@ -136,6 +136,13 @@
             "role": "primary-package"
           },
           {
+            "role": "primary-package",
+            "kind-family": "package",
+            "concrete-kind": "browser-zip",
+            "min-count": 0,
+            "max-count": null
+          },
+          {
             "concrete-kind": "rubygem",
             "kind-family": "package",
             "max-count": null,
@@ -183,6 +190,11 @@
           "concrete-kind": "npm-package",
           "kind-family": "package",
           "role": "primary-package"
+        },
+        {
+          "role": "primary-package",
+          "kind-family": "package",
+          "concrete-kind": "browser-zip"
         },
         {
           "concrete-kind": "rubygem",

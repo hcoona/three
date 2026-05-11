@@ -99,6 +99,11 @@ _EXPECTED_CONTRACTS = {
             {
                 "role": "primary-package",
                 "kind-family": "package",
+                "concrete-kind": "browser-zip",
+            },
+            {
+                "role": "primary-package",
+                "kind-family": "package",
                 "concrete-kind": "rubygem",
             },
             {
@@ -149,6 +154,13 @@ _EXPECTED_CONTRACTS = {
                     "role": "primary-package",
                     "kind-family": "package",
                     "concrete-kind": "npm-package",
+                    "min-count": 0,
+                    "max-count": None,
+                },
+                {
+                    "role": "primary-package",
+                    "kind-family": "package",
+                    "concrete-kind": "browser-zip",
                     "min-count": 0,
                     "max-count": None,
                 },

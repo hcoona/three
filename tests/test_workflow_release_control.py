@@ -1529,13 +1529,16 @@ def test_official_canary_override_rejects_non_allowlisted_project(
         diagnostic = diagnostics["diagnostics"][0]
         assert diagnostic["details"]["canary-override-non-public-ref"] is True
         assert diagnostic["details"]["allowed-project-ids"] == [
+            "hcoona-release-smoke-dotnet-executable",
             "hcoona-release-smoke-github-packages",
             "hcoona-release-smoke-github-release",
+            "hcoona-release-smoke-inno",
             "hcoona-release-smoke-npm",
             "hcoona-release-smoke-npm-dual",
             "hcoona-release-smoke-nuget",
             "hcoona-release-smoke-pypi",
             "hcoona-release-smoke-rubygems",
+            "hcoona-release-smoke-wxt",
         ]
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)

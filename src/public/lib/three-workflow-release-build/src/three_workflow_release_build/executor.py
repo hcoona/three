@@ -34,10 +34,14 @@ type Runner = Callable[
 _DOTNET_PACKAGE_KINDS = {"nuget", "snupkg"}
 _NUGET_IDENTITY_NUMERIC_PARTS = 3
 _NUGET_MAX_NUMERIC_PARTS = 4
+_BROWSER_MIN_VERSION_PARTS = 2
+_BROWSER_NORMALIZED_VERSION_PARTS = 3
+_BROWSER_MAX_VERSION_PARTS = 4
+_BROWSER_MAX_VERSION_PART = 65535
 _SUPPORTED_KINDS = {
     "dotnet": {"nuget", "snupkg", "executable", "inno-setup"},
     "python": {"wheel", "sdist"},
-    "node": {"npm-package"},
+    "node": {"npm-package", "browser-zip"},
     "ruby": {"rubygem"},
 }
 
@@ -571,9 +575,12 @@ def _python_build(
 
 
 def _node_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
-    """Build npm package tarballs for requested artifact slots."""
-    if {slot.concrete_kind for slot in context.artifacts} != {"npm-package"}:
-        msg = "node builds only support npm-package artifacts"
+    """Build npm package tarballs or browser extension zip artifacts."""
+    kinds = {slot.concrete_kind for slot in context.artifacts}
+    if kinds == {"browser-zip"}:
+        return _node_browser_zip_build(context)
+    if kinds != {"npm-package"}:
+        msg = f"unsupported node artifact kind set: {sorted(kinds)}"
         raise BuildExecutorError(msg)
     original_manifest_bytes = _read_npm_package_json_bytes(context.manifest)
     package_json = _parse_npm_package_json_bytes(original_manifest_bytes)
@@ -617,6 +624,161 @@ def _node_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
         return produced
     finally:
         _write_npm_package_json_bytes(context.manifest, original_manifest_bytes)
+
+
+def _node_browser_zip_build(context: _BuildContext) -> dict[str, Path]:
+    """Build one WXT browser extension zip for a browser-dimensioned variant."""
+    _require_single_kind(context.artifacts, "browser-zip")
+    if len(context.artifacts) != 1:
+        msg = "browser-zip node variants must request exactly one artifact"
+        raise BuildExecutorError(msg)
+    original_manifest_bytes = _read_npm_package_json_bytes(context.manifest)
+    package_json = _parse_npm_package_json_bytes(original_manifest_bytes)
+    scripts = package_json.get("scripts")
+    if not isinstance(scripts, Mapping) or not isinstance(
+        scripts.get("build"), str
+    ):
+        msg = "browser-zip packages must declare an explicit build script"
+        raise BuildExecutorError(msg)
+    browser = _browser_dimension(context.request)
+    output = context.output_root / "node-browser-zip"
+    _mkdir_output_work_dir(output)
+    package_runner = _prepare_node_package_runner(context)
+    frozen_version = _frozen_version(context.request)
+    browser_version = _browser_extension_manifest_version(frozen_version)
+    stamped_package_json = dict(package_json)
+    stamped_package_json["version"] = browser_version
+    _write_npm_package_json_bytes(
+        context.manifest,
+        json.dumps(stamped_package_json, indent=2).encode() + b"\n",
+    )
+    try:
+        _run_checked(
+            [*package_runner.args, "run", "build"],
+            package_runner.cwd,
+            context.runner,
+        )
+        produced = _browser_zip_candidates(context.project_root, browser)
+        if len(produced) != 1:
+            msg = (
+                f"expected one browser zip output for {browser!r}, "
+                f"found {len(produced)}"
+            )
+            raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+        _validate_browser_zip_manifest_version(produced[0], browser_version)
+        destination = output / _browser_zip_filename(context.request)
+        try:
+            shutil.copy2(produced[0], destination)
+        except OSError as exc:
+            msg = f"browser zip output could not be copied: {exc}"
+            raise BuildExecutorError(
+                msg,
+                code="BUILD_OUTPUT_INVALID",
+                phase="receipt",
+                details={
+                    "source": produced[0].as_posix(),
+                    "destination": destination.as_posix(),
+                    "error": str(exc),
+                },
+            ) from exc
+        return {context.artifacts[0].artifact_id: destination}
+    finally:
+        _write_npm_package_json_bytes(context.manifest, original_manifest_bytes)
+
+
+def _browser_dimension(request: Mapping[str, object]) -> str:
+    """Return the browser dimension for a browser-zip build request."""
+    variant = _mapping(request["variant"], "variant")
+    dimensions = _mapping(variant["dimensions"], "variant.dimensions")
+    browser = dimensions.get("browser")
+    if browser not in {"chrome", "firefox", "edge"}:
+        msg = "browser-zip variants must carry browser chrome/firefox/edge"
+        raise BuildExecutorError(msg)
+    return str(browser)
+
+
+def _browser_zip_candidates(
+    project_root: Path, browser: str
+) -> tuple[Path, ...]:
+    """Return WXT zip outputs matching the requested browser."""
+    output_root = project_root / ".output"
+    if not output_root.is_dir():
+        msg = "browser-zip build did not produce a .output directory"
+        raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+    return tuple(
+        sorted(
+            path
+            for path in output_root.rglob("*.zip")
+            if path.is_file()
+            and path.stem.casefold().endswith(f"-{browser}")
+        )
+    )
+
+
+def _browser_extension_manifest_version(version: str) -> str:
+    """Map a frozen release version to a browser manifest numeric version."""
+    release_core = re.split(r"[+-]", version, maxsplit=1)[0]
+    parts = release_core.split(".")
+    if not all(re.fullmatch(r"0|[1-9]\d*", part) for part in parts):
+        msg = f"browser-zip resolved version is not version-like: {version!r}"
+        raise BuildExecutorError(msg, code="BUILD_INVALID_INPUT")
+    release = [int(part) for part in parts]
+    if not (
+        _BROWSER_MIN_VERSION_PARTS
+        <= len(release)
+        <= _BROWSER_MAX_VERSION_PARTS
+    ):
+        msg = (
+            "browser-zip resolved version must contain 2 to 4 numeric "
+            f"components, got {version!r}"
+        )
+        raise BuildExecutorError(msg, code="BUILD_INVALID_INPUT")
+    while len(release) < _BROWSER_NORMALIZED_VERSION_PARTS:
+        release.append(0)
+    if any(part < 0 or part > _BROWSER_MAX_VERSION_PART for part in release):
+        msg = (
+            "browser-zip resolved version components must be between "
+            f"0 and 65535, got {version!r}"
+        )
+        raise BuildExecutorError(msg, code="BUILD_INVALID_INPUT")
+    return ".".join(str(part) for part in release)
+
+
+def _validate_browser_zip_manifest_version(
+    zip_path: Path, expected_version: str
+) -> None:
+    """Validate that a browser zip carries the expected manifest version."""
+    try:
+        with (
+            zipfile.ZipFile(zip_path) as archive,
+            archive.open("manifest.json") as manifest_file,
+        ):
+            manifest = json.load(manifest_file)
+    except (KeyError, OSError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+        msg = "browser zip output must contain a valid root manifest.json"
+        raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID") from exc
+    if not isinstance(manifest, Mapping):
+        msg = "browser zip manifest.json must contain a JSON object"
+        raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+    actual_version = manifest.get("version")
+    if actual_version != expected_version:
+        msg = (
+            "browser zip manifest version does not match resolved version: "
+            f"expected {expected_version!r}, got {actual_version!r}"
+        )
+        raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
+
+
+def _browser_zip_filename(request: Mapping[str, object]) -> str:
+    """Return the planner-frozen GitHub asset name for browser zips."""
+    project = _mapping(request["project"], "project")
+    variant = _mapping(request["variant"], "variant")
+    dimensions = _mapping(variant["dimensions"], "variant.dimensions")
+    return (
+        f"{variant['project-id']}-"
+        f"{project['resolved-version']}-"
+        f"{_variant_token(dimensions)}.zip"
+    )
 
 
 def _node_pack_artifact(
@@ -885,23 +1047,28 @@ def _dotnet_publish_executable(
 
 
 def _dotnet_inno_setup(context: _BuildContext) -> dict[str, Path]:
-    """Run the ImageOcclusionEditor Inno Setup packaging scripts."""
+    """Run project Inno Setup packaging scripts."""
     _require_single_kind(context.artifacts, "inno-setup")
     variant = _mapping(context.request["variant"], "variant")
-    if variant.get("project-id") != "image-occlusion-editor":
-        msg = "inno-setup artifacts require a project-specific executor"
-        raise BuildExecutorError(msg)
-    publish_script = (
-        context.project_root / "script" / "Publish-ImageOcclusionEditor.ps1"
-    )
+    project_id = str(variant["project-id"])
+    if project_id == "image-occlusion-editor":
+        publish_script = (
+            context.project_root / "script" / "Publish-ImageOcclusionEditor.ps1"
+        )
+        publish_root_name = "image-occlusion-publish"
+        installer_root_name = "image-occlusion-installer"
+    else:
+        publish_script = context.project_root / "script" / "Publish.ps1"
+        publish_root_name = "inno-setup-publish"
+        installer_root_name = "inno-setup-installer"
     installer_script = (
         context.project_root / "script" / "Build-InnoInstaller.ps1"
     )
     if not publish_script.is_file() or not installer_script.is_file():
-        msg = "ImageOcclusionEditor packaging scripts are missing"
+        msg = "Inno Setup packaging scripts are missing"
         raise BuildExecutorError(msg)
-    publish_root = context.output_root / "image-occlusion-publish"
-    installer_output = context.output_root / "image-occlusion-installer"
+    publish_root = context.output_root / publish_root_name
+    installer_output = context.output_root / installer_root_name
     _mkdir_output_work_dir(installer_output)
     pwsh = shutil.which("pwsh") or "pwsh"
     _run_checked(
@@ -918,26 +1085,66 @@ def _dotnet_inno_setup(context: _BuildContext) -> dict[str, Path]:
         context.repo_root,
         context.runner,
     )
-    _run_checked(
-        [
-            pwsh,
-            "-NoLogo",
-            "-File",
-            installer_script.as_posix(),
-            "-Configuration",
-            "Release",
-            "-PublishOutputRoot",
-            publish_root.as_posix(),
-            "-InstallerOutputPath",
-            installer_output.as_posix(),
-        ],
-        context.repo_root,
-        context.runner,
-    )
-    return _match_outputs(
+    installer_command = [
+        pwsh,
+        "-NoLogo",
+        "-File",
+        installer_script.as_posix(),
+        "-Configuration",
+        "Release",
+        "-PublishOutputRoot",
+        publish_root.as_posix(),
+        "-InstallerOutputPath",
+        installer_output.as_posix(),
+    ]
+    if project_id != "image-occlusion-editor":
+        installer_command.extend(
+            ["-InstallerFileName", _inno_setup_filename(context.request)]
+        )
+    _run_checked(installer_command, context.repo_root, context.runner)
+    produced = _match_outputs(
         context.artifacts,
         {"inno-setup": tuple(installer_output.glob("*.exe"))},
     )
+    _validate_windows_pe_installers(produced)
+    return produced
+
+
+def _inno_setup_filename(request: Mapping[str, object]) -> str:
+    """Return the planner-frozen GitHub asset name for Inno Setup."""
+    project = _mapping(request["project"], "project")
+    variant = _mapping(request["variant"], "variant")
+    dimensions = _mapping(variant["dimensions"], "variant.dimensions")
+    return (
+        f"{variant['project-id']}-"
+        f"{project['resolved-version']}-"
+        f"{_variant_token(dimensions)}-setup.exe"
+    )
+
+
+def _validate_windows_pe_installers(produced: Mapping[str, Path]) -> None:
+    """Reject placeholder text files masquerading as Inno Setup .exe outputs."""
+    for artifact_id, path in produced.items():
+        try:
+            with path.open("rb") as stream:
+                header = stream.read(2)
+        except OSError as exc:
+            msg = f"Inno Setup installer could not be read: {exc}"
+            raise BuildExecutorError(
+                msg,
+                code="BUILD_OUTPUT_INVALID",
+                phase="receipt",
+                artifact_id=artifact_id,
+            ) from exc
+        if header != b"MZ":
+            msg = "Inno Setup installer output is not a Windows executable"
+            raise BuildExecutorError(
+                msg,
+                code="BUILD_OUTPUT_INVALID",
+                phase="receipt",
+                artifact_id=artifact_id,
+                details={"path": path.as_posix()},
+            )
 
 
 def _match_outputs(

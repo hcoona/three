@@ -91,6 +91,14 @@ _FROZEN_DESCRIPTOR_IDENTITY_BY_ROOT = {
         "hcoona-release-smoke-github-release",
         "hcoona-release-smoke-github-release.csproj",
     ),
+    "src/public/lib/hcoona-release-smoke-dotnet-executable": (
+        "hcoona-release-smoke-dotnet-executable",
+        "hcoona-release-smoke-dotnet-executable.csproj",
+    ),
+    "src/public/lib/hcoona-release-smoke-inno": (
+        "hcoona-release-smoke-inno",
+        "hcoona-release-smoke-inno.csproj",
+    ),
     "src/public/lib/hcoona-release-smoke-npm": (
         "hcoona-release-smoke-npm",
         "package.json",
@@ -110,6 +118,10 @@ _FROZEN_DESCRIPTOR_IDENTITY_BY_ROOT = {
     "src/public/lib/hcoona-release-smoke-rubygems": (
         "hcoona-release-smoke-rubygems",
         "hcoona-release-smoke-rubygems.gemspec",
+    ),
+    "src/public/lib/hcoona-release-smoke-wxt": (
+        "hcoona-release-smoke-wxt",
+        "package.json",
     ),
     "src/public/lib/hexo-renderer-asciidoc": (
         "hexo-renderer-asciidoc",
@@ -153,6 +165,7 @@ _PYTHON_PACKAGE_TUPLES = (
     ("primary-package", "package", "sdist"),
 )
 _NPM_PACKAGE_TUPLES = (("primary-package", "package", "npm-package"),)
+_BROWSER_PACKAGE_TUPLES = (("primary-package", "package", "browser-zip"),)
 _RUBYGEMS_PACKAGE_TUPLES = (("primary-package", "package", "rubygem"),)
 _INSTALLER_TUPLES = (("installer", "installer", "inno-setup"),)
 _ONE_EXECUTABLE_TUPLE = (("primary-binary", "binary", "executable"),)
@@ -174,6 +187,14 @@ _DEFAULT_RUBYGEMS_PACKAGE = tuple(
 )
 _WIN_X64_INSTALLER = ((_D_WIN_X64, _INSTALLER_TUPLES[0]),)
 _WIN_X64_EXECUTABLE = ((_D_WIN_X64, _ONE_EXECUTABLE_TUPLE[0]),)
+_D_CHROME = (("browser", "chrome"),)
+_D_FIREFOX = (("browser", "firefox"),)
+_D_EDGE = (("browser", "edge"),)
+_THREE_BROWSER_ZIPS = (
+    (_D_CHROME, _BROWSER_PACKAGE_TUPLES[0]),
+    (_D_FIREFOX, _BROWSER_PACKAGE_TUPLES[0]),
+    (_D_EDGE, _BROWSER_PACKAGE_TUPLES[0]),
+)
 _LINUX_X64_EXECUTABLE = ((_D_LINUX_X64, _ONE_EXECUTABLE_TUPLE[0]),)
 _MACOS_X64_EXECUTABLE = ((_D_MACOS_X64, _ONE_EXECUTABLE_TUPLE[0]),)
 _TWO_EXECUTABLES = _WIN_X64_EXECUTABLE + _LINUX_X64_EXECUTABLE
@@ -253,6 +274,14 @@ _INSTALLER_ARTIFACTS = {
     "buddy": {"github-release/public": _WIN_X64_INSTALLER},
     "official": {"github-release/public": _WIN_X64_INSTALLER},
 }
+_WIN_X64_EXECUTABLE_ARTIFACTS = {
+    "buddy": {"github-release/public": _WIN_X64_EXECUTABLE},
+    "official": {"github-release/public": _WIN_X64_EXECUTABLE},
+}
+_BROWSER_ZIP_ARTIFACTS = {
+    "buddy": {"github-release/public": _THREE_BROWSER_ZIPS},
+    "official": {"github-release/public": _THREE_BROWSER_ZIPS},
+}
 _NO_ARTIFACTS = {"buddy": {}, "official": {}}
 _THREE_EXECUTABLE_ARTIFACTS = {
     "buddy": {"github-release/public": _THREE_EXECUTABLES},
@@ -272,6 +301,8 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
             {"github-release/public", "nuget/github-packages"}
         ),
     },
+    "hcoona-release-smoke-dotnet-executable": _GITHUB_RELEASE_ONLY_TARGETS,
+    "hcoona-release-smoke-inno": _GITHUB_RELEASE_ONLY_TARGETS,
     "hcoona-release-smoke-github-release": _GITHUB_RELEASE_ONLY_TARGETS,
     "hcoona-release-smoke-npm": {
         "buddy": frozenset({"github-release/public", "npm/github-packages"}),
@@ -294,6 +325,7 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
             {"github-release/public", "rubygems/rubygems-org"}
         ),
     },
+    "hcoona-release-smoke-wxt": _GITHUB_RELEASE_ONLY_TARGETS,
     "hexo-renderer-asciidoc": {
         "buddy": frozenset({"github-release/public", "npm/github-packages"}),
         "official": frozenset({"github-release/public", "npm/npmjs"}),
@@ -320,13 +352,16 @@ _FROZEN_TARGET_ARTIFACT_SEMANTICS_BY_PROJECT_ID = {
     "asciidoctor-latexmath": _RUBYGEMS_GITHUB_RELEASE_ARTIFACTS,
     "circular-list": _GITHUB_RELEASE_ARTIFACTS,
     "hcoona-release-smoke": _NO_ARTIFACTS,
+    "hcoona-release-smoke-dotnet-executable": (_WIN_X64_EXECUTABLE_ARTIFACTS),
     "hcoona-release-smoke-github-packages": _GITHUB_PACKAGES_NUGET_ARTIFACTS,
     "hcoona-release-smoke-github-release": _GITHUB_RELEASE_ARTIFACTS,
+    "hcoona-release-smoke-inno": _INSTALLER_ARTIFACTS,
     "hcoona-release-smoke-npm": _NPMJS_ARTIFACTS,
     "hcoona-release-smoke-npm-dual": _NPMJS_ARTIFACTS,
     "hcoona-release-smoke-nuget": _NUGET_ORG_ARTIFACTS,
     "hcoona-release-smoke-pypi": _PYTHON_ARTIFACTS,
     "hcoona-release-smoke-rubygems": _RUBYGEMS_ORG_ARTIFACTS,
+    "hcoona-release-smoke-wxt": _BROWSER_ZIP_ARTIFACTS,
     "hexo-renderer-asciidoc": _NPMJS_ARTIFACTS,
     "hjg-pngcs": _GITHUB_RELEASE_ARTIFACTS,
     "image-occlusion-editor": _INSTALLER_ARTIFACTS,
@@ -365,6 +400,7 @@ _ALLOWED_TUPLES_BY_CONTRACT = {
         ("primary-package", "package", "wheel"),
         ("primary-package", "package", "sdist"),
         ("primary-package", "package", "npm-package"),
+        ("primary-package", "package", "browser-zip"),
         ("primary-package", "package", "rubygem"),
         ("primary-binary", "binary", "executable"),
         ("installer", "installer", "inno-setup"),

@@ -2340,6 +2340,44 @@ def test_github_release_wheel_only_asset_does_not_require_sdist(
     assert list(names.values()) == ["nbgv_python-2.1.0.dev1-py3-none-any.whl"]
 
 
+def test_wxt_browser_zip_projection_names_three_browser_assets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Name WXT browser zip assets for Chrome, Firefox, and Edge variants."""
+    snapshot = validate_authoring(REPO_ROOT)
+
+    def fake_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        if handled := _fake_nbgv_get_version(args, semver2="1.2.3"):
+            return handled
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["hcoona-release-smoke-wxt"]),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+
+    node_id = _github_release_node_id(result.plan)
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    projection = cast("Mapping[str, object]", node["projection"])
+    names = cast("Mapping[str, str]", projection["asset-names-by-artifact-id"])
+    assert sorted(names.values()) == [
+        "hcoona-release-smoke-wxt-1.2.3-chrome.zip",
+        "hcoona-release-smoke-wxt-1.2.3-edge.zip",
+        "hcoona-release-smoke-wxt-1.2.3-firefox.zip",
+    ]
+
+
 def test_dotnet_metadata_boundary_fails_closed_when_missing() -> None:
     """Do not plan .NET projects without Windows metadata evidence."""
     snapshot = validate_authoring(REPO_ROOT)

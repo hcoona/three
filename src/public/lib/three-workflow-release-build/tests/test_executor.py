@@ -1627,6 +1627,205 @@ def test_node_executor_requires_npm_json_and_one_tarball() -> None:
         _remove_tree_scratch(scratch)
 
 
+@pytest.mark.parametrize(
+    ("browser", "artifact_id"),
+    [
+        ("chrome", "artifact/chrome"),
+        ("firefox", "artifact/firefox"),
+        ("edge", "artifact/edge"),
+    ],
+)
+def test_node_browser_zip_executor_receipts_wxt_browser_package(
+    browser: str, artifact_id: str
+) -> None:
+    """Run a WXT build and receipt the requested browser zip asset name."""
+    scratch = REPO_ROOT / f".build-executor-node-browser-{browser}-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            project_id="hcoona-release-smoke-wxt",
+            dimensions={"browser": browser},
+            artifacts={
+                artifact_id: ("primary-package", "package", "browser-zip"),
+            },
+        )
+        project_root = scratch / "hcoona-release-smoke-wxt"
+        (project_root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "hcoona-release-smoke-wxt",
+                    "version": "0.0.0",
+                    "scripts": {"build": "wxt zip"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        calls: list[tuple[tuple[str, ...], Path]] = []
+
+        def runner(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append((tuple(args), cwd))
+            output = project_root / ".output"
+            output.mkdir(exist_ok=True)
+            package_json = json.loads(
+                (project_root / "package.json").read_text(encoding="utf-8")
+            )
+            assert package_json["version"] == "1.2.3"
+            _write_browser_zip(
+                output / f"hcoona-release-smoke-wxt-1.2.3-{browser}.zip",
+                "1.2.3",
+            )
+            _write_browser_zip(
+                output
+                / f"hcoona-release-smoke-wxt-1.2.3-{browser}-sources.zip",
+                "1.2.3",
+            )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        assert calls[0][0][1:3] == ("run", "build")
+        receipt = _result_artifacts(result)[artifact_id]
+        assert isinstance(receipt, dict)
+        assert receipt["bundle-relative-path"] == (
+            f"dist/hcoona-release-smoke-wxt-1.2.3-{browser}.zip"
+        )
+        restored_package_json = json.loads(
+            (project_root / "package.json").read_text(encoding="utf-8")
+        )
+        assert restored_package_json["version"] == "0.0.0"
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_browser_zip_executor_validates_manifest_version() -> None:
+    """Reject browser zips whose manifest version is not the frozen release."""
+    scratch = REPO_ROOT / ".build-executor-node-browser-version-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            project_id="hcoona-release-smoke-wxt",
+            dimensions={"browser": "chrome"},
+            resolved_version="1.2.3-beta.4",
+            artifacts={
+                "artifact/chrome": (
+                    "primary-package",
+                    "package",
+                    "browser-zip",
+                ),
+            },
+        )
+        project_root = scratch / "hcoona-release-smoke-wxt"
+        (project_root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "hcoona-release-smoke-wxt",
+                    "version": "0.0.0",
+                    "scripts": {"build": "wxt zip"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            output = project_root / ".output"
+            output.mkdir(exist_ok=True)
+            _write_browser_zip(
+                output / "hcoona-release-smoke-wxt-1.2.3-chrome.zip",
+                "0.0.0",
+            )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with pytest.raises(
+            BuildExecutorError, match="manifest version"
+        ) as error:
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+
+        assert error.value.code == "BUILD_OUTPUT_INVALID"
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_node_browser_zip_executor_rejects_fake_zip_text() -> None:
+    """Reject placeholder text files masquerading as browser zip output."""
+    scratch = REPO_ROOT / ".build-executor-node-browser-fake-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="node",
+            project_id="hcoona-release-smoke-wxt",
+            dimensions={"browser": "chrome"},
+            artifacts={
+                "artifact/chrome": (
+                    "primary-package",
+                    "package",
+                    "browser-zip",
+                ),
+            },
+        )
+        project_root = scratch / "hcoona-release-smoke-wxt"
+        (project_root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "hcoona-release-smoke-wxt",
+                    "version": "0.0.0",
+                    "scripts": {"build": "wxt zip"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            output = project_root / ".output"
+            output.mkdir(exist_ok=True)
+            (output / "hcoona-release-smoke-wxt-1.2.3-chrome.zip").write_text(
+                "not a zip",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with pytest.raises(
+            BuildExecutorError, match=r"manifest\.json"
+        ) as error:
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+
+        assert error.value.code == "BUILD_OUTPUT_INVALID"
+    finally:
+        _remove_tree_scratch(scratch)
+
+
 def test_node_executor_packs_each_projected_npm_artifact() -> None:
     """Pack one built npm project once per artifact-level package projection."""
     scratch = REPO_ROOT / ".build-executor-node-projection-test"
@@ -3614,9 +3813,10 @@ def test_inno_setup_executor_runs_project_specific_scripts() -> None:
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
             if "-InstallerOutputPath" in args:
+                assert "-InstallerFileName" not in args
                 out_dir = Path(args[args.index("-InstallerOutputPath") + 1])
                 (out_dir / "ImageOcclusionEditorWinUI3_Setup.exe").write_bytes(
-                    b"installer"
+                    b"MZinstaller"
                 )
             return subprocess.CompletedProcess(args, 0, "", "")
 
@@ -3630,6 +3830,107 @@ def test_inno_setup_executor_runs_project_specific_scripts() -> None:
 
         validate_contract(result)
         assert set(_result_artifacts(result)) == {"artifact/installer"}
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_inno_setup_executor_runs_generic_smoke_scripts() -> None:
+    """Run generic Inno Setup publish and installer scripts for smoke apps."""
+    scratch = REPO_ROOT / ".build-executor-inno-generic-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            project_id="hcoona-release-smoke-inno",
+            dimensions={"os": "windows", "rid": "win-x64"},
+            artifacts={
+                "artifact/installer": ("installer", "installer", "inno-setup"),
+            },
+        )
+        project_root = scratch / "hcoona-release-smoke-inno"
+        script_dir = project_root / "script"
+        script_dir.mkdir(exist_ok=True)
+        (script_dir / "Publish.ps1").write_text("", encoding="utf-8")
+        (script_dir / "Build-InnoInstaller.ps1").write_text(
+            "", encoding="utf-8"
+        )
+        calls: list[tuple[str, ...]] = []
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append(tuple(args))
+            if "-InstallerOutputPath" in args:
+                out_dir = Path(args[args.index("-InstallerOutputPath") + 1])
+                file_name = args[args.index("-InstallerFileName") + 1]
+                (out_dir / file_name).write_bytes(b"MZinstaller")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        assert calls[0][3].endswith("/script/Publish.ps1")
+        assert calls[1][3].endswith("/script/Build-InnoInstaller.ps1")
+        receipt = _result_artifacts(result)["artifact/installer"]
+        assert isinstance(receipt, dict)
+        assert receipt["bundle-relative-path"] == (
+            "dist/hcoona-release-smoke-inno-1.2.3-windows-win-x64-setup.exe"
+        )
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_inno_setup_executor_rejects_fake_text_exe() -> None:
+    """Reject placeholder text files masquerading as Inno Setup installers."""
+    scratch = REPO_ROOT / ".build-executor-inno-fake-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            project_id="hcoona-release-smoke-inno",
+            dimensions={"os": "windows", "rid": "win-x64"},
+            artifacts={
+                "artifact/installer": ("installer", "installer", "inno-setup"),
+            },
+        )
+        project_root = scratch / "hcoona-release-smoke-inno"
+        script_dir = project_root / "script"
+        script_dir.mkdir(exist_ok=True)
+        (script_dir / "Publish.ps1").write_text("", encoding="utf-8")
+        (script_dir / "Build-InnoInstaller.ps1").write_text(
+            "", encoding="utf-8"
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            if "-InstallerOutputPath" in args:
+                out_dir = Path(args[args.index("-InstallerOutputPath") + 1])
+                file_name = args[args.index("-InstallerFileName") + 1]
+                (out_dir / file_name).write_text(
+                    "not a real installer",
+                    encoding="utf-8",
+                )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with pytest.raises(BuildExecutorError, match="Windows executable"):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
     finally:
         _remove_tree_scratch(scratch)
 
@@ -4687,3 +4988,18 @@ def _write_nuget_package(path: Path, version: str) -> None:
     )
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("Example.nuspec", nuspec)
+
+
+def _write_browser_zip(path: Path, manifest_version: str) -> None:
+    """Write a minimal browser extension zip containing manifest.json."""
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "manifest.json",
+            json.dumps(
+                {
+                    "manifest_version": 3,
+                    "name": "hcoona-release-smoke-wxt",
+                    "version": manifest_version,
+                }
+            ),
+        )

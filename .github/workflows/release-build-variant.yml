@@ -61,6 +61,39 @@ jobs:
           name: ${{ inputs.plan-artifact-name }}
           path: .three-workflow-release/plan
 
+      - name: Install Inno Setup for installer builds
+        if: ${{ runner.os == 'Windows' }}
+        env:
+          RELEASE_VARIANT_ID: ${{ inputs.variant-id }}
+        shell: pwsh
+        run: |
+          $plan = Get-Content .three-workflow-release/plan/release-plan.json -Raw | ConvertFrom-Json -Depth 100
+          $variant = $plan.graph.variants.PSObject.Properties[$env:RELEASE_VARIANT_ID].Value
+          if ($null -eq $variant) {
+            throw "Variant not found in release plan: $env:RELEASE_VARIANT_ID"
+          }
+
+          $needsInnoSetup = $false
+          foreach ($artifactId in @($variant.'artifact-ids')) {
+            $artifact = $plan.graph.artifacts.PSObject.Properties[$artifactId].Value
+            if ($null -ne $artifact -and $artifact.'concrete-kind' -eq 'inno-setup') {
+              $needsInnoSetup = $true
+              break
+            }
+          }
+
+          if (-not $needsInnoSetup) {
+            Write-Host 'Inno Setup is not required for this variant.'
+            exit 0
+          }
+
+          if (Get-Command -Name 'iscc', 'iscc.exe' -ErrorAction SilentlyContinue) {
+            Write-Host 'Inno Setup compiler is already available.'
+            exit 0
+          }
+
+          choco install innosetup --yes --no-progress
+
       - name: Compute artifact names
         id: names
         env:

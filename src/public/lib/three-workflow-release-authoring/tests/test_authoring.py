@@ -69,13 +69,16 @@ def test_current_repository_authoring_is_valid() -> None:
         "asciidoctor-latexmath",
         "circular-list",
         "hcoona-release-smoke",
+        "hcoona-release-smoke-dotnet-executable",
         "hcoona-release-smoke-github-packages",
         "hcoona-release-smoke-github-release",
+        "hcoona-release-smoke-inno",
         "hcoona-release-smoke-npm",
         "hcoona-release-smoke-npm-dual",
         "hcoona-release-smoke-nuget",
         "hcoona-release-smoke-pypi",
         "hcoona-release-smoke-rubygems",
+        "hcoona-release-smoke-wxt",
         "hexo-renderer-asciidoc",
         "hjg-pngcs",
         "image-occlusion-editor",
@@ -142,6 +145,27 @@ def test_dotnet_metadata_input_is_closed_and_authoring_derived() -> None:
                 "hcoona-release-smoke-github-release.csproj"
             ),
             "requires-package-id": True,
+        },
+        "hcoona-release-smoke-dotnet-executable": {
+            "descriptor-path": (
+                "src/public/lib/hcoona-release-smoke-dotnet-executable/"
+                "three.release.yml"
+            ),
+            "primary-manifest-path": (
+                "src/public/lib/hcoona-release-smoke-dotnet-executable/"
+                "hcoona-release-smoke-dotnet-executable.csproj"
+            ),
+            "requires-package-id": False,
+        },
+        "hcoona-release-smoke-inno": {
+            "descriptor-path": (
+                "src/public/lib/hcoona-release-smoke-inno/three.release.yml"
+            ),
+            "primary-manifest-path": (
+                "src/public/lib/hcoona-release-smoke-inno/"
+                "hcoona-release-smoke-inno.csproj"
+            ),
+            "requires-package-id": False,
         },
         "hcoona-release-smoke-nuget": {
             "descriptor-path": (

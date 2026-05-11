@@ -475,3 +475,10 @@ Updated the workflow-release design notes to move live acceptance away from the 
 - Updated the plan shape to freeze artifact-level npm projection, per-artifact
   npm final distribution filenames, projected npm tarballs in build bundles, and
   identity-verification-only npm publication.
+
+## [2026-05-11] query | Extend workflow release smoke coverage
+
+- Updated workflow-release schema and low-level acceptance notes for dedicated
+  GitHub Release smoke coverage of .NET executable, Inno Setup installer, and
+  WXT browser zip artifacts.
+- Recorded that Python application smoke coverage remains intentionally skipped.

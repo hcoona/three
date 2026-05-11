@@ -64,13 +64,16 @@ _NUGET_PRERELEASE_PART_RE = re.compile(r"^[0-9A-Za-z-]+$")
 _NUGET_BUILD_METADATA_PART_RE = re.compile(r"^[0-9A-Za-z-]+$")
 _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset(
     {
+        "hcoona-release-smoke-dotnet-executable",
         "hcoona-release-smoke-github-packages",
         "hcoona-release-smoke-github-release",
+        "hcoona-release-smoke-inno",
         "hcoona-release-smoke-npm",
         "hcoona-release-smoke-npm-dual",
         "hcoona-release-smoke-nuget",
         "hcoona-release-smoke-pypi",
         "hcoona-release-smoke-rubygems",
+        "hcoona-release-smoke-wxt",
     }
 )
 

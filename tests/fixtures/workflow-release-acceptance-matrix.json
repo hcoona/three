@@ -84,6 +84,18 @@
           },
           {
             "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-dotnet-executable/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-inno/three.release.yml"
+          },
+          {
+            "type": "path",
+            "value": "src/public/lib/hcoona-release-smoke-wxt/three.release.yml"
+          },
+          {
+            "type": "path",
             "value": "src/public/lib/hcoona-release-smoke-github-packages/three.release.yml"
           },
           {
