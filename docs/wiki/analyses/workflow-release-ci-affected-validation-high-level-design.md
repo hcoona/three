@@ -73,6 +73,17 @@ for the selected validation scope. Execution consumes the validation plan and
 must not recompute changed-file classification, selected validation subjects,
 downstream expansion, descriptor-validation scope, or validation obligations.
 
+The validation plan freezes planning provenance at the architecture boundary:
+the CI mode, the resolved commit or range used for planning, and the
+planner-owned validation-subject universe and fact snapshot identity needed for
+execution and evidence handoff.
+
+The validation plan is an inspectable machine-readable or equivalent normalized
+artifact. Its selected scope and planning decisions must be visible to later
+stages and operators, including selected subjects, broad-scope expansions,
+known-non-impacting lightweight selections, fail-closed reasons, and validation
+work groups. The exact representation remains a middle-level design concern.
+
 The exact validation-plan schema is deferred to middle-level design.
 
 ## Control Plane Model
@@ -118,12 +129,12 @@ subsystem without explicitly reopening requirements. The accepted control model
 is no publication authority, validation-only planning, human review, and
 fail-closed scope handling.
 
-This high-level design does not add a special rule that automatically expands or
-fails validation solely because a pull request changes planning or discovery
-inputs such as workspace metadata, descriptors, or dependency facts. Such changes
-are allowed and remain subject to ordinary human review plus the existing
-no-publication-authority, validation-only, trustworthy-scope, and fail-closed
-boundaries.
+Changes to planning or discovery inputs such as workspace metadata, descriptors,
+or dependency facts are handled by the normal classification model. This
+high-level design does not add a separate rule that automatically expands, fails,
+or sandboxes validation solely because those inputs changed. Such changes remain
+subject to ordinary human review plus the existing no-publication-authority,
+validation-only, trustworthy-scope, and fail-closed boundaries.
 
 ## Planning Responsibility Model
 
@@ -157,6 +168,11 @@ requirement-approved ecosystem expansion or fails closed.
 For ecosystem-scoped validation, the planner selects all active validation
 subjects in the affected ecosystem and validates descriptors for
 descriptor-backed projects in that ecosystem.
+
+Invalid descriptors fail validation rather than silently removing
+descriptor-backed projects from CI scope. Descriptor discovery or validation
+failures keep the affected descriptor-backed projects visible to the validation
+plan and evidence flow.
 
 For workflow-release infrastructure changes that can affect descriptor semantics,
 authoring validation, planning, contracts, target catalog behavior, workflow
