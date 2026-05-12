@@ -195,24 +195,27 @@ descriptor-backed projects from CI scope. Descriptor discovery or validation
 failures keep the affected descriptor-backed projects visible to the validation
 plan and evidence flow.
 
-For workflow-release infrastructure changes that can affect authoring validation,
-planning, contracts, target catalog behavior, workflow orchestration, build
-execution, publish execution, smoke validation, or other validation behavior, the
-planner selects affected subjects from the unified validation project universe.
-That selection includes validation-only subjects when the infrastructure change
-can affect their build, test, lint, type-check, or validation obligations.
+For workflow-release infrastructure changes that can affect descriptor semantics,
+authoring validation, planning, contracts, target catalog behavior, workflow
+orchestration, build execution, publish execution, smoke validation, or other
+validation behavior, the planner selects affected subjects from the unified
+validation project universe. That selection includes validation-only subjects
+when the infrastructure change can affect their build, test, lint, type-check, or
+validation obligations.
 
-Descriptor validation is an additional obligation for infrastructure changes that
-can affect descriptor semantics or descriptor-backed release-shaped validation.
-For those changes, the planner includes validation of all discovered release
-descriptors, but descriptor-backed projects are not the only possible affected
-subjects.
+Descriptor validation is an additional obligation for workflow-release
+infrastructure changes that can affect descriptor semantics, authoring
+validation, planning, contracts, build execution, publish execution, or smoke
+validation. For those changes, the planner includes validation of all discovered
+release descriptors, but descriptor-backed projects are not the only possible
+affected subjects.
 
 Workflow-release infrastructure changes also validate the affected
 workflow-release tooling surface. When an infrastructure change can affect
 multiple ecosystems or artifact kinds, planning expands to the related ecosystems
-or representative smoke coverage. If the affected tooling surface or affected
-validation subjects cannot be classified safely, planning fails closed.
+and affected validation subjects. Representative smoke coverage does not
+substitute for that broader validation. If the affected tooling surface or
+affected validation subjects cannot be classified safely, planning fails closed.
 
 ## Project Universe Model
 
@@ -257,8 +260,8 @@ only side effects, including signing, notarization, or privileged artifact
 production capabilities that are not required for ordinary validation. CI should
 use credential-free equivalents or unsigned validation artifacts to validate
 artifact shape. If an artifact shape cannot be trusted without release-only
-credentials or side effects, validation fails closed rather than silently
-claiming equivalence.
+credentials or side effects, execution records a blocking validation failure
+rather than silently claiming equivalence.
 
 For all selected validation subjects:
 
@@ -341,9 +344,7 @@ The following are not high-level design decisions and remain deferred:
 - exact scheduled full validation cadence;
 - exact validation evidence and receipt formats;
 - exact executor interfaces;
-- exact HK profiles, steps, and lightweight/heavyweight command mapping;
-- exact rule for when workflow-release infrastructure changes use representative
-  smoke coverage versus broader validation.
+- exact HK profiles, steps, and lightweight/heavyweight command mapping.
 
 ## Outcome
 
