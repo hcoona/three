@@ -143,6 +143,16 @@ or sandboxes validation solely because those inputs changed. Such changes remain
 subject to ordinary human review plus the existing no-publication-authority,
 validation-only, trustworthy-scope, and fail-closed boundaries.
 
+Changes to policy-bearing CI planning code, such as the planner, classifier, or
+fact-provider implementation, are also validated through the normal CI planning
+model. The authoritative validation plan for such changes may be produced by the
+validation-tree policy code being reviewed. This is an intentional maintainability
+tradeoff so CI policy changes are validated by their resulting planning behavior,
+rather than by a separate trusted-baseline planner that cannot exercise the
+changed policy. This does not grant publication authority or release credentials;
+if the changed policy cannot produce a trustworthy validation scope, planning
+fails closed.
+
 ## Planning Responsibility Model
 
 CI uses a **central validation planner with ecosystem fact providers**.
@@ -185,16 +195,24 @@ descriptor-backed projects from CI scope. Descriptor discovery or validation
 failures keep the affected descriptor-backed projects visible to the validation
 plan and evidence flow.
 
-For workflow-release infrastructure changes that can affect descriptor semantics,
-authoring validation, planning, contracts, target catalog behavior, workflow
-orchestration, build execution, publish execution, or smoke validation, the
-planner includes validation of all discovered release descriptors.
+For workflow-release infrastructure changes that can affect authoring validation,
+planning, contracts, target catalog behavior, workflow orchestration, build
+execution, publish execution, smoke validation, or other validation behavior, the
+planner selects affected subjects from the unified validation project universe.
+That selection includes validation-only subjects when the infrastructure change
+can affect their build, test, lint, type-check, or validation obligations.
+
+Descriptor validation is an additional obligation for infrastructure changes that
+can affect descriptor semantics or descriptor-backed release-shaped validation.
+For those changes, the planner includes validation of all discovered release
+descriptors, but descriptor-backed projects are not the only possible affected
+subjects.
 
 Workflow-release infrastructure changes also validate the affected
 workflow-release tooling surface. When an infrastructure change can affect
 multiple ecosystems or artifact kinds, planning expands to the related ecosystems
-or representative smoke coverage. If the affected tooling surface cannot be
-classified safely, planning fails closed.
+or representative smoke coverage. If the affected tooling surface or affected
+validation subjects cannot be classified safely, planning fails closed.
 
 ## Project Universe Model
 
