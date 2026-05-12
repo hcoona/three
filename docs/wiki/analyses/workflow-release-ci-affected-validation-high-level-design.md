@@ -102,6 +102,18 @@ partial validation. CI validation does not require publication credentials, and
 untrusted pull request contexts must not receive credentials or secrets that are
 needed only for side-effecting release.
 
+Planning and fact collection use the same minimal trust boundary: no publication
+credentials, no release privileges, and no OIDC publish permissions. They may use
+repository and ecosystem tooling to obtain facts, but planning remains
+validation-only and side-effect-free by contract. If fact collection cannot
+produce a trustworthy validation scope, planning fails closed.
+
+This is also a complexity boundary for later design phases. CI planning and fact
+collection should not be expanded into a heavyweight sandbox or security
+subsystem without explicitly reopening requirements. The accepted control model
+is no publication authority, validation-only planning, human review, and
+fail-closed scope handling.
+
 ## Planning Responsibility Model
 
 CI uses a **central validation planner with ecosystem fact providers**.
@@ -112,6 +124,7 @@ The central planner owns interpretation of high-level CI requirements, including
   known non-impacting, and unknown classifications;
 - known global scheduled-full-equivalent expansion;
 - known non-impacting lightweight planning;
+- ecosystem-scoped expansion;
 - fail-closed behavior for unknown or unclassifiable changes;
 - descriptor validation scope;
 - downstream expansion for project-scoped changes;
@@ -130,10 +143,20 @@ downstream dependent projects when downstream impact can be computed safely. If
 safe downstream impact computation is unavailable, the planner uses a
 requirement-approved ecosystem expansion or fails closed.
 
+For ecosystem-scoped validation, the planner selects all active validation
+subjects in the affected ecosystem and validates descriptors for
+descriptor-backed projects in that ecosystem.
+
 For workflow-release infrastructure changes that can affect descriptor semantics,
 authoring validation, planning, contracts, build execution, publish execution, or
 smoke validation, the planner includes validation of all discovered release
 descriptors.
+
+Workflow-release infrastructure changes also validate the affected
+workflow-release tooling surface. When an infrastructure change can affect
+multiple ecosystems or artifact kinds, planning expands to the related ecosystems
+or representative smoke coverage. If the affected tooling surface cannot be
+classified safely, planning fails closed.
 
 ## Project Universe Model
 
@@ -148,6 +171,10 @@ Release descriptors grant release capability. They do not define the entire CI
 validation universe. Non-releasable validation subjects are included by ecosystem
 workspace or solution metadata under active monorepo roots, subject to explicit
 repository-level exclusions.
+
+The planning layer owns the normalized validation-subject universe and capability
+assignment. Ecosystem providers contribute discovery and dependency facts; they
+do not own separate project universes.
 
 Validation-only subjects remain validation subjects only. They must not become
 publish subjects.
@@ -189,6 +216,9 @@ CI validation evidence is **strictly separate** from release immutable proof.
 
 CI evidence may be used to understand validation results and to connect CI jobs
 within a CI run. It must not be reused as `buddy` or `official` publish proof.
+CI-produced receipts and evidence must carry validation-only provenance and must
+be excluded from release immutable-proof lookup and publication admissibility
+paths.
 
 This separation avoids coupling CI trust boundaries, scheduled runs, pull request
 events, and local validation evidence to release publication authorization.

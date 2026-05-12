@@ -172,6 +172,15 @@ formatting checks where applicable, but they must not be silently skipped.
 - CI validation must not rely on publication credentials or release approval.
 - Untrusted pull request contexts must not receive publishing credentials or any
   other secret needed only for side-effecting release.
+- Planning and fact collection must not require publication credentials, release
+  privileges, or OIDC publish permissions.
+- Planning and fact collection may use repository and ecosystem tooling to obtain
+  facts, but planning remains validation-only and side-effect-free by contract.
+- The accepted complexity direction is to avoid turning CI planning or fact
+  collection into a heavyweight sandbox or security subsystem unless requirements
+  are explicitly reopened. The intended controls are no publication credentials,
+  no release privileges, validation-only planning, human review, and fail-closed
+  scope handling.
 - If an event payload cannot provide a trustworthy base/head range for affected
   planning, CI must fail planning closed rather than running a partial affected
   validation.
@@ -212,6 +221,9 @@ formatting checks where applicable, but they must not be silently skipped.
 - CI validation evidence and release immutable proof must remain strictly
   separate. CI validation artifacts must not become `buddy` or `official`
   publication proof.
+- CI-produced receipts and evidence must carry validation-only provenance and
+  must be excluded from release immutable-proof lookup and publication
+  admissibility paths.
 
 ## Confirmed Safety and Fallback Rules
 
@@ -246,6 +258,8 @@ formatting checks where applicable, but they must not be silently skipped.
   not eligible to become release immutable proof.
 - This page does not require project-graph affected builds to be perfectly
   minimal in the first implementation.
+- This page does not require designing a heavyweight sandbox for CI planning or
+  fact collection.
 - This page does not require replacing existing `hk` local validation behavior or
   moving heavyweight CI validation into local hooks.
 
