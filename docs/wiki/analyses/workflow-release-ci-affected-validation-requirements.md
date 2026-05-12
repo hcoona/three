@@ -208,8 +208,10 @@ formatting checks where applicable, but they must not be silently skipped.
 - CI should emit validation evidence or receipts that can be checked by later
   jobs and inspected after failures.
 - These CI outputs are validation artifacts only. They must not be treated as
-  immutable publish proofs unless a later design explicitly defines that
-  relationship.
+  immutable publish proofs.
+- CI validation evidence and release immutable proof must remain strictly
+  separate. CI validation artifacts must not become `buddy` or `official`
+  publication proof.
 
 ## Confirmed Safety and Fallback Rules
 
@@ -240,8 +242,8 @@ formatting checks where applicable, but they must not be silently skipped.
 - This page does not define exact path-matching rules.
 - This page does not define exact GitHub Actions workflow files.
 - This page does not define the exact scheduled full validation cadence.
-- This page does not decide whether validation receipts can later be reused as
-  release immutable proofs.
+- This page does not define release proof reuse because CI validation evidence is
+  not eligible to become release immutable proof.
 - This page does not require project-graph affected builds to be perfectly
   minimal in the first implementation.
 - This page does not require replacing existing `hk` local validation behavior or
@@ -260,6 +262,4 @@ formatting checks where applicable, but they must not be silently skipped.
   exclusions be represented without making those subjects publish subjects?
 - Which lightweight checks should be left-shifted into `hk`, and which checks are
   too heavyweight for local hook execution?
-- Which CI validation artifacts can safely become release proof inputs in a later
-  design, if any?
 - What cadence should scheduled full validation use?

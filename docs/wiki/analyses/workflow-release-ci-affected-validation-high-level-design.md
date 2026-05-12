@@ -68,6 +68,11 @@ At this layer, the important boundary is:
 - validation plans represent validation scope and validation obligations;
 - validation plans never encode publication side effects.
 
+The validation plan is the fully materialized, execution-authoritative artifact
+for the selected validation scope. Execution consumes the validation plan and
+must not recompute changed-file classification, selected validation subjects,
+downstream expansion, descriptor-validation scope, or validation obligations.
+
 The exact validation-plan schema is deferred to middle-level design.
 
 ## Control Plane Model
@@ -90,6 +95,13 @@ These modes share one architectural flow:
 Mode-specific event details, workflow YAML, concurrency policy, and exact
 base/head derivation are deferred to middle-level design.
 
+At the high-level trust boundary, affected validation requires a trustworthy
+input range. If the control plane cannot establish a trustworthy base/head or
+pushed range for affected planning, planning fails closed rather than running a
+partial validation. CI validation does not require publication credentials, and
+untrusted pull request contexts must not receive credentials or secrets that are
+needed only for side-effecting release.
+
 ## Planning Responsibility Model
 
 CI uses a **central validation planner with ecosystem fact providers**.
@@ -102,6 +114,8 @@ The central planner owns interpretation of high-level CI requirements, including
 - known non-impacting lightweight planning;
 - fail-closed behavior for unknown or unclassifiable changes;
 - descriptor validation scope;
+- downstream expansion for project-scoped changes;
+- workflow-release infrastructure descriptor-validation obligations;
 - selected validation subjects and validation obligations.
 
 Ecosystem adapters provide facts rather than owning policy. Examples of facts
@@ -110,6 +124,16 @@ dependency relationships.
 
 This keeps cross-ecosystem policy centralized while still allowing ecosystem
 tools to provide authoritative ecosystem-specific data.
+
+For project-scoped validation, the planner includes directly changed projects and
+downstream dependent projects when downstream impact can be computed safely. If
+safe downstream impact computation is unavailable, the planner uses a
+requirement-approved ecosystem expansion or fails closed.
+
+For workflow-release infrastructure changes that can affect descriptor semantics,
+authoring validation, planning, contracts, build execution, publish execution, or
+smoke validation, the planner includes validation of all discovered release
+descriptors.
 
 ## Project Universe Model
 
@@ -149,6 +173,12 @@ For all selected validation subjects:
 
 - CI runs existing ecosystem gates that apply to the selected scope, such as
   build, tests, lint, formatting checks, and type checks where those gates exist.
+
+Runner selection and tool provisioning remain execution concerns, but the
+execution design must preserve the high-level ecosystem expectations: .NET
+validation in GitHub Actions runs on Windows runners, Python and
+JavaScript/TypeScript validation may run on Ubuntu runners, and toolchains should
+be provisioned through `mise` where practical.
 
 The exact mapping from validation obligations to jobs, commands, receipts, and
 executor calls is deferred to middle-level design.
