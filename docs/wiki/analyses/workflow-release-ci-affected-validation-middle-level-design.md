@@ -282,7 +282,8 @@ full repository validation scope at the scheduled validation-tree snapshot:
 - all active validation subjects in all ecosystems;
 - all discovered release descriptors;
 - all applicable ecosystem gates;
-- release-shaped artifact and receipt validation for descriptor-backed projects.
+- release-shaped artifact and receipt validation for descriptor-backed projects;
+- relevant workflow-release tooling validation.
 
 ### Known Non-Impacting Changes
 
