@@ -73,8 +73,11 @@ for the selected validation scope. Execution consumes the validation plan and
 must not recompute changed-file classification, selected validation subjects,
 downstream expansion, descriptor-validation scope, or validation obligations.
 
-The validation plan freezes planning provenance at the architecture boundary:
-the CI mode, the resolved commit or range used for planning, and the
+The validation plan freezes planning provenance at the architecture boundary.
+For affected validation, that provenance includes both the validation-tree
+snapshot used for fact collection and the trustworthy change-detection range used
+for affected planning. For scheduled full validation, it includes the scheduled
+validation-tree snapshot. In all modes, it also includes the CI mode and the
 planner-owned validation-subject universe and fact snapshot identity needed for
 execution and evidence handoff.
 
@@ -83,6 +86,10 @@ artifact. Its selected scope and planning decisions must be visible to later
 stages and operators, including selected subjects, broad-scope expansions,
 known-non-impacting lightweight selections, fail-closed reasons, and validation
 work groups. The exact representation remains a middle-level design concern.
+
+Fail-closed is a first-class planning outcome. A fail-closed outcome preserves
+planning provenance and reasons for inspection, but it does not authorize
+validation execution.
 
 The exact validation-plan schema is deferred to middle-level design.
 
@@ -159,6 +166,10 @@ dependency relationships.
 
 This keeps cross-ecosystem policy centralized while still allowing ecosystem
 tools to provide authoritative ecosystem-specific data.
+
+Fact providers contribute bounded discovery facts only. Build, test, packaging,
+release-shaped artifact validation, and other validation commands remain
+execution-layer responsibilities.
 
 For project-scoped validation, the planner includes directly changed projects and
 downstream dependent projects when downstream impact can be computed safely. If
@@ -243,6 +254,9 @@ CI validation evidence is **strictly separate** from release immutable proof.
 
 CI evidence may be used to understand validation results and to connect CI jobs
 within a CI run. It must not be reused as `buddy` or `official` publish proof.
+CI evidence references the validation plan identity and resolved planning
+provenance so operators can identify the exact planned scope or fail-closed
+outcome it belongs to.
 CI-produced receipts and evidence must carry validation-only provenance and must
 be excluded from release immutable-proof lookup and publication admissibility
 paths.
