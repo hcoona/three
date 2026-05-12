@@ -85,6 +85,10 @@ The supported modes are:
 - push affected validation;
 - scheduled full validation.
 
+Scheduled full validation selects the full repository validation scope: all
+active build/test projects in all ecosystems, all discovered release descriptors,
+and the full repository validation obligations.
+
 These modes share one architectural flow:
 
 1. normalize event input;
@@ -113,6 +117,13 @@ collection should not be expanded into a heavyweight sandbox or security
 subsystem without explicitly reopening requirements. The accepted control model
 is no publication authority, validation-only planning, human review, and
 fail-closed scope handling.
+
+This high-level design does not add a special rule that automatically expands or
+fails validation solely because a pull request changes planning or discovery
+inputs such as workspace metadata, descriptors, or dependency facts. Such changes
+are allowed and remain subject to ordinary human review plus the existing
+no-publication-authority, validation-only, trustworthy-scope, and fail-closed
+boundaries.
 
 ## Planning Responsibility Model
 
@@ -148,9 +159,9 @@ subjects in the affected ecosystem and validates descriptors for
 descriptor-backed projects in that ecosystem.
 
 For workflow-release infrastructure changes that can affect descriptor semantics,
-authoring validation, planning, contracts, build execution, publish execution, or
-smoke validation, the planner includes validation of all discovered release
-descriptors.
+authoring validation, planning, contracts, target catalog behavior, workflow
+orchestration, build execution, publish execution, or smoke validation, the
+planner includes validation of all discovered release descriptors.
 
 Workflow-release infrastructure changes also validate the affected
 workflow-release tooling surface. When an infrastructure change can affect
