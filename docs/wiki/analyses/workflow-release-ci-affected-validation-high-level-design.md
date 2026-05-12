@@ -196,12 +196,12 @@ failures keep the affected descriptor-backed projects visible to the validation
 plan and evidence flow.
 
 For workflow-release infrastructure changes that can affect descriptor semantics,
-authoring validation, planning, contracts, target catalog behavior, workflow
-orchestration, build execution, publish execution, smoke validation, or other
-validation behavior, the planner selects affected subjects from the unified
-validation project universe. That selection includes validation-only subjects
-when the infrastructure change can affect their build, test, lint, type-check, or
-validation obligations.
+descriptor schema documentation, authoring validation, planning, contracts,
+target catalog behavior, workflow orchestration, build execution, publish
+execution, smoke validation, or other validation behavior, the planner selects
+affected subjects from the unified validation project universe. That selection
+includes validation-only subjects when the infrastructure change can affect their
+build, test, lint, type-check, or validation obligations.
 
 Descriptor validation is an additional obligation for workflow-release
 infrastructure changes that can affect descriptor semantics, authoring
