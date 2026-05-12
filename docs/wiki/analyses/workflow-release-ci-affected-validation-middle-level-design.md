@@ -499,8 +499,11 @@ Evidence aggregation reports:
 
 The aggregated CI validation outcome fails when planning fails closed, required
 evidence is missing, or any work group records a blocking validation failure. It
-passes only when the plan authorizes a lightweight-only outcome or every required
-work group completes successfully with the expected validation evidence.
+passes only when every required work group completes successfully with the
+expected validation evidence, or when a lightweight-only plan has no executable
+lightweight obligations. If a lightweight-only plan includes executable
+lightweight work groups, those work groups must complete successfully with the
+expected validation evidence.
 
 The exact receipt file format and artifact upload naming are lower-level design.
 
