@@ -312,6 +312,10 @@ records:
 
 Execution must not run validation work from a fail-closed plan.
 
+A fail-closed plan produces a failing CI validation outcome. The control plane may
+still publish the fail-closed plan and diagnostics for inspection, but it must not
+convert that diagnostic artifact into a passing validation result.
+
 ## Validation Plan Contract
 
 The validation plan is the single authoritative handoff from planning to
@@ -406,6 +410,12 @@ For each selected descriptor-backed subject, the planner derives release-shaped
 artifact obligations from the same descriptor and artifact model used by `buddy`
 and `official`.
 
+If a descriptor is invalid enough that the planner cannot derive subject,
+descriptor-validation, or release-shaped artifact obligations, planning fails
+closed. If the planner can still materialize explicit descriptor-validation work,
+then descriptor-validation failure is a blocking validation failure. Execution
+must not claim release-shaped artifact coverage for an invalid descriptor.
+
 CI artifact validation covers the union of artifacts required by all declared
 profiles. It does not select publish nodes, does not run publication, and does not
 observe remote publish state.
@@ -486,6 +496,11 @@ Evidence aggregation reports:
 - any blocking validation failures;
 - missing evidence for required work groups;
 - plan provenance sufficient to reproduce the selected scope.
+
+The aggregated CI validation outcome fails when planning fails closed, required
+evidence is missing, or any work group records a blocking validation failure. It
+passes only when the plan authorizes a lightweight-only outcome or every required
+work group completes successfully with the expected validation evidence.
 
 The exact receipt file format and artifact upload naming are lower-level design.
 
