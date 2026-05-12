@@ -234,6 +234,14 @@ For descriptor-backed projects:
 - CI does not execute publish nodes, remote registry operations, GitHub Release
   operations, or release tag operations.
 
+CI release-shaped validation also excludes release-only credentials and release-
+only side effects, including signing, notarization, or privileged artifact
+production capabilities that are not required for ordinary validation. CI should
+use credential-free equivalents or unsigned validation artifacts to validate
+artifact shape. If an artifact shape cannot be trusted without release-only
+credentials or side effects, validation fails closed rather than silently
+claiming equivalence.
+
 For all selected validation subjects:
 
 - CI runs existing ecosystem gates that apply to the selected scope, such as
