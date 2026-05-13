@@ -75,7 +75,7 @@ downstream expansion, descriptor-validation scope, or validation obligations.
 
 The validation plan freezes planning provenance at the architecture boundary.
 For affected validation, that provenance includes both the validation-tree
-snapshot used for fact collection and the trustworthy change-detection range used
+snapshot used for fact collection and the confirmed change-detection range used
 for affected planning. For scheduled full validation, it includes the scheduled
 validation-tree snapshot. In all modes, it also includes the CI mode and the
 planner-owned validation-subject universe and fact snapshot identity needed for
@@ -117,18 +117,18 @@ These modes share one architectural flow:
 Mode-specific event details, workflow YAML, concurrency policy, and exact
 base/head derivation are deferred to middle-level design.
 
-At the high-level trust boundary, affected validation requires a trustworthy
-input range. If the control plane cannot establish a trustworthy base/head or
-pushed range for affected planning, planning fails closed rather than running a
-partial validation. CI validation does not require publication credentials, and
-untrusted pull request contexts must not receive credentials or secrets that are
-needed only for side-effecting release.
+At the high-level event-normalization boundary, affected validation requires a
+confirmed input range. If the control plane cannot establish a confirmed
+base/head or pushed range for affected planning, planning fails closed rather
+than running a partial validation. CI validation does not require publication
+credentials, and pull request contexts without release authority must not receive
+credentials or secrets that are needed only for side-effecting release.
 
-Planning and fact collection use the same minimal trust boundary: no publication
+Planning and fact collection use the same minimal authority boundary: no publication
 credentials, no release privileges, and no OIDC publish permissions. They may use
 repository and ecosystem tooling to obtain facts, but planning remains
 validation-only and side-effect-free by contract. If fact collection cannot
-produce a trustworthy validation scope, planning fails closed.
+produce a confirmed validation scope, planning fails closed.
 
 This is also a complexity boundary for later design phases. CI planning and fact
 collection should not be expanded into a heavyweight sandbox or security
@@ -141,16 +141,16 @@ or dependency facts are handled by the normal classification model. This
 high-level design does not add a separate rule that automatically expands, fails,
 or sandboxes validation solely because those inputs changed. Such changes remain
 subject to ordinary human review plus the existing no-publication-authority,
-validation-only, trustworthy-scope, and fail-closed boundaries.
+validation-only, confirmed-scope, and fail-closed boundaries.
 
 Changes to policy-bearing CI planning code, such as the planner, classifier, or
 fact-provider implementation, are also validated through the normal CI planning
 model. The authoritative validation plan for such changes may be produced by the
 validation-tree policy code being reviewed. This is an intentional maintainability
 tradeoff so CI policy changes are validated by their resulting planning behavior,
-rather than by a separate trusted-baseline planner that cannot exercise the
+rather than by a separate baseline planner that cannot exercise the
 changed policy. This does not grant publication authority or release credentials;
-if the changed policy cannot produce a trustworthy validation scope, planning
+if the changed policy cannot produce a confirmed validation scope, planning
 fails closed.
 
 ## Planning Responsibility Model
@@ -183,8 +183,7 @@ execution-layer responsibilities.
 
 For project-scoped validation, the planner includes directly changed projects and
 downstream dependent projects when downstream impact can be computed safely. If
-safe downstream impact computation is unavailable, the planner uses a
-requirement-approved ecosystem expansion or fails closed.
+safe downstream impact computation is unavailable, planning fails closed.
 
 For ecosystem-scoped validation, the planner selects all active validation
 subjects in the affected ecosystem and validates descriptors for
@@ -259,7 +258,7 @@ CI release-shaped validation also excludes release-only credentials and release-
 only side effects, including signing, notarization, or privileged artifact
 production capabilities that are not required for ordinary validation. CI should
 use credential-free equivalents or unsigned validation artifacts to validate
-artifact shape. If an artifact shape cannot be trusted without release-only
+artifact shape. If an artifact shape cannot be confirmed without release-only
 credentials or side effects, execution records a blocking validation failure
 rather than silently claiming equivalence.
 
@@ -290,7 +289,7 @@ CI-produced receipts and evidence must carry validation-only provenance and must
 be excluded from release immutable-proof lookup and publication admissibility
 paths.
 
-This separation avoids coupling CI trust boundaries, scheduled runs, pull request
+This separation avoids coupling CI authority boundaries, scheduled runs, pull request
 events, and local validation evidence to release publication authorization.
 
 ## HK Left-Shift Boundary

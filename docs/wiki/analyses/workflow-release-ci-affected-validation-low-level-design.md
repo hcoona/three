@@ -32,7 +32,7 @@ upstream decision must be escalated rather than silently rewritten here.
 | Fail-closed        | Emit an inspectable fail-closed plan artifact and diagnostics, but the run conclusion must fail and no validation work groups execute.                                                                                    |
 | Subject universe   | Include discovered validation subjects with selected/excluded status, not only selected subjects.                                                                                                                         |
 | Classification     | Use a conservative ordered rule table: unknown/unclassifiable always fail closed; broad expansion only applies to recognized global, ecosystem, or infrastructure categories.                                             |
-| Downstream closure | Use ecosystem-provided dependency facts when trustworthy; otherwise use approved ecosystem expansion or fail closed.                                                                                                      |
+| Downstream closure | Use ecosystem-provided dependency facts when sufficient for downstream closure; otherwise fail closed.                                                                                                                    |
 | Execution handoff  | Fan out from plan work-group selectors; post-planning jobs must not reclassify changes, rediscover subjects, or alter obligations.                                                                                        |
 | Receipts/evidence  | Emit validation-only JSON receipts per executable work group plus one aggregation report; all evidence is inadmissible as release immutable proof.                                                                        |
 | Credentials        | No publication credentials, release approvals, OIDC publish permissions, registry mutation, GitHub Release mutation, or release-tag mutation in CI validation.                                                            |
@@ -92,7 +92,7 @@ The top-level CI validation workflow preserves this logical sequence:
 
 1. **`normalize-input`**
     - resolves CI mode: `pull_request`, `push`, or `scheduled_full`;
-    - derives the trustworthy affected range for affected modes;
+    - derives the confirmed affected range for affected modes;
     - records event identity for diagnostics;
     - fails into a planner-facing fail-closed request when external event, API, or
       checkout inputs cannot provide a complete affected range.
@@ -167,7 +167,7 @@ affected-range:
     head-sha: string | null
     changed-files: [string]
     source: pull_request | push | null
-    diagnostic: range-unavailable | null
+    diagnostic: range-unavailable | range-unconfirmed | null
 scheduled-full:
     enabled: boolean
 event:
@@ -181,13 +181,17 @@ event:
 Rules:
 
 - `affected-range` is required for `pull_request` and `push`.
-- `affected-range.status: available` requires fixed endpoint SHAs and a complete
-  changed-file list.
-- `affected-range.status: unavailable` means the trusted control-plane logic could
-  not form a complete affected input from GitHub event payloads, GitHub API data,
-  or checkout/git data.
+- `affected-range.status: available` requires fixed endpoint SHAs, a complete
+  changed-file list, and enough provenance consistency to confirm the range as
+  the CI affected boundary.
+- `affected-range.status: unavailable` means the control-plane logic could not
+  establish a complete confirmed affected input from GitHub event payloads,
+  GitHub API data, or checkout/git data.
 - `affected-range.status: unavailable` requires `diagnostic: range-unavailable`
-  and forces fail-closed planning.
+  when range data is missing or incomplete, or `diagnostic: range-unconfirmed`
+  when complete-looking range data cannot be confirmed as the CI affected
+  boundary.
+- `affected-range.status: unavailable` forces fail-closed planning.
 - `scheduled-full.enabled` is `true` only for `scheduled_full`.
 - `changed-files` is absent or empty only for scheduled full or unavailable
   affected ranges.
@@ -227,8 +231,12 @@ affected-range:
 planner:
     policy-source: validation-tree
     version: string | null
-subject-universe-id: string
-fact-snapshot-id: string
+subject-universe:
+    status: available | unavailable
+    id: string | null
+fact-snapshot:
+    status: available | unavailable
+    id: string | null
 ```
 
 `plan-id` is stable for the exact plan content and provenance. It is used to bind
@@ -254,7 +262,12 @@ diagnostics: [planner-diagnostic]
 
 Fail-closed plans still contain envelope, classification, diagnostics, and enough
 provenance to inspect why no executable validation plan was authorized. They have
-no executable work groups.
+no executable validation work groups.
+
+Executable plans require `subject-universe.status: available` and
+`fact-snapshot.status: available`. Fail-closed plans may use `unavailable` with
+`id: null`, but diagnostics must identify which snapshot could not be produced
+or confirmed and why.
 
 The exact JSON Schema file and type generator strategy are implementation-owned,
 but every section above is part of the low-level data contract.
@@ -265,7 +278,7 @@ scope selection:
 ```yaml
 expansion-id: string
 source-impact-id: string
-category: ecosystem | global | workflow-release-infrastructure | approved-fallback
+category: ecosystem | global | workflow-release-infrastructure
 reason: string
 resulting-scope:
     ecosystems: [string]
@@ -338,6 +351,10 @@ artifact:
     concrete-kind: string
     logical-artifact-role: string
     variant-dimensions: object
+release-receipt:
+    expected-family: string
+    logical-receipt-role: string
+    variant-dimensions: object
 credential-posture: credential-free | unsigned-equivalent | unavailable
 expected-evidence-category: release-shaped-artifact
 validation-obligation-id: string
@@ -394,7 +411,8 @@ Each discovered validation subject snapshot has:
 subject-id: string
 ecosystem: dotnet | python | javascript | typescript | ruby | other
 root: string
-status: selected | excluded
+activity-status: active | explicitly-excluded | inactive
+selection-status: selected | not-selected
 capability-class: descriptor-backed | validation-only
 descriptor:
     path: string | null
@@ -415,12 +433,16 @@ exclusion:
 
 Rules:
 
-- `status: excluded` subjects are included for auditability but cannot produce
-  executable validation work.
+- `activity-status` records whether the discovered subject can participate in
+  validation at the repository level.
+- `selection-status` records whether the subject is selected by this specific
+  validation plan.
+- Only subjects with `activity-status: active` and `selection-status: selected`
+  can produce executable validation work.
 - `capability-class: validation-only` subjects cannot have publish obligations.
 - `capability-class: descriptor-backed` subjects may have release-shaped artifact
-  obligations only when descriptor validation is trustworthy enough to derive
-  them.
+  obligations only when descriptor validation can derive them without
+  confirmation gaps.
 - Subject IDs are stable within a repository and should be path- and
   ecosystem-derived rather than display-name-derived.
 
@@ -438,10 +460,9 @@ workflow-release tooling provider.
 
 Provider failure rules:
 
-- If discovery fails for a selected ecosystem scope, planning fails closed unless a
-  requirement-approved broader ecosystem expansion still has trustworthy facts.
-- If dependency facts are unavailable for a project-scoped change, planning uses
-  approved ecosystem expansion or fail-closed behavior.
+- If discovery fails for a selected ecosystem scope, planning fails closed.
+- If dependency facts are unavailable or insufficient for a project-scoped
+  change, planning fails closed.
 - Providers report capabilities and facts; the planner assigns normalized subject
   capability class and final obligations.
 
@@ -494,9 +515,8 @@ Project-scoped resolution:
 1. map changed files to discovered validation subjects;
 2. include directly mapped subjects;
 3. compute downstream dependents from provider dependency facts;
-4. when downstream facts are trustworthy, include downstream subjects;
-5. when downstream facts are not trustworthy, select approved ecosystem expansion
-   or fail closed;
+4. when downstream facts are sufficient, include downstream subjects;
+5. when downstream facts are unavailable or insufficient, fail closed;
 6. add descriptor obligations for selected descriptor-backed subjects;
 7. add ecosystem gate obligations for selected subjects.
 
@@ -504,7 +524,7 @@ Project-scoped resolution:
 
 Ecosystem-scoped resolution selects:
 
-- all selected-status validation subjects in the ecosystem;
+- all active validation subjects in the ecosystem;
 - descriptor validation for all descriptor-backed subjects in the ecosystem;
 - all applicable ecosystem gates for that ecosystem.
 
@@ -523,7 +543,7 @@ Infrastructure resolution selects:
 
 Global and scheduled full select the same scope:
 
-- all selected-status validation subjects in all ecosystems;
+- all active validation subjects in all ecosystems;
 - all discovered release descriptors;
 - all applicable ecosystem gates;
 - release-shaped artifact and receipt validation for descriptor-backed projects;
@@ -534,7 +554,16 @@ changed path, while scheduled full is time-based full-repository validation.
 
 ## 11. Work Group Selectors
 
-Each executable work group has:
+Work groups use this closed kind set:
+
+- `lightweight-preflight`;
+- `ecosystem-gate`;
+- `descriptor-validation`;
+- `release-shaped-artifact`;
+- `workflow-release-tooling`;
+- `evidence-aggregation`.
+
+Each executable validation work group has:
 
 ```yaml
 work-group-id: string
@@ -550,20 +579,37 @@ expected-evidence:
     required: boolean
 ```
 
+Each terminal aggregation work group has:
+
+```yaml
+work-group-id: string
+kind: evidence-aggregation
+coverage-target:
+    type: aggregation
+    id: string
+runner-family: ubuntu
+depends-on: [work-group-id]
+aggregate-output: ci-validation-aggregate
+```
+
 Selector rules:
 
 - `work-group-id` is stable within the plan and derived from kind plus coverage
   target.
 - Work groups are selectors, not command lines.
-- The control plane may batch multiple selectors into one concrete job only when
-  the resulting receipts still report each required selector separately.
-- Fail-closed plans contain no executable work groups.
+- The control plane may batch multiple executable selectors into one concrete job
+  only when the resulting receipts still report each required selector
+  separately.
+- Fail-closed plans contain no executable validation work groups, but may contain
+  the terminal `evidence-aggregation` work group needed to emit the failed
+  aggregate verdict.
 - Lightweight-only plans may contain no executable work groups, or may contain
   lightweight-preflight work groups that must produce evidence before the run can
   pass.
-- Evidence aggregation is not an executable work group. It is the fixed terminal
-  control-plane job that reads the plan and receipts and emits the aggregate
-  verdict artifact without producing a work-group receipt.
+- The `evidence-aggregation` work group is a non-executable terminal
+  control-plane selector. It depends on required executable work groups, reads the
+  plan and receipts, emits the aggregate verdict artifact, and does not produce a
+  work-group receipt.
 
 ## 12. Execution Mapping
 
@@ -579,6 +625,7 @@ The implementation maps work groups to runner families:
 | `release-shaped-artifact` for .NET                            | Windows                                                       | Produces validation-only artifact receipts                                  |
 | `release-shaped-artifact` for Python or JavaScript/TypeScript | Ubuntu                                                        | Produces validation-only artifact receipts                                  |
 | `workflow-release-tooling`                                    | Ubuntu unless affected tooling requires Windows evidence      | May fan out to related ecosystem runners when scope requires                |
+| `evidence-aggregation`                                        | Ubuntu                                                        | Terminal control-plane aggregation; emits aggregate verdict artifact        |
 
 All runners provision tools through `mise` where practical. The concrete command
 lines and helper scripts are implementation-owned, but they must run the
@@ -586,8 +633,8 @@ repository's existing ecosystem gates for selected scopes.
 
 Aggregation is mapped as the terminal control-plane job after all executable
 work-group receipts are available or known missing. It reads the frozen plan and
-validation receipts only, emits `ci-validation-aggregate`, and does not have a
-work-group kind or receipt.
+validation receipts only, emits `ci-validation-aggregate`, and does not emit a
+normal work-group receipt.
 
 ## 13. Release-Shaped Artifact Validation
 
@@ -599,6 +646,10 @@ Artifact obligations are plan-level records in the top-level
 `artifact-obligations` section. Release-shaped validation work groups consume
 those frozen obligations by `artifact-obligation-id`.
 
+The `release-receipt` block describes the release-shaped receipt expectation
+that is validated alongside the artifact shape. It is the receipt shape being
+checked, not the CI validation receipt emitted by the work group.
+
 Rules:
 
 - The obligation set is the union required by all declared profiles.
@@ -609,14 +660,14 @@ Rules:
 - If a descriptor is invalid enough to prevent derivation, planning fails closed.
 - If descriptor-validation work is executable and fails, the corresponding
   descriptor-validation work group records a blocking validation failure.
-- If a shape cannot be trusted without release-only credentials or side effects,
-  the work group records a blocking validation failure.
+- If a shape cannot be confirmed without release-only credentials or side
+  effects, the work group records a blocking validation failure.
 - Artifact validation receipts are validation-only and inadmissible as immutable
   release proof.
 
 ## 14. Evidence and Receipt Files
 
-Every executable work group emits one validation receipt:
+Every executable validation work group emits one CI validation receipt:
 
 ```yaml
 common-envelope: inherited
@@ -652,6 +703,12 @@ Receipt rules:
   aggregated outcome with `required-evidence-skipped`.
 - A concrete job may upload additional logs, but logs are not a substitute for the
   machine-readable receipt.
+- Release-shaped validation receipts may carry evidence that both the planned
+  artifact shape and the planned release-shaped receipt expectation were checked.
+  The CI validation receipt is not itself the release-shaped receipt being
+  validated.
+- The terminal `evidence-aggregation` work group does not emit
+  `ci-validation-receipt`; it emits `ci-validation-aggregate`.
 
 The aggregation report uses:
 
@@ -675,11 +732,12 @@ failures:
       diagnostic-code: diagnostic-code
       message: string
 work-groups:
-    required: integer
-    succeeded: integer
-    failed: integer
-    skipped: integer
-    missing: integer
+    executable-required: integer
+    executable-succeeded: integer
+    executable-failed: integer
+    executable-skipped: integer
+    executable-missing: integer
+    terminal-aggregation: present
 proof-admissibility: validation-only
 ```
 
@@ -696,13 +754,14 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 | Diagnostic family                     | Producer                                    | CI verdict effect                                                                     |
 | ------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `range-unavailable`                   | planner                                     | fail-closed                                                                           |
+| `range-unconfirmed`                   | planner                                     | fail-closed                                                                           |
 | `unknown-change`                      | planner                                     | fail-closed                                                                           |
 | `subject-unresolved`                  | planner                                     | fail-closed                                                                           |
-| `dependency-impact-untrusted`         | planner                                     | fail-closed or ecosystem expansion if approved                                        |
-| `fact-provider-untrusted`             | planner                                     | fail-closed                                                                           |
+| `dependency-impact-insufficient`      | planner                                     | fail-closed                                                                           |
+| `fact-provider-insufficient`          | planner                                     | fail-closed                                                                           |
 | `infrastructure-surface-unclassified` | planner                                     | fail-closed                                                                           |
 | `descriptor-invalid`                  | planner or descriptor-validation work group | fail-closed when obligations cannot be derived; otherwise blocking validation failure |
-| `artifact-shape-untrusted`            | release-shaped validation work group        | blocking validation failure                                                           |
+| `artifact-shape-unconfirmed`          | release-shaped validation work group        | blocking validation failure                                                           |
 | `known-non-impacting`                 | planner                                     | inspectable non-failure                                                               |
 | `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
 | `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
@@ -741,8 +800,8 @@ Implementation acceptance must include at least these evidence scenarios:
 | Unknown path                                                  | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                  |
 | Invalid descriptor blocking derivation                        | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                              |
 | Missing receipt                                               | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                      |
-| Untrusted artifact shape                                      | Blocking validation failure, no release-proof admissibility                                                                                                           |
-| Untrusted PR context                                          | No publication credentials, release environment, or OIDC publish permission exposed                                                                                   |
+| Unconfirmed artifact shape                                    | Blocking validation failure, no release-proof admissibility                                                                                                           |
+| Unconfirmed PR context                                        | No publication credentials, release environment, or OIDC publish permission exposed                                                                                   |
 
 These scenarios are acceptance contracts, not prescribed test framework or file
 layout. The implementer may choose the concrete test harness.

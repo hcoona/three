@@ -40,13 +40,13 @@ The middle-level design preserves these signed-off high-level decisions:
 The CI affected validation entry point is split into these contracts:
 
 1. **Control-plane CI request contract** — normalizes event inputs into a
-   planner-facing request containing the CI mode, validation tree, and trustworthy
+   planner-facing request containing the CI mode, validation tree, and confirmed
    affected range or scheduled-full marker.
 2. **Fact-provider contract** — ecosystem providers expose bounded discovery and
    dependency facts without owning cross-ecosystem policy.
 3. **Classification and scope contract** — the planner classifies changed files,
    resolves affected subjects, expands broad scopes, and emits fail-closed
-   outcomes when scope cannot be trusted.
+   outcomes when scope cannot be confirmed.
 4. **Validation-plan contract** — the planner emits an inspectable,
    execution-authoritative plan with provenance, subject snapshots, validation
    obligations, work groups, diagnostics, and expected evidence.
@@ -70,7 +70,7 @@ The request has exactly one mode:
 For affected modes, the request includes:
 
 - the validation-tree commit snapshot;
-- the trustworthy base and head commits, or pushed range endpoints;
+- the confirmed base and head commits, or pushed range endpoints;
 - the normalized changed-file list derived from that range;
 - the event identity needed for diagnostics and evidence correlation.
 
@@ -80,7 +80,7 @@ For scheduled full mode, the request includes:
 - an explicit scheduled-full marker;
 - no changed-file set and no affected range.
 
-If the control plane cannot establish a trustworthy affected range for
+If the control plane cannot establish a confirmed affected range for
 `pull_request` or `push`, it must request a fail-closed planning result rather
 than fabricating a partial changed-file set.
 
@@ -100,10 +100,10 @@ validation tree under review. This validates the changed policy by its resulting
 planning behavior. The plan must make that provenance inspectable so operators can
 see that the validation-tree policy produced the authoritative plan.
 
-This contract does not add a separate trusted-baseline planning pass. It also
-does not relax safety constraints: the changed policy must produce a trustworthy
-validation scope or a fail-closed outcome, and the run must not gain publication
-credentials or release authority.
+This contract does not add a separate baseline planning pass. It also does not
+relax safety constraints: the changed policy must produce a confirmed validation
+scope or a fail-closed outcome, and the run must not gain publication credentials
+or release authority.
 
 ## Fact-Provider Contract
 
@@ -126,8 +126,7 @@ Each fact provider may report:
 
 The provider output is a fact snapshot. The planner records the snapshot identity
 or equivalent provenance in the validation plan. If a provider cannot produce
-facts trustworthy enough for the requested scope, planning fails closed or expands
-according to the classification and scope contract.
+facts sufficient for the requested scope, planning fails closed.
 
 Providers report available ecosystem facts and tooling capabilities. The planner
 remains the sole owner of normalized validation-subject capability-class
@@ -390,7 +389,7 @@ Supported work group kinds are:
 - **evidence aggregation** — final collection and reporting of validation-only
   evidence.
 
-Each executable work group has:
+Each executable validation work group has:
 
 - stable selector identity;
 - coverage target, such as subject, descriptor, tooling surface, or artifact
@@ -403,6 +402,10 @@ Each executable work group has:
 Work group selectors are not command lines and are not GitHub Actions job names.
 The control plane may map selectors to concrete jobs in lower-level design, but
 it must preserve selector semantics and plan authority.
+
+Evidence aggregation is a terminal control-plane work group. It collects and
+reports validation-only evidence, emits the aggregate verdict artifact, and is
+not a normal executable validation work group.
 
 ## Release-Shaped Artifact Validation Contract
 
@@ -431,7 +434,7 @@ Each release-shaped artifact obligation records:
 
 Execution may produce unsigned or credential-free validation artifacts when
 release-only credentials or side effects would otherwise be required. If artifact
-shape cannot be trusted without release-only credentials or side effects, the
+shape cannot be confirmed without release-only credentials or side effects, the
 corresponding work group records a blocking validation failure rather than
 claiming release equivalence.
 
@@ -537,14 +540,14 @@ lightweight outcomes must be inspectable.
 
 The middle-level fail-closed or blocking-failure diagnostic families are:
 
-- `range-untrusted`;
+- `range-unconfirmed`;
 - `unknown-change`;
 - `subject-unresolved`;
-- `dependency-impact-untrusted`;
-- `fact-provider-untrusted`;
+- `dependency-impact-insufficient`;
+- `fact-provider-insufficient`;
 - `infrastructure-surface-unclassified`;
 - `descriptor-invalid`;
-- `artifact-shape-untrusted`.
+- `artifact-shape-unconfirmed`.
 
 The middle-level inspectable non-failure diagnostic family is:
 
@@ -579,10 +582,10 @@ this page, the requirements, and the HLD remain unchanged.
 | Affected and scheduled modes    | PR, push, and scheduled full validation are required                                    | Single CI request contract with three modes                                                                               |
 | Conservative classification     | Unknown changes fail planning closed                                                    | Classification precedence and fail-closed plan contract                                                                   |
 | Active project participation    | All active build/test projects participate, including non-releasable subjects           | Unified validation subject universe with descriptor-backed and validation-only capabilities                               |
-| Project downstream impact       | Downstream dependents included when safely computable                                   | Project-scoped scope resolution with expansion or fail-closed fallback                                                    |
+| Project downstream impact       | Downstream dependents included when safely computable                                   | Project-scoped scope resolution with fail-closed behavior when downstream impact is unavailable                           |
 | Ecosystem scope                 | Ecosystem changes validate all active projects in that ecosystem                        | Ecosystem-scoped scope resolution                                                                                         |
 | Workflow-release infrastructure | Infrastructure changes validate affected tooling surface and descriptors where required | Infrastructure scope resolution across tooling surface, related ecosystems, affected subjects, and descriptor obligations |
-| Release-shaped validation       | Descriptor-backed projects validate union of all profile artifacts without publication  | Release-shaped artifact validation obligations and blocking validation failure for untrusted shape                        |
+| Release-shaped validation       | Descriptor-backed projects validate union of all profile artifacts without publication  | Release-shaped artifact validation obligations and blocking validation failure for unconfirmed shape                      |
 | Evidence separation             | CI evidence is not release proof                                                        | Validation-only evidence contract and executor prohibitions                                                               |
 | HK left-shift                   | HK provides lightweight local feedback only                                             | HK left-shift contract                                                                                                    |
 

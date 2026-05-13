@@ -170,8 +170,8 @@ formatting checks where applicable, but they must not be silently skipped.
   the branch.
 - Scheduled full validation must not depend on changed-file classification.
 - CI validation must not rely on publication credentials or release approval.
-- Untrusted pull request contexts must not receive publishing credentials or any
-  other secret needed only for side-effecting release.
+- Pull request contexts without release authority must not receive publishing
+  credentials or any other secret needed only for side-effecting release.
 - Planning and fact collection must not require publication credentials, release
   privileges, or OIDC publish permissions.
 - Planning and fact collection may use repository and ecosystem tooling to obtain
@@ -181,7 +181,7 @@ formatting checks where applicable, but they must not be silently skipped.
   are explicitly reopened. The intended controls are no publication credentials,
   no release privileges, validation-only planning, human review, and fail-closed
   scope handling.
-- If an event payload cannot provide a trustworthy base/head range for affected
+- If an event payload cannot provide a confirmed base/head range for affected
   planning, CI must fail planning closed rather than running a partial affected
   validation.
 
