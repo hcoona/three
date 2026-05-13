@@ -246,6 +246,7 @@ classification:
 subjects: [validation-subject-snapshot]
 descriptor-obligations: [descriptor-obligation]
 validation-obligations: [validation-obligation]
+artifact-obligations: [artifact-obligation]
 work-groups: [work-group]
 evidence-expectations: [evidence-expectation]
 diagnostics: [planner-diagnostic]
@@ -324,6 +325,26 @@ work-group-id: string | null
 expected-evidence-id: string | null
 ```
 
+Each `artifact-obligation` has:
+
+```yaml
+artifact-obligation-id: string
+source-impact-ids: [string]
+subject-id: string
+descriptor-path: string
+profile-coverage: [string]
+artifact:
+    kind-family: string
+    concrete-kind: string
+    logical-artifact-role: string
+    variant-dimensions: object
+credential-posture: credential-free | unsigned-equivalent | unavailable
+expected-evidence-category: release-shaped-artifact
+validation-obligation-id: string
+work-group-id: string | null
+expected-evidence-id: string | null
+```
+
 Each `evidence-expectation` has:
 
 ```yaml
@@ -332,7 +353,7 @@ work-group-id: string
 coverage-target:
     type: subject | descriptor | tooling-surface | artifact-obligation
     id: string
-category: lightweight | ecosystem-gate | descriptor | release-shaped-artifact | tooling | aggregation
+category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
 required: boolean
 blocking-if-missing: boolean
 ```
@@ -355,6 +376,12 @@ Binding rules:
 - Obligations reference their source impacts for auditability.
 - Required executable obligations must reference a work group and evidence
   expectation unless planning fails closed.
+- Release-shaped validation obligations and work groups bind to frozen artifact
+  obligations by `artifact-obligation-id`; execution must not rederive artifact
+  shape from descriptors.
+- `descriptor-validation` work groups are produced from descriptor obligations,
+  while release-shaped artifact work groups are produced from artifact
+  obligations.
 - Missing required evidence and blocking diagnostics fail aggregation.
 - Informational diagnostics, including known non-impacting diagnostics, must not
   by themselves authorize or block execution.
@@ -511,7 +538,7 @@ Each executable work group has:
 
 ```yaml
 work-group-id: string
-kind: enum
+kind: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
 coverage-target:
     type: subject | descriptor | tooling-surface | artifact-obligation
     id: string
@@ -519,7 +546,7 @@ ecosystem: string | null
 runner-family: windows | ubuntu | null
 depends-on: [work-group-id]
 expected-evidence:
-    category: lightweight | ecosystem-gate | descriptor | release-shaped-artifact | tooling | aggregation
+    category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
     required: boolean
 ```
 
@@ -534,26 +561,33 @@ Selector rules:
 - Lightweight-only plans may contain no executable work groups, or may contain
   lightweight-preflight work groups that must produce evidence before the run can
   pass.
+- Evidence aggregation is not an executable work group. It is the fixed terminal
+  control-plane job that reads the plan and receipts and emits the aggregate
+  verdict artifact without producing a work-group receipt.
 
 ## 12. Execution Mapping
 
 The implementation maps work groups to runner families:
 
-| Work group kind                                                       | Default runner family                                         | Notes                                                                       |
-| --------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `lightweight-preflight`                                               | Ubuntu                                                        | May run documentation, formatting, or policy checks when lightweight enough |
-| `ecosystem-gate` for .NET                                             | Windows                                                       | Preserves .NET runner expectation                                           |
-| `ecosystem-gate` for Python                                           | Ubuntu                                                        | Uses repository tool provisioning convention                                |
-| `ecosystem-gate` for JavaScript/TypeScript                            | Ubuntu                                                        | Uses repository tool provisioning convention                                |
-| `descriptor-validation`                                               | Ubuntu unless descriptor validation requires ecosystem runner | Must not publish or mutate release state                                    |
-| `release-shaped-build-validation` for .NET                            | Windows                                                       | Produces validation-only artifact receipts                                  |
-| `release-shaped-build-validation` for Python or JavaScript/TypeScript | Ubuntu                                                        | Produces validation-only artifact receipts                                  |
-| `workflow-release-tooling-validation`                                 | Ubuntu unless affected tooling requires Windows evidence      | May fan out to related ecosystem runners when scope requires                |
-| `evidence-aggregation`                                                | Ubuntu                                                        | Reads plan and receipts only                                                |
+| Work group kind                                               | Default runner family                                         | Notes                                                                       |
+| ------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `lightweight-preflight`                                       | Ubuntu                                                        | May run documentation, formatting, or policy checks when lightweight enough |
+| `ecosystem-gate` for .NET                                     | Windows                                                       | Preserves .NET runner expectation                                           |
+| `ecosystem-gate` for Python                                   | Ubuntu                                                        | Uses repository tool provisioning convention                                |
+| `ecosystem-gate` for JavaScript/TypeScript                    | Ubuntu                                                        | Uses repository tool provisioning convention                                |
+| `descriptor-validation`                                       | Ubuntu unless descriptor validation requires ecosystem runner | Must not publish or mutate release state                                    |
+| `release-shaped-artifact` for .NET                            | Windows                                                       | Produces validation-only artifact receipts                                  |
+| `release-shaped-artifact` for Python or JavaScript/TypeScript | Ubuntu                                                        | Produces validation-only artifact receipts                                  |
+| `workflow-release-tooling`                                    | Ubuntu unless affected tooling requires Windows evidence      | May fan out to related ecosystem runners when scope requires                |
 
 All runners provision tools through `mise` where practical. The concrete command
 lines and helper scripts are implementation-owned, but they must run the
 repository's existing ecosystem gates for selected scopes.
+
+Aggregation is mapped as the terminal control-plane job after all executable
+work-group receipts are available or known missing. It reads the frozen plan and
+validation receipts only, emits `ci-validation-aggregate`, and does not have a
+work-group kind or receipt.
 
 ## 13. Release-Shaped Artifact Validation
 
@@ -561,21 +595,9 @@ For descriptor-backed subjects, release-shaped validation derives artifact
 obligations from release descriptors and the existing workflow-release artifact
 model.
 
-Each artifact obligation records:
-
-```yaml
-artifact-obligation-id: string
-subject-id: string
-descriptor-path: string
-profile-coverage: [string]
-artifact:
-    kind-family: string
-    concrete-kind: string
-    logical-artifact-role: string
-    variant-dimensions: object
-credential-posture: credential-free | unsigned-equivalent | unavailable
-expected-evidence-category: release-shaped-artifact
-```
+Artifact obligations are plan-level records in the top-level
+`artifact-obligations` section. Release-shaped validation work groups consume
+those frozen obligations by `artifact-obligation-id`.
 
 Rules:
 
@@ -644,6 +666,14 @@ reason:
     missing-required-evidence: boolean
     skipped-required-evidence: boolean
     blocking-validation-failure: boolean
+diagnostics: [diagnostic-code]
+failures:
+    - kind: missing-required-evidence | skipped-required-evidence | blocking-validation-failure | fail-closed
+      work-group-id: string | null
+      evidence-expectation-id: string | null
+      receipt-id: string | null
+      diagnostic-code: diagnostic-code
+      message: string
 work-groups:
     required: integer
     succeeded: integer
@@ -654,7 +684,10 @@ proof-admissibility: validation-only
 ```
 
 The aggregation report is the only CI-level verdict artifact. Workflow conclusion
-must fail when `verdict` is `failed`.
+must fail when `verdict` is `failed`. Summary booleans and counts are for quick
+inspection; `failures` is the machine-readable trace from the failed verdict to
+specific diagnostics, missing or skipped evidence expectations, and failed
+receipts where applicable.
 
 ## 15. Diagnostics
 
@@ -707,7 +740,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Known non-impacting change with executable lightweight checks | Lightweight work receipts are required for pass                                                                                                                       |
 | Unknown path                                                  | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                  |
 | Invalid descriptor blocking derivation                        | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                              |
-| Missing receipt                                               | Aggregation fails with `required-evidence-missing`                                                                                                                    |
+| Missing receipt                                               | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                      |
 | Untrusted artifact shape                                      | Blocking validation failure, no release-proof admissibility                                                                                                           |
 | Untrusted PR context                                          | No publication credentials, release environment, or OIDC publish permission exposed                                                                                   |
 
