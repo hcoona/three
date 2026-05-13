@@ -221,6 +221,7 @@ common-envelope: inherited
 api-version: three.ci.validation.plan/v1alpha1
 kind: ci-validation-plan
 plan-id: string
+plan-digest: string
 mode: pull_request | push | scheduled_full
 verdict-intent: executable | fail-closed
 created-at: string
@@ -253,7 +254,10 @@ fact-snapshot:
 ```
 
 `plan-id` is stable for the exact plan content and provenance. It is used to bind
-work-group receipts and aggregation evidence to the plan.
+work-group receipts and aggregation evidence to the plan. `plan-digest` is the
+control-plane-computed SHA-256 digest of the frozen validation plan's canonical
+JSON representation with the `plan-digest` field omitted, so the digest can be
+verified without self-reference.
 
 For affected modes, `affected-range.status` is `available` or `unavailable` and
 `scheduled-full.enabled` is `false`. For `scheduled_full`,
@@ -428,6 +432,10 @@ Binding rules:
   the plan-level `scheduled-full` marker is their full-scope selection source.
 - Required executable obligations must reference a work group and evidence
   expectation unless planning fails closed.
+- Each executable `work-group-id` in a plan must have exactly one
+  `evidence-expectation`; the terminal `evidence-aggregation` work group has no
+  receipt expectation. Receipt-to-expectation matching is therefore defined by
+  `plan-id` and `work-group-id`.
 - Release-shaped validation obligations and work groups bind to frozen artifact
   obligations by `artifact-obligation-id`; execution must not rederive artifact
   shape from descriptors.
@@ -760,6 +768,9 @@ Receipt rules:
   derived from `plan-id`, `work-group-id`, and run attempt or equivalent
   execution provenance.
 - `plan-id` and `work-group-id` must match the validation plan.
+- Because each executable `work-group-id` has exactly one evidence expectation in
+  the plan, aggregation matches receipts to evidence expectations by `plan-id`
+  and `work-group-id`.
 - Receipts must mirror the plan provenance: affected-mode receipts carry
   `validation-tree`, `affected-range`, and `scheduled-full` fields matching the
   plan envelope; scheduled-full receipts carry `affected-range.status:
@@ -772,6 +783,9 @@ true`.
   unexpected receipts, wrong-plan receipts, and receipts with an unknown or
   mismatched `work-group-id` are inadmissible for satisfying evidence
   expectations.
+- Any observed inadmissible receipt contributes to a failing aggregated outcome
+  with `inadmissible-receipt`; a valid required receipt does not offset an extra
+  inadmissible receipt.
 - A required evidence expectation passes aggregation only when exactly one valid
   matching receipt satisfies it; zero valid receipts or only inadmissible receipts
   aggregate as `required-evidence-missing`.
@@ -814,6 +828,7 @@ reason:
     missing-required-evidence: boolean
     skipped-required-evidence: boolean
     blocking-validation-failure: boolean
+    inadmissible-receipt: boolean
 diagnostics:
     - diagnostic-record
 evidence-results:
@@ -823,7 +838,7 @@ evidence-results:
       outcome: satisfied | missing | skipped | failed
       diagnostics: [diagnostic-record]
 failures:
-    - kind: missing-required-evidence | skipped-required-evidence | blocking-validation-failure | fail-closed
+    - kind: failure-kind
       work-group-id: string | null
       evidence-expectation-id: string | null
       receipt-id: string | null
@@ -847,7 +862,9 @@ booleans and counts are for quick inspection. `evidence-results` is the
 normalized machine-readable result for each evidence expectation, including
 satisfied evidence, while `failures` is the failed-verdict summary for specific
 diagnostics, missing or skipped evidence expectations, and failed receipts where
-applicable.
+applicable. `failure-kind` is one of `missing-required-evidence`,
+`skipped-required-evidence`, `blocking-validation-failure`,
+`inadmissible-receipt`, or `fail-closed`.
 
 ## 15. Diagnostics
 
@@ -867,6 +884,7 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 | `known-non-impacting`                 | planner                                     | inspectable non-failure                                                               |
 | `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
 | `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
+| `inadmissible-receipt`                | aggregation                                 | failed verdict                                                                        |
 
 `diagnostic-detail` is a stable subcode for diagnostic families that need
 machine-readable reasons. `range-unconfirmed` details are:
@@ -876,7 +894,7 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `inconsistent`;
 - `unconfirmed-provenance`.
 
-`required-evidence-missing` details for inadmissible receipt evidence include:
+`inadmissible-receipt` details include:
 
 - `malformed-receipt`;
 - `wrong-plan`;
@@ -902,9 +920,12 @@ When an affected request fails closed with `range-unconfirmed`, its
 `diagnostic-detail` must be propagated to the planner diagnostic and the
 aggregate failure.
 
-When aggregation sees only inadmissible receipts for a required expectation, it
-must record `required-evidence-missing` with the applicable receipt diagnostic
-detail rather than allowing the inadmissible receipt to satisfy the expectation.
+When aggregation sees an inadmissible receipt, it must record
+`inadmissible-receipt` with the applicable diagnostic detail and fail the
+aggregate verdict. When a required expectation has no valid matching receipt
+because all observed candidates were inadmissible, aggregation must also record
+`required-evidence-missing` for that expectation rather than allowing an
+inadmissible receipt to satisfy it.
 
 New diagnostic families may be added during implementation only when they map to
 one of the verdict effects above or the low-level design is updated.
@@ -942,7 +963,8 @@ Implementation acceptance must include at least these evidence scenarios:
 | Unknown path                                                     | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                |
 | Invalid descriptor blocking derivation                           | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                            |
 | Missing receipt                                                  | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                    |
-| Invalid or mismatched receipt                                    | Inadmissible receipt does not satisfy required evidence; aggregation fails with `required-evidence-missing` and a stable invalid-receipt diagnostic detail                                                                                          |
+| Invalid or mismatched receipt                                    | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                  |
+| Valid required receipt plus extra inadmissible receipt           | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                       |
 | Unconfirmed artifact shape                                       | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                         |
 | Unconfirmed PR context                                           | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                 |
 | All CI validation modes have no configured publication authority | Static workflow/config/code review covers `pull_request`, `push`, and `scheduled_full`; no publication credentials, OIDC publish permission, release environment, registry mutation, GitHub Release mutation, or release tag mutation is configured |
