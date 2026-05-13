@@ -410,6 +410,17 @@ message: string
 verdict-effect: none | fail-closed | failed
 ```
 
+Each `diagnostic-record` has:
+
+```yaml
+code: diagnostic-code
+detail: diagnostic-detail | null
+message: string | null
+source:
+    type: request | impact | subject | descriptor | fact-provider | work-group | aggregation
+    id: string | null
+```
+
 Binding rules:
 
 - Obligations reference their source impacts for auditability.
@@ -506,14 +517,14 @@ The first implementation uses a conservative repository path classification
 table. More-specific rules win before broader rules, except unknown always wins
 when no rule matches.
 
-| Path shape                                                                                                                                                                                                                   | Category                        | Scope result                                                                                                                                                        |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/**`, `src/lab/**`, `tests/**` files owned by one discovered subject                                                                                                                                                     | project-scoped                  | Direct subject plus safe downstream dependents, descriptor obligations when descriptor-backed, applicable ecosystem gates                                           |
-| Ecosystem workspace files such as root workspace metadata, lock files, package-manager configuration, or language tool configuration                                                                                         | ecosystem-scoped                | All active subjects in the affected ecosystem and descriptor-backed descriptors in that ecosystem                                                                   |
-| Root monorepo tool configuration affecting multiple ecosystems, global repository build settings, or cross-ecosystem validation configuration                                                                                | global                          | Scheduled-full-equivalent validation scope with global provenance                                                                                                   |
-| Workflow-release planner, classifier, fact-provider, descriptor contract, target catalog behavior, workflow orchestration, build execution, publish execution, smoke validation, or descriptor schema documentation surfaces | workflow-release infrastructure | Affected tooling surface, related ecosystems and subjects, all discovered descriptors when descriptor semantics or listed infrastructure categories can be affected |
-| Documentation or files explicitly known not to affect build, test, descriptors, workflow-release tooling, or ecosystem behavior                                                                                              | known non-impacting             | Lightweight-only plan with applicable lightweight work groups                                                                                                       |
-| Anything else                                                                                                                                                                                                                | unknown                         | Fail-closed plan                                                                                                                                                    |
+| Path shape                                                                                                                                                                                                                   | Category                        | Scope result                                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/**`, `src/lab/**`, `tests/**` files owned by one discovered subject                                                                                                                                                     | project-scoped                  | Direct subject plus safe downstream dependents, descriptor and release-shaped artifact/receipt obligations when descriptor-backed, applicable ecosystem gates          |
+| Ecosystem workspace files such as root workspace metadata, lock files, package-manager configuration, or language tool configuration                                                                                         | ecosystem-scoped                | All active subjects in the affected ecosystem, descriptor-backed descriptors in that ecosystem, and release-shaped artifact/receipt obligations when descriptor-backed |
+| Root monorepo tool configuration affecting multiple ecosystems, global repository build settings, or cross-ecosystem validation configuration                                                                                | global                          | Scheduled-full-equivalent validation scope with global provenance                                                                                                      |
+| Workflow-release planner, classifier, fact-provider, descriptor contract, target catalog behavior, workflow orchestration, build execution, publish execution, smoke validation, or descriptor schema documentation surfaces | workflow-release infrastructure | Affected tooling surface, related ecosystems and subjects, all discovered descriptors when descriptor semantics or listed infrastructure categories can be affected    |
+| Documentation or files explicitly known not to affect build, test, descriptors, workflow-release tooling, or ecosystem behavior                                                                                              | known non-impacting             | Lightweight-only plan with applicable lightweight work groups                                                                                                          |
+| Anything else                                                                                                                                                                                                                | unknown                         | Fail-closed plan                                                                                                                                                       |
 
 Concrete glob spelling belongs to implementation, but every checked-in path must
 fall into one of these semantic rule families. Any path not classified by the
@@ -545,7 +556,9 @@ Project-scoped resolution:
 4. when downstream facts are sufficient, include downstream subjects;
 5. when downstream facts are unavailable or insufficient, fail closed;
 6. add descriptor obligations for selected descriptor-backed subjects;
-7. add ecosystem gate obligations for selected subjects.
+7. add release-shaped artifact and receipt obligations for selected
+   descriptor-backed subjects;
+8. add ecosystem gate obligations for selected subjects.
 
 ### 10.2 Ecosystem-Scoped
 
@@ -553,6 +566,8 @@ Ecosystem-scoped resolution selects:
 
 - all active validation subjects in the ecosystem;
 - descriptor validation for all descriptor-backed subjects in the ecosystem;
+- release-shaped artifact and receipt validation for all descriptor-backed
+  subjects in the ecosystem;
 - all applicable ecosystem gates for that ecosystem.
 
 ### 10.3 Workflow-Release Infrastructure
@@ -730,9 +745,9 @@ evidence:
     capability-results:
         - capability: build | test | lint | format | type-check
           outcome: success | blocking-failure | skipped
-          diagnostics: [diagnostic-code]
+          diagnostics: [diagnostic-record]
     artifact-refs: [string]
-diagnostics: [diagnostic-code]
+diagnostics: [diagnostic-record]
 proof-admissibility: validation-only
 ```
 
@@ -748,6 +763,13 @@ Receipt rules:
 - `proof-admissibility` is always `validation-only`.
 - `ecosystem-gate` receipts must include one `capability-results` entry for each
   planned capability in the corresponding work group.
+- Malformed receipts, duplicate receipts for the same required expectation,
+  unexpected receipts, wrong-plan receipts, and receipts with an unknown or
+  mismatched `work-group-id` are inadmissible for satisfying evidence
+  expectations.
+- A required evidence expectation passes aggregation only when exactly one valid
+  matching receipt satisfies it; zero valid receipts or only inadmissible receipts
+  aggregate as `required-evidence-missing`.
 - A receipt with `blocking-failure` contributes to a failing aggregated outcome.
 - Missing required receipts contribute to a failing aggregated outcome.
 - A receipt with `skipped` is valid only for non-required work groups.
@@ -776,23 +798,19 @@ reason:
     skipped-required-evidence: boolean
     blocking-validation-failure: boolean
 diagnostics:
-    - code: diagnostic-code
-      detail: diagnostic-detail | null
+    - diagnostic-record
 evidence-results:
     - evidence-expectation-id: string
       work-group-id: string
       receipt-id: string | null
       outcome: satisfied | missing | skipped | failed
-      diagnostics:
-          - code: diagnostic-code
-            detail: diagnostic-detail | null
+      diagnostics: [diagnostic-record]
 failures:
     - kind: missing-required-evidence | skipped-required-evidence | blocking-validation-failure | fail-closed
       work-group-id: string | null
       evidence-expectation-id: string | null
       receipt-id: string | null
-      diagnostic-code: diagnostic-code
-      diagnostic-detail: diagnostic-detail | null
+      diagnostic: diagnostic-record
       message: string
 work-groups:
     executable-required: integer
@@ -837,9 +855,22 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `inconsistent`;
 - `unconfirmed-provenance`.
 
+`required-evidence-missing` details for inadmissible receipt evidence include:
+
+- `malformed-receipt`;
+- `wrong-plan`;
+- `unknown-work-group`;
+- `mismatched-work-group`;
+- `duplicate-receipt`;
+- `unexpected-receipt`.
+
 When an affected request fails closed with `range-unconfirmed`, its
 `diagnostic-detail` must be propagated to the planner diagnostic and the
 aggregate failure.
+
+When aggregation sees only inadmissible receipts for a required expectation, it
+must record `required-evidence-missing` with the applicable receipt diagnostic
+detail rather than allowing the inadmissible receipt to satisfy the expectation.
 
 New diagnostic families may be added during implementation only when they map to
 one of the verdict effects above or the low-level design is updated.
@@ -866,16 +897,18 @@ Implementation acceptance must include at least these evidence scenarios:
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Project-scoped descriptor-backed change                          | Plan selects direct subject, safe downstream subjects, descriptor obligation, ecosystem gates, release-shaped artifact obligations, receipts, and passing aggregation                                                                               |
 | Project-scoped validation-only change                            | Plan selects validation-only subject and ecosystem gates, no publish or release-shaped artifact obligation unless descriptor-backed                                                                                                                 |
-| Ecosystem-scoped change                                          | Plan selects all active subjects in ecosystem and descriptors for descriptor-backed subjects                                                                                                                                                        |
+| Ecosystem-scoped change                                          | Plan selects all active subjects in ecosystem, descriptors for descriptor-backed subjects, release-shaped artifact/receipt obligations, and applicable ecosystem gates                                                                              |
 | Workflow-release infrastructure change                           | Plan selects affected tooling surface, related subjects/ecosystems, and all required discovered descriptors                                                                                                                                         |
 | Known global change                                              | Plan selects scheduled-full-equivalent scope with global provenance                                                                                                                                                                                 |
 | Scheduled full run                                               | Plan selects full repository scope with scheduled provenance                                                                                                                                                                                        |
 | Known non-impacting change with no executable checks             | Lightweight-only plan passes without heavy work and remains inspectable                                                                                                                                                                             |
 | Known non-impacting change with executable lightweight checks    | Lightweight work receipts are required for pass                                                                                                                                                                                                     |
 | PR/push affected range unconfirmed                               | Request diagnostic `range-unconfirmed`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                                                 |
+| Project-scoped change with insufficient downstream facts         | Planner diagnostic `dependency-impact-insufficient` or `fact-provider-insufficient`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                    |
 | Unknown path                                                     | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                |
 | Invalid descriptor blocking derivation                           | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                            |
 | Missing receipt                                                  | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                    |
+| Invalid or mismatched receipt                                    | Inadmissible receipt does not satisfy required evidence; aggregation fails with `required-evidence-missing` and a stable invalid-receipt diagnostic detail                                                                                          |
 | Unconfirmed artifact shape                                       | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                         |
 | Unconfirmed PR context                                           | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                 |
 | All CI validation modes have no configured publication authority | Static workflow/config/code review covers `pull_request`, `push`, and `scheduled_full`; no publication credentials, OIDC publish permission, release environment, registry mutation, GitHub Release mutation, or release tag mutation is configured |
