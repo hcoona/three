@@ -730,9 +730,12 @@ work-group-id: string
 mode: pull_request | push | scheduled_full
 validation-tree:
     commit-sha: string
+    ref: string | null
 affected-range:
+    status: available | unavailable | not-applicable
     base-sha: string | null
     head-sha: string | null
+    changed-files-hash: string | null
 scheduled-full:
     enabled: boolean
 coverage-target:
@@ -758,8 +761,10 @@ Receipt rules:
   execution provenance.
 - `plan-id` and `work-group-id` must match the validation plan.
 - Receipts must mirror the plan provenance: affected-mode receipts carry
-  affected-range SHAs and `scheduled-full.enabled: false`; scheduled-full
-  receipts carry null affected-range SHAs and `scheduled-full.enabled: true`.
+  `validation-tree`, `affected-range`, and `scheduled-full` fields matching the
+  plan envelope; scheduled-full receipts carry `affected-range.status:
+not-applicable`, null affected-range SHAs and hash, and `scheduled-full.enabled:
+true`.
 - `proof-admissibility` is always `validation-only`.
 - `ecosystem-gate` receipts must include one `capability-results` entry for each
   planned capability in the corresponding work group.
@@ -791,6 +796,18 @@ common-envelope: inherited
 api-version: three.ci.validation.aggregate/v1alpha1
 kind: ci-validation-aggregate
 plan-id: string
+plan-digest: string
+mode: pull_request | push | scheduled_full
+validation-tree:
+    commit-sha: string
+    ref: string | null
+affected-range:
+    status: available | unavailable | not-applicable
+    base-sha: string | null
+    head-sha: string | null
+    changed-files-hash: string | null
+scheduled-full:
+    enabled: boolean
 verdict: passed | failed
 reason:
     fail-closed: boolean
@@ -823,11 +840,14 @@ proof-admissibility: validation-only
 ```
 
 The aggregation report is the only CI-level verdict artifact. Workflow conclusion
-must fail when `verdict` is `failed`. Summary booleans and counts are for quick
-inspection. `evidence-results` is the normalized machine-readable result for
-each evidence expectation, including satisfied evidence, while `failures` is the
-failed-verdict summary for specific diagnostics, missing or skipped evidence
-expectations, and failed receipts where applicable.
+must fail when `verdict` is `failed`. `plan-digest`, `mode`, `validation-tree`,
+`affected-range`, and `scheduled-full` are copied from the frozen plan; the
+aggregator must verify they match the plan before emitting the report. Summary
+booleans and counts are for quick inspection. `evidence-results` is the
+normalized machine-readable result for each evidence expectation, including
+satisfied evidence, while `failures` is the failed-verdict summary for specific
+diagnostics, missing or skipped evidence expectations, and failed receipts where
+applicable.
 
 ## 15. Diagnostics
 
@@ -843,6 +863,7 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 | `infrastructure-surface-unclassified` | planner                                     | fail-closed                                                                           |
 | `descriptor-invalid`                  | planner or descriptor-validation work group | fail-closed when obligations cannot be derived; otherwise blocking validation failure |
 | `artifact-shape-unconfirmed`          | release-shaped validation work group        | blocking validation failure                                                           |
+| `validation-work-failed`              | executable validation work group            | blocking validation failure                                                           |
 | `known-non-impacting`                 | planner                                     | inspectable non-failure                                                               |
 | `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
 | `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
@@ -863,6 +884,19 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `mismatched-work-group`;
 - `duplicate-receipt`;
 - `unexpected-receipt`.
+
+`validation-work-failed` details are:
+
+- `build`;
+- `test`;
+- `lint`;
+- `format`;
+- `type-check`;
+- `tooling`.
+
+Executable validation work groups use `validation-work-failed` for
+`blocking-failure` receipts unless a more specific registered diagnostic family
+applies.
 
 When an affected request fails closed with `range-unconfirmed`, its
 `diagnostic-detail` must be propagated to the planner diagnostic and the
