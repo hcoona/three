@@ -239,6 +239,8 @@ affected-range:
     base-sha: string | null
     head-sha: string | null
     changed-files-hash: string | null
+scheduled-full:
+    enabled: boolean
 planner:
     policy-source: validation-tree
     version: string | null
@@ -252,6 +254,13 @@ fact-snapshot:
 
 `plan-id` is stable for the exact plan content and provenance. It is used to bind
 work-group receipts and aggregation evidence to the plan.
+
+For affected modes, `affected-range.status` is `available` or `unavailable` and
+`scheduled-full.enabled` is `false`. For `scheduled_full`,
+`affected-range.status` is `not-applicable`, affected-range hashes and SHAs are
+`null`, and `scheduled-full.enabled` is `true`. The scheduled-full marker is the
+full-scope selection source for scheduled plans; scheduled-full obligations and
+work groups do not fabricate impact records.
 
 ### 6.2 Plan Sections
 
@@ -341,7 +350,7 @@ validation-obligation-id: string
 source-impact-ids: [string]
 kind: lightweight-preflight | ecosystem-gate | release-shaped-artifact | workflow-release-tooling
 coverage-target:
-    type: subject | descriptor | tooling-surface | artifact-obligation
+    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation
     id: string
 required: boolean
 blocking: boolean
@@ -379,7 +388,7 @@ Each `evidence-expectation` has:
 evidence-expectation-id: string
 work-group-id: string
 coverage-target:
-    type: subject | descriptor | tooling-surface | artifact-obligation
+    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation
     id: string
 category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
 planned-capabilities: [build | test | lint | format | type-check] | null
@@ -392,6 +401,7 @@ Each `planner-diagnostic` has:
 ```yaml
 diagnostic-id: string
 code: diagnostic-code
+detail: diagnostic-detail | null
 severity: info | warning | fail-closed | blocking-failure
 source:
     type: request | impact | subject | descriptor | fact-provider | aggregation
@@ -403,6 +413,8 @@ verdict-effect: none | fail-closed | failed
 Binding rules:
 
 - Obligations reference their source impacts for auditability.
+- Scheduled-full obligations may have empty `source-impact-ids`; in that mode,
+  the plan-level `scheduled-full` marker is their full-scope selection source.
 - Required executable obligations must reference a work group and evidence
   expectation unless planning fails closed.
 - Release-shaped validation obligations and work groups bind to frozen artifact
@@ -437,7 +449,7 @@ capabilities:
     type-check: boolean
     release-shaped-artifacts: boolean
 inclusion:
-    source: descriptor | workspace | solution | explicit
+    source: descriptor | workspace | solution
     reason: string
 exclusion:
     reason: string | null
@@ -451,6 +463,9 @@ Rules:
   validation plan.
 - Only subjects with `activity-status: active` and `selection-status: selected`
   can produce executable validation work.
+- Explicit repository rules may adjust `activity-status` or `exclusion.reason`
+  for discovered candidates, but they are not an inclusion authority for adding
+  validation subjects.
 - `capability-class: validation-only` subjects cannot have publish obligations.
 - `capability-class: descriptor-backed` subjects may have release-shaped artifact
   obligations only when descriptor validation can derive them without
@@ -581,7 +596,7 @@ Each executable validation work group has:
 work-group-id: string
 kind: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
 coverage-target:
-    type: subject | descriptor | tooling-surface | artifact-obligation
+    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation
     id: string
 ecosystem: string | null
 runner-family: windows | ubuntu | null
@@ -617,6 +632,10 @@ Selector rules:
   its coverage target. The work group, matching evidence expectation, and receipt
   record that set so build, test, lint, format, and type-check outcomes do not
   collapse into an opaque gate result.
+- `coverage-target.type: ecosystem` is valid only for ecosystem-level
+  `ecosystem-gate` selectors. If ecosystem gates are decomposed into subject
+  selectors, the plan must preserve the ecosystem parent through source impacts
+  or scheduled-full provenance.
 - Fail-closed plans contain no executable validation work groups, but may contain
   the terminal `evidence-aggregation` work group needed to emit the failed
   aggregate verdict.
@@ -699,8 +718,10 @@ validation-tree:
 affected-range:
     base-sha: string | null
     head-sha: string | null
+scheduled-full:
+    enabled: boolean
 coverage-target:
-    type: subject | descriptor | tooling-surface | artifact-obligation
+    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation
     id: string
 outcome: success | blocking-failure | skipped
 evidence:
@@ -721,6 +742,9 @@ Receipt rules:
   derived from `plan-id`, `work-group-id`, and run attempt or equivalent
   execution provenance.
 - `plan-id` and `work-group-id` must match the validation plan.
+- Receipts must mirror the plan provenance: affected-mode receipts carry
+  affected-range SHAs and `scheduled-full.enabled: false`; scheduled-full
+  receipts carry null affected-range SHAs and `scheduled-full.enabled: true`.
 - `proof-admissibility` is always `validation-only`.
 - `ecosystem-gate` receipts must include one `capability-results` entry for each
   planned capability in the corresponding work group.
@@ -751,19 +775,24 @@ reason:
     missing-required-evidence: boolean
     skipped-required-evidence: boolean
     blocking-validation-failure: boolean
-diagnostics: [diagnostic-code]
+diagnostics:
+    - code: diagnostic-code
+      detail: diagnostic-detail | null
 evidence-results:
     - evidence-expectation-id: string
       work-group-id: string
       receipt-id: string | null
       outcome: satisfied | missing | skipped | failed
-      diagnostics: [diagnostic-code]
+      diagnostics:
+          - code: diagnostic-code
+            detail: diagnostic-detail | null
 failures:
     - kind: missing-required-evidence | skipped-required-evidence | blocking-validation-failure | fail-closed
       work-group-id: string | null
       evidence-expectation-id: string | null
       receipt-id: string | null
       diagnostic-code: diagnostic-code
+      diagnostic-detail: diagnostic-detail | null
       message: string
 work-groups:
     executable-required: integer
@@ -800,6 +829,18 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 | `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
 | `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
 
+`diagnostic-detail` is a stable subcode for diagnostic families that need
+machine-readable reasons. `range-unconfirmed` details are:
+
+- `missing`;
+- `incomplete`;
+- `inconsistent`;
+- `unconfirmed-provenance`.
+
+When an affected request fails closed with `range-unconfirmed`, its
+`diagnostic-detail` must be propagated to the planner diagnostic and the
+aggregate failure.
+
 New diagnostic families may be added during implementation only when they map to
 one of the verdict effects above or the low-level design is updated.
 
@@ -821,22 +862,23 @@ implementation must avoid turning ordinary local hooks into full CI.
 
 Implementation acceptance must include at least these evidence scenarios:
 
-| Scenario                                                      | Expected evidence                                                                                                                                                     |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Project-scoped descriptor-backed change                       | Plan selects direct subject, safe downstream subjects, descriptor obligation, ecosystem gates, release-shaped artifact obligations, receipts, and passing aggregation |
-| Project-scoped validation-only change                         | Plan selects validation-only subject and ecosystem gates, no publish or release-shaped artifact obligation unless descriptor-backed                                   |
-| Ecosystem-scoped change                                       | Plan selects all active subjects in ecosystem and descriptors for descriptor-backed subjects                                                                          |
-| Workflow-release infrastructure change                        | Plan selects affected tooling surface, related subjects/ecosystems, and all required discovered descriptors                                                           |
-| Known global change                                           | Plan selects scheduled-full-equivalent scope with global provenance                                                                                                   |
-| Scheduled full run                                            | Plan selects full repository scope with scheduled provenance                                                                                                          |
-| Known non-impacting change with no executable checks          | Lightweight-only plan passes without heavy work and remains inspectable                                                                                               |
-| Known non-impacting change with executable lightweight checks | Lightweight work receipts are required for pass                                                                                                                       |
-| PR/push affected range unconfirmed                            | Request diagnostic `range-unconfirmed`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts   |
-| Unknown path                                                  | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                  |
-| Invalid descriptor blocking derivation                        | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                              |
-| Missing receipt                                               | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                      |
-| Unconfirmed artifact shape                                    | Blocking validation failure, no release-proof admissibility                                                                                                           |
-| Unconfirmed PR context                                        | No publication credentials, release environment, or OIDC publish permission exposed                                                                                   |
+| Scenario                                                         | Expected evidence                                                                                                                                                                                                                                   |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project-scoped descriptor-backed change                          | Plan selects direct subject, safe downstream subjects, descriptor obligation, ecosystem gates, release-shaped artifact obligations, receipts, and passing aggregation                                                                               |
+| Project-scoped validation-only change                            | Plan selects validation-only subject and ecosystem gates, no publish or release-shaped artifact obligation unless descriptor-backed                                                                                                                 |
+| Ecosystem-scoped change                                          | Plan selects all active subjects in ecosystem and descriptors for descriptor-backed subjects                                                                                                                                                        |
+| Workflow-release infrastructure change                           | Plan selects affected tooling surface, related subjects/ecosystems, and all required discovered descriptors                                                                                                                                         |
+| Known global change                                              | Plan selects scheduled-full-equivalent scope with global provenance                                                                                                                                                                                 |
+| Scheduled full run                                               | Plan selects full repository scope with scheduled provenance                                                                                                                                                                                        |
+| Known non-impacting change with no executable checks             | Lightweight-only plan passes without heavy work and remains inspectable                                                                                                                                                                             |
+| Known non-impacting change with executable lightweight checks    | Lightweight work receipts are required for pass                                                                                                                                                                                                     |
+| PR/push affected range unconfirmed                               | Request diagnostic `range-unconfirmed`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                                                 |
+| Unknown path                                                     | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                |
+| Invalid descriptor blocking derivation                           | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                            |
+| Missing receipt                                                  | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                    |
+| Unconfirmed artifact shape                                       | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                         |
+| Unconfirmed PR context                                           | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                 |
+| All CI validation modes have no configured publication authority | Static workflow/config/code review covers `pull_request`, `push`, and `scheduled_full`; no publication credentials, OIDC publish permission, release environment, registry mutation, GitHub Release mutation, or release tag mutation is configured |
 
 These scenarios are acceptance contracts, not prescribed test framework or file
 layout. The implementer may choose the concrete test harness.
