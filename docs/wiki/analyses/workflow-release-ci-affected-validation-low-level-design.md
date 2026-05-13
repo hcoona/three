@@ -151,7 +151,7 @@ machine-readable file has:
 Schema blocks below use `common-envelope: inherited` to avoid repeating those
 fields. The block then lists only fields specific to that artifact kind.
 
-The planner-facing CI request uses:
+The planner-facing CI request common fields are:
 
 ```yaml
 common-envelope: inherited
@@ -161,15 +161,6 @@ mode: pull_request | push | scheduled_full
 validation-tree:
     commit-sha: string
     ref: string | null
-affected-range:
-    status: available | unavailable
-    base-sha: string | null
-    head-sha: string | null
-    changed-files: [string]
-    source: pull_request | push | null
-    diagnostic: range-unavailable | range-unconfirmed | null
-scheduled-full:
-    enabled: boolean
 event:
     name: string
     number: string | null
@@ -178,23 +169,43 @@ event:
     run-attempt: string
 ```
 
+For `pull_request` and `push`, the request also has:
+
+```yaml
+affected-range:
+    status: available | unavailable
+    base-sha: string | null
+    head-sha: string | null
+    changed-files: [string]
+    source: pull_request | push
+    diagnostic: range-unconfirmed | null
+    diagnostic-detail: missing | incomplete | inconsistent | unconfirmed-provenance | null
+```
+
+For `scheduled_full`, the request instead has:
+
+```yaml
+scheduled-full:
+    enabled: true
+```
+
 Rules:
 
-- `affected-range` is required for `pull_request` and `push`.
+- `scheduled_full` requests must not carry `affected-range` or `changed-files`;
+  they are full-scope requests, not affected requests with an empty affected
+  range.
 - `affected-range.status: available` requires fixed endpoint SHAs, a complete
   changed-file list, and enough provenance consistency to confirm the range as
   the CI affected boundary.
 - `affected-range.status: unavailable` means the control-plane logic could not
   establish a complete confirmed affected input from GitHub event payloads,
   GitHub API data, or checkout/git data.
-- `affected-range.status: unavailable` requires `diagnostic: range-unavailable`
-  when range data is missing or incomplete, or `diagnostic: range-unconfirmed`
-  when complete-looking range data cannot be confirmed as the CI affected
-  boundary.
+- `affected-range.status: unavailable` requires `diagnostic: range-unconfirmed`
+  and a `diagnostic-detail` that records whether range data is missing,
+  incomplete, inconsistent, or complete-looking but not confirmable as the CI
+  affected boundary.
 - `affected-range.status: unavailable` forces fail-closed planning.
-- `scheduled-full.enabled` is `true` only for `scheduled_full`.
-- `changed-files` is absent or empty only for scheduled full or unavailable
-  affected ranges.
+- `changed-files` is absent or empty only for unavailable affected ranges.
 
 The exact physical filename is implementation-owned, but the file is an internal
 workflow artifact or workspace handoff, not a user-authored source file.
@@ -371,6 +382,7 @@ coverage-target:
     type: subject | descriptor | tooling-surface | artifact-obligation
     id: string
 category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
+planned-capabilities: [build | test | lint | format | type-check] | null
 required: boolean
 blocking-if-missing: boolean
 ```
@@ -576,6 +588,7 @@ runner-family: windows | ubuntu | null
 depends-on: [work-group-id]
 expected-evidence:
     category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
+    planned-capabilities: [build | test | lint | format | type-check] | null
     required: boolean
 ```
 
@@ -600,6 +613,10 @@ Selector rules:
 - The control plane may batch multiple executable selectors into one concrete job
   only when the resulting receipts still report each required selector
   separately.
+- One `ecosystem-gate` selector covers the complete planned capability set for
+  its coverage target. The work group, matching evidence expectation, and receipt
+  record that set so build, test, lint, format, and type-check outcomes do not
+  collapse into an opaque gate result.
 - Fail-closed plans contain no executable validation work groups, but may contain
   the terminal `evidence-aggregation` work group needed to emit the failed
   aggregate verdict.
@@ -673,6 +690,7 @@ Every executable validation work group emits one CI validation receipt:
 common-envelope: inherited
 api-version: three.ci.validation.receipt/v1alpha1
 kind: ci-validation-receipt
+receipt-id: string
 plan-id: string
 work-group-id: string
 mode: pull_request | push | scheduled_full
@@ -687,6 +705,11 @@ coverage-target:
 outcome: success | blocking-failure | skipped
 evidence:
     category: string
+    planned-capabilities: [build | test | lint | format | type-check] | null
+    capability-results:
+        - capability: build | test | lint | format | type-check
+          outcome: success | blocking-failure | skipped
+          diagnostics: [diagnostic-code]
     artifact-refs: [string]
 diagnostics: [diagnostic-code]
 proof-admissibility: validation-only
@@ -694,8 +717,13 @@ proof-admissibility: validation-only
 
 Receipt rules:
 
+- `receipt-id` is stable for the exact receipt content and provenance, and is
+  derived from `plan-id`, `work-group-id`, and run attempt or equivalent
+  execution provenance.
 - `plan-id` and `work-group-id` must match the validation plan.
 - `proof-admissibility` is always `validation-only`.
+- `ecosystem-gate` receipts must include one `capability-results` entry for each
+  planned capability in the corresponding work group.
 - A receipt with `blocking-failure` contributes to a failing aggregated outcome.
 - Missing required receipts contribute to a failing aggregated outcome.
 - A receipt with `skipped` is valid only for non-required work groups.
@@ -724,6 +752,12 @@ reason:
     skipped-required-evidence: boolean
     blocking-validation-failure: boolean
 diagnostics: [diagnostic-code]
+evidence-results:
+    - evidence-expectation-id: string
+      work-group-id: string
+      receipt-id: string | null
+      outcome: satisfied | missing | skipped | failed
+      diagnostics: [diagnostic-code]
 failures:
     - kind: missing-required-evidence | skipped-required-evidence | blocking-validation-failure | fail-closed
       work-group-id: string | null
@@ -743,9 +777,10 @@ proof-admissibility: validation-only
 
 The aggregation report is the only CI-level verdict artifact. Workflow conclusion
 must fail when `verdict` is `failed`. Summary booleans and counts are for quick
-inspection; `failures` is the machine-readable trace from the failed verdict to
-specific diagnostics, missing or skipped evidence expectations, and failed
-receipts where applicable.
+inspection. `evidence-results` is the normalized machine-readable result for
+each evidence expectation, including satisfied evidence, while `failures` is the
+failed-verdict summary for specific diagnostics, missing or skipped evidence
+expectations, and failed receipts where applicable.
 
 ## 15. Diagnostics
 
@@ -753,7 +788,6 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 
 | Diagnostic family                     | Producer                                    | CI verdict effect                                                                     |
 | ------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `range-unavailable`                   | planner                                     | fail-closed                                                                           |
 | `range-unconfirmed`                   | planner                                     | fail-closed                                                                           |
 | `unknown-change`                      | planner                                     | fail-closed                                                                           |
 | `subject-unresolved`                  | planner                                     | fail-closed                                                                           |
@@ -797,6 +831,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Scheduled full run                                            | Plan selects full repository scope with scheduled provenance                                                                                                          |
 | Known non-impacting change with no executable checks          | Lightweight-only plan passes without heavy work and remains inspectable                                                                                               |
 | Known non-impacting change with executable lightweight checks | Lightweight work receipts are required for pass                                                                                                                       |
+| PR/push affected range unconfirmed                            | Request diagnostic `range-unconfirmed`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts   |
 | Unknown path                                                  | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                  |
 | Invalid descriptor blocking derivation                        | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                              |
 | Missing receipt                                               | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                      |
