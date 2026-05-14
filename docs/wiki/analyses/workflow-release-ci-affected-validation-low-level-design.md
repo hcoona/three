@@ -155,6 +155,15 @@ machine-readable file has:
 - `schema-diagnostics` for producer-side warnings that are not validation
   failures.
 
+`schema-diagnostics` uses the same shape as `diagnostic-record`, sorted by
+`diagnostic-id`. These diagnostics are producer-side schema or compatibility
+warnings only: every entry must have `severity: warning` or `info` and
+`verdict-effect: none`, and aggregation must not treat them as validation
+failures. Schema diagnostics that indicate an artifact is unreadable, malformed,
+schema-invalid, or structurally invalid must instead be represented by the
+artifact-specific planner, receipt, or aggregation diagnostic paths defined
+below.
+
 Schema blocks below use `common-envelope: inherited` to avoid repeating those
 fields. The block then lists only fields specific to that artifact kind.
 
@@ -337,6 +346,16 @@ If two records compare equal under their canonical key, the plan is structurally
 invalid unless the record kind explicitly permits duplicates. The planner must
 not rely on source discovery order, API response order, filesystem order, or job
 completion order for digest-affecting arrays.
+
+Except for `plan-id`, which is explicitly run-scoped and opaque, every
+identifier that participates in the validation plan digest must be derived
+deterministically from a typed, versioned, RFC 8785 canonical JSON preimage
+containing the record kind and the fields that define the record's semantic
+identity. The exact identifier text may be a readable normalized prefix plus a
+digest, but two equivalent planning inputs must produce the same plan-local
+identifier values and references. Candidate-only audit IDs that exist only before
+freezing, such as `subsumption-record.subsumed-candidate-ids`, are not
+plan-local references and are outside this determinism requirement.
 
 For affected modes, `affected-range.status` is `available` or `unavailable` and
 `scheduled-full.enabled` is `false`. For `scheduled_full`,
@@ -988,6 +1007,22 @@ Selector rules:
   from the work-group kind, a normalized readable prefix, and a lowercase
   SHA-256 digest of the full typed coverage target; the digest preimage, not the
   readable prefix, preserves uniqueness.
+  The work-group ID digest preimage is the RFC 8785 canonical JSON bytes of:
+
+    ```json
+    {
+        "api-version": "three.ci.validation.work-group-id/v1alpha1",
+        "kind": "release-shaped-artifact",
+        "coverage-target": {
+            "type": "artifact-obligation",
+            "id": "artifact-obligation-id"
+        }
+    }
+    ```
+
+    `kind`, `coverage-target.type`, and `coverage-target.id` are replaced by the
+    frozen work-group values before hashing.
+
 - Work groups are selectors, not command lines.
 - Every `depends-on` entry must resolve to a `work-group-id` in the same frozen
   plan. The work-group dependency graph must be acyclic. Executable work groups
@@ -1374,6 +1409,11 @@ true`.
 - Malformed receipts, duplicate receipts for the same expectation, unexpected
   receipts, wrong-plan receipts, and receipts with an unknown or mismatched
   `work-group-id` are inadmissible for satisfying evidence expectations.
+- When multiple otherwise admissible receipts match the same evidence
+  expectation, the receipt with the lowest `observed-entry-id` is the only
+  candidate that may satisfy the expectation; every other matching receipt is
+  inadmissible with `duplicate-receipt`. Receipts that are inadmissible for other
+  reasons do not participate in choosing the satisfying receipt.
 - Any observed inadmissible receipt contributes to a failing aggregated outcome
   with `inadmissible-receipt`; a valid receipt does not offset an extra
   inadmissible receipt.
