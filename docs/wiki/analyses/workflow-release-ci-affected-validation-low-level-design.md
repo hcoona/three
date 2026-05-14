@@ -155,6 +155,25 @@ machine-readable file has:
 - `schema-diagnostics` for producer-side warnings that are not validation
   failures.
 
+The inherited common envelope fields have these minimum shapes:
+
+```yaml
+created-at: string
+repository:
+    owner: string
+    name: string
+run:
+    workflow: string
+    run-id: string
+    run-attempt: string
+schema-diagnostics: [diagnostic-record]
+```
+
+`created-at` is an RFC 3339 timestamp for producer inspection only and is not a
+security or replay authority. `run.workflow`, `run.run-id`, and
+`run.run-attempt` are copied from the GitHub Actions run context and are the only
+common-envelope run identity fields used by cross-artifact binding.
+
 `schema-diagnostics` uses the same shape as `diagnostic-record`, sorted by
 `diagnostic-id`. These diagnostics are producer-side schema or compatibility
 warnings only: every entry must have `severity: warning` or `info` and
@@ -1082,8 +1101,9 @@ Selector rules:
     produces an `invalid-plan` aggregate with a selector-assignment diagnostic
     detail.
 
-- Each executable writer emits a contract-owned writer-observation record before
-  or atomically with receipt upload:
+- The control plane emits a contract-owned writer-observation record after the
+  receipt artifact has a stable `artifact-instance-id` and before aggregation
+  admits that receipt:
 
     ```yaml
     common-envelope: inherited
@@ -1102,8 +1122,11 @@ Selector rules:
     The writer-observation artifact ref is exactly the assignment's
     `writer-observation-ref`. `observed-writer-id` is captured from immutable
     GitHub Actions job context outside the receipt payload and normalized with the
-    same algorithm as `trusted-writer-id`. Aggregation verifies the observation
-    record's envelope, schema, plan identity, assignment, receipt ref,
+    same algorithm as `trusted-writer-id`. The executable writer does not supply
+    `artifact-instance-id` or self-attest the observed writer identity; the
+    control plane binds the already-uploaded receipt artifact instance to the
+    previously captured job context. Aggregation verifies the observation record's
+    envelope, schema, plan identity, assignment, receipt ref,
     `artifact-instance-id`, writer source, and observed writer ID before admitting
     the receipt. Missing, malformed, mismatched, duplicate, or wrong-plan
     writer-observation records make the corresponding receipt inadmissible with
