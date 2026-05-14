@@ -491,3 +491,10 @@ Updated the workflow-release design notes to move live acceptance away from the 
 - Recorded GitHub Actions run `25885824704` and its rerun observations,
   including the fact that run-scoped artifact enumeration still returns old
   attempt artifacts.
+
+## [2026-05-14] query | Record CI validation producer identity experiment
+
+- Added the Group 2 GitHub Actions platform experiment for producer and job
+  identity, matrix rerun behavior, and writer-observation feasibility.
+- Linked the findings to the Group 1 artifact enumeration spike and recorded
+  LLD impacts for trusted receipt writers.
