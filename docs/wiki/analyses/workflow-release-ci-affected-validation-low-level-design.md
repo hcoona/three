@@ -252,6 +252,17 @@ a different physical name is non-authoritative for that contract boundary even i
 its payload fields resemble valid evidence; in closed namespaces, such an
 instance is an unexpected contract artifact.
 
+Because the physical artifact namespace is flat, aggregation must classify all
+prefixed physical artifacts against the complete set of expected non-receipt
+contract refs before closing the receipt namespace. The expected non-receipt set
+contains the request, validation plan, changed-files snapshot, fact snapshot,
+selector-assignment manifest, receipt manifest, and aggregate refs for the current
+run attempt. Any prefixed physical artifact that matches one of those expected
+non-receipt physical names is handled only by that contract's validation rules.
+Any remaining prefixed physical artifact that is not classifiable as an expected
+non-receipt artifact is receipt-like for receipt manifest enumeration, even when
+its payload is unreadable or does not reveal a logical receipt ref.
+
 `schema-diagnostics` uses the same shape as `diagnostic-record`, sorted by
 `diagnostic-id`. These diagnostics are producer-side schema or compatibility
 warnings only: every entry must have `severity: warning` or `info` and
@@ -327,8 +338,18 @@ Rules:
   boundary before trusting affected-range or scheduled-full fields. A missing,
   duplicate, unreadable, malformed, schema-invalid, digest-mismatched,
   wrong-run-attempt, or producer-unverified request makes planning fail closed or
-  emit no authoritative plan rather than trusting a payload self-claim. If
-  planning emits a fail-closed plan for an invalid request, it must include a
+  emit no authoritative plan rather than trusting a payload self-claim. Planning
+  may emit an authoritative fail-closed plan for a `request-invalid` case only when
+  the request artifact is replayable: the contract-owned request ref, physical
+  artifact instance count, common-envelope run identity, `normalize-input`
+  producer authority, schema-valid payload, matching payload `artifact-ref`, and
+  recomputed canonical `request-digest` can all be established. Digest-mismatch and
+  wrong-run-attempt requests are replayable only when those fields can still be
+  parsed and verified enough to freeze the observed request ref and recomputed
+  digest. Missing, duplicate, unreadable, malformed, schema-invalid,
+  producer-unverified, or ref-unidentified requests are unreplayable; in those
+  cases planning emits no authoritative validation plan. If planning emits a
+  fail-closed plan for a replayable invalid request, it must include a
   `request-invalid` planner diagnostic with the applicable closed
   `diagnostic-detail`; otherwise no authoritative validation plan is emitted.
   A request whose payload `artifact-ref` does not equal the contract-owned request
@@ -499,22 +520,21 @@ fact-snapshot:
 
 `request.artifact-ref` is the exact contract-owned planner-facing request artifact
 ref from section 5. `request.request-digest` is the verified request digest the
-planner recomputed before trusting the request. Both fields are required for every
-authoritative plan, including fail-closed plans emitted for an invalid request.
-When planning emits a fail-closed plan after it can identify the request artifact
-but cannot trust its payload, these fields still identify the observed request ref
-and digest claim or recomputed digest that caused `request-invalid`; if the request
-artifact cannot be identified at all, the planner emits no authoritative
-validation plan. `plan-id` is an opaque run-scoped stable identifier assigned by
-the control plane. It is not a content digest and must not be derived from a
-representation that includes itself. `plan-digest` is the lowercase hexadecimal
-SHA-256 digest of the RFC 8785 JSON Canonicalization Scheme canonical UTF-8 bytes
-for the frozen validation plan after removing only the root-level `plan-digest`
-member. It must match `^[0-9a-f]{64}$`. The plan payload must be I-JSON compatible
-for digesting; duplicate object member names make it malformed. All remaining
-fields, including nulls, false values, empty arrays or objects, request binding,
-diagnostics, obligations, work groups, evidence expectations, and detail profiles,
-participate in the digest.
+planner recomputed before trusting the request or before emitting a replayable
+`request-invalid` fail-closed plan. Both fields are required for every
+authoritative plan. If the request artifact cannot be identified, parsed, verified
+to the replayable request boundary, and canonically digested, the planner emits no
+authoritative validation plan instead of inventing nullable request binding.
+`plan-id` is an opaque run-scoped stable identifier assigned by the control plane.
+It is not a content digest and must not be derived from a representation that
+includes itself. `plan-digest` is the lowercase hexadecimal SHA-256 digest of the
+RFC 8785 JSON Canonicalization Scheme canonical UTF-8 bytes for the frozen
+validation plan after removing only the root-level `plan-digest` member. It must
+match `^[0-9a-f]{64}$`. The plan payload must be I-JSON compatible for digesting;
+duplicate object member names make it malformed. All remaining fields, including
+nulls, false values, empty arrays or objects, request binding, diagnostics,
+obligations, work groups, evidence expectations, and detail profiles, participate
+in the digest.
 Array order is preserved. Receipts and aggregation evidence bind to the frozen
 plan with both `plan-id` and `plan-digest`, and post-run audit can replay-bind the
 plan to the normalized request through the frozen request artifact ref and digest.
@@ -2148,6 +2168,13 @@ Receipt rules:
   `ci-validation/receipts/<run-id>/<run-attempt>/<work-group-id>/receipt.json`.
   If one concrete job batches multiple selectors, it must still write one receipt
   artifact at the derived ref for each covered `work-group-id`.
+  Because physical artifact names are digest-only, this logical namespace is made
+  observable by the section 5 classification rule: aggregation first removes every
+  prefixed artifact matching an expected non-receipt contract ref for the current
+  run attempt, then treats all remaining prefixed artifacts as receipt-like
+  entries for manifest closure. This deliberately fails closed on unexpected
+  prefixed artifacts rather than proving receipt membership from unreadable
+  payloads or physical-name prefixes.
   Final receipt manifest and aggregate artifacts must be serialized as RFC 8785
   canonical UTF-8 JSON bytes before upload. Any rule below that refers to raw
   manifest or aggregate artifact bytes, content digests, or replay recomputation
@@ -2508,12 +2535,17 @@ For structurally valid plans, `plan-digest`, `mode`, `validation-tree`,
 `affected-range`, `request`, and `scheduled-full` are copied from the frozen plan;
 the aggregator must verify they match the plan before emitting the report.
 Aggregation and post-run acceptance must use `request.artifact-ref` and
-`request.request-digest` to verify the authoritative normalized request artifact:
-exactly one artifact instance at the frozen request ref, matching common-envelope
-run identity, `normalize-input` producer authority, schema validity, matching
-payload `artifact-ref`, and recomputed request digest. If request replay
-verification fails for an otherwise structurally valid plan, aggregation emits
-`invalid-plan` rather than treating the plan as detached from its original request.
+`request.request-digest` to verify the authoritative normalized request artifact
+for executable plans, fail-closed plans, and replayable `request-invalid`
+fail-closed plans: exactly one artifact instance at the frozen request ref,
+matching common-envelope run identity, `normalize-input` producer authority,
+schema validity, matching payload `artifact-ref`, and recomputed request digest.
+For replayable `request-invalid` plans, aggregation verifies the request replay
+boundary and then preserves the planner's `request-invalid` fail-closed diagnostic;
+it does not require the request to be semantically valid. If request replay
+verification itself fails for an otherwise structurally valid plan, aggregation
+emits `invalid-plan` rather than treating the plan as detached from its original
+request.
 Summary booleans and counts are for quick inspection. `evidence-results` is the
 normalized machine-readable result for every evidence expectation. Every evidence
 expectation is verdict-relevant, so
@@ -2760,6 +2792,8 @@ Implementation acceptance must include at least these evidence scenarios:
 | Known non-impacting lightweight-only plan attempts subject, ecosystem, or descriptor-scoped lightweight work                                                                                    | The plan is structurally invalid; lightweight-only executable checks must use `lightweight-policy` or workflow-release `tooling-surface` coverage targets rather than implying selected validation subjects                                                                                                                                                                                                                                                                                                                                                                                      |
 | Confirmed zero-file affected range                                                                                                                                                              | Affected request has `affected-range.status: available`, empty `changed-files`, non-null canonical `changed-files-hash`, executable lightweight-only plan with available discovered subjects all marked `not-selected`, an available provider fact snapshot whose provider subject IDs exactly match the provider-bound frozen subject universe, unsupported audit subjects only when they satisfy the unsupported-subject constraints, no selected subjects, no executable validation work groups, no evidence expectations, no receipts, and passing aggregate after final evidence validation |
 | Wrong-run or producer-unverified planner-facing request                                                                                                                                         | Planning does not trust affected-range or scheduled-full payload claims; it either fails closed with `request-invalid` or emits no authoritative plan unless the request ref, digest, instance count, envelope, and `normalize-input` producer authority verify; authoritative plans and aggregates freeze the verified request ref and digest for replay                                                                                                                                                                                                                                        |
+| Missing, duplicate, unreadable, malformed, schema-invalid, producer-unverified, or ref-unidentified planner-facing request                                                                      | No authoritative validation plan is emitted because the request cannot satisfy the replayable request boundary needed for plan request binding                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Digest-mismatched or wrong-run request that is still replayable enough to freeze request ref and recomputed digest                                                                              | Planning may emit a fail-closed plan with `request-invalid`; aggregation replay-verifies the request artifact boundary and preserves the fail-closed diagnostic rather than converting it to `invalid-plan`                                                                                                                                                                                                                                                                                                                                                                                      |
 | Selector materialization receives invalid, producer-unverified, identity-unverified, or companion-mismatched plan                                                                               | `materialize-work-groups` emits no selector-assignment manifest and no executable selectors unless it can verify plan identity and all authoritative plan plus companion snapshot checks; fan-out never runs from a plan that has not passed that validation                                                                                                                                                                                                                                                                                                                                     |
 | Structurally valid fail-closed or no-executable plan                                                                                                                                            | `materialize-work-groups` emits exactly one empty selector-assignment manifest with verified plan identity so aggregation preserves fail-closed or no-work semantics instead of reporting `invalid-plan`                                                                                                                                                                                                                                                                                                                                                                                         |
 | Mixed project/ecosystem/infrastructure/non-impacting change                                                                                                                                     | Plan unions all selected scopes, descriptor/release-shaped obligations, ecosystem gates, and additive lightweight obligations; broader scopes may subsume duplicates only with explicit `classification.subsumptions` records, and non-impacting paths do not replace required heavyweight validation                                                                                                                                                                                                                                                                                            |
@@ -2783,6 +2817,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest                                                                                  | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Logical boundary mapped to missing or wrong platform job identity                                                                                                                               | Producer authority verification rejects the artifact as producer-unverified using the boundary identity map; payload producer claims, logs, and job conclusions do not substitute                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Logical contract artifact ref maps ambiguously or incorrectly to a physical artifact name                                                                                                       | Artifact instance counting, duplicate detection, and namespace enumeration use the canonical fixed-length SHA-256 physical-name mapping; prefixed artifacts whose payload refs do not recompute to the observed physical name are non-authoritative or unexpected in closed namespaces                                                                                                                                                                                                                                                                                                           |
+| Prefixed physical artifact does not match any expected non-receipt contract ref during receipt namespace closure                                                                                | Aggregation treats it as an unexpected receipt-like manifest entry with `artifact-ref: null`; expected non-receipt artifacts are classified first and handled only by their own contract rules                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Request payload artifact ref or physical artifact name mismatches the contract-owned request ref                                                                                                | Planning fails closed with `request-invalid` and `diagnostic-detail: request-ref-mismatch`, or emits no authoritative plan                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Aggregate cannot replay-verify the request artifact ref or digest frozen into an otherwise structurally valid plan                                                                              | Aggregation emits `invalid-plan`; copied plan semantics are insufficient without the authoritative normalized request artifact identity and digest                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Missing receipt                                                                                                                                                                                 | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
