@@ -498,3 +498,11 @@ Updated the workflow-release design notes to move live acceptance away from the 
   identity, matrix rerun behavior, and writer-observation feasibility.
 - Linked the findings to the Group 1 artifact enumeration spike and recorded
   LLD impacts for trusted receipt writers.
+
+## [2026-05-14] query | Record CI validation no-plan failure experiment
+
+- Ran the Group 3 no-authoritative-plan GitHub Actions probe through the
+  `Release Buddy` dispatch entry.
+- Added a durable experiment page covering missing plan artifacts, readable
+  diagnostics, downstream skipped jobs, always-running reporting, and required
+  aggregate-check implications for CI affected validation.
