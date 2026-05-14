@@ -227,6 +227,23 @@ not authoritative acceptance evidence. Payload fields, artifact names supplied b
 executable validation commands, logs, and job conclusions never prove producer
 authority.
 
+`artifact-ref` values in this document are logical contract refs, not physical
+GitHub artifact names. Every logical ref is encoded to one physical artifact name
+with this reversible mapping:
+
+```text
+physical-artifact-name = "three-ci-validation-" + base64url_no_padding(utf8(logical-artifact-ref))
+```
+
+The decoded logical ref must exactly equal the payload `artifact-ref` field for
+artifact classes that carry one. Artifact instance counting, duplicate detection,
+namespace enumeration, producer checks, and replay binding operate on physical
+artifact instances whose names decode to the expected logical contract ref or
+logical ref prefix. A physical artifact name that does not decode, decodes to a
+non-canonical logical ref, or decodes to a ref outside the expected namespace is
+non-authoritative for that contract boundary even if its payload fields resemble
+valid evidence.
+
 `schema-diagnostics` uses the same shape as `diagnostic-record`, sorted by
 `diagnostic-id`. These diagnostics are producer-side schema or compatibility
 warnings only: every entry must have `severity: warning` or `info` and
@@ -1467,15 +1484,18 @@ Selector rules:
     assignment manifest artifact instance must exist at the authoritative ref;
     zero or multiple instances make the plan invalid for aggregation.
     `materialize-work-groups` must perform the same authoritative plan validation
-    needed to safely fan out executable selectors before emitting any non-empty
-    assignment set: plan ref and instance count, producer authority, envelope,
-    schema, digest, structural reference rules, executable/fail-closed invariants,
-    and required companion changed-files and fact snapshot artifacts. If any of
-    those checks fails, or the plan is fail-closed, it emits an empty assignment
-    set and no executable selectors. Validation work-group fan-out must be
-    contingent on a non-empty selector-assignment manifest produced after those
-    checks; it must not run executable selectors from a plan that only aggregation
-    later discovers is invalid.
+    needed to safely fan out executable selectors before emitting any assignment
+    manifest: plan ref and instance count, producer authority, envelope, schema,
+    digest, structural reference rules, executable/fail-closed invariants, and
+    required companion changed-files and fact snapshot artifacts. If the plan
+    identity cannot be verified, or any of those checks fails, it emits no
+    selector-assignment manifest and no executable selectors. A structurally valid
+    fail-closed plan, or a valid lightweight-only plan with no executable work
+    groups, may emit an empty selector-assignment manifest with the verified
+    `plan-id` and `plan-digest`. Validation work-group fan-out must be contingent
+    on a non-empty selector-assignment manifest produced after those checks; it
+    must not run executable selectors from a plan that only aggregation later
+    discovers is invalid.
     Aggregation must verify the selector-assignment artifact's producer authority
     from platform/control-plane metadata before trusting its payload because the
     manifest authorizes receipt writers. A selector-assignment manifest authored
@@ -2369,7 +2389,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Known non-impacting change with executable lightweight checks                                                                                                                                   | Lightweight work receipts are required for pass                                                                                                                                                                                                                                                                                                                                                                              |
 | Confirmed zero-file affected range                                                                                                                                                              | Affected request has `affected-range.status: available`, empty `changed-files`, non-null canonical `changed-files-hash`, executable lightweight-only plan with an available empty in-plan subject universe and an available empty fact snapshot companion artifact, no selected subjects, no executable validation work groups, no evidence expectations, no receipts, and passing aggregate after final evidence validation |
 | Wrong-run or producer-unverified planner-facing request                                                                                                                                         | Planning does not trust affected-range or scheduled-full payload claims; it fails closed or emits no authoritative plan unless the request ref, digest, instance count, envelope, and `normalize-input` producer authority verify                                                                                                                                                                                            |
-| Selector materialization receives invalid, producer-unverified, or companion-mismatched plan                                                                                                    | `materialize-work-groups` emits an empty selector-assignment manifest and no executable selectors; fan-out never runs from a plan that has not passed authoritative plan and companion snapshot validation                                                                                                                                                                                                                   |
+| Selector materialization receives invalid, producer-unverified, identity-unverified, or companion-mismatched plan                                                                               | `materialize-work-groups` emits no selector-assignment manifest and no executable selectors unless it can verify plan identity and all authoritative plan plus companion snapshot checks; fan-out never runs from a plan that has not passed that validation                                                                                                                                                                 |
 | Mixed project/ecosystem/infrastructure/non-impacting change                                                                                                                                     | Plan unions all selected scopes, descriptor/release-shaped obligations, ecosystem gates, and additive lightweight obligations; broader scopes may subsume duplicates only with explicit `classification.subsumptions` records, and non-impacting paths do not replace required heavyweight validation                                                                                                                        |
 | Policy-bearing planner/classifier/fact-provider change                                                                                                                                          | Plan is produced using the validation tree under review, exposes `planner.policy-source: validation-tree` and validation-tree provenance, and acceptance rejects evidence planned by a baseline or wrong-tree policy                                                                                                                                                                                                         |
 | Affected plan omits or invents changed-path impact coverage                                                                                                                                     | Aggregation emits `invalid-plan` with `diagnostic-detail: changed-files-impact-coverage-mismatch` rather than allowing omitted paths to bypass fail-closed classification                                                                                                                                                                                                                                                    |
@@ -2383,6 +2403,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Missing, unexpected, duplicate, producer-unverified, malformed, ref-mismatched, or digest-mismatched companion planning snapshot                                                                | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                                                                                                                                                                                                       |
 | Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest                                                                                  | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                                                                                                                                                                                                   |
 | Logical boundary mapped to missing or wrong platform job identity                                                                                                                               | Producer authority verification rejects the artifact as producer-unverified using the boundary identity map; payload producer claims, logs, and job conclusions do not substitute                                                                                                                                                                                                                                            |
+| Logical contract artifact ref maps ambiguously or incorrectly to a physical artifact name                                                                                                       | Artifact instance counting, duplicate detection, and namespace enumeration use the canonical `base64url_no_padding(utf8(logical-artifact-ref))` physical-name mapping; non-decodable or mismatched physical names are non-authoritative                                                                                                                                                                                      |
 | Missing receipt                                                                                                                                                                                 | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                                                                                                                                                                                             |
 | Planned validation work skipped or failed                                                                                                                                                       | Aggregation records `required-evidence-skipped` or `blocking-validation-failure` and fails the final verdict; planned executable validation work is not optional or non-gating                                                                                                                                                                                                                                               |
 | Ecosystem gate omits a capability enabled by selected subject/provider facts                                                                                                                    | Plan is fail-closed with `fact-provider-insufficient` or structurally invalid; receipts cannot pass by matching an under-planned capability set                                                                                                                                                                                                                                                                              |
