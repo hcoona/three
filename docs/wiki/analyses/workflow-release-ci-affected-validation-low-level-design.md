@@ -175,6 +175,7 @@ For `pull_request` and `push`, the request also has:
 affected-range:
     status: available | unavailable
     base-sha: string | null
+    base-tip-sha: string | null
     head-sha: string | null
     changed-files: [string] | null
     source: pull_request | push
@@ -225,16 +226,20 @@ Rules:
 
 Mode-specific affected-range rules:
 
-- For `pull_request`, `base-sha` is the event `pull_request.base.sha` and
-  `head-sha` is the event `pull_request.head.sha`. The changed-file set is the
-  complete compare from base to head, whether validation executes on the head
-  commit or a GitHub-created merge ref. Event payload data, GitHub API file-list
-  data, and checkout/git data used by the control plane must reconcile to the
-  same endpoints and changed-file set.
+- For `pull_request`, `base-sha` is the explicit PR diff base used for changed
+  file enumeration, normally the merge base between the event
+  `pull_request.base.sha` and `pull_request.head.sha`; `base-tip-sha` records the
+  event `pull_request.base.sha`; and `head-sha` is the event
+  `pull_request.head.sha`. The changed-file set is the complete compare from the
+  PR diff base to the head, whether validation executes on the head commit or a
+  GitHub-created merge ref. GitHub API file-list data and checkout/git data used
+  by the control plane must reconcile to the same diff-base/head endpoints and
+  changed-file set. Base branch movement that changes `base-tip-sha` without
+  changing the confirmed PR diff base is not by itself an inconsistency.
 - For `push`, `base-sha` is the event `before` SHA and `head-sha` is the event
-  `after` SHA. Deleted branches, all-zero endpoints, force-push ranges whose
-  base cannot be fetched or compared, and otherwise unconfirmable push ranges
-  make the affected range unavailable.
+  `after` SHA; `base-tip-sha` is `null`. Deleted branches, all-zero endpoints,
+  force-push ranges whose base cannot be fetched or compared, and otherwise
+  unconfirmable push ranges make the affected range unavailable.
 - File enumeration must consume every page or chunk from the chosen GitHub API or
   git source. Truncation, pagination failure, endpoint mismatch, or disagreement
   between sources used for reconciliation makes the range unavailable with
@@ -275,6 +280,7 @@ validation-tree:
 affected-range:
     status: available | unavailable | not-applicable
     base-sha: string | null
+    base-tip-sha: string | null
     head-sha: string | null
     changed-files-hash: string | null
 scheduled-full:
@@ -688,6 +694,11 @@ Rules:
   validation plan.
 - Only subjects with `activity-status: active` and `selection-status: selected`
   can produce executable validation work.
+- A selected executable subject must have an explicit fact provider and execution
+  mapping in this LLD. For the first implementation, `ruby` and `other` subjects
+  may be discovered only as `inactive` or `not-selected`; if an affected,
+  ecosystem, global, or scheduled-full scope would otherwise select them,
+  planning fails closed with `fact-provider-insufficient`.
 - Explicit repository rules may adjust `activity-status` or `exclusion.reason`
   for discovered candidates, but they are not an inclusion authority for adding
   validation subjects.
@@ -795,6 +806,26 @@ Infrastructure resolution selects:
   validation, planning, contracts, build execution, publish execution, or smoke
   validation impacts;
 - no representative-smoke substitution for broader validation.
+
+Tooling-surface expansion is deterministic:
+
+| Tooling surface                   | Required validation scope                                                                                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `planner`                         | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                  |
+| `classifier`                      | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                  |
+| `fact-provider`                   | All active subjects in ecosystems whose provider can be affected, all descriptors discovered through those subjects, and tooling validation               |
+| `descriptor-contract`             | All discovered descriptors, descriptor-validation work groups, release-shaped artifact obligations derived from those descriptors, and tooling validation |
+| `target-catalog`                  | All descriptor-backed subjects with release-shaped artifact obligations and tooling validation                                                            |
+| `workflow-orchestration`          | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                  |
+| `build-execution`                 | All active subjects with build or release-shaped artifact capabilities, their descriptor-backed artifact obligations, and tooling validation              |
+| `publish-execution`               | All descriptor-backed subjects with release-shaped artifact obligations and tooling validation; publication remains out of scope                          |
+| `smoke-validation`                | Smoke-validation tooling work groups, all smoke descriptors/subjects, and descriptor-backed subjects whose smoke receipt contracts can be affected        |
+| `descriptor-schema-documentation` | All discovered descriptors and descriptor-validation work groups                                                                                          |
+
+If a changed workflow-release infrastructure path cannot be mapped to one of the
+closed tooling surfaces, or if the mapped surface cannot determine its affected
+ecosystems or subjects deterministically, planning fails closed with
+`infrastructure-surface-unclassified`.
 
 ### 10.4 Global and Scheduled Full
 
@@ -944,6 +975,36 @@ Rules:
   effects, the work group records a blocking validation failure.
 - Artifact validation receipts are validation-only and inadmissible as immutable
   release proof.
+- A `release-shaped-artifact` receipt must use `category-result.detail` with this
+  minimum shape:
+
+    ```yaml
+    artifact-obligation-results:
+        - artifact-obligation-id: string
+          descriptor:
+              path: string
+              identity: string | null
+          profile-coverage: [string]
+          artifact:
+              kind: string
+              variant: string | null
+              refs: [string]
+              digests:
+                  - artifact-ref: string
+                    digest: string
+          release-receipt:
+              expected: boolean
+              schema-checked: boolean
+              outcome: success | blocking-failure | skipped
+              diagnostics: [diagnostic-record]
+          outcome: success | blocking-failure | skipped
+          diagnostics: [diagnostic-record]
+    ```
+
+    Each planned `artifact-obligation-id` assigned to the work group must appear
+    exactly once. `profile-coverage` is copied from the frozen obligation and
+    artifact refs are content-addressed when the ecosystem can produce a digest
+    without publish credentials or side effects.
 
 ## 14. Evidence and Receipt Files
 
@@ -964,6 +1025,7 @@ validation-tree:
 affected-range:
     status: available | unavailable | not-applicable
     base-sha: string | null
+    base-tip-sha: string | null
     head-sha: string | null
     changed-files-hash: string | null
 scheduled-full:
@@ -1103,21 +1165,23 @@ The aggregation report uses:
 common-envelope: inherited
 api-version: three.ci.validation.aggregate/v1alpha1
 kind: ci-validation-aggregate
-plan-id: string
-plan-digest: string
-mode: pull_request | push | scheduled_full
+plan-id: string | null
+plan-digest: string | null
+mode: pull_request | push | scheduled_full | unknown
 validation-tree:
-    commit-sha: string
+    commit-sha: string | null
     ref: string | null
 affected-range:
-    status: available | unavailable | not-applicable
+    status: available | unavailable | not-applicable | unknown
     base-sha: string | null
+    base-tip-sha: string | null
     head-sha: string | null
     changed-files-hash: string | null
 scheduled-full:
-    enabled: boolean
+    enabled: boolean | null
 verdict: passed | failed
 reason:
+    invalid-plan: boolean
     fail-closed: boolean
     missing-required-evidence: boolean
     skipped-required-evidence: boolean
@@ -1160,19 +1224,28 @@ proof-admissibility: validation-only
 ```
 
 The aggregation report is the only CI-level verdict artifact. Workflow conclusion
-must fail when `verdict` is `failed`. `plan-digest`, `mode`, `validation-tree`,
-`affected-range`, and `scheduled-full` are copied from the frozen plan; the
-aggregator must verify they match the plan before emitting the report. Summary
-booleans and counts are for quick inspection. `evidence-results` is the
-normalized machine-readable result for every evidence expectation. Every
-evidence expectation is verdict-relevant, so `missing`, `skipped`, and `failed`
-results must have corresponding `failures` entries. `failure-kind` is one of
+must fail when `verdict` is `failed`. For structurally valid plans,
+`plan-digest`, `mode`, `validation-tree`, `affected-range`, and `scheduled-full`
+are copied from the frozen plan; the aggregator must verify they match the plan
+before emitting the report. Summary booleans and counts are for quick
+inspection. `evidence-results` is the normalized machine-readable result for
+every evidence expectation. Every evidence expectation is verdict-relevant, so
+`missing`, `skipped`, and `failed` results must have corresponding `failures`
+entries. `failure-kind` is one of `invalid-plan`,
 `missing-required-evidence`, `skipped-required-evidence`,
 `blocking-validation-failure`, `inadmissible-receipt`, or `fail-closed`.
 `observed-receipts` records every artifact in the closed intake boundary,
 including valid, malformed, unexpected, wrong-plan, duplicate, and otherwise
 inadmissible receipt artifacts. Evidence results and failures reference the
 receipt artifact and digest that caused the result when one exists.
+
+If aggregation cannot parse, schema-validate, digest-verify, or structurally
+validate the plan, it emits a failed aggregate with `reason.invalid-plan: true`
+and `reason.fail-closed: true`. In that mode, unverified plan-derived fields are
+`null` or `unknown`, `evidence-results` is empty, counts are zero except
+`terminal-aggregation: present`, and `failures` contains an `invalid-plan`
+failure with an `invalid-plan` diagnostic. The aggregate must not copy unverified
+plan fields merely because they were present in the unreadable or invalid input.
 
 ## 15. Diagnostics
 
@@ -1193,6 +1266,7 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 | `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
 | `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
 | `inadmissible-receipt`                | aggregation                                 | failed verdict                                                                        |
+| `invalid-plan`                        | aggregation                                 | fail-closed failed verdict                                                            |
 
 `diagnostic-detail` is a stable subcode for diagnostic families that need
 machine-readable reasons. `range-unconfirmed` details are:
@@ -1212,6 +1286,14 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `mismatched-outcome`;
 - `duplicate-receipt`;
 - `unexpected-receipt`.
+
+`invalid-plan` details include:
+
+- `plan-unreadable`;
+- `malformed-plan`;
+- `schema-invalid`;
+- `plan-digest-mismatch`;
+- `structurally-invalid`.
 
 `validation-work-failed` details are:
 
