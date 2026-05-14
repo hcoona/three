@@ -176,7 +176,7 @@ affected-range:
     status: available | unavailable
     base-sha: string | null
     head-sha: string | null
-    changed-files: [string]
+    changed-files: [string] | null
     source: pull_request | push
     diagnostic: range-unconfirmed | null
     diagnostic-detail: missing | incomplete | inconsistent | unconfirmed-provenance | null
@@ -205,7 +205,21 @@ Rules:
   incomplete, inconsistent, or complete-looking but not confirmable as the CI
   affected boundary.
 - `affected-range.status: unavailable` forces fail-closed planning.
-- `changed-files` is absent or empty only for unavailable affected ranges.
+- `changed-files` is `null` for unavailable affected ranges. For
+  `affected-range.status: available`, it is the confirmed repository-relative
+  changed-file list. It may be empty only when the control plane positively
+  confirms a zero-file affected range.
+- Changed-file paths are canonical repository-relative Git paths. Each path uses
+  `/` separators, is case-sensitive, and must not be empty, absolute, start with
+  `./`, contain `\`, contain empty path segments, contain `.` or `..` path
+  segments, or end with `/`.
+- The control plane must not repair changed-file paths by normalizing,
+  case-folding, or deduplicating them. Missing, incomplete, duplicate,
+  non-canonical, unsorted, or otherwise unconfirmed changed-file data makes the
+  affected range unavailable with `diagnostic-detail: inconsistent` unless a
+  more specific `range-unconfirmed` detail applies.
+- For deterministic consumers, the canonical changed-file sequence is sorted
+  lexicographically by UTF-8 encoded bytes.
 
 The exact physical filename is implementation-owned, but the file is an internal
 workflow artifact or workspace handoff, not a user-authored source file.
@@ -255,11 +269,15 @@ fact-snapshot:
 
 `plan-id` is an opaque run-scoped stable identifier assigned by the control
 plane. It is not a content digest and must not be derived from a representation
-that includes itself. `plan-digest` is the control-plane-computed SHA-256 digest
-of the frozen validation plan's canonical JSON representation with the
-`plan-digest` field omitted, so the digest can be verified without
-self-reference. Receipts and aggregation evidence bind to the frozen plan with
-both `plan-id` and `plan-digest`.
+that includes itself. `plan-digest` is the lowercase hexadecimal SHA-256 digest
+of the RFC 8785 JSON Canonicalization Scheme canonical UTF-8 bytes for the
+frozen validation plan after removing only the root-level `plan-digest` member.
+It must match `^[0-9a-f]{64}$`. The plan payload must be I-JSON compatible for
+digesting; duplicate object member names make it malformed. All remaining
+fields, including nulls, false values, empty arrays or objects, diagnostics,
+obligations, work groups, and evidence expectations, participate in the digest.
+Array order is preserved. Receipts and aggregation evidence bind to the frozen
+plan with both `plan-id` and `plan-digest`.
 
 For affected modes, `affected-range.status` is `available` or `unavailable` and
 `scheduled-full.enabled` is `false`. For `scheduled_full`,
@@ -267,6 +285,24 @@ For affected modes, `affected-range.status` is `available` or `unavailable` and
 `null`, and `scheduled-full.enabled` is `true`. The scheduled-full marker is the
 full-scope selection source for scheduled plans; scheduled-full obligations and
 work groups do not fabricate impact records.
+
+For `affected-range.status: available`, `changed-files-hash` is the lowercase
+hexadecimal SHA-256 digest of the RFC 8785 canonical JSON representation of this
+versioned object:
+
+```json
+{
+    "api-version": "three.ci.validation.changed-files/v1alpha1",
+    "changed-files": []
+}
+```
+
+`changed-files` is replaced by the canonical changed-file sequence from the
+request contract. A confirmed zero-file affected range uses `changed-files: []`
+and emits the digest of that object. For `affected-range.status: unavailable`
+and for scheduled-full `not-applicable`, `changed-files-hash` is `null` and no
+changed-files hash preimage is defined. Non-null `changed-files-hash` values
+must match `^[0-9a-f]{64}$`.
 
 ### 6.2 Plan Sections
 
@@ -315,6 +351,9 @@ resulting-scope:
 
 The expansion record is inspectability data. Execution still consumes the final
 selected subjects, obligations, and work groups rather than recomputing expansion.
+It must not be used to imply obligation, work-group, or evidence subsumption.
+Any duplicate removal caused by an expanded scope must have an explicit
+`subsumption-record`.
 
 ### 6.3 Named Record Minimum Shapes
 
@@ -408,6 +447,7 @@ Each `subsumption-record` has:
 ```yaml
 subsumption-id: string
 source-impact-ids: [string]
+source-expansion-ids: [string]
 subsumed-kind: descriptor-obligation | validation-obligation | artifact-obligation | work-group | evidence-expectation
 subsumed-ids: [string]
 retained-id: string
@@ -441,6 +481,23 @@ source:
 
 Binding rules:
 
+- All identifier-bearing records inside one frozen validation plan are resolved
+  in typed plan-local namespaces. For each record kind, its identifier field must
+  be unique within that record-kind namespace in the plan. This applies at least
+  to `impact-id`, `expansion-id`, `subject-id`, `descriptor-obligation-id`,
+  `validation-obligation-id`, `artifact-obligation-id`, `work-group-id`,
+  `evidence-expectation-id`, `subsumption-id`, and `diagnostic-id`.
+- References are not resolved by searching all string identifiers. Each non-null
+  plan-local reference resolves only to its declared target namespace in the
+  same frozen plan, either by the reference field name or by the accompanying
+  kind/type discriminator such as `coverage-target.type`, `subsumed-kind`, or
+  diagnostic `source.type`.
+- Duplicate identifiers within a namespace, unresolved references, or references
+  that resolve only by guessing across namespaces make the plan structurally
+  invalid. An executable plan must not be emitted with structural identity
+  errors; consumers must reject structurally invalid executable plans rather than
+  reinterpret, repair, or resolve references against receipts, prior plans, or
+  repository state.
 - Obligations reference their source impacts for auditability.
 - Scheduled-full obligations may have empty `source-impact-ids`; in that mode,
   the plan-level `scheduled-full` marker is their full-scope selection source.
@@ -456,7 +513,8 @@ Binding rules:
 - `descriptor-validation` work groups are produced from descriptor obligations,
   while release-shaped artifact work groups are produced from artifact
   obligations.
-- Missing required evidence and blocking diagnostics fail aggregation.
+- Missing required evidence and verdict-affecting blocking diagnostics fail
+  aggregation.
 - Informational diagnostics, including known non-impacting diagnostics, must not
   by themselves authorize or block execution.
 
@@ -563,8 +621,9 @@ produced impact records. If any impact is unknown or unclassifiable, the whole
 plan fails closed. Otherwise, the planner unions selected subjects, descriptor
 obligations, validation obligations, work groups, and evidence expectations from
 all impacts. Broader scopes may subsume duplicate narrower obligations when the
-plan records the subsumption in `classification.subsumptions` or
-`broad-expansion-record` records.
+plan records every retained and subsumed relationship in
+`classification.subsumptions`. `broad-expansion-record` records why broader
+scope was selected; it is not a subsumption ledger.
 
 ## 10. Scope Resolution Details
 
@@ -680,7 +739,10 @@ Selector rules:
   lightweight-preflight work groups that must produce evidence before the run can
   pass.
 - The `evidence-aggregation` work group is a non-executable terminal
-  control-plane selector. It depends on required executable work groups, reads the
+  control-plane selector. Its completion boundary includes every planned
+  executable work group that can emit into the closed receipt boundary, including
+  non-required work groups. Requiredness affects evidence satisfaction only; it
+  does not limit which receipts aggregation must observe. Aggregation reads the
   plan and receipts, emits the aggregate verdict artifact, and does not produce a
   work-group receipt.
 
@@ -704,10 +766,10 @@ All runners provision tools through `mise` where practical. The concrete command
 lines and helper scripts are implementation-owned, but they must run the
 repository's existing ecosystem gates for selected scopes.
 
-Aggregation is mapped as the terminal control-plane job after all executable
-work-group receipts are available or known missing. It reads the frozen plan and
-validation receipts only, emits `ci-validation-aggregate`, and does not emit a
-normal work-group receipt.
+Aggregation is mapped as the terminal control-plane job after all planned
+executable work groups are complete, skipped by workflow construction, or
+otherwise known missing. It reads the frozen plan and validation receipts only,
+emits `ci-validation-aggregate`, and does not emit a normal work-group receipt.
 
 ## 13. Release-Shaped Artifact Validation
 
@@ -772,6 +834,10 @@ evidence:
         - capability: build | test | lint | format | type-check
           outcome: success | blocking-failure | skipped
           diagnostics: [diagnostic-record]
+    category-result:
+        outcome: success | blocking-failure | skipped
+        diagnostics: [diagnostic-record]
+        detail: object | null
     artifact-refs: [string]
 diagnostics: [diagnostic-record]
 proof-admissibility: validation-only
@@ -787,6 +853,8 @@ Receipt rules:
   run attempt or equivalent execution provenance. It must not be derived from a
   representation that includes itself.
 - `plan-id`, `plan-digest`, and `work-group-id` must match the validation plan.
+  `plan-digest` matching means equality to the recomputed digest defined in
+  section 6.1, not merely equality to an unverified string copied from the plan.
 - Because each executable `work-group-id` has exactly one evidence expectation in
   the plan, aggregation matches receipts to evidence expectations by `plan-id`
   and `work-group-id`.
@@ -795,6 +863,9 @@ Receipt rules:
   plan envelope; scheduled-full receipts carry `affected-range.status:
 not-applicable`, null affected-range SHAs and hash, and `scheduled-full.enabled:
 true`.
+- Receipts and aggregates copy `changed-files-hash` from the frozen plan. They
+  must not rediscover, reorder, or rehash changed files; a mismatch is
+  inadmissible as `wrong-plan` or `mismatched-evidence-payload`.
 - Receipt payload fields must match the frozen plan's matched work group and
   evidence expectation: `coverage-target`, evidence `category`, and
   `planned-capabilities` are equality-checked against the plan. Mismatches are
@@ -802,28 +873,44 @@ true`.
 - `proof-admissibility` is always `validation-only`.
 - Receipts with non-null `planned-capabilities` must include exactly one
   `capability-results` entry for each planned capability in the corresponding
-  work group. Receipts with null `planned-capabilities` must not invent
-  capability-level coverage.
+  work group and no `category-result`. Receipts with null `planned-capabilities`
+  must include exactly one `category-result` and no `capability-results`; they
+  must not invent capability-level coverage.
 - For receipts with capability results, top-level `outcome` is derived from those
   results: any `blocking-failure` capability makes the receipt
   `blocking-failure`; all planned capabilities succeeding makes it `success`;
   `skipped` remains valid only under the non-required work-group rule below. A
   top-level outcome that disagrees with capability results is inadmissible.
-- Malformed receipts, duplicate receipts for the same required expectation,
-  unexpected receipts, wrong-plan receipts, and receipts with an unknown or
-  mismatched `work-group-id` are inadmissible for satisfying evidence
-  expectations.
+- For null-capability receipts, top-level `outcome` is derived from
+  `category-result`: `success` is admissible only when the category-specific
+  validation completed successfully and no blocking diagnostic is present;
+  `blocking-failure` is admissible only when the category-specific validation
+  failed or a blocking diagnostic is present; `skipped` is admissible only when
+  category-specific validation was intentionally not executed for a non-required
+  work group and the receipt carries a non-blocking diagnostic explaining the
+  skip. A mismatch between top-level `outcome`, `category-result`, diagnostics,
+  or required/skipped rules is inadmissible.
+- Malformed receipts, duplicate receipts for the same expectation, unexpected
+  receipts, wrong-plan receipts, and receipts with an unknown or mismatched
+  `work-group-id` are inadmissible for satisfying evidence expectations.
 - Any observed inadmissible receipt contributes to a failing aggregated outcome
-  with `inadmissible-receipt`; a valid required receipt does not offset an extra
+  with `inadmissible-receipt`; a valid receipt does not offset an extra
   inadmissible receipt.
 - A required evidence expectation passes aggregation only when exactly one valid
   matching receipt satisfies it; zero valid receipts or only inadmissible receipts
   aggregate as `required-evidence-missing`.
-- A receipt with `blocking-failure` contributes to a failing aggregated outcome.
+- A valid required receipt with `blocking-failure` contributes to a failing
+  aggregated outcome.
 - Missing required receipts contribute to a failing aggregated outcome.
 - A receipt with `skipped` is valid only for non-required work groups.
 - A required work group that produces `skipped` contributes to a failing
   aggregated outcome with `required-evidence-skipped`.
+- A non-required evidence expectation is optional for verdict purposes: missing,
+  valid `skipped`, valid `success`, and valid `blocking-failure` outcomes are
+  recorded in `evidence-results` but do not create `failures` and do not fail CI
+  by themselves. Requiredness never weakens receipt integrity; any observed
+  inadmissible receipt, including one associated with optional evidence, records
+  `inadmissible-receipt` and fails aggregation.
 - A concrete job may upload additional logs, but logs are not a substitute for the
   machine-readable receipt.
 - Release-shaped validation receipts may carry evidence that both the planned
@@ -864,8 +951,10 @@ diagnostics:
 evidence-results:
     - evidence-expectation-id: string
       work-group-id: string
+      required: boolean
       receipt-id: string | null
       outcome: satisfied | missing | skipped | failed
+      verdict-effect: none | failed
       diagnostics: [diagnostic-record]
 failures:
     - kind: failure-kind
@@ -876,10 +965,15 @@ failures:
       message: string
 work-groups:
     executable-required: integer
-    executable-succeeded: integer
-    executable-failed: integer
-    executable-skipped: integer
-    executable-missing: integer
+    executable-optional: integer
+    required-succeeded: integer
+    required-failed: integer
+    required-skipped: integer
+    required-missing: integer
+    optional-succeeded: integer
+    optional-failed: integer
+    optional-skipped: integer
+    optional-missing: integer
     terminal-aggregation: present
 proof-admissibility: validation-only
 ```
@@ -889,32 +983,33 @@ must fail when `verdict` is `failed`. `plan-digest`, `mode`, `validation-tree`,
 `affected-range`, and `scheduled-full` are copied from the frozen plan; the
 aggregator must verify they match the plan before emitting the report. Summary
 booleans and counts are for quick inspection. `evidence-results` is the
-normalized machine-readable result for each evidence expectation, including
-satisfied evidence, while `failures` is the failed-verdict summary for specific
-diagnostics, missing or skipped evidence expectations, and failed receipts where
-applicable. `failure-kind` is one of `missing-required-evidence`,
-`skipped-required-evidence`, `blocking-validation-failure`,
-`inadmissible-receipt`, or `fail-closed`.
+normalized machine-readable result for every evidence expectation, required and
+optional. `verdict-effect` is `failed` only when that result contributes to the
+final failed verdict. `failures` contains only verdict-affecting records; valid
+optional missing, skipped, or failed evidence appears in `evidence-results` and
+optional counters, not in `failures`. `failure-kind` is one of
+`missing-required-evidence`, `skipped-required-evidence`,
+`blocking-validation-failure`, `inadmissible-receipt`, or `fail-closed`.
 
 ## 15. Diagnostics
 
 Planner and aggregation diagnostics use a small registered vocabulary:
 
-| Diagnostic family                     | Producer                                    | CI verdict effect                                                                     |
-| ------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `range-unconfirmed`                   | planner                                     | fail-closed                                                                           |
-| `unknown-change`                      | planner                                     | fail-closed                                                                           |
-| `subject-unresolved`                  | planner                                     | fail-closed                                                                           |
-| `dependency-impact-insufficient`      | planner                                     | fail-closed                                                                           |
-| `fact-provider-insufficient`          | planner                                     | fail-closed                                                                           |
-| `infrastructure-surface-unclassified` | planner                                     | fail-closed                                                                           |
-| `descriptor-invalid`                  | planner or descriptor-validation work group | fail-closed when obligations cannot be derived; otherwise blocking validation failure |
-| `artifact-shape-unconfirmed`          | release-shaped validation work group        | blocking validation failure                                                           |
-| `validation-work-failed`              | executable validation work group            | blocking validation failure                                                           |
-| `known-non-impacting`                 | planner                                     | inspectable non-failure                                                               |
-| `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
-| `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
-| `inadmissible-receipt`                | aggregation                                 | failed verdict                                                                        |
+| Diagnostic family                     | Producer                                    | CI verdict effect                                                                            |
+| ------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `range-unconfirmed`                   | planner                                     | fail-closed                                                                                  |
+| `unknown-change`                      | planner                                     | fail-closed                                                                                  |
+| `subject-unresolved`                  | planner                                     | fail-closed                                                                                  |
+| `dependency-impact-insufficient`      | planner                                     | fail-closed                                                                                  |
+| `fact-provider-insufficient`          | planner                                     | fail-closed                                                                                  |
+| `infrastructure-surface-unclassified` | planner                                     | fail-closed                                                                                  |
+| `descriptor-invalid`                  | planner or descriptor-validation work group | fail-closed when obligations cannot be derived; otherwise blocking validation failure        |
+| `artifact-shape-unconfirmed`          | release-shaped validation work group        | blocking validation failure for required evidence; recorded non-gating for optional evidence |
+| `validation-work-failed`              | executable validation work group            | blocking validation failure for required evidence; recorded non-gating for optional evidence |
+| `known-non-impacting`                 | planner                                     | inspectable non-failure                                                                      |
+| `required-evidence-missing`           | aggregation                                 | failed verdict                                                                               |
+| `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                               |
+| `inadmissible-receipt`                | aggregation                                 | failed verdict                                                                               |
 
 `diagnostic-detail` is a stable subcode for diagnostic families that need
 machine-readable reasons. `range-unconfirmed` details are:
@@ -992,12 +1087,14 @@ Implementation acceptance must include at least these evidence scenarios:
 | Scheduled full run                                               | Plan selects full repository scope with scheduled provenance                                                                                                                                                                                        |
 | Known non-impacting change with no executable checks             | Lightweight-only plan passes without heavy work and remains inspectable                                                                                                                                                                             |
 | Known non-impacting change with executable lightweight checks    | Lightweight work receipts are required for pass                                                                                                                                                                                                     |
+| Confirmed zero-file affected range                               | Affected request has `affected-range.status: available`, empty `changed-files`, non-null canonical `changed-files-hash`, and normal plan/receipt/aggregate provenance copying                                                                       |
 | PR/push affected range unconfirmed                               | Request diagnostic `range-unconfirmed`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                                                 |
 | Project-scoped change with insufficient downstream facts         | Planner diagnostic `dependency-impact-insufficient` or `fact-provider-insufficient`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                    |
 | Unclassifiable workflow-release infrastructure impact            | Planner diagnostic `infrastructure-surface-unclassified`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                               |
 | Unknown path                                                     | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                |
 | Invalid descriptor blocking derivation                           | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                            |
 | Missing receipt                                                  | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                    |
+| Optional evidence missing, skipped, or failed                    | Aggregation records the optional result in `evidence-results` and optional counters without adding a `failure` or failing the final verdict unless an observed receipt is inadmissible                                                              |
 | Invalid or mismatched receipt                                    | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                  |
 | Valid required receipt plus extra inadmissible receipt           | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                       |
 | Unconfirmed artifact shape                                       | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                         |
