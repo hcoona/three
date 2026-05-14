@@ -588,7 +588,11 @@ acceptance must load the snapshot, verify its common-envelope `run-id` and
 snapshot was produced by the logical `plan` control-plane boundary for the same
 workflow run attempt. They reject the plan as `invalid-plan` if the artifact ref,
 artifact instance count, snapshot producer, snapshot envelope, schema, or digest
-is missing, unverified, malformed, or mismatched.
+is missing, unverified, malformed, or mismatched. The snapshot `changed-files`
+array must be in the canonical UTF-8 byte lexicographic order defined by the
+request contract and must exactly match the changed-file sequence frozen into the
+plan; a self-consistent but noncanonical snapshot is still structurally invalid
+with `diagnostic-detail: changed-files-snapshot-noncanonical`.
 
 `subject-universe.id` is the lowercase hexadecimal SHA-256 digest of the RFC
 8785 canonical JSON representation of this versioned object:
@@ -712,11 +716,14 @@ with `status: unavailable`, empty fact arrays, and diagnostics explaining why th
 planner failed closed. Planning, aggregation, and acceptance must verify the
 artifact ref, artifact instance count, producer authority from the logical `plan`
 control-plane boundary, common-envelope `run-id` and `run-attempt`, `plan-id`,
-schema, and recomputed `fact-snapshot-id` before treating any plan whose
-`fact-snapshot.status` is `available` as structurally valid, including
-fail-closed plans. The artifact `plan-id` must equal the frozen
-validation plan's `plan-id`; a mismatch is an `invalid-plan` failure even though
-`plan-id` is not part of the `fact-snapshot-id` digest preimage.
+schema, the canonical ordering rules above, and recomputed `fact-snapshot-id`
+before treating any plan whose `fact-snapshot.status` is `available` as
+structurally valid, including fail-closed plans. A self-consistent fact snapshot
+whose arrays or tuple records are not in canonical order is structurally invalid
+with `diagnostic-detail: fact-snapshot-noncanonical`. The artifact `plan-id` must
+equal the frozen validation plan's `plan-id`; a mismatch is an `invalid-plan`
+failure even though `plan-id` is not part of the `fact-snapshot-id` digest
+preimage.
 
 ### 6.2 Plan Sections
 
@@ -1089,6 +1096,16 @@ Binding rules:
   must match exactly. A mismatch between the duplicated work-group
   `expected-evidence` contract and the `evidence-expectation` record makes the
   plan structurally invalid.
+- For each required validation obligation with non-null `work-group-id` and
+  `expected-evidence-id`, the referenced executable work group and evidence
+  expectation must bind back to that obligation's exact validation intent:
+  `work-group.kind` must equal `validation-obligation.kind`,
+  `evidence-expectation.category` must equal `validation-obligation.kind`, and
+  both coverage targets must exactly equal the validation obligation
+  `coverage-target`. No two frozen validation obligations may share the same
+  work group or evidence expectation; any duplicate candidate work must be
+  removed before freezing and recorded only through an explicit
+  `subsumption-record`.
 - Release-shaped validation obligations, work groups, and evidence expectations
   bind one-to-one to frozen artifact obligations by `artifact-obligation-id`.
   A required artifact obligation with non-null `work-group-id` and
@@ -2344,6 +2361,7 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `changed-files-snapshot-schema-invalid`;
 - `changed-files-snapshot-ref-mismatch`;
 - `changed-files-snapshot-envelope-mismatch`;
+- `changed-files-snapshot-noncanonical`;
 - `changed-files-snapshot-digest-mismatch`;
 - `fact-snapshot-missing`;
 - `fact-snapshot-unexpected`;
@@ -2356,6 +2374,7 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `fact-snapshot-envelope-mismatch`;
 - `fact-snapshot-plan-mismatch`;
 - `fact-snapshot-cross-reference-invalid`;
+- `fact-snapshot-noncanonical`;
 - `fact-snapshot-digest-mismatch`;
 - `selector-assignment-missing`;
 - `selector-assignment-duplicate`;
@@ -2466,7 +2485,8 @@ Implementation acceptance must include at least these evidence scenarios:
 | Descriptor-validation receipt omits or mismatches its bound descriptor obligation                                                                                                               | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; descriptor obligation ID, descriptor path/identity/owner/source, and descriptor scope must match the frozen plan and fact snapshot exactly                                                                                                                                                                                         |
 | Unreadable, malformed, schema-invalid, duplicate, producer-unverified, or digest-mismatched validation plan                                                                                     | Aggregation emits a failed `invalid-plan` aggregate with unverified plan-derived fields set to `null` or `unknown`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                                                                                                                                                            |
 | Structurally invalid but schema/digest-valid validation plan                                                                                                                                    | Aggregation emits `invalid-plan` with `diagnostic-detail: structurally-invalid`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                                                                                                                                                                                               |
-| Missing, unexpected, duplicate, producer-unverified, malformed, ref-mismatched, or digest-mismatched companion planning snapshot                                                                | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                                                                                                                                                                                                |
+| Missing, unexpected, duplicate, producer-unverified, malformed, ref-mismatched, noncanonical, or digest-mismatched companion planning snapshot                                                  | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                                                                                                                                                                                                |
+| Validation obligation references a mismatched or shared work group/evidence expectation                                                                                                         | The plan is structurally invalid unless duplicate candidates were removed before freezing and represented only by explicit subsumption records                                                                                                                                                                                                                                                                        |
 | Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest                                                                                  | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                                                                                                                                                                                            |
 | Logical boundary mapped to missing or wrong platform job identity                                                                                                                               | Producer authority verification rejects the artifact as producer-unverified using the boundary identity map; payload producer claims, logs, and job conclusions do not substitute                                                                                                                                                                                                                                     |
 | Logical contract artifact ref maps ambiguously or incorrectly to a physical artifact name                                                                                                       | Artifact instance counting, duplicate detection, and namespace enumeration use the canonical `base64url_no_padding(utf8(logical-artifact-ref))` physical-name mapping; non-decodable or mismatched physical names are non-authoritative                                                                                                                                                                               |
