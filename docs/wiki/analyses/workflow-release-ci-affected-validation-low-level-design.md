@@ -104,6 +104,8 @@ The top-level CI validation workflow preserves this logical sequence:
 3. **`materialize-work-groups`**
     - reads the validation plan;
     - materializes execution selectors from plan work groups;
+    - emits the selector-assignment manifest that binds each executable selector
+      to its authorized receipt writer;
     - produces an empty selector set for fail-closed plans and lightweight-only
       plans with no executable lightweight obligations.
 4. **Validation work-group fan-out**
@@ -113,6 +115,7 @@ The top-level CI validation workflow preserves this logical sequence:
 5. **`aggregate-evidence`**
     - runs after planning and selector materialization are attempted, even when a
       prior logical job fails to produce a readable plan or selector set;
+    - verifies selector assignments before admitting any receipt;
     - verifies expected receipts;
     - treats missing, unreadable, invalid, or unmaterializable plans as
       `invalid-plan` with no executable selectors;
@@ -367,17 +370,21 @@ versioned changed-files object as a companion snapshot artifact:
 common-envelope: inherited
 api-version: three.ci.validation.changed-files/v1alpha1
 kind: ci-validation-changed-files-snapshot
+artifact-ref: string
 changed-files-hash: string
 hash-payload:
     api-version: three.ci.validation.changed-files/v1alpha1
     changed-files: [string]
 ```
 
+The changed-files snapshot artifact ref is contract-owned:
+`ci-validation/planning/<run-id>/<run-attempt>/changed-files-snapshot.json`.
 `changed-files-hash` is computed only from the RFC 8785 canonical JSON bytes of
 `hash-payload`; common-envelope fields, `kind`, and `schema-diagnostics` are not
 part of that hash preimage. Aggregation and acceptance must load the snapshot,
-recompute `changed-files-hash`, and reject the plan as `invalid-plan` if the
-snapshot is missing, malformed, or mismatched.
+verify its common-envelope `run-id` and `run-attempt` match the plan, recompute
+`changed-files-hash`, and reject the plan as `invalid-plan` if the artifact ref,
+snapshot envelope, schema, or digest is missing, malformed, or mismatched.
 
 `subject-universe.id` is the lowercase hexadecimal SHA-256 digest of the RFC
 8785 canonical JSON representation of this versioned object:
@@ -409,6 +416,7 @@ The fact snapshot artifact uses this minimum shape:
 common-envelope: inherited
 api-version: three.ci.validation.fact-snapshot/v1alpha1
 kind: ci-validation-fact-snapshot
+artifact-ref: string
 fact-snapshot-id: string
 plan-id: string
 providers:
@@ -437,19 +445,22 @@ each provider ID; duplicate provider IDs make the snapshot invalid. The
 JavaScript and TypeScript subjects; subject records still use their normalized
 `ecosystem` value to distinguish JavaScript and TypeScript validation scope.
 
+The fact snapshot artifact ref is contract-owned:
+`ci-validation/planning/<run-id>/<run-attempt>/fact-snapshot.json`.
 `fact-snapshot-id` equals the plan envelope `fact-snapshot.id` and is computed as
 the RFC 8785 digest of the artifact projection containing only `api-version`,
-`kind`, `plan-id`, and `providers`; common-envelope fields, `fact-snapshot-id`,
-and `schema-diagnostics` are not part of the hash preimage. Provider entries are
-sorted by `provider`; `roots`, `subjects`, and `tooling-surfaces` are sorted
-lexicographically by UTF-8 encoded bytes; `dependency-edges` are sorted by
-`(from-subject-id, to-subject-id, relation)` with each field compared as UTF-8
-bytes; diagnostics are sorted by `diagnostic-id`. Null sorts before strings for
-any future nullable tuple field. Unavailable provider entries inside an emitted
-fact snapshot artifact must appear with `status: unavailable`, empty fact arrays,
-and diagnostics explaining why the planner failed closed. Planning, aggregation,
-and acceptance must verify the artifact schema and recompute `fact-snapshot-id`
-before treating an executable plan as structurally valid.
+`kind`, `plan-id`, and `providers`; common-envelope fields, `artifact-ref`,
+`fact-snapshot-id`, and `schema-diagnostics` are not part of the hash preimage.
+Provider entries are sorted by `provider`; `roots`, `subjects`, and
+`tooling-surfaces` are sorted lexicographically by UTF-8 encoded bytes;
+`dependency-edges` are sorted by `(from-subject-id, to-subject-id, relation)`
+with each field compared as UTF-8 bytes; diagnostics are sorted by
+`diagnostic-id`. Null sorts before strings for any future nullable tuple field.
+Unavailable provider entries inside an emitted fact snapshot artifact must appear
+with `status: unavailable`, empty fact arrays, and diagnostics explaining why the
+planner failed closed. Planning, aggregation, and acceptance must verify the
+artifact ref, common-envelope `run-id` and `run-attempt`, schema, and recomputed
+`fact-snapshot-id` before treating an executable plan as structurally valid.
 
 ### 6.2 Plan Sections
 
@@ -871,12 +882,12 @@ Tooling-surface expansion is deterministic:
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `planner`                         | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                                                                                  |
 | `classifier`                      | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                                                                                  |
-| `fact-provider`                   | All active subjects in ecosystems whose provider can be affected, all descriptors discovered through those subjects, and tooling validation                                                                               |
+| `fact-provider`                   | All active subjects in ecosystems whose provider can be affected, all descriptors discovered through those subjects, all discovered release descriptors, all descriptor-validation work groups, and tooling validation    |
 | `descriptor-contract`             | All discovered descriptors, descriptor-validation work groups, release-shaped artifact obligations derived from those descriptors, and tooling validation                                                                 |
 | `target-catalog`                  | All descriptor-backed subjects with release-shaped artifact obligations and tooling validation                                                                                                                            |
 | `workflow-orchestration`          | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                                                                                  |
-| `build-execution`                 | All active subjects with build or release-shaped artifact capabilities, their descriptor-backed artifact obligations, and tooling validation                                                                              |
-| `publish-execution`               | All descriptor-backed subjects with release-shaped artifact obligations and tooling validation; publication remains out of scope                                                                                          |
+| `build-execution`                 | All active subjects with build or release-shaped artifact capabilities, their descriptor-backed artifact obligations, all discovered release descriptors, all descriptor-validation work groups, and tooling validation   |
+| `publish-execution`               | All descriptor-backed subjects with release-shaped artifact obligations, all discovered release descriptors, all descriptor-validation work groups, and tooling validation; publication remains out of scope              |
 | `smoke-validation`                | Smoke-validation tooling work groups, all discovered release descriptors, all descriptor-validation work groups, smoke descriptors/subjects, and descriptor-backed subjects whose smoke receipt contracts can be affected |
 | `descriptor-schema-documentation` | Descriptor schema documentation tooling/docs-surface validation and workflow-release tooling validation                                                                                                                   |
 
@@ -956,6 +967,32 @@ Selector rules:
 - The control plane may batch multiple executable selectors into one concrete job
   only when the resulting receipts still report each required selector
   separately.
+- `materialize-work-groups` emits a selector-assignment manifest at the
+  contract-owned ref
+  `ci-validation/assignments/<run-id>/<run-attempt>/selector-assignments.json`.
+  It has:
+
+    ```yaml
+    common-envelope: inherited
+    api-version: three.ci.validation.selector-assignments/v1alpha1
+    kind: ci-validation-selector-assignments
+    plan-id: string
+    plan-digest: string
+    assignments:
+        - assignment-id: string
+          work-group-id: string
+          trusted-writer-id: string
+          receipt-artifact-ref: string
+    ```
+
+    `assignment-id` is stable within the run attempt and derived from
+    `work-group-id`. `trusted-writer-id` is the control-plane job, matrix leg, or
+    trusted wrapper identity authorized to upload the receipt for that selector.
+    `receipt-artifact-ref` must equal the contract-owned receipt ref derived from
+    the work group. Assignment entries are sorted by `work-group-id`; duplicate
+    work groups, duplicate receipt refs, or mismatches with the frozen plan make
+    selector materialization invalid.
+
 - One `ecosystem-gate` selector covers the complete planned capability set for
   its coverage target. The work group, matching evidence expectation, and receipt
   record that set so build, test, lint, format, and type-check outcomes do not
@@ -1097,6 +1134,7 @@ receipt-id: string
 plan-id: string
 plan-digest: string
 work-group-id: string
+assignment-id: string
 mode: pull_request | push | scheduled_full
 validation-tree:
     commit-sha: string
@@ -1179,32 +1217,38 @@ Receipt rules:
   enumeration artifact. Manifest entries have:
 
     ```yaml
+    common-envelope: inherited
     api-version: three.ci.validation.receipt-manifest/v1alpha1
     kind: ci-validation-receipt-manifest
     plan-id: string
     plan-digest: string
-    run-id: string
-    run-attempt: string
     entries:
         - artifact-ref: string
+          assignment-id: string | null
           writer-work-group-id: string
+          trusted-writer-id: string | null
           receipt-id: string | null
           receipt-content-digest: string | null
     ```
 
     `writer-work-group-id` is derived from the artifact ref path segment, not
-    from the receipt payload. `receipt-content-digest` in the manifest is the
+    from the receipt payload. `assignment-id` and `trusted-writer-id` are copied
+    from the selector-assignment manifest only after aggregation verifies the
+    observed artifact uploader identity or trusted wrapper identity matches that
+    assignment. `receipt-content-digest` in the manifest is the
     aggregator-observed SHA-256 digest, not a writer claim. Aggregation is the
     only authorized writer for the manifest and the only reader that derives the
-    CI-level verdict. Duplicate observed entries, artifact refs that do not match
-    the derived pattern, writer/work-group mismatches between artifact ref and
-    receipt payload, cross-attempt artifacts, and unreadable receipt artifacts are
-    observed inadmissible entries and must appear in aggregate
-    diagnostics/failures. A pre-existing manifest uploaded by an executable work
-    group in the receipt intake namespace is treated as an unexpected
-    receipt-like artifact, not as aggregation authority. Re-running aggregation
-    for the same `run-id` and `run-attempt` overwrites only the manifest outside
-    the receipt intake boundary; it does not add to the observed receipt set.
+    CI-level verdict. Entries are sorted by `artifact-ref`. Duplicate observed
+    entries, artifact refs that do not match the derived pattern,
+    writer/work-group mismatches between artifact ref, assignment manifest, and
+    receipt payload, missing or mismatched trusted writer identity, cross-attempt
+    artifacts, and unreadable receipt artifacts are observed inadmissible entries
+    and must appear in aggregate diagnostics/failures. A pre-existing manifest
+    uploaded by an executable work group in the receipt intake namespace is
+    treated as an unexpected receipt-like artifact, not as aggregation authority.
+    Re-running aggregation for the same `run-id` and `run-attempt` overwrites
+    only the manifest outside the receipt intake boundary; it does not add to the
+    observed receipt set.
 
 - `receipt-id` is an opaque stable identifier for the receipt emission within the
   run attempt or equivalent execution provenance. It must not be derived from a
@@ -1212,6 +1256,8 @@ Receipt rules:
 - `plan-id`, `plan-digest`, and `work-group-id` must match the validation plan.
   `plan-digest` matching means equality to the recomputed digest defined in
   section 6.1, not merely equality to an unverified string copied from the plan.
+  `assignment-id` must match the selector-assignment manifest entry for the work
+  group; the receipt payload cannot create, change, or authorize that assignment.
 - Because each executable `work-group-id` has exactly one evidence expectation in
   the plan, aggregation matches receipts to evidence expectations by `plan-id`
   and `work-group-id`.
@@ -1372,6 +1418,13 @@ entries. `failure-kind` is one of `invalid-plan`,
 including valid, malformed, unexpected, wrong-plan, duplicate, and otherwise
 inadmissible receipt artifacts. Evidence results and failures reference the
 receipt artifact and digest that caused the result when one exists.
+
+Aggregate arrays use canonical ordering to keep reruns and retries stable:
+`diagnostics` by `diagnostic-id`; `observed-receipts` by `(artifact-ref,
+receipt-content-digest)` with `null` before strings; `evidence-results` by
+`evidence-expectation-id`; and `failures` by `(kind, work-group-id,
+evidence-expectation-id, receipt-artifact-ref, diagnostic.diagnostic-id)` with
+`null` before strings. Nested diagnostics use the same `diagnostic-id` ordering.
 
 If aggregation cannot parse, schema-validate, digest-verify, or structurally
 validate the plan, it emits a failed aggregate with `reason.invalid-plan: true`
