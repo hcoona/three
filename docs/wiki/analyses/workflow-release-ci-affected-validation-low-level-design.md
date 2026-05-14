@@ -232,21 +232,25 @@ executable validation commands, logs, and job conclusions never prove producer
 authority.
 
 `artifact-ref` values in this document are logical contract refs, not physical
-GitHub artifact names. Every logical ref is encoded to one physical artifact name
-with this reversible mapping:
+GitHub artifact names. Every logical ref maps to one fixed-length physical
+artifact name with this digest mapping:
 
 ```text
-physical-artifact-name = "three-ci-validation-" + base64url_no_padding(utf8(logical-artifact-ref))
+physical-artifact-name = "three-ci-validation-" + lowercase_sha256(utf8(logical-artifact-ref))
 ```
 
-The decoded logical ref must exactly equal the payload `artifact-ref` field for
-artifact classes that carry one. Artifact instance counting, duplicate detection,
-namespace enumeration, producer checks, and replay binding operate on physical
-artifact instances whose names decode to the expected logical contract ref or
-logical ref prefix. A physical artifact name that does not decode, decodes to a
-non-canonical logical ref, or decodes to a ref outside the expected namespace is
-non-authoritative for that contract boundary even if its payload fields resemble
-valid evidence.
+The physical name is 84 ASCII characters and is stable regardless of logical-ref
+length. For artifact classes that carry an `artifact-ref`, aggregation recomputes
+the expected physical name from that payload field and requires it to equal the
+observed physical name before trusting the payload. Artifact instance counting,
+duplicate detection, namespace enumeration, producer checks, and replay binding
+operate on physical artifact instances whose names have the
+`three-ci-validation-` prefix and whose payload or contract ref recomputes to the
+expected physical name. A prefixed physical artifact whose payload is unreadable,
+has no expected `artifact-ref`, has a non-canonical logical ref, or recomputes to
+a different physical name is non-authoritative for that contract boundary even if
+its payload fields resemble valid evidence; in closed namespaces, such an
+instance is an unexpected contract artifact.
 
 `schema-diagnostics` uses the same shape as `diagnostic-record`, sorted by
 `diagnostic-id`. These diagnostics are producer-side schema or compatibility
@@ -993,6 +997,7 @@ coverage-target:
     id: string
 category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
 planned-capabilities: [build | test | lint | format | type-check] | null
+detail-profile: string | null
 required: boolean
 blocking-if-missing: boolean
 ```
@@ -1112,10 +1117,18 @@ Binding rules:
   receipt expectation. Receipt-to-expectation matching is therefore defined by
   `plan-id` and `work-group-id`.
 - For each executable work group and its evidence expectation, `coverage-target`,
-  evidence `category`, `planned-capabilities`, and required/blocking semantics
-  must match exactly. A mismatch between the duplicated work-group
-  `expected-evidence` contract and the `evidence-expectation` record makes the
-  plan structurally invalid.
+  evidence `category`, `planned-capabilities`, `detail-profile`, and
+  required/blocking semantics must match exactly. A mismatch between the
+  duplicated work-group `expected-evidence` contract and the
+  `evidence-expectation` record makes the plan structurally invalid.
+- `detail-profile` is required and non-null for `lightweight-preflight` and
+  `workflow-release-tooling` work groups whose `planned-capabilities` is `null`
+  because those receipts use `category-result` evidence. It is a stable,
+  plan-local profile identifier that names the intended lightweight or tooling
+  validation profile for the frozen `coverage-target`, and it must match
+  `^[a-z0-9][a-z0-9._-]{0,127}$`. It is `null` for capability-result branches and
+  for categories whose required detail is fully defined by descriptor or artifact
+  obligations.
 - For each required validation obligation with non-null `work-group-id` and
   `expected-evidence-id`, the referenced executable work group and evidence
   expectation must bind back to that obligation's exact validation intent:
@@ -1389,7 +1402,18 @@ Global and scheduled full select the same scope:
 - all discovered release descriptors;
 - all applicable ecosystem gates;
 - release-shaped artifact and receipt validation for descriptor-backed projects;
-- relevant workflow-release tooling validation.
+- `workflow-release-tooling` work groups and evidence expectations for every
+  closed tooling surface: `planner`, `classifier`, `fact-provider`,
+  `descriptor-contract`, `workflow-release-contract`, `authoring-validation`,
+  `target-catalog`, `workflow-orchestration`, `build-execution`,
+  `publish-execution`, `smoke-validation`, and
+  `descriptor-schema-documentation`.
+
+Global and scheduled-full workflow-release tooling work groups use
+`coverage-target.type: tooling-surface` with one of the closed IDs above. They
+must be required, blocking, and represented in evidence expectations just like
+changed workflow-release infrastructure tooling work groups; the scope source is
+the global or scheduled-full selection rather than a changed infrastructure path.
 
 The only difference is provenance: global is affected validation caused by a
 changed path, while scheduled full is time-based full-repository validation.
@@ -1420,6 +1444,7 @@ depends-on: [work-group-id]
 expected-evidence:
     category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
     planned-capabilities: [build | test | lint | format | type-check] | null
+    detail-profile: string | null
     required: boolean
 ```
 
@@ -1920,6 +1945,48 @@ category-result branch:
         diagnostics: [diagnostic-record]
         detail: object | null
 ```
+
+`lightweight-preflight` receipts must use `category-result.detail` with this
+minimum shape:
+
+```yaml
+lightweight-preflight:
+    work-group-id: string
+    detail-profile: string
+    coverage-target:
+        type: lightweight-policy | subject | ecosystem | descriptor | tooling-surface
+        id: string
+    selector-variant: string | null
+    runner-family: windows | ubuntu
+    outcome: success | blocking-failure | skipped
+    diagnostics: [diagnostic-record]
+```
+
+`workflow-release-tooling` receipts must use `category-result.detail` with this
+minimum shape:
+
+```yaml
+workflow-release-tooling:
+    work-group-id: string
+    detail-profile: string
+    coverage-target:
+        type: tooling-surface | subject | ecosystem | descriptor
+        id: string
+    ecosystem: dotnet | python | javascript | typescript | null
+    selector-variant: string | null
+    runner-family: windows | ubuntu
+    outcome: success | blocking-failure | skipped
+    diagnostics: [diagnostic-record]
+```
+
+For required `lightweight-preflight` and `workflow-release-tooling` receipts,
+`category-result.detail` must be non-null and must contain exactly the matching
+category object above. Aggregation equality-checks `work-group-id`,
+`detail-profile`, `coverage-target`, `ecosystem` when present,
+`selector-variant`, `runner-family`, and `outcome` against the frozen work group,
+evidence expectation, and receipt outcome. Missing detail, the wrong detail
+object, an unplanned `detail-profile`, or any mismatched frozen field makes the
+receipt inadmissible with `mismatched-evidence-payload`.
 
 A `descriptor-validation` receipt must use `category-result.detail` with this
 minimum shape:
@@ -2530,8 +2597,8 @@ Implementation acceptance must include at least these evidence scenarios:
 | Project-scoped validation-only change                                                                                                                                                           | Plan selects validation-only subject and ecosystem gates, no publish or release-shaped artifact obligation unless descriptor-backed                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Ecosystem-scoped change                                                                                                                                                                         | Plan selects all active subjects in ecosystem, descriptors for descriptor-backed subjects, release-shaped artifact/receipt obligations, and applicable ecosystem gates                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Workflow-release infrastructure change                                                                                                                                                          | Plan selects affected tooling surface, related subjects/ecosystems, and all discovered descriptors only for descriptor semantics, authoring validation, planning, contracts, build execution, publish execution, or smoke validation impacts                                                                                                                                                                                                                                                                                                                                                     |
-| Known global change                                                                                                                                                                             | Plan selects scheduled-full-equivalent scope with global provenance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Scheduled full run                                                                                                                                                                              | Plan selects full repository scope with scheduled provenance records using `selection-kind: scheduled-full`, empty impact/expansion refs, `scheduled-full-source: true`, and `scheduled-full.enabled: true`                                                                                                                                                                                                                                                                                                                                                                                      |
+| Known global change                                                                                                                                                                             | Plan selects scheduled-full-equivalent scope with global provenance and required workflow-release-tooling work groups for every closed tooling surface                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Scheduled full run                                                                                                                                                                              | Plan selects full repository scope with required workflow-release-tooling work groups for every closed tooling surface and scheduled provenance records using `selection-kind: scheduled-full`, empty impact/expansion refs, `scheduled-full-source: true`, and `scheduled-full.enabled: true`                                                                                                                                                                                                                                                                                                   |
 | Known non-impacting change with no executable checks                                                                                                                                            | Lightweight-only plan passes without heavy work and remains inspectable                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Known non-impacting change with executable lightweight checks                                                                                                                                   | Lightweight work receipts are required for pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Confirmed zero-file affected range                                                                                                                                                              | Affected request has `affected-range.status: available`, empty `changed-files`, non-null canonical `changed-files-hash`, executable lightweight-only plan with available discovered subjects all marked `not-selected`, an available provider fact snapshot whose provider subject IDs exactly match the provider-bound frozen subject universe, unsupported audit subjects only when they satisfy the unsupported-subject constraints, no selected subjects, no executable validation work groups, no evidence expectations, no receipts, and passing aggregate after final evidence validation |
@@ -2555,13 +2622,14 @@ Implementation acceptance must include at least these evidence scenarios:
 | Validation obligation references a mismatched or shared work group/evidence expectation                                                                                                         | The plan is structurally invalid unless duplicate candidates were removed before freezing and represented only by explicit subsumption records                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest                                                                                  | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Logical boundary mapped to missing or wrong platform job identity                                                                                                                               | Producer authority verification rejects the artifact as producer-unverified using the boundary identity map; payload producer claims, logs, and job conclusions do not substitute                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Logical contract artifact ref maps ambiguously or incorrectly to a physical artifact name                                                                                                       | Artifact instance counting, duplicate detection, and namespace enumeration use the canonical `base64url_no_padding(utf8(logical-artifact-ref))` physical-name mapping; non-decodable or mismatched physical names are non-authoritative                                                                                                                                                                                                                                                                                                                                                          |
+| Logical contract artifact ref maps ambiguously or incorrectly to a physical artifact name                                                                                                       | Artifact instance counting, duplicate detection, and namespace enumeration use the canonical fixed-length SHA-256 physical-name mapping; prefixed artifacts whose payload refs do not recompute to the observed physical name are non-authoritative or unexpected in closed namespaces                                                                                                                                                                                                                                                                                                           |
 | Missing receipt                                                                                                                                                                                 | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Planned validation work skipped or failed                                                                                                                                                       | Aggregation records `required-evidence-skipped` or `blocking-validation-failure` and fails the final verdict; planned executable validation work is not optional or non-gating                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Ecosystem gate omits a capability enabled by selected subject/provider facts                                                                                                                    | Plan is fail-closed with `fact-provider-insufficient` or structurally invalid; receipts cannot pass by matching an under-planned capability set                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Upstream selector emits a valid `blocking-failure` receipt                                                                                                                                      | The selector job completes successfully for dependency gating, downstream selectors are not dependency-blocked solely by that receipt outcome, and aggregation fails the final verdict from the receipt evidence                                                                                                                                                                                                                                                                                                                                                                                 |
 | Receipt emitted after validation on the wrong or unverifiable execution tree                                                                                                                    | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; copied plan provenance is insufficient without `execution-tree` evidence from the trusted receipt boundary                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Release-shaped artifact receipt with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked expected release receipt, or mismatched planned shape | Aggregation records `artifact-shape-unconfirmed` or `mismatched-evidence-payload` and fails the final verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Lightweight-preflight or workflow-release-tooling receipt omits or mismatches its required detail profile                                                                                       | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; category-result detail must match the frozen work group and evidence expectation                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Invalid or mismatched receipt                                                                                                                                                                   | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Forged or producer-unverified writer observation                                                                                                                                                | Matching payload fields are insufficient; aggregation treats the receipt as inadmissible with `mismatched-writer-identity` and fails as `inadmissible-receipt`                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Valid required receipt plus extra inadmissible receipt                                                                                                                                          | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                                                                                                                                                                                                                                                                                                                                                                    |
