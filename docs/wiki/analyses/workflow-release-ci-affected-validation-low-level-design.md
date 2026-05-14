@@ -141,6 +141,20 @@ concrete job identifiers, reusable workflows, or grouped jobs, provided the
 sequence, authority boundary, evidence semantics, and final required check
 context remain intact.
 
+Logical handoff names are also producer-authority boundaries. The workflow
+contract must define a boundary identity map before execution that maps each
+logical boundary (`plan`, `materialize-work-groups`,
+trusted receipt/observation boundaries, and `aggregate-evidence`) to the allowed
+GitHub Actions job identifiers, reusable-workflow call-site job identifiers, and
+matrix identity dimensions that may produce artifacts for that boundary. This map
+is control-plane contract data, not a payload claim; artifact consumers verify
+producer authority by comparing immutable workflow/job context to the mapped
+identity for the expected logical boundary. If a concrete job topology change
+cannot preserve that mapping, the workflow contract and acceptance evidence must
+be updated before the changed topology is authoritative. Missing boundary-map
+coverage or a platform identity outside the allowed set makes the artifact
+producer-unverified for that boundary.
+
 ### 4.3 Permissions
 
 The CI validation workflow uses least privilege:
@@ -201,13 +215,16 @@ the expected logical boundary by non-payload control-plane evidence for the same
 | Writer-observation record                                  | Trusted observation boundary      | Contract-owned observation ref and instance count plus immutable workflow/job context proving the record was emitted by the observation boundary after receipt upload               |
 | Receipt manifest and aggregate                             | `aggregate-evidence`              | Contract-owned final refs and instance counts plus immutable workflow/job context proving final artifacts were uploaded by the aggregation control-plane boundary                   |
 
-If the workflow platform or control-plane wrapper cannot expose those signals for
-an artifact class, that artifact is producer-unverified. Producer-unverified
-planning artifacts make the plan invalid, producer-unverified receipts or
-writer-observations are inadmissible, and producer-unverified final manifest or
-aggregate artifacts are not authoritative acceptance evidence. Payload fields,
-artifact names supplied by executable validation commands, logs, and job
-conclusions never prove producer authority.
+The immutable workflow/job context must match the boundary identity map from
+section 4.2 for the required producer boundary. If the workflow platform or
+control-plane wrapper cannot expose those signals for an artifact class, or the
+observed platform identity is not allowed by the boundary identity map, that
+artifact is producer-unverified. Producer-unverified planning artifacts make the
+plan invalid, producer-unverified receipts or writer-observations are
+inadmissible, and producer-unverified final manifest or aggregate artifacts are
+not authoritative acceptance evidence. Payload fields, artifact names supplied by
+executable validation commands, logs, and job conclusions never prove producer
+authority.
 
 `schema-diagnostics` uses the same shape as `diagnostic-record`, sorted by
 `diagnostic-id`. These diagnostics are producer-side schema or compatibility
@@ -1728,6 +1745,10 @@ Receipt rules:
     kind: ci-validation-receipt-manifest
     plan-id: string | null
     plan-digest: string | null
+    receipt-namespace-closure:
+        source: aggregate-evidence
+        closed-receipt-count: integer
+        observed-entry-ids: [string]
     entries:
         - observed-entry-id: string
           artifact-ref: string
@@ -1740,6 +1761,19 @@ Receipt rules:
           receipt-id: string | null
           receipt-content-digest: string | null
     ```
+
+    `receipt-namespace-closure` records the closed receipt set observed by the
+    first authoritative aggregation pass for the run attempt. Aggregation may
+    declare the namespace closed only after selector materialization is complete
+    and all executable work-group jobs that can write trusted receipts have
+    reached a terminal state. The closure's `closed-receipt-count` and
+    `observed-entry-ids` must equal the manifest entries. Post-run acceptance and
+    same-attempt aggregation retries must re-enumerate the receipt intake
+    namespace and require exact equality with the manifest's closed artifact
+    refs, artifact instance IDs, and observed entry IDs. Any receipt-like artifact
+    instance that appears after closure, or any missing closed instance, makes
+    final evidence non-authoritative rather than extending the observed receipt
+    set.
 
     `observed-entry-id` is a stable aggregation-assigned identifier for one
     observed receipt-like artifact instance. It is derived from `run-id`,
@@ -1775,19 +1809,24 @@ Receipt rules:
     uploaded by an executable work group in the receipt intake namespace is
     treated as an unexpected receipt-like artifact, not as aggregation authority.
     Re-running aggregation for the same `run-id` and `run-attempt` never adds to
-    the observed receipt set. Same-attempt finalization uses one reconciliation
-    contract for the final manifest and aggregate refs: aggregation first
-    recomputes the manifest and aggregate from the closed receipt intake
-    namespace, then checks the contract-owned final refs before upload. If neither
-    final ref exists, it uploads both final artifacts. If exactly one final ref
-    already has one artifact instance, aggregation verifies that instance's
-    content digest equals the recomputed final content before uploading the
-    missing counterpart. If both final refs already have one artifact instance,
-    aggregation verifies both digests and uploads nothing. It must never upload a
-    second artifact instance at an occupied final ref. A duplicate final instance,
-    digest mismatch, unreadable occupied final artifact, or occupied ref whose
-    producer authority cannot be verified makes finalization fail and leaves
-    post-run acceptance without authoritative final evidence.
+    the observed receipt set once an authoritative manifest has closed the
+    namespace. Same-attempt finalization uses one reconciliation contract for the
+    final manifest and aggregate refs: aggregation first recomputes the manifest
+    and aggregate from the closed receipt set, then checks the contract-owned final
+    refs before upload. If neither final ref exists, it uploads both final
+    artifacts and their `created-at` values become the replay-stable final
+    timestamps for those raw artifacts. If exactly one final ref already has one
+    artifact instance, aggregation verifies that instance's raw content digest by
+    recomputing the same final artifact with the occupied artifact's existing
+    `created-at` value, then uploads the missing counterpart from the same closed
+    receipt set. If both final refs already have one artifact instance,
+    aggregation verifies each raw digest by preserving that artifact's own
+    `created-at` value and uploads nothing. It must never upload a second artifact
+    instance at an occupied final ref. A duplicate final instance, digest
+    mismatch after preserving the occupied final `created-at`, unreadable occupied
+    final artifact, namespace-closure mismatch, or occupied ref whose producer
+    authority cannot be verified makes finalization fail and leaves post-run
+    acceptance without authoritative final evidence.
 
     Post-run acceptance evidence requires exactly one authoritative receipt
     manifest artifact instance at the contract-owned manifest ref. A missing,
@@ -2173,8 +2212,13 @@ because all observed candidates were inadmissible, aggregation must also record
 `required-evidence-missing` for that expectation rather than allowing an
 inadmissible receipt to satisfy it.
 
-New diagnostic families may be added during implementation only when they map to
-one of the verdict effects above or the low-level design is updated.
+Diagnostic families and `diagnostic-detail` values are closed for this
+`v1alpha1` low-level contract. A verdict-relevant diagnostic family or detail not
+listed here is not valid evidence and must be introduced only by updating this
+LLD, the schema, and the relevant `api-version` or compatibility contract.
+Implementation-owned informational messages may appear only in non-contract logs
+or as registered diagnostics with `verdict-effect: none`; they must not create
+new machine-readable verdict-affecting codes by convention.
 
 ## 16. HK Left-Shift Mapping
 
@@ -2215,6 +2259,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Structurally invalid but schema/digest-valid validation plan                                                                                                                                    | Aggregation emits `invalid-plan` with `diagnostic-detail: structurally-invalid`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                                                                                                 |
 | Missing, unexpected, duplicate, producer-unverified, malformed, ref-mismatched, or digest-mismatched companion planning snapshot                                                                | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                                                                                                  |
 | Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest                                                                                  | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                                                                                              |
+| Logical boundary mapped to missing or wrong platform job identity                                                                                                                               | Producer authority verification rejects the artifact as producer-unverified using the boundary identity map; payload producer claims, logs, and job conclusions do not substitute                                                                                                                                       |
 | Missing receipt                                                                                                                                                                                 | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                                                                                        |
 | Planned validation work skipped or failed                                                                                                                                                       | Aggregation records `required-evidence-skipped` or `blocking-validation-failure` and fails the final verdict; planned executable validation work is not optional or non-gating                                                                                                                                          |
 | Receipt emitted after validation on the wrong or unverifiable execution tree                                                                                                                    | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; copied plan provenance is insufficient without `execution-tree` evidence from the trusted receipt boundary                                                                                                                           |
@@ -2222,7 +2267,10 @@ Implementation acceptance must include at least these evidence scenarios:
 | Invalid or mismatched receipt                                                                                                                                                                   | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                                                                                      |
 | Forged or producer-unverified writer observation                                                                                                                                                | Matching payload fields are insufficient; aggregation treats the receipt as inadmissible with `mismatched-writer-identity` and fails as `inadmissible-receipt`                                                                                                                                                          |
 | Valid required receipt plus extra inadmissible receipt                                                                                                                                          | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                                                                                           |
+| Receipt-like artifact appears after receipt namespace closure                                                                                                                                   | Post-run acceptance or same-attempt retry treats final evidence as non-authoritative rather than extending the closed receipt set                                                                                                                                                                                       |
+| Same-attempt finalization retry with occupied final manifest or aggregate                                                                                                                       | Aggregation preserves the occupied artifact's `created-at` while recomputing raw digest equality; digest mismatch or duplicate final artifact leaves no authoritative final evidence                                                                                                                                    |
 | Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched final manifest or aggregate                                                                                    | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                                                                                              |
+| Unknown verdict-relevant diagnostic family or detail appears in contract evidence                                                                                                               | Schema or aggregation rejects it under the closed `v1alpha1` diagnostic vocabulary unless the LLD/schema/api-version contract has been updated                                                                                                                                                                          |
 | Unconfirmed artifact shape                                                                                                                                                                      | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                                                                                             |
 | Unconfirmed PR context                                                                                                                                                                          | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                                                                                     |
 | Accidental publication or remote publish-state validation                                                                                                                                       | Static workflow/config/code review and receipt/aggregate inspection show no work group, command output, receipt field, aggregate field, registry query, GitHub Release lookup, tag lookup, or remote publish-state observation is used as validation evidence                                                           |
@@ -2237,7 +2285,8 @@ The following remain implementation-owned for the single senior engineer:
 
 - internal planner module boundaries and private data structures;
 - concrete command lines for ecosystem gates and descriptor validation;
-- exact workflow job identifiers when they preserve the logical sequence;
+- exact workflow job identifiers when they preserve the boundary identity map and
+  logical sequence;
 - reusable workflow, composite action, or helper script decomposition;
 - exact JSON Schema file locations and type-generation approach;
 - temporary directories and log formatting;
