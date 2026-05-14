@@ -280,6 +280,12 @@ event:
     run-attempt: string
 ```
 
+`event.run-id` and `event.run-attempt` duplicate the common-envelope run identity
+for digest-bound request projection. They must exactly equal
+`common-envelope.run.run-id` and `common-envelope.run.run-attempt`; a mismatch is
+a schema-valid but invalid request that fails closed with
+`diagnostic-detail: request-wrong-run-attempt` or emits no authoritative plan.
+
 For `pull_request` and `push`, the request also has:
 
 ```yaml
@@ -423,9 +429,11 @@ The validation plan is one JSON artifact emitted by planning at the
 contract-owned ref
 `ci-validation/planning/<run-id>/<run-attempt>/validation-plan.json`. A missing,
 unreadable, malformed, schema-invalid, digest-mismatched, or duplicate artifact at
-that authoritative ref makes aggregation emit `invalid-plan`. Plan artifacts
-outside that ref are non-authoritative auxiliary artifacts and must not be used
-for selector materialization or aggregation.
+that authoritative ref makes aggregation emit `invalid-plan`. Missing authoritative
+plan artifacts use `diagnostic-detail: plan-missing`; duplicate authoritative plan
+artifact instances use `diagnostic-detail: plan-duplicate`. Plan artifacts outside
+that ref are non-authoritative auxiliary artifacts and must not be used for
+selector materialization or aggregation.
 Selector materialization and aggregation must verify the validation-plan
 artifact's producer authority from platform/control-plane metadata before
 trusting its payload. The authoritative plan must be produced by the logical
@@ -963,12 +971,17 @@ release-receipt dimensions are catalog-derived. The frozen
 `artifact.logical-artifact-role`, `artifact.variant-dimensions`,
 `artifact.expected-artifact-refs`, `release-receipt.expected-family`,
 `release-receipt.logical-receipt-role`, and `release-receipt.variant-dimensions`
-must be derivable from those fact records. For a required artifact obligation,
-`expected-artifact-refs` is the complete validation-only artifact coverage the
-work group must materialize or inspect for that obligation, must be non-empty,
-and must not identify publication targets or remote release state. Missing,
-partial, empty, or mismatched descriptor or target-catalog fact backing makes the
-plan structurally invalid.
+must be derivable from those fact records. The artifact obligation `subject-id`
+must resolve to an active selected descriptor-backed subject whose
+`descriptor.path` equals `descriptor-path`; the digest-bound descriptor fact for
+that path must have `owner-subject-id` equal to `subject-id`, and the
+release-shaped work group's ecosystem and runner family must match the resolved
+subject ecosystem mapping. For a required artifact obligation,
+`expected-artifact-refs` is the complete validation-only artifact coverage the work
+group must materialize or inspect for that obligation, must be non-empty, and must
+not identify publication targets or remote release state. Missing, partial,
+empty, or mismatched subject, descriptor, target-catalog, ecosystem, or runner
+fact backing makes the plan structurally invalid.
 
 Each `evidence-expectation` has:
 
@@ -1400,7 +1413,7 @@ kind: lightweight-preflight | ecosystem-gate | descriptor-validation | release-s
 coverage-target:
     type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
-ecosystem: string | null
+ecosystem: dotnet | python | javascript | typescript | null
 runner-family: windows | ubuntu
 selector-variant: string | null
 depends-on: [work-group-id]
@@ -1416,6 +1429,18 @@ rediscovering subject ecosystem, descriptor contents, or tooling policy after
 planning. If the planner cannot determine a required executable work group's
 runner family from the closed mapping in section 12, planning fails closed or the
 plan is structurally invalid rather than emitting `runner-family: null`.
+`ecosystem` is plan authority for ecosystem-specific execution mapping. It must
+be `dotnet`, `python`, `javascript`, or `typescript` for `ecosystem-gate` work
+groups and for `release-shaped-artifact` work groups, derived from the referenced
+subject or artifact obligation subject. It must be the owning subject ecosystem
+for `descriptor-validation` only when descriptor validation requires
+ecosystem-specific evidence; otherwise it is `null`. It is `null` for
+`lightweight-preflight` and ordinary `workflow-release-tooling` work groups; a
+workflow-release-tooling work group that fans out to ecosystem runners must use
+separate work groups whose coverage and selector variant identify the relevant
+ecosystem-owned scope. `ecosystem` must be consistent with `runner-family` under
+section 12; illegal enum values, required-but-null ecosystems, or ecosystem/runner
+mismatches make the plan structurally invalid.
 `selector-variant` is `null` for the ordinary one-work-group-per-kind/target
 case. It is required and path-safe when multiple executable work groups share the
 same `kind` and `coverage-target`; examples include runner-family splits or
@@ -2383,6 +2408,8 @@ machine-readable reasons. `request-invalid` details are:
 `invalid-plan` details include:
 
 - `plan-unreadable`;
+- `plan-missing`;
+- `plan-duplicate`;
 - `malformed-plan`;
 - `schema-invalid`;
 - `plan-producer-unverified`;
@@ -2520,8 +2547,10 @@ Implementation acceptance must include at least these evidence scenarios:
 | Unknown path                                                                                                                                                                                    | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Invalid descriptor blocking derivation                                                                                                                                                          | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Descriptor-validation receipt omits or mismatches its bound descriptor obligation                                                                                                               | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; descriptor obligation ID, descriptor path/identity/owner/source, and descriptor scope must match the frozen plan and fact snapshot exactly                                                                                                                                                                                                                                                                                                                                                                    |
-| Unreadable, malformed, schema-invalid, duplicate, producer-unverified, or digest-mismatched validation plan                                                                                     | Aggregation emits a failed `invalid-plan` aggregate with unverified plan-derived fields set to `null` or `unknown`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                                                                                                                                                                                                                                                                                                                                       |
+| Missing, unreadable, malformed, schema-invalid, duplicate, producer-unverified, or digest-mismatched validation plan                                                                            | Aggregation emits a failed `invalid-plan` aggregate with the applicable plan diagnostic detail, unverified plan-derived fields set to `null` or `unknown`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                                                                                                                                                                                                                                                                                                |
 | Structurally invalid but schema/digest-valid validation plan                                                                                                                                    | Aggregation emits `invalid-plan` with `diagnostic-detail: structurally-invalid`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Release-shaped artifact obligation references a mismatched subject, descriptor owner, validation obligation, work group, ecosystem, or runner                                                   | The plan is structurally invalid because artifact validation must bind to the selected descriptor-backed subject and its digest-bound descriptor and target-catalog facts                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Work group has a missing or mismatched ecosystem for ecosystem-specific execution                                                                                                               | The plan is structurally invalid because runner and command selection consume the frozen work-group ecosystem rather than rediscovering it during execution                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Missing, unexpected, duplicate, producer-unverified, malformed, ref-mismatched, noncanonical, or digest-mismatched companion planning snapshot                                                  | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Validation obligation references a mismatched or shared work group/evidence expectation                                                                                                         | The plan is structurally invalid unless duplicate candidates were removed before freezing and represented only by explicit subsumption records                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest                                                                                  | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
