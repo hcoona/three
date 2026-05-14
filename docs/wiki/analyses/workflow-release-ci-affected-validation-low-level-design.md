@@ -627,6 +627,12 @@ for the single non-executable terminal `evidence-aggregation` work group that
 emits the failed aggregate verdict. Inspectability is carried by classification,
 snapshot status, provenance fields, and diagnostics instead of non-executable
 obligation records.
+`verdict-intent: fail-closed` structurally requires at least one planner
+diagnostic with `verdict-effect: fail-closed`. A structurally valid fail-closed
+plan always aggregates to `verdict: failed`, `reason.fail-closed: true`, and at
+least one `failure` with `kind: fail-closed`; a fail-closed plan without a
+fail-closed diagnostic is structurally invalid rather than an empty successful
+plan.
 
 Executable plans require `subject-universe.status: available` and
 `fact-snapshot.status: available`. Fail-closed plans may use `unavailable` with
@@ -706,6 +712,14 @@ work-group-id: string | null
 expected-evidence-id: string | null
 ```
 
+Every descriptor obligation must resolve to a digest-bound fact snapshot
+descriptor record by `coverage-target.id == descriptor-path`. For descriptor
+obligations derived from ecosystem-owned subjects, `owner-subject-id` must equal
+the selected subject; for workflow-release-only descriptor/tooling surfaces,
+`owner-subject-id` is `null` and the obligation is reached through a
+`tooling-surface` impact. Missing or mismatched descriptor fact backing makes the
+plan structurally invalid.
+
 Each `validation-obligation` has:
 
 ```yaml
@@ -746,6 +760,16 @@ validation-obligation-id: string
 work-group-id: string | null
 expected-evidence-id: string | null
 ```
+
+Every artifact obligation must resolve to a digest-bound descriptor fact by
+`descriptor-path` and to the relevant target-catalog fact when its artifact or
+release-receipt dimensions are catalog-derived. The frozen
+`artifact.kind-family`, `artifact.concrete-kind`,
+`artifact.logical-artifact-role`, `artifact.variant-dimensions`,
+`release-receipt.expected-family`, `release-receipt.logical-receipt-role`, and
+`release-receipt.variant-dimensions` must be derivable from those fact records.
+Missing or mismatched descriptor or target-catalog fact backing makes the plan
+structurally invalid.
 
 Each `evidence-expectation` has:
 
@@ -1229,8 +1253,14 @@ Selector rules:
           writer-observation-ref: string
     ```
 
-    `assignment-id` is stable within the run attempt and derived from
-    `work-group-id`. `trusted-writer-id` is the normalized control-plane job or
+    `assignment-id` is stable within the run attempt, derived from
+    `work-group-id`, and artifact-ref-bearing because it appears in
+    `writer-observation-ref`. It must match the same path-safe grammar as
+    `work-group-id`, `^[a-z0-9][a-z0-9._-]{0,127}$`. The default assignment ID is
+    `work-group-id`; if a future assignment strategy needs a different value, it
+    must use a normalized readable prefix plus a lowercase SHA-256 digest of the
+    typed assignment identity rather than embedding raw coverage targets or path
+    separators. `trusted-writer-id` is the normalized control-plane job or
     matrix leg identity authorized to upload the receipt for that selector.
     `writer-identity-source` declares the non-payload source aggregation must use
     to observe that identity: immutable GitHub Actions job context captured by the
@@ -1733,12 +1763,13 @@ true`.
   explanatory diagnostics instead. Aggregation must also verify the companion
   fact snapshot artifact when `fact-snapshot.status` is `available`, including
   provider subject IDs, dependency-edge subject IDs, roots, tooling-surface IDs,
-  and exact selected-subject provider coverage against the frozen plan
-  namespaces. Aggregation also verifies the companion changed-files snapshot
+  descriptor facts, target-catalog facts, exact selected-subject provider
+  coverage, and descriptor/artifact-obligation fact backing against the frozen
+  plan namespaces. Aggregation also verifies the companion changed-files snapshot
   artifact when `changed-files-hash` is non-null. Missing, malformed,
   schema-invalid, cross-reference-invalid, or digest-mismatched companion
-  artifacts or snapshot IDs make the plan invalid and produce an `invalid-plan`
-  aggregate.
+  artifacts, snapshot IDs, or fact-to-obligation bindings make the plan invalid
+  and produce an `invalid-plan` aggregate.
 
 The aggregation report uses:
 
@@ -1880,7 +1911,7 @@ be listed for inspection with `admissibility: inadmissible`, but they must not
 create `inadmissible-receipt` failures because the selector and receipt
 admission contracts are not authoritative under an invalid plan.
 `reason.fail-closed` is reserved for structurally valid planner fail-closed
-plans.
+plans and must be `true` for those plans.
 
 ## 15. Diagnostics
 
@@ -1943,6 +1974,7 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `changed-files-snapshot-malformed`;
 - `changed-files-snapshot-schema-invalid`;
 - `changed-files-snapshot-ref-mismatch`;
+- `changed-files-snapshot-envelope-mismatch`;
 - `changed-files-snapshot-digest-mismatch`;
 - `fact-snapshot-missing`;
 - `fact-snapshot-unexpected`;
@@ -1952,6 +1984,9 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `fact-snapshot-malformed`;
 - `fact-snapshot-schema-invalid`;
 - `fact-snapshot-ref-mismatch`;
+- `fact-snapshot-envelope-mismatch`;
+- `fact-snapshot-plan-mismatch`;
+- `fact-snapshot-cross-reference-invalid`;
 - `fact-snapshot-digest-mismatch`;
 - `selector-assignment-missing`;
 - `selector-assignment-duplicate`;
