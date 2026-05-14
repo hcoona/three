@@ -863,6 +863,15 @@ normalized subject `ecosystem` is `javascript` or `typescript`; ecosystem-scoped
 selection, work-group IDs, evidence expectations, and runner mapping continue to
 use the subject ecosystem rather than splitting the provider entry.
 
+For every subject with `activity-status: active` and `selection-status: selected`,
+the fact snapshot must contain exactly one `status: available` provider entry
+that lists the subject ID and supports that subject's ecosystem: `dotnet` for
+`.NET`, `python` for Python, `javascript-typescript` for JavaScript or
+TypeScript, or `workflow-release` for descriptor/tooling-only workflow-release
+subjects. Missing provider coverage, duplicate provider coverage for the same
+selected subject, unavailable provider coverage, or an ecosystem/provider
+mismatch makes planning fail closed with `fact-provider-insufficient`.
+
 Provider failure rules:
 
 - If discovery fails for a selected ecosystem scope, planning fails closed.
@@ -1076,7 +1085,10 @@ Selector rules:
   aggregation reports `required-evidence-missing`.
 - The control plane may batch multiple executable selectors into one concrete job
   only when the resulting receipts still report each required selector
-  separately.
+  separately. It must not batch selectors connected by a `depends-on` edge in the
+  same concrete job unless the concrete job enforces the same intra-job ordering,
+  receipt upload, and dependency-blocked receipt behavior before starting the
+  dependent selector's validation.
 - `materialize-work-groups` emits a selector-assignment manifest at the
   contract-owned ref
   `ci-validation/assignments/<run-id>/<run-attempt>/selector-assignments.json`.
@@ -1679,6 +1691,19 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `malformed-plan`;
 - `schema-invalid`;
 - `plan-digest-mismatch`;
+- `subject-universe-digest-mismatch`;
+- `changed-files-snapshot-missing`;
+- `changed-files-snapshot-unreadable`;
+- `changed-files-snapshot-malformed`;
+- `changed-files-snapshot-schema-invalid`;
+- `changed-files-snapshot-ref-mismatch`;
+- `changed-files-snapshot-digest-mismatch`;
+- `fact-snapshot-missing`;
+- `fact-snapshot-unreadable`;
+- `fact-snapshot-malformed`;
+- `fact-snapshot-schema-invalid`;
+- `fact-snapshot-ref-mismatch`;
+- `fact-snapshot-digest-mismatch`;
 - `selector-assignment-missing`;
 - `selector-assignment-unreadable`;
 - `selector-assignment-malformed`;
