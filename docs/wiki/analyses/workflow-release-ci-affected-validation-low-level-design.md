@@ -350,6 +350,12 @@ and for scheduled-full `not-applicable`, `changed-files-hash` is `null` and no
 changed-files hash preimage is defined. Non-null `changed-files-hash` values
 must match `^[0-9a-f]{64}$`.
 
+When `changed-files-hash` is non-null, the planner must persist the exact
+versioned changed-files object as a companion
+`three.ci.validation.changed-files/v1alpha1` snapshot artifact. Aggregation and
+acceptance must load the snapshot, recompute `changed-files-hash`, and reject the
+plan as `invalid-plan` if the snapshot is missing, malformed, or mismatched.
+
 `subject-universe.id` is the lowercase hexadecimal SHA-256 digest of the RFC
 8785 canonical JSON representation of this versioned object:
 
@@ -366,8 +372,13 @@ the lowercase hexadecimal SHA-256 digest of a companion
 provider facts used for planning. Both IDs must match `^[0-9a-f]{64}$` when
 their status is `available`; when a snapshot status is `unavailable`, its `id`
 is `null` and diagnostics must explain why the snapshot could not be produced or
-confirmed. The fact snapshot artifact is plan-inspectable evidence for planning
-inputs, not executable validation evidence and not release proof.
+confirmed. A fail-closed plan with `fact-snapshot.status: unavailable` has no
+required fact snapshot artifact. A fail-closed plan may instead use
+`fact-snapshot.status: available` with a digest-bound artifact that records
+provider entries with `status: unavailable`; in that case, diagnostics still
+explain why the plan is fail-closed. The fact snapshot artifact is
+plan-inspectable evidence for planning inputs, not executable validation evidence
+and not release proof.
 
 The fact snapshot artifact uses this minimum shape:
 
@@ -403,10 +414,11 @@ the RFC 8785 digest of the artifact after removing only the root
 bytes; `dependency-edges` are sorted by `(from-subject-id, to-subject-id,
 relation)` with each field compared as UTF-8 bytes; diagnostics are sorted by
 `diagnostic-id`. Null sorts before strings for any future nullable tuple field.
-Unavailable provider facts must appear with `status: unavailable`, empty fact
-arrays, and diagnostics explaining why the planner failed closed. Planning and
-acceptance must verify the artifact schema and recompute `fact-snapshot-id`
-before treating the plan as structurally valid.
+Unavailable provider entries inside an emitted fact snapshot artifact must appear
+with `status: unavailable`, empty fact arrays, and diagnostics explaining why the
+planner failed closed. Planning, aggregation, and acceptance must verify the
+artifact schema and recompute `fact-snapshot-id` before treating an executable
+plan as structurally valid.
 
 ### 6.2 Plan Sections
 
@@ -505,7 +517,7 @@ validation-obligation-id: string
 source-impact-ids: [string]
 kind: lightweight-preflight | ecosystem-gate | release-shaped-artifact | workflow-release-tooling
 coverage-target:
-    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation
+    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
 required: boolean
 blocking: boolean
@@ -543,7 +555,7 @@ Each `evidence-expectation` has:
 evidence-expectation-id: string
 work-group-id: string
 coverage-target:
-    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation
+    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
 category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
 planned-capabilities: [build | test | lint | format | type-check] | null
@@ -617,6 +629,7 @@ Binding rules:
       `descriptor-schema-documentation`;
     - `artifact-obligation` resolves to
       `artifact-obligation.artifact-obligation-id`;
+    - `lightweight-policy` uses the closed ID `known-non-impacting`;
     - `global` uses `id: null`;
     - `aggregation` uses `id: ci-validation-aggregate`;
     - `none` uses `id: null`.
@@ -647,6 +660,11 @@ Binding rules:
   `evidence-expectation`; the terminal `evidence-aggregation` work group has no
   receipt expectation. Receipt-to-expectation matching is therefore defined by
   `plan-id` and `work-group-id`.
+- For each executable work group and its evidence expectation, `coverage-target`,
+  evidence `category`, `planned-capabilities`, and required/blocking semantics
+  must match exactly. A mismatch between the duplicated work-group
+  `expected-evidence` contract and the `evidence-expectation` record makes the
+  plan structurally invalid.
 - Release-shaped validation obligations and work groups bind to frozen artifact
   obligations by `artifact-obligation-id`; execution must not rederive artifact
   shape from descriptors.
@@ -809,18 +827,18 @@ Infrastructure resolution selects:
 
 Tooling-surface expansion is deterministic:
 
-| Tooling surface                   | Required validation scope                                                                                                                                 |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `planner`                         | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                  |
-| `classifier`                      | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                  |
-| `fact-provider`                   | All active subjects in ecosystems whose provider can be affected, all descriptors discovered through those subjects, and tooling validation               |
-| `descriptor-contract`             | All discovered descriptors, descriptor-validation work groups, release-shaped artifact obligations derived from those descriptors, and tooling validation |
-| `target-catalog`                  | All descriptor-backed subjects with release-shaped artifact obligations and tooling validation                                                            |
-| `workflow-orchestration`          | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                  |
-| `build-execution`                 | All active subjects with build or release-shaped artifact capabilities, their descriptor-backed artifact obligations, and tooling validation              |
-| `publish-execution`               | All descriptor-backed subjects with release-shaped artifact obligations and tooling validation; publication remains out of scope                          |
-| `smoke-validation`                | Smoke-validation tooling work groups, all smoke descriptors/subjects, and descriptor-backed subjects whose smoke receipt contracts can be affected        |
-| `descriptor-schema-documentation` | All discovered descriptors and descriptor-validation work groups                                                                                          |
+| Tooling surface                   | Required validation scope                                                                                                                                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `planner`                         | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                                                                                  |
+| `classifier`                      | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                                                                                  |
+| `fact-provider`                   | All active subjects in ecosystems whose provider can be affected, all descriptors discovered through those subjects, and tooling validation                                                                               |
+| `descriptor-contract`             | All discovered descriptors, descriptor-validation work groups, release-shaped artifact obligations derived from those descriptors, and tooling validation                                                                 |
+| `target-catalog`                  | All descriptor-backed subjects with release-shaped artifact obligations and tooling validation                                                                                                                            |
+| `workflow-orchestration`          | Scheduled-full-equivalent scope plus workflow-release tooling validation                                                                                                                                                  |
+| `build-execution`                 | All active subjects with build or release-shaped artifact capabilities, their descriptor-backed artifact obligations, and tooling validation                                                                              |
+| `publish-execution`               | All descriptor-backed subjects with release-shaped artifact obligations and tooling validation; publication remains out of scope                                                                                          |
+| `smoke-validation`                | Smoke-validation tooling work groups, all discovered release descriptors, all descriptor-validation work groups, smoke descriptors/subjects, and descriptor-backed subjects whose smoke receipt contracts can be affected |
+| `descriptor-schema-documentation` | All discovered descriptors, descriptor-validation work groups, and workflow-release tooling validation                                                                                                                    |
 
 If a changed workflow-release infrastructure path cannot be mapped to one of the
 closed tooling surfaces, or if the mapped surface cannot determine its affected
@@ -857,7 +875,7 @@ Each executable validation work group has:
 work-group-id: string
 kind: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
 coverage-target:
-    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation
+    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
 ecosystem: string | null
 runner-family: windows | ubuntu | null
@@ -906,6 +924,10 @@ Selector rules:
 - Lightweight-only plans may contain no executable work groups, or may contain
   lightweight-preflight work groups that must produce evidence before the run can
   pass.
+- `lightweight-preflight` work groups for known-non-impacting changes use
+  `coverage-target.type: lightweight-policy` and
+  `coverage-target.id: known-non-impacting` unless they naturally bind to a more
+  specific subject, ecosystem, or tooling surface.
 - The `evidence-aggregation` work group is a non-executable terminal
   control-plane selector. Its completion boundary includes every planned
   executable work group that can emit into the closed receipt boundary. All such
@@ -944,8 +966,9 @@ not use a separate simplified CI-only path.
 
 Aggregation is mapped as the terminal control-plane job after all planned
 executable work groups are complete, skipped by workflow construction, or
-otherwise known missing. It reads the frozen plan and validation receipts only,
-emits `ci-validation-aggregate`, and does not emit a normal work-group receipt.
+otherwise known missing. It reads the frozen plan, required companion planning
+snapshots, and validation receipts, emits `ci-validation-aggregate`, and does not
+emit a normal work-group receipt.
 
 ## 13. Release-Shaped Artifact Validation
 
@@ -1031,23 +1054,52 @@ affected-range:
 scheduled-full:
     enabled: boolean
 coverage-target:
-    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation
+    type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
 outcome: success | blocking-failure | skipped
 evidence:
     category: string
     planned-capabilities: [build | test | lint | format | type-check] | null
+    capability-results: [capability-result] | absent
+    category-result: category-result | absent
+    artifact-refs: [string]
+diagnostics: [diagnostic-record]
+proof-admissibility: validation-only
+```
+
+`capability-result` has:
+
+```yaml
+capability: build | test | lint | format | type-check
+outcome: success | blocking-failure | skipped
+diagnostics: [diagnostic-record]
+```
+
+`category-result` has:
+
+```yaml
+outcome: success | blocking-failure | skipped
+diagnostics: [diagnostic-record]
+detail: object | null
+```
+
+The `evidence` union determines which result branch appears:
+
+```yaml
+capability-result branch:
+    planned-capabilities: [build | test | lint | format | type-check]
     capability-results:
         - capability: build | test | lint | format | type-check
           outcome: success | blocking-failure | skipped
           diagnostics: [diagnostic-record]
+    category-result: absent
+category-result branch:
+    planned-capabilities: null
+    capability-results: absent
     category-result:
         outcome: success | blocking-failure | skipped
         diagnostics: [diagnostic-record]
         detail: object | null
-    artifact-refs: [string]
-diagnostics: [diagnostic-record]
-proof-admissibility: validation-only
 ```
 
 Receipt rules:
@@ -1099,8 +1151,10 @@ Receipt rules:
 not-applicable`, null affected-range SHAs and hash, and `scheduled-full.enabled:
 true`.
 - Receipts and aggregates copy `changed-files-hash` from the frozen plan. They
-  must not rediscover, reorder, or rehash changed files; a mismatch is
-  inadmissible as `wrong-plan` or `mismatched-evidence-payload`.
+  must not rediscover or reorder changed files; aggregation only recomputes the
+  hash from the companion changed-files snapshot artifact. A receipt mismatch is
+  inadmissible as `wrong-plan` or `mismatched-evidence-payload`; a missing or
+  mismatched companion snapshot makes the plan invalid.
 - `receipt-content-digest` is the lowercase hexadecimal SHA-256 digest of the raw
   receipt artifact bytes as observed by aggregation. It is recorded for every
   observed receipt artifact, including malformed or inadmissible artifacts, and
@@ -1110,11 +1164,14 @@ true`.
   `planned-capabilities` are equality-checked against the plan. Mismatches are
   inadmissible.
 - `proof-admissibility` is always `validation-only`.
-- Receipts with non-null `planned-capabilities` must include exactly one
+- Receipt `evidence` is a discriminated union on `planned-capabilities`. Receipts
+  with non-null `planned-capabilities` must include exactly one
   `capability-results` entry for each planned capability in the corresponding
-  work group and no `category-result`. Receipts with null `planned-capabilities`
-  must include exactly one `category-result` and no `capability-results`; they
-  must not invent capability-level coverage.
+  work group and must omit `category-result`. Receipts with null
+  `planned-capabilities` must include exactly one `category-result` and must omit
+  `capability-results`; they must not invent capability-level coverage. `null`,
+  empty-array, or empty-object substitutes for the omitted branch are
+  inadmissible.
 - For receipts with capability results, top-level `outcome` is derived from those
   results: any `blocking-failure` capability makes the receipt
   `blocking-failure`; otherwise any `skipped` capability makes the receipt
@@ -1158,6 +1215,11 @@ true`.
   validated.
 - The terminal `evidence-aggregation` work group does not emit
   `ci-validation-receipt`; it emits `ci-validation-aggregate`.
+- Before accepting receipts for an executable plan, aggregation must verify the
+  companion fact snapshot artifact when `fact-snapshot.status: available` and
+  the companion changed-files snapshot artifact when `changed-files-hash` is
+  non-null. Missing, malformed, schema-invalid, or digest-mismatched companion
+  artifacts make the plan invalid and produce an `invalid-plan` aggregate.
 
 The aggregation report uses:
 
