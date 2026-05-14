@@ -460,7 +460,8 @@ Unavailable provider entries inside an emitted fact snapshot artifact must appea
 with `status: unavailable`, empty fact arrays, and diagnostics explaining why the
 planner failed closed. Planning, aggregation, and acceptance must verify the
 artifact ref, common-envelope `run-id` and `run-attempt`, schema, and recomputed
-`fact-snapshot-id` before treating an executable plan as structurally valid.
+`fact-snapshot-id` before treating any plan whose `fact-snapshot.status` is
+`available` as structurally valid, including fail-closed plans.
 
 ### 6.2 Plan Sections
 
@@ -710,9 +711,14 @@ Binding rules:
   must match exactly. A mismatch between the duplicated work-group
   `expected-evidence` contract and the `evidence-expectation` record makes the
   plan structurally invalid.
-- Release-shaped validation obligations and work groups bind to frozen artifact
-  obligations by `artifact-obligation-id`; execution must not rederive artifact
-  shape from descriptors.
+- Release-shaped validation obligations, work groups, and evidence expectations
+  bind one-to-one to frozen artifact obligations by `artifact-obligation-id`.
+  A required artifact obligation with non-null `work-group-id` and
+  `expected-evidence-id` must reference a `release-shaped-artifact` work group
+  and evidence expectation whose `coverage-target.type` is `artifact-obligation`
+  and whose `coverage-target.id` is exactly that `artifact-obligation-id`. No two
+  artifact obligations may share the same release-shaped work group or evidence
+  expectation. Execution must not rederive artifact shape from descriptors.
 - `descriptor-validation` work groups are produced from descriptor obligations,
   while release-shaped artifact work groups are produced from artifact
   obligations.
@@ -982,12 +988,20 @@ Selector rules:
         - assignment-id: string
           work-group-id: string
           trusted-writer-id: string
+          writer-identity-source: github-actions-job-context | trusted-upload-wrapper
           receipt-artifact-ref: string
     ```
 
     `assignment-id` is stable within the run attempt and derived from
-    `work-group-id`. `trusted-writer-id` is the control-plane job, matrix leg, or
-    trusted wrapper identity authorized to upload the receipt for that selector.
+    `work-group-id`. `trusted-writer-id` is the normalized control-plane job,
+    matrix leg, or trusted upload wrapper identity authorized to upload the
+    receipt for that selector. `writer-identity-source` declares the non-payload
+    source aggregation must use to observe that identity: either immutable GitHub
+    Actions job context captured by the control plane before receipt upload, or a
+    trusted upload wrapper record captured outside the receipt payload. The
+    observed writer identity is normalized with the same algorithm that produced
+    `trusted-writer-id` and compared by exact string equality; receipt payload
+    fields, artifact path segments, and log text are never identity sources.
     `receipt-artifact-ref` must equal the contract-owned receipt ref derived from
     the work group. Assignment entries are sorted by `work-group-id`; duplicate
     work groups, duplicate receipt refs, or mismatches with the frozen plan make
@@ -1117,8 +1131,9 @@ Rules:
           diagnostics: [diagnostic-record]
     ```
 
-    Each planned `artifact-obligation-id` assigned to the work group must appear
-    exactly once. `profile-coverage` is copied from the frozen obligation and
+    The single planned `artifact-obligation-id` bound to the release-shaped work
+    group must appear exactly once, and no other artifact obligation may appear in
+    that receipt. `profile-coverage` is copied from the frozen obligation and
     artifact refs are content-addressed when the ecosystem can produce a digest
     without publish credentials or side effects.
 
@@ -1220,26 +1235,35 @@ Receipt rules:
     common-envelope: inherited
     api-version: three.ci.validation.receipt-manifest/v1alpha1
     kind: ci-validation-receipt-manifest
-    plan-id: string
-    plan-digest: string
+    plan-id: string | null
+    plan-digest: string | null
     entries:
-        - artifact-ref: string
+        - observed-entry-id: string
+          artifact-ref: string
+          artifact-instance-id: string
           assignment-id: string | null
-          writer-work-group-id: string
+          writer-work-group-id: string | null
           trusted-writer-id: string | null
           receipt-id: string | null
           receipt-content-digest: string | null
     ```
 
-    `writer-work-group-id` is derived from the artifact ref path segment, not
-    from the receipt payload. `assignment-id` and `trusted-writer-id` are copied
-    from the selector-assignment manifest only after aggregation verifies the
-    observed artifact uploader identity or trusted wrapper identity matches that
+    `observed-entry-id` is a stable aggregation-assigned identifier for one
+    observed receipt-like artifact instance. It is derived from `run-id`,
+    `run-attempt`, `artifact-ref`, and the artifact service or control-plane
+    enumeration `artifact-instance-id`; if the artifact store cannot provide a
+    stable per-instance ID, the receipt namespace is unenumerable and aggregation
+    emits a failed aggregate with an aggregation diagnostic rather than
+    collapsing duplicates. `writer-work-group-id` is derived from the artifact ref
+    path segment, not from the receipt payload, and is `null` when the ref is
+    malformed. `assignment-id` and `trusted-writer-id` are copied from the
+    selector-assignment manifest only after aggregation verifies the observed
+    writer identity from the declared `writer-identity-source` matches that
     assignment. `receipt-content-digest` in the manifest is the
     aggregator-observed SHA-256 digest, not a writer claim. Aggregation is the
     only authorized writer for the manifest and the only reader that derives the
-    CI-level verdict. Entries are sorted by `artifact-ref`. Duplicate observed
-    entries, artifact refs that do not match the derived pattern,
+    CI-level verdict. Entries are sorted by `observed-entry-id`. Duplicate
+    observed entries, artifact refs that do not match the derived pattern,
     writer/work-group mismatches between artifact ref, assignment manifest, and
     receipt payload, missing or mismatched trusted writer identity, cross-attempt
     artifacts, and unreadable receipt artifacts are observed inadmissible entries
@@ -1250,6 +1274,11 @@ Receipt rules:
     only the manifest outside the receipt intake boundary; it does not add to the
     observed receipt set.
 
+- When aggregation cannot verify a readable plan identity, the manifest
+  `plan-id` and `plan-digest` are `null`. Manifest entries still record observed
+  receipt-like artifacts in the closed intake namespace, but no entry can be
+  admissible until a structurally valid plan, selector-assignment manifest, and
+  matching plan identity are verified.
 - `receipt-id` is an opaque stable identifier for the receipt emission within the
   run attempt or equivalent execution provenance. It must not be derived from a
   representation that includes itself.
@@ -1331,13 +1360,13 @@ true`.
   validated.
 - The terminal `evidence-aggregation` work group does not emit
   `ci-validation-receipt`; it emits `ci-validation-aggregate`.
-- Before accepting receipts for an executable plan, aggregation must recompute
-  `subject-universe.id` from the canonical frozen `subjects` section, verify the
-  companion fact snapshot artifact when `fact-snapshot.status: available`, and
-  verify the companion changed-files snapshot artifact when `changed-files-hash`
-  is non-null. Missing, malformed, schema-invalid, or digest-mismatched companion
-  artifacts or snapshot IDs make the plan invalid and produce an `invalid-plan`
-  aggregate.
+- Before emitting the aggregate for any structurally valid plan, aggregation must
+  recompute `subject-universe.id` from the canonical frozen `subjects` section,
+  verify the companion fact snapshot artifact when `fact-snapshot.status` is
+  `available`, and verify the companion changed-files snapshot artifact when
+  `changed-files-hash` is non-null. Missing, malformed, schema-invalid, or
+  digest-mismatched companion artifacts or snapshot IDs make the plan invalid and
+  produce an `invalid-plan` aggregate.
 
 The aggregation report uses:
 
@@ -1370,7 +1399,9 @@ reason:
 diagnostics:
     - diagnostic-record
 observed-receipts:
-    - artifact-ref: string
+    - observed-entry-id: string
+      artifact-ref: string
+      artifact-instance-id: string
       receipt-id: string | null
       work-group-id: string | null
       receipt-content-digest: string | null
@@ -1380,6 +1411,7 @@ evidence-results:
     - evidence-expectation-id: string
       work-group-id: string
       receipt-id: string | null
+      observed-entry-id: string | null
       receipt-artifact-ref: string | null
       receipt-content-digest: string | null
       outcome: satisfied | missing | skipped | failed
@@ -1389,6 +1421,7 @@ failures:
       work-group-id: string | null
       evidence-expectation-id: string | null
       receipt-id: string | null
+      observed-entry-id: string | null
       receipt-artifact-ref: string | null
       receipt-content-digest: string | null
       diagnostic: diagnostic-record
@@ -1414,17 +1447,18 @@ every evidence expectation. Every evidence expectation is verdict-relevant, so
 entries. `failure-kind` is one of `invalid-plan`,
 `required-evidence-missing`, `required-evidence-skipped`,
 `blocking-validation-failure`, `inadmissible-receipt`, or `fail-closed`.
-`observed-receipts` records every artifact in the closed intake boundary,
-including valid, malformed, unexpected, wrong-plan, duplicate, and otherwise
-inadmissible receipt artifacts. Evidence results and failures reference the
-receipt artifact and digest that caused the result when one exists.
+`observed-receipts` records every artifact instance in the closed intake
+boundary, including valid, malformed, unexpected, wrong-plan, duplicate, and
+otherwise inadmissible receipt artifacts. Evidence results and failures reference
+the observed entry, receipt artifact, and digest that caused the result when one
+exists.
 
 Aggregate arrays use canonical ordering to keep reruns and retries stable:
-`diagnostics` by `diagnostic-id`; `observed-receipts` by `(artifact-ref,
-receipt-content-digest)` with `null` before strings; `evidence-results` by
-`evidence-expectation-id`; and `failures` by `(kind, work-group-id,
-evidence-expectation-id, receipt-artifact-ref, diagnostic.diagnostic-id)` with
-`null` before strings. Nested diagnostics use the same `diagnostic-id` ordering.
+`diagnostics` by `diagnostic-id`; `observed-receipts` by `observed-entry-id`;
+`evidence-results` by `evidence-expectation-id`; and `failures` by `(kind,
+work-group-id, evidence-expectation-id, observed-entry-id,
+diagnostic.diagnostic-id)` with `null` before strings. Nested diagnostics use the
+same `diagnostic-id` ordering.
 
 If aggregation cannot parse, schema-validate, digest-verify, or structurally
 validate the plan, it emits a failed aggregate with `reason.invalid-plan: true`
@@ -1467,13 +1501,16 @@ machine-readable reasons. `range-unconfirmed` details are:
 
 `inadmissible-receipt` details include:
 
+- `malformed-artifact-ref`;
 - `malformed-receipt`;
 - `wrong-plan`;
 - `unknown-work-group`;
 - `mismatched-work-group`;
+- `mismatched-writer-identity`;
 - `mismatched-evidence-payload`;
 - `mismatched-outcome`;
 - `duplicate-receipt`;
+- `unstable-artifact-instance-id`;
 - `unexpected-receipt`.
 
 `invalid-plan` details include:
