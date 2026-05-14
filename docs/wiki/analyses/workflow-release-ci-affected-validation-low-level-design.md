@@ -502,7 +502,8 @@ frozen validation plan after removing only the root-level `plan-digest` member.
 It must match `^[0-9a-f]{64}$`. The plan payload must be I-JSON compatible for
 digesting; duplicate object member names make it malformed. All remaining
 fields, including nulls, false values, empty arrays or objects, diagnostics,
-obligations, work groups, and evidence expectations, participate in the digest.
+obligations, work groups, evidence expectations, and detail profiles, participate
+in the digest.
 Array order is preserved. Receipts and aggregation evidence bind to the frozen
 plan with both `plan-id` and `plan-digest`.
 
@@ -526,6 +527,7 @@ Before computing `plan-digest`, the planner emits arrays in canonical order:
 | `source-impact-ids`, `source-expansion-ids`, references, paths, and string IDs | Ascending UTF-8 byte lexicographic order                                   |
 | `planned-capabilities`                                                         | Declared capability order: build, test, lint, format, type-check           |
 | Capability result arrays                                                       | Declared capability order                                                  |
+| Subcheck requirement and result arrays                                         | Ascending by `subcheck-id` in UTF-8 byte lexicographic order               |
 | `profile-coverage`                                                             | Ascending UTF-8 byte lexicographic order                                   |
 | Diagnostics                                                                    | Ascending `diagnostic-id`                                                  |
 | Tuple records without one identifier                                           | Ascending by the documented tuple fields; null sorts before strings        |
@@ -765,6 +767,7 @@ validation-obligations: [validation-obligation]
 artifact-obligations: [artifact-obligation]
 work-groups: [work-group]
 evidence-expectations: [evidence-expectation]
+detail-profiles: [detail-profile-definition]
 diagnostics: [planner-diagnostic]
 ```
 
@@ -772,12 +775,12 @@ Fail-closed plans still contain envelope, classification, diagnostics, and enoug
 provenance to inspect why no executable validation plan was authorized. They have
 no executable validation work groups. Every emitted plan, including fail-closed
 plans, must satisfy the schema and structural identity/reference rules in this
-document. Fail-closed plans must leave descriptor, validation, artifact, and
-evidence-expectation sections empty. Their `work-groups` section is empty except
-for the single non-executable terminal `evidence-aggregation` work group that
-emits the failed aggregate verdict. Inspectability is carried by classification,
-snapshot status, provenance fields, and diagnostics instead of non-executable
-obligation records.
+document. Fail-closed plans must leave descriptor, validation, artifact,
+evidence-expectation, and detail-profile sections empty. Their `work-groups`
+section is empty except for the single non-executable terminal
+`evidence-aggregation` work group that emits the failed aggregate verdict.
+Inspectability is carried by classification, snapshot status, provenance fields,
+and diagnostics instead of non-executable obligation records.
 `verdict-intent: fail-closed` structurally requires at least one planner
 diagnostic with `verdict-effect: fail-closed`. A structurally valid fail-closed
 plan always aggregates to `verdict: failed`, `reason.fail-closed: true`, and at
@@ -1006,17 +1009,48 @@ required: boolean
 blocking-if-missing: boolean
 ```
 
+Every non-null `detail-profile` value in a work group or evidence expectation must
+resolve to exactly one `detail-profile-definition` by `detail-profile-id`. Detail
+profiles are plan-local, digest-bound contracts for validation categories whose
+success depends on more than a single ecosystem capability. They are not free-form
+labels and they cannot be supplied only by the receipt writer.
+
+Each `detail-profile-definition` has:
+
+```yaml
+detail-profile-id: string
+category: lightweight-preflight | workflow-release-tooling
+coverage-target:
+    type: subject | ecosystem | descriptor | tooling-surface | lightweight-policy
+    id: string
+required-subchecks:
+    - subcheck-id: string
+      check-kind: configuration | policy | contract | tool-discovery | documentation
+      blocking: boolean
+      description: string
+```
+
+The profile category and coverage target must match every work group and evidence
+expectation that references the profile. `required-subchecks` is the complete
+planner-authored subcheck set for that profile and must be non-empty. Required
+subcheck identifiers are compared as opaque strings, but they must be stable within
+the profile and unique after Unicode NFC normalization. A selected profile with an
+empty, duplicate, or mismatched subcheck set makes the plan structurally invalid.
+
 Each `subsumption-record` has:
 
 ```yaml
 subsumption-id: string
 source-impact-ids: [string]
 source-expansion-ids: [string]
-subsumed-kind: descriptor-obligation | validation-obligation | artifact-obligation | work-group | evidence-expectation
+subsumed-kind: string
 subsumed-candidate-ids: [string]
 retained-id: string
 reason: string
 ```
+
+`subsumed-kind` is one of `descriptor-obligation`, `validation-obligation`,
+`artifact-obligation`, `work-group`, `evidence-expectation`, or `detail-profile`.
 
 Each `planner-diagnostic` has:
 
@@ -1061,7 +1095,8 @@ Binding rules:
   be unique within that record-kind namespace in the plan. This applies at least
   to `impact-id`, `expansion-id`, `subject-id`, `descriptor-obligation-id`,
   `validation-obligation-id`, `artifact-obligation-id`, `work-group-id`,
-  `evidence-expectation-id`, `subsumption-id`, and `diagnostic-id`.
+  `evidence-expectation-id`, `detail-profile-id`, `subsumption-id`, and
+  `diagnostic-id`.
 - References are not resolved by searching all string identifiers. Each non-null
   plan-local reference resolves only to its declared target namespace in the
   same frozen plan, either by the reference field name or by the accompanying
@@ -1218,6 +1253,15 @@ Rules:
   for discovered candidates, but they are not an inclusion authority for adding
   validation subjects.
 - `capability-class: validation-only` subjects cannot have publish obligations.
+- A selected active `capability-class: validation-only` subject must have at least
+  one enabled validation capability among `build`, `test`, `lint`, `format`, or
+  `type-check`. If a project, ecosystem, global, infrastructure, or scheduled-full
+  scope selects a validation-only subject and no enabled validation capability can
+  be derived from provider facts, planning fails closed with
+  `no-validation-capability` rather than emitting a selected subject with no
+  required evidence. This does not apply to zero-file or known-non-impacting
+  lightweight-only plans, because those plans have no selected validation-only
+  subjects.
 - `capability-class: descriptor-backed` subjects may have release-shaped artifact
   obligations only when descriptor validation can derive them without
   confirmation gaps.
@@ -1291,6 +1335,14 @@ Provider failure rules:
   fails closed with `fact-provider-insufficient`; the planner must not emit an
   under-specified non-null `planned-capabilities` set merely because receipts can
   later equality-check it.
+- For every selected active validation-only subject in an executable non-lightweight
+  plan, the derived subject-scoped `planned-capabilities` set must be non-empty and
+  covered by a required ecosystem-gate validation obligation, executable work
+  group, and evidence expectation. If provider facts are available but prove that
+  the selected validation-only subject has no executable validation capability,
+  planning fails closed with `no-validation-capability`. If provider facts cannot
+  prove the capability set either way, planning fails closed with
+  `fact-provider-insufficient`.
 
 Fact collection must not perform build, test, packaging, release-shaped artifact
 validation, publication, or remote publish-state observation. Those activities
@@ -1702,11 +1754,13 @@ Selector rules:
   `evidence-expectation.planned-capabilities`. A subject-scoped gate uses the
   selected active subject's enabled capabilities. An ecosystem-scoped gate uses
   the union of enabled capabilities across all selected active subjects in that
-  ecosystem. A selected subject with no enabled validation capabilities does not
-  create an executable ecosystem gate by itself; descriptor/release-shaped
-  obligations carry their own evidence. Missing provider capability facts for any
-  selected subject in the gate scope make the plan fail closed rather than
-  silently omitting that capability from the gate.
+  ecosystem. A selected descriptor-backed subject with no enabled validation
+  capabilities does not create an executable ecosystem gate by itself because
+  descriptor/release-shaped obligations carry their own evidence. A selected
+  validation-only subject with no enabled validation capabilities is invalid under
+  section 7 and must fail closed instead of contributing no evidence. Missing
+  provider capability facts for any selected subject in the gate scope make the
+  plan fail closed rather than silently omitting that capability from the gate.
 - `coverage-target.type: ecosystem` is valid only for ecosystem-level
   `ecosystem-gate` selectors. If ecosystem gates are decomposed into subject
   selectors, the plan must preserve the ecosystem parent through source impacts
@@ -1964,6 +2018,10 @@ lightweight-preflight:
     selector-variant: string | null
     runner-family: windows | ubuntu
     outcome: success | blocking-failure | skipped
+    subcheck-results:
+        - subcheck-id: string
+          outcome: success | blocking-failure | skipped
+          diagnostics: [diagnostic-record]
     diagnostics: [diagnostic-record]
 ```
 
@@ -1981,6 +2039,10 @@ workflow-release-tooling:
     selector-variant: string | null
     runner-family: windows | ubuntu
     outcome: success | blocking-failure | skipped
+    subcheck-results:
+        - subcheck-id: string
+          outcome: success | blocking-failure | skipped
+          diagnostics: [diagnostic-record]
     diagnostics: [diagnostic-record]
 ```
 
@@ -1992,6 +2054,14 @@ category object above. Aggregation equality-checks `work-group-id`,
 evidence expectation, and receipt outcome. Missing detail, the wrong detail
 object, an unplanned `detail-profile`, or any mismatched frozen field makes the
 receipt inadmissible with `mismatched-evidence-payload`.
+Aggregation also resolves the frozen `detail-profile-definition` and requires
+`subcheck-results` to contain exactly one entry for every required subcheck and no
+extra entries. A `success` category result is admissible only when every blocking
+subcheck result is `success`, all skipped or failed blocking subchecks carry
+diagnostics, and the category outcome equals the aggregate of its subcheck results.
+A receipt whose category-level outcome is successful while required subchecks are
+missing, duplicated, extra, skipped, failed, or inconsistent is inadmissible with
+`mismatched-evidence-payload`, not merely a successful self-attestation.
 
 A `descriptor-validation` receipt must use `category-result.detail` with this
 minimum shape:
@@ -2228,13 +2298,15 @@ true`.
   `skipped`; all planned capabilities succeeding makes it `success`. A top-level
   outcome that disagrees with capability results is inadmissible.
 - For null-capability receipts, top-level `outcome` is derived from
-  `category-result`: `success` is admissible only when the category-specific
-  validation completed successfully and no blocking diagnostic is present;
-  `blocking-failure` is admissible only when the category-specific validation
-  failed or a blocking diagnostic is present; `skipped` is admissible only when
-  category-specific validation was intentionally not executed and the receipt
-  carries a diagnostic explaining the skip. A mismatch between top-level
-  `outcome`, `category-result`, diagnostics, or skipped rules is inadmissible.
+  `category-result` and, for detail-profile categories, from the profile subcheck
+  results: `success` is admissible only when every blocking subcheck and the
+  category-specific validation completed successfully and no blocking diagnostic is
+  present; `blocking-failure` is admissible only when category-specific validation
+  failed, a blocking subcheck failed, or a blocking diagnostic is present; `skipped`
+  is admissible only when category-specific validation was intentionally not
+  executed or a blocking subcheck was skipped and the receipt carries a diagnostic
+  explaining the skip. A mismatch between top-level `outcome`, `category-result`,
+  profile subcheck results, diagnostics, or skipped rules is inadmissible.
 - Receipt diagnostics are verdict-affecting according to their own
   `verdict-effect` and location. Capability diagnostics affect their containing
   capability result; `category-result.diagnostics` affect the category result;
@@ -2456,6 +2528,7 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 | `subject-unresolved`                  | planner                                     | fail-closed                                                                           |
 | `dependency-impact-insufficient`      | planner                                     | fail-closed                                                                           |
 | `fact-provider-insufficient`          | planner                                     | fail-closed                                                                           |
+| `no-validation-capability`            | planner                                     | fail-closed                                                                           |
 | `infrastructure-surface-unclassified` | planner                                     | fail-closed                                                                           |
 | `descriptor-invalid`                  | planner or descriptor-validation work group | fail-closed when obligations cannot be derived; otherwise blocking validation failure |
 | `artifact-shape-unconfirmed`          | release-shaped validation work group        | blocking validation failure                                                           |
@@ -2624,7 +2697,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Scenario                                                                                                                                                                                        | Expected evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Project-scoped descriptor-backed change                                                                                                                                                         | Plan selects direct subject, safe downstream subjects, direct-vs-downstream selection provenance, descriptor obligation, ecosystem gates, release-shaped artifact obligations, receipts, and passing aggregation                                                                                                                                                                                                                                                                                                                                                                                 |
-| Project-scoped validation-only change                                                                                                                                                           | Plan selects validation-only subject and ecosystem gates, no publish or release-shaped artifact obligation unless descriptor-backed                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Project-scoped validation-only change                                                                                                                                                           | Plan selects validation-only subject and ecosystem gates, no publish or release-shaped artifact obligation unless descriptor-backed; selected active validation-only subjects with no enabled validation capability fail closed with `no-validation-capability` instead of producing no required evidence                                                                                                                                                                                                                                                                                        |
 | Ecosystem-scoped change                                                                                                                                                                         | Plan selects all active subjects in ecosystem, descriptors for descriptor-backed subjects, release-shaped artifact/receipt obligations, and applicable ecosystem gates                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Workflow-release infrastructure change                                                                                                                                                          | Plan selects affected tooling surface, related subjects/ecosystems, and all discovered descriptors only for descriptor semantics, authoring validation, planning, contracts, build execution, publish execution, or smoke validation impacts                                                                                                                                                                                                                                                                                                                                                     |
 | Known global change                                                                                                                                                                             | Plan selects scheduled-full-equivalent scope with global provenance and required workflow-release-tooling work groups for every closed tooling surface                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -2663,7 +2736,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Aggregate mirrors an unreadable or unclassified prefixed receipt artifact                                                                                                                       | `observed-receipts` records the manifest entry with `artifact-ref: null`, the observed physical artifact name, and inadmissible diagnostics                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Release-shaped artifact receipt with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked expected release receipt, or mismatched planned shape | Aggregation records `artifact-shape-unconfirmed` or `mismatched-evidence-payload` and fails the final verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Receipt top-level artifact refs are populated for non-artifact evidence or differ from release-shaped observed refs                                                                             | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; top-level `artifact-refs` is either empty or mirrors the category-specific release-shaped observed refs                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Lightweight-preflight or workflow-release-tooling receipt omits or mismatches its required detail profile                                                                                       | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; category-result detail must match the frozen work group and evidence expectation                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Lightweight-preflight or workflow-release-tooling receipt omits or mismatches its required detail profile or subcheck results                                                                   | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; category-result detail must match the frozen work group, evidence expectation, and profile subcheck contract                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Invalid or mismatched receipt                                                                                                                                                                   | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Forged or producer-unverified writer observation                                                                                                                                                | Matching payload fields are insufficient; aggregation treats the receipt as inadmissible with `mismatched-writer-identity` and fails as `inadmissible-receipt`                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Valid required receipt plus extra inadmissible receipt                                                                                                                                          | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                                                                                                                                                                                                                                                                                                                                                                    |
