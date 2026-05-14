@@ -1343,6 +1343,19 @@ Selector rules:
   inadmissible. Aggregation treats an admissible dependency-blocked receipt as
   `required-evidence-skipped`; if the dependency-blocked receipt is also missing,
   aggregation reports `required-evidence-missing`.
+- Receipt-emitting executable work-group jobs separate validation outcome from
+  control-plane/job infrastructure outcome. A category-specific validation
+  failure that is successfully captured in a contract-owned receipt with
+  `outcome: blocking-failure` still lets the concrete receipt-emitting job
+  complete successfully for dependency gating; final failure is expressed by
+  aggregation, not by the selector job conclusion. The concrete job fails only
+  when the trusted receipt boundary cannot evaluate the planned contract, cannot
+  verify required control-plane inputs such as the execution tree, cannot upload
+  the expected receipt and writer observation, or otherwise cannot produce
+  contract evidence for that selector. Downstream selectors are
+  dependency-blocked only by those control-plane/job failures, cancellation,
+  skipping, or missing expected receipt artifacts, not by an upstream
+  validation-failure receipt that was emitted successfully.
 - The control plane may batch multiple executable selectors into one concrete job
   only when the resulting receipts still report each required selector
   separately. It must not batch selectors connected by a `depends-on` edge in the
@@ -1810,21 +1823,27 @@ Receipt rules:
     treated as an unexpected receipt-like artifact, not as aggregation authority.
     Re-running aggregation for the same `run-id` and `run-attempt` never adds to
     the observed receipt set once an authoritative manifest has closed the
-    namespace. Same-attempt finalization uses one reconciliation contract for the
-    final manifest and aggregate refs: aggregation first recomputes the manifest
-    and aggregate from the closed receipt set, then checks the contract-owned final
-    refs before upload. If neither final ref exists, it uploads both final
-    artifacts and their `created-at` values become the replay-stable final
-    timestamps for those raw artifacts. If exactly one final ref already has one
-    artifact instance, aggregation verifies that instance's raw content digest by
-    recomputing the same final artifact with the occupied artifact's existing
-    `created-at` value, then uploads the missing counterpart from the same closed
-    receipt set. If both final refs already have one artifact instance,
-    aggregation verifies each raw digest by preserving that artifact's own
-    `created-at` value and uploads nothing. It must never upload a second artifact
-    instance at an occupied final ref. A duplicate final instance, digest
-    mismatch after preserving the occupied final `created-at`, unreadable occupied
-    final artifact, namespace-closure mismatch, or occupied ref whose producer
+    namespace. Same-attempt finalization is manifest-first. Aggregation first
+    computes or verifies the final manifest from the closed receipt set, then
+    emits or verifies the aggregate that binds that exact manifest digest. If
+    neither final ref exists, aggregation uploads the manifest, verifies the
+    uploaded manifest instance and digest, then uploads the aggregate that records
+    that manifest digest. Their `created-at` values become the replay-stable final
+    timestamps for those raw artifacts. If the manifest exists and the aggregate
+    is missing, aggregation verifies the occupied manifest's raw content digest by
+    recomputing the manifest with that artifact's existing `created-at`, then
+    uploads the missing aggregate bound to the occupied manifest digest. If both
+    final refs already have one artifact instance, aggregation verifies each raw
+    digest by preserving that artifact's own `created-at` value and verifies the
+    aggregate's recorded `receipt-manifest.content-digest` equals the occupied
+    manifest digest. If the aggregate exists while the manifest is missing, the
+    final state is non-recoverable and non-authoritative for that run attempt:
+    aggregation must not recreate a manifest to satisfy an existing aggregate
+    claim because the aggregate already binds exact manifest bytes. It must never
+    upload a second artifact instance at an occupied final ref. A duplicate final
+    instance, digest mismatch after preserving the occupied final `created-at`,
+    unreadable occupied final artifact, namespace-closure mismatch,
+    aggregate-without-manifest final state, or occupied ref whose producer
     authority cannot be verified makes finalization fail and leaves post-run
     acceptance without authoritative final evidence.
 
@@ -2045,8 +2064,11 @@ non-aggregation job, or an unverified artifact instance is non-authoritative eve
 if its payload, schema, and digest bindings match. The same-attempt finalization
 reconciliation above is the only replay/idempotency contract for both final
 artifacts; consumers must not choose among multiple final instances by timestamp,
-job conclusion, or payload self-claims. Workflow conclusion must fail when
-`verdict` is `failed`. For structurally valid plans,
+job conclusion, or payload self-claims. Any final manifest or aggregate
+finalization/reconciliation failure must fail the `aggregate-evidence` job and
+the final required check even when the computed validation verdict would
+otherwise be `passed`. Workflow conclusion must fail when `verdict` is `failed`.
+For structurally valid plans,
 `plan-digest`, `mode`, `validation-tree`, `affected-range`, and `scheduled-full`
 are copied from the frozen plan; the aggregator must verify they match the plan
 before emitting the report. Summary booleans and counts are for quick
@@ -2262,6 +2284,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Logical boundary mapped to missing or wrong platform job identity                                                                                                                               | Producer authority verification rejects the artifact as producer-unverified using the boundary identity map; payload producer claims, logs, and job conclusions do not substitute                                                                                                                                       |
 | Missing receipt                                                                                                                                                                                 | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                                                                                        |
 | Planned validation work skipped or failed                                                                                                                                                       | Aggregation records `required-evidence-skipped` or `blocking-validation-failure` and fails the final verdict; planned executable validation work is not optional or non-gating                                                                                                                                          |
+| Upstream selector emits a valid `blocking-failure` receipt                                                                                                                                      | The selector job completes successfully for dependency gating, downstream selectors are not dependency-blocked solely by that receipt outcome, and aggregation fails the final verdict from the receipt evidence                                                                                                        |
 | Receipt emitted after validation on the wrong or unverifiable execution tree                                                                                                                    | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; copied plan provenance is insufficient without `execution-tree` evidence from the trusted receipt boundary                                                                                                                           |
 | Release-shaped artifact receipt with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked expected release receipt, or mismatched planned shape | Aggregation records `artifact-shape-unconfirmed` or `mismatched-evidence-payload` and fails the final verdict                                                                                                                                                                                                           |
 | Invalid or mismatched receipt                                                                                                                                                                   | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                                                                                      |
@@ -2269,6 +2292,8 @@ Implementation acceptance must include at least these evidence scenarios:
 | Valid required receipt plus extra inadmissible receipt                                                                                                                                          | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                                                                                           |
 | Receipt-like artifact appears after receipt namespace closure                                                                                                                                   | Post-run acceptance or same-attempt retry treats final evidence as non-authoritative rather than extending the closed receipt set                                                                                                                                                                                       |
 | Same-attempt finalization retry with occupied final manifest or aggregate                                                                                                                       | Aggregation preserves the occupied artifact's `created-at` while recomputing raw digest equality; digest mismatch or duplicate final artifact leaves no authoritative final evidence                                                                                                                                    |
+| Aggregate exists at the final ref but the final manifest is missing                                                                                                                             | Same-attempt retry treats the final state as non-recoverable and non-authoritative; it does not recreate a manifest to satisfy the aggregate's existing `receipt-manifest.content-digest` claim                                                                                                                         |
+| Final manifest or aggregate finalization/reconciliation fails despite a passing computed validation verdict                                                                                     | The `aggregate-evidence` job and final required check fail because authoritative final evidence was not produced                                                                                                                                                                                                        |
 | Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched final manifest or aggregate                                                                                    | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                                                                                              |
 | Unknown verdict-relevant diagnostic family or detail appears in contract evidence                                                                                                               | Schema or aggregation rejects it under the closed `v1alpha1` diagnostic vocabulary unless the LLD/schema/api-version contract has been updated                                                                                                                                                                          |
 | Unconfirmed artifact shape                                                                                                                                                                      | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                                                                                             |
