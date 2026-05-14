@@ -506,3 +506,13 @@ Updated the workflow-release design notes to move live acceptance away from the 
 - Added a durable experiment page covering missing plan artifacts, readable
   diagnostics, downstream skipped jobs, always-running reporting, and required
   aggregate-check implications for CI affected validation.
+
+## [2026-05-14] query | Summarize CI validation platform spikes
+
+- Added the Group 4 platform-spike summary for workflow-release CI
+  affected-validation readiness.
+- Synthesized the Group 1 artifact enumeration, Group 2 producer identity, and
+  Group 3 no-authoritative-plan experiment records without triggering new
+  workflow runs.
+- Recorded the implementation-readiness recommendation, validated platform
+  assumptions, design constraints, remaining risks, and OA scope-out items.
