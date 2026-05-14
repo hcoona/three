@@ -325,6 +325,36 @@ is `null` and diagnostics must explain why the snapshot could not be produced or
 confirmed. The fact snapshot artifact is plan-inspectable evidence for planning
 inputs, not executable validation evidence and not release proof.
 
+The fact snapshot artifact uses this minimum shape:
+
+```yaml
+api-version: three.ci.validation.fact-snapshot/v1alpha1
+kind: ci-validation-fact-snapshot
+fact-snapshot-id: string
+plan-id: string
+providers:
+    - provider: dotnet | python | javascript | typescript | workflow-release
+      provider-version: string | null
+      status: available | unavailable
+      roots: [string]
+      subjects: [subject-id]
+      dependency-edges:
+          - from-subject-id: string
+            to-subject-id: string
+            relation: project-reference | package-reference | workspace | tooling
+      tooling-surfaces: [string]
+      diagnostics: [diagnostic-record]
+```
+
+`fact-snapshot-id` equals the plan envelope `fact-snapshot.id` and is computed as
+the RFC 8785 digest of the artifact after removing only the root
+`fact-snapshot-id` member. Provider entries are sorted by `provider`; roots,
+subjects, dependency edges, tooling surfaces, and diagnostics are sorted by their
+stable identifier fields. Unavailable provider facts must appear with
+`status: unavailable`, empty fact arrays, and diagnostics explaining why the
+planner failed closed. Planning and acceptance must verify the artifact schema
+and recompute `fact-snapshot-id` before treating the plan as structurally valid.
+
 ### 6.2 Plan Sections
 
 The plan contains these top-level sections:
@@ -346,12 +376,17 @@ diagnostics: [planner-diagnostic]
 
 Fail-closed plans still contain envelope, classification, diagnostics, and enough
 provenance to inspect why no executable validation plan was authorized. They have
-no executable validation work groups.
+no executable validation work groups. Every emitted plan, including fail-closed
+plans, must satisfy the schema and structural identity/reference rules in this
+document. Fail-closed plans must leave descriptor, validation, artifact,
+work-group, and evidence-expectation sections empty unless a section is needed
+only for inspectability and has no executable references.
 
 Executable plans require `subject-universe.status: available` and
 `fact-snapshot.status: available`. Fail-closed plans may use `unavailable` with
 `id: null`, but diagnostics must identify which snapshot could not be produced
-or confirmed and why.
+or confirmed and why. Aggregation must reject structurally invalid plans instead
+of converting them into successful inspectable fail-closed evidence.
 
 The exact JSON Schema file and type generator strategy are implementation-owned,
 but every section above is part of the low-level data contract.
@@ -545,11 +580,13 @@ Binding rules:
   the plan-level `scheduled-full` marker is their full-scope selection source.
 - Required executable obligations must reference a work group and evidence
   expectation unless planning fails closed.
-- Every emitted validation obligation, executable work group, and evidence
-  expectation in this design is verdict-relevant: obligation `required` and
-  `blocking`, work-group `expected-evidence.required`, and evidence expectation
-  `required` and `blocking-if-missing` must all be `true`. Non-contractual
-  auxiliary telemetry may be uploaded as logs or artifacts, but it must not emit
+- Every emitted descriptor obligation, validation obligation, executable work
+  group, and evidence expectation in this design is verdict-relevant:
+  obligation `required` and `blocking`, work-group `expected-evidence.required`,
+  and evidence expectation `required` and `blocking-if-missing` must all be
+  `true`. Descriptor obligations must resolve to gating work and evidence unless
+  planning fails closed before derivation. Non-contractual auxiliary telemetry
+  may be uploaded as logs or artifacts, but it must not emit
   `ci-validation-receipt`, appear in `evidence-expectations`, or affect
   aggregation.
 - Each executable `work-group-id` in a plan must have exactly one
