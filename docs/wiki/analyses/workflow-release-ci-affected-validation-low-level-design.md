@@ -223,6 +223,27 @@ Rules:
   for deterministic plan and hash emission. Sorting a confirmed set is
   canonicalization, not repair.
 
+Mode-specific affected-range rules:
+
+- For `pull_request`, `base-sha` is the event `pull_request.base.sha` and
+  `head-sha` is the event `pull_request.head.sha`. The changed-file set is the
+  complete compare from base to head, whether validation executes on the head
+  commit or a GitHub-created merge ref. Event payload data, GitHub API file-list
+  data, and checkout/git data used by the control plane must reconcile to the
+  same endpoints and changed-file set.
+- For `push`, `base-sha` is the event `before` SHA and `head-sha` is the event
+  `after` SHA. Deleted branches, all-zero endpoints, force-push ranges whose
+  base cannot be fetched or compared, and otherwise unconfirmable push ranges
+  make the affected range unavailable.
+- File enumeration must consume every page or chunk from the chosen GitHub API or
+  git source. Truncation, pagination failure, endpoint mismatch, or disagreement
+  between sources used for reconciliation makes the range unavailable with
+  `diagnostic-detail: incomplete` or `inconsistent`.
+- Renames include both the old path and the new path because either side can
+  affect ownership, descriptor mapping, or validation scope. Deletes include the
+  deleted path. Paths that cannot be represented as canonical repository-relative
+  Git paths make the range unavailable.
+
 The exact physical filename is implementation-owned, but the file is an internal
 workflow artifact or workspace handoff, not a user-authored source file.
 
@@ -280,6 +301,23 @@ fields, including nulls, false values, empty arrays or objects, diagnostics,
 obligations, work groups, and evidence expectations, participate in the digest.
 Array order is preserved. Receipts and aggregation evidence bind to the frozen
 plan with both `plan-id` and `plan-digest`.
+
+Before computing `plan-digest`, the planner emits arrays in canonical order:
+
+| Array family                                                                   | Canonical order                                                            |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Identifier-bearing records                                                     | Ascending by the record identifier field in UTF-8 byte lexicographic order |
+| `source-impact-ids`, `source-expansion-ids`, references, paths, and string IDs | Ascending UTF-8 byte lexicographic order                                   |
+| `planned-capabilities`                                                         | Declared capability order: build, test, lint, format, type-check           |
+| Capability result arrays                                                       | Declared capability order                                                  |
+| `profile-coverage`                                                             | Ascending UTF-8 byte lexicographic order                                   |
+| Diagnostics                                                                    | Ascending `diagnostic-id`                                                  |
+| Tuple records without one identifier                                           | Ascending by the documented tuple fields; null sorts before strings        |
+
+If two records compare equal under their canonical key, the plan is structurally
+invalid unless the record kind explicitly permits duplicates. The planner must
+not rely on source discovery order, API response order, filesystem order, or job
+completion order for digest-affecting arrays.
 
 For affected modes, `affected-range.status` is `available` or `unavailable` and
 `scheduled-full.enabled` is `false`. For `scheduled_full`,
@@ -346,14 +384,23 @@ providers:
       diagnostics: [diagnostic-record]
 ```
 
+`from-subject-id` depends on `to-subject-id`. Downstream affected subjects are
+the reverse transitive dependents of directly affected subjects, limited to
+active subjects. Dependency cycles are traversed with a visited set and emitted
+once in canonical subject order; if a cycle or partial graph prevents a complete
+deterministic downstream closure, planning fails closed.
+
 `fact-snapshot-id` equals the plan envelope `fact-snapshot.id` and is computed as
 the RFC 8785 digest of the artifact after removing only the root
-`fact-snapshot-id` member. Provider entries are sorted by `provider`; roots,
-subjects, dependency edges, tooling surfaces, and diagnostics are sorted by their
-stable identifier fields. Unavailable provider facts must appear with
-`status: unavailable`, empty fact arrays, and diagnostics explaining why the
-planner failed closed. Planning and acceptance must verify the artifact schema
-and recompute `fact-snapshot-id` before treating the plan as structurally valid.
+`fact-snapshot-id` member. Provider entries are sorted by `provider`; `roots`,
+`subjects`, and `tooling-surfaces` are sorted lexicographically by UTF-8 encoded
+bytes; `dependency-edges` are sorted by `(from-subject-id, to-subject-id,
+relation)` with each field compared as UTF-8 bytes; diagnostics are sorted by
+`diagnostic-id`. Null sorts before strings for any future nullable tuple field.
+Unavailable provider facts must appear with `status: unavailable`, empty fact
+arrays, and diagnostics explaining why the planner failed closed. Planning and
+acceptance must verify the artifact schema and recompute `fact-snapshot-id`
+before treating the plan as structurally valid.
 
 ### 6.2 Plan Sections
 
@@ -527,6 +574,7 @@ verdict-effect: none | fail-closed | failed
 Each `diagnostic-record` has:
 
 ```yaml
+diagnostic-id: string
 code: diagnostic-code
 detail: diagnostic-detail | null
 severity: info | warning | fail-closed | blocking-failure
@@ -807,6 +855,9 @@ Selector rules:
 - `work-group-id` is stable within the plan and derived from kind plus coverage
   target.
 - Work groups are selectors, not command lines.
+- Every `depends-on` entry must resolve to a `work-group-id` in the same frozen
+  plan. The work-group dependency graph must be acyclic. Executable work groups
+  must not depend on the terminal `evidence-aggregation` work group.
 - The control plane may batch multiple executable selectors into one concrete job
   only when the resulting receipts still report each required selector
   separately.
@@ -830,6 +881,10 @@ Selector rules:
   work groups are verdict-relevant under this design. Aggregation reads the plan
   and receipts, emits the aggregate verdict artifact, and does not produce a
   work-group receipt.
+- The terminal `evidence-aggregation` work group must be downstream of every
+  executable work group, either by direct `depends-on` references or by the
+  transitive dependency graph. A plan whose dependencies do not make aggregation
+  terminal is structurally invalid.
 
 ## 12. Execution Mapping
 
@@ -849,7 +904,12 @@ The implementation maps work groups to runner families:
 
 All runners provision tools through `mise` where practical. The concrete command
 lines and helper scripts are implementation-owned, but they must run the
-repository's existing ecosystem gates for selected scopes.
+repository's existing ecosystem gates for selected scopes. Release-shaped
+artifact work groups must invoke the existing workflow-release build
+recipes/adapters in validation/no-publish mode where practical. Wrappers,
+artifact staging locations, and receipt emission may differ from release runs,
+but build semantics, descriptor interpretation, and artifact-contract checks must
+not use a separate simplified CI-only path.
 
 Aggregation is mapped as the terminal control-plane job after all planned
 executable work groups are complete, skipped by workflow construction, or
@@ -930,10 +990,38 @@ proof-admissibility: validation-only
 
 Receipt rules:
 
-- The receipt intake boundary is a closed control-plane-owned manifest or
+- The receipt intake boundary is a closed control-plane-owned manifest-indexed
   namespace for validation receipts. Aggregation enumerates every receipt-like
   entry in that boundary and does not treat ordinary logs or auxiliary artifacts
   outside that boundary as observed receipts.
+- The closed receipt intake boundary is the run-attempt-scoped artifact namespace
+  `ci-validation/receipts/<run-id>/<run-attempt>/` plus the control-plane-owned
+  manifest `ci-validation/receipts/<run-id>/<run-attempt>/manifest.json`.
+  Manifest entries have:
+
+    ```yaml
+    api-version: three.ci.validation.receipt-manifest/v1alpha1
+    kind: ci-validation-receipt-manifest
+    plan-id: string
+    plan-digest: string
+    run-id: string
+    run-attempt: string
+    entries:
+        - artifact-ref: string
+          writer-work-group-id: string
+          receipt-id: string | null
+          receipt-content-digest: string | null
+    ```
+
+    Executable work-group jobs are the only authorized writers for their own
+    `writer-work-group-id`; aggregation is the only authorized reader that derives
+    the CI-level verdict. Aggregation enumerates the manifest and every artifact
+    under the namespace for the same `run-id` and `run-attempt`. Manifest entries
+    outside the namespace, namespace artifacts missing from the manifest, duplicate
+    manifest entries, writer/work-group mismatches, cross-attempt artifacts, and
+    unreadable receipt artifacts are observed inadmissible entries and must appear
+    in aggregate diagnostics/failures.
+
 - `receipt-id` is an opaque stable identifier for the receipt emission within the
   run attempt or equivalent execution provenance. It must not be derived from a
   representation that includes itself.
@@ -951,6 +1039,10 @@ true`.
 - Receipts and aggregates copy `changed-files-hash` from the frozen plan. They
   must not rediscover, reorder, or rehash changed files; a mismatch is
   inadmissible as `wrong-plan` or `mismatched-evidence-payload`.
+- `receipt-content-digest` is the lowercase hexadecimal SHA-256 digest of the raw
+  receipt artifact bytes as observed by aggregation. It is recorded for every
+  observed receipt artifact, including malformed or inadmissible artifacts, and
+  must match `^[0-9a-f]{64}$` when the artifact bytes are readable.
 - Receipt payload fields must match the frozen plan's matched work group and
   evidence expectation: `coverage-target`, evidence `category`, and
   `planned-capabilities` are equality-checked against the plan. Mismatches are
@@ -1033,10 +1125,19 @@ reason:
     inadmissible-receipt: boolean
 diagnostics:
     - diagnostic-record
+observed-receipts:
+    - artifact-ref: string
+      receipt-id: string | null
+      work-group-id: string | null
+      receipt-content-digest: string | null
+      admissibility: valid | inadmissible
+      diagnostics: [diagnostic-record]
 evidence-results:
     - evidence-expectation-id: string
       work-group-id: string
       receipt-id: string | null
+      receipt-artifact-ref: string | null
+      receipt-content-digest: string | null
       outcome: satisfied | missing | skipped | failed
       diagnostics: [diagnostic-record]
 failures:
@@ -1044,6 +1145,8 @@ failures:
       work-group-id: string | null
       evidence-expectation-id: string | null
       receipt-id: string | null
+      receipt-artifact-ref: string | null
+      receipt-content-digest: string | null
       diagnostic: diagnostic-record
       message: string
 work-groups:
@@ -1066,6 +1169,10 @@ evidence expectation is verdict-relevant, so `missing`, `skipped`, and `failed`
 results must have corresponding `failures` entries. `failure-kind` is one of
 `missing-required-evidence`, `skipped-required-evidence`,
 `blocking-validation-failure`, `inadmissible-receipt`, or `fail-closed`.
+`observed-receipts` records every artifact in the closed intake boundary,
+including valid, malformed, unexpected, wrong-plan, duplicate, and otherwise
+inadmissible receipt artifacts. Evidence results and failures reference the
+receipt artifact and digest that caused the result when one exists.
 
 ## 15. Diagnostics
 
