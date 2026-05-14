@@ -111,6 +111,8 @@ The top-level CI validation workflow preserves this logical sequence:
 4. **Validation work-group fan-out**
     - runs executable work groups by selector;
     - emits one validation-only receipt per work group;
+    - records writer observations for uploaded receipt artifact instances using
+      control-plane job context, outside receipt payload authority;
     - never changes planned scope or obligations.
 5. **`aggregate-evidence`**
     - runs after planning and selector materialization are attempted, even when a
@@ -713,6 +715,14 @@ source:
     id: string | null
 ```
 
+`diagnostic-id` is deterministic within its artifact. It is derived from the
+producer kind, stable source type and ID, diagnostic `code`, `detail`, and the
+stable artifact/result location such as work-group ID, evidence expectation ID,
+observed entry ID, or aggregate failure tuple. If multiple diagnostics would have
+the same derived ID, the producer appends a deterministic ordinal based on the
+same canonical ordering input; source discovery order, log order, and job
+completion order must not affect diagnostic IDs.
+
 Binding rules:
 
 - All identifier-bearing records inside one frozen validation plan are resolved
@@ -850,12 +860,12 @@ Rules:
 The implementation uses one fact-provider seam per ecosystem family plus one
 workflow-release tooling provider.
 
-| Provider              | Discovery source                                                         | Required facts                                                                                                                                         |
-| --------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| .NET                  | solution/MSBuild project graph under active roots                        | project roots, project references when available, packable descriptor-backed projects, validation-only test/build projects, Windows runner expectation |
-| Python                | `uv` workspace and project metadata under active roots                   | workspace members, package roots, validation-only projects, dependency facts when safely available, Ubuntu runner expectation                          |
-| JavaScript/TypeScript | PNPM workspace metadata under active roots                               | workspace packages, package roots, validation-only packages, dependency facts when safely available, Ubuntu runner expectation                         |
-| workflow-release      | release descriptors, target catalog, workflow-release docs/tooling paths | descriptor-backed subjects, tooling surfaces, descriptor schema documentation surfaces, smoke validation surfaces                                      |
+| Provider              | Discovery source                                                         | Required facts                                                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| .NET                  | solution/MSBuild project graph under active roots                        | .NET subject ownership, project roots, project references when available, packable descriptor-backed projects, validation-only test/build projects, Windows runner expectation                                  |
+| Python                | `uv` workspace and project metadata under active roots                   | Python subject ownership, workspace members, package roots, validation-only projects, dependency facts when safely available, Ubuntu runner expectation                                                         |
+| JavaScript/TypeScript | PNPM workspace metadata under active roots                               | JavaScript/TypeScript subject ownership, workspace packages, package roots, validation-only packages, dependency facts when safely available, Ubuntu runner expectation                                         |
+| workflow-release      | release descriptors, target catalog, workflow-release docs/tooling paths | workflow-release-only subject ownership, descriptor metadata for descriptor-backed subjects owned by ecosystem providers, tooling surfaces, descriptor schema documentation surfaces, smoke validation surfaces |
 
 The JavaScript/TypeScript row is one provider seam and emits the single fact
 snapshot provider ID `javascript-typescript`. It may discover subjects whose
@@ -867,10 +877,14 @@ For every subject with `activity-status: active` and `selection-status: selected
 the fact snapshot must contain exactly one `status: available` provider entry
 that lists the subject ID and supports that subject's ecosystem: `dotnet` for
 `.NET`, `python` for Python, `javascript-typescript` for JavaScript or
-TypeScript, or `workflow-release` for descriptor/tooling-only workflow-release
-subjects. Missing provider coverage, duplicate provider coverage for the same
-selected subject, unavailable provider coverage, or an ecosystem/provider
-mismatch makes planning fail closed with `fact-provider-insufficient`.
+TypeScript, or `workflow-release` only for workflow-release tooling and
+descriptor/tooling-only workflow-release subjects. Descriptor metadata emitted by
+the `workflow-release` provider for ecosystem-owned descriptor-backed subjects is
+auxiliary provider data and must not list those subjects in
+`provider.subjects`. Missing provider coverage, duplicate provider coverage for
+the same selected subject, unavailable provider coverage, or an
+ecosystem/provider mismatch makes planning fail closed with
+`fact-provider-insufficient`.
 
 Provider failure rules:
 
@@ -1525,9 +1539,12 @@ true`.
   when `subject-universe.status` is `available`; when it is `unavailable`,
   aggregation verifies `subject-universe.id: null`, empty `subjects`, and
   explanatory diagnostics instead. Aggregation must also verify the companion
-  fact snapshot artifact when `fact-snapshot.status` is `available`, and verify
-  the companion changed-files snapshot artifact when `changed-files-hash` is
-  non-null. Missing, malformed, schema-invalid, or digest-mismatched companion
+  fact snapshot artifact when `fact-snapshot.status` is `available`, including
+  provider subject IDs, dependency-edge subject IDs, roots, tooling-surface IDs,
+  and exact selected-subject provider coverage against the frozen plan
+  namespaces. Aggregation also verifies the companion changed-files snapshot
+  artifact when `changed-files-hash` is non-null. Missing, malformed,
+  schema-invalid, cross-reference-invalid, or digest-mismatched companion
   artifacts or snapshot IDs make the plan invalid and produce an `invalid-plan`
   aggregate.
 
