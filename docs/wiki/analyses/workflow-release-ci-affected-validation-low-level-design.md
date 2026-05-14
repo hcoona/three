@@ -111,7 +111,11 @@ The top-level CI validation workflow preserves this logical sequence:
     - emits one validation-only receipt per work group;
     - never changes planned scope or obligations.
 5. **`aggregate-evidence`**
+    - runs after planning and selector materialization are attempted, even when a
+      prior logical job fails to produce a readable plan or selector set;
     - verifies expected receipts;
+    - treats missing, unreadable, invalid, or unmaterializable plans as
+      `invalid-plan` with no executable selectors;
     - computes the CI validation verdict;
     - emits one aggregation report;
     - fails the workflow when the aggregated validation outcome fails.
@@ -240,6 +244,12 @@ Mode-specific affected-range rules:
   `after` SHA; `base-tip-sha` is `null`. Deleted branches, all-zero endpoints,
   force-push ranges whose base cannot be fetched or compared, and otherwise
   unconfirmable push ranges make the affected range unavailable.
+- The checked-out `validation-tree.commit-sha` must match the affected boundary.
+  For `push`, it must equal `head-sha`. For `pull_request`, it must be either
+  `head-sha` or a verified GitHub merge commit for the recorded
+  `base-tip-sha`/`head-sha` pair. If the validation tree cannot be verified
+  against the affected endpoints, the affected range is unavailable with
+  `diagnostic-detail: unconfirmed-provenance`.
 - File enumeration must consume every page or chunk from the chosen GitHub API or
   git source. Truncation, pagination failure, endpoint mismatch, or disagreement
   between sources used for reconciliation makes the range unavailable with
@@ -402,7 +412,7 @@ kind: ci-validation-fact-snapshot
 fact-snapshot-id: string
 plan-id: string
 providers:
-    - provider: dotnet | python | javascript | typescript | workflow-release
+    - provider: dotnet | python | javascript-typescript | workflow-release
       provider-version: string | null
       status: available | unavailable
       roots: [string]
@@ -420,6 +430,12 @@ the reverse transitive dependents of directly affected subjects, limited to
 active subjects. Dependency cycles are traversed with a visited set and emitted
 once in canonical subject order; if a cycle or partial graph prevents a complete
 deterministic downstream closure, planning fails closed.
+
+The provider ID set is closed. A fact snapshot may contain at most one entry for
+each provider ID; duplicate provider IDs make the snapshot invalid. The
+`javascript-typescript` provider is the single PNPM-backed fact provider for both
+JavaScript and TypeScript subjects; subject records still use their normalized
+`ecosystem` value to distinguish JavaScript and TypeScript validation scope.
 
 `fact-snapshot-id` equals the plan envelope `fact-snapshot.id` and is computed as
 the RFC 8785 digest of the artifact projection containing only `api-version`,
@@ -757,6 +773,12 @@ workflow-release tooling provider.
 | JavaScript/TypeScript | PNPM workspace metadata under active roots                               | workspace packages, package roots, validation-only packages, dependency facts when safely available, Ubuntu runner expectation                         |
 | workflow-release      | release descriptors, target catalog, workflow-release docs/tooling paths | descriptor-backed subjects, tooling surfaces, descriptor schema documentation surfaces, smoke validation surfaces                                      |
 
+The JavaScript/TypeScript row is one provider seam and emits the single fact
+snapshot provider ID `javascript-typescript`. It may discover subjects whose
+normalized subject `ecosystem` is `javascript` or `typescript`; ecosystem-scoped
+selection, work-group IDs, evidence expectations, and runner mapping continue to
+use the subject ecosystem rather than splitting the provider entry.
+
 Provider failure rules:
 
 - If discovery fails for a selected ecosystem scope, planning fails closed.
@@ -856,12 +878,18 @@ Tooling-surface expansion is deterministic:
 | `build-execution`                 | All active subjects with build or release-shaped artifact capabilities, their descriptor-backed artifact obligations, and tooling validation                                                                              |
 | `publish-execution`               | All descriptor-backed subjects with release-shaped artifact obligations and tooling validation; publication remains out of scope                                                                                          |
 | `smoke-validation`                | Smoke-validation tooling work groups, all discovered release descriptors, all descriptor-validation work groups, smoke descriptors/subjects, and descriptor-backed subjects whose smoke receipt contracts can be affected |
-| `descriptor-schema-documentation` | All discovered descriptors, descriptor-validation work groups, and workflow-release tooling validation                                                                                                                    |
+| `descriptor-schema-documentation` | Descriptor schema documentation tooling/docs-surface validation and workflow-release tooling validation                                                                                                                   |
 
 If a changed workflow-release infrastructure path cannot be mapped to one of the
 closed tooling surfaces, or if the mapped surface cannot determine its affected
 ecosystems or subjects deterministically, planning fails closed with
 `infrastructure-surface-unclassified`.
+
+Descriptor schema documentation changes expand to all discovered descriptors only
+when classification also shows they affect descriptor semantics, descriptor
+contracts, authoring validation, planning, build execution, publish execution, or
+smoke validation. Documentation-only changes do not by themselves require
+all-discovered descriptor validation.
 
 ### 10.4 Global and Scheduled Full
 
@@ -990,6 +1018,13 @@ executable work groups are complete, skipped by workflow construction, or
 otherwise known missing. It reads the frozen plan, required companion planning
 snapshots, and validation receipts, emits `ci-validation-aggregate`, and does not
 emit a normal work-group receipt.
+
+Aggregation uses always-run failure-reporting semantics after the planning and
+selector materialization attempts. If planning emits no readable plan, emits an
+invalid plan, or selector materialization fails before producing a reliable
+executable selector set, aggregation emits an `invalid-plan` aggregate with zero
+executable selectors rather than allowing the workflow to end without an
+aggregate artifact.
 
 ## 13. Release-Shaped Artifact Validation
 
@@ -1140,7 +1175,7 @@ Receipt rules:
   Aggregation owns manifest creation and finalization: at aggregation start it
   enumerates the closed namespace, computes observed digests from the artifact
   bytes it reads, and writes the control-plane manifest
-  `ci-validation/receipts/<run-id>/<run-attempt>/manifest.json` as an observed
+  `ci-validation/manifests/<run-id>/<run-attempt>/receipt-manifest.json` as an observed
   enumeration artifact. Manifest entries have:
 
     ```yaml
@@ -1166,8 +1201,10 @@ Receipt rules:
     receipt payload, cross-attempt artifacts, and unreadable receipt artifacts are
     observed inadmissible entries and must appear in aggregate
     diagnostics/failures. A pre-existing manifest uploaded by an executable work
-    group is treated as an unexpected receipt-like artifact, not as aggregation
-    authority.
+    group in the receipt intake namespace is treated as an unexpected
+    receipt-like artifact, not as aggregation authority. Re-running aggregation
+    for the same `run-id` and `run-attempt` overwrites only the manifest outside
+    the receipt intake boundary; it does not add to the observed receipt set.
 
 - `receipt-id` is an opaque stable identifier for the receipt emission within the
   run attempt or equivalent execution provenance. It must not be derived from a
@@ -1280,8 +1317,8 @@ verdict: passed | failed
 reason:
     invalid-plan: boolean
     fail-closed: boolean
-    missing-required-evidence: boolean
-    skipped-required-evidence: boolean
+    required-evidence-missing: boolean
+    required-evidence-skipped: boolean
     blocking-validation-failure: boolean
     inadmissible-receipt: boolean
 diagnostics:
@@ -1329,7 +1366,7 @@ inspection. `evidence-results` is the normalized machine-readable result for
 every evidence expectation. Every evidence expectation is verdict-relevant, so
 `missing`, `skipped`, and `failed` results must have corresponding `failures`
 entries. `failure-kind` is one of `invalid-plan`,
-`missing-required-evidence`, `skipped-required-evidence`,
+`required-evidence-missing`, `required-evidence-skipped`,
 `blocking-validation-failure`, `inadmissible-receipt`, or `fail-closed`.
 `observed-receipts` records every artifact in the closed intake boundary,
 including valid, malformed, unexpected, wrong-plan, duplicate, and otherwise
@@ -1477,7 +1514,9 @@ The following remain implementation-owned for the single senior engineer:
 - exact workflow job identifiers when they preserve the logical sequence;
 - reusable workflow, composite action, or helper script decomposition;
 - exact JSON Schema file locations and type-generation approach;
-- temporary directories, artifact upload names, and log formatting;
+- temporary directories and log formatting;
+- upload names for logs and auxiliary artifacts other than contract-owned receipt
+  artifacts and manifests;
 - batching strategy for work-group selectors;
 - exact HK profile names and step ordering;
 - internal test organization.
@@ -1494,6 +1533,8 @@ The following are not implementation-owned:
 - validation-only proof inadmissibility;
 - final verdict semantics for fail-closed, missing evidence, blocking failures,
   and lightweight-only plans.
+- contract-owned receipt artifact refs, intake namespace, and aggregate manifest
+  location.
 
 ## 19. Outcome
 
