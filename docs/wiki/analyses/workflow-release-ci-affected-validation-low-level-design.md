@@ -602,6 +602,8 @@ release-receipt:
     variant-dimensions: object
 credential-posture: credential-free | unsigned-equivalent | unavailable
 expected-evidence-category: release-shaped-artifact
+required: boolean
+blocking: boolean
 validation-obligation-id: string
 work-group-id: string | null
 expected-evidence-id: string | null
@@ -705,13 +707,14 @@ Binding rules:
   the plan-level `scheduled-full` marker is their full-scope selection source.
 - Required executable obligations must reference a work group and evidence
   expectation unless planning fails closed.
-- Every emitted descriptor obligation, validation obligation, executable work
-  group, and evidence expectation in this design is verdict-relevant:
-  obligation `required` and `blocking`, work-group `expected-evidence.required`,
-  and evidence expectation `required` and `blocking-if-missing` must all be
-  `true`. Descriptor obligations must resolve to gating work and evidence unless
-  planning fails closed before derivation. Non-contractual auxiliary telemetry
-  may be uploaded as logs or artifacts, but it must not emit
+- Every emitted descriptor obligation, validation obligation, artifact
+  obligation, executable work group, and evidence expectation in this design is
+  verdict-relevant: obligation `required` and `blocking`, work-group
+  `expected-evidence.required`, and evidence expectation `required` and
+  `blocking-if-missing` must all be `true`. Descriptor obligations must resolve
+  to gating work and evidence unless planning fails closed before derivation.
+  Non-contractual auxiliary telemetry may be uploaded as logs or artifacts, but
+  it must not emit
   `ci-validation-receipt`, appear in `evidence-expectations`, or affect
   aggregation.
 - Each executable `work-group-id` in a plan must have exactly one
@@ -977,11 +980,27 @@ aggregate-output: ci-validation-aggregate
 Selector rules:
 
 - `work-group-id` is stable within the plan and derived from kind plus coverage
-  target.
+  target. It is an artifact-ref-bearing identifier and therefore must match the
+  path-safe grammar `^[a-z0-9][a-z0-9._-]{0,127}$`. The planner must not embed
+  raw coverage target IDs that can contain `/`, path separators, percent-escaped
+  path syntax, control characters, or filesystem traversal tokens. When a
+  coverage target is not already path-safe, the planner derives `work-group-id`
+  from the work-group kind, a normalized readable prefix, and a lowercase
+  SHA-256 digest of the full typed coverage target; the digest preimage, not the
+  readable prefix, preserves uniqueness.
 - Work groups are selectors, not command lines.
 - Every `depends-on` entry must resolve to a `work-group-id` in the same frozen
   plan. The work-group dependency graph must be acyclic. Executable work groups
   must not depend on the terminal `evidence-aggregation` work group.
+- `depends-on` is an execution gate. A work group may execute validation only
+  after every dependency has exactly one admissible successful receipt. If any
+  dependency is missing, inadmissible, `skipped`, or `blocking-failure`, the
+  dependent work group is dependency-blocked: it must not run its
+  category-specific validation and must still emit its own admissible receipt with
+  `outcome: skipped`, empty artifact refs, and a diagnostic explaining the
+  blocking dependency. Aggregation treats that receipt as
+  `required-evidence-skipped`; if the dependency-blocked receipt is also missing,
+  aggregation reports `required-evidence-missing`.
 - The control plane may batch multiple executable selectors into one concrete job
   only when the resulting receipts still report each required selector
   separately.
@@ -1502,6 +1521,7 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 | `descriptor-invalid`                  | planner or descriptor-validation work group | fail-closed when obligations cannot be derived; otherwise blocking validation failure |
 | `artifact-shape-unconfirmed`          | release-shaped validation work group        | blocking validation failure                                                           |
 | `validation-work-failed`              | executable validation work group            | blocking validation failure                                                           |
+| `validation-work-skipped`             | executable validation work group            | required evidence skipped                                                             |
 | `known-non-impacting`                 | planner                                     | inspectable non-failure                                                               |
 | `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
 | `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
@@ -1552,6 +1572,10 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `format`;
 - `type-check`;
 - `tooling`.
+
+`validation-work-skipped` details are:
+
+- `dependency-blocked`.
 
 Executable validation work groups use `validation-work-failed` for
 `blocking-failure` receipts unless a more specific registered diagnostic family
