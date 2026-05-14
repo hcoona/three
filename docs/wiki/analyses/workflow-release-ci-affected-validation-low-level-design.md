@@ -253,11 +253,13 @@ fact-snapshot:
     id: string | null
 ```
 
-`plan-id` is stable for the exact plan content and provenance. It is used to bind
-work-group receipts and aggregation evidence to the plan. `plan-digest` is the
-control-plane-computed SHA-256 digest of the frozen validation plan's canonical
-JSON representation with the `plan-digest` field omitted, so the digest can be
-verified without self-reference.
+`plan-id` is an opaque run-scoped stable identifier assigned by the control
+plane. It is not a content digest and must not be derived from a representation
+that includes itself. `plan-digest` is the control-plane-computed SHA-256 digest
+of the frozen validation plan's canonical JSON representation with the
+`plan-digest` field omitted, so the digest can be verified without
+self-reference. Receipts and aggregation evidence bind to the frozen plan with
+both `plan-id` and `plan-digest`.
 
 For affected modes, `affected-range.status` is `available` or `unavailable` and
 `scheduled-full.enabled` is `false`. For `scheduled_full`,
@@ -274,6 +276,7 @@ The plan contains these top-level sections:
 classification:
     impacts: [impact-record]
     broad-expansions: [broad-expansion-record]
+    subsumptions: [subsumption-record]
     lightweight-only: boolean
 subjects: [validation-subject-snapshot]
 descriptor-obligations: [descriptor-obligation]
@@ -398,6 +401,17 @@ category: lightweight-preflight | ecosystem-gate | descriptor-validation | relea
 planned-capabilities: [build | test | lint | format | type-check] | null
 required: boolean
 blocking-if-missing: boolean
+```
+
+Each `subsumption-record` has:
+
+```yaml
+subsumption-id: string
+source-impact-ids: [string]
+subsumed-kind: descriptor-obligation | validation-obligation | artifact-obligation | work-group | evidence-expectation
+subsumed-ids: [string]
+retained-id: string
+reason: string
 ```
 
 Each `planner-diagnostic` has:
@@ -525,14 +539,14 @@ The first implementation uses a conservative repository path classification
 table. More-specific rules win before broader rules, except unknown always wins
 when no rule matches.
 
-| Path shape                                                                                                                                                                                                                   | Category                        | Scope result                                                                                                                                                           |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/**`, `src/lab/**`, `tests/**` files owned by one discovered subject                                                                                                                                                     | project-scoped                  | Direct subject plus safe downstream dependents, descriptor and release-shaped artifact/receipt obligations when descriptor-backed, applicable ecosystem gates          |
-| Ecosystem workspace files such as root workspace metadata, lock files, package-manager configuration, or language tool configuration                                                                                         | ecosystem-scoped                | All active subjects in the affected ecosystem, descriptor-backed descriptors in that ecosystem, and release-shaped artifact/receipt obligations when descriptor-backed |
-| Root monorepo tool configuration affecting multiple ecosystems, global repository build settings, or cross-ecosystem validation configuration                                                                                | global                          | Scheduled-full-equivalent validation scope with global provenance                                                                                                      |
-| Workflow-release planner, classifier, fact-provider, descriptor contract, target catalog behavior, workflow orchestration, build execution, publish execution, smoke validation, or descriptor schema documentation surfaces | workflow-release infrastructure | Affected tooling surface, related ecosystems and subjects, all discovered descriptors when descriptor semantics or listed infrastructure categories can be affected    |
-| Documentation or files explicitly known not to affect build, test, descriptors, workflow-release tooling, or ecosystem behavior                                                                                              | known non-impacting             | Lightweight-only plan with applicable lightweight work groups                                                                                                          |
-| Anything else                                                                                                                                                                                                                | unknown                         | Fail-closed plan                                                                                                                                                       |
+| Path shape                                                                                                                                                                                                                   | Category                        | Scope result                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/**`, `src/lab/**`, `tests/**` files owned by one discovered subject                                                                                                                                                     | project-scoped                  | Direct subject plus safe downstream dependents, descriptor and release-shaped artifact/receipt obligations when descriptor-backed, applicable ecosystem gates                                                                            |
+| Ecosystem workspace files such as root workspace metadata, lock files, package-manager configuration, or language tool configuration                                                                                         | ecosystem-scoped                | All active subjects in the affected ecosystem, descriptor-backed descriptors in that ecosystem, and release-shaped artifact/receipt obligations when descriptor-backed                                                                   |
+| Root monorepo tool configuration affecting multiple ecosystems, global repository build settings, or cross-ecosystem validation configuration                                                                                | global                          | Scheduled-full-equivalent validation scope with global provenance                                                                                                                                                                        |
+| Workflow-release planner, classifier, fact-provider, descriptor contract, target catalog behavior, workflow orchestration, build execution, publish execution, smoke validation, or descriptor schema documentation surfaces | workflow-release infrastructure | Affected tooling surface, related ecosystems and subjects; all discovered descriptors only when descriptor semantics, authoring validation, planning, contracts, build execution, publish execution, or smoke validation can be affected |
+| Documentation or files explicitly known not to affect build, test, descriptors, workflow-release tooling, or ecosystem behavior                                                                                              | known non-impacting             | Lightweight-only plan with applicable lightweight work groups                                                                                                                                                                            |
+| Anything else                                                                                                                                                                                                                | unknown                         | Fail-closed plan                                                                                                                                                                                                                         |
 
 Concrete glob spelling belongs to implementation, but every checked-in path must
 fall into one of these semantic rule families. Any path not classified by the
@@ -549,8 +563,8 @@ produced impact records. If any impact is unknown or unclassifiable, the whole
 plan fails closed. Otherwise, the planner unions selected subjects, descriptor
 obligations, validation obligations, work groups, and evidence expectations from
 all impacts. Broader scopes may subsume duplicate narrower obligations when the
-plan records the subsumption in classification rationale or broad-expansion
-records.
+plan records the subsumption in `classification.subsumptions` or
+`broad-expansion-record` records.
 
 ## 10. Scope Resolution Details
 
@@ -734,6 +748,7 @@ api-version: three.ci.validation.receipt/v1alpha1
 kind: ci-validation-receipt
 receipt-id: string
 plan-id: string
+plan-digest: string
 work-group-id: string
 mode: pull_request | push | scheduled_full
 validation-tree:
@@ -764,10 +779,14 @@ proof-admissibility: validation-only
 
 Receipt rules:
 
-- `receipt-id` is stable for the exact receipt content and provenance, and is
-  derived from `plan-id`, `work-group-id`, and run attempt or equivalent
-  execution provenance.
-- `plan-id` and `work-group-id` must match the validation plan.
+- The receipt intake boundary is a closed control-plane-owned manifest or
+  namespace for validation receipts. Aggregation enumerates every receipt-like
+  entry in that boundary and does not treat ordinary logs or auxiliary artifacts
+  outside that boundary as observed receipts.
+- `receipt-id` is an opaque stable identifier for the receipt emission within the
+  run attempt or equivalent execution provenance. It must not be derived from a
+  representation that includes itself.
+- `plan-id`, `plan-digest`, and `work-group-id` must match the validation plan.
 - Because each executable `work-group-id` has exactly one evidence expectation in
   the plan, aggregation matches receipts to evidence expectations by `plan-id`
   and `work-group-id`.
@@ -776,9 +795,20 @@ Receipt rules:
   plan envelope; scheduled-full receipts carry `affected-range.status:
 not-applicable`, null affected-range SHAs and hash, and `scheduled-full.enabled:
 true`.
+- Receipt payload fields must match the frozen plan's matched work group and
+  evidence expectation: `coverage-target`, evidence `category`, and
+  `planned-capabilities` are equality-checked against the plan. Mismatches are
+  inadmissible.
 - `proof-admissibility` is always `validation-only`.
-- `ecosystem-gate` receipts must include one `capability-results` entry for each
-  planned capability in the corresponding work group.
+- Receipts with non-null `planned-capabilities` must include exactly one
+  `capability-results` entry for each planned capability in the corresponding
+  work group. Receipts with null `planned-capabilities` must not invent
+  capability-level coverage.
+- For receipts with capability results, top-level `outcome` is derived from those
+  results: any `blocking-failure` capability makes the receipt
+  `blocking-failure`; all planned capabilities succeeding makes it `success`;
+  `skipped` remains valid only under the non-required work-group rule below. A
+  top-level outcome that disagrees with capability results is inadmissible.
 - Malformed receipts, duplicate receipts for the same required expectation,
   unexpected receipts, wrong-plan receipts, and receipts with an unknown or
   mismatched `work-group-id` are inadmissible for satisfying evidence
@@ -900,6 +930,8 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `wrong-plan`;
 - `unknown-work-group`;
 - `mismatched-work-group`;
+- `mismatched-evidence-payload`;
+- `mismatched-outcome`;
 - `duplicate-receipt`;
 - `unexpected-receipt`.
 
@@ -916,9 +948,11 @@ Executable validation work groups use `validation-work-failed` for
 `blocking-failure` receipts unless a more specific registered diagnostic family
 applies.
 
-When an affected request fails closed with `range-unconfirmed`, its
-`diagnostic-detail` must be propagated to the planner diagnostic and the
-aggregate failure.
+Every planner diagnostic with `verdict-effect: fail-closed` must be copied into
+the aggregate `diagnostics` and represented in `failures` with `kind:
+fail-closed`. When an affected request fails closed with `range-unconfirmed`,
+its `diagnostic-detail` must be propagated to the planner diagnostic and the
+aggregate failure under this general rule.
 
 When aggregation sees an inadmissible receipt, it must record
 `inadmissible-receipt` with the applicable diagnostic detail and fail the
@@ -953,13 +987,14 @@ Implementation acceptance must include at least these evidence scenarios:
 | Project-scoped descriptor-backed change                          | Plan selects direct subject, safe downstream subjects, descriptor obligation, ecosystem gates, release-shaped artifact obligations, receipts, and passing aggregation                                                                               |
 | Project-scoped validation-only change                            | Plan selects validation-only subject and ecosystem gates, no publish or release-shaped artifact obligation unless descriptor-backed                                                                                                                 |
 | Ecosystem-scoped change                                          | Plan selects all active subjects in ecosystem, descriptors for descriptor-backed subjects, release-shaped artifact/receipt obligations, and applicable ecosystem gates                                                                              |
-| Workflow-release infrastructure change                           | Plan selects affected tooling surface, related subjects/ecosystems, and all required discovered descriptors                                                                                                                                         |
+| Workflow-release infrastructure change                           | Plan selects affected tooling surface, related subjects/ecosystems, and all discovered descriptors only for descriptor semantics, authoring validation, planning, contracts, build execution, publish execution, or smoke validation impacts        |
 | Known global change                                              | Plan selects scheduled-full-equivalent scope with global provenance                                                                                                                                                                                 |
 | Scheduled full run                                               | Plan selects full repository scope with scheduled provenance                                                                                                                                                                                        |
 | Known non-impacting change with no executable checks             | Lightweight-only plan passes without heavy work and remains inspectable                                                                                                                                                                             |
 | Known non-impacting change with executable lightweight checks    | Lightweight work receipts are required for pass                                                                                                                                                                                                     |
 | PR/push affected range unconfirmed                               | Request diagnostic `range-unconfirmed`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                                                 |
 | Project-scoped change with insufficient downstream facts         | Planner diagnostic `dependency-impact-insufficient` or `fact-provider-insufficient`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                    |
+| Unclassifiable workflow-release infrastructure impact            | Planner diagnostic `infrastructure-surface-unclassified`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                               |
 | Unknown path                                                     | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                |
 | Invalid descriptor blocking derivation                           | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                            |
 | Missing receipt                                                  | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                    |
