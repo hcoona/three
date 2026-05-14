@@ -1524,6 +1524,12 @@ Receipt rules:
     only the manifest outside the receipt intake boundary; it does not add to the
     observed receipt set.
 
+    Post-run acceptance evidence requires exactly one authoritative receipt
+    manifest artifact instance at the contract-owned manifest ref. A missing,
+    duplicate, unreadable, malformed, or wrong-run manifest is non-authoritative
+    acceptance evidence even if the workflow produced other logs or auxiliary
+    artifacts.
+
 - When aggregation cannot verify a readable plan identity, the manifest
   `plan-id` and `plan-digest` are `null`. Manifest entries still record observed
   receipt-like artifacts in the closed intake namespace, but no entry can be
@@ -1701,8 +1707,11 @@ proof-admissibility: validation-only
 The aggregation report is the only CI-level verdict artifact and is emitted at
 the contract-owned ref
 `ci-validation/aggregate/<run-id>/<run-attempt>/ci-validation-aggregate.json`.
-Workflow conclusion must fail when `verdict` is `failed`. For structurally valid
-plans,
+Post-run acceptance evidence requires exactly one authoritative aggregate
+artifact instance at that ref. A missing, duplicate, unreadable, malformed, or
+wrong-run aggregate is non-authoritative CI verdict evidence; logs, job
+conclusions, or auxiliary artifacts cannot substitute for it. Workflow conclusion
+must fail when `verdict` is `failed`. For structurally valid plans,
 `plan-digest`, `mode`, `validation-tree`, `affected-range`, and `scheduled-full`
 are copied from the frozen plan; the aggregator must verify they match the plan
 before emitting the report. Summary booleans and counts are for quick
@@ -1882,6 +1891,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Unknown path                                                                                    | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                |
 | Invalid descriptor blocking derivation                                                          | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                            |
 | Unreadable, malformed, schema-invalid, duplicate, or digest-mismatched validation plan          | Aggregation emits a failed `invalid-plan` aggregate with unverified plan-derived fields set to `null` or `unknown`, empty evidence results, zero executable counts, and no receipt admissibility authority                                          |
+| Structurally invalid but schema/digest-valid validation plan                                    | Aggregation emits `invalid-plan` with `diagnostic-detail: structurally-invalid`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                             |
 | Missing, duplicate, malformed, ref-mismatched, or digest-mismatched companion planning snapshot | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                              |
 | Missing, duplicate, plan-mismatched, or structurally invalid selector-assignment manifest       | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                          |
 | Missing receipt                                                                                 | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                    |
@@ -1889,6 +1899,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Invalid or mismatched receipt                                                                   | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                  |
 | Forged or producer-unverified writer observation                                                | Matching payload fields are insufficient; aggregation treats the receipt as inadmissible with `mismatched-writer-identity` and fails as `inadmissible-receipt`                                                                                      |
 | Valid required receipt plus extra inadmissible receipt                                          | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                       |
+| Missing, duplicate, malformed, or wrong-run final manifest or aggregate                         | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                          |
 | Unconfirmed artifact shape                                                                      | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                         |
 | Unconfirmed PR context                                                                          | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                 |
 | All CI validation modes have no configured publication authority                                | Static workflow/config/code review covers `pull_request`, `push`, and `scheduled_full`; no publication credentials, OIDC publish permission, release environment, registry mutation, GitHub Release mutation, or release tag mutation is configured |
