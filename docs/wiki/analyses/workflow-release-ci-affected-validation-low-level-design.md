@@ -99,7 +99,7 @@ The top-level CI validation workflow preserves this logical sequence:
 2. **`plan`**
     - checks out the validation tree;
     - runs validation planning without publication credentials;
-    - emits exactly one validation plan artifact;
+    - emits exactly one validation plan artifact at the contract-owned ref;
     - emits plan diagnostics when planning fails closed.
 3. **`materialize-work-groups`**
     - reads the validation plan;
@@ -120,7 +120,7 @@ The top-level CI validation workflow preserves this logical sequence:
     - treats missing, unreadable, invalid, or unmaterializable plans as
       `invalid-plan` with no executable selectors;
     - computes the CI validation verdict;
-    - emits one aggregation report;
+    - emits one aggregation report at the contract-owned ref;
     - fails the workflow when the aggregated validation outcome fails.
 
 These job names are logical handoff names. The implementer may map them to
@@ -295,7 +295,13 @@ workflow artifact or workspace handoff, not a user-authored source file.
 
 ## 6. Validation Plan File
 
-The validation plan is one JSON artifact emitted by planning.
+The validation plan is one JSON artifact emitted by planning at the
+contract-owned ref
+`ci-validation/planning/<run-id>/<run-attempt>/validation-plan.json`. A missing,
+unreadable, malformed, schema-invalid, digest-mismatched, or duplicate artifact at
+that authoritative ref makes aggregation emit `invalid-plan`. Plan artifacts
+outside that ref are non-authoritative auxiliary artifacts and must not be used
+for selector materialization or aggregation.
 
 ### 6.1 Plan Envelope
 
@@ -365,6 +371,11 @@ If two records compare equal under their canonical key, the plan is structurally
 invalid unless the record kind explicitly permits duplicates. The planner must
 not rely on source discovery order, API response order, filesystem order, or job
 completion order for digest-affecting arrays.
+
+Scalar arrays in the plan are sets unless their schema explicitly says they are
+ordered sequences or multiplicity-bearing lists. Duplicate values in set arrays,
+including references, paths, string IDs, `planned-capabilities`, and
+`profile-coverage`, make the plan structurally invalid.
 
 Except for `plan-id`, which is explicitly run-scoped and opaque, every
 identifier that participates in the validation plan digest must be derived
@@ -1049,13 +1060,18 @@ Selector rules:
 - Every `depends-on` entry must resolve to a `work-group-id` in the same frozen
   plan. The work-group dependency graph must be acyclic. Executable work groups
   must not depend on the terminal `evidence-aggregation` work group.
-- `depends-on` is an execution gate. A work group may execute validation only
-  after every dependency has exactly one admissible successful receipt. If any
-  dependency is missing, inadmissible, `skipped`, or `blocking-failure`, the
-  dependent work group is dependency-blocked: it must not run its
-  category-specific validation and must still emit its own admissible receipt with
+- `depends-on` is an execution gate based on observable upstream job outcome and
+  receipt presence, not final receipt admissibility. A dependent work group may
+  execute validation only after every dependency's concrete job completed
+  successfully and uploaded a receipt artifact at its expected ref. If a
+  dependency job failed, was cancelled, was skipped, or did not upload the
+  expected receipt, the dependent work group is dependency-blocked: it must not
+  run its category-specific validation and must still emit its own receipt with
   `outcome: skipped`, empty artifact refs, and a diagnostic explaining the
-  blocking dependency. Aggregation treats that receipt as
+  blocking dependency when workflow construction can still run that dependent
+  selector. Terminal aggregation remains the only authority for final receipt
+  admissibility and may later mark either the dependency or dependent receipt
+  inadmissible. Aggregation treats an admissible dependency-blocked receipt as
   `required-evidence-skipped`; if the dependency-blocked receipt is also missing,
   aggregation reports `required-evidence-missing`.
 - The control plane may batch multiple executable selectors into one concrete job
@@ -1571,8 +1587,11 @@ work-groups:
 proof-admissibility: validation-only
 ```
 
-The aggregation report is the only CI-level verdict artifact. Workflow conclusion
-must fail when `verdict` is `failed`. For structurally valid plans,
+The aggregation report is the only CI-level verdict artifact and is emitted at
+the contract-owned ref
+`ci-validation/aggregate/<run-id>/<run-attempt>/ci-validation-aggregate.json`.
+Workflow conclusion must fail when `verdict` is `failed`. For structurally valid
+plans,
 `plan-digest`, `mode`, `validation-tree`, `affected-range`, and `scheduled-full`
 are copied from the frozen plan; the aggregator must verify they match the plan
 before emitting the report. Summary booleans and counts are for quick
@@ -1599,9 +1618,14 @@ If aggregation cannot parse, schema-validate, digest-verify, or structurally
 validate the plan, it emits a failed aggregate with `reason.invalid-plan: true`
 and `reason.fail-closed: false`. In that mode, unverified plan-derived fields are
 `null` or `unknown`, `evidence-results` is empty, counts are zero except
-`terminal-aggregation: present`, and `failures` contains an `invalid-plan`
-failure with an `invalid-plan` diagnostic. The aggregate must not copy unverified
-plan fields merely because they were present in the unreadable or invalid input.
+`terminal-aggregation: present`, `reason.inadmissible-receipt` is `false`, and
+`failures` contains only an `invalid-plan` failure with an `invalid-plan`
+diagnostic. Observed receipt-like artifacts may still be listed in
+`observed-receipts` for inspection with `admissibility: inadmissible`, but they
+must not create `inadmissible-receipt` failures because no verified plan exists
+against which receipt admissibility can be authoritative. The aggregate must not
+copy unverified plan fields merely because they were present in the unreadable or
+invalid input.
 `reason.fail-closed` is reserved for structurally valid planner fail-closed
 plans.
 
