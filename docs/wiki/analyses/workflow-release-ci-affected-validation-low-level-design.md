@@ -396,10 +396,6 @@ run:
 validation-tree:
     commit-sha: string
     ref: string | null
-execution-tree:
-    observed-commit-sha: string | null
-    source: trusted-receipt-boundary
-    verified: boolean
 affected-range:
     status: available | unavailable | not-applicable
     base-sha: string | null
@@ -1643,6 +1639,10 @@ mode: pull_request | push | scheduled_full
 validation-tree:
     commit-sha: string
     ref: string | null
+execution-tree:
+    observed-commit-sha: string | null
+    source: trusted-receipt-boundary
+    verified: boolean
 affected-range:
     status: available | unavailable | not-applicable
     base-sha: string | null
