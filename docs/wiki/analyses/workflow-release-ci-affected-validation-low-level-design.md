@@ -458,10 +458,12 @@ Fail-closed plans still contain envelope, classification, diagnostics, and enoug
 provenance to inspect why no executable validation plan was authorized. They have
 no executable validation work groups. Every emitted plan, including fail-closed
 plans, must satisfy the schema and structural identity/reference rules in this
-document. Fail-closed plans must leave descriptor, validation, artifact,
-work-group, and evidence-expectation sections empty; inspectability is carried by
-classification, snapshot status, provenance fields, and diagnostics instead of
-non-executable obligation records.
+document. Fail-closed plans must leave descriptor, validation, artifact, and
+evidence-expectation sections empty. Their `work-groups` section is empty except
+for the single non-executable terminal `evidence-aggregation` work group that
+emits the failed aggregate verdict. Inspectability is carried by classification,
+snapshot status, provenance fields, and diagnostics instead of non-executable
+obligation records.
 
 Executable plans require `subject-universe.status: available` and
 `fact-snapshot.status: available`. Fail-closed plans may use `unavailable` with
@@ -934,9 +936,10 @@ Selector rules:
   `ecosystem-gate` selectors. If ecosystem gates are decomposed into subject
   selectors, the plan must preserve the ecosystem parent through source impacts
   or scheduled-full provenance.
-- Fail-closed plans contain no executable validation work groups, but may contain
-  the terminal `evidence-aggregation` work group needed to emit the failed
-  aggregate verdict.
+- Fail-closed plans contain no executable validation work groups and exactly one
+  terminal `evidence-aggregation` work group needed to emit the failed aggregate
+  verdict. The fail-closed aggregation work group has no receipt expectation and
+  an empty `depends-on` list.
 - Lightweight-only plans may contain no executable work groups, or may contain
   lightweight-preflight work groups that must produce evidence before the run can
   pass.
@@ -952,8 +955,10 @@ Selector rules:
   work-group receipt.
 - The terminal `evidence-aggregation` work group must be downstream of every
   executable work group, either by direct `depends-on` references or by the
-  transitive dependency graph. A plan whose dependencies do not make aggregation
-  terminal is structurally invalid.
+  transitive dependency graph. A fail-closed plan has no executable work groups,
+  so its terminal aggregation work group is terminal with empty `depends-on`. A
+  plan whose dependencies do not make aggregation terminal is structurally
+  invalid.
 
 ## 12. Execution Mapping
 
@@ -1127,6 +1132,11 @@ Receipt rules:
 - The closed receipt intake boundary is the run-attempt-scoped artifact namespace
   `ci-validation/receipts/<run-id>/<run-attempt>/`. Executable work-group jobs
   are authorized to write only their own receipt artifacts in that namespace.
+  Each expected receipt artifact ref is derived from the frozen selector, not
+  from receipt payload claims:
+  `ci-validation/receipts/<run-id>/<run-attempt>/<work-group-id>/receipt.json`.
+  If one concrete job batches multiple selectors, it must still write one receipt
+  artifact at the derived ref for each covered `work-group-id`.
   Aggregation owns manifest creation and finalization: at aggregation start it
   enumerates the closed namespace, computes observed digests from the artifact
   bytes it reads, and writes the control-plane manifest
@@ -1147,14 +1157,17 @@ Receipt rules:
           receipt-content-digest: string | null
     ```
 
-    `receipt-content-digest` in the manifest is the aggregator-observed SHA-256
-    digest, not a writer claim. Aggregation is the only authorized writer for the
-    manifest and the only reader that derives the CI-level verdict. Duplicate
-    observed entries, writer/work-group mismatches, cross-attempt artifacts, and
-    unreadable receipt artifacts are observed inadmissible entries and must
-    appear in aggregate diagnostics/failures. A pre-existing manifest uploaded by
-    an executable work group is treated as an unexpected receipt-like artifact,
-    not as aggregation authority.
+    `writer-work-group-id` is derived from the artifact ref path segment, not
+    from the receipt payload. `receipt-content-digest` in the manifest is the
+    aggregator-observed SHA-256 digest, not a writer claim. Aggregation is the
+    only authorized writer for the manifest and the only reader that derives the
+    CI-level verdict. Duplicate observed entries, artifact refs that do not match
+    the derived pattern, writer/work-group mismatches between artifact ref and
+    receipt payload, cross-attempt artifacts, and unreadable receipt artifacts are
+    observed inadmissible entries and must appear in aggregate
+    diagnostics/failures. A pre-existing manifest uploaded by an executable work
+    group is treated as an unexpected receipt-like artifact, not as aggregation
+    authority.
 
 - `receipt-id` is an opaque stable identifier for the receipt emission within the
   run attempt or equivalent execution provenance. It must not be derived from a
