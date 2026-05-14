@@ -261,6 +261,27 @@ Rules:
   for deterministic plan and hash emission. Sorting a confirmed set is
   canonicalization, not repair.
 
+Repository path representation:
+
+- Unless a field explicitly says otherwise, any digest-bearing or
+  evidence-bearing field that names repository content uses a canonical
+  repository-relative Git path. This includes subject `root`, subject descriptor
+  `path`, fact snapshot provider `roots`, artifact-obligation
+  `descriptor-path`, descriptor coverage-target IDs, and release-shaped receipt
+  descriptor `path`.
+- Canonical repository-relative Git paths use the changed-file path invariants
+  above: `/` separators, case-sensitive bytes, no empty value, no absolute path,
+  no `./` prefix, no `\`, no empty segment, no `.` or `..` segment, and no
+  trailing `/`.
+- Directory root fields use the same representation without a trailing slash.
+  The repository root, when it must be named as a directory root, is the only
+  exception and is encoded as the exact string `.`.
+- Producers must emit these paths only in canonical form. Consumers,
+  aggregation, and acceptance must not repair, normalize, case-fold, or
+  workspace-relativize path fields; non-canonical path values in the plan or its
+  companion snapshots make the artifact schema-invalid or structurally invalid
+  according to the containing artifact's validation boundary.
+
 Mode-specific affected-range rules:
 
 - For `pull_request`, `base-sha` is the explicit PR diff base used for changed
@@ -373,6 +394,12 @@ If two records compare equal under their canonical key, the plan is structurally
 invalid unless the record kind explicitly permits duplicates. The planner must
 not rely on source discovery order, API response order, filesystem order, or job
 completion order for digest-affecting arrays.
+
+Canonical array ordering is a structural validity rule for the frozen plan, not
+only a planner emission convention. Aggregation must verify digest-affecting
+arrays are in the canonical order defined above before accepting the plan; a
+non-canonically ordered but digest-self-consistent plan is `invalid-plan` with
+`diagnostic-detail: structurally-invalid`.
 
 Scalar arrays in the plan are sets unless their schema explicitly says they are
 ordered sequences or multiplicity-bearing lists. Duplicate values in set arrays,
