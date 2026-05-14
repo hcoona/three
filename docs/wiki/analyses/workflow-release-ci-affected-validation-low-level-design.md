@@ -554,6 +554,18 @@ providers:
       target-catalog:
           catalog-id: string | null
           descriptor-paths: [string]
+          entries:
+              - descriptor-path: string
+                profile: string
+                artifact:
+                    kind-family: string
+                    concrete-kind: string
+                    logical-artifact-role: string
+                    variant-dimensions: object
+                release-receipt:
+                    expected-family: string
+                    logical-receipt-role: string
+                    variant-dimensions: object
       diagnostics: [diagnostic-record]
 ```
 
@@ -581,12 +593,17 @@ preimage. Provider entries are sorted by `provider`; `roots`, `subjects`, and
 `tooling-surfaces` are sorted lexicographically by UTF-8 encoded bytes;
 descriptor fact records are sorted by `(descriptor-path, descriptor-identity,
 owner-subject-id, source)` with null before strings; `target-catalog` descriptor
-paths are sorted lexicographically by UTF-8 encoded bytes; `dependency-edges` are
-sorted by `(from-subject-id, to-subject-id, relation)` with each field compared
-as UTF-8 bytes; diagnostics are sorted by `diagnostic-id`. Null sorts before
-strings for any future nullable tuple field.
+paths are sorted lexicographically by UTF-8 encoded bytes; `target-catalog`
+entries are sorted by `(descriptor-path, profile, artifact.kind-family,
+artifact.concrete-kind, artifact.logical-artifact-role,
+release-receipt.expected-family, release-receipt.logical-receipt-role)` with
+variant-dimension objects compared by RFC 8785 canonical JSON bytes;
+`dependency-edges` are sorted by `(from-subject-id, to-subject-id, relation)` with
+each field compared as UTF-8 bytes; diagnostics are sorted by `diagnostic-id`.
+Null sorts before strings for any future nullable tuple field.
 Provider entries that do not own target-catalog facts use
-`target-catalog.catalog-id: null` and `target-catalog.descriptor-paths: []`.
+`target-catalog.catalog-id: null`, `target-catalog.descriptor-paths: []`, and
+`target-catalog.entries: []`.
 Unavailable provider entries inside an emitted fact snapshot artifact must appear
 with `status: unavailable`, empty fact arrays, and diagnostics explaining why the
 planner failed closed. Planning, aggregation, and acceptance must verify the
@@ -989,16 +1006,19 @@ subject universe. Workflow-release-only validation is represented as
 `workflow-release-tooling` work groups with `coverage-target.type:
 tooling-surface`; descriptor/tooling-only workflow-release surfaces are tooling
 surfaces, not `validation-subject-snapshot` records. For every subject with
-`activity-status: active` and `selection-status: selected`, the fact snapshot must
-contain exactly one `status: available` provider entry that lists the subject ID
-and supports that subject's ecosystem: `dotnet` for `.NET`, `python` for Python,
-and `javascript-typescript` for JavaScript or TypeScript. Descriptor metadata
-emitted by the `workflow-release` provider for ecosystem-owned descriptor-backed
-subjects is digest-bound provider data in `descriptors` and must not list those
-subjects in `provider.subjects`. Missing provider coverage, duplicate provider
-coverage for the same selected subject, unavailable provider coverage, or an
-ecosystem/provider mismatch makes planning fail closed with
-`fact-provider-insufficient`.
+`activity-status: active` and `selection-status: selected` in an executable plan,
+the fact snapshot must contain exactly one `status: available` provider entry
+that lists the subject ID and supports that subject's ecosystem: `dotnet` for
+`.NET`, `python` for Python, and `javascript-typescript` for JavaScript or
+TypeScript. For structurally valid fail-closed plans, selected subjects may be
+listed by `status: unavailable` provider entries only when fail-closed
+diagnostics explain why provider facts could not be produced or confirmed.
+Descriptor metadata emitted by the `workflow-release` provider for
+ecosystem-owned descriptor-backed subjects is digest-bound provider data in
+`descriptors` and must not list those subjects in `provider.subjects`. Missing
+provider coverage, duplicate provider coverage for the same selected subject,
+unavailable provider coverage in an executable plan, or an ecosystem/provider
+mismatch makes planning fail closed with `fact-provider-insufficient`.
 
 Descriptor and target-catalog facts that affect descriptor obligations,
 release-shaped artifact obligations, descriptor-validation scope, or smoke
@@ -1155,6 +1175,7 @@ coverage-target:
     id: string
 ecosystem: string | null
 runner-family: windows | ubuntu
+selector-variant: string | null
 depends-on: [work-group-id]
 expected-evidence:
     category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
@@ -1168,6 +1189,11 @@ rediscovering subject ecosystem, descriptor contents, or tooling policy after
 planning. If the planner cannot determine a required executable work group's
 runner family from the closed mapping in section 12, planning fails closed or the
 plan is structurally invalid rather than emitting `runner-family: null`.
+`selector-variant` is `null` for the ordinary one-work-group-per-kind/target
+case. It is required and path-safe when multiple executable work groups share the
+same `kind` and `coverage-target`; examples include runner-family splits or
+other validation variants that must remain distinct while covering the same
+logical target.
 
 Each terminal aggregation work group has:
 
@@ -1184,14 +1210,15 @@ aggregate-output: ci-validation-aggregate
 
 Selector rules:
 
-- `work-group-id` is stable within the plan and derived from kind plus coverage
-  target. It is an artifact-ref-bearing identifier and therefore must match the
-  path-safe grammar `^[a-z0-9][a-z0-9._-]{0,127}$`. The planner must not embed
-  raw coverage target IDs that can contain `/`, path separators, percent-escaped
-  path syntax, control characters, or filesystem traversal tokens. When a
-  coverage target is not already path-safe, the planner derives `work-group-id`
-  from the work-group kind, a normalized readable prefix, and a lowercase
-  SHA-256 digest of the full typed coverage target; the digest preimage, not the
+- `work-group-id` is stable within the plan and derived from kind, coverage
+  target, and `selector-variant`. It is an artifact-ref-bearing identifier and
+  therefore must match the path-safe grammar `^[a-z0-9][a-z0-9._-]{0,127}$`. The
+  planner must not embed raw coverage target IDs or selector variants that can
+  contain `/`, path separators, percent-escaped path syntax, control characters,
+  or filesystem traversal tokens. When a coverage target or selector variant is
+  not already path-safe, the planner derives `work-group-id` from the work-group
+  kind, a normalized readable prefix, and a lowercase SHA-256 digest of the full
+  typed coverage target and selector variant; the digest preimage, not the
   readable prefix, preserves uniqueness.
   The work-group ID digest preimage is the RFC 8785 canonical JSON bytes of:
 
@@ -1199,6 +1226,7 @@ Selector rules:
     {
         "api-version": "three.ci.validation.work-group-id/v1alpha1",
         "kind": "release-shaped-artifact",
+        "selector-variant": null,
         "coverage-target": {
             "type": "artifact-obligation",
             "id": "artifact-obligation-id"
@@ -1206,8 +1234,8 @@ Selector rules:
     }
     ```
 
-    `kind`, `coverage-target.type`, and `coverage-target.id` are replaced by the
-    frozen work-group values before hashing.
+    `kind`, `selector-variant`, `coverage-target.type`, and `coverage-target.id`
+    are replaced by the frozen work-group values before hashing.
 
 - Work groups are selectors, not command lines.
 - Every `depends-on` entry must resolve to a `work-group-id` in the same frozen
@@ -1406,8 +1434,9 @@ The planner applies this table before freezing work groups and records the
 result in each executable selector. "Requires ecosystem runner" means the
 descriptor validation must run with the same runner family as the selected
 subject or artifact-producing ecosystem; mixed requirements are represented by
-separate work groups. "Requires Windows-only evidence" means the affected tooling
-surface validates Windows-specific .NET/build behavior. All other
+separate work groups with distinct non-null `selector-variant` values. "Requires
+Windows-only evidence" means the affected tooling surface validates
+Windows-specific .NET/build behavior. All other
 workflow-release-tooling work groups use Ubuntu. All runners provision tools
 through `mise` where practical. The concrete command lines and helper scripts are
 implementation-owned, but they must run the repository's existing ecosystem gates
