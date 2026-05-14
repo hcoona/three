@@ -477,6 +477,9 @@ affected-range:
     base-tip-sha: string | null
     head-sha: string | null
     changed-files-hash: string | null
+request:
+    artifact-ref: string
+    request-digest: string
 scheduled-full:
     enabled: boolean
 planner:
@@ -494,18 +497,27 @@ fact-snapshot:
     id: string | null
 ```
 
-`plan-id` is an opaque run-scoped stable identifier assigned by the control
-plane. It is not a content digest and must not be derived from a representation
-that includes itself. `plan-digest` is the lowercase hexadecimal SHA-256 digest
-of the RFC 8785 JSON Canonicalization Scheme canonical UTF-8 bytes for the
-frozen validation plan after removing only the root-level `plan-digest` member.
-It must match `^[0-9a-f]{64}$`. The plan payload must be I-JSON compatible for
-digesting; duplicate object member names make it malformed. All remaining
-fields, including nulls, false values, empty arrays or objects, diagnostics,
-obligations, work groups, evidence expectations, and detail profiles, participate
-in the digest.
+`request.artifact-ref` is the exact contract-owned planner-facing request artifact
+ref from section 5. `request.request-digest` is the verified request digest the
+planner recomputed before trusting the request. Both fields are required for every
+authoritative plan, including fail-closed plans emitted for an invalid request.
+When planning emits a fail-closed plan after it can identify the request artifact
+but cannot trust its payload, these fields still identify the observed request ref
+and digest claim or recomputed digest that caused `request-invalid`; if the request
+artifact cannot be identified at all, the planner emits no authoritative
+validation plan. `plan-id` is an opaque run-scoped stable identifier assigned by
+the control plane. It is not a content digest and must not be derived from a
+representation that includes itself. `plan-digest` is the lowercase hexadecimal
+SHA-256 digest of the RFC 8785 JSON Canonicalization Scheme canonical UTF-8 bytes
+for the frozen validation plan after removing only the root-level `plan-digest`
+member. It must match `^[0-9a-f]{64}$`. The plan payload must be I-JSON compatible
+for digesting; duplicate object member names make it malformed. All remaining
+fields, including nulls, false values, empty arrays or objects, request binding,
+diagnostics, obligations, work groups, evidence expectations, and detail profiles,
+participate in the digest.
 Array order is preserved. Receipts and aggregation evidence bind to the frozen
-plan with both `plan-id` and `plan-digest`.
+plan with both `plan-id` and `plan-digest`, and post-run audit can replay-bind the
+plan to the normalized request through the frozen request artifact ref and digest.
 
 The `plan` boundary must observe its checkout tree before running planner logic
 and bind that observation into `planner.execution-tree`. For authoritative plans,
@@ -2411,6 +2423,9 @@ affected-range:
     base-tip-sha: string | null
     head-sha: string | null
     changed-files-hash: string | null
+request:
+    artifact-ref: string | null
+    request-digest: string | null
 scheduled-full:
     enabled: boolean | null
 verdict: passed | failed
@@ -2489,12 +2504,19 @@ job conclusion, or payload self-claims. Any final manifest or aggregate
 finalization/reconciliation failure must fail the `aggregate-evidence` job and
 the final required check even when the computed validation verdict would
 otherwise be `passed`. Workflow conclusion must fail when `verdict` is `failed`.
-For structurally valid plans,
-`plan-digest`, `mode`, `validation-tree`, `affected-range`, and `scheduled-full`
-are copied from the frozen plan; the aggregator must verify they match the plan
-before emitting the report. Summary booleans and counts are for quick
-inspection. `evidence-results` is the normalized machine-readable result for
-every evidence expectation. Every evidence expectation is verdict-relevant, so
+For structurally valid plans, `plan-digest`, `mode`, `validation-tree`,
+`affected-range`, `request`, and `scheduled-full` are copied from the frozen plan;
+the aggregator must verify they match the plan before emitting the report.
+Aggregation and post-run acceptance must use `request.artifact-ref` and
+`request.request-digest` to verify the authoritative normalized request artifact:
+exactly one artifact instance at the frozen request ref, matching common-envelope
+run identity, `normalize-input` producer authority, schema validity, matching
+payload `artifact-ref`, and recomputed request digest. If request replay
+verification fails for an otherwise structurally valid plan, aggregation emits
+`invalid-plan` rather than treating the plan as detached from its original request.
+Summary booleans and counts are for quick inspection. `evidence-results` is the
+normalized machine-readable result for every evidence expectation. Every evidence
+expectation is verdict-relevant, so
 `missing`, `skipped`, and `failed` results must have corresponding `failures`
 entries. Finalization/reconciliation failures that leave no authoritative final
 evidence must produce `reason.final-evidence-failure: true` and a corresponding
@@ -2737,7 +2759,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Known non-impacting change with executable lightweight checks                                                                                                                                   | Lightweight work receipts are required for pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Known non-impacting lightweight-only plan attempts subject, ecosystem, or descriptor-scoped lightweight work                                                                                    | The plan is structurally invalid; lightweight-only executable checks must use `lightweight-policy` or workflow-release `tooling-surface` coverage targets rather than implying selected validation subjects                                                                                                                                                                                                                                                                                                                                                                                      |
 | Confirmed zero-file affected range                                                                                                                                                              | Affected request has `affected-range.status: available`, empty `changed-files`, non-null canonical `changed-files-hash`, executable lightweight-only plan with available discovered subjects all marked `not-selected`, an available provider fact snapshot whose provider subject IDs exactly match the provider-bound frozen subject universe, unsupported audit subjects only when they satisfy the unsupported-subject constraints, no selected subjects, no executable validation work groups, no evidence expectations, no receipts, and passing aggregate after final evidence validation |
-| Wrong-run or producer-unverified planner-facing request                                                                                                                                         | Planning does not trust affected-range or scheduled-full payload claims; it either fails closed with `request-invalid` or emits no authoritative plan unless the request ref, digest, instance count, envelope, and `normalize-input` producer authority verify                                                                                                                                                                                                                                                                                                                                  |
+| Wrong-run or producer-unverified planner-facing request                                                                                                                                         | Planning does not trust affected-range or scheduled-full payload claims; it either fails closed with `request-invalid` or emits no authoritative plan unless the request ref, digest, instance count, envelope, and `normalize-input` producer authority verify; authoritative plans and aggregates freeze the verified request ref and digest for replay                                                                                                                                                                                                                                        |
 | Selector materialization receives invalid, producer-unverified, identity-unverified, or companion-mismatched plan                                                                               | `materialize-work-groups` emits no selector-assignment manifest and no executable selectors unless it can verify plan identity and all authoritative plan plus companion snapshot checks; fan-out never runs from a plan that has not passed that validation                                                                                                                                                                                                                                                                                                                                     |
 | Structurally valid fail-closed or no-executable plan                                                                                                                                            | `materialize-work-groups` emits exactly one empty selector-assignment manifest with verified plan identity so aggregation preserves fail-closed or no-work semantics instead of reporting `invalid-plan`                                                                                                                                                                                                                                                                                                                                                                                         |
 | Mixed project/ecosystem/infrastructure/non-impacting change                                                                                                                                     | Plan unions all selected scopes, descriptor/release-shaped obligations, ecosystem gates, and additive lightweight obligations; broader scopes may subsume duplicates only with explicit `classification.subsumptions` records, and non-impacting paths do not replace required heavyweight validation                                                                                                                                                                                                                                                                                            |
@@ -2762,6 +2784,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Logical boundary mapped to missing or wrong platform job identity                                                                                                                               | Producer authority verification rejects the artifact as producer-unverified using the boundary identity map; payload producer claims, logs, and job conclusions do not substitute                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Logical contract artifact ref maps ambiguously or incorrectly to a physical artifact name                                                                                                       | Artifact instance counting, duplicate detection, and namespace enumeration use the canonical fixed-length SHA-256 physical-name mapping; prefixed artifacts whose payload refs do not recompute to the observed physical name are non-authoritative or unexpected in closed namespaces                                                                                                                                                                                                                                                                                                           |
 | Request payload artifact ref or physical artifact name mismatches the contract-owned request ref                                                                                                | Planning fails closed with `request-invalid` and `diagnostic-detail: request-ref-mismatch`, or emits no authoritative plan                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Aggregate cannot replay-verify the request artifact ref or digest frozen into an otherwise structurally valid plan                                                                              | Aggregation emits `invalid-plan`; copied plan semantics are insufficient without the authoritative normalized request artifact identity and digest                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Missing receipt                                                                                                                                                                                 | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Planned validation work skipped or failed                                                                                                                                                       | Aggregation records `required-evidence-skipped` or `blocking-validation-failure` and fails the final verdict; planned executable validation work is not optional or non-gating                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Ecosystem gate omits a capability enabled by selected subject/provider facts                                                                                                                    | Plan is fail-closed with `fact-provider-insufficient` or structurally invalid; receipts cannot pass by matching an under-planned capability set                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
