@@ -121,9 +121,10 @@ The experiments imply these constraints for the future LLD or implementation:
 
 ## Remaining Risks and Non-Validated Areas
 
-- Same-run duplicate physical artifact names were not observed. The design must
-  still fail closed because enumeration is instance-oriented and duplicates are a
-  plausible control-plane conflict.
+- Same-run duplicate physical artifact names were observed for out-of-scope
+  `release-tag` artifacts. CI-validation candidate artifacts still need
+  fail-closed duplicate handling and exactly-one admission because enumeration is
+  instance-oriented.
 - GitHub's artifact API does not provide a cryptographic or API-native
   artifact-to-uploader-job binding. Any stricter producer-authority requirement
   needs separate trust-boundary review.
@@ -141,9 +142,26 @@ The experiments imply these constraints for the future LLD or implementation:
   attempt-2 .NET planner metadata that did not exist while attempt-1 metadata
   remained enumerable. This is release rerun hardening, not Group 4 summary
   implementation work.
-- Group 2 observed a second `release-tag-result` artifact produced during
-  attempt 2 while its name still contained attempt `1`. This is also release
-  rerun hardening outside the CI affected-validation platform-spike summary.
+- Group 2 observed duplicate out-of-scope `release-tag-result` artifacts with
+  the same physical name:
+  `release-tag-result-v1-25886359951-1-c56877384aa6a56fcdc86f83`. This is
+  release rerun hardening outside the CI affected-validation platform-spike
+  summary.
+    - 2026-05-14 verification used this query:
+
+        ```bash
+        gh api \
+          'repos/hcoona/three/actions/runs/25886359951/artifacts?per_page=100' \
+          --jq '.artifacts[] | select(.name == "release-tag-result-v1-25886359951-1-c56877384aa6a56fcdc86f83") | {id, name}'
+        ```
+
+        It returned two live artifacts with that name:
+
+        | Artifact ID  | Name                                                           |
+        | ------------ | -------------------------------------------------------------- |
+        | `7005190428` | `release-tag-result-v1-25886359951-1-c56877384aa6a56fcdc86f83` |
+        | `7005148473` | `release-tag-result-v1-25886359951-1-c56877384aa6a56fcdc86f83` |
+
 - If OA requires strict producer authority against untrusted workflow changes,
   the current platform evidence is not enough; that needs a separate security
   and trust-boundary decision.
