@@ -459,7 +459,10 @@ request contract. A confirmed zero-file affected range uses `changed-files: []`
 and emits the digest of that object. For `affected-range.status: unavailable`
 and for scheduled-full `not-applicable`, `changed-files-hash` is `null` and no
 changed-files hash preimage is defined. Non-null `changed-files-hash` values
-must match `^[0-9a-f]{64}$`.
+must match `^[0-9a-f]{64}$`. When `changed-files-hash` is `null`, zero artifact
+instances must exist at the changed-files snapshot authoritative ref. An artifact
+at that ref is non-authoritative and makes the plan `invalid-plan` because it
+conflicts with the plan's no-snapshot contract.
 
 When `changed-files-hash` is non-null, the planner must persist the exact
 versioned changed-files object as a companion snapshot artifact:
@@ -516,7 +519,10 @@ fail-closed plan may instead use
 provider entries with `status: unavailable`; in that case, diagnostics still
 explain why the plan is fail-closed. The fact snapshot artifact is
 plan-inspectable evidence for planning inputs, not executable validation evidence
-and not release proof.
+and not release proof. When `fact-snapshot.status` is `unavailable`, zero
+artifact instances must exist at the fact snapshot authoritative ref. An artifact
+at that ref is non-authoritative and makes the plan `invalid-plan` because it
+conflicts with the plan's no-snapshot contract.
 
 The fact snapshot artifact uses this minimum shape:
 
@@ -538,6 +544,14 @@ providers:
             to-subject-id: string
             relation: project-reference | package-reference | workspace | tooling
       tooling-surfaces: [string]
+      descriptors:
+          - descriptor-path: string
+            descriptor-identity: string | null
+            owner-subject-id: string | null
+            source: ecosystem-provider | workflow-release-provider
+      target-catalog:
+          catalog-id: string | null
+          descriptor-paths: [string]
       diagnostics: [diagnostic-record]
 ```
 
@@ -563,9 +577,14 @@ is computed as the RFC 8785 digest of the artifact projection containing only
 `plan-id`, `fact-snapshot-id`, and `schema-diagnostics` are not part of the hash
 preimage. Provider entries are sorted by `provider`; `roots`, `subjects`, and
 `tooling-surfaces` are sorted lexicographically by UTF-8 encoded bytes;
-`dependency-edges` are sorted by `(from-subject-id, to-subject-id, relation)`
-with each field compared as UTF-8 bytes; diagnostics are sorted by
-`diagnostic-id`. Null sorts before strings for any future nullable tuple field.
+descriptor fact records are sorted by `(descriptor-path, descriptor-identity,
+owner-subject-id, source)` with null before strings; `target-catalog` descriptor
+paths are sorted lexicographically by UTF-8 encoded bytes; `dependency-edges` are
+sorted by `(from-subject-id, to-subject-id, relation)` with each field compared
+as UTF-8 bytes; diagnostics are sorted by `diagnostic-id`. Null sorts before
+strings for any future nullable tuple field.
+Provider entries that do not own target-catalog facts use
+`target-catalog.catalog-id: null` and `target-catalog.descriptor-paths: []`.
 Unavailable provider entries inside an emitted fact snapshot artifact must appear
 with `status: unavailable`, empty fact arrays, and diagnostics explaining why the
 planner failed closed. Planning, aggregation, and acceptance must verify the
@@ -925,12 +944,12 @@ Rules:
 The implementation uses one fact-provider seam per ecosystem family plus one
 workflow-release tooling provider.
 
-| Provider              | Discovery source                                                         | Required facts                                                                                                                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| .NET                  | solution/MSBuild project graph under active roots                        | .NET subject ownership, project roots, project references when available, packable descriptor-backed projects, validation-only test/build projects, Windows runner expectation                                  |
-| Python                | `uv` workspace and project metadata under active roots                   | Python subject ownership, workspace members, package roots, validation-only projects, dependency facts when safely available, Ubuntu runner expectation                                                         |
-| JavaScript/TypeScript | PNPM workspace metadata under active roots                               | JavaScript/TypeScript subject ownership, workspace packages, package roots, validation-only packages, dependency facts when safely available, Ubuntu runner expectation                                         |
-| workflow-release      | release descriptors, target catalog, workflow-release docs/tooling paths | workflow-release-only subject ownership, descriptor metadata for descriptor-backed subjects owned by ecosystem providers, tooling surfaces, descriptor schema documentation surfaces, smoke validation surfaces |
+| Provider              | Discovery source                                                         | Required facts                                                                                                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| .NET                  | solution/MSBuild project graph under active roots                        | .NET subject ownership, project roots, project references when available, packable descriptor-backed projects, validation-only test/build projects, Windows runner expectation                                |
+| Python                | `uv` workspace and project metadata under active roots                   | Python subject ownership, workspace members, package roots, validation-only projects, dependency facts when safely available, Ubuntu runner expectation                                                       |
+| JavaScript/TypeScript | PNPM workspace metadata under active roots                               | JavaScript/TypeScript subject ownership, workspace packages, package roots, validation-only packages, dependency facts when safely available, Ubuntu runner expectation                                       |
+| workflow-release      | release descriptors, target catalog, workflow-release docs/tooling paths | workflow-release tooling surfaces, descriptor metadata for descriptor-backed subjects owned by ecosystem providers, target-catalog facts, descriptor schema documentation surfaces, smoke validation surfaces |
 
 The JavaScript/TypeScript row is one provider seam and emits the single fact
 snapshot provider ID `javascript-typescript`. It may discover subjects whose
@@ -938,18 +957,28 @@ normalized subject `ecosystem` is `javascript` or `typescript`; ecosystem-scoped
 selection, work-group IDs, evidence expectations, and runner mapping continue to
 use the subject ecosystem rather than splitting the provider entry.
 
-For every subject with `activity-status: active` and `selection-status: selected`,
-the fact snapshot must contain exactly one `status: available` provider entry
-that lists the subject ID and supports that subject's ecosystem: `dotnet` for
-`.NET`, `python` for Python, `javascript-typescript` for JavaScript or
-TypeScript, or `workflow-release` only for workflow-release tooling and
-descriptor/tooling-only workflow-release subjects. Descriptor metadata emitted by
-the `workflow-release` provider for ecosystem-owned descriptor-backed subjects is
-auxiliary provider data and must not list those subjects in
-`provider.subjects`. Missing provider coverage, duplicate provider coverage for
-the same selected subject, unavailable provider coverage, or an
+The workflow-release provider does not create `workflow-release` subjects in the
+subject universe. Workflow-release-only validation is represented as
+`workflow-release-tooling` work groups with `coverage-target.type:
+tooling-surface`; descriptor/tooling-only workflow-release surfaces are tooling
+surfaces, not `validation-subject-snapshot` records. For every subject with
+`activity-status: active` and `selection-status: selected`, the fact snapshot must
+contain exactly one `status: available` provider entry that lists the subject ID
+and supports that subject's ecosystem: `dotnet` for `.NET`, `python` for Python,
+and `javascript-typescript` for JavaScript or TypeScript. Descriptor metadata
+emitted by the `workflow-release` provider for ecosystem-owned descriptor-backed
+subjects is digest-bound provider data in `descriptors` and must not list those
+subjects in `provider.subjects`. Missing provider coverage, duplicate provider
+coverage for the same selected subject, unavailable provider coverage, or an
 ecosystem/provider mismatch makes planning fail closed with
 `fact-provider-insufficient`.
+
+Descriptor and target-catalog facts that affect descriptor obligations,
+release-shaped artifact obligations, descriptor-validation scope, or smoke
+validation scope must be represented in the digest-bound fact snapshot before the
+plan can derive those obligations. The planner must not derive those obligations
+from repository state, descriptor files, or target catalog data that is absent
+from the frozen fact snapshot.
 
 Provider failure rules:
 
@@ -1771,8 +1800,13 @@ manifest/aggregate mismatch as non-authoritative final evidence.
 Post-run acceptance evidence requires exactly one authoritative aggregate
 artifact instance at that ref. A missing, duplicate, unreadable, malformed, or
 wrong-run aggregate is non-authoritative CI verdict evidence; logs, job
-conclusions, or auxiliary artifacts cannot substitute for it. Workflow conclusion
-must fail when `verdict` is `failed`. For structurally valid plans,
+conclusions, or auxiliary artifacts cannot substitute for it. Post-run acceptance
+must also verify that the final manifest and aggregate artifacts were produced by
+the `aggregate-evidence` control-plane boundary for the same run attempt. A
+manifest or aggregate artifact authored by an executable validation command, a
+non-aggregation job, or an unverified artifact instance is non-authoritative even
+if its payload, schema, and digest bindings match. Workflow conclusion must fail
+when `verdict` is `failed`. For structurally valid plans,
 `plan-digest`, `mode`, `validation-tree`, `affected-range`, and `scheduled-full`
 are copied from the frozen plan; the aggregator must verify they match the plan
 before emitting the report. Summary booleans and counts are for quick
@@ -1877,6 +1911,7 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `subject-universe-digest-mismatch`;
 - `changed-files-impact-coverage-mismatch`;
 - `changed-files-snapshot-missing`;
+- `changed-files-snapshot-unexpected`;
 - `changed-files-snapshot-duplicate`;
 - `changed-files-snapshot-unreadable`;
 - `changed-files-snapshot-malformed`;
@@ -1884,6 +1919,7 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `changed-files-snapshot-ref-mismatch`;
 - `changed-files-snapshot-digest-mismatch`;
 - `fact-snapshot-missing`;
+- `fact-snapshot-unexpected`;
 - `fact-snapshot-duplicate`;
 - `fact-snapshot-unreadable`;
 - `fact-snapshot-malformed`;
@@ -1970,14 +2006,14 @@ Implementation acceptance must include at least these evidence scenarios:
 | Invalid descriptor blocking derivation                                                                         | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                            |
 | Unreadable, malformed, schema-invalid, duplicate, producer-unverified, or digest-mismatched validation plan    | Aggregation emits a failed `invalid-plan` aggregate with unverified plan-derived fields set to `null` or `unknown`, empty evidence results, zero executable counts, and no receipt admissibility authority                                          |
 | Structurally invalid but schema/digest-valid validation plan                                                   | Aggregation emits `invalid-plan` with `diagnostic-detail: structurally-invalid`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                             |
-| Missing, duplicate, malformed, ref-mismatched, or digest-mismatched companion planning snapshot                | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                              |
+| Missing, unexpected, duplicate, malformed, ref-mismatched, or digest-mismatched companion planning snapshot    | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                              |
 | Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                          |
 | Missing receipt                                                                                                | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                    |
 | Planned validation work skipped or failed                                                                      | Aggregation records `required-evidence-skipped` or `blocking-validation-failure` and fails the final verdict; planned executable validation work is not optional or non-gating                                                                      |
 | Invalid or mismatched receipt                                                                                  | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                  |
 | Forged or producer-unverified writer observation                                                               | Matching payload fields are insufficient; aggregation treats the receipt as inadmissible with `mismatched-writer-identity` and fails as `inadmissible-receipt`                                                                                      |
 | Valid required receipt plus extra inadmissible receipt                                                         | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                       |
-| Missing, duplicate, malformed, wrong-run, or mutually mismatched final manifest or aggregate                   | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                          |
+| Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched final manifest or aggregate   | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                          |
 | Unconfirmed artifact shape                                                                                     | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                         |
 | Unconfirmed PR context                                                                                         | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                 |
 | All CI validation modes have no configured publication authority                                               | Static workflow/config/code review covers `pull_request`, `push`, and `scheduled_full`; no publication credentials, OIDC publish permission, release environment, registry mutation, GitHub Release mutation, or release tag mutation is configured |
