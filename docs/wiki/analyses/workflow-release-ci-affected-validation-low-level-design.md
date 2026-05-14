@@ -351,10 +351,23 @@ changed-files hash preimage is defined. Non-null `changed-files-hash` values
 must match `^[0-9a-f]{64}$`.
 
 When `changed-files-hash` is non-null, the planner must persist the exact
-versioned changed-files object as a companion
-`three.ci.validation.changed-files/v1alpha1` snapshot artifact. Aggregation and
-acceptance must load the snapshot, recompute `changed-files-hash`, and reject the
-plan as `invalid-plan` if the snapshot is missing, malformed, or mismatched.
+versioned changed-files object as a companion snapshot artifact:
+
+```yaml
+common-envelope: inherited
+api-version: three.ci.validation.changed-files/v1alpha1
+kind: ci-validation-changed-files-snapshot
+changed-files-hash: string
+hash-payload:
+    api-version: three.ci.validation.changed-files/v1alpha1
+    changed-files: [string]
+```
+
+`changed-files-hash` is computed only from the RFC 8785 canonical JSON bytes of
+`hash-payload`; common-envelope fields, `kind`, and `schema-diagnostics` are not
+part of that hash preimage. Aggregation and acceptance must load the snapshot,
+recompute `changed-files-hash`, and reject the plan as `invalid-plan` if the
+snapshot is missing, malformed, or mismatched.
 
 `subject-universe.id` is the lowercase hexadecimal SHA-256 digest of the RFC
 8785 canonical JSON representation of this versioned object:
@@ -383,6 +396,7 @@ and not release proof.
 The fact snapshot artifact uses this minimum shape:
 
 ```yaml
+common-envelope: inherited
 api-version: three.ci.validation.fact-snapshot/v1alpha1
 kind: ci-validation-fact-snapshot
 fact-snapshot-id: string
@@ -408,17 +422,18 @@ once in canonical subject order; if a cycle or partial graph prevents a complete
 deterministic downstream closure, planning fails closed.
 
 `fact-snapshot-id` equals the plan envelope `fact-snapshot.id` and is computed as
-the RFC 8785 digest of the artifact after removing only the root
-`fact-snapshot-id` member. Provider entries are sorted by `provider`; `roots`,
-`subjects`, and `tooling-surfaces` are sorted lexicographically by UTF-8 encoded
-bytes; `dependency-edges` are sorted by `(from-subject-id, to-subject-id,
-relation)` with each field compared as UTF-8 bytes; diagnostics are sorted by
-`diagnostic-id`. Null sorts before strings for any future nullable tuple field.
-Unavailable provider entries inside an emitted fact snapshot artifact must appear
-with `status: unavailable`, empty fact arrays, and diagnostics explaining why the
-planner failed closed. Planning, aggregation, and acceptance must verify the
-artifact schema and recompute `fact-snapshot-id` before treating an executable
-plan as structurally valid.
+the RFC 8785 digest of the artifact projection containing only `api-version`,
+`kind`, `plan-id`, and `providers`; common-envelope fields, `fact-snapshot-id`,
+and `schema-diagnostics` are not part of the hash preimage. Provider entries are
+sorted by `provider`; `roots`, `subjects`, and `tooling-surfaces` are sorted
+lexicographically by UTF-8 encoded bytes; `dependency-edges` are sorted by
+`(from-subject-id, to-subject-id, relation)` with each field compared as UTF-8
+bytes; diagnostics are sorted by `diagnostic-id`. Null sorts before strings for
+any future nullable tuple field. Unavailable provider entries inside an emitted
+fact snapshot artifact must appear with `status: unavailable`, empty fact arrays,
+and diagnostics explaining why the planner failed closed. Planning, aggregation,
+and acceptance must verify the artifact schema and recompute `fact-snapshot-id`
+before treating an executable plan as structurally valid.
 
 ### 6.2 Plan Sections
 
@@ -444,8 +459,9 @@ provenance to inspect why no executable validation plan was authorized. They hav
 no executable validation work groups. Every emitted plan, including fail-closed
 plans, must satisfy the schema and structural identity/reference rules in this
 document. Fail-closed plans must leave descriptor, validation, artifact,
-work-group, and evidence-expectation sections empty unless a section is needed
-only for inspectability and has no executable references.
+work-group, and evidence-expectation sections empty; inspectability is carried by
+classification, snapshot status, provenance fields, and diagnostics instead of
+non-executable obligation records.
 
 Executable plans require `subject-universe.status: available` and
 `fact-snapshot.status: available`. Fail-closed plans may use `unavailable` with
@@ -1109,9 +1125,13 @@ Receipt rules:
   entry in that boundary and does not treat ordinary logs or auxiliary artifacts
   outside that boundary as observed receipts.
 - The closed receipt intake boundary is the run-attempt-scoped artifact namespace
-  `ci-validation/receipts/<run-id>/<run-attempt>/` plus the control-plane-owned
-  manifest `ci-validation/receipts/<run-id>/<run-attempt>/manifest.json`.
-  Manifest entries have:
+  `ci-validation/receipts/<run-id>/<run-attempt>/`. Executable work-group jobs
+  are authorized to write only their own receipt artifacts in that namespace.
+  Aggregation owns manifest creation and finalization: at aggregation start it
+  enumerates the closed namespace, computes observed digests from the artifact
+  bytes it reads, and writes the control-plane manifest
+  `ci-validation/receipts/<run-id>/<run-attempt>/manifest.json` as an observed
+  enumeration artifact. Manifest entries have:
 
     ```yaml
     api-version: three.ci.validation.receipt-manifest/v1alpha1
@@ -1127,14 +1147,14 @@ Receipt rules:
           receipt-content-digest: string | null
     ```
 
-    Executable work-group jobs are the only authorized writers for their own
-    `writer-work-group-id`; aggregation is the only authorized reader that derives
-    the CI-level verdict. Aggregation enumerates the manifest and every artifact
-    under the namespace for the same `run-id` and `run-attempt`. Manifest entries
-    outside the namespace, namespace artifacts missing from the manifest, duplicate
-    manifest entries, writer/work-group mismatches, cross-attempt artifacts, and
-    unreadable receipt artifacts are observed inadmissible entries and must appear
-    in aggregate diagnostics/failures.
+    `receipt-content-digest` in the manifest is the aggregator-observed SHA-256
+    digest, not a writer claim. Aggregation is the only authorized writer for the
+    manifest and the only reader that derives the CI-level verdict. Duplicate
+    observed entries, writer/work-group mismatches, cross-attempt artifacts, and
+    unreadable receipt artifacts are observed inadmissible entries and must
+    appear in aggregate diagnostics/failures. A pre-existing manifest uploaded by
+    an executable work group is treated as an unexpected receipt-like artifact,
+    not as aggregation authority.
 
 - `receipt-id` is an opaque stable identifier for the receipt emission within the
   run attempt or equivalent execution provenance. It must not be derived from a
@@ -1215,11 +1235,13 @@ true`.
   validated.
 - The terminal `evidence-aggregation` work group does not emit
   `ci-validation-receipt`; it emits `ci-validation-aggregate`.
-- Before accepting receipts for an executable plan, aggregation must verify the
-  companion fact snapshot artifact when `fact-snapshot.status: available` and
-  the companion changed-files snapshot artifact when `changed-files-hash` is
-  non-null. Missing, malformed, schema-invalid, or digest-mismatched companion
-  artifacts make the plan invalid and produce an `invalid-plan` aggregate.
+- Before accepting receipts for an executable plan, aggregation must recompute
+  `subject-universe.id` from the canonical frozen `subjects` section, verify the
+  companion fact snapshot artifact when `fact-snapshot.status: available`, and
+  verify the companion changed-files snapshot artifact when `changed-files-hash`
+  is non-null. Missing, malformed, schema-invalid, or digest-mismatched companion
+  artifacts or snapshot IDs make the plan invalid and produce an `invalid-plan`
+  aggregate.
 
 The aggregation report uses:
 
@@ -1303,11 +1325,13 @@ receipt artifact and digest that caused the result when one exists.
 
 If aggregation cannot parse, schema-validate, digest-verify, or structurally
 validate the plan, it emits a failed aggregate with `reason.invalid-plan: true`
-and `reason.fail-closed: true`. In that mode, unverified plan-derived fields are
+and `reason.fail-closed: false`. In that mode, unverified plan-derived fields are
 `null` or `unknown`, `evidence-results` is empty, counts are zero except
 `terminal-aggregation: present`, and `failures` contains an `invalid-plan`
 failure with an `invalid-plan` diagnostic. The aggregate must not copy unverified
 plan fields merely because they were present in the unreadable or invalid input.
+`reason.fail-closed` is reserved for structurally valid planner fail-closed
+plans.
 
 ## 15. Diagnostics
 
