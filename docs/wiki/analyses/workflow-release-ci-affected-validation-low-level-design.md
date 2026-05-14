@@ -518,9 +518,12 @@ with each field compared as UTF-8 bytes; diagnostics are sorted by
 Unavailable provider entries inside an emitted fact snapshot artifact must appear
 with `status: unavailable`, empty fact arrays, and diagnostics explaining why the
 planner failed closed. Planning, aggregation, and acceptance must verify the
-artifact ref, common-envelope `run-id` and `run-attempt`, schema, and recomputed
-`fact-snapshot-id` before treating any plan whose `fact-snapshot.status` is
-`available` as structurally valid, including fail-closed plans.
+artifact ref, common-envelope `run-id` and `run-attempt`, `plan-id`, schema, and
+recomputed `fact-snapshot-id` before treating any plan whose
+`fact-snapshot.status` is `available` as structurally valid, including
+fail-closed plans. The artifact `plan-id` must equal the frozen validation plan's
+`plan-id`; a mismatch is an `invalid-plan` failure even though `plan-id` is not
+part of the `fact-snapshot-id` digest preimage.
 
 ### 6.2 Plan Sections
 
@@ -1128,9 +1131,25 @@ Selector rules:
     matrix leg identity authorized to upload the receipt for that selector.
     `writer-identity-source` declares the non-payload source aggregation must use
     to observe that identity: immutable GitHub Actions job context captured by the
-    control plane before receipt upload. The observed writer identity is
-    normalized with the same algorithm that produced `trusted-writer-id` and
-    compared by exact string equality; receipt payload fields, artifact path
+    control plane before receipt upload. The writer identity preimage is the RFC
+    8785 canonical JSON bytes of:
+
+    ```json
+    {
+        "api-version": "three.ci.validation.writer-id/v1alpha1",
+        "workflow": "workflow-name",
+        "job": "job-id",
+        "matrix": {}
+    }
+    ```
+
+    `workflow` is the common-envelope `run.workflow`; `job` is the stable
+    concrete GitHub Actions job identifier or reusable-workflow call-site job
+    identifier that owns the upload; and `matrix` is the canonical matrix object
+    for the leg, or `{}` when absent. `trusted-writer-id` and
+    `observed-writer-id` are both `github-actions-job:` followed by the lowercase
+    SHA-256 digest of that preimage, and must match
+    `^github-actions-job:[0-9a-f]{64}$`. Receipt payload fields, artifact path
     segments, wrapper records, and log text are never identity sources.
     `receipt-artifact-ref` must equal the contract-owned receipt ref derived from
     the work group. `writer-observation-ref` must equal
@@ -1163,11 +1182,11 @@ Selector rules:
 
     The writer-observation artifact ref is exactly the assignment's
     `writer-observation-ref`. `observed-writer-id` is captured from immutable
-    GitHub Actions job context outside the receipt payload and normalized with the
-    same algorithm as `trusted-writer-id`. The executable writer does not supply
-    `artifact-instance-id` or self-attest the observed writer identity; the
-    control plane binds the already-uploaded receipt artifact instance to the
-    previously captured job context. Aggregation verifies the observation record's
+    GitHub Actions job context outside the receipt payload and computed from the
+    same writer identity preimage as `trusted-writer-id`. The executable writer
+    does not supply `artifact-instance-id` or self-attest the observed writer
+    identity; the control plane binds the already-uploaded receipt artifact
+    instance to the previously captured job context. Aggregation verifies the observation record's
     envelope, schema, plan identity, assignment, receipt ref,
     `artifact-instance-id`, writer source, and observed writer ID before admitting
     the receipt. Missing, malformed, mismatched, duplicate, or wrong-plan
@@ -1363,7 +1382,7 @@ The `evidence` union determines which result branch appears:
 
 ```yaml
 capability-result branch:
-    planned-capabilities: [build | test | lint | format | type-check]
+    planned-capabilities: non-empty [build | test | lint | format | type-check]
     capability-results:
         - capability: build | test | lint | format | type-check
           outcome: success | blocking-failure | skipped
@@ -1422,10 +1441,12 @@ Receipt rules:
     `run-attempt`, `artifact-ref`, and the artifact service or control-plane
     enumeration `artifact-instance-id`; if the artifact store cannot provide a
     stable per-instance ID, the receipt namespace is unenumerable and aggregation
-    emits a failed aggregate with an aggregation diagnostic rather than
-    collapsing duplicates. `writer-work-group-id` is derived from the artifact ref
-    path segment, not from the receipt payload, and is `null` when the ref is
-    malformed. `assignment-id`, `trusted-writer-id`, `observed-writer-id`, and
+    emits a failed aggregate with `reason.inadmissible-receipt: true`, a failure
+    with `kind: inadmissible-receipt`, and diagnostic detail
+    `unstable-artifact-instance-id` rather than collapsing duplicates.
+    `writer-work-group-id` is derived from the artifact ref path segment, not
+    from the receipt payload, and is `null` when the ref is malformed.
+    `assignment-id`, `trusted-writer-id`, `observed-writer-id`, and
     `writer-observation-ref` are copied only after aggregation verifies the
     selector assignment and writer-observation record for the artifact instance.
     `receipt-content-digest` in the manifest is the aggregator-observed SHA-256
@@ -1481,7 +1502,8 @@ true`.
 - Receipt `evidence` is a discriminated union on `planned-capabilities`. Receipts
   with non-null `planned-capabilities` must include exactly one
   `capability-results` entry for each planned capability in the corresponding
-  work group and must omit `category-result`. Receipts with null
+  work group, must have at least one planned capability, and must omit
+  `category-result`. Receipts with null
   `planned-capabilities` must include exactly one `category-result` and must omit
   `capability-results`; they must not invent capability-level coverage. `null`,
   empty-array, or empty-object substitutes for the omitted branch are
