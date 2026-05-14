@@ -482,3 +482,12 @@ Updated the workflow-release design notes to move live acceptance away from the 
   GitHub Release smoke coverage of .NET executable, Inno Setup installer, and
   WXT browser zip artifacts.
 - Recorded that Python application smoke coverage remains intentionally skipped.
+
+## [2026-05-14] query | Probe CI validation artifact enumeration
+
+- Added a Group 1 workflow-release CI affected-validation platform experiment
+  record for artifact enumeration, instance counting, run-attempt separation,
+  and fixed physical artifact names.
+- Recorded GitHub Actions run `25885824704` and its rerun observations,
+  including the fact that run-scoped artifact enumeration still returns old
+  attempt artifacts.
