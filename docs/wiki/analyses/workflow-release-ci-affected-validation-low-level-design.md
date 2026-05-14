@@ -188,6 +188,27 @@ security or replay authority. `run.workflow`, `run.run-id`, and
 `run.run-attempt` are copied from the GitHub Actions run context and are the only
 common-envelope run identity fields used by cross-artifact binding.
 
+Producer authority is not a payload self-claim. Any artifact that gates planning,
+selector materialization, receipt admission, or final acceptance must be tied to
+the expected logical boundary by non-payload control-plane evidence for the same
+`run-id` and `run-attempt`. The allowed producer-authority signals are:
+
+| Artifact class                                             | Required producer boundary        | Allowed non-payload authority signals                                                                                                                                               |
+| ---------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Validation plan, changed-files snapshot, and fact snapshot | `plan`                            | Contract-owned artifact ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the planning control-plane boundary for this run attempt    |
+| Selector-assignment manifest                               | `materialize-work-groups`         | Contract-owned artifact ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the selector-materialization control-plane boundary         |
+| CI validation receipt                                      | Assigned trusted receipt boundary | Selector assignment, contract-owned receipt ref, artifact instance ID, and matching writer-observation record derived from immutable job context rather than receipt payload fields |
+| Writer-observation record                                  | Trusted observation boundary      | Contract-owned observation ref and instance count plus immutable workflow/job context proving the record was emitted by the observation boundary after receipt upload               |
+| Receipt manifest and aggregate                             | `aggregate-evidence`              | Contract-owned final refs and instance counts plus immutable workflow/job context proving final artifacts were uploaded by the aggregation control-plane boundary                   |
+
+If the workflow platform or control-plane wrapper cannot expose those signals for
+an artifact class, that artifact is producer-unverified. Producer-unverified
+planning artifacts make the plan invalid, producer-unverified receipts or
+writer-observations are inadmissible, and producer-unverified final manifest or
+aggregate artifacts are not authoritative acceptance evidence. Payload fields,
+artifact names supplied by executable validation commands, logs, and job
+conclusions never prove producer authority.
+
 `schema-diagnostics` uses the same shape as `diagnostic-record`, sorted by
 `diagnostic-id`. These diagnostics are producer-side schema or compatibility
 warnings only: every entry must have `severity: warning` or `info` and
@@ -562,6 +583,7 @@ providers:
                     concrete-kind: string
                     logical-artifact-role: string
                     variant-dimensions: object
+                    expected-artifact-refs: [string]
                 release-receipt:
                     expected-family: string
                     logical-receipt-role: string
@@ -597,7 +619,8 @@ paths are sorted lexicographically by UTF-8 encoded bytes; `target-catalog`
 entries are sorted by `(descriptor-path, profile, artifact.kind-family,
 artifact.concrete-kind, artifact.logical-artifact-role,
 release-receipt.expected-family, release-receipt.logical-receipt-role)` with
-variant-dimension objects compared by RFC 8785 canonical JSON bytes;
+`artifact.expected-artifact-refs` sorted lexicographically by UTF-8 encoded bytes
+and variant-dimension objects compared by RFC 8785 canonical JSON bytes;
 `dependency-edges` are sorted by `(from-subject-id, to-subject-id, relation)` with
 each field compared as UTF-8 bytes; diagnostics are sorted by `diagnostic-id`.
 Null sorts before strings for any future nullable tuple field.
@@ -623,6 +646,7 @@ The plan contains these top-level sections:
 classification:
     impacts: [impact-record]
     broad-expansions: [broad-expansion-record]
+    subject-selection-provenance: [subject-selection-provenance-record]
     subsumptions: [subsumption-record]
     lightweight-only: boolean
 subjects: [validation-subject-snapshot]
@@ -679,6 +703,36 @@ selected subjects, obligations, and work groups rather than recomputing expansio
 It must not be used to imply obligation, work-group, or evidence subsumption.
 Any duplicate removal caused by an expanded scope must have an explicit
 `subsumption-record`.
+
+Each `subject-selection-provenance-record` records why a selected subject is in
+scope:
+
+```yaml
+provenance-id: string
+subject-id: string
+selection-kind: direct | downstream | broad-expansion | scheduled-full
+source-impact-ids: [string]
+direct-subject-id: string | null
+dependency-edge-basis:
+    - from-subject-id: string
+      to-subject-id: string
+      relation: project-reference | package-reference | workspace | tooling
+broad-expansion-id: string | null
+```
+
+Every active selected subject in an executable plan must have exactly one
+subject-selection provenance record. Direct project-scoped selections use
+`selection-kind: direct`, the selected `subject-id`, the source project impact,
+`direct-subject-id: null`, and an empty `dependency-edge-basis`. Downstream
+selections use `selection-kind: downstream`, identify the originally affected
+`direct-subject-id`, and list the digest-bound dependency edges that justify the
+selected subject as a reverse transitive dependent. Broad and scheduled-full
+selections use `selection-kind: broad-expansion` or `scheduled-full`, cite the
+corresponding expansion or scheduled-full source, and do not imply downstream
+proof. Aggregation verifies that provenance subjects are selected subjects,
+source impacts exist, broad expansion IDs resolve, and every dependency edge
+basis is present in the fact snapshot; it does not recompute downstream closure
+from repository state during acceptance.
 
 ### 6.3 Named Record Minimum Shapes
 
@@ -765,6 +819,7 @@ artifact:
     concrete-kind: string
     logical-artifact-role: string
     variant-dimensions: object
+    expected-artifact-refs: [string]
 release-receipt:
     expected-family: string
     logical-receipt-role: string
@@ -783,10 +838,14 @@ Every artifact obligation must resolve to a digest-bound descriptor fact by
 release-receipt dimensions are catalog-derived. The frozen
 `artifact.kind-family`, `artifact.concrete-kind`,
 `artifact.logical-artifact-role`, `artifact.variant-dimensions`,
-`release-receipt.expected-family`, `release-receipt.logical-receipt-role`, and
-`release-receipt.variant-dimensions` must be derivable from those fact records.
-Missing or mismatched descriptor or target-catalog fact backing makes the plan
-structurally invalid.
+`artifact.expected-artifact-refs`, `release-receipt.expected-family`,
+`release-receipt.logical-receipt-role`, and `release-receipt.variant-dimensions`
+must be derivable from those fact records. For a required artifact obligation,
+`expected-artifact-refs` is the complete validation-only artifact coverage the
+work group must materialize or inspect for that obligation, must be non-empty,
+and must not identify publication targets or remote release state. Missing,
+partial, empty, or mismatched descriptor or target-catalog fact backing makes the
+plan structurally invalid.
 
 Each `evidence-expectation` has:
 
@@ -893,6 +952,9 @@ Binding rules:
   candidate before subsumption. `retained-id` must resolve in the frozen plan
   within the namespace named by `subsumed-kind`.
 - Obligations reference their source impacts for auditability.
+- Selected subjects record direct, downstream, broad-expansion, or scheduled-full
+  provenance in `classification.subject-selection-provenance`; acceptance reads
+  that frozen provenance rather than recomputing why a subject was selected.
 - Scheduled-full obligations may have empty `source-impact-ids`; in that mode,
   the plan-level `scheduled-full` marker is their full-scope selection source.
 - Required executable obligations must reference a work group and evidence
@@ -1503,6 +1565,7 @@ Rules:
                   concrete-kind: string
                   logical-artifact-role: string
                   variant-dimensions: object
+                  expected-artifact-refs: [string]
               observed:
                   refs: [string]
                   digests:
@@ -1530,16 +1593,25 @@ Rules:
     group must appear exactly once, and no other artifact obligation may appear in
     that receipt. `profile-coverage` is copied from the frozen obligation and
     artifact `planned` plus release-receipt `planned` fields are copied from the
-    frozen artifact obligation and equality-checked by aggregation. The
-    `observed.refs` set must equal the refs checked by the work group, and
-    `observed.digests` must contain exactly one entry per `observed.refs` value
-    with `algorithm: sha256`, matching `artifact-ref`, and a lowercase
-    hexadecimal SHA-256 `digest` when `digest-available: true`. A missing,
-    duplicate, mismatched, non-SHA-256, or unavailable digest is a blocking
-    release-shaped artifact validation failure with `artifact-shape-unconfirmed`;
-    unavailable digest entries must set `digest-available: false`, use an empty
-    digest string, and carry a diagnostic explaining why the artifact bytes could
-    not be content-bound without publication credentials or side effects.
+    frozen artifact obligation and equality-checked by aggregation. The planned
+    `expected-artifact-refs` set is the complete required artifact coverage for
+    the obligation and must be non-empty. The `observed.refs` set must equal both
+    the refs checked by the work group and the frozen `expected-artifact-refs`;
+    empty, partial, or extra refs are a blocking release-shaped artifact
+    validation failure. `observed.digests` must contain exactly one entry per
+    expected ref with `algorithm: sha256`, matching `artifact-ref`, and a
+    lowercase hexadecimal SHA-256 `digest` when `digest-available: true`. A
+    missing, duplicate, mismatched, non-SHA-256, or unavailable digest is a
+    blocking release-shaped artifact validation failure with
+    `artifact-shape-unconfirmed`; unavailable digest entries must set
+    `digest-available: false`, use an empty digest string, and carry a diagnostic
+    explaining why the artifact bytes could not be content-bound without
+    publication credentials or side effects. A successful release-shaped artifact
+    result also requires `release-receipt.expected` and
+    `release-receipt.schema-checked` to be `true`, and
+    `release-receipt.outcome` to be `success`; unchecked or unexpected
+    release-shaped receipt outputs are blocking failures, not successful
+    validation evidence.
 
 ## 14. Evidence and Receipt Files
 
@@ -1683,9 +1755,20 @@ Receipt rules:
     and must appear in aggregate diagnostics/failures. A pre-existing manifest
     uploaded by an executable work group in the receipt intake namespace is
     treated as an unexpected receipt-like artifact, not as aggregation authority.
-    Re-running aggregation for the same `run-id` and `run-attempt` overwrites
-    only the manifest outside the receipt intake boundary; it does not add to the
-    observed receipt set.
+    Re-running aggregation for the same `run-id` and `run-attempt` never adds to
+    the observed receipt set. Same-attempt finalization uses one reconciliation
+    contract for the final manifest and aggregate refs: aggregation first
+    recomputes the manifest and aggregate from the closed receipt intake
+    namespace, then checks the contract-owned final refs before upload. If neither
+    final ref exists, it uploads both final artifacts. If exactly one final ref
+    already has one artifact instance, aggregation verifies that instance's
+    content digest equals the recomputed final content before uploading the
+    missing counterpart. If both final refs already have one artifact instance,
+    aggregation verifies both digests and uploads nothing. It must never upload a
+    second artifact instance at an occupied final ref. A duplicate final instance,
+    digest mismatch, unreadable occupied final artifact, or occupied ref whose
+    producer authority cannot be verified makes finalization fail and leaves
+    post-run acceptance without authoritative final evidence.
 
     Post-run acceptance evidence requires exactly one authoritative receipt
     manifest artifact instance at the contract-owned manifest ref. A missing,
@@ -1793,9 +1876,10 @@ true`.
   fact snapshot artifact when `fact-snapshot.status` is `available`, including
   provider subject IDs, dependency-edge subject IDs, roots, tooling-surface IDs,
   descriptor facts, target-catalog facts, exact selected-subject provider
-  coverage, and descriptor/artifact-obligation fact backing against the frozen
-  plan namespaces. Aggregation also verifies the companion changed-files snapshot
-  artifact when `changed-files-hash` is non-null. Missing, malformed,
+  coverage, subject-selection provenance dependency-edge basis, and
+  descriptor/artifact-obligation fact backing against the frozen plan namespaces.
+  Aggregation also verifies the companion changed-files snapshot artifact when
+  `changed-files-hash` is non-null. Missing, malformed,
   schema-invalid, cross-reference-invalid, or digest-mismatched companion
   artifacts, snapshot IDs, or fact-to-obligation bindings make the plan invalid
   and produce an `invalid-plan` aggregate.
@@ -1890,8 +1974,11 @@ must also verify that the final manifest and aggregate artifacts were produced b
 the `aggregate-evidence` control-plane boundary for the same run attempt. A
 manifest or aggregate artifact authored by an executable validation command, a
 non-aggregation job, or an unverified artifact instance is non-authoritative even
-if its payload, schema, and digest bindings match. Workflow conclusion must fail
-when `verdict` is `failed`. For structurally valid plans,
+if its payload, schema, and digest bindings match. The same-attempt finalization
+reconciliation above is the only replay/idempotency contract for both final
+artifacts; consumers must not choose among multiple final instances by timestamp,
+job conclusion, or payload self-claims. Workflow conclusion must fail when
+`verdict` is `failed`. For structurally valid plans,
 `plan-digest`, `mode`, `validation-tree`, `affected-range`, and `scheduled-full`
 are copied from the frozen plan; the aggregator must verify they match the plan
 before emitting the report. Summary booleans and counts are for quick
@@ -2078,37 +2165,38 @@ implementation must avoid turning ordinary local hooks into full CI.
 
 Implementation acceptance must include at least these evidence scenarios:
 
-| Scenario                                                                                                                         | Expected evidence                                                                                                                                                                                                                                   |
-| -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Project-scoped descriptor-backed change                                                                                          | Plan selects direct subject, safe downstream subjects, descriptor obligation, ecosystem gates, release-shaped artifact obligations, receipts, and passing aggregation                                                                               |
-| Project-scoped validation-only change                                                                                            | Plan selects validation-only subject and ecosystem gates, no publish or release-shaped artifact obligation unless descriptor-backed                                                                                                                 |
-| Ecosystem-scoped change                                                                                                          | Plan selects all active subjects in ecosystem, descriptors for descriptor-backed subjects, release-shaped artifact/receipt obligations, and applicable ecosystem gates                                                                              |
-| Workflow-release infrastructure change                                                                                           | Plan selects affected tooling surface, related subjects/ecosystems, and all discovered descriptors only for descriptor semantics, authoring validation, planning, contracts, build execution, publish execution, or smoke validation impacts        |
-| Known global change                                                                                                              | Plan selects scheduled-full-equivalent scope with global provenance                                                                                                                                                                                 |
-| Scheduled full run                                                                                                               | Plan selects full repository scope with scheduled provenance                                                                                                                                                                                        |
-| Known non-impacting change with no executable checks                                                                             | Lightweight-only plan passes without heavy work and remains inspectable                                                                                                                                                                             |
-| Known non-impacting change with executable lightweight checks                                                                    | Lightweight work receipts are required for pass                                                                                                                                                                                                     |
-| Confirmed zero-file affected range                                                                                               | Affected request has `affected-range.status: available`, empty `changed-files`, non-null canonical `changed-files-hash`, and normal plan/receipt/aggregate provenance copying                                                                       |
-| Affected plan omits or invents changed-path impact coverage                                                                      | Aggregation emits `invalid-plan` with `diagnostic-detail: changed-files-impact-coverage-mismatch` rather than allowing omitted paths to bypass fail-closed classification                                                                           |
-| PR/push affected range unconfirmed                                                                                               | Request diagnostic `range-unconfirmed`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                                                 |
-| Project-scoped change with insufficient downstream facts                                                                         | Planner diagnostic `dependency-impact-insufficient` or `fact-provider-insufficient`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                    |
-| Unclassifiable workflow-release infrastructure impact                                                                            | Planner diagnostic `infrastructure-surface-unclassified`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                               |
-| Unknown path                                                                                                                     | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                |
-| Invalid descriptor blocking derivation                                                                                           | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                            |
-| Unreadable, malformed, schema-invalid, duplicate, producer-unverified, or digest-mismatched validation plan                      | Aggregation emits a failed `invalid-plan` aggregate with unverified plan-derived fields set to `null` or `unknown`, empty evidence results, zero executable counts, and no receipt admissibility authority                                          |
-| Structurally invalid but schema/digest-valid validation plan                                                                     | Aggregation emits `invalid-plan` with `diagnostic-detail: structurally-invalid`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                             |
-| Missing, unexpected, duplicate, producer-unverified, malformed, ref-mismatched, or digest-mismatched companion planning snapshot | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                              |
-| Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest                   | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                          |
-| Missing receipt                                                                                                                  | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                    |
-| Planned validation work skipped or failed                                                                                        | Aggregation records `required-evidence-skipped` or `blocking-validation-failure` and fails the final verdict; planned executable validation work is not optional or non-gating                                                                      |
-| Release-shaped artifact receipt with missing or unavailable artifact digest or mismatched planned shape                          | Aggregation records `artifact-shape-unconfirmed` or `mismatched-evidence-payload` and fails the final verdict                                                                                                                                       |
-| Invalid or mismatched receipt                                                                                                    | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                  |
-| Forged or producer-unverified writer observation                                                                                 | Matching payload fields are insufficient; aggregation treats the receipt as inadmissible with `mismatched-writer-identity` and fails as `inadmissible-receipt`                                                                                      |
-| Valid required receipt plus extra inadmissible receipt                                                                           | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                       |
-| Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched final manifest or aggregate                     | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                          |
-| Unconfirmed artifact shape                                                                                                       | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                         |
-| Unconfirmed PR context                                                                                                           | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                 |
-| All CI validation modes have no configured publication authority                                                                 | Static workflow/config/code review covers `pull_request`, `push`, and `scheduled_full`; no publication credentials, OIDC publish permission, release environment, registry mutation, GitHub Release mutation, or release tag mutation is configured |
+| Scenario                                                                                                                                                                                        | Expected evidence                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project-scoped descriptor-backed change                                                                                                                                                         | Plan selects direct subject, safe downstream subjects, direct-vs-downstream selection provenance, descriptor obligation, ecosystem gates, release-shaped artifact obligations, receipts, and passing aggregation                                              |
+| Project-scoped validation-only change                                                                                                                                                           | Plan selects validation-only subject and ecosystem gates, no publish or release-shaped artifact obligation unless descriptor-backed                                                                                                                           |
+| Ecosystem-scoped change                                                                                                                                                                         | Plan selects all active subjects in ecosystem, descriptors for descriptor-backed subjects, release-shaped artifact/receipt obligations, and applicable ecosystem gates                                                                                        |
+| Workflow-release infrastructure change                                                                                                                                                          | Plan selects affected tooling surface, related subjects/ecosystems, and all discovered descriptors only for descriptor semantics, authoring validation, planning, contracts, build execution, publish execution, or smoke validation impacts                  |
+| Known global change                                                                                                                                                                             | Plan selects scheduled-full-equivalent scope with global provenance                                                                                                                                                                                           |
+| Scheduled full run                                                                                                                                                                              | Plan selects full repository scope with scheduled provenance                                                                                                                                                                                                  |
+| Known non-impacting change with no executable checks                                                                                                                                            | Lightweight-only plan passes without heavy work and remains inspectable                                                                                                                                                                                       |
+| Known non-impacting change with executable lightweight checks                                                                                                                                   | Lightweight work receipts are required for pass                                                                                                                                                                                                               |
+| Confirmed zero-file affected range                                                                                                                                                              | Affected request has `affected-range.status: available`, empty `changed-files`, non-null canonical `changed-files-hash`, and normal plan/receipt/aggregate provenance copying                                                                                 |
+| Affected plan omits or invents changed-path impact coverage                                                                                                                                     | Aggregation emits `invalid-plan` with `diagnostic-detail: changed-files-impact-coverage-mismatch` rather than allowing omitted paths to bypass fail-closed classification                                                                                     |
+| PR/push affected range unconfirmed                                                                                                                                                              | Request diagnostic `range-unconfirmed`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                                                           |
+| Project-scoped change with insufficient downstream facts                                                                                                                                        | Planner diagnostic `dependency-impact-insufficient` or `fact-provider-insufficient`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                              |
+| Unclassifiable workflow-release infrastructure impact                                                                                                                                           | Planner diagnostic `infrastructure-surface-unclassified`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                                         |
+| Unknown path                                                                                                                                                                                    | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                          |
+| Invalid descriptor blocking derivation                                                                                                                                                          | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                                      |
+| Unreadable, malformed, schema-invalid, duplicate, producer-unverified, or digest-mismatched validation plan                                                                                     | Aggregation emits a failed `invalid-plan` aggregate with unverified plan-derived fields set to `null` or `unknown`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                    |
+| Structurally invalid but schema/digest-valid validation plan                                                                                                                                    | Aggregation emits `invalid-plan` with `diagnostic-detail: structurally-invalid`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                                       |
+| Missing, unexpected, duplicate, producer-unverified, malformed, ref-mismatched, or digest-mismatched companion planning snapshot                                                                | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                                        |
+| Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest                                                                                  | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                                    |
+| Missing receipt                                                                                                                                                                                 | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                              |
+| Planned validation work skipped or failed                                                                                                                                                       | Aggregation records `required-evidence-skipped` or `blocking-validation-failure` and fails the final verdict; planned executable validation work is not optional or non-gating                                                                                |
+| Release-shaped artifact receipt with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked expected release receipt, or mismatched planned shape | Aggregation records `artifact-shape-unconfirmed` or `mismatched-evidence-payload` and fails the final verdict                                                                                                                                                 |
+| Invalid or mismatched receipt                                                                                                                                                                   | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                            |
+| Forged or producer-unverified writer observation                                                                                                                                                | Matching payload fields are insufficient; aggregation treats the receipt as inadmissible with `mismatched-writer-identity` and fails as `inadmissible-receipt`                                                                                                |
+| Valid required receipt plus extra inadmissible receipt                                                                                                                                          | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                                 |
+| Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched final manifest or aggregate                                                                                    | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                                    |
+| Unconfirmed artifact shape                                                                                                                                                                      | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                                   |
+| Unconfirmed PR context                                                                                                                                                                          | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                           |
+| Accidental publication or remote publish-state validation                                                                                                                                       | Static workflow/config/code review and receipt/aggregate inspection show no work group, command output, receipt field, aggregate field, registry query, GitHub Release lookup, tag lookup, or remote publish-state observation is used as validation evidence |
+| All CI validation modes have no configured publication authority                                                                                                                                | Static workflow/config/code review covers `pull_request`, `push`, and `scheduled_full`; no publication credentials, OIDC publish permission, release environment, registry mutation, GitHub Release mutation, or release tag mutation is configured           |
 
 These scenarios are acceptance contracts, not prescribed test framework or file
 layout. The implementer may choose the concrete test harness.
