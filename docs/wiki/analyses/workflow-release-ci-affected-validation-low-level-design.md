@@ -82,6 +82,17 @@ operator documentation may refer to CI check names. Unlike release publication
 workflows, it is not a trusted-publisher identity and must not be configured in
 external registry policies.
 
+The workflow `name` and the final required GitHub check context are also
+repository contracts:
+
+- workflow `name`: `CI Validation`;
+- required final check context: `CI Validation / aggregate-evidence`.
+
+Branch protection for this CI gate must bind to the final aggregate check
+context, not to fan-out validation job names or auxiliary checks. If the concrete
+GitHub Actions job topology changes, the implementation must preserve that final
+check context or update branch protection and this design together.
+
 Implementation may introduce reusable internal workflow files or composite
 actions for validation work groups. Those internal files are implementation-owned
 unless later branch protection or external policy starts depending on them.
@@ -127,7 +138,8 @@ The top-level CI validation workflow preserves this logical sequence:
 
 These job names are logical handoff names. The implementer may map them to
 concrete job identifiers, reusable workflows, or grouped jobs, provided the
-sequence, authority boundary, and evidence semantics remain intact.
+sequence, authority boundary, evidence semantics, and final required check
+context remain intact.
 
 ### 4.3 Permissions
 
@@ -325,6 +337,13 @@ unreadable, malformed, schema-invalid, digest-mismatched, or duplicate artifact 
 that authoritative ref makes aggregation emit `invalid-plan`. Plan artifacts
 outside that ref are non-authoritative auxiliary artifacts and must not be used
 for selector materialization or aggregation.
+Selector materialization and aggregation must verify the validation-plan
+artifact's producer authority from platform/control-plane metadata before
+trusting its payload. The authoritative plan must be produced by the logical
+`plan` control-plane boundary for the same workflow run attempt; a plan artifact
+authored by another job, an executable validation command, or an unverified
+artifact instance is not authority even when its schema and self-digest match.
+A producer-unverified plan produces `invalid-plan`.
 
 ### 6.1 Plan Envelope
 
@@ -639,6 +658,16 @@ diagnostic: diagnostic-code | null
 `source-rule` is the stable classifier rule identifier. `rationale` is a
 human-inspectable explanation of why the matched paths produced the category,
 coverage target, required expansions, and diagnostic.
+
+For affected plans with `affected-range.status: available`, the union of
+`classification.impacts[].matched-paths` must equal the canonical changed-file
+sequence in the changed-files companion snapshot as a set: no changed path may be
+omitted, no unmatched path may appear, and no path may appear in more than one
+impact record. A changed path that is unknown or unclassifiable is still
+represented by an `impact-record` with `category: unknown` and the corresponding
+fail-closed diagnostic rather than being omitted. Aggregation verifies this
+coverage after loading the changed-files snapshot; a mismatch makes the plan
+`invalid-plan`.
 
 Each `descriptor-obligation` has:
 
@@ -1069,13 +1098,20 @@ coverage-target:
     type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
 ecosystem: string | null
-runner-family: windows | ubuntu | null
+runner-family: windows | ubuntu
 depends-on: [work-group-id]
 expected-evidence:
     category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
     planned-capabilities: [build | test | lint | format | type-check] | null
     required: boolean
 ```
+
+Executable work groups must have a non-null `runner-family` in the frozen plan.
+Runner assignment is plan authority: execution must not select a runner by
+rediscovering subject ecosystem, descriptor contents, or tooling policy after
+planning. If the planner cannot determine a required executable work group's
+runner family from the closed mapping in section 12, planning fails closed or the
+plan is structurally invalid rather than emitting `runner-family: null`.
 
 Each terminal aggregation work group has:
 
@@ -1290,28 +1326,34 @@ Selector rules:
 
 ## 12. Execution Mapping
 
-The implementation maps work groups to runner families:
+The planner maps work groups to runner families:
 
-| Work group kind                                               | Default runner family                                         | Notes                                                                       |
-| ------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `lightweight-preflight`                                       | Ubuntu                                                        | May run documentation, formatting, or policy checks when lightweight enough |
-| `ecosystem-gate` for .NET                                     | Windows                                                       | Preserves .NET runner expectation                                           |
-| `ecosystem-gate` for Python                                   | Ubuntu                                                        | Uses repository tool provisioning convention                                |
-| `ecosystem-gate` for JavaScript/TypeScript                    | Ubuntu                                                        | Uses repository tool provisioning convention                                |
-| `descriptor-validation`                                       | Ubuntu unless descriptor validation requires ecosystem runner | Must not publish or mutate release state                                    |
-| `release-shaped-artifact` for .NET                            | Windows                                                       | Produces validation-only artifact receipts                                  |
-| `release-shaped-artifact` for Python or JavaScript/TypeScript | Ubuntu                                                        | Produces validation-only artifact receipts                                  |
-| `workflow-release-tooling`                                    | Ubuntu unless affected tooling requires Windows evidence      | May fan out to related ecosystem runners when scope requires                |
-| `evidence-aggregation`                                        | Ubuntu                                                        | Terminal control-plane aggregation; emits aggregate verdict artifact        |
+| Work group kind                                               | Default runner family                                                                                   | Notes                                                                       |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `lightweight-preflight`                                       | Ubuntu                                                                                                  | May run documentation, formatting, or policy checks when lightweight enough |
+| `ecosystem-gate` for .NET                                     | Windows                                                                                                 | Preserves .NET runner expectation                                           |
+| `ecosystem-gate` for Python                                   | Ubuntu                                                                                                  | Uses repository tool provisioning convention                                |
+| `ecosystem-gate` for JavaScript/TypeScript                    | Ubuntu                                                                                                  | Uses repository tool provisioning convention                                |
+| `descriptor-validation`                                       | Ubuntu, or the subject ecosystem runner when descriptor validation requires ecosystem-specific evidence | Must not publish or mutate release state                                    |
+| `release-shaped-artifact` for .NET                            | Windows                                                                                                 | Produces validation-only artifact receipts                                  |
+| `release-shaped-artifact` for Python or JavaScript/TypeScript | Ubuntu                                                                                                  | Produces validation-only artifact receipts                                  |
+| `workflow-release-tooling`                                    | Ubuntu, or Windows when the affected tooling surface requires Windows-only evidence                     | May fan out to related ecosystem runners when scope requires                |
+| `evidence-aggregation`                                        | Ubuntu                                                                                                  | Terminal control-plane aggregation; emits aggregate verdict artifact        |
 
-All runners provision tools through `mise` where practical. The concrete command
-lines and helper scripts are implementation-owned, but they must run the
-repository's existing ecosystem gates for selected scopes. Release-shaped
-artifact work groups must invoke the existing workflow-release build
-recipes/adapters in validation/no-publish mode where practical. Wrappers,
-artifact staging locations, and receipt emission may differ from release runs,
-but build semantics, descriptor interpretation, and artifact-contract checks must
-not use a separate simplified CI-only path.
+The planner applies this table before freezing work groups and records the
+result in each executable selector. "Requires ecosystem runner" means the
+descriptor validation must run with the same runner family as the selected
+subject or artifact-producing ecosystem; mixed requirements are represented by
+separate work groups. "Requires Windows-only evidence" means the affected tooling
+surface validates Windows-specific .NET/build behavior. All other
+workflow-release-tooling work groups use Ubuntu. All runners provision tools
+through `mise` where practical. The concrete command lines and helper scripts are
+implementation-owned, but they must run the repository's existing ecosystem gates
+for selected scopes. Release-shaped artifact work groups must invoke the
+existing workflow-release build recipes/adapters in validation/no-publish mode
+where practical. Wrappers, artifact staging locations, and receipt emission may
+differ from release runs, but build semantics, descriptor interpretation, and
+artifact-contract checks must not use a separate simplified CI-only path.
 
 Aggregation is mapped as the terminal control-plane job after all planned
 executable work groups are complete, skipped by workflow construction, or
@@ -1515,9 +1557,12 @@ Receipt rules:
     `writer-observation-ref` are copied only after aggregation verifies the
     selector assignment and writer-observation record for the artifact instance.
     `receipt-content-digest` in the manifest is the aggregator-observed SHA-256
-    digest, not a writer claim. Aggregation is the only authorized writer for the
-    manifest and the only reader that derives the CI-level verdict. Entries are
-    sorted by `observed-entry-id`. Duplicate observed entries, artifact refs that
+    digest, not a writer claim. The receipt manifest artifact content digest is
+    the lowercase hexadecimal SHA-256 digest of the raw manifest artifact bytes
+    written at the contract-owned manifest ref. Aggregation is the only
+    authorized writer for the manifest and the only reader that derives the
+    CI-level verdict. Entries are sorted by `observed-entry-id`. Duplicate
+    observed entries, artifact refs that
     do not match the derived pattern, writer/work-group mismatches between
     artifact ref, assignment manifest, writer-observation record, and receipt
     payload, missing or mismatched trusted writer identity, cross-attempt
@@ -1650,6 +1695,9 @@ kind: ci-validation-aggregate
 plan-id: string | null
 plan-digest: string | null
 mode: pull_request | push | scheduled_full | unknown
+receipt-manifest:
+    artifact-ref: string | null
+    content-digest: string | null
 validation-tree:
     commit-sha: string | null
     ref: string | null
@@ -1712,6 +1760,14 @@ proof-admissibility: validation-only
 The aggregation report is the only CI-level verdict artifact and is emitted at
 the contract-owned ref
 `ci-validation/aggregate/<run-id>/<run-attempt>/ci-validation-aggregate.json`.
+`receipt-manifest.artifact-ref` is the contract-owned manifest ref,
+`ci-validation/manifests/<run-id>/<run-attempt>/receipt-manifest.json`, and
+`receipt-manifest.content-digest` is the lowercase hexadecimal SHA-256 digest of
+the raw manifest artifact bytes. Both are `null` only if aggregation cannot write
+or verify the manifest artifact; in that case the aggregate must be failed and is
+not authoritative acceptance evidence. Post-run acceptance must load the single
+authoritative manifest artifact, recompute its digest, and reject any
+manifest/aggregate mismatch as non-authoritative final evidence.
 Post-run acceptance evidence requires exactly one authoritative aggregate
 artifact instance at that ref. A missing, duplicate, unreadable, malformed, or
 wrong-run aggregate is non-authoritative CI verdict evidence; logs, job
@@ -1816,8 +1872,10 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `plan-unreadable`;
 - `malformed-plan`;
 - `schema-invalid`;
+- `plan-producer-unverified`;
 - `plan-digest-mismatch`;
 - `subject-universe-digest-mismatch`;
+- `changed-files-impact-coverage-mismatch`;
 - `changed-files-snapshot-missing`;
 - `changed-files-snapshot-duplicate`;
 - `changed-files-snapshot-unreadable`;
@@ -1904,12 +1962,13 @@ Implementation acceptance must include at least these evidence scenarios:
 | Known non-impacting change with no executable checks                                                           | Lightweight-only plan passes without heavy work and remains inspectable                                                                                                                                                                             |
 | Known non-impacting change with executable lightweight checks                                                  | Lightweight work receipts are required for pass                                                                                                                                                                                                     |
 | Confirmed zero-file affected range                                                                             | Affected request has `affected-range.status: available`, empty `changed-files`, non-null canonical `changed-files-hash`, and normal plan/receipt/aggregate provenance copying                                                                       |
+| Affected plan omits or invents changed-path impact coverage                                                    | Aggregation emits `invalid-plan` with `diagnostic-detail: changed-files-impact-coverage-mismatch` rather than allowing omitted paths to bypass fail-closed classification                                                                           |
 | PR/push affected range unconfirmed                                                                             | Request diagnostic `range-unconfirmed`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                                                 |
 | Project-scoped change with insufficient downstream facts                                                       | Planner diagnostic `dependency-impact-insufficient` or `fact-provider-insufficient`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                    |
 | Unclassifiable workflow-release infrastructure impact                                                          | Planner diagnostic `infrastructure-surface-unclassified`, fail-closed plan, failing aggregation/workflow conclusion, no executable validation work groups, and no validation receipts                                                               |
 | Unknown path                                                                                                   | Fail-closed plan, failing aggregation/workflow conclusion, no validation work groups                                                                                                                                                                |
 | Invalid descriptor blocking derivation                                                                         | Fail-closed planning or blocking descriptor-validation failure according to derivability                                                                                                                                                            |
-| Unreadable, malformed, schema-invalid, duplicate, or digest-mismatched validation plan                         | Aggregation emits a failed `invalid-plan` aggregate with unverified plan-derived fields set to `null` or `unknown`, empty evidence results, zero executable counts, and no receipt admissibility authority                                          |
+| Unreadable, malformed, schema-invalid, duplicate, producer-unverified, or digest-mismatched validation plan    | Aggregation emits a failed `invalid-plan` aggregate with unverified plan-derived fields set to `null` or `unknown`, empty evidence results, zero executable counts, and no receipt admissibility authority                                          |
 | Structurally invalid but schema/digest-valid validation plan                                                   | Aggregation emits `invalid-plan` with `diagnostic-detail: structurally-invalid`, empty evidence results, zero executable counts, and no receipt admissibility authority                                                                             |
 | Missing, duplicate, malformed, ref-mismatched, or digest-mismatched companion planning snapshot                | Aggregation rejects the otherwise readable plan as `invalid-plan` with the applicable changed-files or fact-snapshot diagnostic detail                                                                                                              |
 | Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                          |
@@ -1918,7 +1977,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Invalid or mismatched receipt                                                                                  | Inadmissible receipt does not satisfy required evidence; aggregation fails with `inadmissible-receipt`, and also `required-evidence-missing` when no valid matching receipt exists                                                                  |
 | Forged or producer-unverified writer observation                                                               | Matching payload fields are insufficient; aggregation treats the receipt as inadmissible with `mismatched-writer-identity` and fails as `inadmissible-receipt`                                                                                      |
 | Valid required receipt plus extra inadmissible receipt                                                         | Required evidence is satisfied by the valid receipt, but aggregation still fails with `inadmissible-receipt` for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group receipt                       |
-| Missing, duplicate, malformed, or wrong-run final manifest or aggregate                                        | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                          |
+| Missing, duplicate, malformed, wrong-run, or mutually mismatched final manifest or aggregate                   | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                          |
 | Unconfirmed artifact shape                                                                                     | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                         |
 | Unconfirmed PR context                                                                                         | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                 |
 | All CI validation modes have no configured publication authority                                               | Static workflow/config/code review covers `pull_request`, `push`, and `scheduled_full`; no publication credentials, OIDC publish permission, release environment, registry mutation, GitHub Release mutation, or release tag mutation is configured |
