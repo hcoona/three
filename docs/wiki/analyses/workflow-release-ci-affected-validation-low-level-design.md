@@ -396,14 +396,21 @@ snapshot envelope, schema, or digest is missing, malformed, or mismatched.
 }
 ```
 
-`subjects` is replaced by the frozen `subjects` section. `fact-snapshot.id` is
-the lowercase hexadecimal SHA-256 digest of a companion
-`three.ci.validation.fact-snapshot/v1alpha1` artifact containing the deterministic
-provider facts used for planning. Both IDs must match `^[0-9a-f]{64}$` when
-their status is `available`; when a snapshot status is `unavailable`, its `id`
-is `null` and diagnostics must explain why the snapshot could not be produced or
-confirmed. A fail-closed plan with `fact-snapshot.status: unavailable` has no
-required fact snapshot artifact. A fail-closed plan may instead use
+`subjects` is replaced by the frozen `subjects` section. When
+`subject-universe.status` is `available`, `subject-universe.id` must match
+`^[0-9a-f]{64}$`, `subjects` is authoritative for planning, and aggregation must
+recompute the digest from that frozen section. When `subject-universe.status` is
+`unavailable`, `subject-universe.id` is `null`, `subjects` must be empty, and
+diagnostics must explain why the subject universe could not be produced or
+confirmed; aggregation must not recompute a subject-universe digest for that
+plan. `fact-snapshot.id` is the lowercase hexadecimal SHA-256 digest of a
+companion `three.ci.validation.fact-snapshot/v1alpha1` artifact containing the
+deterministic provider facts used for planning. It must match `^[0-9a-f]{64}$`
+when `fact-snapshot.status` is `available`; when `fact-snapshot.status` is
+`unavailable`, its `id` is `null` and diagnostics must explain why the snapshot
+could not be produced or confirmed. A fail-closed plan with
+`fact-snapshot.status: unavailable` has no required fact snapshot artifact. A
+fail-closed plan may instead use
 `fact-snapshot.status: available` with a digest-bound artifact that records
 provider entries with `status: unavailable`; in that case, diagnostics still
 explain why the plan is fail-closed. The fact snapshot artifact is
@@ -531,6 +538,7 @@ impact-id: string
 category: project-scoped | ecosystem-scoped | workflow-release-infrastructure | global | known-non-impacting | unknown
 matched-paths: [string]
 source-rule: string
+rationale: string
 coverage-target:
     type: subject | ecosystem | tooling-surface | global | none
     id: string | null
@@ -540,6 +548,10 @@ requires:
     broad-expansion: boolean
 diagnostic: diagnostic-code | null
 ```
+
+`source-rule` is the stable classifier rule identifier. `rationale` is a
+human-inspectable explanation of why the matched paths produced the category,
+coverage target, required expansions, and diagnostic.
 
 Each `descriptor-obligation` has:
 
@@ -988,24 +1000,26 @@ Selector rules:
         - assignment-id: string
           work-group-id: string
           trusted-writer-id: string
-          writer-identity-source: github-actions-job-context | trusted-upload-wrapper
+          writer-identity-source: github-actions-job-context
           receipt-artifact-ref: string
     ```
 
     `assignment-id` is stable within the run attempt and derived from
-    `work-group-id`. `trusted-writer-id` is the normalized control-plane job,
-    matrix leg, or trusted upload wrapper identity authorized to upload the
-    receipt for that selector. `writer-identity-source` declares the non-payload
-    source aggregation must use to observe that identity: either immutable GitHub
-    Actions job context captured by the control plane before receipt upload, or a
-    trusted upload wrapper record captured outside the receipt payload. The
-    observed writer identity is normalized with the same algorithm that produced
-    `trusted-writer-id` and compared by exact string equality; receipt payload
-    fields, artifact path segments, and log text are never identity sources.
+    `work-group-id`. `trusted-writer-id` is the normalized control-plane job or
+    matrix leg identity authorized to upload the receipt for that selector.
+    `writer-identity-source` declares the non-payload source aggregation must use
+    to observe that identity: immutable GitHub Actions job context captured by the
+    control plane before receipt upload. The observed writer identity is
+    normalized with the same algorithm that produced `trusted-writer-id` and
+    compared by exact string equality; receipt payload fields, artifact path
+    segments, wrapper records, and log text are never identity sources.
     `receipt-artifact-ref` must equal the contract-owned receipt ref derived from
     the work group. Assignment entries are sorted by `work-group-id`; duplicate
     work groups, duplicate receipt refs, or mismatches with the frozen plan make
-    selector materialization invalid.
+    selector materialization invalid. A missing, unreadable, malformed,
+    schema-invalid, plan-mismatched, or structurally invalid selector-assignment
+    manifest makes the plan invalid for aggregation and produces an `invalid-plan`
+    aggregate with a selector-assignment diagnostic detail.
 
 - One `ecosystem-gate` selector covers the complete planned capability set for
   its coverage target. The work group, matching evidence expectation, and receipt
@@ -1361,12 +1375,15 @@ true`.
 - The terminal `evidence-aggregation` work group does not emit
   `ci-validation-receipt`; it emits `ci-validation-aggregate`.
 - Before emitting the aggregate for any structurally valid plan, aggregation must
-  recompute `subject-universe.id` from the canonical frozen `subjects` section,
-  verify the companion fact snapshot artifact when `fact-snapshot.status` is
-  `available`, and verify the companion changed-files snapshot artifact when
-  `changed-files-hash` is non-null. Missing, malformed, schema-invalid, or
-  digest-mismatched companion artifacts or snapshot IDs make the plan invalid and
-  produce an `invalid-plan` aggregate.
+  recompute `subject-universe.id` from the canonical frozen `subjects` section
+  when `subject-universe.status` is `available`; when it is `unavailable`,
+  aggregation verifies `subject-universe.id: null`, empty `subjects`, and
+  explanatory diagnostics instead. Aggregation must also verify the companion
+  fact snapshot artifact when `fact-snapshot.status` is `available`, and verify
+  the companion changed-files snapshot artifact when `changed-files-hash` is
+  non-null. Missing, malformed, schema-invalid, or digest-mismatched companion
+  artifacts or snapshot IDs make the plan invalid and produce an `invalid-plan`
+  aggregate.
 
 The aggregation report uses:
 
@@ -1489,7 +1506,7 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 | `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
 | `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
 | `inadmissible-receipt`                | aggregation                                 | failed verdict                                                                        |
-| `invalid-plan`                        | aggregation                                 | fail-closed failed verdict                                                            |
+| `invalid-plan`                        | aggregation                                 | failed verdict with `reason.invalid-plan: true` and `reason.fail-closed: false`       |
 
 `diagnostic-detail` is a stable subcode for diagnostic families that need
 machine-readable reasons. `range-unconfirmed` details are:
@@ -1519,6 +1536,12 @@ machine-readable reasons. `range-unconfirmed` details are:
 - `malformed-plan`;
 - `schema-invalid`;
 - `plan-digest-mismatch`;
+- `selector-assignment-missing`;
+- `selector-assignment-unreadable`;
+- `selector-assignment-malformed`;
+- `selector-assignment-schema-invalid`;
+- `selector-assignment-plan-mismatch`;
+- `selector-assignment-structurally-invalid`;
 - `structurally-invalid`.
 
 `validation-work-failed` details are:
