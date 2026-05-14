@@ -331,6 +331,10 @@ Rules:
   planning emits a fail-closed plan for an invalid request, it must include a
   `request-invalid` planner diagnostic with the applicable closed
   `diagnostic-detail`; otherwise no authoritative validation plan is emitted.
+  A request whose payload `artifact-ref` does not equal the contract-owned request
+  ref, or whose physical artifact name does not recompute from that logical ref,
+  uses `diagnostic-detail: request-ref-mismatch` when represented by a
+  fail-closed plan.
 - `scheduled_full` requests must not carry `affected-range` or `changed-files`;
   they are full-scope requests, not affected requests with an empty affected
   range.
@@ -1876,6 +1880,7 @@ Every executable validation work group emits one CI validation receipt:
 common-envelope: inherited
 api-version: three.ci.validation.receipt/v1alpha1
 kind: ci-validation-receipt
+artifact-ref: string
 receipt-id: string
 plan-id: string
 plan-digest: string
@@ -2053,7 +2058,8 @@ Receipt rules:
         observed-entry-ids: [string]
     entries:
         - observed-entry-id: string
-          artifact-ref: string
+          artifact-ref: string | null
+          physical-artifact-name: string
           artifact-instance-id: string
           assignment-id: string | null
           writer-work-group-id: string | null
@@ -2064,6 +2070,16 @@ Receipt rules:
           receipt-content-digest: string | null
     ```
 
+    Receipt manifest entries always record the observed `physical-artifact-name`.
+    `artifact-ref` is the logical receipt ref only after aggregation can establish
+    it from the selector-assignment expected receipt ref or from a readable
+    receipt payload whose `artifact-ref` recomputes to the observed physical name;
+    otherwise it is `null`. Unreadable, malformed, unparseable, or otherwise
+    unclassified prefixed artifacts remain observed receipt-like entries with
+    `artifact-ref: null`, `writer-work-group-id: null`, and
+    `receipt-id: null`; they are inadmissible unexpected receipt artifacts rather
+    than ignored artifacts.
+
     `receipt-namespace-closure` records the closed receipt set observed by the
     first authoritative aggregation pass for the run attempt. Aggregation may
     declare the namespace closed only after selector materialization is complete
@@ -2071,11 +2087,11 @@ Receipt rules:
     reached a terminal state. The closure's `closed-receipt-count` and
     `observed-entry-ids` must equal the manifest entries. Post-run acceptance and
     same-attempt aggregation retries must re-enumerate the receipt intake
-    namespace and require exact equality with the manifest's closed artifact
-    refs, artifact instance IDs, and observed entry IDs. Any receipt-like artifact
-    instance that appears after closure, or any missing closed instance, makes
-    final evidence non-authoritative rather than extending the observed receipt
-    set.
+    namespace and require exact equality with the manifest's closed physical
+    artifact names, logical artifact refs when non-null, artifact instance IDs,
+    and observed entry IDs. Any receipt-like artifact instance that appears after
+    closure, or any missing closed instance, makes final evidence
+    non-authoritative rather than extending the observed receipt set.
 
     `observed-entry-id` is a stable aggregation-assigned identifier for one
     observed receipt-like artifact instance. It is derived from `run-id`,
@@ -2091,8 +2107,10 @@ Receipt rules:
     plan or post-plan control contract is invalid, unstable receipt instance IDs
     remain inspection-only observations and must not create
     `inadmissible-receipt` failures.
-    `writer-work-group-id` is derived from the artifact ref path segment, not
-    from the receipt payload, and is `null` when the ref is malformed.
+    `writer-work-group-id` is derived from the logical artifact-ref path segment
+    after aggregation has established `artifact-ref`, not from the receipt payload
+    alone or from the digest physical name; it is `null` when the logical ref is
+    missing or malformed.
     `assignment-id`, `trusted-writer-id`, `observed-writer-id`, and
     `writer-observation-ref` are copied only after aggregation verifies the
     selector assignment and writer-observation record for the artifact instance.
@@ -2455,6 +2473,7 @@ machine-readable reasons. `request-invalid` details are:
 - `request-unreadable`;
 - `request-malformed`;
 - `request-schema-invalid`;
+- `request-ref-mismatch`;
 - `request-digest-mismatch`;
 - `request-wrong-run-attempt`;
 - `request-producer-unverified`.
@@ -2631,11 +2650,13 @@ Implementation acceptance must include at least these evidence scenarios:
 | Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest                                                                                  | Aggregation emits `invalid-plan` rather than materializing selectors or admitting receipts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Logical boundary mapped to missing or wrong platform job identity                                                                                                                               | Producer authority verification rejects the artifact as producer-unverified using the boundary identity map; payload producer claims, logs, and job conclusions do not substitute                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Logical contract artifact ref maps ambiguously or incorrectly to a physical artifact name                                                                                                       | Artifact instance counting, duplicate detection, and namespace enumeration use the canonical fixed-length SHA-256 physical-name mapping; prefixed artifacts whose payload refs do not recompute to the observed physical name are non-authoritative or unexpected in closed namespaces                                                                                                                                                                                                                                                                                                           |
+| Request payload artifact ref or physical artifact name mismatches the contract-owned request ref                                                                                                | Planning fails closed with `request-invalid` and `diagnostic-detail: request-ref-mismatch`, or emits no authoritative plan                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Missing receipt                                                                                                                                                                                 | Aggregation fails with `required-evidence-missing` and identifies the missing work group or evidence expectation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Planned validation work skipped or failed                                                                                                                                                       | Aggregation records `required-evidence-skipped` or `blocking-validation-failure` and fails the final verdict; planned executable validation work is not optional or non-gating                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Ecosystem gate omits a capability enabled by selected subject/provider facts                                                                                                                    | Plan is fail-closed with `fact-provider-insufficient` or structurally invalid; receipts cannot pass by matching an under-planned capability set                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Upstream selector emits a valid `blocking-failure` receipt                                                                                                                                      | The selector job completes successfully for dependency gating, downstream selectors are not dependency-blocked solely by that receipt outcome, and aggregation fails the final verdict from the receipt evidence                                                                                                                                                                                                                                                                                                                                                                                 |
 | Receipt emitted after validation on the wrong or unverifiable execution tree                                                                                                                    | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; copied plan provenance is insufficient without `execution-tree` evidence from the trusted receipt boundary                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Unreadable or unclassified prefixed receipt artifact appears in the receipt intake namespace                                                                                                    | The receipt manifest records the physical artifact name with `artifact-ref: null`; aggregation treats it as an unexpected inadmissible receipt-like artifact rather than ignoring it                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Release-shaped artifact receipt with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked expected release receipt, or mismatched planned shape | Aggregation records `artifact-shape-unconfirmed` or `mismatched-evidence-payload` and fails the final verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Receipt top-level artifact refs are populated for non-artifact evidence or differ from release-shaped observed refs                                                                             | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; top-level `artifact-refs` is either empty or mirrors the category-specific release-shaped observed refs                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Lightweight-preflight or workflow-release-tooling receipt omits or mismatches its required detail profile                                                                                       | Aggregation treats the receipt as inadmissible with `mismatched-evidence-payload`; category-result detail must match the frozen work group and evidence expectation                                                                                                                                                                                                                                                                                                                                                                                                                              |
