@@ -355,7 +355,8 @@ identity. The exact identifier text may be a readable normalized prefix plus a
 digest, but two equivalent planning inputs must produce the same plan-local
 identifier values and references. Candidate-only audit IDs that exist only before
 freezing, such as `subsumption-record.subsumed-candidate-ids`, are not
-plan-local references and are outside this determinism requirement.
+plan-local references but still use deterministic semantic-key IDs because they
+remain inside the frozen plan digest.
 
 For affected modes, `affected-range.status` is `available` or `unavailable` and
 `scheduled-full.enabled` is `false`. For `scheduled_full`,
@@ -475,7 +476,7 @@ The fact snapshot artifact ref is contract-owned:
 `ci-validation/planning/<run-id>/<run-attempt>/fact-snapshot.json`.
 `fact-snapshot-id` equals the plan envelope `fact-snapshot.id` and is computed as
 the RFC 8785 digest of the artifact projection containing only `api-version`,
-`kind`, `plan-id`, and `providers`; common-envelope fields, `artifact-ref`,
+`kind`, and `providers`; common-envelope fields, `artifact-ref`, `plan-id`,
 `fact-snapshot-id`, and `schema-diagnostics` are not part of the hash preimage.
 Provider entries are sorted by `provider`; `roots`, `subjects`, and
 `tooling-surfaces` are sorted lexicographically by UTF-8 encoded bytes;
@@ -718,9 +719,11 @@ Binding rules:
   errors; consumers must reject structurally invalid executable plans rather than
   reinterpret, repair, or resolve references against receipts, prior plans, or
   repository state.
-- `subsumption-record.subsumed-candidate-ids` are pre-freeze planner candidate
-  audit identifiers, not plan-local references. `retained-id` must resolve in the
-  frozen plan within the namespace named by `subsumed-kind`.
+- `subsumption-record.subsumed-candidate-ids` are deterministic pre-freeze
+  planner candidate audit identifiers, not plan-local references. Each candidate
+  ID is derived from the record kind plus the deterministic semantic key of the
+  candidate before subsumption. `retained-id` must resolve in the frozen plan
+  within the namespace named by `subsumed-kind`.
 - Obligations reference their source impacts for auditability.
 - Scheduled-full obligations may have empty `source-impact-ids`; in that mode,
   the plan-level `scheduled-full` marker is their full-scope selection source.
@@ -1056,6 +1059,7 @@ Selector rules:
           trusted-writer-id: string
           writer-identity-source: github-actions-job-context
           receipt-artifact-ref: string
+          writer-observation-ref: string
     ```
 
     `assignment-id` is stable within the run attempt and derived from
@@ -1068,12 +1072,42 @@ Selector rules:
     compared by exact string equality; receipt payload fields, artifact path
     segments, wrapper records, and log text are never identity sources.
     `receipt-artifact-ref` must equal the contract-owned receipt ref derived from
-    the work group. Assignment entries are sorted by `work-group-id`; duplicate
-    work groups, duplicate receipt refs, or mismatches with the frozen plan make
-    selector materialization invalid. A missing, unreadable, malformed,
-    schema-invalid, plan-mismatched, or structurally invalid selector-assignment
-    manifest makes the plan invalid for aggregation and produces an `invalid-plan`
-    aggregate with a selector-assignment diagnostic detail.
+    the work group. `writer-observation-ref` must equal
+    `ci-validation/writer-observations/<run-id>/<run-attempt>/<assignment-id>.json`.
+    Assignment entries are sorted by `work-group-id`; duplicate work groups,
+    duplicate receipt refs, duplicate writer-observation refs, or mismatches with
+    the frozen plan make selector materialization invalid. A missing, unreadable,
+    malformed, schema-invalid, plan-mismatched, or structurally invalid
+    selector-assignment manifest makes the plan invalid for aggregation and
+    produces an `invalid-plan` aggregate with a selector-assignment diagnostic
+    detail.
+
+- Each executable writer emits a contract-owned writer-observation record before
+  or atomically with receipt upload:
+
+    ```yaml
+    common-envelope: inherited
+    api-version: three.ci.validation.writer-observation/v1alpha1
+    kind: ci-validation-writer-observation
+    plan-id: string
+    plan-digest: string
+    assignment-id: string
+    work-group-id: string
+    receipt-artifact-ref: string
+    artifact-instance-id: string
+    writer-identity-source: github-actions-job-context
+    observed-writer-id: string
+    ```
+
+    The writer-observation artifact ref is exactly the assignment's
+    `writer-observation-ref`. `observed-writer-id` is captured from immutable
+    GitHub Actions job context outside the receipt payload and normalized with the
+    same algorithm as `trusted-writer-id`. Aggregation verifies the observation
+    record's envelope, schema, plan identity, assignment, receipt ref,
+    `artifact-instance-id`, writer source, and observed writer ID before admitting
+    the receipt. Missing, malformed, mismatched, duplicate, or wrong-plan
+    writer-observation records make the corresponding receipt inadmissible with
+    `mismatched-writer-identity`.
 
 - One `ecosystem-gate` selector covers the complete planned capability set for
   its coverage target. The work group, matching evidence expectation, and receipt
@@ -1312,6 +1346,8 @@ Receipt rules:
           assignment-id: string | null
           writer-work-group-id: string | null
           trusted-writer-id: string | null
+          observed-writer-id: string | null
+          writer-observation-ref: string | null
           receipt-id: string | null
           receipt-content-digest: string | null
     ```
@@ -1324,16 +1360,16 @@ Receipt rules:
     emits a failed aggregate with an aggregation diagnostic rather than
     collapsing duplicates. `writer-work-group-id` is derived from the artifact ref
     path segment, not from the receipt payload, and is `null` when the ref is
-    malformed. `assignment-id` and `trusted-writer-id` are copied from the
-    selector-assignment manifest only after aggregation verifies the observed
-    writer identity from the declared `writer-identity-source` matches that
-    assignment. `receipt-content-digest` in the manifest is the
-    aggregator-observed SHA-256 digest, not a writer claim. Aggregation is the
-    only authorized writer for the manifest and the only reader that derives the
-    CI-level verdict. Entries are sorted by `observed-entry-id`. Duplicate
-    observed entries, artifact refs that do not match the derived pattern,
-    writer/work-group mismatches between artifact ref, assignment manifest, and
-    receipt payload, missing or mismatched trusted writer identity, cross-attempt
+    malformed. `assignment-id`, `trusted-writer-id`, `observed-writer-id`, and
+    `writer-observation-ref` are copied only after aggregation verifies the
+    selector assignment and writer-observation record for the artifact instance.
+    `receipt-content-digest` in the manifest is the aggregator-observed SHA-256
+    digest, not a writer claim. Aggregation is the only authorized writer for the
+    manifest and the only reader that derives the CI-level verdict. Entries are
+    sorted by `observed-entry-id`. Duplicate observed entries, artifact refs that
+    do not match the derived pattern, writer/work-group mismatches between
+    artifact ref, assignment manifest, writer-observation record, and receipt
+    payload, missing or mismatched trusted writer identity, cross-attempt
     artifacts, and unreadable receipt artifacts are observed inadmissible entries
     and must appear in aggregate diagnostics/failures. A pre-existing manifest
     uploaded by an executable work group in the receipt intake namespace is
