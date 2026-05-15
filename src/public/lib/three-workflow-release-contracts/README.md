@@ -17,8 +17,16 @@ foundation data for future CI affected-validation implementation work:
 - logical artifact-ref to physical GitHub artifact name mapping using
   `three-ci-validation-` plus lowercase SHA-256 of the UTF-8 logical ref;
 - canonical JSON bytes and SHA-256 digest helpers.
+- GitHub Actions artifact metadata helpers for normalizing run-scoped artifact
+  lists, grouping instances by physical name, admitting exactly one live
+  candidate with `expired: false` for an expected logical ref, and preparing
+  ID-addressed download inputs.
 
 The canonical JSON helper is intentionally scoped to the contract's I-JSON data
 model. It orders object members by RFC 8785 UTF-16 code-unit order and emits
 UTF-8 JSON without insignificant whitespace, but rejects floats instead of
 pretending to implement full RFC 8785 number serialization.
+
+Artifact metadata helpers preserve artifact ID, physical name, timestamps,
+expiration, and digest fields exposed by GitHub. They intentionally do not infer
+authoritative uploader job or matrix identity from artifact metadata alone.
