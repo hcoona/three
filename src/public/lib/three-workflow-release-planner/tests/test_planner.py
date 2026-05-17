@@ -8,7 +8,7 @@ import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import pytest
 from three_workflow_release_authoring import (
@@ -2438,3 +2438,1082 @@ def test_unknown_project_fails_the_whole_request() -> None:
             ),
         )
     assert error.value.diagnostics[0]["code"] == "REQ_PROJECT_NOT_FOUND"
+
+
+def _ci_request(changed_files: list[str]) -> dict[str, object]:
+    """Return a normalized CI validation planner request."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        API_VERSIONS_BY_KIND,
+        CiValidationKind,
+        canonical_json_digest,
+        ci_validation_request_artifact_ref,
+        ci_validation_request_projection,
+    )
+
+    run_id = "25887422010"
+    run_attempt = "1"
+    document: dict[str, object] = {
+        "api-version": API_VERSIONS_BY_KIND[CiValidationKind.REQUEST.value],
+        "kind": CiValidationKind.REQUEST.value,
+        "created-at": "2026-05-14T21:09:21Z",
+        "repository": {"owner": "hcoona", "name": "three"},
+        "run": {
+            "workflow": "CI Validation",
+            "run-id": run_id,
+            "run-attempt": run_attempt,
+        },
+        "schema-diagnostics": [],
+        "artifact-ref": ci_validation_request_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        "request-digest": "0" * 64,
+        "mode": "pull_request",
+        "validation-tree": {
+            "commit-sha": SHA,
+            "ref": "refs/pull/42/merge",
+        },
+        "event": {
+            "name": "pull_request",
+            "number": "42",
+            "actor": "octocat",
+            "run-id": run_id,
+            "run-attempt": run_attempt,
+        },
+        "affected-range": {
+            "status": "available",
+            "base-sha": "a" * 40,
+            "base-tip-sha": "c" * 40,
+            "head-sha": SHA,
+            "changed-files": changed_files,
+            "source": "pull_request",
+            "diagnostic": None,
+            "diagnostic-detail": None,
+        },
+    }
+    document["request-digest"] = canonical_json_digest(
+        ci_validation_request_projection(document),
+    )
+    return document
+
+
+def _ci_inputs(changed_files: list[str]):
+    """Return CI planner inputs for tests."""
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        CiValidationPlannerInputs,
+    )
+
+    return CiValidationPlannerInputs(
+        request=_ci_request(changed_files),
+        repo_root=REPO_ROOT,
+        expected_run_id="25887422010",
+        expected_run_attempt="1",
+        created_at="2026-05-14T21:09:21Z",
+    )
+
+
+def _scheduled_ci_inputs():
+    """Return scheduled full CI planner inputs for tests."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        canonical_json_digest,
+        ci_validation_request_projection,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        CiValidationPlannerInputs,
+    )
+
+    request = dict(_ci_request([]))
+    request["mode"] = "scheduled_full"
+    request["event"] = {
+        "name": "schedule",
+        "number": None,
+        "actor": "octocat",
+        "run-id": "25887422010",
+        "run-attempt": "1",
+    }
+    request["scheduled-full"] = {"enabled": True}
+    del request["affected-range"]
+    request["request-digest"] = canonical_json_digest(
+        ci_validation_request_projection(request),
+    )
+    return CiValidationPlannerInputs(
+        request=request,
+        repo_root=REPO_ROOT,
+        expected_run_id="25887422010",
+        expected_run_attempt="1",
+        created_at="2026-05-14T21:09:21Z",
+    )
+
+
+def test_ci_validation_plans_zero_file_affected_range() -> None:
+    """Confirmed zero-file affected ranges are executable no-work plans."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(_ci_inputs([]))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    classification = cast(
+        "Mapping[str, object]", snapshot.plan["classification"]
+    )
+    assert classification["impacts"] == []
+    assert classification["lightweight-only"] is True
+    subjects = cast("Sequence[Mapping[str, object]]", snapshot.plan["subjects"])
+    assert all(item["selection-status"] == "not-selected" for item in subjects)
+    assert snapshot.plan["descriptor-obligations"] == []
+    assert snapshot.plan["validation-obligations"] == []
+    assert snapshot.plan["artifact-obligations"] == []
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]", snapshot.plan["work-groups"]
+    )
+    assert [item["kind"] for item in work_groups] == ["evidence-aggregation"]
+
+
+def test_ci_validation_plans_known_non_impacting_scope() -> None:
+    """Known non-impacting paths produce executable lightweight-only plans."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(_ci_inputs(["README.md"]))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    classification = cast(
+        "Mapping[str, object]", snapshot.plan["classification"]
+    )
+    assert classification["lightweight-only"] is True
+
+
+def test_ci_validation_plans_descriptor_backed_subject_scope() -> None:
+    """Project changes select the owning subject and planned evidence."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs(["src/public/lib/nbgv-python/pyproject.toml"]),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    subjects = cast("Sequence[Mapping[str, object]]", snapshot.plan["subjects"])
+    selected = [
+        item for item in subjects if item["selection-status"] == "selected"
+    ]
+    assert "python.src-public-lib-nbgv-python" in [
+        item["subject-id"] for item in selected
+    ]
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]", snapshot.plan["work-groups"]
+    )
+    assert {item["kind"] for item in work_groups} >= {
+        "descriptor-validation",
+        "ecosystem-gate",
+        "release-shaped-artifact",
+    }
+
+
+def test_ci_validation_plans_mixed_changes_keep_canonical_paths() -> None:
+    """Mixed valid changes keep flattened matched paths in canonical order."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    changed_files = [
+        "README.md",
+        "src/public/lib/nbgv-python/pyproject.toml",
+    ]
+
+    snapshot = plan_ci_validation_from_repo(_ci_inputs(changed_files))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    classification = cast(
+        "Mapping[str, object]", snapshot.plan["classification"]
+    )
+    impacts = cast("Sequence[Mapping[str, object]]", classification["impacts"])
+    flattened_paths = [
+        path
+        for impact in impacts
+        for path in cast("Sequence[str]", impact["matched-paths"])
+    ]
+    assert flattened_paths == sorted(changed_files)
+    readme_impact = next(
+        impact
+        for impact in impacts
+        if impact["category"] == "known-non-impacting"
+    )
+    readme_impact_id = str(readme_impact["impact-id"])
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]", snapshot.plan["work-groups"]
+    )
+    assert any(item["kind"] != "lightweight-preflight" for item in work_groups)
+    assert any(item["kind"] == "lightweight-preflight" for item in work_groups)
+    validation_obligations = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["validation-obligations"],
+    )
+    lightweight_obligations = [
+        item
+        for item in validation_obligations
+        if item["kind"] == "lightweight-preflight"
+    ]
+    assert len(lightweight_obligations) == 1
+    assert lightweight_obligations[0]["source-impact-ids"] == [readme_impact_id]
+
+
+def test_ci_validation_plans_python_downstream_dependency_closure() -> None:
+    """Project-scoped Python changes include downstream package dependents."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs(
+            ["src/public/lib/three-workflow-release-contracts/pyproject.toml"]
+        ),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    subjects = cast("Sequence[Mapping[str, object]]", snapshot.plan["subjects"])
+    selected_subject_ids = {
+        item["subject-id"]
+        for item in subjects
+        if item["selection-status"] == "selected"
+    }
+    assert "python.src-public-lib-three-workflow-release-contracts" in (
+        selected_subject_ids
+    )
+    assert "python.src-public-lib-three-workflow-release-authoring" in (
+        selected_subject_ids
+    )
+    assert "python.src-public-lib-three-workflow-release-planner" in (
+        selected_subject_ids
+    )
+
+
+def test_ci_validation_plans_transitive_downstream_dependency_basis() -> None:
+    """Transitive downstream selections carry the complete dependency path."""
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        ci_validation_planner as planner_module,
+    )
+
+    edge_to_b: dict[str, object] = {
+        "from-subject-id": "python.package-b",
+        "to-subject-id": "python.package-a",
+        "relation": "runtime",
+    }
+    edge_to_c: dict[str, object] = {
+        "from-subject-id": "python.package-c",
+        "to-subject-id": "python.package-b",
+        "relation": "runtime",
+    }
+    facts = planner_module._PlanningFacts(  # noqa: SLF001
+        subjects={},
+        providers=(),
+        dependency_edges=(edge_to_b, edge_to_c),
+        dependency_failures=(),
+    )
+
+    downstream = planner_module._downstream_subjects(  # noqa: SLF001
+        "python.package-a",
+        facts,
+    )
+
+    assert downstream == [
+        ("python.package-b", [edge_to_b]),
+        ("python.package-c", [edge_to_b, edge_to_c]),
+    ]
+
+
+def test_ci_validation_plans_python_build_system_dependency_closure() -> None:
+    """Build-system requirements also drive Python downstream closure."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs(["src/public/lib/nbgv-python/pyproject.toml"]),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    subjects = cast("Sequence[Mapping[str, object]]", snapshot.plan["subjects"])
+    selected_subject_ids = {
+        item["subject-id"]
+        for item in subjects
+        if item["selection-status"] == "selected"
+    }
+    assert "python.src-public-lib-nbgv-python" in selected_subject_ids
+    assert "python.src-public-lib-hcoona-release-smoke" in selected_subject_ids
+    assert "python.src-public-lib-hcoona-release-smoke-pypi" in (
+        selected_subject_ids
+    )
+    artifact_obligations = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["artifact-obligations"],
+    )
+    assert not any(
+        item["subject-id"] == "python.src-public-lib-hcoona-release-smoke"
+        for item in artifact_obligations
+    )
+
+
+def test_ci_validation_plans_artifact_obligations_keep_shape_granularity() -> (
+    None
+):
+    """Wheel and sdist targets remain distinct catalog-backed obligations."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs(["src/public/lib/nbgv-python/pyproject.toml"]),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    artifact_obligations = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["artifact-obligations"],
+    )
+    nbgv_obligations = [
+        obligation
+        for obligation in artifact_obligations
+        if obligation["subject-id"] == "python.src-public-lib-nbgv-python"
+    ]
+    obligations_by_ref = {
+        ref: cast("Mapping[str, object]", obligation["artifact"])[
+            "concrete-kind"
+        ]
+        for obligation in nbgv_obligations
+        for ref in cast(
+            "Sequence[str]",
+            cast("Mapping[str, object]", obligation["artifact"])[
+                "expected-artifact-refs"
+            ],
+        )
+    }
+    assert (
+        obligations_by_ref[
+            "ci-validation/artifacts/nbgv-python/official/wheel.artifact"
+        ]
+        == "wheel"
+    )
+    assert (
+        obligations_by_ref[
+            "ci-validation/artifacts/nbgv-python/official/sdist.artifact"
+        ]
+        == "sdist"
+    )
+    assert all(
+        not (
+            cast("Mapping[str, object]", obligation["artifact"])[
+                "concrete-kind"
+            ]
+            == "wheel"
+            and any(
+                "sdist.artifact" in ref
+                for ref in cast(
+                    "Sequence[str]",
+                    cast("Mapping[str, object]", obligation["artifact"])[
+                        "expected-artifact-refs"
+                    ],
+                )
+            )
+        )
+        for obligation in nbgv_obligations
+    )
+
+
+def test_ci_validation_fact_snapshot_workflow_release_owns_catalog_facts() -> (
+    None
+):
+    """Descriptor and target-catalog facts are workflow-release facts."""
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(_ci_inputs([]))
+
+    providers = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.fact_snapshot["providers"],
+    )
+    providers_by_id = {
+        str(provider["provider"]): provider for provider in providers
+    }
+    workflow_release = providers_by_id["workflow-release"]
+    workflow_catalog = cast(
+        "Mapping[str, object]",
+        workflow_release["target-catalog"],
+    )
+    assert workflow_release["descriptors"]
+    assert workflow_catalog["entries"]
+    for provider_id in ("dotnet", "javascript-typescript", "python"):
+        provider = providers_by_id[provider_id]
+        catalog = cast("Mapping[str, object]", provider["target-catalog"])
+        assert provider["subjects"]
+        assert provider["descriptors"] == []
+        assert catalog["entries"] == []
+
+
+def test_ci_validation_plans_pnpm_workspace_globs_are_subjects() -> None:
+    """PNPM package globs expand without reading unrelated YAML lists."""
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(_ci_inputs([]))
+
+    subjects = cast("Sequence[Mapping[str, object]]", snapshot.plan["subjects"])
+    subject_ids = {str(item["subject-id"]) for item in subjects}
+    assert {
+        "typescript.src-private-app-im-acp-gateway-poc-telegram-bot-verifier",
+        "typescript.src-private-app-im-acp-gateway-poc-telegram-topic-session-bridge",
+        "typescript.src-private-app-im-acp-gateway-poc-wechat-ilink-verifier",
+    } <= subject_ids
+    assert not any("hexo-util" in subject_id for subject_id in subject_ids)
+
+
+def test_ci_validation_plans_dependency_read_failures_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Project-scoped dependency discovery failures fail closed."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticFamily,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation,
+    )
+
+    snapshot = validate_authoring(REPO_ROOT)
+    broken_path = (
+        REPO_ROOT / "src/public/lib/hcoona-release-smoke/pyproject.toml"
+    )
+    original_read_text = Path.read_text
+
+    def fake_read_text(
+        path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> str:
+        if path == broken_path:
+            message = "simulated dependency metadata read failure"
+            raise OSError(message)
+        return original_read_text(
+            path,
+            encoding=encoding,
+            errors=errors,
+            newline=newline,
+        )
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+
+    result = plan_ci_validation(
+        snapshot,
+        _ci_inputs(["src/public/lib/nbgv-python/pyproject.toml"]),
+    )
+
+    validate_ci_validation_plan(
+        result.plan,
+        changed_files_snapshot=result.changed_files_snapshot,
+        fact_snapshot=result.fact_snapshot,
+    )
+    assert result.plan["verdict-intent"] == "fail-closed"
+    diagnostics = cast(
+        "Sequence[Mapping[str, object]]",
+        result.plan["diagnostics"],
+    )
+    assert diagnostics[0]["code"] == (
+        DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value
+    )
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]", result.plan["work-groups"]
+    )
+    assert [item["kind"] for item in work_groups] == ["evidence-aggregation"]
+
+
+@pytest.mark.parametrize(
+    ("changed_files", "request_mode"),
+    [
+        (["src/lab/unowned/uv.lock"], "affected"),
+        (["uv.lock"], "affected"),
+        (
+            ["src/public/lib/three-workflow-release-planner/pyproject.toml"],
+            "affected",
+        ),
+        (
+            ["src/public/lib/three-workflow-release-metadata/provider.py"],
+            "affected",
+        ),
+        ([], "scheduled-full"),
+    ],
+)
+def test_ci_validation_plans_broad_dependency_read_failures_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    changed_files: list[str],
+    request_mode: str,
+) -> None:
+    """Broad-scope dependency discovery failures fail closed."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticFamily,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation,
+    )
+
+    snapshot = validate_authoring(REPO_ROOT)
+    broken_path = (
+        REPO_ROOT / "src/public/lib/hcoona-release-smoke/pyproject.toml"
+    )
+    original_read_text = Path.read_text
+
+    def fake_read_text(
+        path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> str:
+        if path == broken_path:
+            message = "simulated dependency metadata read failure"
+            raise OSError(message)
+        return original_read_text(
+            path,
+            encoding=encoding,
+            errors=errors,
+            newline=newline,
+        )
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+
+    inputs = (
+        _scheduled_ci_inputs()
+        if request_mode == "scheduled-full"
+        else _ci_inputs(changed_files)
+    )
+    result = plan_ci_validation(snapshot, inputs)
+
+    validate_ci_validation_plan(
+        result.plan,
+        changed_files_snapshot=result.changed_files_snapshot,
+        fact_snapshot=result.fact_snapshot,
+    )
+    assert result.plan["verdict-intent"] == "fail-closed"
+    diagnostics = cast(
+        "Sequence[Mapping[str, object]]",
+        result.plan["diagnostics"],
+    )
+    assert diagnostics[0]["code"] == (
+        DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value
+    )
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]", result.plan["work-groups"]
+    )
+    assert [item["kind"] for item in work_groups] == ["evidence-aggregation"]
+
+
+@pytest.mark.parametrize(
+    ("broken_path", "broken_content", "changed_file"),
+    [
+        (
+            REPO_ROOT / "pyproject.toml",
+            "[tool.uv.workspace\n",
+            "pyproject.toml",
+        ),
+        (
+            REPO_ROOT / "pnpm-workspace.yaml",
+            "packages: [\n",
+            "pnpm-workspace.yaml",
+        ),
+        (
+            REPO_ROOT / "src/public/lib/hcoona-release-smoke-npm/package.json",
+            "{",
+            "src/public/lib/hcoona-release-smoke-npm/package.json",
+        ),
+    ],
+)
+def test_ci_validation_plans_fact_discovery_parse_failures_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    broken_path: Path,
+    broken_content: str,
+    changed_file: str,
+) -> None:
+    """Fact discovery parse failures fail closed instead of omitting facts."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticFamily,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation,
+    )
+
+    snapshot = validate_authoring(REPO_ROOT)
+    original_read_text = Path.read_text
+
+    def fake_read_text(
+        path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> str:
+        if path == broken_path:
+            return broken_content
+        return original_read_text(
+            path,
+            encoding=encoding,
+            errors=errors,
+            newline=newline,
+        )
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+
+    result = plan_ci_validation(snapshot, _ci_inputs([changed_file]))
+
+    validate_ci_validation_plan(
+        result.plan,
+        changed_files_snapshot=result.changed_files_snapshot,
+        fact_snapshot=result.fact_snapshot,
+    )
+    assert result.plan["verdict-intent"] == "fail-closed"
+    diagnostics = cast(
+        "Sequence[Mapping[str, object]]",
+        result.plan["diagnostics"],
+    )
+    assert diagnostics[0]["code"] == (
+        DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value
+    )
+    classification = cast(
+        "Mapping[str, object]",
+        result.plan["classification"],
+    )
+    impacts = cast(
+        "Sequence[Mapping[str, object]]",
+        classification["impacts"],
+    )
+    requires = cast("Mapping[str, object]", impacts[0]["requires"])
+    assert requires["diagnostic"] == (
+        DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value
+    )
+
+
+@pytest.mark.parametrize(
+    ("broken_path", "changed_file"),
+    [
+        (
+            REPO_ROOT / "src/public/lib/hcoona-release-smoke/pyproject.toml",
+            "src/public/lib/nbgv-python/pyproject.toml",
+        ),
+        (
+            REPO_ROOT / "src/public/lib/hcoona-release-smoke-npm/package.json",
+            "src/public/lib/hcoona-release-smoke-npm/package.json",
+        ),
+    ],
+)
+def test_ci_validation_plans_dependency_utf8_failures_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    broken_path: Path,
+    changed_file: str,
+) -> None:
+    """Invalid UTF-8 dependency metadata fails closed instead of crashing."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticFamily,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation,
+    )
+
+    snapshot = validate_authoring(REPO_ROOT)
+    original_read_text = Path.read_text
+
+    def fake_read_text(
+        path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> str:
+        if path == broken_path:
+            encoding_name = "utf-8"
+            reason = "invalid start"
+            raise UnicodeDecodeError(encoding_name, b"\xff", 0, 1, reason)
+        return original_read_text(
+            path,
+            encoding=encoding,
+            errors=errors,
+            newline=newline,
+        )
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+
+    result = plan_ci_validation(snapshot, _ci_inputs([changed_file]))
+
+    validate_ci_validation_plan(
+        result.plan,
+        changed_files_snapshot=result.changed_files_snapshot,
+        fact_snapshot=result.fact_snapshot,
+    )
+    assert result.plan["verdict-intent"] == "fail-closed"
+    diagnostics = cast(
+        "Sequence[Mapping[str, object]]",
+        result.plan["diagnostics"],
+    )
+    assert diagnostics[0]["code"] == (
+        DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value
+    )
+    classification = cast(
+        "Mapping[str, object]",
+        result.plan["classification"],
+    )
+    impacts = cast(
+        "Sequence[Mapping[str, object]]",
+        classification["impacts"],
+    )
+    requires = cast("Mapping[str, object]", impacts[0]["requires"])
+    assert requires["diagnostic"] == (
+        DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value
+    )
+
+
+def test_ci_validation_global_tooling_obligations_have_source_impacts() -> None:
+    """Affected global tooling obligations retain their source impact IDs."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs(
+            [
+                "docs/wiki/analyses/"
+                "workflow-release-ci-affected-validation-low-level-design.md"
+            ]
+        )
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    validation_obligations = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["validation-obligations"],
+    )
+    tooling_obligations = [
+        item
+        for item in validation_obligations
+        if item["kind"] == "workflow-release-tooling"
+    ]
+    assert tooling_obligations
+    assert all(item["source-impact-ids"] for item in tooling_obligations)
+
+
+def test_ci_validation_workflow_release_project_paths_are_tooling() -> None:
+    """Workflow-release package paths are classified by tooling surface."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    changed_file = (
+        "src/public/lib/three-workflow-release-planner/src/"
+        "three_workflow_release_planner/ci_validation_planner.py"
+    )
+    snapshot = plan_ci_validation_from_repo(_ci_inputs([changed_file]))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    classification = cast(
+        "Mapping[str, object]", snapshot.plan["classification"]
+    )
+    impacts = cast("Sequence[Mapping[str, object]]", classification["impacts"])
+    assert len(impacts) == 1
+    assert impacts[0]["category"] == "workflow-release-infrastructure"
+    assert impacts[0]["coverage-target"] == {
+        "type": "tooling-surface",
+        "id": "planner",
+    }
+    validation_obligations = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["validation-obligations"],
+    )
+    tooling_obligations = [
+        item
+        for item in validation_obligations
+        if item["kind"] == "workflow-release-tooling"
+    ]
+    assert tooling_obligations
+
+
+def test_ci_validation_build_execution_scope_covers_build_subjects() -> None:
+    """Build tooling changes select every active build-capable subject."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    changed_file = (
+        "src/public/lib/three-workflow-release-build/src/"
+        "three_workflow_release_build/executor.py"
+    )
+    snapshot = plan_ci_validation_from_repo(_ci_inputs([changed_file]))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    subjects = cast("Sequence[Mapping[str, object]]", snapshot.plan["subjects"])
+    active_build_subjects = [
+        subject
+        for subject in subjects
+        if subject["activity-status"] == "active"
+        and (
+            cast("Mapping[str, object]", subject["capabilities"]).get("build")
+            is True
+            or cast("Mapping[str, object]", subject["capabilities"]).get(
+                "release-shaped-artifacts",
+            )
+            is True
+        )
+    ]
+    assert active_build_subjects
+    assert any(
+        subject["capability-class"] == "validation-only"
+        for subject in active_build_subjects
+    )
+    assert {
+        subject["selection-status"] for subject in active_build_subjects
+    } == {"selected"}
+    descriptor_obligations = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["descriptor-obligations"],
+    )
+    assert descriptor_obligations
+    assert {
+        obligation["descriptor-scope"] for obligation in descriptor_obligations
+    } == {"all-discovered"}
+
+
+def test_ci_validation_freeze_fallback_covers_changed_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Executable freeze fallback preserves changed-file coverage."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        ContractValidationError,
+        DiagnosticFamily,
+        ValidationIssue,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        ci_validation_planner,
+    )
+
+    original_freeze = ci_validation_planner.freeze_ci_validation_plan
+    calls = 0
+
+    def fail_first_executable_freeze(**kwargs: Any) -> object:
+        nonlocal calls
+        calls += 1
+        if calls == 1 and kwargs["verdict_intent"] == "executable":
+            raise ContractValidationError(
+                [ValidationIssue("$.classification", "forced failure")],
+            )
+        return original_freeze(**kwargs)
+
+    expected_freeze_calls = 2
+    changed_files = [
+        "src/public/lib/three-workflow-release-planner/src/"
+        "three_workflow_release_planner/ci_validation_planner.py",
+    ]
+    monkeypatch.setattr(
+        ci_validation_planner,
+        "freeze_ci_validation_plan",
+        fail_first_executable_freeze,
+    )
+
+    snapshot = ci_validation_planner.plan_ci_validation_from_repo(
+        _ci_inputs(changed_files),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert calls == expected_freeze_calls
+    assert snapshot.plan["verdict-intent"] == "fail-closed"
+    classification = cast(
+        "Mapping[str, object]", snapshot.plan["classification"]
+    )
+    impacts = cast("Sequence[Mapping[str, object]]", classification["impacts"])
+    assert {
+        path
+        for impact in impacts
+        for path in cast("Sequence[str]", impact["matched-paths"])
+    } == set(changed_files)
+    assert {impact["category"] for impact in impacts} == {"unknown"}
+    assert {
+        cast("Mapping[str, object]", impact["requires"])["diagnostic"]
+        for impact in impacts
+    } == {DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value}
+
+
+def test_ci_validation_authoring_validation_failure_covers_changed_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Authoring validation failures preserve changed-file coverage."""
+    from three_workflow_release_authoring import (  # noqa: PLC0415
+        AuthoringIssue,
+        AuthoringValidationError,
+    )
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticFamily,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        ci_validation_planner,
+    )
+
+    def fail_authoring_validation(*_args: Any, **_kwargs: Any) -> object:
+        raise AuthoringValidationError(
+            [
+                AuthoringIssue(
+                    code="SIMULATED_AUTHORING_FAILURE",
+                    path="workflow-release/projects/example.yaml",
+                    message="simulated authoring validation failure",
+                ),
+            ],
+        )
+
+    changed_files = [
+        "src/public/lib/three-workflow-release-planner/src/"
+        "three_workflow_release_planner/ci_validation_planner.py",
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py",
+    ]
+    monkeypatch.setattr(
+        ci_validation_planner,
+        "validate_authoring",
+        fail_authoring_validation,
+    )
+
+    snapshot = ci_validation_planner.plan_ci_validation_from_repo(
+        _ci_inputs(changed_files),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "fail-closed"
+    diagnostics = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["diagnostics"],
+    )
+    assert diagnostics[0]["code"] == DiagnosticFamily.DESCRIPTOR_INVALID.value
+    classification = cast(
+        "Mapping[str, object]", snapshot.plan["classification"]
+    )
+    impacts = cast("Sequence[Mapping[str, object]]", classification["impacts"])
+    assert [
+        path
+        for impact in impacts
+        for path in cast("Sequence[str]", impact["matched-paths"])
+    ] == sorted(changed_files)
+    assert {impact["category"] for impact in impacts} == {"unknown"}
+    assert {
+        cast("Mapping[str, object]", impact["requires"])["diagnostic"]
+        for impact in impacts
+    } == {DiagnosticFamily.DESCRIPTOR_INVALID.value}
+
+
+def test_ci_validation_plans_unknown_paths_fail_closed() -> None:
+    """Unclassified paths produce an inspectable fail-closed plan."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticFamily,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(_ci_inputs(["unknown.bin"]))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "fail-closed"
+    diagnostics = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["diagnostics"],
+    )
+    assert diagnostics[0]["code"] == DiagnosticFamily.UNKNOWN_CHANGE.value

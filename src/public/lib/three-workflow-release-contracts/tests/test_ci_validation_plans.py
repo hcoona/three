@@ -3157,6 +3157,94 @@ def test_artifact_obligations_cover_all_target_catalog_profiles() -> None:
     )
 
 
+def test_artifact_obligations_cover_same_profile_artifact_shapes() -> None:
+    """Catalog entries may require multiple artifact shapes for one profile."""
+    provider = _descriptor_fact_provider()
+    catalog = cast("dict[str, object]", provider["target-catalog"])
+    wheel_entry = deepcopy(
+        cast("list[dict[str, object]]", catalog["entries"])[0],
+    )
+    sdist_entry = deepcopy(wheel_entry)
+    sdist_artifact = cast("dict[str, object]", sdist_entry["artifact"])
+    sdist_artifact["concrete-kind"] = "sdist"
+    sdist_artifact["expected-artifact-refs"] = [
+        "ci-validation/artifacts/python/example/sdist.tar.gz",
+    ]
+    catalog["entries"] = [sdist_entry, wheel_entry]
+
+    wheel_obligation = _artifact_obligation()
+    sdist_obligation = deepcopy(wheel_obligation)
+    sdist_obligation["artifact-obligation-id"] = "artifact-example-sdist"
+    sdist_obligation["validation-obligation-id"] = "validation-artifact-sdist"
+    sdist_obligation["work-group-id"] = "wg-artifact-sdist"
+    sdist_obligation["expected-evidence-id"] = "evidence-artifact-sdist"
+    sdist_artifact_obligation = cast(
+        "dict[str, object]", sdist_obligation["artifact"]
+    )
+    sdist_artifact_obligation["concrete-kind"] = "sdist"
+    sdist_artifact_obligation["expected-artifact-refs"] = [
+        "ci-validation/artifacts/python/example/sdist.tar.gz",
+    ]
+
+    sdist_work_group = _artifact_work_group()
+    sdist_work_group["work-group-id"] = "wg-artifact-sdist"
+    sdist_work_group["coverage-target"] = {
+        "type": "artifact-obligation",
+        "id": "artifact-example-sdist",
+    }
+    sdist_evidence = _artifact_evidence_expectation()
+    sdist_evidence["evidence-expectation-id"] = "evidence-artifact-sdist"
+    sdist_evidence["work-group-id"] = "wg-artifact-sdist"
+    sdist_evidence["coverage-target"] = {
+        "type": "artifact-obligation",
+        "id": "artifact-example-sdist",
+    }
+    sdist_validation = _artifact_validation_obligation()
+    sdist_validation["validation-obligation-id"] = "validation-artifact-sdist"
+    sdist_validation["coverage-target"] = {
+        "type": "artifact-obligation",
+        "id": "artifact-example-sdist",
+    }
+    sdist_validation["work-group-id"] = "wg-artifact-sdist"
+    sdist_validation["expected-evidence-id"] = "evidence-artifact-sdist"
+
+    snapshot = freeze_ci_validation_plan(
+        request=_normalized_request(),
+        plan_id=PLAN_ID,
+        created_at=CREATED_AT,
+        observed_commit_sha=TREE_SHA,
+        verdict_intent="executable",
+        classification=_classification(),
+        subjects=[_descriptor_backed_subject()],
+        validation_obligations=[
+            _artifact_validation_obligation(),
+            sdist_validation,
+            _validation_obligation(),
+        ],
+        descriptor_obligations=[_descriptor_obligation()],
+        artifact_obligations=[wheel_obligation, sdist_obligation],
+        work_groups=[
+            _artifact_work_group(),
+            sdist_work_group,
+            _descriptor_work_group(),
+            _ecosystem_gate_work_group(),
+        ],
+        evidence_expectations=[
+            _artifact_evidence_expectation(),
+            sdist_evidence,
+            _descriptor_evidence_expectation(),
+            _evidence_expectation(),
+        ],
+        fact_snapshot_providers=[provider],
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+
 @pytest.mark.parametrize(
     ("profiles", "provider"),
     [
@@ -3279,6 +3367,63 @@ def test_selected_descriptor_backed_subject_rejects_missing_artifact_chain():
             evidence_expectations=[_descriptor_evidence_expectation()],
             fact_snapshot_providers=[_descriptor_fact_provider()],
         )
+
+
+def test_selected_descriptor_backed_subject_rejects_catalog_capability_gap():
+    """Target-catalog entries require artifact coverage."""
+    subject = _descriptor_backed_subject()
+    capabilities = cast("dict[str, bool]", subject["capabilities"])
+    capabilities["release-shaped-artifacts"] = False
+
+    with pytest.raises(ContractValidationError, match="artifact chain"):
+        freeze_ci_validation_plan(
+            request=_normalized_request(),
+            plan_id=PLAN_ID,
+            created_at=CREATED_AT,
+            observed_commit_sha=TREE_SHA,
+            verdict_intent="executable",
+            classification=_classification(),
+            subjects=[subject],
+            validation_obligations=[_validation_obligation()],
+            descriptor_obligations=[_descriptor_obligation()],
+            work_groups=[
+                _descriptor_work_group(),
+                _ecosystem_gate_work_group(),
+            ],
+            evidence_expectations=[
+                _descriptor_evidence_expectation(),
+                _evidence_expectation(),
+            ],
+            fact_snapshot_providers=[_descriptor_fact_provider()],
+        )
+
+
+def test_descriptor_backed_subject_without_release_artifacts_needs_no_chain():
+    """Zero-target descriptor-backed subjects need no artifact chain."""
+    subject = _descriptor_backed_subject()
+    capabilities = cast("dict[str, bool]", subject["capabilities"])
+    capabilities["release-shaped-artifacts"] = False
+    provider = _descriptor_fact_provider()
+    catalog = cast("dict[str, object]", provider["target-catalog"])
+    catalog["entries"] = []
+
+    freeze_ci_validation_plan(
+        request=_normalized_request(),
+        plan_id=PLAN_ID,
+        created_at=CREATED_AT,
+        observed_commit_sha=TREE_SHA,
+        verdict_intent="executable",
+        classification=_classification(),
+        subjects=[subject],
+        validation_obligations=[_validation_obligation()],
+        descriptor_obligations=[_descriptor_obligation()],
+        work_groups=[_descriptor_work_group(), _ecosystem_gate_work_group()],
+        evidence_expectations=[
+            _descriptor_evidence_expectation(),
+            _evidence_expectation(),
+        ],
+        fact_snapshot_providers=[provider],
+    )
 
 
 def test_descriptor_backed_subject_requires_ecosystem_gate_chain() -> None:

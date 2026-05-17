@@ -254,7 +254,7 @@ class _SpecialObligationResolution:
 @dataclass(frozen=True, slots=True)
 class _FactIndexes:
     descriptors: Mapping[str, Mapping[str, object]]
-    catalog_entries: Mapping[tuple[str, str], Mapping[str, object]]
+    catalog_entries: Mapping[tuple[str, str], Sequence[Mapping[str, object]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1650,7 +1650,7 @@ def _validate_fact_backed_obligations(  # noqa: PLR0913
 
 def _fact_indexes(fact_snapshot: Mapping[str, object]) -> _FactIndexes:
     descriptors: dict[str, Mapping[str, object]] = {}
-    catalog_entries: dict[tuple[str, str], Mapping[str, object]] = {}
+    catalog_entries: dict[tuple[str, str], list[Mapping[str, object]]] = {}
     providers = fact_snapshot.get("providers")
     if not isinstance(providers, Sequence) or isinstance(
         providers, str | bytes
@@ -1670,8 +1670,21 @@ def _fact_indexes(fact_snapshot: Mapping[str, object]) -> _FactIndexes:
             descriptor_path = entry.get("descriptor-path")
             profile = entry.get("profile")
             if isinstance(descriptor_path, str) and isinstance(profile, str):
-                catalog_entries[(descriptor_path, profile)] = entry
+                catalog_entries.setdefault(
+                    (descriptor_path, profile), []
+                ).append(entry)
     return _FactIndexes(descriptors, catalog_entries)
+
+
+def _target_catalog_profiles_by_descriptor(
+    fact_snapshot: Mapping[str, object],
+) -> dict[str, set[str]]:
+    profiles_by_descriptor: dict[str, set[str]] = {}
+    for descriptor_path, profile in _fact_indexes(
+        fact_snapshot
+    ).catalog_entries:
+        profiles_by_descriptor.setdefault(descriptor_path, set()).add(profile)
+    return profiles_by_descriptor
 
 
 def _mapping_items(value: object) -> list[Mapping[str, object]]:
@@ -2099,15 +2112,21 @@ def _validate_artifact_catalog_backing(
     descriptor_path = str(obligation.get("descriptor-path"))
     profiles = _string_items(obligation.get("profile-coverage"))
     for profile in profiles:
-        entry = indexes.catalog_entries.get((descriptor_path, profile))
-        if entry is None:
+        entries = indexes.catalog_entries.get((descriptor_path, profile), ())
+        if not entries:
             issues.append(
                 ValidationIssue(
                     "artifact-obligation.profile-coverage", "unbacked"
                 ),
             )
             continue
-        _validate_artifact_catalog_entry_match(obligation, entry, issues)
+        if not any(
+            _artifact_catalog_entry_matches(obligation, entry)
+            for entry in entries
+        ):
+            issues.append(
+                ValidationIssue("artifact-obligation.artifact", "unbacked")
+            )
 
 
 def _validate_artifact_target_catalog_profile_coverage(
@@ -2116,9 +2135,7 @@ def _validate_artifact_target_catalog_profile_coverage(
     indexes: _FactIndexes,
     issues: list[ValidationIssue],
 ) -> None:
-    profiles_by_descriptor: dict[str, set[str]] = {}
-    for descriptor_path, profile in indexes.catalog_entries:
-        profiles_by_descriptor.setdefault(descriptor_path, set()).add(profile)
+    entries_by_descriptor = _catalog_entry_keys_by_descriptor(indexes, issues)
     for subject_id, descriptor_path in _selected_descriptor_subject_bindings(
         subjects,
     ):
@@ -2130,8 +2147,8 @@ def _validate_artifact_target_catalog_profile_coverage(
         ]
         if not subject_obligations:
             continue
-        required_profiles = profiles_by_descriptor.get(descriptor_path, set())
-        if not required_profiles:
+        required_entries = entries_by_descriptor.get(descriptor_path, set())
+        if not required_entries:
             issues.append(
                 ValidationIssue(
                     "artifact-obligation.profile-coverage",
@@ -2139,27 +2156,52 @@ def _validate_artifact_target_catalog_profile_coverage(
                 ),
             )
             continue
-        covered_profiles: set[str] = set()
-        duplicate_profiles: set[str] = set()
+        covered_entries: set[tuple[object, ...]] = set()
+        duplicate_entries: set[tuple[object, ...]] = set()
         for obligation in subject_obligations:
             for profile in _string_items(obligation.get("profile-coverage")):
-                if profile in covered_profiles:
-                    duplicate_profiles.add(profile)
-                covered_profiles.add(profile)
-        if duplicate_profiles:
+                key = _artifact_obligation_catalog_key(obligation, profile)
+                if key in covered_entries:
+                    duplicate_entries.add(key)
+                covered_entries.add(key)
+        if duplicate_entries:
             issues.append(
                 ValidationIssue(
                     "artifact-obligation.profile-coverage",
                     "must not duplicate target-catalog profiles",
                 ),
             )
-        if covered_profiles != required_profiles:
+        if covered_entries != required_entries:
             issues.append(
                 ValidationIssue(
                     "artifact-obligation.profile-coverage",
                     "must exactly cover target-catalog profiles",
                 ),
             )
+
+
+def _catalog_entry_keys_by_descriptor(
+    indexes: _FactIndexes,
+    issues: list[ValidationIssue],
+) -> dict[str, set[tuple[object, ...]]]:
+    entries_by_descriptor: dict[str, set[tuple[object, ...]]] = {}
+    for (descriptor_path, _profile), entries in indexes.catalog_entries.items():
+        descriptor_entries = entries_by_descriptor.setdefault(
+            descriptor_path,
+            set(),
+        )
+        for entry in entries:
+            try:
+                descriptor_entries.add(_target_catalog_entry_key(entry))
+            except (TypeError, ValueError) as error:
+                issues.append(
+                    ValidationIssue(
+                        "artifact-obligation.profile-coverage",
+                        "cannot canonicalize fact snapshot target catalog "
+                        f"dimensions: {error}",
+                    ),
+                )
+    return entries_by_descriptor
 
 
 def _selected_descriptor_subject_bindings(
@@ -2183,23 +2225,15 @@ def _selected_descriptor_subject_bindings(
     return bindings
 
 
-def _validate_artifact_catalog_entry_match(
+def _artifact_catalog_entry_matches(
     obligation: Mapping[str, object],
     entry: Mapping[str, object],
-    issues: list[ValidationIssue],
-) -> None:
+) -> bool:
     artifact = obligation.get("artifact")
     receipt = obligation.get("release-receipt")
     entry_artifact = entry.get("artifact")
     entry_receipt = entry.get("release-receipt")
-    if artifact != entry_artifact:
-        issues.append(
-            ValidationIssue("artifact-obligation.artifact", "unbacked")
-        )
-    if receipt != entry_receipt:
-        issues.append(
-            ValidationIssue("artifact-obligation.release-receipt", "unbacked")
-        )
+    return artifact == entry_artifact and receipt == entry_receipt
 
 
 def _validate_evidence_expectations(
@@ -4567,6 +4601,7 @@ def _validate_plan_sections(  # noqa: PLR0915
                 validation_obligations,
                 descriptor_obligations,
                 artifact_obligations,
+                fact_snapshot,
                 issues,
             )
             _validate_scheduled_full_equivalent_scope(
@@ -5268,13 +5303,11 @@ def _validate_descriptor_backed_artifact_scope(
     issues: list[ValidationIssue],
 ) -> None:
     subjects = _mapping_items(subjects_value)
-    required = _active_descriptor_artifact_subject_bindings(subjects)
-    if not required:
-        return
-    catalog_profiles: dict[str, set[str]] = {}
-    catalog_entries = _fact_indexes(fact_snapshot).catalog_entries
-    for descriptor_path, profile in catalog_entries:
-        catalog_profiles.setdefault(descriptor_path, set()).add(profile)
+    catalog_profiles = _target_catalog_profiles_by_descriptor(fact_snapshot)
+    required = _active_descriptor_artifact_subject_bindings(
+        subjects,
+        catalog_profiles,
+    )
     for subject_id, descriptor_path, selected in required:
         if not selected:
             issues.append(
@@ -5316,22 +5349,24 @@ def _validate_descriptor_backed_artifact_scope(
 
 def _active_descriptor_artifact_subject_bindings(
     subjects: Sequence[Mapping[str, object]],
+    catalog_profiles: Mapping[str, set[str]],
 ) -> list[tuple[str, str, bool]]:
     bindings: list[tuple[str, str, bool]] = []
     for subject in subjects:
-        capabilities = subject.get("capabilities")
         descriptor = subject.get("descriptor")
         if (
             subject.get("activity-status") != "active"
             or subject.get("capability-class") != "descriptor-backed"
-            or not isinstance(capabilities, Mapping)
-            or capabilities.get("release-shaped-artifacts") is not True
             or not isinstance(descriptor, Mapping)
         ):
             continue
         subject_id = subject.get("subject-id")
         descriptor_path = descriptor.get("path")
-        if isinstance(subject_id, str) and isinstance(descriptor_path, str):
+        if (
+            isinstance(subject_id, str)
+            and isinstance(descriptor_path, str)
+            and descriptor_path in catalog_profiles
+        ):
             bindings.append(
                 (
                     subject_id,
@@ -7652,6 +7687,7 @@ def _validate_selected_descriptor_backed_coverage(  # noqa: PLR0913
     validation_obligations: Sequence[Mapping[str, object]],
     descriptor_obligations: Sequence[Mapping[str, object]],
     artifact_obligations: Sequence[Mapping[str, object]],
+    fact_snapshot: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> None:
     evidence_by_work_group = {
@@ -7674,6 +7710,11 @@ def _validate_selected_descriptor_backed_coverage(  # noqa: PLR0913
         for item in work_groups
         if isinstance(item.get("work-group-id"), str)
     }
+    catalog_profiles = (
+        _target_catalog_profiles_by_descriptor(fact_snapshot)
+        if fact_snapshot is not None
+        else {}
+    )
     ecosystem_capabilities = _selected_active_ecosystem_capabilities(subjects)
     for subject in subjects:
         if (
@@ -7700,6 +7741,20 @@ def _validate_selected_descriptor_backed_coverage(  # noqa: PLR0913
             continue
         ecosystem = subject.get("ecosystem")
         derived_capabilities = _derived_validation_capabilities(subject)
+        capabilities = subject.get("capabilities")
+        requires_artifact_chain = descriptor_path in catalog_profiles
+        if (
+            requires_artifact_chain
+            and isinstance(capabilities, Mapping)
+            and capabilities.get("release-shaped-artifacts") is not True
+        ):
+            issues.append(
+                ValidationIssue(
+                    "$.subjects",
+                    "descriptor-backed artifact capability must match "
+                    "target-catalog entries",
+                ),
+            )
         if derived_capabilities and ecosystem in _ECOSYSTEMS:
             ecosystem_id = str(ecosystem)
             accepted_targets = (
@@ -7751,7 +7806,13 @@ def _validate_selected_descriptor_backed_coverage(  # noqa: PLR0913
                     "selected descriptor-backed subjects need descriptor chain",
                 ),
             )
-        if not _has_descriptor_backed_artifact_chain(
+        if (
+            requires_artifact_chain
+            or (
+                isinstance(capabilities, Mapping)
+                and capabilities.get("release-shaped-artifacts") is True
+            )
+        ) and not _has_descriptor_backed_artifact_chain(
             subject_id,
             descriptor_path,
             groups_by_id,
@@ -8931,6 +8992,30 @@ def _target_catalog_entry_key(
         str(artifact.get("kind-family")),
         str(artifact.get("concrete-kind")),
         str(artifact.get("logical-artifact-role")),
+        tuple(_string_items(artifact.get("expected-artifact-refs"))),
+        str(release_receipt.get("expected-family")),
+        str(release_receipt.get("logical-receipt-role")),
+        *_target_catalog_entry_variant_key_parts(artifact, release_receipt),
+    )
+
+
+def _artifact_obligation_catalog_key(
+    obligation: Mapping[str, object],
+    profile: str,
+) -> tuple[object, ...]:
+    artifact = obligation.get("artifact")
+    release_receipt = obligation.get("release-receipt")
+    if not isinstance(artifact, Mapping):
+        artifact = {}
+    if not isinstance(release_receipt, Mapping):
+        release_receipt = {}
+    return (
+        str(obligation.get("descriptor-path")),
+        profile,
+        str(artifact.get("kind-family")),
+        str(artifact.get("concrete-kind")),
+        str(artifact.get("logical-artifact-role")),
+        tuple(_string_items(artifact.get("expected-artifact-refs"))),
         str(release_receipt.get("expected-family")),
         str(release_receipt.get("logical-receipt-role")),
         *_target_catalog_entry_variant_key_parts(artifact, release_receipt),
