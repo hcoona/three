@@ -1,0 +1,322 @@
+name: CI Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '17 8 * * *'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  normalize-input:
+    name: normalize-input
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      request-artifact-name: ${{ steps.refs.outputs.request_artifact_name }}
+      plan-artifact-name: ${{ steps.refs.outputs.plan_artifact_name }}
+      planner-diagnostics-artifact-name: ${{ steps.refs.outputs.planner_diagnostics_artifact_name }}
+      changed-files-snapshot-artifact-name: ${{ steps.refs.outputs.changed_files_snapshot_artifact_name }}
+      fact-snapshot-artifact-name: ${{ steps.refs.outputs.fact_snapshot_artifact_name }}
+      selector-assignments-artifact-name: ${{ steps.refs.outputs.selector_assignments_artifact_name }}
+      receipt-manifest-artifact-name: ${{ steps.refs.outputs.receipt_manifest_artifact_name }}
+      aggregate-artifact-name: ${{ steps.refs.outputs.aggregate_artifact_name }}
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - name: Compute artifact refs
+        id: refs
+        run: |
+          uv run python eng/scripts/workflow_release_control.py ci-validation-artifact-refs \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Resolve CI mode
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          mode=push
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            mode=pull_request
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            mode=scheduled_full
+          fi
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+      - name: Write planner-facing request
+        env:
+          CI_ACTOR: ${{ github.actor }}
+          CI_EVENT_NAME: ${{ github.event_name }}
+          CI_HEAD_SHA: ${{ github.sha }}
+          CI_MODE: ${{ steps.mode.outputs.mode }}
+          CI_REF: ${{ github.ref }}
+          CI_REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p .three-ci-validation/normalize
+          range_args=()
+          if [ "$CI_MODE" != "scheduled_full" ]; then
+            range_args=(--range-status unavailable --range-diagnostic-detail incomplete)
+          fi
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-request \
+            --mode "$CI_MODE" \
+            --repository "$CI_REPOSITORY" \
+            --workflow "CI Validation" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --event-name "$CI_EVENT_NAME" \
+            --actor "$CI_ACTOR" \
+            --validation-commit-sha "$CI_HEAD_SHA" \
+            --validation-ref "$CI_REF" \
+            "${range_args[@]}" \
+            --out .three-ci-validation/normalize/ci-validation-request.json
+      - name: Upload planner-facing request
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.refs.outputs.request_artifact_name }}
+          path: .three-ci-validation/normalize/ci-validation-request.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  plan:
+    name: plan
+    needs: normalize-input
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.request-artifact-name }}
+          path: .three-ci-validation/request
+      - name: Run CI validation planner
+        run: |
+          mkdir -p .three-ci-validation/plan
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run three-workflow-release-planner ci-plan \
+            --repo-root . \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-commit-sha "$observed_commit_sha" \
+            --plan-out .three-ci-validation/plan/validation-plan.json \
+            --changed-files-out .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot-out .three-ci-validation/plan/fact-snapshot.json \
+            --diagnostics-out .three-ci-validation/plan/planner-diagnostics.json
+      - name: Upload validation plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          path: .three-ci-validation/plan/validation-plan.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload planner diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.planner-diagnostics-artifact-name }}
+          path: .three-ci-validation/plan/planner-diagnostics.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Upload changed-files snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          path: .three-ci-validation/plan/changed-files.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Upload fact snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          path: .three-ci-validation/plan/fact-snapshot.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30
+
+  materialize-work-groups:
+    name: materialize-work-groups
+    needs:
+      - normalize-input
+      - plan
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      has-work-groups: ${{ steps.materialize.outputs.has_work_groups }}
+      work-group-matrix: ${{ steps.materialize.outputs.work_group_matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Download changed-files snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Download fact snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Materialize selector assignments
+        id: materialize
+        run: |
+          mkdir -p .three-ci-validation/materialize
+          uv run python eng/scripts/workflow_release_control.py materialize-ci-work-groups \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --workflow "CI Validation" \
+            --writer-job "validation-work-groups" \
+            --assignments-out .three-ci-validation/materialize/selector-assignments.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload selector assignments
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
+          path: .three-ci-validation/materialize/selector-assignments.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  validation-work-groups:
+    name: validation-work-groups
+    needs: materialize-work-groups
+    if: needs.materialize-work-groups.outputs.has-work-groups == 'true'
+    runs-on: ${{ matrix.work-group.runner == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        work-group: ${{ fromJson(needs.materialize-work-groups.outputs.work-group-matrix) }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Explicit validation executor placeholder
+        shell: bash
+        env:
+          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+        run: |
+          echo "Planned CI validation work group '${WORK_GROUP_ID}' is not executed by this Group 9 skeleton." >&2
+          echo "No ecosystem validation receipt is emitted by placeholder boundaries." >&2
+          exit 1
+
+  aggregate-evidence:
+    name: aggregate-evidence
+    needs:
+      - normalize-input
+      - plan
+      - materialize-work-groups
+      - validation-work-groups
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - name: Download validation plan
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Download selector assignments
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
+          path: .three-ci-validation/materialize
+      - name: Download changed-files snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Download fact snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Aggregate validation evidence
+        env:
+          CI_REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p .three-ci-validation/aggregate
+          uv run python eng/scripts/workflow_release_control.py aggregate-ci-evidence \
+            --repository "$CI_REPOSITORY" \
+            --workflow "CI Validation" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --receipt-manifest-out .three-ci-validation/aggregate/receipt-manifest.json \
+            --aggregate-out .three-ci-validation/aggregate/ci-validation-aggregate.json
+      - name: Upload receipt manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.receipt-manifest-artifact-name }}
+          path: .three-ci-validation/aggregate/receipt-manifest.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Upload aggregate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.aggregate-artifact-name }}
+          path: .three-ci-validation/aggregate/ci-validation-aggregate.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30

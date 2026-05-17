@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import io
 import json
@@ -22,9 +23,16 @@ from three_workflow_release_build import execute_build
 from three_workflow_release_contracts import (
     ArtifactNameInputs,
     artifact_name,
+    ci_validation_writer_id,
+    validate_ci_validation_aggregate,
     validate_contract,
 )
-from three_workflow_release_planner import PlannerInputs, plan_release
+from three_workflow_release_planner import (
+    CiValidationPlannerInputs,
+    PlannerInputs,
+    plan_ci_validation_from_repo,
+    plan_release,
+)
 from three_workflow_release_proof import (
     ProofError,
     classify_immutable_observations,
@@ -4782,6 +4790,87 @@ def test_workflow_helper_invocations_use_uv_workspace_python() -> None:
                 assert line.strip().startswith(uv_helper)
 
 
+def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
+    """CI validation workflow preserves planned control-plane boundaries."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    jobs = workflow["jobs"]
+
+    assert workflow["name"] == "CI Validation"
+    assert "workflow_dispatch" not in workflow[True]
+    assert set(workflow[True]) == {"pull_request", "push", "schedule"}
+    assert (
+        jobs["normalize-input"]["outputs"]["planner-diagnostics-artifact-name"]
+        == "${{ steps.refs.outputs.planner_diagnostics_artifact_name }}"
+    )
+    assert set(jobs) >= {
+        "normalize-input",
+        "plan",
+        "materialize-work-groups",
+        "validation-work-groups",
+        "aggregate-evidence",
+    }
+    assert jobs["plan"]["needs"] == "normalize-input"
+    assert set(jobs["materialize-work-groups"]["needs"]) == {
+        "normalize-input",
+        "plan",
+    }
+    assert "validation-work-groups" in jobs["aggregate-evidence"]["needs"]
+    assert jobs["aggregate-evidence"]["name"] == "aggregate-evidence"
+    assert "id-token" not in workflow["permissions"]
+    plan_steps = jobs["plan"]["steps"]
+    diagnostics_upload = next(
+        step
+        for step in plan_steps
+        if step.get("name") == "Upload planner diagnostics"
+    )
+    assert diagnostics_upload["with"]["name"] == (
+        "${{ needs.normalize-input.outputs.planner-diagnostics-artifact-name }}"
+    )
+
+
+def test_ci_validation_workflow_placeholders_fail_closed() -> None:
+    """Skeleton validation fan-out is explicit and does not fake receipts."""
+    workflow = _workflow("ci-validate.yml")
+    placeholder = _step_block(
+        workflow,
+        "Explicit validation executor placeholder",
+    )
+    aggregate = _step_block(workflow, "Aggregate validation evidence")
+
+    assert "not executed by this Group 9 skeleton" in placeholder
+    assert "No ecosystem validation receipt is emitted" in placeholder
+    assert "exit 1" in placeholder
+    assert "aggregate-ci-evidence" in aggregate
+
+
+def test_ci_validation_artifact_refs_include_planner_diagnostics() -> None:
+    """Control-plane artifact refs expose the planner diagnostics artifact."""
+    output = SCRATCH / "ci-validation-artifact-refs.txt"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    try:
+        assert (
+            control._cmd_ci_validation_artifact_refs(
+                argparse.Namespace(
+                    run_id="25887422010",
+                    run_attempt="1",
+                    github_output=str(output),
+                )
+            )
+            == 0
+        )
+        outputs = _github_outputs(output)
+        assert "planner_diagnostics_artifact_name" in outputs
+        assert outputs["planner_diagnostics_artifact_name"].startswith(
+            "three-ci-validation-",
+        )
+        assert outputs["planner_diagnostics_artifact_name"] != (
+            "ci-validation-planner-diagnostics-25887422010-1"
+        )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
 def test_release_workflow_uv_setup_precedes_uv_run() -> None:
     """Every release job installs pinned uv before invoking uv commands."""
     workflows = REPO_ROOT / ".github/workflows"
@@ -4975,6 +5064,400 @@ def test_orchestrator_always_uploads_entry_handoff() -> None:
     assert "if:" not in upload_block
     assert "entry-publish-handoff.json" in write_block
     assert "entry-publish-handoff.json" in upload_block
+
+
+def _ci_validation_push_request(
+    changed_files: list[str],
+) -> dict[str, object]:
+    """Return a CI validation push request for control-plane tests."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        API_VERSIONS_BY_KIND,
+        CiValidationKind,
+        canonical_json_digest,
+        ci_validation_request_artifact_ref,
+        ci_validation_request_projection,
+    )
+
+    run_id = "25887422010"
+    run_attempt = "1"
+    request: dict[str, object] = {
+        "api-version": API_VERSIONS_BY_KIND[CiValidationKind.REQUEST.value],
+        "kind": CiValidationKind.REQUEST.value,
+        "created-at": "2026-05-14T21:09:21Z",
+        "repository": {"owner": "hcoona", "name": "three"},
+        "run": {
+            "workflow": "CI Validation",
+            "run-id": run_id,
+            "run-attempt": run_attempt,
+        },
+        "schema-diagnostics": [],
+        "artifact-ref": ci_validation_request_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        "request-digest": "0" * 64,
+        "mode": "push",
+        "validation-tree": {
+            "commit-sha": "b" * 40,
+            "ref": "refs/heads/main",
+        },
+        "event": {
+            "name": "push",
+            "number": None,
+            "actor": "octocat",
+            "run-id": run_id,
+            "run-attempt": run_attempt,
+        },
+        "affected-range": {
+            "status": "available",
+            "base-sha": "a" * 40,
+            "base-tip-sha": None,
+            "head-sha": "b" * 40,
+            "changed-files": sorted(changed_files),
+            "source": "push",
+            "diagnostic": None,
+            "diagnostic-detail": None,
+        },
+    }
+    request["request-digest"] = canonical_json_digest(
+        ci_validation_request_projection(request),
+    )
+    return request
+
+
+def _github_outputs(path: Path) -> dict[str, str]:
+    """Read simple one-line GitHub output records."""
+    return dict(
+        line.rstrip("\n").split("=", 1)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+
+
+def test_ci_validation_control_plane_materializes_empty_plan() -> None:
+    """CI control helpers write request, assignments, and aggregate evidence."""
+    scratch = SCRATCH / "ci-validation-control"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        request_path = scratch / "ci-validation-request.json"
+        assignments_path = scratch / "selector-assignments.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        manifest_path = scratch / "receipt-manifest.json"
+        aggregate_path = scratch / "aggregate.json"
+        output_path = scratch / "outputs.txt"
+        request_args = argparse.Namespace(
+            mode="push",
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id="25887422010",
+            run_attempt="1",
+            event_name="push",
+            event_number="",
+            actor="octocat",
+            validation_commit_sha="b" * 40,
+            validation_ref="refs/heads/main",
+            base_sha="a" * 40,
+            base_tip_sha="",
+            head_sha="b" * 40,
+            changed_files_json="[]",
+            range_status="available",
+            range_diagnostic_detail="missing",
+            created_at="2026-05-14T21:09:21Z",
+            out=str(request_path),
+            github_output=None,
+        )
+        assert control._cmd_write_ci_validation_request(request_args) == 0
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=request,
+                repo_root=REPO_ROOT,
+                expected_run_id="25887422010",
+                expected_run_attempt="1",
+                created_at="2026-05-14T21:09:21Z",
+            )
+        )
+        plan_path = scratch / "validation-plan.json"
+        plan_path.write_text(
+            json.dumps(plan_snapshot.plan),
+            encoding="utf-8",
+        )
+        changed_files_path.write_text(
+            json.dumps(plan_snapshot.changed_files_snapshot),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(plan_snapshot.fact_snapshot),
+            encoding="utf-8",
+        )
+        materialize_args = argparse.Namespace(
+            plan=str(plan_path),
+            changed_files_snapshot=str(changed_files_path),
+            fact_snapshot=str(fact_snapshot_path),
+            workflow="CI Validation",
+            writer_job="validation-work-groups",
+            created_at="2026-05-14T21:09:21Z",
+            assignments_out=str(assignments_path),
+            github_output=str(output_path),
+        )
+        assert control._cmd_materialize_ci_work_groups(materialize_args) == 0
+        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
+        assert assignments["assignments"] == []
+        aggregate_args = argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id="25887422010",
+            run_attempt="1",
+            plan=str(plan_path),
+            changed_files_snapshot=str(changed_files_path),
+            fact_snapshot=str(fact_snapshot_path),
+            assignments=str(assignments_path),
+            created_at="2026-05-14T21:09:21Z",
+            receipt_manifest_out=str(manifest_path),
+            aggregate_out=str(aggregate_path),
+            github_output=str(output_path),
+        )
+        assert control._cmd_aggregate_ci_evidence(aggregate_args) == 0
+        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+        receipt_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        changed_files = json.loads(
+            changed_files_path.read_text(encoding="utf-8"),
+        )
+        fact_snapshot = json.loads(
+            fact_snapshot_path.read_text(encoding="utf-8"),
+        )
+        validate_ci_validation_aggregate(
+            aggregate,
+            plan=plan_snapshot.plan,
+            receipt_manifest=receipt_manifest,
+            selector_assignments_manifest=assignments,
+            changed_files_snapshot=changed_files,
+            fact_snapshot=fact_snapshot,
+        )
+        assert aggregate["verdict"] == "passed"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_materializer_uses_workflow_matrix_writer_ids() -> None:
+    """Trusted writer IDs match the actual workflow matrix object shape."""
+    scratch = SCRATCH / "ci-validation-writer-ids"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        request = _ci_validation_push_request(
+            [
+                (
+                    "src/public/lib/three-workflow-release-planner/src/"
+                    "three_workflow_release_planner/ci_validation_planner.py"
+                )
+            ],
+        )
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=request,
+                repo_root=REPO_ROOT,
+                expected_run_id="25887422010",
+                expected_run_attempt="1",
+                created_at="2026-05-14T21:09:21Z",
+            )
+        )
+        plan_path = scratch / "validation-plan.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        assignments_path = scratch / "selector-assignments.json"
+        output_path = scratch / "outputs.txt"
+        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(plan_snapshot.changed_files_snapshot),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(plan_snapshot.fact_snapshot),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_materialize_ci_work_groups(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    workflow="CI Validation",
+                    writer_job="validation-work-groups",
+                    created_at="2026-05-14T21:09:21Z",
+                    assignments_out=str(assignments_path),
+                    github_output=str(output_path),
+                )
+            )
+            == 0
+        )
+
+        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
+        outputs = _github_outputs(output_path)
+        matrix = {
+            item["work-group-id"]: item
+            for item in json.loads(outputs["work_group_matrix"])
+        }
+        assert assignments["assignments"]
+        for assignment in assignments["assignments"]:
+            work_group_id = assignment["work-group-id"]
+            assert assignment["trusted-writer-id"] == ci_validation_writer_id(
+                workflow="CI Validation",
+                job="validation-work-groups",
+                matrix={"work-group": matrix[work_group_id]},
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan() -> (
+    None
+):
+    """Malformed plans still produce an invalid-plan aggregate artifact."""
+    scratch = SCRATCH / "ci-validation-malformed-plan"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan_path = scratch / "validation-plan.json"
+        manifest_path = scratch / "receipt-manifest.json"
+        aggregate_path = scratch / "aggregate.json"
+        plan_path.write_text("{", encoding="utf-8")
+
+        result = control._cmd_aggregate_ci_evidence(
+            argparse.Namespace(
+                repository="hcoona/three",
+                workflow="CI Validation",
+                run_id="25887422010",
+                run_attempt="1",
+                plan=str(plan_path),
+                changed_files_snapshot="",
+                fact_snapshot="",
+                assignments="",
+                created_at="2026-05-14T21:09:21Z",
+                receipt_manifest_out=str(manifest_path),
+                aggregate_out=str(aggregate_path),
+                github_output=None,
+            )
+        )
+
+        assert result == 1
+        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+        validate_ci_validation_aggregate(aggregate)
+        assert aggregate["reason"]["invalid-plan"] is True
+        assert aggregate["verdict"] == "failed"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_aggregate_writes_invalid_plan_for_missing_plan() -> None:
+    """Missing plans produce a schema-valid invalid-plan aggregate artifact."""
+    scratch = SCRATCH / "ci-validation-missing-plan"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        manifest_path = scratch / "receipt-manifest.json"
+        aggregate_path = scratch / "aggregate.json"
+
+        result = control._cmd_aggregate_ci_evidence(
+            argparse.Namespace(
+                repository="hcoona/three",
+                workflow="CI Validation",
+                run_id="25887422010",
+                run_attempt="1",
+                plan=str(scratch / "missing-validation-plan.json"),
+                changed_files_snapshot="",
+                fact_snapshot="",
+                assignments="",
+                created_at="2026-05-14T21:09:21Z",
+                receipt_manifest_out=str(manifest_path),
+                aggregate_out=str(aggregate_path),
+                github_output=None,
+            )
+        )
+
+        assert result == 1
+        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+        validate_ci_validation_aggregate(aggregate)
+        assert aggregate["reason"]["invalid-plan"] is True
+        assert aggregate["diagnostics"][0]["detail"] == "plan-missing"
+        assert "no-authoritative-plan" not in aggregate
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments() -> (
+    None
+):
+    """Invalid selector assignments produce a failed invalid-plan aggregate."""
+    scratch = SCRATCH / "ci-validation-invalid-assignments"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=_ci_validation_push_request([]),
+                repo_root=REPO_ROOT,
+                expected_run_id="25887422010",
+                expected_run_attempt="1",
+                created_at="2026-05-14T21:09:21Z",
+            )
+        )
+        plan_path = scratch / "validation-plan.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        assignments_path = scratch / "selector-assignments.json"
+        manifest_path = scratch / "receipt-manifest.json"
+        aggregate_path = scratch / "aggregate.json"
+        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(plan_snapshot.changed_files_snapshot),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(plan_snapshot.fact_snapshot),
+            encoding="utf-8",
+        )
+        assignments_path.write_text("{}", encoding="utf-8")
+
+        result = control._cmd_aggregate_ci_evidence(
+            argparse.Namespace(
+                repository="hcoona/three",
+                workflow="CI Validation",
+                run_id="25887422010",
+                run_attempt="1",
+                plan=str(plan_path),
+                changed_files_snapshot=str(changed_files_path),
+                fact_snapshot=str(fact_snapshot_path),
+                assignments=str(assignments_path),
+                created_at="2026-05-14T21:09:21Z",
+                receipt_manifest_out=str(manifest_path),
+                aggregate_out=str(aggregate_path),
+                github_output=None,
+            )
+        )
+
+        assert result == 1
+        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        changed_files = json.loads(
+            changed_files_path.read_text(encoding="utf-8"),
+        )
+        fact_snapshot = json.loads(
+            fact_snapshot_path.read_text(encoding="utf-8"),
+        )
+        validate_ci_validation_aggregate(
+            aggregate,
+            plan=plan_snapshot.plan,
+            receipt_manifest=manifest,
+            changed_files_snapshot=changed_files,
+            fact_snapshot=fact_snapshot,
+        )
+        assert aggregate["reason"]["invalid-plan"] is True
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_skip_only_tag_verification_is_read_only_without_environment() -> None:

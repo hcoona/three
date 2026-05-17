@@ -2545,6 +2545,112 @@ def _scheduled_ci_inputs():
     )
 
 
+def test_cli_emits_ci_validation_plan_snapshots() -> None:
+    """CI planner CLI writes the plan and available companion snapshots."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+
+    scratch = REPO_ROOT / ".planner-cli-ci-validation"
+    try:
+        _remove_flat_scratch(scratch)
+        scratch.mkdir(parents=True)
+        request = scratch / "ci-request.json"
+        plan_out = scratch / "validation-plan.json"
+        changed_files_out = scratch / "changed-files.json"
+        fact_snapshot_out = scratch / "fact-snapshot.json"
+        request.write_text(
+            json.dumps(_ci_request([])),
+            encoding="utf-8",
+        )
+        old_argv = sys.argv
+        sys.argv = [
+            "three-workflow-release-planner",
+            "ci-plan",
+            "--repo-root",
+            str(REPO_ROOT),
+            "--request",
+            str(request),
+            "--expected-run-id",
+            "25887422010",
+            "--expected-run-attempt",
+            "1",
+            "--created-at",
+            "2026-05-14T21:09:21Z",
+            "--plan-out",
+            str(plan_out),
+            "--changed-files-out",
+            str(changed_files_out),
+            "--fact-snapshot-out",
+            str(fact_snapshot_out),
+        ]
+        try:
+            assert cli_main() == 0
+        finally:
+            sys.argv = old_argv
+        plan = json.loads(plan_out.read_text(encoding="utf-8"))
+        changed_files = json.loads(
+            changed_files_out.read_text(encoding="utf-8"),
+        )
+        fact_snapshot = json.loads(
+            fact_snapshot_out.read_text(encoding="utf-8"),
+        )
+        validate_ci_validation_plan(
+            plan,
+            changed_files_snapshot=changed_files,
+            fact_snapshot=fact_snapshot,
+        )
+        assert plan["kind"] == "ci-validation-plan"
+        assert plan["mode"] == "pull_request"
+    finally:
+        _remove_flat_scratch(scratch)
+
+
+def test_cli_ci_plan_failure_writes_planner_diagnostics_contract() -> None:
+    """CI planner CLI failure diagnostics use the planner diagnostics schema."""
+    scratch = REPO_ROOT / ".planner-cli-ci-validation-diagnostics"
+    try:
+        _remove_flat_scratch(scratch)
+        scratch.mkdir(parents=True)
+        request = _ci_request([])
+        request["run"] = dict(cast("Mapping[str, object]", request["run"]))
+        cast("dict[str, object]", request["run"])["run-id"] = "wrong"
+        request_path = scratch / "ci-request.json"
+        diagnostics_out = scratch / "planner-diagnostics.json"
+        plan_out = scratch / "validation-plan.json"
+        request_path.write_text(json.dumps(request), encoding="utf-8")
+        old_argv = sys.argv
+        sys.argv = [
+            "three-workflow-release-planner",
+            "ci-plan",
+            "--repo-root",
+            str(REPO_ROOT),
+            "--request",
+            str(request_path),
+            "--expected-run-id",
+            "25887422010",
+            "--expected-run-attempt",
+            "1",
+            "--plan-out",
+            str(plan_out),
+            "--diagnostics-out",
+            str(diagnostics_out),
+        ]
+        try:
+            assert cli_main() == 1
+        finally:
+            sys.argv = old_argv
+        document = json.loads(diagnostics_out.read_text(encoding="utf-8"))
+        validate_contract(document)
+        assert document["api-version"] == (
+            "three.release.planner-diagnostics/v1alpha1"
+        )
+        assert document["kind"] == "planner-diagnostics"
+        assert document["diagnostics"][0]["kind"] == "planner-diagnostic"
+    finally:
+        _remove_flat_scratch(scratch)
+
+
 def test_ci_validation_plans_zero_file_affected_range() -> None:
     """Confirmed zero-file affected ranges are executable no-work plans."""
     from three_workflow_release_contracts import (  # noqa: PLC0415

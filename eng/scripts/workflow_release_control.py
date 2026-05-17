@@ -17,6 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,13 +26,36 @@ import yaml
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 for _WORKSPACE_SRC in (
     _REPO_ROOT / "src/public/lib/three-workflow-release-contracts/src",
+    _REPO_ROOT / "src/public/lib/three-workflow-release-planner/src",
     _REPO_ROOT / "src/public/lib/three-workflow-release-proof/src",
 ):
     if _WORKSPACE_SRC.is_dir():
         sys.path.insert(0, str(_WORKSPACE_SRC))
 
 from three_workflow_release_contracts import (  # noqa: E402
+    API_VERSIONS_BY_KIND,
+    CiValidationKind,
     ContractValidationError,
+    DiagnosticDetail,
+    artifact_physical_name,
+    canonical_json_digest,
+    ci_validation_aggregate_artifact_ref,
+    ci_validation_changed_files_snapshot_artifact_ref,
+    ci_validation_fact_snapshot_artifact_ref,
+    ci_validation_plan_artifact_ref,
+    ci_validation_planner_diagnostics_artifact_ref,
+    ci_validation_receipt_manifest_artifact_ref,
+    ci_validation_request_artifact_ref,
+    ci_validation_request_projection,
+    ci_validation_selector_assignments_artifact_ref,
+    ci_validation_writer_id,
+    freeze_ci_validation_aggregate,
+    freeze_ci_validation_invalid_plan_aggregate,
+    freeze_ci_validation_receipt_manifest,
+    freeze_ci_validation_selector_assignments,
+    validate_ci_validation_plan,
+    validate_ci_validation_request,
+    validate_ci_validation_selector_assignments,
     validate_contract,
 )
 from three_workflow_release_contracts.artifact_names import (  # noqa: E402
@@ -85,6 +109,10 @@ def main() -> int:
     _add_normalize_entry(subparsers)
     _add_artifact_name(subparsers)
     _add_write_request(subparsers)
+    _add_write_ci_validation_request(subparsers)
+    _add_ci_validation_artifact_refs(subparsers)
+    _add_materialize_ci_work_groups(subparsers)
+    _add_aggregate_ci_evidence(subparsers)
     _add_plan_gate(subparsers)
     _add_matrix_outputs(subparsers)
     _add_entry_publish_handoff(subparsers)
@@ -154,6 +182,80 @@ def _add_write_request(
     parser.add_argument("--force", required=True)
     parser.add_argument("--out", required=True)
     parser.set_defaults(func=_cmd_write_planner_request)
+
+
+def _add_write_ci_validation_request(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("write-ci-validation-request")
+    parser.add_argument(
+        "--mode",
+        required=True,
+        choices=("pull_request", "push", "scheduled_full"),
+    )
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--run-attempt", required=True)
+    parser.add_argument("--event-name", required=True)
+    parser.add_argument("--event-number", default="")
+    parser.add_argument("--actor", required=True)
+    parser.add_argument("--validation-commit-sha", required=True)
+    parser.add_argument("--validation-ref", default="")
+    parser.add_argument("--base-sha", default="")
+    parser.add_argument("--base-tip-sha", default="")
+    parser.add_argument("--head-sha", default="")
+    parser.add_argument("--changed-files-json", default="")
+    parser.add_argument("--range-status", choices=("available", "unavailable"))
+    parser.add_argument("--range-diagnostic-detail", default="missing")
+    parser.add_argument("--created-at")
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_write_ci_validation_request)
+
+
+def _add_ci_validation_artifact_refs(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("ci-validation-artifact-refs")
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--run-attempt", required=True)
+    parser.add_argument("--github-output", required=True)
+    parser.set_defaults(func=_cmd_ci_validation_artifact_refs)
+
+
+def _add_materialize_ci_work_groups(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("materialize-ci-work-groups")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--changed-files-snapshot", default="")
+    parser.add_argument("--fact-snapshot", default="")
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--writer-job", required=True)
+    parser.add_argument("--created-at")
+    parser.add_argument("--assignments-out", required=True)
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_materialize_ci_work_groups)
+
+
+def _add_aggregate_ci_evidence(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("aggregate-ci-evidence")
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--run-attempt", required=True)
+    parser.add_argument("--plan", default="")
+    parser.add_argument("--changed-files-snapshot", default="")
+    parser.add_argument("--fact-snapshot", default="")
+    parser.add_argument("--assignments", default="")
+    parser.add_argument("--created-at")
+    parser.add_argument("--receipt-manifest-out", required=True)
+    parser.add_argument("--aggregate-out", required=True)
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_aggregate_ci_evidence)
 
 
 def _add_plan_gate(
@@ -507,6 +609,338 @@ def _cmd_write_planner_request(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_write_ci_validation_request(args: argparse.Namespace) -> int:
+    owner, name = _split_repository(args.repository)
+    run_id = str(args.run_id)
+    run_attempt = str(args.run_attempt)
+    request: Json = {
+        "api-version": API_VERSIONS_BY_KIND[CiValidationKind.REQUEST.value],
+        "kind": CiValidationKind.REQUEST.value,
+        "created-at": args.created_at or _utc_now(),
+        "repository": {"owner": owner, "name": name},
+        "run": {
+            "workflow": args.workflow,
+            "run-id": run_id,
+            "run-attempt": run_attempt,
+        },
+        "schema-diagnostics": [],
+        "artifact-ref": ci_validation_request_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        "request-digest": "0" * 64,
+        "mode": args.mode,
+        "validation-tree": {
+            "commit-sha": args.validation_commit_sha,
+            "ref": args.validation_ref or None,
+        },
+        "event": {
+            "name": args.event_name,
+            "number": args.event_number or None,
+            "actor": args.actor,
+            "run-id": run_id,
+            "run-attempt": run_attempt,
+        },
+    }
+    if args.mode == "scheduled_full":
+        request["scheduled-full"] = {"enabled": True}
+    else:
+        request["affected-range"] = _ci_affected_range(args)
+    request["request-digest"] = canonical_json_digest(
+        ci_validation_request_projection(request),
+    )
+    validate_ci_validation_request(
+        request,
+        expected_run_id=run_id,
+        expected_run_attempt=run_attempt,
+    )
+    _write_json(Path(args.out), request)
+    _write_outputs(
+        args.github_output,
+        {
+            "request_artifact_ref": str(request["artifact-ref"]),
+            "request_digest": str(request["request-digest"]),
+        },
+    )
+    return 0
+
+
+def _cmd_ci_validation_artifact_refs(args: argparse.Namespace) -> int:
+    run_id = str(args.run_id)
+    run_attempt = str(args.run_attempt)
+    _write_outputs(
+        args.github_output,
+        {
+            "request_artifact_name": artifact_physical_name(
+                ci_validation_request_artifact_ref(
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                )
+            ),
+            "plan_artifact_name": artifact_physical_name(
+                ci_validation_plan_artifact_ref(
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                )
+            ),
+            "planner_diagnostics_artifact_name": artifact_physical_name(
+                ci_validation_planner_diagnostics_artifact_ref(
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                )
+            ),
+            "changed_files_snapshot_artifact_name": artifact_physical_name(
+                ci_validation_changed_files_snapshot_artifact_ref(
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                )
+            ),
+            "fact_snapshot_artifact_name": artifact_physical_name(
+                ci_validation_fact_snapshot_artifact_ref(
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                )
+            ),
+            "selector_assignments_artifact_name": artifact_physical_name(
+                ci_validation_selector_assignments_artifact_ref(
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                )
+            ),
+            "receipt_manifest_artifact_name": artifact_physical_name(
+                ci_validation_receipt_manifest_artifact_ref(
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                )
+            ),
+            "aggregate_artifact_name": artifact_physical_name(
+                ci_validation_aggregate_artifact_ref(
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                )
+            ),
+        },
+    )
+    return 0
+
+
+def _cmd_materialize_ci_work_groups(args: argparse.Namespace) -> int:
+    plan = _read_json(Path(args.plan))
+    changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
+    fact_snapshot = _read_optional_json(args.fact_snapshot)
+    matrix = [
+        _ci_work_group_matrix_entry(group)
+        for group in _ci_executable_work_groups(plan)
+    ]
+    trusted_writer_ids = {
+        str(entry["work-group-id"]): ci_validation_writer_id(
+            workflow=args.workflow,
+            job=args.writer_job,
+            matrix={"work-group": entry},
+        )
+        for entry in matrix
+    }
+    assignments = freeze_ci_validation_selector_assignments(
+        plan=plan,
+        trusted_writer_ids=trusted_writer_ids,
+        created_at=args.created_at or _utc_now(),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    _write_json(Path(args.assignments_out), assignments)
+    work_group_ids = [str(entry["work-group-id"]) for entry in matrix]
+    _write_outputs(
+        args.github_output,
+        {
+            "has_work_groups": _bool_str(bool(matrix)),
+            "work_group_matrix": json.dumps(matrix, separators=(",", ":")),
+            "work_group_ids": json.dumps(work_group_ids, separators=(",", ":")),
+        },
+    )
+    return 0
+
+
+def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
+    owner, name = _split_repository(args.repository)
+    created_at = args.created_at or _utc_now()
+    try:
+        plan = _read_optional_json(args.plan)
+        changed_files_snapshot = _read_optional_json(
+            args.changed_files_snapshot
+        )
+        fact_snapshot = _read_optional_json(args.fact_snapshot)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return _write_invalid_ci_aggregate(
+            args,
+            owner=owner,
+            name=name,
+            created_at=created_at,
+        )
+    if plan is not None:
+        try:
+            validate_ci_validation_plan(
+                plan,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+            )
+        except ContractValidationError:
+            return _write_invalid_ci_aggregate(
+                args,
+                owner=owner,
+                name=name,
+                created_at=created_at,
+            )
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=plan,
+        entries=[],
+        created_at=created_at,
+        repository_owner=owner,
+        repository_name=name,
+        workflow=args.workflow,
+        run_id=str(args.run_id),
+        run_attempt=str(args.run_attempt),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    _write_json(Path(args.receipt_manifest_out), manifest)
+    if plan is None:
+        aggregate = freeze_ci_validation_invalid_plan_aggregate(
+            created_at=created_at,
+            repository_owner=owner,
+            repository_name=name,
+            workflow=args.workflow,
+            run_id=str(args.run_id),
+            run_attempt=str(args.run_attempt),
+            diagnostic_detail=DiagnosticDetail.PLAN_MISSING.value,
+            receipt_manifest=manifest,
+        )
+    else:
+        try:
+            assignments = _read_optional_json(args.assignments)
+            if assignments is not None:
+                validate_ci_validation_selector_assignments(
+                    assignments,
+                    plan=plan,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                )
+        except (
+            ContractValidationError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+        ):
+            assignments = None
+        if assignments is None:
+            aggregate = _invalid_ci_aggregate_for_valid_plan(
+                args,
+                owner=owner,
+                name=name,
+                created_at=created_at,
+                plan=plan,
+                manifest=manifest,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+            )
+        else:
+            try:
+                aggregate = freeze_ci_validation_aggregate(
+                    plan=plan,
+                    receipt_manifest=manifest,
+                    selector_assignments_manifest=assignments,
+                    observed_receipts=[],
+                    created_at=created_at,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                )
+            except ContractValidationError:
+                aggregate = _invalid_ci_aggregate_for_valid_plan(
+                    args,
+                    owner=owner,
+                    name=name,
+                    created_at=created_at,
+                    plan=plan,
+                    manifest=manifest,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                )
+    _write_json(Path(args.aggregate_out), aggregate)
+    _write_outputs(
+        args.github_output,
+        {
+            "verdict": str(aggregate["verdict"]),
+            "passed": _bool_str(aggregate["verdict"] == "passed"),
+        },
+    )
+    return 0 if aggregate["verdict"] == "passed" else 1
+
+
+def _write_invalid_ci_aggregate(
+    args: argparse.Namespace,
+    *,
+    owner: str,
+    name: str,
+    created_at: str,
+) -> int:
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=None,
+        entries=[],
+        created_at=created_at,
+        repository_owner=owner,
+        repository_name=name,
+        workflow=args.workflow,
+        run_id=str(args.run_id),
+        run_attempt=str(args.run_attempt),
+    )
+    _write_json(Path(args.receipt_manifest_out), manifest)
+    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+        created_at=created_at,
+        repository_owner=owner,
+        repository_name=name,
+        workflow=args.workflow,
+        run_id=str(args.run_id),
+        run_attempt=str(args.run_attempt),
+        diagnostic_detail=DiagnosticDetail.STRUCTURALLY_INVALID.value,
+        receipt_manifest=manifest,
+    )
+    _write_json(Path(args.aggregate_out), aggregate)
+    _write_outputs(
+        args.github_output,
+        {
+            "verdict": str(aggregate["verdict"]),
+            "passed": "false",
+        },
+    )
+    return 1
+
+
+def _invalid_ci_aggregate_for_valid_plan(
+    args: argparse.Namespace,
+    *,
+    owner: str,
+    name: str,
+    created_at: str,
+    plan: Mapping[str, object],
+    manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+) -> Json:
+    return freeze_ci_validation_invalid_plan_aggregate(
+        created_at=created_at,
+        repository_owner=owner,
+        repository_name=name,
+        workflow=args.workflow,
+        run_id=str(args.run_id),
+        run_attempt=str(args.run_attempt),
+        diagnostic_detail=DiagnosticDetail.STRUCTURALLY_INVALID.value,
+        plan=plan,
+        receipt_manifest=manifest,
+        post_plan_contract_invalid=True,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+
+
 def _cmd_plan_gate(args: argparse.Namespace) -> int:
     plan = _read_json(Path(args.plan))
     execution_sets = _read_json(Path(args.execution_sets))
@@ -709,10 +1143,11 @@ def _materialize_npm_build_projections(
             for item in node.get("artifact-ids", [])
             if isinstance(item, str)
         ]
+        artifact_keys = {str(artifact_id) for artifact_id in artifacts}
         relevant = [
             artifact_id
             for artifact_id in node_artifact_ids
-            if artifact_id in artifacts
+            if artifact_id in artifact_keys
         ]
         if not relevant:
             continue
@@ -1537,11 +1972,17 @@ def _known_oidc_target_instance_refs() -> set[str]:
             encoding="utf-8"
         )
     )
+    if not isinstance(catalog, Mapping):
+        return set()
     families = catalog.get("families", {})
+    if not isinstance(families, Mapping):
+        return set()
     return {
         f"{family_id}/{instance['id']}"
         for family_id, family in families.items()
+        if isinstance(family, Mapping)
         for instance in family.get("instances", [])
+        if isinstance(instance, Mapping)
         if instance.get("capabilities", {}).get("credential-posture") == "oidc"
     }
 
@@ -2234,16 +2675,10 @@ def _ruleset_ref_matches(ruleset: Mapping[str, Any], ref_name: str) -> bool:
     ref_condition = conditions.get("ref_name")
     if not isinstance(ref_condition, Mapping):
         return True
-    includes = (
-        ref_condition.get("include")
-        if isinstance(ref_condition.get("include"), list)
-        else ["~ALL"]
-    )
-    excludes = (
-        ref_condition.get("exclude")
-        if isinstance(ref_condition.get("exclude"), list)
-        else []
-    )
+    include_value = ref_condition.get("include")
+    includes = include_value if isinstance(include_value, list) else ["~ALL"]
+    exclude_value = ref_condition.get("exclude")
+    excludes = exclude_value if isinstance(exclude_value, list) else []
     return any(
         _ref_pattern_matches(str(pattern), ref_name, ref)
         for pattern in includes
@@ -3121,6 +3556,91 @@ def _normalize_project_ids(value: str) -> list[str]:
             if item.strip()
         }
     )
+
+
+def _split_repository(repository: str) -> tuple[str, str]:
+    parts = repository.split("/", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        msg = "repository must use owner/name form"
+        raise ValueError(msg)
+    return parts[0], parts[1]
+
+
+def _utc_now() -> str:
+    return (
+        datetime.now(UTC)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace(
+            "+00:00",
+            "Z",
+        )
+    )
+
+
+def _ci_affected_range(args: argparse.Namespace) -> Json:
+    status = args.range_status or "unavailable"
+    if status == "available":
+        changed_files = json.loads(args.changed_files_json or "[]")
+        if not isinstance(changed_files, list) or not all(
+            isinstance(item, str) for item in changed_files
+        ):
+            msg = "--changed-files-json must be a JSON string array"
+            raise TypeError(msg)
+        return {
+            "status": "available",
+            "base-sha": args.base_sha or None,
+            "base-tip-sha": args.base_tip_sha or None,
+            "head-sha": args.head_sha or None,
+            "changed-files": sorted(changed_files),
+            "source": args.mode,
+            "diagnostic": None,
+            "diagnostic-detail": None,
+        }
+    return {
+        "status": "unavailable",
+        "base-sha": args.base_sha or None,
+        "base-tip-sha": args.base_tip_sha or None,
+        "head-sha": args.head_sha or None,
+        "changed-files": None,
+        "source": args.mode,
+        "diagnostic": "range-unconfirmed",
+        "diagnostic-detail": args.range_diagnostic_detail,
+    }
+
+
+def _ci_executable_work_groups(
+    plan: Mapping[str, object],
+) -> list[Mapping[str, Any]]:
+    groups = plan.get("work-groups")
+    if not isinstance(groups, Sequence) or isinstance(groups, str | bytes):
+        return []
+    result: list[Mapping[str, Any]] = []
+    for group in groups:
+        if not isinstance(group, Mapping):
+            continue
+        if group.get("kind") == "evidence-aggregation":
+            continue
+        work_group_id = group.get("work-group-id")
+        if isinstance(work_group_id, str):
+            result.append(_mapping(group, "work-group"))
+    return sorted(result, key=lambda item: str(item["work-group-id"]))
+
+
+def _executable_ci_work_group_ids(plan: Mapping[str, object]) -> list[str]:
+    return [
+        str(group["work-group-id"])
+        for group in _ci_executable_work_groups(plan)
+    ]
+
+
+def _ci_work_group_matrix_entry(group: Mapping[str, Any]) -> Json:
+    return {
+        "work-group-id": str(group["work-group-id"]),
+        "kind": str(group.get("kind")),
+        "runner": str(group.get("runner-family", "ubuntu")),
+        "placeholder": True,
+    }
 
 
 def _parse_bool(value: str | bool) -> bool:
