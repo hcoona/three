@@ -23,6 +23,7 @@ from three_workflow_release_authoring import validate_authoring
 from three_workflow_release_build import execute_build
 from three_workflow_release_contracts import (
     ArtifactNameInputs,
+    CiValidationObservedReceiptInput,
     artifact_name,
     artifact_physical_name,
     ci_validation_plan_digest,
@@ -45,6 +46,8 @@ from three_workflow_release_proof import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
+
+    from three_workflow_release_contracts import ReceiptOutcome
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
@@ -5055,6 +5058,7 @@ def test_ci_validation_workflow_executes_mapped_commands_before_receipts() -> (
         in receipt
     )
     assert "steps.receipt.outputs.receipt_artifact_name" in upload
+    assert ".three-ci-validation/work/validation-result.json" in upload
     assert "steps.upload-receipt.outputs.artifact-id" in observation
     assert "write-ci-validation-writer-observation" in observation
     assert "aggregate-ci-evidence" in aggregate
@@ -5538,6 +5542,7 @@ def test_ci_validation_materializer_uses_workflow_matrix_writer_ids() -> None:
                 assert item["validation-commands"]
             if item["kind"] in {
                 "lightweight-preflight",
+                "release-shaped-artifact",
                 "workflow-release-tooling",
             }:
                 assert item["validation-commands"]
@@ -5826,10 +5831,18 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
             "planned-capabilities": ["format", "type-check"],
         },
     }
+    release_group = {
+        "work-group-id": "wg-release",
+        "kind": "release-shaped-artifact",
+        "coverage-target": {"type": "subject", "id": "js-subject"},
+        "runner-family": "ubuntu",
+        "depends-on": ["wg-js"],
+    }
 
     dotnet_commands = control._ci_validation_commands(plan, dotnet_group)
     fallback_commands = control._ci_validation_commands({}, dotnet_group)
     js_commands = control._ci_validation_commands(plan, js_group)
+    release_commands = control._ci_validation_commands(plan, release_group)
 
     assert ["dotnet", "build", "src/public/lib/CircularList"] in [
         command["argv"] for command in dotnet_commands
@@ -5900,6 +5913,14 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
     ] in [command["argv"] for command in js_commands]
     assert all("--if-present" not in command["argv"] for command in js_commands)
     assert all(command["argv"][-1] != "format" for command in js_commands)
+    assert release_commands == [
+        {
+            "label": "validate release-shaped artifact obligations",
+            "argv": [],
+            "capability": None,
+            "builtin": "release-shaped-artifact",
+        }
+    ]
 
 
 def test_ci_validation_evidence_preserves_per_capability_outcomes() -> None:
@@ -6011,6 +6032,1099 @@ def test_ci_validation_success_requires_result_identity_match() -> None:
         )
 
 
+def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
+    None
+):
+    """Release-shaped validation fails closed without reuse evidence."""
+    scratch = SCRATCH / "ci-validation-release-shaped-success"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_ref = (
+            "ci-validation/artifacts/python/example/"
+            "example-1.0.0-py3-none-any.whl"
+        )
+        work_group = {
+            "work-group-id": "wg-release",
+            "kind": "release-shaped-artifact",
+            "runner-family": "ubuntu",
+            "coverage-target": {"type": "subject", "id": "python.example"},
+            "depends-on": ["wg-python", "wg-descriptor"],
+        }
+        obligation = {
+            "artifact-obligation-id": "artifact-python-example-wheel",
+            "work-group-id": "wg-release",
+            "subject-id": "python.example",
+            "descriptor-path": "src/public/lib/example/three.release.yml",
+            "profile-coverage": ["wheel"],
+            "artifact": {
+                "kind-family": "python",
+                "concrete-kind": "wheel",
+                "logical-artifact-role": "package",
+                "variant-dimensions": {},
+                "expected-artifact-refs": [artifact_ref],
+            },
+            "release-receipt": {
+                "expected-family": "python",
+                "logical-receipt-role": "build",
+                "variant-dimensions": {},
+            },
+        }
+        plan = {
+            "validation-tree": {"commit-sha": "b" * 40},
+            "work-groups": [work_group],
+            "artifact-obligations": [obligation],
+            "evidence-expectations": [
+                {
+                    "work-group-id": "wg-release",
+                    "category": "release-shaped-artifact",
+                    "planned-capabilities": None,
+                }
+            ],
+        }
+        matrix = {**work_group, "validation-commands": [], "no-publish": True}
+        matrix["validation-commands"] = control._ci_validation_commands(
+            plan,
+            work_group,
+        )
+        plan_path = scratch / "validation-plan.json"
+        result_path = scratch / "validation-result.json"
+        outputs_path = scratch / "outputs.txt"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(matrix),
+                    plan=str(plan_path),
+                    changed_files_snapshot="",
+                    fact_snapshot="",
+                    assignments="",
+                    observed_artifacts_dir="",
+                    observed_commit_sha="b" * 40,
+                    repo_root=str(REPO_ROOT),
+                    result_out=str(result_path),
+                    github_output=str(outputs_path),
+                )
+            )
+            == 0
+        )
+
+        validation_result = json.loads(result_path.read_text(encoding="utf-8"))
+        assert validation_result["outcome"] == "blocking-failure"
+        command = validation_result["commands"][0]
+        assert command["builtin"] == "release-shaped-artifact"
+        assert "reuse release-shaped evidence" in command["error"]
+        assert (
+            control._ci_validation_outcome(
+                plan,
+                "wg-release",
+                dependency_blocked=False,
+                validation_result=validation_result,
+            )
+            == "blocking-failure"
+        )
+        evidence = control._ci_validation_evidence(
+            plan,
+            "wg-release",
+            outcome="blocking-failure",
+            diagnostics=control._ci_validation_diagnostics(
+                plan,
+                "wg-release",
+                outcome="blocking-failure",
+            ),
+            validation_result=validation_result,
+        )
+        assert evidence["artifact-refs"] == []
+
+        stale_matrix = {
+            **matrix,
+            "coverage-target": {"type": "subject", "id": "python.stale"},
+        }
+        stale_result_path = scratch / "stale-validation-result.json"
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(stale_matrix),
+                    plan=str(plan_path),
+                    changed_files_snapshot="",
+                    fact_snapshot="",
+                    assignments="",
+                    observed_artifacts_dir="",
+                    observed_commit_sha="b" * 40,
+                    repo_root=str(REPO_ROOT),
+                    result_out=str(stale_result_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        stale_result = json.loads(stale_result_path.read_text(encoding="utf-8"))
+        assert stale_result["outcome"] == "blocking-failure"
+        assert (
+            "does not match frozen plan" in stale_result["commands"][0]["error"]
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_success_requires_valid_evidence() -> None:
+    """Release-shaped success requires matching artifact evidence."""
+    artifact_ref = "ci-validation/artifacts/python/example/wheel.whl"
+    plan: Mapping[str, object] = {
+        "validation-tree": {"commit-sha": "b" * 40},
+        "work-groups": [
+            {
+                "work-group-id": "wg-release",
+                "kind": "release-shaped-artifact",
+                "runner-family": "ubuntu",
+                "coverage-target": {"type": "subject", "id": "python.example"},
+            }
+        ],
+        "artifact-obligations": [
+            {
+                "artifact-obligation-id": "artifact-python-example-wheel",
+                "work-group-id": "wg-release",
+                "subject-id": "python.example",
+                "descriptor-path": "src/public/lib/example/three.release.yml",
+                "profile-coverage": ["wheel"],
+                "artifact": {
+                    "kind-family": "python",
+                    "concrete-kind": "wheel",
+                    "logical-artifact-role": "package",
+                    "variant-dimensions": {},
+                    "expected-artifact-refs": [artifact_ref],
+                },
+                "release-receipt": {
+                    "expected-family": "python",
+                    "logical-receipt-role": "build",
+                    "variant-dimensions": {},
+                },
+            }
+        ],
+        "evidence-expectations": [
+            {
+                "work-group-id": "wg-release",
+                "category": "release-shaped-artifact",
+                "planned-capabilities": None,
+            }
+        ],
+    }
+    result = control._ci_artifact_obligation_success_result(
+        cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", plan["artifact-obligations"])[0],
+        )
+    )
+    cast(
+        "dict[str, object]",
+        cast("dict[str, object]", result["artifact"])["observed"],
+    )["digests"] = [
+        {
+            "artifact-ref": artifact_ref,
+            "algorithm": "sha256",
+            "digest": "f" * 64,
+            "digest-available": True,
+            "diagnostics": [],
+        }
+    ]
+    validation_result: dict[str, object] = {
+        "work-group-id": "wg-release",
+        "kind": "release-shaped-artifact",
+        "runner-family": "ubuntu",
+        "coverage-target": {"type": "subject", "id": "python.example"},
+        "observed-commit-sha": "b" * 40,
+        "outcome": "success",
+        "commands": [
+            {
+                "builtin": "release-shaped-artifact",
+                "evidence-source": "no-publish-validation",
+                "outcome": "success",
+                "artifact-obligation-results": [result],
+            }
+        ],
+    }
+
+    assert (
+        control._ci_validation_outcome(
+            plan,
+            "wg-release",
+            dependency_blocked=False,
+            validation_result=validation_result,
+        )
+        == "blocking-failure"
+    )
+    reused_validation_result = deepcopy(validation_result)
+    reused_command = cast(
+        "dict[str, object]",
+        cast("list[object]", reused_validation_result["commands"])[0],
+    )
+    reused_command["evidence-source"] = "reused-validation-receipt"
+    reused_command["reused-receipt"] = {
+        "artifact-ref": (
+            "ci-validation/receipts/25887422010/1/wg-release/receipt.json"
+        ),
+        "receipt-id": "wg-release",
+        "receipt-content-digest": "a" * 64,
+        "observed-commit-sha": "b" * 40,
+    }
+    assert (
+        control._ci_validation_outcome(
+            plan,
+            "wg-release",
+            dependency_blocked=False,
+            validation_result=reused_validation_result,
+        )
+        == "blocking-failure"
+    )
+    stale_reused_result = deepcopy(reused_validation_result)
+    stale_reused_command = cast(
+        "dict[str, object]",
+        cast("list[object]", stale_reused_result["commands"])[0],
+    )
+    cast("dict[str, object]", stale_reused_command["reused-receipt"])[
+        "observed-commit-sha"
+    ] = "c" * 40
+    assert (
+        control._ci_validation_outcome(
+            plan,
+            "wg-release",
+            dependency_blocked=False,
+            validation_result=stale_reused_result,
+        )
+        == "blocking-failure"
+    )
+
+    missing_evidence = {
+        **validation_result,
+        "commands": [
+            {
+                "builtin": "release-shaped-artifact",
+                "evidence-source": "no-publish-validation",
+                "outcome": "success",
+            }
+        ],
+    }
+    assert (
+        control._ci_validation_outcome(
+            plan,
+            "wg-release",
+            dependency_blocked=False,
+            validation_result=missing_evidence,
+        )
+        == "blocking-failure"
+    )
+    unchecked_result = deepcopy(result)
+    cast("dict[str, object]", unchecked_result["release-receipt"])[
+        "schema-checked"
+    ] = False
+    invalid_evidence = {
+        **validation_result,
+        "commands": [
+            {
+                "builtin": "release-shaped-artifact",
+                "evidence-source": "no-publish-validation",
+                "outcome": "success",
+                "artifact-obligation-results": [unchecked_result],
+            }
+        ],
+    }
+    assert (
+        control._ci_validation_outcome(
+            plan,
+            "wg-release",
+            dependency_blocked=False,
+            validation_result=invalid_evidence,
+        )
+        == "blocking-failure"
+    )
+
+    for field, value in (
+        ("coverage-target", {"type": "subject", "id": "python.other"}),
+        ("observed-commit-sha", "c" * 40),
+    ):
+        mismatched_identity = {**validation_result, field: value}
+        assert (
+            control._ci_validation_outcome(
+                plan,
+                "wg-release",
+                dependency_blocked=False,
+                validation_result=mismatched_identity,
+            )
+            == "blocking-failure"
+        )
+
+    fabricated_result = control._ci_artifact_obligation_success_result(
+        cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", plan["artifact-obligations"])[0],
+        )
+    )
+    fabricated_evidence = {
+        **validation_result,
+        "commands": [
+            {
+                "builtin": "release-shaped-artifact",
+                "evidence-source": "no-publish-validation",
+                "outcome": "success",
+                "artifact-obligation-results": [fabricated_result],
+            }
+        ],
+    }
+    assert (
+        control._ci_validation_outcome(
+            plan,
+            "wg-release",
+            dependency_blocked=False,
+            validation_result=fabricated_evidence,
+        )
+        == "blocking-failure"
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_command",
+    [
+        {
+            "outcome": "blocking-failure",
+            "evidence-source": "no-publish-validation",
+            "artifact-obligation-results": [],
+        },
+        {
+            "outcome": "success",
+            "evidence-source": "unsupported-sidecar-command",
+            "artifact-obligation-results": [],
+        },
+        {"outcome": "success"},
+        "malformed-command",
+    ],
+)
+def test_ci_validation_release_shaped_sidecar_helpers_reject_extra_commands(
+    extra_command: object,
+) -> None:
+    """Script-side no-publish source helpers fail closed on extra commands."""
+    source_command = {
+        "outcome": "success",
+        "evidence-source": "no-publish-validation",
+        "source-proof": {
+            "kind": "no-publish-validation-result",
+            "work-group-id": "wg-release",
+        },
+        "artifact-obligation-results": [],
+    }
+    validation_result = {"commands": [source_command, extra_command]}
+
+    assert (
+        control._ci_release_shaped_source_proof_from_validation_result(
+            validation_result,
+        )
+        is None
+    )
+    assert (
+        control._ci_no_publish_source_command_from_validation_result(
+            validation_result,
+        )
+        is None
+    )
+
+
+def test_ci_validation_release_receipt_write_accepts_observed_reuse() -> (  # noqa: PLR0915
+    None
+):
+    """Release-shaped success is backed by an observed reusable receipt."""
+    scratch = SCRATCH / "ci-validation-release-shaped-observed-reuse"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        request = _ci_validation_push_request(
+            ["src/public/lib/nbgv-python/pyproject.toml"],
+        )
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=request,
+                repo_root=REPO_ROOT,
+                expected_run_id="25887422010",
+                expected_run_attempt="1",
+                created_at="2026-05-14T21:09:21Z",
+            )
+        )
+        plan_path = scratch / "validation-plan.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        assignments_path = scratch / "selector-assignments.json"
+        materialize_outputs_path = scratch / "materialize-outputs.txt"
+        validation_result_path = scratch / "validation-result.json"
+        receipt_path = scratch / "receipt.json"
+        receipt_outputs_path = scratch / "receipt-outputs.txt"
+        observed_root = scratch / "observed-artifacts"
+        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(plan_snapshot.changed_files_snapshot),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(plan_snapshot.fact_snapshot),
+            encoding="utf-8",
+        )
+        assert (
+            control._cmd_materialize_ci_work_groups(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    workflow="CI Validation",
+                    writer_job="validation-work-groups",
+                    created_at="2026-05-14T21:09:21Z",
+                    assignments_out=str(assignments_path),
+                    github_output=str(materialize_outputs_path),
+                )
+            )
+            == 0
+        )
+        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
+        matrix = {
+            item["work-group-id"]: item
+            for item in json.loads(
+                _github_outputs(materialize_outputs_path)["work_group_matrix"]
+            )
+        }
+        groups = cast(
+            "Sequence[Mapping[str, object]]",
+            plan_snapshot.plan["work-groups"],
+        )
+        release_group = next(
+            group
+            for group in groups
+            if group["kind"] == "release-shaped-artifact"
+        )
+        release_work_group_id = str(release_group["work-group-id"])
+        for dependency in cast("Sequence[str]", release_group["depends-on"]):
+            _stage_ci_observed_receipt(
+                scratch=scratch,
+                observed_root=observed_root,
+                plan=plan_snapshot.plan,
+                assignments=assignments,
+                matrix=matrix,
+                work_group_id=dependency,
+                outcome="success",
+                changed_files_snapshot=cast(
+                    "Mapping[str, object]",
+                    plan_snapshot.changed_files_snapshot,
+                ),
+                fact_snapshot=cast(
+                    "Mapping[str, object]",
+                    plan_snapshot.fact_snapshot,
+                ),
+            )
+        _stage_ci_release_shaped_observed_receipt(
+            scratch=scratch,
+            observed_root=observed_root,
+            plan=plan_snapshot.plan,
+            assignments=assignments,
+            matrix=matrix,
+            work_group_id=release_work_group_id,
+            changed_files_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.changed_files_snapshot,
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.fact_snapshot,
+            ),
+        )
+        release_assignment = control._ci_assignment_for_work_group(
+            assignments,
+            release_work_group_id,
+        )
+        release_receipt_path = (
+            observed_root
+            / artifact_physical_name(
+                str(release_assignment["receipt-artifact-ref"])
+            )
+            / "receipt.json"
+        )
+        genuine_release_receipt = json.loads(
+            release_receipt_path.read_text(encoding="utf-8")
+        )
+        synthetic_release_receipt = deepcopy(genuine_release_receipt)
+        synthetic_detail = cast(
+            "dict[str, object]",
+            synthetic_release_receipt["evidence"]["category-result"]["detail"],
+        )
+        synthetic_detail.pop("evidence-source", None)
+        synthetic_detail.pop("source-proof", None)
+        release_receipt_path.write_text(
+            json.dumps(synthetic_release_receipt),
+            encoding="utf-8",
+        )
+        synthetic_result_path = scratch / "synthetic-validation-result.json"
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    observed_artifacts_dir=str(observed_root),
+                    observed_commit_sha="b" * 40,
+                    repo_root=str(REPO_ROOT),
+                    result_out=str(synthetic_result_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        synthetic_result = json.loads(
+            synthetic_result_path.read_text(encoding="utf-8")
+        )
+        assert synthetic_result["outcome"] == "blocking-failure"
+        release_receipt_path.write_text(
+            json.dumps(genuine_release_receipt),
+            encoding="utf-8",
+        )
+        release_validation_result_path = (
+            release_receipt_path.parent / "validation-result.json"
+        )
+        release_validation_result_json = (
+            release_validation_result_path.read_text(
+                encoding="utf-8",
+            )
+        )
+        release_validation_result_path.unlink()
+        missing_source_result_path = (
+            scratch / "missing-source-validation-result.json"
+        )
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    observed_artifacts_dir=str(observed_root),
+                    observed_commit_sha="b" * 40,
+                    repo_root=str(REPO_ROOT),
+                    result_out=str(missing_source_result_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        missing_source_result = json.loads(
+            missing_source_result_path.read_text(encoding="utf-8")
+        )
+        assert missing_source_result["outcome"] == "blocking-failure"
+        release_validation_result_path.write_text(
+            release_validation_result_json,
+            encoding="utf-8",
+        )
+        mismatched_source_result_path = (
+            scratch / "mismatched-source-result.json"
+        )
+        mismatched_validation_result = json.loads(
+            release_validation_result_json
+        )
+        mismatched_command = mismatched_validation_result["commands"][0]
+        mismatched_proof_digest = mismatched_command["source-proof"][
+            "artifact-digests"
+        ][0]
+        mismatched_proof_digest["digest"] = "e" * 64
+        release_validation_result_path.write_text(
+            json.dumps(mismatched_validation_result),
+            encoding="utf-8",
+        )
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    observed_artifacts_dir=str(observed_root),
+                    observed_commit_sha="b" * 40,
+                    repo_root=str(REPO_ROOT),
+                    result_out=str(mismatched_source_result_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        mismatched_source_result = json.loads(
+            mismatched_source_result_path.read_text(encoding="utf-8")
+        )
+        assert mismatched_source_result["outcome"] == "blocking-failure"
+        release_validation_result_path.write_text(
+            release_validation_result_json,
+            encoding="utf-8",
+        )
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    observed_artifacts_dir=str(observed_root),
+                    observed_commit_sha="b" * 40,
+                    repo_root=str(REPO_ROOT),
+                    result_out=str(validation_result_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        validation_result = json.loads(
+            validation_result_path.read_text(encoding="utf-8")
+        )
+        command = validation_result["commands"][0]
+        assert validation_result["outcome"] == "success"
+        assert command["evidence-source"] == "reused-validation-receipt"
+        assert (
+            control._cmd_write_ci_validation_receipt(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=release_work_group_id,
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    workflow="CI Validation",
+                    job=matrix[release_work_group_id]["writer-job"],
+                    observed_artifacts_dir=str(observed_root),
+                    observed_commit_sha="b" * 40,
+                    validation_result=str(validation_result_path),
+                    validation_outcome="success",
+                    created_at="2026-05-14T21:09:24Z",
+                    receipt_out=str(receipt_path),
+                    github_output=str(receipt_outputs_path),
+                )
+            )
+            == 0
+        )
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        assignment = control._ci_assignment_for_work_group(
+            assignments,
+            release_work_group_id,
+        )
+        validate_ci_validation_receipt(
+            receipt,
+            plan=plan_snapshot.plan,
+            selector_assignments_manifest=assignments,
+            assignment=assignment,
+            changed_files_snapshot=plan_snapshot.changed_files_snapshot,
+            fact_snapshot=plan_snapshot.fact_snapshot,
+        )
+        assert receipt["outcome"] == "success"
+        assert receipt["diagnostics"] == []
+        receipt_detail = receipt["evidence"]["category-result"]["detail"]
+        assert receipt_detail["evidence-source"] == "reused-validation-receipt"
+        assert receipt_detail["reused-receipt"] == command["reused-receipt"]
+        observed_receipts = control._ci_observed_receipt_inputs(
+            plan=plan_snapshot.plan,
+            assignments=assignments,
+            observed_artifacts_dir=str(observed_root),
+            changed_files_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.changed_files_snapshot,
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.fact_snapshot,
+            ),
+        )
+        assert control._ci_receipt_reusable_for_release_shape(
+            receipt,
+            plan_snapshot.plan,
+            assignments,
+            release_work_group_id,
+            "b" * 40,
+            observed_receipts=observed_receipts,
+            changed_files_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.changed_files_snapshot,
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.fact_snapshot,
+            ),
+        )
+        mutated_receipt = deepcopy(receipt)
+        mutated_results = cast(
+            "list[dict[str, object]]",
+            mutated_receipt["evidence"]["category-result"]["detail"][
+                "artifact-obligation-results"
+            ],
+        )
+        mutated_digest = cast(
+            "list[dict[str, object]]",
+            cast(
+                "dict[str, object]",
+                cast("dict[str, object]", mutated_results[0]["artifact"])[
+                    "observed"
+                ],
+            )["digests"],
+        )[0]
+        mutated_digest["digest"] = "e" * 64
+        assert not control._ci_receipt_reusable_for_release_shape(
+            mutated_receipt,
+            plan_snapshot.plan,
+            assignments,
+            release_work_group_id,
+            "b" * 40,
+            observed_receipts=observed_receipts,
+            changed_files_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.changed_files_snapshot,
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.fact_snapshot,
+            ),
+        )
+        malformed_extra_result = deepcopy(validation_result)
+        malformed_commands = cast(
+            "list[object]",
+            malformed_extra_result["commands"],
+        )
+        malformed_commands.append("malformed-command")
+        validation_result_path.write_text(
+            json.dumps(malformed_extra_result),
+            encoding="utf-8",
+        )
+        assert not control._ci_validation_result_has_success_evidence(
+            plan_snapshot.plan,
+            release_work_group_id,
+            malformed_extra_result,
+            assignments=assignments,
+            observed_artifacts_dir=str(observed_root),
+            observed_commit_sha="b" * 40,
+            changed_files_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.changed_files_snapshot,
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.fact_snapshot,
+            ),
+        )
+        malformed_receipt_path = scratch / "malformed-extra-receipt.json"
+        assert (
+            control._cmd_write_ci_validation_receipt(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=release_work_group_id,
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    workflow="CI Validation",
+                    job=matrix[release_work_group_id]["writer-job"],
+                    observed_artifacts_dir=str(observed_root),
+                    observed_commit_sha="b" * 40,
+                    validation_result=str(validation_result_path),
+                    validation_outcome="success",
+                    created_at="2026-05-14T21:09:24Z",
+                    receipt_out=str(malformed_receipt_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        malformed_receipt = json.loads(
+            malformed_receipt_path.read_text(encoding="utf-8")
+        )
+        assert malformed_receipt["outcome"] == "blocking-failure"
+        observed_receipts = control._ci_observed_receipt_inputs(
+            plan=plan_snapshot.plan,
+            assignments=assignments,
+            observed_artifacts_dir=str(observed_root),
+            changed_files_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.changed_files_snapshot,
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.fact_snapshot,
+            ),
+        )
+        assert control._ci_receipt_reusable_for_release_shape(
+            receipt,
+            plan_snapshot.plan,
+            assignments,
+            release_work_group_id,
+            "b" * 40,
+            observed_receipts=observed_receipts,
+            changed_files_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.changed_files_snapshot,
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.fact_snapshot,
+            ),
+        )
+        reused_ref = command["reused-receipt"]["artifact-ref"]
+        for field, value in (
+            ("observed-writer-id", None),
+            ("writer-work-group-id", "wg-other"),
+        ):
+            tampered_observed_receipts = [
+                CiValidationObservedReceiptInput(
+                    manifest_entry={
+                        **item.manifest_entry,
+                        field: value,
+                    }
+                    if item.manifest_entry.get("artifact-ref") == reused_ref
+                    else item.manifest_entry,
+                    receipt=item.receipt,
+                    raw_receipt_bytes=item.raw_receipt_bytes,
+                    validation_result=item.validation_result,
+                )
+                for item in observed_receipts
+            ]
+            assert not control._ci_receipt_reusable_for_release_shape(
+                receipt,
+                plan_snapshot.plan,
+                assignments,
+                release_work_group_id,
+                "b" * 40,
+                observed_receipts=tampered_observed_receipts,
+                changed_files_snapshot=cast(
+                    "Mapping[str, object]",
+                    plan_snapshot.changed_files_snapshot,
+                ),
+                fact_snapshot=cast(
+                    "Mapping[str, object]",
+                    plan_snapshot.fact_snapshot,
+                ),
+            )
+        assert (
+            _github_outputs(receipt_outputs_path)["dependency_blocked"]
+            == "false"
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_aggregate_requires_release_shaped_source_sidecar() -> (  # noqa: PLR0915
+    None
+):
+    """Final aggregation fails closed without observed release source proof."""
+    scratch = SCRATCH / "ci-validation-release-shaped-aggregate-source"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=_ci_validation_push_request(
+                    ["src/public/lib/nbgv-python/pyproject.toml"],
+                ),
+                repo_root=REPO_ROOT,
+                expected_run_id="25887422010",
+                expected_run_attempt="1",
+                created_at="2026-05-14T21:09:21Z",
+            )
+        )
+        plan_path = scratch / "validation-plan.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        assignments_path = scratch / "selector-assignments.json"
+        materialize_outputs_path = scratch / "materialize-outputs.txt"
+        observed_root = scratch / "observed-artifacts"
+        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(plan_snapshot.changed_files_snapshot),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(plan_snapshot.fact_snapshot),
+            encoding="utf-8",
+        )
+        assert (
+            control._cmd_materialize_ci_work_groups(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    workflow="CI Validation",
+                    writer_job="validation-work-groups",
+                    created_at="2026-05-14T21:09:21Z",
+                    assignments_out=str(assignments_path),
+                    github_output=str(materialize_outputs_path),
+                )
+            )
+            == 0
+        )
+        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
+        matrix = {
+            item["work-group-id"]: item
+            for item in json.loads(
+                _github_outputs(materialize_outputs_path)["work_group_matrix"]
+            )
+        }
+        release_group = next(
+            group
+            for group in cast(
+                "Sequence[Mapping[str, object]]",
+                plan_snapshot.plan["work-groups"],
+            )
+            if group["kind"] == "release-shaped-artifact"
+        )
+        release_work_group_id = str(release_group["work-group-id"])
+        for group in cast(
+            "Sequence[Mapping[str, object]]",
+            plan_snapshot.plan["work-groups"],
+        ):
+            work_group_id = str(group["work-group-id"])
+            if group["kind"] == "evidence-aggregation":
+                continue
+            if group["kind"] == "release-shaped-artifact":
+                _stage_ci_release_shaped_observed_receipt(
+                    scratch=scratch,
+                    observed_root=observed_root,
+                    plan=plan_snapshot.plan,
+                    assignments=assignments,
+                    matrix=matrix,
+                    work_group_id=work_group_id,
+                    changed_files_snapshot=cast(
+                        "Mapping[str, object]",
+                        plan_snapshot.changed_files_snapshot,
+                    ),
+                    fact_snapshot=cast(
+                        "Mapping[str, object]",
+                        plan_snapshot.fact_snapshot,
+                    ),
+                )
+                continue
+            _stage_ci_observed_receipt(
+                scratch=scratch,
+                observed_root=observed_root,
+                plan=plan_snapshot.plan,
+                assignments=assignments,
+                matrix=matrix,
+                work_group_id=work_group_id,
+                outcome="success",
+                changed_files_snapshot=cast(
+                    "Mapping[str, object]",
+                    plan_snapshot.changed_files_snapshot,
+                ),
+                fact_snapshot=cast(
+                    "Mapping[str, object]",
+                    plan_snapshot.fact_snapshot,
+                ),
+            )
+        release_assignment = control._ci_assignment_for_work_group(
+            assignments,
+            release_work_group_id,
+        )
+        release_dir = observed_root / artifact_physical_name(
+            str(release_assignment["receipt-artifact-ref"])
+        )
+        validation_result_path = release_dir / "validation-result.json"
+        original_validation_result = validation_result_path.read_text(
+            encoding="utf-8"
+        )
+
+        def aggregate(verdict_name: str) -> Mapping[str, object]:
+            aggregate_path = scratch / f"{verdict_name}-aggregate.json"
+            manifest_path = scratch / f"{verdict_name}-manifest.json"
+            control._cmd_aggregate_ci_evidence(
+                argparse.Namespace(
+                    repository="hcoona/three",
+                    workflow="CI Validation",
+                    run_id="25887422010",
+                    run_attempt="1",
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    observed_artifacts_dir=str(observed_root),
+                    created_at="2026-05-14T21:09:25Z",
+                    receipt_manifest_out=str(manifest_path),
+                    aggregate_out=str(aggregate_path),
+                    github_output=None,
+                )
+            )
+            return json.loads(aggregate_path.read_text(encoding="utf-8"))
+
+        validation_result_path.unlink()
+        missing_sidecar = aggregate("missing-sidecar")
+        assert missing_sidecar["verdict"] == "failed"
+        assert missing_sidecar["reason"]["blocking-validation-failure"] is True
+
+        mismatched_result = json.loads(original_validation_result)
+        command = mismatched_result["commands"][0]
+        command["source-proof"]["artifact-digests"][0]["digest"] = "e" * 64
+        validation_result_path.write_text(
+            json.dumps(mismatched_result),
+            encoding="utf-8",
+        )
+        mismatched_sidecar = aggregate("mismatched-sidecar")
+        assert mismatched_sidecar["verdict"] == "failed"
+        assert (
+            mismatched_sidecar["reason"]["blocking-validation-failure"] is True
+        )
+
+        for index, extra_command in enumerate(
+            [
+                {
+                    "outcome": "blocking-failure",
+                    "evidence-source": "no-publish-validation",
+                    "diagnostics": [],
+                },
+                {
+                    "outcome": "success",
+                    "evidence-source": "unsupported-sidecar-command",
+                    "artifact-obligation-results": [],
+                },
+                {"outcome": "success"},
+                "malformed-command",
+            ],
+        ):
+            extra_command_result = json.loads(original_validation_result)
+            extra_command_result["commands"].append(extra_command)
+            validation_result_path.write_text(
+                json.dumps(extra_command_result),
+                encoding="utf-8",
+            )
+            extra_sidecar = aggregate(f"extra-sidecar-command-{index}")
+            assert extra_sidecar["verdict"] == "failed"
+            assert (
+                extra_sidecar["reason"]["blocking-validation-failure"] is True
+            )
+
+        validation_result_path.write_text(
+            original_validation_result,
+            encoding="utf-8",
+        )
+        accepted = aggregate("accepted")
+        assert accepted["verdict"] == "passed"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_ci_validation_materializer_fails_closed_for_extra_layers() -> None:
     """Static workflow materialization rejects unsupported dependency depth."""
     scratch = SCRATCH / "ci-validation-too-many-layers"
@@ -6084,7 +7198,7 @@ def _stage_ci_observed_receipt(  # noqa: PLR0913
     assignments: Mapping[str, object],
     matrix: Mapping[str, Mapping[str, object]],
     work_group_id: str,
-    outcome: str,
+    outcome: ReceiptOutcome,
     changed_files_snapshot: Mapping[str, object],
     fact_snapshot: Mapping[str, object],
 ) -> None:
@@ -6162,6 +7276,180 @@ def _stage_ci_observed_receipt(  # noqa: PLR0913
         metadata_path,
         observation_dir / "receipt-artifact-metadata.json",
     )
+
+
+def _stage_ci_release_shaped_observed_receipt(  # noqa: PLR0913
+    *,
+    scratch: Path,
+    observed_root: Path,
+    plan: Mapping[str, object],
+    assignments: Mapping[str, object],
+    matrix: Mapping[str, Mapping[str, object]],
+    work_group_id: str,
+    changed_files_snapshot: Mapping[str, object],
+    fact_snapshot: Mapping[str, object],
+) -> None:
+    assignment = control._ci_assignment_for_work_group(
+        assignments,
+        work_group_id,
+    )
+    obligation_results: list[Mapping[str, object]] = []
+    for obligation in control._ci_plan_records_for_work_group(
+        plan,
+        "artifact-obligations",
+        work_group_id,
+    ):
+        result = control._ci_artifact_obligation_success_result(obligation)
+        descriptor_path = str(obligation["descriptor-path"])
+        descriptor_fact = control._ci_descriptor_fact(
+            fact_snapshot,
+            descriptor_path,
+        )
+        cast("dict[str, object]", result["descriptor"])["identity"] = (
+            descriptor_fact.get("descriptor-identity")
+            if descriptor_fact is not None
+            else None
+        )
+        observed_artifact = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", result["artifact"])["observed"],
+        )
+        observed_artifact["digests"] = [
+            {
+                "artifact-ref": artifact_ref,
+                "algorithm": "sha256",
+                "digest": "f" * 64,
+                "digest-available": True,
+                "diagnostics": [],
+            }
+            for artifact_ref in control._ci_artifact_expected_refs(obligation)
+        ]
+        obligation_results.append(result)
+    validation_result = {
+        "work-group-id": work_group_id,
+        "kind": matrix[work_group_id]["kind"],
+        "runner-family": matrix[work_group_id]["runner-family"],
+        "coverage-target": matrix[work_group_id]["coverage-target"],
+        "observed-commit-sha": "b" * 40,
+        "outcome": "success",
+        "commands": [
+            {
+                "builtin": "release-shaped-artifact",
+                "evidence-source": "no-publish-validation",
+                "source-proof": _release_shaped_no_publish_source_proof(
+                    work_group_id=work_group_id,
+                    matrix_work_group=matrix[work_group_id],
+                    obligation_results=obligation_results,
+                ),
+                "outcome": "success",
+                "artifact-obligation-results": obligation_results,
+            }
+        ],
+    }
+    diagnostics: list[Mapping[str, object]] = []
+    receipt = freeze_ci_validation_receipt(
+        plan=plan,
+        selector_assignments_manifest=assignments,
+        assignment=assignment,
+        receipt_id=str(assignment["assignment-id"]),
+        created_at="2026-05-14T21:09:22Z",
+        execution_observed_commit_sha="b" * 40,
+        outcome="success",
+        evidence=control._ci_validation_evidence(
+            plan,
+            work_group_id,
+            outcome="success",
+            diagnostics=diagnostics,
+            validation_result=validation_result,
+            fact_snapshot=fact_snapshot,
+        ),
+        diagnostics=diagnostics,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    observation_path = scratch / f"{work_group_id}-writer-observation.json"
+    metadata_path = scratch / f"{work_group_id}-receipt-metadata.json"
+    assert (
+        control._cmd_write_ci_validation_writer_observation(
+            argparse.Namespace(
+                plan=str(scratch / "validation-plan.json"),
+                changed_files_snapshot=str(scratch / "changed-files.json"),
+                fact_snapshot=str(scratch / "fact-snapshot.json"),
+                assignments=str(scratch / "selector-assignments.json"),
+                work_group_id=work_group_id,
+                matrix_work_group_json=json.dumps(
+                    matrix[work_group_id],
+                    separators=(",", ":"),
+                ),
+                workflow="CI Validation",
+                job=matrix[work_group_id]["writer-job"],
+                artifact_instance_id=f"{work_group_id}-artifact",
+                created_at="2026-05-14T21:09:23Z",
+                observation_out=str(observation_path),
+                metadata_out=str(metadata_path),
+                github_output=None,
+            )
+        )
+        == 0
+    )
+    receipt_dir = observed_root / artifact_physical_name(
+        str(assignment["receipt-artifact-ref"])
+    )
+    observation_dir = observed_root / artifact_physical_name(
+        str(assignment["writer-observation-ref"])
+    )
+    receipt_dir.mkdir(parents=True)
+    observation_dir.mkdir(parents=True)
+    (receipt_dir / "receipt.json").write_text(
+        json.dumps(receipt),
+        encoding="utf-8",
+    )
+    (receipt_dir / "validation-result.json").write_text(
+        json.dumps(validation_result),
+        encoding="utf-8",
+    )
+    shutil.copyfile(
+        observation_path,
+        observation_dir / "writer-observation.json",
+    )
+    shutil.copyfile(
+        metadata_path,
+        observation_dir / "receipt-artifact-metadata.json",
+    )
+
+
+def _release_shaped_no_publish_source_proof(
+    *,
+    work_group_id: str,
+    matrix_work_group: Mapping[str, object],
+    obligation_results: Sequence[Mapping[str, object]],
+) -> Mapping[str, object]:
+    artifact_digests: list[Mapping[str, object]] = []
+    for result in obligation_results:
+        artifact = cast("Mapping[str, object]", result["artifact"])
+        observed = cast("Mapping[str, object]", artifact["observed"])
+        digest_entries = cast(
+            "Sequence[Mapping[str, object]]",
+            observed["digests"],
+        )
+        for digest in digest_entries:
+            artifact_digests.append(
+                {
+                    "artifact-ref": digest["artifact-ref"],
+                    "algorithm": digest["algorithm"],
+                    "digest": digest["digest"],
+                }
+            )
+    return {
+        "kind": "no-publish-validation-result",
+        "work-group-id": work_group_id,
+        "coverage-target": matrix_work_group["coverage-target"],
+        "observed-commit-sha": "b" * 40,
+        "artifact-digests": sorted(
+            artifact_digests,
+            key=lambda item: str(item["artifact-ref"]),
+        ),
+    }
 
 
 def _clear_ci_evidence_diagnostics(value: object) -> None:

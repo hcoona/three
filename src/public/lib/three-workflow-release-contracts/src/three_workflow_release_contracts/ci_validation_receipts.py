@@ -1004,9 +1004,22 @@ def _validate_release_shaped_detail(
     if not isinstance(detail, Mapping):
         issues.append(ValidationIssue(path, "must be an object"))
         return None
-    _validate_root_keys(
-        detail, frozenset({"artifact-obligation-results"}), path, issues
-    )
+    detail_keys = set(detail)
+    allowed_detail_keys = {
+        "artifact-obligation-results",
+        "evidence-source",
+        "reused-receipt",
+        "source-proof",
+    }
+    for key in sorted(detail_keys - allowed_detail_keys):
+        issues.append(ValidationIssue(f"{path}.{key}", "is not allowed"))
+    if "artifact-obligation-results" not in detail_keys:
+        issues.append(
+            ValidationIssue(
+                f"{path}.artifact-obligation-results",
+                "is required",
+            )
+        )
     obligations = _records_for_work_group(
         context.plan.get("artifact-obligations"),
         "work-group-id",

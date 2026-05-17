@@ -36,6 +36,7 @@ from three_workflow_release_contracts.ci_validation_plans import (
 )
 from three_workflow_release_contracts.ci_validation_receipts import (
     ci_validation_receipt_content_digest,
+    load_ci_validation_receipt_payload,
     validate_ci_validation_receipt,
 )
 from three_workflow_release_contracts.ci_validation_requests import (
@@ -247,11 +248,12 @@ _DIAGNOSTIC_SOURCE_KEYS = frozenset({"type", "id"})
 
 @dataclass(frozen=True, slots=True)
 class CiValidationObservedReceiptInput:
-    """One manifest entry plus the parsed receipt payload, when readable."""
+    """One manifest entry plus independently observed readable payloads."""
 
     manifest_entry: Mapping[str, object]
     receipt: Mapping[str, object] | None = None
     raw_receipt_bytes: bytes | None = None
+    validation_result: Mapping[str, object] | None = None
 
 
 def ci_validation_observed_entry_id(
@@ -567,11 +569,29 @@ def freeze_ci_validation_aggregate(  # noqa: PLR0913
             pull_request_merge_commit_verification
         ),
     )
-    summaries = _apply_duplicate_admissibility(summaries, receipts_by_entry)
+    summaries = _apply_duplicate_admissibility(
+        plan=plan,
+        summaries=summaries,
+        receipts_by_entry=receipts_by_entry,
+        observed_inputs=inputs,
+        selector_assignments_manifest=selector_assignments_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+    )
     evidence_results, failures = _evidence_results_and_failures(
         plan=plan,
         summaries=summaries,
         receipts_by_entry=receipts_by_entry,
+        observed_inputs=inputs,
+        selector_assignments_manifest=selector_assignments_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
     )
     fail_closed_failures = _fail_closed_failures(plan)
     final_failures = _final_evidence_failures(final_evidence_diagnostics)
@@ -638,6 +658,7 @@ def freeze_ci_validation_aggregate(  # noqa: PLR0913
         plan=plan,
         receipt_manifest=receipt_manifest,
         selector_assignments_manifest=selector_assignments_manifest,
+        observed_receipts=inputs,
         changed_files_snapshot=changed_files_snapshot,
         fact_snapshot=fact_snapshot,
         pull_request_merge_commit_verification=(
@@ -781,6 +802,10 @@ def validate_ci_validation_aggregate(  # noqa: C901,PLR0913
     plan: Mapping[str, object] | None = None,
     receipt_manifest: Mapping[str, object] | None = None,
     selector_assignments_manifest: Mapping[str, object] | None = None,
+    observed_receipts: Sequence[
+        CiValidationObservedReceiptInput | Mapping[str, object]
+    ]
+    | None = None,
     changed_files_snapshot: Mapping[str, object] | None = None,
     fact_snapshot: Mapping[str, object] | None = None,
     pull_request_merge_commit_verification: Mapping[str, object] | None = None,
@@ -874,7 +899,18 @@ def validate_ci_validation_aggregate(  # noqa: C901,PLR0913
         )
     _validate_aggregate_shapes(aggregate, envelope, issues)
     _validate_receipt_manifest_ref_binding(aggregate, envelope, issues)
-    _validate_aggregate_consistency(aggregate, plan, issues)
+    _validate_aggregate_consistency(
+        aggregate,
+        plan,
+        _normalize_observed_inputs(observed_receipts)
+        if observed_receipts is not None
+        else None,
+        selector_assignments_manifest,
+        changed_files_snapshot,
+        fact_snapshot,
+        pull_request_merge_commit_verification,
+        issues,
+    )
     if issues:
         raise ContractValidationError(issues)
 
@@ -901,6 +937,21 @@ def _receipt_digest_matches_payload(
     except (ContractValidationError, TypeError, ValueError):
         return False
     return entry.get("receipt-content-digest") == observed_digest
+
+
+def _receipt_payload_matches_observed_bytes(
+    entry: Mapping[str, object],
+    receipt: Mapping[str, object],
+    raw_receipt_bytes: bytes | None,
+) -> bool:
+    if raw_receipt_bytes is None or not _receipt_digest_matches_payload(
+        entry, raw_receipt_bytes
+    ):
+        return False
+    try:
+        return load_ci_validation_receipt_payload(raw_receipt_bytes) == receipt
+    except (ContractValidationError, TypeError, ValueError):
+        return False
 
 
 def _manifest_envelope_from_plan_or_args(  # noqa: PLR0913
@@ -967,6 +1018,7 @@ def _normalize_observed_inputs(
             entry = item.get("manifest-entry")
             receipt = item.get("receipt")
             raw_receipt_bytes = item.get("raw-receipt-bytes")
+            validation_result = item.get("validation-result")
             if not isinstance(entry, Mapping):
                 entry = item
             normalized.append(
@@ -975,6 +1027,9 @@ def _normalize_observed_inputs(
                     receipt=receipt if isinstance(receipt, Mapping) else None,
                     raw_receipt_bytes=raw_receipt_bytes
                     if isinstance(raw_receipt_bytes, bytes)
+                    else None,
+                    validation_result=validation_result
+                    if isinstance(validation_result, Mapping)
                     else None,
                 )
             )
@@ -1024,8 +1079,9 @@ def _receipt_summaries(  # noqa: C901,PLR0913
                 DiagnosticDetail.MALFORMED_RECEIPT.value,
                 "Readable receipt artifact is missing observed content digest",
             )
-        elif not _receipt_digest_matches_payload(
+        elif not _receipt_payload_matches_observed_bytes(
             entry,
+            receipt,
             item.raw_receipt_bytes,
         ):
             diagnostic = _inadmissible_diagnostic(
@@ -1086,48 +1142,204 @@ def _receipt_summaries(  # noqa: C901,PLR0913
     return summaries, receipts_by_entry
 
 
-def _apply_duplicate_admissibility(
+def _apply_duplicate_admissibility(  # noqa: PLR0913
+    *,
+    plan: Mapping[str, object],
     summaries: list[dict[str, object]],
     receipts_by_entry: dict[str, Mapping[str, object]],
+    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    selector_assignments_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
 ) -> list[dict[str, object]]:
-    first_by_work_group: dict[str, str] = {}
-    for summary in sorted(
-        summaries, key=lambda item: str(item["observed-entry-id"])
-    ):
-        if summary.get("admissibility") != "valid":
+    valid_by_work_group: dict[str, list[dict[str, object]]] = {}
+    for summary in summaries:
+        if summary.get("admissibility") == "valid" and isinstance(
+            summary.get("work-group-id"), str
+        ):
+            valid_by_work_group.setdefault(
+                cast("str", summary["work-group-id"]), []
+            ).append(summary)
+    for work_group_id, group in valid_by_work_group.items():
+        sorted_group = sorted(
+            group, key=lambda item: str(item["observed-entry-id"])
+        )
+        if len(sorted_group) <= 1:
             continue
-        work_group_id = summary.get("work-group-id")
-        if not isinstance(work_group_id, str):
-            continue
-        entry_id = cast("str", summary["observed-entry-id"])
-        if work_group_id not in first_by_work_group:
-            first_by_work_group[work_group_id] = entry_id
-            continue
-        summary["admissibility"] = "inadmissible"
-        receipts_by_entry.pop(entry_id, None)
-        summary["diagnostics"] = [
-            _inadmissible_diagnostic(
-                entry_id,
-                DiagnosticDetail.DUPLICATE_RECEIPT.value,
-                "More than one admissible receipt matched expectation",
+        keep_valid = _valid_reused_chain_entry_ids_for_duplicate_group(
+            plan=plan,
+            work_group_id=work_group_id,
+            summaries=sorted_group,
+            receipts_by_entry=receipts_by_entry,
+            observed_inputs=observed_inputs,
+            selector_assignments_manifest=selector_assignments_manifest,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            pull_request_merge_commit_verification=(
+                pull_request_merge_commit_verification
+            ),
+        )
+        if keep_valid is None:
+            keep_valid = {cast("str", sorted_group[0]["observed-entry-id"])}
+        for summary in sorted_group:
+            entry_id = cast("str", summary["observed-entry-id"])
+            if entry_id in keep_valid:
+                continue
+            _mark_duplicate_summary_inadmissible(
+                summary, receipts_by_entry, entry_id
             )
-        ]
     return summaries
 
 
-def _evidence_results_and_failures(
+def _mark_duplicate_summary_inadmissible(
+    summary: dict[str, object],
+    receipts_by_entry: dict[str, Mapping[str, object]],
+    entry_id: str,
+) -> None:
+    summary["admissibility"] = "inadmissible"
+    receipts_by_entry.pop(entry_id, None)
+    summary["diagnostics"] = [
+        _inadmissible_diagnostic(
+            entry_id,
+            DiagnosticDetail.DUPLICATE_RECEIPT.value,
+            "More than one admissible receipt matched expectation",
+        )
+    ]
+
+
+def _valid_reused_chain_entry_ids_for_duplicate_group(  # noqa: PLR0913
+    *,
+    plan: Mapping[str, object],
+    work_group_id: str,
+    summaries: Sequence[Mapping[str, object]],
+    receipts_by_entry: Mapping[str, Mapping[str, object]],
+    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    selector_assignments_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
+) -> set[str] | None:
+    if _work_group_kind(plan, work_group_id) != "release-shaped-artifact":
+        return None
+    group_entry_ids = {
+        cast("str", summary["observed-entry-id"])
+        for summary in summaries
+        if isinstance(summary.get("observed-entry-id"), str)
+    }
+    chain_candidates: list[set[str]] = []
+    for summary in summaries:
+        entry_id = summary.get("observed-entry-id")
+        if not isinstance(entry_id, str):
+            continue
+        receipt = receipts_by_entry.get(entry_id)
+        if receipt is None or receipt.get("outcome") != "success":
+            continue
+        chain = _release_shaped_success_source_chain_entry_ids(
+            receipt=receipt,
+            plan=plan,
+            selector_assignments_manifest=selector_assignments_manifest,
+            work_group_id=work_group_id,
+            entry_id=entry_id,
+            receipts_by_entry=receipts_by_entry,
+            observed_inputs=observed_inputs,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            pull_request_merge_commit_verification=(
+                pull_request_merge_commit_verification
+            ),
+            visited_receipt_digests=set(),
+        )
+        if chain and chain <= group_entry_ids:
+            chain_candidates.append({entry_id, *chain})
+    maximal_candidates = _maximal_entry_id_sets(chain_candidates)
+    if len(maximal_candidates) != 1:
+        return None
+    return maximal_candidates[0]
+
+
+def _maximal_entry_id_sets(candidates: Sequence[set[str]]) -> list[set[str]]:
+    unique: list[set[str]] = []
+    for candidate in candidates:
+        if not any(candidate == existing for existing in unique):
+            unique.append(candidate)
+    return [
+        candidate
+        for candidate in unique
+        if not any(candidate < other for other in unique)
+    ]
+
+
+def _valid_evidence_summary_by_work_group(  # noqa: PLR0913
+    *,
+    plan: Mapping[str, object],
+    work_group_id: str,
+    summaries: Sequence[Mapping[str, object]],
+    receipts_by_entry: Mapping[str, Mapping[str, object]],
+    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    selector_assignments_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
+) -> Mapping[str, object] | None:
+    valid = [
+        summary
+        for summary in summaries
+        if summary.get("admissibility") == "valid"
+        and summary.get("work-group-id") == work_group_id
+    ]
+    if len(valid) <= 1:
+        return valid[0] if valid else None
+    if _work_group_kind(plan, work_group_id) == "release-shaped-artifact":
+        candidates: list[tuple[Mapping[str, object], set[str]]] = []
+        for summary in valid:
+            entry_id = summary.get("observed-entry-id")
+            if not isinstance(entry_id, str):
+                continue
+            receipt = receipts_by_entry.get(entry_id)
+            if receipt is None:
+                continue
+            chain = _release_shaped_success_source_chain_entry_ids(
+                receipt=receipt,
+                plan=plan,
+                selector_assignments_manifest=selector_assignments_manifest,
+                work_group_id=work_group_id,
+                entry_id=entry_id,
+                receipts_by_entry=receipts_by_entry,
+                observed_inputs=observed_inputs,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+                pull_request_merge_commit_verification=(
+                    pull_request_merge_commit_verification
+                ),
+                visited_receipt_digests=set(),
+            )
+            if chain:
+                candidates.append((summary, {entry_id, *chain}))
+        maximal_candidates = _maximal_entry_id_sets(
+            [candidate for _summary, candidate in candidates]
+        )
+        if len(maximal_candidates) == 1:
+            maximal = maximal_candidates[0]
+            for summary, candidate in candidates:
+                if candidate == maximal:
+                    return summary
+    return sorted(valid, key=lambda item: str(item["observed-entry-id"]))[0]
+
+
+def _evidence_results_and_failures(  # noqa: PLR0913
     *,
     plan: Mapping[str, object],
     summaries: Sequence[Mapping[str, object]],
     receipts_by_entry: Mapping[str, Mapping[str, object]],
+    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    selector_assignments_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     failures: list[dict[str, object]] = []
     results: list[dict[str, object]] = []
-    valid_by_work_group = {
-        summary.get("work-group-id"): summary
-        for summary in summaries
-        if summary.get("admissibility") == "valid"
-    }
     for summary in summaries:
         if summary.get("admissibility") == "inadmissible":
             for diagnostic in _diagnostics(summary.get("diagnostics")):
@@ -1154,7 +1366,19 @@ def _evidence_results_and_failures(
     for expectation in _evidence_expectations(plan):
         expectation_id = cast("str", expectation["evidence-expectation-id"])
         work_group_id = cast("str", expectation["work-group-id"])
-        summary = valid_by_work_group.get(work_group_id)
+        summary = _valid_evidence_summary_by_work_group(
+            plan=plan,
+            work_group_id=work_group_id,
+            summaries=summaries,
+            receipts_by_entry=receipts_by_entry,
+            observed_inputs=observed_inputs,
+            selector_assignments_manifest=selector_assignments_manifest,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            pull_request_merge_commit_verification=(
+                pull_request_merge_commit_verification
+            ),
+        )
         if summary is None:
             diagnostic = _diagnostic(
                 diagnostic_id=f"required-evidence-missing/{expectation_id}",
@@ -1183,6 +1407,61 @@ def _evidence_results_and_failures(
         receipt = receipts_by_entry[entry_id]
         receipt_outcome = receipt.get("outcome")
         if receipt_outcome == "success":
+            if (
+                _work_group_kind(plan, work_group_id)
+                == "release-shaped-artifact"
+                and not _release_shaped_success_source_is_admissible(
+                    receipt=receipt,
+                    plan=plan,
+                    selector_assignments_manifest=(
+                        selector_assignments_manifest
+                    ),
+                    work_group_id=work_group_id,
+                    entry_id=entry_id,
+                    receipts_by_entry=receipts_by_entry,
+                    observed_inputs=observed_inputs,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                    pull_request_merge_commit_verification=(
+                        pull_request_merge_commit_verification
+                    ),
+                    visited_receipt_digests=set(),
+                )
+            ):
+                diagnostic = _release_shaped_source_failure_diagnostic(
+                    expectation_id=expectation_id,
+                    work_group_id=work_group_id,
+                )
+                results.append(
+                    _evidence_result(
+                        expectation_id=expectation_id,
+                        work_group_id=work_group_id,
+                        outcome="failed",
+                        summary=summary,
+                        diagnostic=diagnostic,
+                    )
+                )
+                failures.append(
+                    _failure(
+                        kind="blocking-validation-failure",
+                        work_group_id=work_group_id,
+                        evidence_expectation_id=expectation_id,
+                        receipt_id=_nullable_str(summary.get("receipt-id")),
+                        observed_entry_id=entry_id,
+                        receipt_artifact_ref=_nullable_str(
+                            summary.get("artifact-ref")
+                        ),
+                        receipt_content_digest=_nullable_str(
+                            summary.get("receipt-content-digest")
+                        ),
+                        diagnostic=diagnostic,
+                        message=(
+                            "Release-shaped success lacks admissible source "
+                            "evidence"
+                        ),
+                    )
+                )
+                continue
             results.append(
                 _evidence_result(
                     expectation_id=expectation_id,
@@ -1257,6 +1536,427 @@ def _evidence_results_and_failures(
                 )
             )
     return results, failures
+
+
+def _release_shaped_success_source_is_admissible(  # noqa: PLR0913
+    *,
+    receipt: Mapping[str, object],
+    plan: Mapping[str, object],
+    selector_assignments_manifest: Mapping[str, object],
+    work_group_id: str,
+    entry_id: str,
+    receipts_by_entry: Mapping[str, Mapping[str, object]],
+    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
+    visited_receipt_digests: set[str],
+) -> bool:
+    return (
+        _release_shaped_success_source_chain_entry_ids(
+            receipt=receipt,
+            plan=plan,
+            selector_assignments_manifest=selector_assignments_manifest,
+            work_group_id=work_group_id,
+            entry_id=entry_id,
+            receipts_by_entry=receipts_by_entry,
+            observed_inputs=observed_inputs,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            pull_request_merge_commit_verification=(
+                pull_request_merge_commit_verification
+            ),
+            visited_receipt_digests=visited_receipt_digests,
+        )
+        is not None
+    )
+
+
+def _release_shaped_success_source_chain_entry_ids(  # noqa: C901,PLR0911,PLR0913
+    *,
+    receipt: Mapping[str, object],
+    plan: Mapping[str, object],
+    selector_assignments_manifest: Mapping[str, object],
+    work_group_id: str,
+    entry_id: str,
+    receipts_by_entry: Mapping[str, Mapping[str, object]],
+    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
+    visited_receipt_digests: set[str],
+) -> set[str] | None:
+    assignment = _assignments_by_work_group(selector_assignments_manifest).get(
+        work_group_id
+    )
+    if not _release_shaped_receipt_validates_against_current_context(
+        receipt=receipt,
+        plan=plan,
+        selector_assignments_manifest=selector_assignments_manifest,
+        assignment=assignment,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+    ):
+        return None
+    assignment = cast("Mapping[str, object]", assignment)
+    detail = _release_shaped_receipt_detail(receipt)
+    if detail is None:
+        return None
+    evidence_source = detail.get("evidence-source")
+    observed_input = _observed_input_by_entry_id(observed_inputs).get(entry_id)
+    if evidence_source == "no-publish-validation":
+        if _no_publish_release_shaped_source_is_admissible(
+            receipt=receipt,
+            detail=detail,
+            source_validation_result=(
+                observed_input.validation_result
+                if observed_input is not None
+                else None
+            ),
+        ):
+            return set()
+        return None
+    if evidence_source != "reused-validation-receipt":
+        return None
+    reused_receipt = detail.get("reused-receipt")
+    if not isinstance(reused_receipt, Mapping):
+        return None
+    prior_input = _observed_reused_receipt_input(
+        reused_receipt,
+        observed_inputs,
+        observed_commit_sha=_receipt_observed_commit_sha(receipt),
+        work_group_id=work_group_id,
+        expected_writer_id=assignment.get("trusted-writer-id"),
+    )
+    if prior_input is None:
+        return None
+    prior_entry_id = prior_input.manifest_entry.get("observed-entry-id")
+    if not isinstance(prior_entry_id, str) or prior_entry_id == entry_id:
+        return None
+    prior_receipt = receipts_by_entry.get(prior_entry_id)
+    if prior_receipt is None:
+        return None
+    prior_digest = prior_input.manifest_entry.get("receipt-content-digest")
+    if (
+        not isinstance(prior_digest, str)
+        or prior_digest in visited_receipt_digests
+        or prior_receipt.get("work-group-id") != work_group_id
+        or not _release_shaped_reused_receipt_matches_source_results(
+            current_detail=detail,
+            source_receipt=prior_receipt,
+        )
+    ):
+        return None
+    try:
+        validate_ci_validation_receipt(
+            prior_receipt,
+            plan=plan,
+            selector_assignments_manifest=selector_assignments_manifest,
+            assignment=assignment,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            pull_request_merge_commit_verification=(
+                pull_request_merge_commit_verification
+            ),
+        )
+    except ContractValidationError:
+        return None
+    prior_chain = _release_shaped_success_source_chain_entry_ids(
+        receipt=prior_receipt,
+        plan=plan,
+        selector_assignments_manifest=selector_assignments_manifest,
+        work_group_id=work_group_id,
+        entry_id=prior_entry_id,
+        receipts_by_entry=receipts_by_entry,
+        observed_inputs=observed_inputs,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+        visited_receipt_digests=visited_receipt_digests | {prior_digest},
+    )
+    if prior_chain is None:
+        return None
+    return {prior_entry_id, *prior_chain}
+
+
+def _release_shaped_receipt_validates_against_current_context(  # noqa: PLR0913
+    *,
+    receipt: Mapping[str, object],
+    plan: Mapping[str, object],
+    selector_assignments_manifest: Mapping[str, object],
+    assignment: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
+) -> bool:
+    if assignment is None:
+        return False
+    try:
+        validate_ci_validation_receipt(
+            receipt,
+            plan=plan,
+            selector_assignments_manifest=selector_assignments_manifest,
+            assignment=assignment,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            pull_request_merge_commit_verification=(
+                pull_request_merge_commit_verification
+            ),
+        )
+    except ContractValidationError:
+        return False
+    return True
+
+
+def _release_shaped_receipt_detail(
+    receipt: Mapping[str, object],
+) -> Mapping[str, object] | None:
+    evidence = receipt.get("evidence")
+    if not isinstance(evidence, Mapping):
+        return None
+    category_result = evidence.get("category-result")
+    if not isinstance(category_result, Mapping):
+        return None
+    detail = category_result.get("detail")
+    return detail if isinstance(detail, Mapping) else None
+
+
+def _release_shaped_reused_results_match_source(
+    *,
+    current_detail: Mapping[str, object],
+    source_detail: Mapping[str, object],
+) -> bool:
+    current_results = current_detail.get("artifact-obligation-results")
+    source_results = source_detail.get("artifact-obligation-results")
+    return (
+        isinstance(current_results, Sequence)
+        and not isinstance(current_results, str | bytes)
+        and all(isinstance(item, Mapping) for item in current_results)
+        and isinstance(source_results, Sequence)
+        and not isinstance(source_results, str | bytes)
+        and all(isinstance(item, Mapping) for item in source_results)
+        and [dict(item) for item in current_results]
+        == [dict(item) for item in source_results]
+    )
+
+
+def _release_shaped_reused_receipt_matches_source_results(
+    *,
+    current_detail: Mapping[str, object],
+    source_receipt: Mapping[str, object],
+) -> bool:
+    source_detail = _release_shaped_receipt_detail(source_receipt)
+    return (
+        source_detail is not None
+        and _release_shaped_reused_results_match_source(
+            current_detail=current_detail,
+            source_detail=source_detail,
+        )
+    )
+
+
+def _observed_input_by_entry_id(
+    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+) -> dict[str, CiValidationObservedReceiptInput]:
+    return {
+        entry_id: item
+        for item in observed_inputs
+        if isinstance(
+            entry_id := item.manifest_entry.get("observed-entry-id"),
+            str,
+        )
+    }
+
+
+def _no_publish_release_shaped_source_is_admissible(  # noqa: PLR0911
+    *,
+    receipt: Mapping[str, object],
+    detail: Mapping[str, object],
+    source_validation_result: Mapping[str, object] | None,
+) -> bool:
+    source_proof = detail.get("source-proof")
+    if not isinstance(source_proof, Mapping):
+        return False
+    if (
+        source_proof.get("kind") != "no-publish-validation-result"
+        or source_proof.get("work-group-id") != receipt.get("work-group-id")
+        or source_proof.get("coverage-target") != receipt.get("coverage-target")
+        or source_proof.get("observed-commit-sha")
+        != _receipt_observed_commit_sha(receipt)
+    ):
+        return False
+    if source_validation_result is None or not (
+        source_validation_result.get("outcome") == "success"
+        and source_validation_result.get("work-group-id")
+        == receipt.get("work-group-id")
+        and source_validation_result.get("kind") == "release-shaped-artifact"
+        and source_validation_result.get("coverage-target")
+        == receipt.get("coverage-target")
+        and source_validation_result.get("observed-commit-sha")
+        == _receipt_observed_commit_sha(receipt)
+    ):
+        return False
+    source_command = _no_publish_source_command_from_validation_result(
+        source_validation_result
+    )
+    if source_command is None:
+        return False
+    if source_command.get("source-proof") != source_proof or source_command.get(
+        "artifact-obligation-results"
+    ) != detail.get("artifact-obligation-results"):
+        return False
+    proof_digests = source_proof.get("artifact-digests")
+    if not isinstance(proof_digests, Sequence) or isinstance(
+        proof_digests, str | bytes
+    ):
+        return False
+    if not all(isinstance(item, Mapping) for item in proof_digests):
+        return False
+    return _release_shaped_digest_proof_entries_from_results(
+        cast(
+            "Sequence[Mapping[str, object]]",
+            source_command["artifact-obligation-results"],
+        )
+    ) == [
+        dict(item)
+        for item in cast("Sequence[Mapping[str, object]]", proof_digests)
+    ]
+
+
+def _no_publish_source_command_from_validation_result(
+    validation_result: Mapping[str, object],
+) -> Mapping[str, object] | None:
+    commands = validation_result.get("commands")
+    if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
+        return None
+    if len(commands) != 1:
+        return None
+    command = commands[0]
+    if not (
+        isinstance(command, Mapping)
+        and command.get("outcome") == "success"
+        and command.get("evidence-source") == "no-publish-validation"
+        and isinstance(command.get("source-proof"), Mapping)
+        and isinstance(command.get("artifact-obligation-results"), Sequence)
+        and not isinstance(
+            command.get("artifact-obligation-results"), str | bytes
+        )
+    ):
+        return None
+    return command
+
+
+def _release_shaped_digest_proof_entries_from_results(
+    results: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for result in results:
+        artifact = result.get("artifact")
+        if not isinstance(artifact, Mapping):
+            continue
+        observed = artifact.get("observed")
+        if not isinstance(observed, Mapping):
+            continue
+        digests = observed.get("digests")
+        if not isinstance(digests, Sequence) or isinstance(
+            digests, str | bytes
+        ):
+            continue
+        for digest in digests:
+            if not isinstance(digest, Mapping):
+                continue
+            entries.append(
+                {
+                    "artifact-ref": digest.get("artifact-ref"),
+                    "algorithm": digest.get("algorithm"),
+                    "digest": digest.get("digest"),
+                }
+            )
+    return sorted(entries, key=lambda item: str(item["artifact-ref"]))
+
+
+def _observed_reused_receipt_input(
+    reused_receipt: Mapping[str, object],
+    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    *,
+    observed_commit_sha: str | None,
+    work_group_id: str,
+    expected_writer_id: object,
+) -> CiValidationObservedReceiptInput | None:
+    if (
+        observed_commit_sha is None
+        or reused_receipt.get("observed-commit-sha") != observed_commit_sha
+    ):
+        return None
+    artifact_ref = reused_receipt.get("artifact-ref")
+    receipt_id = reused_receipt.get("receipt-id")
+    content_digest = reused_receipt.get("receipt-content-digest")
+    if not all(
+        isinstance(item, str) and item
+        for item in (artifact_ref, receipt_id, content_digest)
+    ):
+        return None
+    for observed in observed_inputs:
+        if (
+            observed.manifest_entry.get("artifact-ref") == artifact_ref
+            and observed.manifest_entry.get("receipt-id") == receipt_id
+            and observed.manifest_entry.get("receipt-content-digest")
+            == content_digest
+            and _observed_receipt_manifest_matches_trusted_writer(
+                observed.manifest_entry,
+                work_group_id=work_group_id,
+                expected_writer_id=expected_writer_id,
+            )
+        ):
+            return observed
+    return None
+
+
+def _observed_receipt_manifest_matches_trusted_writer(
+    manifest_entry: Mapping[str, object],
+    *,
+    work_group_id: str,
+    expected_writer_id: object,
+) -> bool:
+    return (
+        isinstance(expected_writer_id, str)
+        and bool(expected_writer_id)
+        and manifest_entry.get("writer-work-group-id") == work_group_id
+        and manifest_entry.get("trusted-writer-id") == expected_writer_id
+        and manifest_entry.get("observed-writer-id") == expected_writer_id
+    )
+
+
+def _receipt_observed_commit_sha(receipt: Mapping[str, object]) -> str | None:
+    execution_tree = receipt.get("execution-tree")
+    if not isinstance(execution_tree, Mapping):
+        return None
+    value = execution_tree.get("observed-commit-sha")
+    return value if isinstance(value, str) else None
+
+
+def _release_shaped_source_failure_diagnostic(
+    *, expectation_id: str, work_group_id: str
+) -> dict[str, object]:
+    return _diagnostic(
+        diagnostic_id=(
+            f"blocking-validation-failure/{expectation_id}/"
+            "release-shaped-source"
+        ),
+        code=DiagnosticFamily.VALIDATION_WORK_FAILED.value,
+        detail=DiagnosticDetail.TOOLING.value,
+        message=(
+            "Release-shaped success requires independently observed "
+            "no-publish source proof or an admissible reused receipt chain"
+        ),
+        source_type="work-group",
+        source_id=work_group_id,
+    )
 
 
 def _blocking_validation_failure_diagnostic(
@@ -2145,9 +2845,14 @@ def _validate_aggregate_shapes(  # noqa: C901
     _validate_work_group_counts(aggregate.get("work-groups"), issues)
 
 
-def _validate_aggregate_consistency(  # noqa: C901,PLR0912
+def _validate_aggregate_consistency(  # noqa: C901,PLR0912,PLR0913
     aggregate: Mapping[str, object],
     plan: Mapping[str, object] | None,
+    observed_inputs: Sequence[CiValidationObservedReceiptInput] | None,
+    selector_assignments_manifest: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> None:
     reason = aggregate.get("reason")
@@ -2206,7 +2911,15 @@ def _validate_aggregate_consistency(  # noqa: C901,PLR0912
             issues,
         )
         _validate_valid_observed_receipts(
-            aggregate.get("observed-receipts"), plan, issues
+            aggregate.get("observed-receipts"),
+            results,
+            plan,
+            observed_inputs,
+            selector_assignments_manifest,
+            changed_files_snapshot,
+            fact_snapshot,
+            pull_request_merge_commit_verification,
+            issues,
         )
         _validate_failures_are_justified(
             failures, results, observed, plan, issues
@@ -2679,14 +3392,21 @@ def _validate_inadmissible_observed_receipts(
             )
 
 
-def _validate_valid_observed_receipts(  # noqa: C901
+def _validate_valid_observed_receipts(  # noqa: C901,PLR0912,PLR0913
     observed: object,
+    results: object,
     plan: Mapping[str, object] | None,
+    observed_inputs: Sequence[CiValidationObservedReceiptInput] | None,
+    selector_assignments_manifest: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> None:
     if not isinstance(observed, Sequence) or isinstance(observed, str | bytes):
         return
-    valid_by_work_group: dict[str, Mapping[str, object]] = {}
+    valid_by_work_group: dict[str, list[Mapping[str, object]]] = {}
+    evidence_entry_ids = _satisfied_evidence_entry_ids_by_work_group(results)
     evidence_work_groups = (
         {
             expectation.get("work-group-id")
@@ -2762,8 +3482,28 @@ def _validate_valid_observed_receipts(  # noqa: C901
                     "observed receipts",
                 )
             )
-        previous = valid_by_work_group.get(ref_work_group)
-        if previous is not None:
+        valid_by_work_group.setdefault(ref_work_group, []).append(item)
+    for work_group_id, receipts in valid_by_work_group.items():
+        if len(receipts) <= 1:
+            continue
+        if not (
+            plan is not None
+            and _work_group_kind(plan, work_group_id)
+            == "release-shaped-artifact"
+            and _duplicate_valid_receipts_are_chain_shaped(
+                work_group_id=work_group_id,
+                receipts=receipts,
+                evidence_entry_ids=evidence_entry_ids,
+                plan=plan,
+                observed_inputs=observed_inputs,
+                selector_assignments_manifest=selector_assignments_manifest,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+                pull_request_merge_commit_verification=(
+                    pull_request_merge_commit_verification
+                ),
+            )
+        ):
             issues.append(
                 ValidationIssue(
                     "$.observed-receipts",
@@ -2771,8 +3511,200 @@ def _validate_valid_observed_receipts(  # noqa: C901
                     "work group",
                 )
             )
-        else:
-            valid_by_work_group[ref_work_group] = item
+    _validate_satisfied_release_shaped_sources(
+        observed=observed,
+        results=results,
+        plan=plan,
+        observed_inputs=observed_inputs,
+        selector_assignments_manifest=selector_assignments_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+        issues=issues,
+    )
+
+
+def _validate_satisfied_release_shaped_sources(  # noqa: PLR0913
+    *,
+    observed: object,
+    results: object,
+    plan: Mapping[str, object] | None,
+    observed_inputs: Sequence[CiValidationObservedReceiptInput] | None,
+    selector_assignments_manifest: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
+    issues: list[ValidationIssue],
+) -> None:
+    if (
+        plan is None
+        or not isinstance(results, Sequence)
+        or isinstance(results, str | bytes)
+        or not isinstance(observed, Sequence)
+        or isinstance(observed, str | bytes)
+    ):
+        return
+    observed_items = [item for item in observed if isinstance(item, Mapping)]
+    release_results = [
+        item
+        for item in results
+        if (
+            isinstance(item, Mapping)
+            and item.get("outcome") == "satisfied"
+            and isinstance(item.get("work-group-id"), str)
+            and _work_group_kind(plan, cast("str", item["work-group-id"]))
+            == "release-shaped-artifact"
+        )
+    ]
+    if not release_results:
+        return
+    if observed_inputs is None or selector_assignments_manifest is None:
+        issues.append(
+            ValidationIssue(
+                "$.evidence-results",
+                "satisfied release-shaped evidence requires observed source "
+                "proof",
+            )
+        )
+        return
+    receipts_by_entry = _observed_receipts_by_summary_entry_id(
+        observed_items, observed_inputs
+    )
+    for result in release_results:
+        entry_id = result.get("observed-entry-id")
+        work_group_id = result.get("work-group-id")
+        if not isinstance(entry_id, str) or not isinstance(work_group_id, str):
+            continue
+        receipt = receipts_by_entry.get(entry_id)
+        if receipt is None or not _release_shaped_success_source_is_admissible(
+            receipt=receipt,
+            plan=plan,
+            selector_assignments_manifest=selector_assignments_manifest,
+            work_group_id=work_group_id,
+            entry_id=entry_id,
+            receipts_by_entry=receipts_by_entry,
+            observed_inputs=observed_inputs,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            pull_request_merge_commit_verification=(
+                pull_request_merge_commit_verification
+            ),
+            visited_receipt_digests=set(),
+        ):
+            issues.append(
+                ValidationIssue(
+                    "$.evidence-results",
+                    "satisfied release-shaped evidence requires observed "
+                    "source proof",
+                )
+            )
+
+
+def _satisfied_evidence_entry_ids_by_work_group(
+    results: object,
+) -> dict[str, set[str]]:
+    if not isinstance(results, Sequence) or isinstance(results, str | bytes):
+        return {}
+    entry_ids: dict[str, set[str]] = {}
+    for result in results:
+        if not (
+            isinstance(result, Mapping)
+            and result.get("outcome") == "satisfied"
+            and isinstance(result.get("work-group-id"), str)
+            and isinstance(result.get("observed-entry-id"), str)
+        ):
+            continue
+        entry_ids.setdefault(cast("str", result["work-group-id"]), set()).add(
+            cast("str", result["observed-entry-id"])
+        )
+    return entry_ids
+
+
+def _duplicate_valid_receipts_are_chain_shaped(  # noqa: PLR0913
+    *,
+    work_group_id: str,
+    receipts: Sequence[Mapping[str, object]],
+    evidence_entry_ids: Mapping[str, set[str]],
+    plan: Mapping[str, object],
+    observed_inputs: Sequence[CiValidationObservedReceiptInput] | None,
+    selector_assignments_manifest: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
+) -> bool:
+    referenced = evidence_entry_ids.get(work_group_id, set())
+    receipt_entry_ids = {
+        cast("str", receipt["observed-entry-id"])
+        for receipt in receipts
+        if isinstance(receipt.get("observed-entry-id"), str)
+    }
+    if len(referenced & receipt_entry_ids) != 1:
+        return False
+    digests = [
+        receipt.get("receipt-content-digest")
+        for receipt in receipts
+        if isinstance(receipt.get("receipt-content-digest"), str)
+    ]
+    if len(digests) != len(receipts) or len(set(digests)) != len(digests):
+        return False
+    if observed_inputs is None or selector_assignments_manifest is None:
+        return False
+    receipts_by_entry = _observed_receipts_by_summary_entry_id(
+        receipts, observed_inputs
+    )
+    if set(receipts_by_entry) != receipt_entry_ids:
+        return False
+    proven_chain = _valid_reused_chain_entry_ids_for_duplicate_group(
+        plan=plan,
+        work_group_id=work_group_id,
+        summaries=receipts,
+        receipts_by_entry=receipts_by_entry,
+        observed_inputs=observed_inputs,
+        selector_assignments_manifest=selector_assignments_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+    )
+    return proven_chain is not None and receipt_entry_ids <= proven_chain
+
+
+def _observed_receipts_by_summary_entry_id(
+    summaries: Sequence[Mapping[str, object]],
+    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+) -> dict[str, Mapping[str, object]]:
+    summaries_by_entry = {
+        cast("str", summary["observed-entry-id"]): summary
+        for summary in summaries
+        if isinstance(summary.get("observed-entry-id"), str)
+    }
+    receipts_by_entry: dict[str, Mapping[str, object]] = {}
+    for observed in observed_inputs:
+        entry_id = observed.manifest_entry.get("observed-entry-id")
+        if not isinstance(entry_id, str) or entry_id not in summaries_by_entry:
+            continue
+        receipt = observed.receipt
+        if receipt is None:
+            continue
+        summary = summaries_by_entry[entry_id]
+        if (
+            summary.get("artifact-ref")
+            == observed.manifest_entry.get("artifact-ref")
+            and summary.get("receipt-id")
+            == observed.manifest_entry.get("receipt-id")
+            and summary.get("receipt-content-digest")
+            == observed.manifest_entry.get("receipt-content-digest")
+            and _receipt_payload_matches_observed_bytes(
+                observed.manifest_entry,
+                receipt,
+                observed.raw_receipt_bytes,
+            )
+        ):
+            receipts_by_entry[entry_id] = receipt
+    return receipts_by_entry
 
 
 def _has_matching_inadmissible_failure(

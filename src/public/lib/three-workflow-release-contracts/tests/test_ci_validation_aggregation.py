@@ -199,6 +199,132 @@ def _observed_input(
     return result
 
 
+def _release_observed_input_with_no_publish_result(
+    *,
+    extra_commands: list[object] | None = None,
+) -> tuple[Any, dict[str, object], dict[str, object], dict[str, object]]:
+    snapshot, selector_manifest, assignment = _specialized_context(
+        group=_artifact_work_group(),
+        evidence_expectation=_artifact_evidence_expectation(),
+        validation_obligations=[_artifact_validation_obligation()],
+        artifact_obligations=[_artifact_obligation()],
+    )
+    receipt = _receipt_for_context(
+        snapshot, selector_manifest, assignment, _release_receipt_evidence()
+    )
+    evidence = cast("dict[str, object]", receipt["evidence"])
+    category = cast("dict[str, object]", evidence["category-result"])
+    detail = cast("dict[str, object]", category["detail"])
+    artifact_results = cast(
+        "list[dict[str, object]]", detail["artifact-obligation-results"]
+    )
+    proof_digests: list[dict[str, object]] = []
+    for result in artifact_results:
+        artifact = cast("dict[str, object]", result["artifact"])
+        observed = cast("dict[str, object]", artifact["observed"])
+        for digest in cast("list[dict[str, object]]", observed["digests"]):
+            proof_digests.append(
+                {
+                    "artifact-ref": digest["artifact-ref"],
+                    "algorithm": digest["algorithm"],
+                    "digest": digest["digest"],
+                }
+            )
+    source_proof = {
+        "kind": "no-publish-validation-result",
+        "work-group-id": receipt["work-group-id"],
+        "coverage-target": receipt["coverage-target"],
+        "observed-commit-sha": cast(
+            "dict[str, object]", receipt["execution-tree"]
+        )["observed-commit-sha"],
+        "artifact-digests": sorted(
+            proof_digests, key=lambda item: str(item["artifact-ref"])
+        ),
+    }
+    detail["evidence-source"] = "no-publish-validation"
+    detail["source-proof"] = source_proof
+    source_command = {
+        "outcome": "success",
+        "evidence-source": "no-publish-validation",
+        "source-proof": source_proof,
+        "artifact-obligation-results": artifact_results,
+    }
+    validation_result: dict[str, object] = {
+        "outcome": "success",
+        "work-group-id": receipt["work-group-id"],
+        "kind": "release-shaped-artifact",
+        "coverage-target": receipt["coverage-target"],
+        "observed-commit-sha": cast(
+            "dict[str, object]", receipt["execution-tree"]
+        )["observed-commit-sha"],
+        "commands": [source_command, *(extra_commands or [])],
+    }
+    entry = _entry_for_assignment(receipt, assignment)
+    observed_input = _observed_input(entry, receipt)
+    observed_input["validation-result"] = validation_result
+    return snapshot, selector_manifest, entry, observed_input
+
+
+def _release_reused_receipt_chain_inputs() -> tuple[
+    Any,
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
+    snapshot, selector_manifest, prior_entry, prior_input = (
+        _release_observed_input_with_no_publish_result()
+    )
+    prior_receipt = cast("dict[str, object]", prior_input["receipt"])
+    current_receipt = deepcopy(prior_receipt)
+    current_receipt["receipt-id"] = "receipt-reused-001"
+    detail = cast(
+        "dict[str, object]",
+        cast(
+            "dict[str, object]",
+            cast("dict[str, object]", current_receipt["evidence"])[
+                "category-result"
+            ],
+        )["detail"],
+    )
+    detail["evidence-source"] = "reused-validation-receipt"
+    detail.pop("source-proof", None)
+    detail["reused-receipt"] = {
+        "artifact-ref": prior_entry["artifact-ref"],
+        "receipt-id": prior_entry["receipt-id"],
+        "receipt-content-digest": prior_entry["receipt-content-digest"],
+        "observed-commit-sha": cast(
+            "dict[str, object]", prior_receipt["execution-tree"]
+        )["observed-commit-sha"],
+    }
+    current_entry = _entry_for_assignment(
+        current_receipt,
+        cast(
+            "dict[str, object]",
+            cast("list[dict[str, object]]", selector_manifest["assignments"])[
+                0
+            ],
+        ),
+    )
+    current_entry["artifact-instance-id"] = "1002"
+    current_entry["observed-entry-id"] = ci_validation_observed_entry_id(
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        artifact_ref=cast("str", current_entry["artifact-ref"]),
+        artifact_instance_id="1002",
+    )
+    current_input = _observed_input(current_entry, current_receipt)
+    return (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    )
+
+
 def _manifest(
     entries: list[dict[str, object]],
 ) -> tuple[dict[str, object], object, dict[str, object]]:
@@ -918,6 +1044,685 @@ def test_aggregate_reports_required_evidence_failures() -> None:
     reason = cast("dict[str, object]", inadmissible["reason"])
     assert reason["inadmissible-receipt"] is True
     assert reason["required-evidence-missing"] is True
+
+
+def test_release_success_accepts_single_no_publish_source_command() -> None:
+    """Release success may be backed by one observed no-publish command."""
+    snapshot, selector_manifest, entry, observed_input = (
+        _release_observed_input_with_no_publish_result()
+    )
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[observed_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    artifact_result = next(
+        item
+        for item in cast(
+            "list[dict[str, object]]", aggregate["evidence-results"]
+        )
+        if item["work-group-id"] == ARTIFACT_WORK_GROUP_ID
+    )
+    assert artifact_result["outcome"] == "satisfied"
+    assert not any(
+        failure["work-group-id"] == ARTIFACT_WORK_GROUP_ID
+        for failure in cast("list[dict[str, object]]", aggregate["failures"])
+    )
+    validate_ci_validation_aggregate(
+        aggregate,
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[observed_input],
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+
+def test_release_success_accepts_same_work_group_reused_receipt_chain() -> None:
+    """A reused receipt may rely on an observed same-work-group prior."""
+    (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[prior_entry, current_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    artifact_result = next(
+        item
+        for item in cast(
+            "list[dict[str, object]]", aggregate["evidence-results"]
+        )
+        if item["work-group-id"] == ARTIFACT_WORK_GROUP_ID
+    )
+    assert artifact_result["outcome"] == "satisfied"
+    assert (
+        artifact_result["observed-entry-id"]
+        == current_entry["observed-entry-id"]
+    )
+    assert not any(
+        failure["kind"] == "blocking-validation-failure"
+        and failure["work-group-id"] == ARTIFACT_WORK_GROUP_ID
+        for failure in cast("list[dict[str, object]]", aggregate["failures"])
+    )
+    assert {
+        item["admissibility"]
+        for item in cast(
+            "list[dict[str, object]]", aggregate["observed-receipts"]
+        )
+    } == {"valid"}
+    validate_ci_validation_aggregate(
+        aggregate,
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input],
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+
+def test_release_success_rejects_reused_receipt_result_mismatch() -> None:
+    """A reused receipt cannot replace the source artifact results it reuses."""
+    (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    current_receipt = cast("dict[str, object]", current_input["receipt"])
+    detail = cast(
+        "dict[str, object]",
+        cast(
+            "dict[str, object]",
+            cast("dict[str, object]", current_receipt["evidence"])[
+                "category-result"
+            ],
+        )["detail"],
+    )
+    results = cast(
+        "list[dict[str, object]]", detail["artifact-obligation-results"]
+    )
+    artifact = cast("dict[str, object]", results[0]["artifact"])
+    observed = cast("dict[str, object]", artifact["observed"])
+    digest = cast("list[dict[str, object]]", observed["digests"])[0]
+    digest["digest"] = "e" * 64
+    raw_current = canonical_json_bytes(current_receipt)
+    current_input["raw-receipt-bytes"] = raw_current
+    current_entry["receipt-content-digest"] = (
+        ci_validation_receipt_content_digest(raw_current)
+    )
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[prior_entry, current_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    assert aggregate["verdict"] == "failed"
+    assert (
+        cast("dict[str, object]", aggregate["reason"])[
+            "blocking-validation-failure"
+        ]
+        is True
+    )
+
+
+def test_validation_accepts_duplicate_release_chain_bound_to_raw_bytes() -> (
+    None
+):
+    """Duplicate release summaries are accepted when raw receipt bytes bind."""
+    (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[prior_entry, current_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    validate_ci_validation_aggregate(
+        aggregate,
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input],
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+
+@pytest.mark.parametrize(
+    "bad_raw_bytes",
+    [b'{"not":"the receipt"}', b'{"not":'],
+)
+def test_validation_rejects_duplicate_release_chain_bad_raw_bytes(
+    bad_raw_bytes: bytes,
+) -> None:
+    """Duplicate release chain proof must bind to observed raw bytes."""
+    (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[prior_entry, current_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    tampered_current_input = deepcopy(current_input)
+    tampered_current_input["raw-receipt-bytes"] = bad_raw_bytes
+
+    with pytest.raises(ContractValidationError, match="duplicate valid"):
+        validate_ci_validation_aggregate(
+            aggregate,
+            plan=snapshot.plan,
+            receipt_manifest=manifest,
+            selector_assignments_manifest=selector_manifest,
+            observed_receipts=[prior_input, tampered_current_input],
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=snapshot.fact_snapshot,
+        )
+
+
+def test_release_success_accepts_multi_hop_same_work_group_reused_chain() -> (
+    None
+):
+    """A reused receipt may rely on another admissible reused receipt."""
+    (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    current_receipt = cast("dict[str, object]", current_input["receipt"])
+    latest_receipt = deepcopy(current_receipt)
+    latest_receipt["receipt-id"] = "receipt-reused-002"
+    detail = cast(
+        "dict[str, object]",
+        cast(
+            "dict[str, object]",
+            cast("dict[str, object]", latest_receipt["evidence"])[
+                "category-result"
+            ],
+        )["detail"],
+    )
+    detail["reused-receipt"] = {
+        "artifact-ref": current_entry["artifact-ref"],
+        "receipt-id": current_entry["receipt-id"],
+        "receipt-content-digest": current_entry["receipt-content-digest"],
+        "observed-commit-sha": cast(
+            "dict[str, object]", current_receipt["execution-tree"]
+        )["observed-commit-sha"],
+    }
+    latest_entry = _entry_for_assignment(
+        latest_receipt,
+        cast(
+            "dict[str, object]",
+            cast("list[dict[str, object]]", selector_manifest["assignments"])[
+                0
+            ],
+        ),
+    )
+    latest_entry["artifact-instance-id"] = "1003"
+    latest_entry["observed-entry-id"] = ci_validation_observed_entry_id(
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        artifact_ref=cast("str", latest_entry["artifact-ref"]),
+        artifact_instance_id="1003",
+    )
+    latest_input = _observed_input(latest_entry, latest_receipt)
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[prior_entry, current_entry, latest_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input, latest_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    artifact_result = next(
+        item
+        for item in cast(
+            "list[dict[str, object]]", aggregate["evidence-results"]
+        )
+        if item["work-group-id"] == ARTIFACT_WORK_GROUP_ID
+    )
+    assert artifact_result["outcome"] == "satisfied"
+    assert (
+        artifact_result["observed-entry-id"]
+        == latest_entry["observed-entry-id"]
+    )
+    assert {
+        item["admissibility"]
+        for item in cast(
+            "list[dict[str, object]]", aggregate["observed-receipts"]
+        )
+    } == {"valid"}
+    validate_ci_validation_aggregate(
+        aggregate,
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input, latest_input],
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+
+def test_aggregate_rejects_forged_current_reused_release_receipt() -> None:
+    """Satisfied reused release evidence must validate the current receipt."""
+    (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[prior_entry, current_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    forged_input = deepcopy(current_input)
+    forged_receipt = cast("dict[str, object]", forged_input["receipt"])
+    forged_validation_tree = cast(
+        "dict[str, object]", forged_receipt["validation-tree"]
+    )
+    forged_validation_tree["commit-sha"] = "f" * 40
+    forged_raw = canonical_json_bytes(forged_receipt)
+    forged_digest = ci_validation_receipt_content_digest(forged_raw)
+    forged_input["raw-receipt-bytes"] = forged_raw
+    forged_entry = cast("dict[str, object]", forged_input["manifest-entry"])
+    forged_entry["receipt-content-digest"] = forged_digest
+
+    forged_manifest = deepcopy(manifest)
+    for entry in cast("list[dict[str, object]]", forged_manifest["entries"]):
+        if entry["observed-entry-id"] == current_entry["observed-entry-id"]:
+            entry["receipt-content-digest"] = forged_digest
+    forged_aggregate = deepcopy(aggregate)
+    for observed in cast(
+        "list[dict[str, object]]", forged_aggregate["observed-receipts"]
+    ):
+        if observed["observed-entry-id"] == current_entry["observed-entry-id"]:
+            observed["receipt-content-digest"] = forged_digest
+    for result in cast(
+        "list[dict[str, object]]", forged_aggregate["evidence-results"]
+    ):
+        if result["observed-entry-id"] == current_entry["observed-entry-id"]:
+            result["receipt-content-digest"] = forged_digest
+    cast("dict[str, object]", forged_aggregate["receipt-manifest"])[
+        "content-digest"
+    ] = ci_validation_receipt_manifest_payload_digest(forged_manifest)
+
+    with pytest.raises(ContractValidationError, match="observed source proof"):
+        validate_ci_validation_aggregate(
+            forged_aggregate,
+            plan=snapshot.plan,
+            receipt_manifest=forged_manifest,
+            selector_assignments_manifest=selector_manifest,
+            observed_receipts=[prior_input, forged_input],
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=snapshot.fact_snapshot,
+        )
+
+
+def test_aggregate_rejects_duplicate_release_summaries_without_proof() -> None:
+    """Duplicate release summaries cannot self-assert chain linkage."""
+    (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[prior_entry, current_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    with pytest.raises(ContractValidationError, match="duplicate valid"):
+        validate_ci_validation_aggregate(
+            aggregate,
+            plan=snapshot.plan,
+            receipt_manifest=manifest,
+            selector_assignments_manifest=selector_manifest,
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=snapshot.fact_snapshot,
+        )
+
+
+def test_aggregate_rejects_forged_single_reused_release_summary() -> None:
+    """Reused release evidence cannot be satisfied without its source."""
+    (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[prior_entry, current_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[prior_input, current_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    current_entry_id = current_entry["observed-entry-id"]
+    aggregate["observed-receipts"] = [
+        item
+        for item in cast(
+            "list[dict[str, object]]", aggregate["observed-receipts"]
+        )
+        if item["observed-entry-id"] == current_entry_id
+    ]
+
+    with pytest.raises(ContractValidationError, match="observed source proof"):
+        validate_ci_validation_aggregate(
+            aggregate,
+            plan=snapshot.plan,
+            receipt_manifest=manifest,
+            selector_assignments_manifest=selector_manifest,
+            observed_receipts=[current_input],
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=snapshot.fact_snapshot,
+        )
+
+
+def test_release_success_rejects_same_work_group_duplicate_current_reuse() -> (
+    None
+):
+    """An extra current receipt for the same work group remains ambiguous."""
+    (
+        snapshot,
+        selector_manifest,
+        prior_entry,
+        prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    duplicate_receipt = deepcopy(
+        cast("dict[str, object]", current_input["receipt"])
+    )
+    duplicate_receipt["receipt-id"] = "receipt-reused-002"
+    duplicate_entry = deepcopy(current_entry)
+    duplicate_entry["receipt-id"] = duplicate_receipt["receipt-id"]
+    duplicate_entry["artifact-instance-id"] = "1003"
+    duplicate_entry["observed-entry-id"] = ci_validation_observed_entry_id(
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        artifact_ref=cast("str", duplicate_entry["artifact-ref"]),
+        artifact_instance_id="1003",
+    )
+    duplicate_entry["receipt-content-digest"] = (
+        ci_validation_receipt_content_digest(
+            canonical_json_bytes(duplicate_receipt)
+        )
+    )
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[prior_entry, current_entry, duplicate_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[
+            prior_input,
+            current_input,
+            _observed_input(duplicate_entry, duplicate_receipt),
+        ],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    assert aggregate["verdict"] == "failed"
+    assert (
+        cast("dict[str, object]", aggregate["reason"])["inadmissible-receipt"]
+        is True
+    )
+    assert any(
+        cast("dict[str, object]", failure["diagnostic"])["detail"]
+        == DiagnosticDetail.DUPLICATE_RECEIPT.value
+        for failure in cast("list[dict[str, object]]", aggregate["failures"])
+    )
+
+
+def test_release_success_rejects_self_asserted_reused_receipt_chain() -> None:
+    """A reused receipt link cannot prove itself."""
+    (
+        snapshot,
+        selector_manifest,
+        _prior_entry,
+        _prior_input,
+        current_entry,
+        current_input,
+    ) = _release_reused_receipt_chain_inputs()
+    current_receipt = cast("dict[str, object]", current_input["receipt"])
+    detail = cast(
+        "dict[str, object]",
+        cast(
+            "dict[str, object]",
+            cast("dict[str, object]", current_receipt["evidence"])[
+                "category-result"
+            ],
+        )["detail"],
+    )
+    reused = cast("dict[str, object]", detail["reused-receipt"])
+    reused["receipt-id"] = current_entry["receipt-id"]
+    reused["receipt-content-digest"] = current_entry["receipt-content-digest"]
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[current_entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[current_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    assert aggregate["verdict"] == "failed"
+    reason = cast("dict[str, object]", aggregate["reason"])
+    assert (
+        reason["blocking-validation-failure"] is True
+        or reason["inadmissible-receipt"] is True
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_command",
+    [
+        {
+            "outcome": "blocking-failure",
+            "evidence-source": "no-publish-validation",
+            "diagnostics": [],
+        },
+        {
+            "outcome": "success",
+            "evidence-source": "unsupported-sidecar-command",
+            "diagnostics": [],
+        },
+        {"outcome": "success"},
+        "malformed-command",
+    ],
+)
+def test_release_success_rejects_extra_no_publish_sidecar_commands(
+    extra_command: object,
+) -> None:
+    """Extra failed, unsupported, or malformed sidecar commands fail closed."""
+    snapshot, selector_manifest, entry, observed_input = (
+        _release_observed_input_with_no_publish_result(
+            extra_commands=[extra_command]
+        )
+    )
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[observed_input],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    reason = cast("dict[str, object]", aggregate["reason"])
+    assert aggregate["verdict"] == "failed"
+    assert reason["blocking-validation-failure"] is True
+    assert any(
+        failure["kind"] == "blocking-validation-failure"
+        and failure["work-group-id"] == ARTIFACT_WORK_GROUP_ID
+        for failure in cast("list[dict[str, object]]", aggregate["failures"])
+    )
+    validate_ci_validation_aggregate(
+        aggregate,
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
 
 
 def test_evidence_failure_kinds_reject_wrong_diagnostic_families() -> None:

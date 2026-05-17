@@ -307,8 +307,14 @@ jobs:
           MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
         run: |
           mkdir -p .three-ci-validation/work
+          observed_commit_sha="$(git rev-parse HEAD)"
           uv run python eng/scripts/workflow_release_control.py run-ci-validation-commands \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --observed-commit-sha "$observed_commit_sha" \
             --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
             --repo-root . \
             --result-out .three-ci-validation/work/validation-result.json \
@@ -344,7 +350,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.receipt.outputs.receipt_artifact_name }}
-          path: .three-ci-validation/work/receipt.json
+          path: |
+            .three-ci-validation/work/receipt.json
+            .three-ci-validation/work/validation-result.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
@@ -463,8 +471,14 @@ jobs:
           MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
         run: |
           mkdir -p .three-ci-validation/work
+          observed_commit_sha="$(git rev-parse HEAD)"
           uv run python eng/scripts/workflow_release_control.py run-ci-validation-commands \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --observed-commit-sha "$observed_commit_sha" \
             --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
             --repo-root . \
             --result-out .three-ci-validation/work/validation-result.json \
@@ -500,7 +514,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.receipt.outputs.receipt_artifact_name }}
-          path: .three-ci-validation/work/receipt.json
+          path: |
+            .three-ci-validation/work/receipt.json
+            .three-ci-validation/work/validation-result.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
@@ -620,8 +636,14 @@ jobs:
           MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
         run: |
           mkdir -p .three-ci-validation/work
+          observed_commit_sha="$(git rev-parse HEAD)"
           uv run python eng/scripts/workflow_release_control.py run-ci-validation-commands \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --observed-commit-sha "$observed_commit_sha" \
             --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
             --repo-root . \
             --result-out .three-ci-validation/work/validation-result.json \
@@ -657,7 +679,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.receipt.outputs.receipt_artifact_name }}
-          path: .three-ci-validation/work/receipt.json
+          path: |
+            .three-ci-validation/work/receipt.json
+            .three-ci-validation/work/validation-result.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
