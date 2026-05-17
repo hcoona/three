@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 import yaml
@@ -28,10 +28,17 @@ for _WORKSPACE_SRC in (
     _REPO_ROOT / "src/public/lib/three-workflow-release-contracts/src",
     _REPO_ROOT / "src/public/lib/three-workflow-release-planner/src",
     _REPO_ROOT / "src/public/lib/three-workflow-release-proof/src",
+    _REPO_ROOT / "src/public/lib/three-workflow-release-authoring/src",
 ):
     if _WORKSPACE_SRC.is_dir():
         sys.path.insert(0, str(_WORKSPACE_SRC))
 
+from three_workflow_release_authoring import (  # noqa: E402
+    CATALOG_PATH,
+    AuthoringValidationError,
+    validate_project_descriptor_document,
+    validate_target_catalog_document,
+)
 from three_workflow_release_contracts import (  # noqa: E402
     API_VERSIONS_BY_KIND,
     CiValidationKind,
@@ -127,6 +134,10 @@ def main() -> int:
     _add_write_ci_validation_request(subparsers)
     _add_ci_validation_artifact_refs(subparsers)
     _add_materialize_ci_work_groups(subparsers)
+    _add_check_ci_validation_dependencies(subparsers)
+    _add_validate_ci_validation_lightweight_policy(subparsers)
+    _add_validate_ci_validation_descriptors(subparsers)
+    _add_run_ci_validation_commands(subparsers)
     _add_write_ci_validation_receipt(subparsers)
     _add_write_ci_validation_writer_observation(subparsers)
     _add_aggregate_ci_evidence(subparsers)
@@ -279,7 +290,14 @@ def _add_aggregate_ci_evidence(
 def _add_write_ci_validation_receipt(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    parser = subparsers.add_parser("write-ci-validation-placeholder-receipt")
+    parser = subparsers.add_parser("write-ci-validation-receipt")
+    _add_ci_validation_receipt_args(parser)
+    parser.set_defaults(func=_cmd_write_ci_validation_receipt)
+
+
+def _add_ci_validation_receipt_args(
+    parser: argparse.ArgumentParser,
+) -> None:
     parser.add_argument("--plan", required=True)
     parser.add_argument("--changed-files-snapshot", default="")
     parser.add_argument("--fact-snapshot", default="")
@@ -290,10 +308,62 @@ def _add_write_ci_validation_receipt(
     parser.add_argument("--job", required=True)
     parser.add_argument("--observed-artifacts-dir", default="")
     parser.add_argument("--observed-commit-sha", required=True)
+    parser.add_argument("--validation-result", default="")
+    parser.add_argument(
+        "--validation-outcome",
+        choices=("success", "blocking-failure"),
+        default="blocking-failure",
+    )
     parser.add_argument("--created-at")
     parser.add_argument("--receipt-out", required=True)
     parser.add_argument("--github-output")
-    parser.set_defaults(func=_cmd_write_ci_validation_receipt)
+
+
+def _add_run_ci_validation_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("run-ci-validation-commands")
+    parser.add_argument("--plan", default="")
+    parser.add_argument("--matrix-work-group-json", required=True)
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--result-out", required=True)
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_run_ci_validation_commands)
+
+
+def _add_validate_ci_validation_lightweight_policy(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("validate-ci-validation-lightweight-policy")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--assignments", required=True)
+    parser.add_argument("--work-group-id", required=True)
+    parser.add_argument("--matrix-work-group-json", required=True)
+    parser.set_defaults(func=_cmd_validate_ci_validation_lightweight_policy)
+
+
+def _add_validate_ci_validation_descriptors(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("validate-ci-validation-descriptors")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--work-group-id", required=True)
+    parser.add_argument("--repo-root", default=".")
+    parser.set_defaults(func=_cmd_validate_ci_validation_descriptors)
+
+
+def _add_check_ci_validation_dependencies(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("check-ci-validation-dependencies")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--changed-files-snapshot", default="")
+    parser.add_argument("--fact-snapshot", default="")
+    parser.add_argument("--assignments", required=True)
+    parser.add_argument("--work-group-id", required=True)
+    parser.add_argument("--observed-artifacts-dir", default="")
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_check_ci_validation_dependencies)
 
 
 def _add_write_ci_validation_writer_observation(
@@ -789,6 +859,7 @@ def _cmd_materialize_ci_work_groups(args: argparse.Namespace) -> int:
     layer_by_work_group = _ci_work_group_dependency_layers(plan)
     matrix = [
         _ci_work_group_matrix_entry(
+            plan,
             group,
             dependency_layer=layer_by_work_group[str(group["work-group-id"])],
             writer_job=(
@@ -844,6 +915,460 @@ def _cmd_materialize_ci_work_groups(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_run_ci_validation_commands(args: argparse.Namespace) -> int:
+    matrix_work_group = _read_json_value(args.matrix_work_group_json)
+    if not isinstance(matrix_work_group, Mapping):
+        msg = "matrix work group must be a JSON object"
+        raise TypeError(msg)
+    plan = _read_optional_json(getattr(args, "plan", ""))
+    commands = matrix_work_group.get("validation-commands")
+    if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
+        commands = []
+    command_results: list[Json] = []
+    outcome: ReceiptOutcome = "success"
+    for index, command in enumerate(commands):
+        result = _ci_run_validation_command(
+            index=index,
+            command=command,
+            plan=plan,
+            matrix_work_group=matrix_work_group,
+            repo_root=Path(args.repo_root),
+        )
+        if result["outcome"] != "success":
+            outcome = "blocking-failure"
+        command_results.append(result)
+    if not commands:
+        outcome = "blocking-failure"
+        command_results.append(
+            {
+                "index": 0,
+                "label": "execution-mapping",
+                "argv": [],
+                "capability": None,
+                "exit-code": None,
+                "outcome": "blocking-failure",
+                "error": "no no-publish validation command is mapped",
+            }
+        )
+    result = {
+        "work-group-id": matrix_work_group.get("work-group-id"),
+        "kind": matrix_work_group.get("kind"),
+        "runner-family": matrix_work_group.get("runner-family"),
+        "outcome": outcome,
+        "commands": command_results,
+    }
+    _write_json(Path(args.result_out), result)
+    _write_outputs(
+        args.github_output,
+        {
+            "validation_outcome": outcome,
+            "validation_command_count": str(len(command_results)),
+        },
+    )
+    return 0
+
+
+def _cmd_check_ci_validation_dependencies(args: argparse.Namespace) -> int:
+    plan = _read_json(Path(args.plan))
+    assignments = _read_json(Path(args.assignments))
+    changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
+    fact_snapshot = _read_optional_json(args.fact_snapshot)
+    dependency_blocked = _ci_dependency_blocked(
+        plan=plan,
+        assignments=assignments,
+        work_group_id=args.work_group_id,
+        observed_artifacts_dir=getattr(args, "observed_artifacts_dir", ""),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    _write_outputs(
+        args.github_output,
+        {"dependency_blocked": _bool_str(dependency_blocked)},
+    )
+    return 0
+
+
+def _cmd_validate_ci_validation_lightweight_policy(
+    args: argparse.Namespace,
+) -> int:
+    try:
+        plan = _read_json(Path(args.plan))
+        assignments = _read_json(Path(args.assignments))
+        matrix_work_group = _read_json_value(args.matrix_work_group_json)
+        _require_mapping(matrix_work_group, "matrix work group")
+        _validate_ci_validation_lightweight_policy(
+            plan=plan,
+            assignments=assignments,
+            work_group_id=args.work_group_id,
+            matrix_work_group=cast("Mapping[str, object]", matrix_work_group),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+def _cmd_validate_ci_validation_descriptors(args: argparse.Namespace) -> int:
+    try:
+        plan = _read_json(Path(args.plan))
+        _validate_scoped_descriptor_obligations(
+            plan=plan,
+            work_group_id=args.work_group_id,
+            repo_root=Path(args.repo_root),
+        )
+    except (
+        AuthoringValidationError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        yaml.YAMLError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+def _ci_run_validation_command(
+    *,
+    index: int,
+    command: object,
+    plan: Json | None,
+    matrix_work_group: Mapping[str, object],
+    repo_root: Path,
+) -> Json:
+    if not isinstance(command, Mapping):
+        return _ci_validation_command_failure(
+            index,
+            f"command-{index}",
+            "command entry is not an object",
+        )
+    label = str(command.get("label") or f"command-{index}")
+    capability = command.get("capability")
+    capability_value = str(capability) if isinstance(capability, str) else None
+    builtin = command.get("builtin")
+    if isinstance(builtin, str):
+        return _ci_run_builtin_validation_command(
+            index=index,
+            label=label,
+            capability=capability_value,
+            builtin=builtin,
+            plan=plan,
+            matrix_work_group=matrix_work_group,
+        )
+    argv = command.get("argv")
+    if not isinstance(argv, Sequence) or isinstance(argv, str | bytes):
+        return _ci_validation_command_failure(
+            index,
+            label,
+            "command argv is not an array",
+            capability=capability_value,
+        )
+    argv_list = [str(item) for item in argv]
+    try:
+        completed = subprocess.run(argv_list, cwd=repo_root, check=False)
+        returncode: int | None = completed.returncode
+        error = None
+    except OSError as exc:
+        returncode = None
+        error = str(exc)
+    command_outcome: ReceiptOutcome = (
+        "success" if returncode == 0 else "blocking-failure"
+    )
+    result = {
+        "index": index,
+        "label": label,
+        "argv": argv_list,
+        "capability": capability_value,
+        "exit-code": returncode,
+        "outcome": command_outcome,
+    }
+    if error is not None:
+        result["error"] = error
+    return result
+
+
+def _ci_validation_command_failure(
+    index: int,
+    label: str,
+    error: str,
+    *,
+    capability: str | None = None,
+) -> Json:
+    return {
+        "index": index,
+        "label": label,
+        "argv": [],
+        "capability": capability,
+        "exit-code": None,
+        "outcome": "blocking-failure",
+        "error": error,
+    }
+
+
+def _ci_run_builtin_validation_command(
+    *,
+    index: int,
+    label: str,
+    capability: str | None,
+    builtin: str,
+    plan: Json | None,
+    matrix_work_group: Mapping[str, object],
+) -> Json:
+    try:
+        command_outcome, error = _ci_builtin_validation_command_outcome(
+            builtin=builtin,
+            plan=plan,
+            matrix_work_group=matrix_work_group,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        command_outcome = "blocking-failure"
+        error = str(exc)
+    result = {
+        "index": index,
+        "label": label,
+        "argv": [],
+        "capability": capability,
+        "builtin": builtin,
+        "exit-code": 0 if command_outcome == "success" else 1,
+        "outcome": command_outcome,
+    }
+    if error is not None:
+        result["error"] = error
+    return result
+
+
+def _ci_builtin_validation_command_outcome(
+    *,
+    builtin: str,
+    plan: Json | None,
+    matrix_work_group: Mapping[str, object],
+) -> tuple[ReceiptOutcome, str | None]:
+    target, subcheck_ids = _ci_builtin_validation_context(
+        plan, matrix_work_group
+    )
+    if builtin == "lightweight-preflight":
+        return _ci_lightweight_builtin_outcome(
+            matrix_work_group, target, subcheck_ids
+        )
+    if builtin == "workflow-release-tooling":
+        return _ci_tooling_builtin_outcome(
+            matrix_work_group, target, subcheck_ids
+        )
+    return "blocking-failure", f"unknown builtin validation command: {builtin}"
+
+
+def _ci_builtin_validation_context(
+    plan: Json | None,
+    matrix_work_group: Mapping[str, object],
+) -> tuple[Mapping[str, object], set[str]]:
+    if not isinstance(plan, Mapping):
+        msg = "frozen validation plan is required"
+        raise TypeError(msg)
+    work_group_id = matrix_work_group.get("work-group-id")
+    if not isinstance(work_group_id, str) or not work_group_id:
+        msg = "matrix work group id is required"
+        raise ValueError(msg)
+    target = matrix_work_group.get("coverage-target")
+    if not isinstance(target, Mapping):
+        msg = "matrix coverage target is required"
+        raise TypeError(msg)
+    expectation = _ci_evidence_expectation(plan, work_group_id)
+    profile = _ci_detail_profile(plan, str(expectation["detail-profile"]))
+    subchecks = profile.get("required-subchecks")
+    subcheck_ids = {
+        str(item.get("subcheck-id"))
+        for item in subchecks
+        if isinstance(item, Mapping)
+        and isinstance(item.get("subcheck-id"), str)
+    }
+    return target, subcheck_ids
+
+
+def _ci_lightweight_builtin_outcome(
+    matrix_work_group: Mapping[str, object],
+    target: Mapping[str, object],
+    subcheck_ids: set[str],
+) -> tuple[ReceiptOutcome, str | None]:
+    if matrix_work_group.get("kind") != "lightweight-preflight":
+        return "blocking-failure", "work group is not lightweight preflight"
+    if target != {"type": "lightweight-policy", "id": "known-non-impacting"}:
+        return "blocking-failure", "unexpected lightweight coverage target"
+    if "known-non-impacting-policy" not in subcheck_ids:
+        return (
+            "blocking-failure",
+            "lightweight detail profile lacks policy subcheck",
+        )
+    return "success", None
+
+
+def _validate_ci_validation_lightweight_policy(
+    *,
+    plan: Mapping[str, object],
+    assignments: Mapping[str, object],
+    work_group_id: str,
+    matrix_work_group: Mapping[str, object],
+) -> None:
+    group = _ci_work_group(plan, work_group_id)
+    if group.get("kind") != "lightweight-preflight":
+        msg = "work group is not lightweight preflight"
+        raise ValueError(msg)
+    _validate_lightweight_matrix_scope(
+        work_group_id=work_group_id,
+        group=group,
+        matrix_work_group=matrix_work_group,
+    )
+    _validate_lightweight_plan_policy(plan, work_group_id, group)
+    assignment = _ci_assignment_for_work_group(assignments, work_group_id)
+    _validate_lightweight_assignment_policy(assignment)
+    if _ci_work_group_dependency_layers(plan).get(work_group_id, -1) != 0:
+        msg = "lightweight preflight must run in the initial validation layer"
+        raise ValueError(msg)
+
+
+def _validate_lightweight_matrix_scope(
+    *,
+    work_group_id: str,
+    group: Mapping[str, object],
+    matrix_work_group: Mapping[str, object],
+) -> None:
+    if matrix_work_group.get("work-group-id") != work_group_id:
+        msg = "matrix work group id does not match scoped work group"
+        raise ValueError(msg)
+    if matrix_work_group.get("no-publish") is not True:
+        msg = "lightweight execution context must be no-publish"
+        raise ValueError(msg)
+    for field in ("kind", "runner-family", "coverage-target"):
+        if matrix_work_group.get(field) != group.get(field):
+            msg = f"matrix work group {field} does not match frozen plan"
+            raise ValueError(msg)
+
+
+def _validate_lightweight_plan_policy(
+    plan: Mapping[str, object],
+    work_group_id: str,
+    group: Mapping[str, object],
+) -> None:
+    target = group.get("coverage-target")
+    if target != {"type": "lightweight-policy", "id": "known-non-impacting"}:
+        msg = "unexpected lightweight coverage target"
+        raise ValueError(msg)
+    expectation = _ci_evidence_expectation(plan, work_group_id)
+    if expectation.get("expected-outcome", "success") != "success":
+        msg = "lightweight preflight must expect a successful policy receipt"
+        raise ValueError(msg)
+    profile = _ci_detail_profile(plan, str(expectation["detail-profile"]))
+    subcheck_ids = _ci_detail_profile_required_subcheck_ids(profile)
+    if "known-non-impacting-policy" not in subcheck_ids:
+        msg = "lightweight detail profile lacks policy subcheck"
+        raise ValueError(msg)
+
+
+def _validate_lightweight_assignment_policy(
+    assignment: Mapping[str, object],
+) -> None:
+    if assignment.get("expected-outcome", "success") != "success":
+        msg = "lightweight assignment must expect a successful receipt"
+        raise ValueError(msg)
+    for field in ("receipt-artifact-ref", "writer-observation-ref"):
+        if not isinstance(assignment.get(field), str) or not assignment[field]:
+            msg = f"lightweight assignment is missing {field}"
+            raise ValueError(msg)
+    trusted_writer = assignment.get("trusted-writer-id")
+    if not isinstance(trusted_writer, str) or not trusted_writer:
+        msg = "lightweight assignment is missing trusted writer identity"
+        raise ValueError(msg)
+
+
+def _ci_detail_profile_required_subcheck_ids(
+    profile: Mapping[str, object],
+) -> set[str]:
+    subchecks = profile.get("required-subchecks")
+    if not isinstance(subchecks, Sequence) or isinstance(
+        subchecks, str | bytes
+    ):
+        return set()
+    return {
+        str(item.get("subcheck-id"))
+        for item in subchecks
+        if isinstance(item, Mapping)
+        and isinstance(item.get("subcheck-id"), str)
+    }
+
+
+def _validate_scoped_descriptor_obligations(
+    *,
+    plan: Mapping[str, object],
+    work_group_id: str,
+    repo_root: Path,
+) -> None:
+    group = _ci_work_group(plan, work_group_id)
+    if group.get("kind") != "descriptor-validation":
+        msg = "work group is not descriptor validation"
+        raise ValueError(msg)
+    obligations = _ci_plan_records_for_work_group(
+        plan, "descriptor-obligations", work_group_id
+    )
+    if not obligations:
+        msg = "descriptor validation work group has no scoped obligations"
+        raise ValueError(msg)
+    descriptor_paths = sorted(
+        {
+            _ci_descriptor_obligation_path(obligation)
+            for obligation in obligations
+        }
+    )
+    validate_target_catalog_document(
+        _read_yaml(repo_root / CATALOG_PATH),
+        catalog_path=CATALOG_PATH,
+    )
+    tracked_files = _scoped_authoring_tracked_files(repo_root, descriptor_paths)
+    for descriptor_path in descriptor_paths:
+        validate_project_descriptor_document(
+            descriptor_path,
+            _read_yaml(repo_root / descriptor_path),
+            tracked_files=tracked_files,
+        )
+
+
+def _read_yaml(path: Path) -> object:
+    with path.open("r", encoding="utf-8") as stream:
+        return yaml.safe_load(stream)
+
+
+def _scoped_authoring_tracked_files(
+    repo_root: Path,
+    descriptor_paths: Sequence[str],
+) -> set[str]:
+    tracked: set[str] = {CATALOG_PATH}
+    for descriptor_path in descriptor_paths:
+        tracked.add(descriptor_path)
+        descriptor_parent = PurePosixPath(descriptor_path).parent
+        root = repo_root / descriptor_parent
+        if root.is_dir():
+            for path in root.rglob("*"):
+                if path.is_file():
+                    tracked.add(path.relative_to(repo_root).as_posix())
+    return tracked
+
+
+def _ci_tooling_builtin_outcome(
+    matrix_work_group: Mapping[str, object],
+    target: Mapping[str, object],
+    subcheck_ids: set[str],
+) -> tuple[ReceiptOutcome, str | None]:
+    if matrix_work_group.get("kind") != "workflow-release-tooling":
+        return "blocking-failure", "work group is not tooling validation"
+    if target.get("type") != "tooling-surface":
+        return "blocking-failure", "unexpected tooling coverage target"
+    if "tooling-contract" not in subcheck_ids:
+        return (
+            "blocking-failure",
+            "tooling detail profile lacks contract subcheck",
+        )
+    return "success", None
+
+
 def _cmd_write_ci_validation_receipt(args: argparse.Namespace) -> int:
     plan = _read_json(Path(args.plan))
     assignments = _read_json(Path(args.assignments))
@@ -861,6 +1386,12 @@ def _cmd_write_ci_validation_receipt(args: argparse.Namespace) -> int:
             "observed workflow matrix writer identity does not match assignment"
         )
         raise RuntimeError(msg)
+    try:
+        validation_result = _read_optional_json(
+            getattr(args, "validation_result", "")
+        )
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        validation_result = None
     dependency_blocked = _ci_dependency_blocked(
         plan=plan,
         assignments=assignments,
@@ -869,10 +1400,16 @@ def _cmd_write_ci_validation_receipt(args: argparse.Namespace) -> int:
         changed_files_snapshot=changed_files_snapshot,
         fact_snapshot=fact_snapshot,
     )
-    outcome = _ci_placeholder_outcome(
+    outcome = _ci_validation_outcome(
         plan,
         args.work_group_id,
         dependency_blocked=dependency_blocked,
+        validation_result=validation_result,
+    )
+    diagnostics = _ci_validation_diagnostics(
+        plan,
+        args.work_group_id,
+        outcome=outcome,
     )
     receipt = freeze_ci_validation_receipt(
         plan=plan,
@@ -882,15 +1419,15 @@ def _cmd_write_ci_validation_receipt(args: argparse.Namespace) -> int:
         created_at=args.created_at or _utc_now(),
         execution_observed_commit_sha=args.observed_commit_sha,
         outcome=outcome,
-        evidence=_ci_placeholder_evidence(
+        evidence=_ci_validation_evidence(
             plan,
             args.work_group_id,
             outcome=outcome,
+            diagnostics=diagnostics,
+            validation_result=validation_result,
             fact_snapshot=fact_snapshot,
         ),
-        diagnostics=[
-            _ci_validation_placeholder_diagnostic(args.work_group_id, outcome),
-        ],
+        diagnostics=diagnostics,
         changed_files_snapshot=changed_files_snapshot,
         fact_snapshot=fact_snapshot,
     )
@@ -3868,22 +4405,373 @@ def _executable_ci_work_group_ids(plan: Mapping[str, object]) -> list[str]:
 
 
 def _ci_work_group_matrix_entry(
+    plan: Mapping[str, object],
     group: Mapping[str, Any],
     *,
     dependency_layer: int,
     writer_job: str,
 ) -> Json:
+    runner_family = str(group["runner-family"])
     return {
         "work-group-id": str(group["work-group-id"]),
         "kind": str(group.get("kind")),
-        "runner": str(group.get("runner-family", "ubuntu")),
+        "runner-family": runner_family,
+        "runner": runner_family,
+        "ecosystem": group.get("ecosystem"),
+        "coverage-target": group.get("coverage-target"),
+        "selector-variant": group.get("selector-variant"),
         "depends-on": [
             str(item)
             for item in cast("Sequence[object]", group.get("depends-on", []))
         ],
         "dependency-layer": dependency_layer,
         "writer-job": writer_job,
-        "placeholder": True,
+        "validation-commands": _ci_validation_commands(plan, group),
+        "no-publish": True,
+    }
+
+
+def _ci_validation_commands(
+    plan: Mapping[str, object],
+    group: Mapping[str, Any],
+) -> list[Json]:
+    kind = str(group.get("kind"))
+    if kind == "ecosystem-gate":
+        return _ci_ecosystem_validation_commands(plan, group)
+    if kind == "descriptor-validation":
+        return [
+            _ci_command(
+                "validate scoped workflow-release descriptors",
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    "eng/scripts/workflow_release_control.py",
+                    "validate-ci-validation-descriptors",
+                    "--plan",
+                    ".three-ci-validation/plan/validation-plan.json",
+                    "--work-group-id",
+                    str(group.get("work-group-id")),
+                    "--repo-root",
+                    ".",
+                ],
+            )
+        ]
+    if kind == "lightweight-preflight":
+        matrix_work_group = _ci_work_group_matrix_command_context(group)
+        return [
+            _ci_command(
+                "validate lightweight preflight policy",
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    "eng/scripts/workflow_release_control.py",
+                    "validate-ci-validation-lightweight-policy",
+                    "--plan",
+                    ".three-ci-validation/plan/validation-plan.json",
+                    "--assignments",
+                    ".three-ci-validation/materialize/selector-assignments.json",
+                    "--work-group-id",
+                    str(group.get("work-group-id")),
+                    "--matrix-work-group-json",
+                    json.dumps(
+                        matrix_work_group,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                ],
+            )
+        ]
+    if kind == "workflow-release-tooling":
+        return _ci_workflow_release_tooling_validation_commands(group)
+    return []
+
+
+def _ci_work_group_matrix_command_context(group: Mapping[str, Any]) -> Json:
+    return {
+        "work-group-id": str(group.get("work-group-id")),
+        "kind": str(group.get("kind")),
+        "runner-family": group.get("runner-family"),
+        "coverage-target": group.get("coverage-target"),
+        "no-publish": True,
+    }
+
+
+def _ci_ecosystem_validation_commands(
+    plan: Mapping[str, object],
+    group: Mapping[str, Any],
+) -> list[Json]:
+    ecosystem = str(group.get("ecosystem"))
+    root = _ci_work_group_subject_root(plan, group)
+    expectation = cast(
+        "Mapping[str, object]",
+        group.get("expected-evidence", {}),
+    )
+    capabilities = [
+        str(item)
+        for item in cast(
+            "Sequence[object]",
+            expectation.get("planned-capabilities", []),
+        )
+    ]
+    if ecosystem == "dotnet":
+        return _ci_dotnet_validation_commands(root, capabilities)
+    if ecosystem == "python":
+        return _ci_python_validation_commands(root, capabilities)
+    if ecosystem in {"javascript", "typescript"}:
+        return _ci_javascript_validation_commands(root, capabilities)
+    return []
+
+
+def _ci_dotnet_validation_commands(
+    root: str,
+    capabilities: Sequence[str],
+) -> list[Json]:
+    target = root if root != "." else "dirs.proj"
+    commands: list[Json] = []
+    if "build" in capabilities:
+        commands.append(
+            _ci_command(
+                "dotnet build",
+                ["dotnet", "build", target],
+                capability="build",
+            )
+        )
+    if "test" in capabilities:
+        dotnet_test_argv = [
+            "dotnet",
+            "test",
+            target,
+        ]
+        if "build" in capabilities:
+            dotnet_test_argv.extend(["--no-restore", "--no-build"])
+        commands.append(
+            _ci_command(
+                "dotnet test",
+                dotnet_test_argv,
+                capability="test",
+            )
+        )
+    if "type-check" in capabilities:
+        commands.append(
+            _ci_command(
+                "dotnet type check",
+                ["dotnet", "build", target],
+                capability="type-check",
+            )
+        )
+    if "format" in capabilities:
+        commands.append(
+            _ci_command(
+                "dotnet format check",
+                ["dotnet", "format", target, "--verify-no-changes"],
+                capability="format",
+            )
+        )
+    return commands
+
+
+def _ci_python_validation_commands(
+    root: str,
+    capabilities: Sequence[str],
+) -> list[Json]:
+    commands: list[Json] = []
+    if "build" in capabilities:
+        commands.append(
+            _ci_command(
+                "python build",
+                [
+                    "uv",
+                    "build",
+                    "--out-dir",
+                    ".three-ci-validation/work/validation-build",
+                    root,
+                ],
+                capability="build",
+            )
+        )
+    if "test" in capabilities:
+        commands.append(
+            _ci_command(
+                "python tests",
+                ["uv", "run", "pytest", root],
+                capability="test",
+            )
+        )
+    if "lint" in capabilities:
+        commands.append(
+            _ci_command(
+                "python lint",
+                ["uv", "run", "ruff", "check", "--force-exclude", root],
+                capability="lint",
+            )
+        )
+    if "format" in capabilities:
+        commands.append(
+            _ci_command(
+                "python format check",
+                [
+                    "uv",
+                    "run",
+                    "ruff",
+                    "format",
+                    "--quiet",
+                    "--force-exclude",
+                    "--check",
+                    root,
+                ],
+                capability="format",
+            )
+        )
+    if "type-check" in capabilities:
+        commands.append(
+            _ci_command(
+                "python type check",
+                ["uv", "run", "pyrefly", "check", root],
+                capability="type-check",
+            )
+        )
+    return commands
+
+
+def _ci_javascript_validation_commands(
+    root: str,
+    capabilities: Sequence[str],
+) -> list[Json]:
+    script_by_capability = {
+        "build": "build",
+        "test": "test",
+        "lint": "lint",
+        "type-check": "typecheck",
+    }
+    commands = [
+        _ci_command(
+            "javascript-typescript install",
+            ["pnpm", "install", "--frozen-lockfile"],
+        )
+    ]
+    commands.extend(
+        _ci_command(
+            f"javascript-typescript {script}",
+            ["pnpm", "--dir", root, "run", script],
+            capability=capability,
+        )
+        for capability, script in script_by_capability.items()
+        if capability in capabilities
+    )
+    if "format" in capabilities:
+        commands.append(
+            _ci_command(
+                "javascript-typescript format check",
+                [
+                    "pnpm",
+                    "--dir",
+                    root,
+                    "exec",
+                    "biome",
+                    "format",
+                    "--check",
+                    ".",
+                ],
+                capability="format",
+            )
+        )
+    return commands
+
+
+def _ci_workflow_release_tooling_validation_commands(
+    group: Mapping[str, Any],
+) -> list[Json]:
+    target = group.get("coverage-target")
+    surface = ""
+    if isinstance(target, Mapping) and target.get("type") == "tooling-surface":
+        surface = str(target.get("id") or "")
+    path_by_surface = {
+        "planner": "src/public/lib/three-workflow-release-planner",
+        "classifier": "src/public/lib/three-workflow-release-planner",
+        "fact-provider": "src/public/lib/three-workflow-release-planner",
+        "descriptor-contract": "src/public/lib/three-workflow-release-contracts",
+        "workflow-release-contract": "src/public/lib/three-workflow-release-contracts",
+        "authoring-validation": "src/public/lib/three-workflow-release-authoring",
+        "target-catalog": "src/public/lib/three-workflow-release-planner",
+        "build-execution": "src/public/lib/three-workflow-release-build",
+        "publish-execution": "src/public/lib/three-workflow-release-publish",
+        "smoke-validation": "tests/test_workflow_release_control.py",
+        "descriptor-schema-documentation": (
+            "src/public/lib/three-workflow-release-authoring"
+        ),
+    }
+    if surface == "workflow-orchestration":
+        return [
+            _ci_command(
+                "workflow-release orchestration tests",
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    "-m",
+                    "pytest",
+                    "tests/test_workflow_release_control.py",
+                    "-q",
+                ],
+            )
+        ]
+    path = path_by_surface.get(surface)
+    if path is None:
+        return [
+            _ci_builtin_command(
+                "validate workflow-release tooling surface",
+                "workflow-release-tooling",
+            )
+        ]
+    return [
+        _ci_command(
+            f"workflow-release {surface} tooling lint",
+            ["uv", "run", "ruff", "check", "--force-exclude", path],
+        )
+    ]
+
+
+def _ci_work_group_subject_root(
+    plan: Mapping[str, object],
+    group: Mapping[str, Any],
+) -> str:
+    target = group.get("coverage-target")
+    subject_id = None
+    if isinstance(target, Mapping) and target.get("type") == "subject":
+        subject_id = target.get("id")
+    subjects = plan.get("subjects")
+    if isinstance(subjects, Sequence) and not isinstance(subjects, str | bytes):
+        for subject in subjects:
+            if (
+                isinstance(subject, Mapping)
+                and subject.get("subject-id") == subject_id
+                and isinstance(subject.get("root"), str)
+            ):
+                return str(subject["root"])
+    return "."
+
+
+def _ci_command(
+    label: str,
+    argv: Sequence[str],
+    *,
+    capability: str | None = None,
+) -> Json:
+    return {
+        "label": label,
+        "argv": [str(item) for item in argv],
+        "capability": capability,
+    }
+
+
+def _ci_builtin_command(label: str, builtin: str) -> Json:
+    return {
+        "label": label,
+        "argv": [],
+        "builtin": builtin,
+        "capability": None,
     }
 
 
@@ -3910,8 +4798,7 @@ def _ci_work_group_dependency_layers(
             if str(item) in groups
         ]
         value = (
-            max(layer(dependency, visiting) for dependency in dependencies)
-            + 1
+            max(layer(dependency, visiting) for dependency in dependencies) + 1
             if dependencies
             else 0
         )
@@ -3924,7 +4811,9 @@ def _ci_work_group_dependency_layers(
     return layers
 
 
-def _ci_work_group_matrix_layers(matrix: Sequence[Mapping[str, object]]) -> list[list[Json]]:
+def _ci_work_group_matrix_layers(
+    matrix: Sequence[Mapping[str, object]],
+) -> list[list[Json]]:
     layer_count = (
         max(int(item["dependency-layer"]) for item in matrix) + 1
         if matrix
@@ -4016,18 +4905,32 @@ def _read_json_value(value: str) -> object:
     return json.loads(value)
 
 
-def _ci_validation_placeholder_diagnostic(
+def _ci_validation_diagnostics(
+    plan: Mapping[str, object],
+    work_group_id: str,
+    *,
+    outcome: str,
+) -> list[Json]:
+    if outcome == "success":
+        return []
+    return [_ci_validation_diagnostic(plan, work_group_id, outcome)]
+
+
+def _ci_validation_diagnostic(
+    plan: Mapping[str, object],
     work_group_id: str,
     outcome: str,
 ) -> Json:
     if outcome == "blocking-failure":
+        group = _ci_work_group(plan, work_group_id)
+        kind = str(group.get("kind") or "validation-work")
         return ci_validation_diagnostic(
-            diagnostic_id=f"validation-work-failed/{work_group_id}/placeholder",
+            diagnostic_id=f"validation-work-failed/{work_group_id}/execution",
             code=DiagnosticFamily.VALIDATION_WORK_FAILED.value,
             detail=DiagnosticDetail.TOOLING.value,
             message=(
-                "Validation executor plumbing emitted an explicit placeholder "
-                "failure; real ecosystem validation is not implemented yet."
+                f"No-publish CI validation execution for {kind} did not "
+                "complete successfully."
             ),
             source_type="work-group",
             source_id=work_group_id,
@@ -4035,12 +4938,12 @@ def _ci_validation_placeholder_diagnostic(
             verdict_effect=DiagnosticVerdictEffect.FAILED.value,
         )
     return ci_validation_diagnostic(
-        diagnostic_id=f"validation-work-skipped/{work_group_id}/placeholder",
+        diagnostic_id=f"validation-work-skipped/{work_group_id}/dependency",
         code=DiagnosticFamily.VALIDATION_WORK_SKIPPED.value,
         detail=DiagnosticDetail.DEPENDENCY_BLOCKED.value,
         message=(
-            "Validation executor plumbing emitted an explicit placeholder "
-            "receipt; real ecosystem validation is not implemented yet."
+            "No-publish CI validation execution was skipped because a planned "
+            "prerequisite work group did not produce a successful receipt."
         ),
         source_type="work-group",
         source_id=work_group_id,
@@ -4049,27 +4952,129 @@ def _ci_validation_placeholder_diagnostic(
     )
 
 
-def _ci_placeholder_outcome(
+def _ci_capability_failure_diagnostic(
+    work_group_id: str,
+    capability: str,
+) -> Json:
+    detail_by_capability = {
+        "build": DiagnosticDetail.BUILD.value,
+        "test": DiagnosticDetail.TEST.value,
+        "lint": DiagnosticDetail.LINT.value,
+        "format": DiagnosticDetail.FORMAT.value,
+        "type-check": DiagnosticDetail.TYPE_CHECK.value,
+    }
+    return ci_validation_diagnostic(
+        diagnostic_id=(
+            f"validation-work-failed/{work_group_id}/capability/{capability}"
+        ),
+        code=DiagnosticFamily.VALIDATION_WORK_FAILED.value,
+        detail=detail_by_capability.get(
+            capability, DiagnosticDetail.TOOLING.value
+        ),
+        message=(
+            f"No-publish CI validation command for planned capability "
+            f"{capability!r} did not complete successfully."
+        ),
+        source_type="work-group",
+        source_id=work_group_id,
+        severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+        verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+    )
+
+
+def _ci_validation_outcome(
     plan: Mapping[str, object],
     work_group_id: str,
     *,
     dependency_blocked: bool,
+    validation_result: Mapping[str, object] | None,
 ) -> ReceiptOutcome:
     if dependency_blocked:
         return "skipped"
+    if (
+        _ci_work_group(plan, work_group_id).get("kind")
+        == "release-shaped-artifact"
+    ):
+        return "blocking-failure"
+    if (
+        validation_result is not None
+        and _ci_validation_result_has_success_evidence(
+            plan,
+            work_group_id,
+            validation_result,
+        )
+    ):
+        return "success"
     return "blocking-failure"
 
 
-def _ci_placeholder_evidence(
+def _ci_validation_result_has_success_evidence(
+    plan: Mapping[str, object],
+    work_group_id: str,
+    validation_result: Mapping[str, object],
+) -> bool:
+    if validation_result.get("outcome") != "success" or not (
+        _ci_validation_result_identity_matches(
+            plan,
+            work_group_id,
+            validation_result,
+        )
+    ):
+        return False
+    commands = validation_result.get("commands")
+    if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
+        return False
+    command_mappings = [
+        command for command in commands if isinstance(command, Mapping)
+    ]
+    if not command_mappings:
+        return False
+    expectation = _ci_evidence_expectation(plan, work_group_id)
+    planned_capabilities = expectation.get("planned-capabilities")
+    if isinstance(planned_capabilities, Sequence) and not isinstance(
+        planned_capabilities, str | bytes
+    ):
+        commands_by_capability = _ci_command_results_by_capability(
+            validation_result,
+        )
+        return all(
+            commands_by_capability.get(str(capability))
+            and all(
+                command.get("outcome") == "success"
+                for command in commands_by_capability[str(capability)]
+            )
+            for capability in planned_capabilities
+        )
+    return all(
+        command.get("outcome") == "success" for command in command_mappings
+    )
+
+
+def _ci_validation_result_identity_matches(
+    plan: Mapping[str, object],
+    work_group_id: str,
+    validation_result: Mapping[str, object],
+) -> bool:
+    planned_work_group = _ci_work_group(plan, work_group_id)
+    return (
+        validation_result.get("work-group-id") == work_group_id
+        and validation_result.get("kind") == planned_work_group.get("kind")
+        and validation_result.get("runner-family")
+        == planned_work_group.get("runner-family")
+    )
+
+
+def _ci_validation_evidence(
     plan: Mapping[str, object],
     work_group_id: str,
     *,
     outcome: str,
-    fact_snapshot: Mapping[str, object] | None,
+    diagnostics: Sequence[Mapping[str, object]],
+    validation_result: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
 ) -> Json:
     expectation = _ci_evidence_expectation(plan, work_group_id)
     category = str(expectation["category"])
-    diagnostic = _ci_validation_placeholder_diagnostic(work_group_id, outcome)
     if isinstance(expectation.get("planned-capabilities"), Sequence):
         capabilities = [
             str(item)
@@ -4078,27 +5083,27 @@ def _ci_placeholder_evidence(
                 expectation["planned-capabilities"],
             )
         ]
+        capability_results = _ci_capability_results(
+            work_group_id=work_group_id,
+            capabilities=capabilities,
+            outcome=outcome,
+            diagnostics=diagnostics,
+            validation_result=validation_result,
+        )
         return {
             "category": category,
             "planned-capabilities": capabilities,
-            "capability-results": [
-                {
-                    "capability": capability,
-                    "outcome": outcome,
-                    "diagnostics": [diagnostic],
-                }
-                for capability in capabilities
-            ],
+            "capability-results": capability_results,
             "artifact-refs": [],
         }
     category_result: Json = {
         "outcome": outcome,
-        "diagnostics": [diagnostic],
-        "detail": _ci_placeholder_detail(
+        "diagnostics": [dict(item) for item in diagnostics],
+        "detail": _ci_validation_detail(
             plan,
             work_group_id,
             category,
-            diagnostic,
+            diagnostics,
             outcome=outcome,
             fact_snapshot=fact_snapshot,
         ),
@@ -4111,21 +5116,92 @@ def _ci_placeholder_evidence(
     }
 
 
-def _ci_placeholder_detail(
+def _ci_capability_results(
+    *,
+    work_group_id: str,
+    capabilities: Sequence[str],
+    outcome: str,
+    diagnostics: Sequence[Mapping[str, object]],
+    validation_result: Mapping[str, object] | None,
+) -> list[Json]:
+    if outcome == "skipped":
+        return [
+            {
+                "capability": capability,
+                "outcome": "skipped",
+                "diagnostics": [dict(item) for item in diagnostics],
+            }
+            for capability in capabilities
+        ]
+    if validation_result is None:
+        return [
+            {
+                "capability": capability,
+                "outcome": outcome,
+                "diagnostics": [dict(item) for item in diagnostics],
+            }
+            for capability in capabilities
+        ]
+    commands_by_capability = _ci_command_results_by_capability(
+        validation_result,
+    )
+    results: list[Json] = []
+    for capability in capabilities:
+        commands = commands_by_capability.get(capability, [])
+        capability_outcome = (
+            "success"
+            if commands
+            and all(command.get("outcome") == "success" for command in commands)
+            else "blocking-failure"
+        )
+        capability_diagnostics = (
+            []
+            if capability_outcome == "success"
+            else [_ci_capability_failure_diagnostic(work_group_id, capability)]
+        )
+        results.append(
+            {
+                "capability": capability,
+                "outcome": capability_outcome,
+                "diagnostics": capability_diagnostics,
+            }
+        )
+    return results
+
+
+def _ci_command_results_by_capability(
+    validation_result: Mapping[str, object] | None,
+) -> dict[str, list[Mapping[str, object]]]:
+    commands = (
+        None if validation_result is None else validation_result.get("commands")
+    )
+    if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
+        return {}
+    result: dict[str, list[Mapping[str, object]]] = {}
+    for command in commands:
+        if not isinstance(command, Mapping):
+            continue
+        capability = command.get("capability")
+        if isinstance(capability, str):
+            result.setdefault(capability, []).append(command)
+    return result
+
+
+def _ci_validation_detail(
     plan: Mapping[str, object],
     work_group_id: str,
     category: str,
-    diagnostic: Mapping[str, object],
+    diagnostics: Sequence[Mapping[str, object]],
     *,
     outcome: str,
     fact_snapshot: Mapping[str, object] | None,
 ) -> Json:
     if category in {"lightweight-preflight", "workflow-release-tooling"}:
-        return _ci_detail_profile_placeholder(
+        return _ci_detail_profile_result(
             plan,
             work_group_id,
             category,
-            diagnostic,
+            diagnostics,
             outcome=outcome,
         )
     if category == "descriptor-validation":
@@ -4133,7 +5209,7 @@ def _ci_placeholder_detail(
             "descriptor-obligation-results": [
                 _ci_descriptor_placeholder_result(
                     obligation,
-                    diagnostic,
+                    diagnostics,
                     outcome=outcome,
                     fact_snapshot=fact_snapshot,
                 )
@@ -4147,7 +5223,7 @@ def _ci_placeholder_detail(
             "artifact-obligation-results": [
                 _ci_artifact_placeholder_result(
                     obligation,
-                    diagnostic,
+                    diagnostics,
                     fact_snapshot=fact_snapshot,
                     outcome=outcome,
                 )
@@ -4159,11 +5235,11 @@ def _ci_placeholder_detail(
     return {}
 
 
-def _ci_detail_profile_placeholder(
+def _ci_detail_profile_result(
     plan: Mapping[str, object],
     work_group_id: str,
     category: str,
-    diagnostic: Mapping[str, object],
+    diagnostics: Sequence[Mapping[str, object]],
     *,
     outcome: str,
 ) -> Json:
@@ -4181,14 +5257,14 @@ def _ci_detail_profile_placeholder(
             {
                 "subcheck-id": item["subcheck-id"],
                 "outcome": outcome,
-                "diagnostics": [diagnostic],
+                "diagnostics": [dict(item) for item in diagnostics],
             }
             for item in cast(
                 "Sequence[Mapping[str, object]]",
                 profile["required-subchecks"],
             )
         ],
-        "diagnostics": [diagnostic],
+        "diagnostics": [dict(item) for item in diagnostics],
     }
     if category == "workflow-release-tooling":
         detail["ecosystem"] = group.get("ecosystem")
@@ -4197,7 +5273,7 @@ def _ci_detail_profile_placeholder(
 
 def _ci_descriptor_placeholder_result(
     obligation: Mapping[str, object],
-    diagnostic: Mapping[str, object],
+    diagnostics: Sequence[Mapping[str, object]],
     *,
     outcome: str,
     fact_snapshot: Mapping[str, object] | None,
@@ -4214,13 +5290,13 @@ def _ci_descriptor_placeholder_result(
         },
         "descriptor-scope": obligation["descriptor-scope"],
         "outcome": outcome,
-        "diagnostics": [diagnostic],
+        "diagnostics": [dict(item) for item in diagnostics],
     }
 
 
 def _ci_artifact_placeholder_result(
     obligation: Mapping[str, object],
-    diagnostic: Mapping[str, object],
+    diagnostics: Sequence[Mapping[str, object]],
     *,
     fact_snapshot: Mapping[str, object] | None,
     outcome: str,
@@ -4242,17 +5318,17 @@ def _ci_artifact_placeholder_result(
             "planned": artifact,
             "observed": {"refs": [], "digests": []},
             "outcome": outcome,
-            "diagnostics": [diagnostic],
+            "diagnostics": [dict(item) for item in diagnostics],
         },
         "release-receipt": {
             "planned": receipt,
             "expected": True,
             "schema-checked": False,
             "outcome": outcome,
-            "diagnostics": [diagnostic],
+            "diagnostics": [dict(item) for item in diagnostics],
         },
         "outcome": outcome,
-        "diagnostics": [diagnostic],
+        "diagnostics": [dict(item) for item in diagnostics],
     }
 
 
@@ -4692,6 +5768,12 @@ def _mapping(value: object, path: str) -> Mapping[str, Any]:
         msg = f"{path} must be a JSON object"
         raise TypeError(msg)
     return value
+
+
+def _require_mapping(value: object, label: str) -> None:
+    if not isinstance(value, Mapping):
+        msg = f"{label} must be a JSON object"
+        raise TypeError(msg)
 
 
 def _read_optional_json(value: str) -> Json | None:

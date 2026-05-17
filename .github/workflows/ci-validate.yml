@@ -233,7 +233,7 @@ jobs:
       - plan
       - materialize-work-groups
     if: always() && needs.materialize-work-groups.outputs.has-work-group-layer-0 == 'true'
-    runs-on: ${{ matrix.work-group.runner == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.work-group.runner-family == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -250,6 +250,15 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Install Node.js for JavaScript/TypeScript validation
+        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Enable pnpm for JavaScript/TypeScript validation
+        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        shell: bash
+        run: corepack enable pnpm
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
@@ -276,16 +285,46 @@ jobs:
         with:
           pattern: three-ci-validation-*
           path: .three-ci-validation/observed-artifacts
-      - name: Write placeholder validation receipt
+      - name: Check prerequisite validation receipts
+        id: dependency-gate
+        shell: bash
+        env:
+          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py check-ci-validation-dependencies \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --work-group-id "$WORK_GROUP_ID" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Run mapped validation commands
+        if: ${{ steps.dependency-gate.outputs.dependency_blocked != 'true' }}
+        id: validation
+        shell: bash
+        env:
+          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+        run: |
+          mkdir -p .three-ci-validation/work
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-commands \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --repo-root . \
+            --result-out .three-ci-validation/work/validation-result.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Write validation receipt
         id: receipt
         shell: bash
         env:
           WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
           MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
           WRITER_JOB: ${{ matrix.work-group.writer-job }}
+          VALIDATION_OUTCOME: ${{ steps.validation.outputs.validation_outcome }}
         run: |
           mkdir -p .three-ci-validation/work
-          uv run python eng/scripts/workflow_release_control.py write-ci-validation-placeholder-receipt \
+          validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-receipt \
             --plan .three-ci-validation/plan/validation-plan.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
@@ -296,6 +335,8 @@ jobs:
             --job "$WRITER_JOB" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$GITHUB_SHA" \
+            --validation-result .three-ci-validation/work/validation-result.json \
+            --validation-outcome "$validation_outcome" \
             --receipt-out .three-ci-validation/work/receipt.json \
             --github-output "$GITHUB_OUTPUT"
       - name: Upload validation receipt
@@ -348,7 +389,7 @@ jobs:
       - materialize-work-groups
       - validation-work-groups-layer-0
     if: always() && needs.materialize-work-groups.outputs.has-work-group-layer-1 == 'true'
-    runs-on: ${{ matrix.work-group.runner == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.work-group.runner-family == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -365,6 +406,15 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Install Node.js for JavaScript/TypeScript validation
+        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Enable pnpm for JavaScript/TypeScript validation
+        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        shell: bash
+        run: corepack enable pnpm
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
@@ -391,16 +441,46 @@ jobs:
         with:
           pattern: three-ci-validation-*
           path: .three-ci-validation/observed-artifacts
-      - name: Write placeholder validation receipt
+      - name: Check prerequisite validation receipts
+        id: dependency-gate
+        shell: bash
+        env:
+          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py check-ci-validation-dependencies \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --work-group-id "$WORK_GROUP_ID" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Run mapped validation commands
+        if: ${{ steps.dependency-gate.outputs.dependency_blocked != 'true' }}
+        id: validation
+        shell: bash
+        env:
+          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+        run: |
+          mkdir -p .three-ci-validation/work
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-commands \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --repo-root . \
+            --result-out .three-ci-validation/work/validation-result.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Write validation receipt
         id: receipt
         shell: bash
         env:
           WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
           MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
           WRITER_JOB: ${{ matrix.work-group.writer-job }}
+          VALIDATION_OUTCOME: ${{ steps.validation.outputs.validation_outcome }}
         run: |
           mkdir -p .three-ci-validation/work
-          uv run python eng/scripts/workflow_release_control.py write-ci-validation-placeholder-receipt \
+          validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-receipt \
             --plan .three-ci-validation/plan/validation-plan.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
@@ -411,6 +491,8 @@ jobs:
             --job "$WRITER_JOB" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$GITHUB_SHA" \
+            --validation-result .three-ci-validation/work/validation-result.json \
+            --validation-outcome "$validation_outcome" \
             --receipt-out .three-ci-validation/work/receipt.json \
             --github-output "$GITHUB_OUTPUT"
       - name: Upload validation receipt
@@ -464,7 +546,7 @@ jobs:
       - validation-work-groups-layer-0
       - validation-work-groups-layer-1
     if: always() && needs.materialize-work-groups.outputs.has-work-group-layer-2 == 'true'
-    runs-on: ${{ matrix.work-group.runner == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.work-group.runner-family == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -481,6 +563,15 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Install Node.js for JavaScript/TypeScript validation
+        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Enable pnpm for JavaScript/TypeScript validation
+        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        shell: bash
+        run: corepack enable pnpm
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
@@ -507,16 +598,46 @@ jobs:
         with:
           pattern: three-ci-validation-*
           path: .three-ci-validation/observed-artifacts
-      - name: Write placeholder validation receipt
+      - name: Check prerequisite validation receipts
+        id: dependency-gate
+        shell: bash
+        env:
+          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py check-ci-validation-dependencies \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --work-group-id "$WORK_GROUP_ID" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Run mapped validation commands
+        if: ${{ steps.dependency-gate.outputs.dependency_blocked != 'true' }}
+        id: validation
+        shell: bash
+        env:
+          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+        run: |
+          mkdir -p .three-ci-validation/work
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-commands \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --repo-root . \
+            --result-out .three-ci-validation/work/validation-result.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Write validation receipt
         id: receipt
         shell: bash
         env:
           WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
           MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
           WRITER_JOB: ${{ matrix.work-group.writer-job }}
+          VALIDATION_OUTCOME: ${{ steps.validation.outputs.validation_outcome }}
         run: |
           mkdir -p .three-ci-validation/work
-          uv run python eng/scripts/workflow_release_control.py write-ci-validation-placeholder-receipt \
+          validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-receipt \
             --plan .three-ci-validation/plan/validation-plan.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
@@ -527,6 +648,8 @@ jobs:
             --job "$WRITER_JOB" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$GITHUB_SHA" \
+            --validation-result .three-ci-validation/work/validation-result.json \
+            --validation-outcome "$validation_outcome" \
             --receipt-out .three-ci-validation/work/receipt.json \
             --github-output "$GITHUB_OUTPUT"
       - name: Upload validation receipt
