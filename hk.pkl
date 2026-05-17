@@ -243,6 +243,7 @@ local python_linters = new Mapping<String, Step> {
 local workflow_release_validation = new Mapping<String, Step> {
   local workflow_release_files =
     List(
+      ".github/workflows/ci-validate.yml",
       ".github/workflows/release-*.yml",
       "eng/release/**",
       "eng/scripts/workflow_release_control.py",
@@ -251,6 +252,7 @@ local workflow_release_validation = new Mapping<String, Step> {
       "src/public/lib/three-workflow-release-*/**",
       "tests/test_workflow_release_control.py",
       "tests/fixtures/workflow-release-acceptance-matrix.json",
+      "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json",
     )
 
   ["workflow-release-control-tests"] {

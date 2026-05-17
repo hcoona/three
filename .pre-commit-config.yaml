@@ -138,7 +138,7 @@ repos:
     entry: python eng/scripts/hk_exec.py uv run python eng/scripts/workflow_release_acceptance_gate.py
     language: system
     pass_filenames: false
-    files: \.github/workflows/release-[^/]*\.yml$|eng/release/.*$|eng/scripts/workflow_release_control\.py$|eng/scripts/workflow_release_acceptance_gate\.py$|src/(?:.*/)*three\.release\.yml$|src/public/lib/three-workflow-release-[^/]*/.*$|tests/test_workflow_release_control\.py$|tests/fixtures/workflow-release-acceptance-matrix\.json$
+    files: \.github/workflows/ci-validate\.yml$|\.github/workflows/release-[^/]*\.yml$|eng/release/.*$|eng/scripts/workflow_release_control\.py$|eng/scripts/workflow_release_acceptance_gate\.py$|src/(?:.*/)*three\.release\.yml$|src/public/lib/three-workflow-release-[^/]*/.*$|tests/test_workflow_release_control\.py$|tests/fixtures/workflow-release-acceptance-matrix\.json$|tests/fixtures/workflow-release-ci-validation-acceptance-matrix\.json$
   - id: dotenv-linter
     name: Dotenv Linter
     entry: python eng/scripts/hk_exec.py dotenv-linter check --

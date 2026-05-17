@@ -55,8 +55,16 @@ FIXTURES = (
 ACCEPTANCE_MATRIX = (
     REPO_ROOT / "tests/fixtures/workflow-release-acceptance-matrix.json"
 )
+CI_ACCEPTANCE_MATRIX = (
+    REPO_ROOT
+    / "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json"
+)
 LOW_LEVEL_DESIGN = (
     REPO_ROOT / "docs/wiki/analyses/workflow-release-low-level-design.md"
+)
+CI_LOW_LEVEL_DESIGN = REPO_ROOT / (
+    "docs/wiki/analyses/"
+    "workflow-release-ci-affected-validation-low-level-design.md"
 )
 ACCEPTANCE_GATE = REPO_ROOT / "eng/scripts/workflow_release_acceptance_gate.py"
 SCRATCH = REPO_ROOT / ".pytest-workflow-release-control"
@@ -259,12 +267,46 @@ def _acceptance_matrix() -> dict[str, object]:
     return json.loads(ACCEPTANCE_MATRIX.read_text(encoding="utf-8"))
 
 
+def _ci_acceptance_matrix() -> dict[str, object]:
+    """Load the CI affected-validation acceptance matrix fixture."""
+    return json.loads(CI_ACCEPTANCE_MATRIX.read_text(encoding="utf-8"))
+
+
 def _design_acceptance_scenarios() -> list[str]:
     """Extract Section 10 scenario names from the low-level design table."""
     lines = LOW_LEVEL_DESIGN.read_text(encoding="utf-8").splitlines()
     scenarios: list[str] = []
     in_table = False
     for line in lines:
+        if line.startswith("| Scenario "):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if not line.startswith("| "):
+            if scenarios:
+                break
+            continue
+        if line.startswith("| ---"):
+            continue
+        scenarios.append(line.split("|", maxsplit=2)[1].strip())
+    return scenarios
+
+
+def _ci_design_acceptance_scenarios() -> list[str]:
+    """Extract Section 17 CI acceptance scenario names from the LLD table."""
+    lines = CI_LOW_LEVEL_DESIGN.read_text(encoding="utf-8").splitlines()
+    scenarios: list[str] = []
+    in_section = False
+    in_table = False
+    for line in lines:
+        if line == "## 17. Acceptance Traceability":
+            in_section = True
+            continue
+        if in_section and line.startswith("## 18. "):
+            break
+        if not in_section:
+            continue
         if line.startswith("| Scenario "):
             in_table = True
             continue
@@ -886,13 +928,127 @@ def test_acceptance_matrix_rows_are_ci_actionable() -> None:
                     raise AssertionError((row["id"], column, ref_type))
 
 
+def test_ci_acceptance_matrix_fixture_tracks_lld_scenarios() -> None:
+    """CI acceptance fixture must cover every LLD acceptance row."""
+    matrix = _ci_acceptance_matrix()
+    design_scenarios = _ci_design_acceptance_scenarios()
+    rows = matrix["rows"]
+    assert isinstance(rows, list)
+
+    assert matrix["api-version"] == (
+        "three.release.ci-validation-acceptance-matrix/v1alpha1"
+    )
+    assert matrix["kind"] == "workflow-release-ci-validation-acceptance-matrix"
+    assert matrix["source"] == {
+        "design": (
+            "docs/wiki/analyses/"
+            "workflow-release-ci-affected-validation-low-level-design.md"
+        ),
+        "section": "17. Acceptance Traceability",
+    }
+    assert [row["scenario"] for row in rows] == design_scenarios
+    assert len({row["id"] for row in rows}) == len(rows)
+
+
+def test_ci_acceptance_matrix_rows_are_actionable() -> None:
+    """Every CI acceptance row maps design text to executable evidence."""
+    matrix = _ci_acceptance_matrix()
+    columns = matrix["evidence-columns"]
+    assert columns == [
+        "design-contract",
+        "planning-evidence",
+        "execution-evidence",
+        "aggregate-or-verdict",
+        "no-publication-boundary",
+    ]
+    test_nodeids = _all_test_nodeids()
+
+    for row in matrix["rows"]:
+        assert row["validation-mode"] == "ci-acceptance"
+        assert row["fixture-anchor"] == (
+            "workflow-release-ci-affected-validation-low-level-design#17"
+        )
+        evidence = row["evidence"]
+        assert set(evidence) == set(columns)
+        row_test_refs: list[str] = []
+        for column in columns:
+            references = evidence[column]
+            assert isinstance(references, list)
+            assert references
+            for reference in references:
+                assert set(reference) == {"type", "value"}
+                ref_type = reference["type"]
+                value = reference["value"]
+                assert isinstance(value, str)
+                if ref_type == "path":
+                    assert (REPO_ROOT / value).is_file(), (row["id"], column)
+                elif ref_type == "test":
+                    assert value in test_nodeids, (row["id"], column, value)
+                    row_test_refs.append(value)
+                elif ref_type == "workflow":
+                    assert (REPO_ROOT / value).is_file(), (row["id"], column)
+                else:
+                    raise AssertionError((row["id"], column, ref_type))
+        assert row_test_refs, row["id"]
+
+
+def test_ci_acceptance_matrix_preserves_no_publish_boundaries() -> None:
+    """CI acceptance rows validate no-publish boundaries, not release probes."""
+    matrix = _ci_acceptance_matrix()
+    forbidden_nodeid_terms = {
+        "observe_remote",
+        "publish_request",
+        "entry_publish",
+        "ensure_tag",
+        "official_entry_publish",
+    }
+    required_boundary_tests = {
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_workflow_executes_mapped_commands_before_receipts",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_command_mapping_uses_required_no_publish_checks",
+    }
+
+    for row in matrix["rows"]:
+        boundary_refs = row["evidence"]["no-publication-boundary"]
+        assert {
+            reference["value"]
+            for reference in boundary_refs
+            if reference["type"] == "workflow"
+        } == {".github/workflows/ci-validate.yml"}
+        assert required_boundary_tests <= {
+            reference["value"]
+            for reference in boundary_refs
+            if reference["type"] == "test"
+        }
+        all_tests = {
+            reference["value"]
+            for references in row["evidence"].values()
+            for reference in references
+            if reference["type"] == "test"
+        }
+        assert not any(
+            term in nodeid
+            for nodeid in all_tests
+            for term in forbidden_nodeid_terms
+        ), row["id"]
+
+
 def test_acceptance_matrix_test_nodeids_are_collected_by_gate() -> None:
     """HK acceptance gate must execute every matrix test evidence nodeid."""
     matrix = _acceptance_matrix()
+    ci_matrix = _ci_acceptance_matrix()
     gate_nodeids = set(acceptance_gate._collect_test_nodeids(matrix))
+    ci_gate_nodeids = set(acceptance_gate._collect_test_nodeids(ci_matrix))
     mandatory_nodeids = {
         "tests/test_workflow_release_control.py::"
         "test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_acceptance_matrix_fixture_tracks_lld_scenarios",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_acceptance_matrix_rows_are_actionable",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_acceptance_matrix_preserves_no_publish_boundaries",
         "tests/test_workflow_release_control.py::"
         "test_hk_runs_focused_workflow_release_validation",
         "tests/test_workflow_release_control.py::"
@@ -903,6 +1059,10 @@ def test_acceptance_matrix_test_nodeids_are_collected_by_gate() -> None:
     for nodeid in _matrix_test_nodeids(matrix):
         assert nodeid in _all_test_nodeids()
         assert nodeid in gate_nodeids
+    assert _matrix_test_nodeids(ci_matrix)
+    for nodeid in _matrix_test_nodeids(ci_matrix):
+        assert nodeid in _all_test_nodeids()
+        assert nodeid in ci_gate_nodeids
     assert mandatory_nodeids <= gate_nodeids
 
 
@@ -7747,8 +7907,12 @@ def test_entry_workflows_stage_and_upload_deterministic_proofs() -> None:
 def test_hk_runs_focused_workflow_release_validation() -> None:
     """HK must run focused control-plane tests for release workflow changes."""
     hk_config = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
+    pre_commit_config = (REPO_ROOT / ".pre-commit-config.yaml").read_text(
+        encoding="utf-8"
+    )
 
     assert "workflow-release-control-tests" in hk_config
+    assert ".github/workflows/ci-validate.yml" in hk_config
     assert ".github/workflows/release-*.yml" in hk_config
     assert "eng/release/**" in hk_config
     assert "eng/scripts/workflow_release_control.py" in hk_config
@@ -7758,7 +7922,13 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     assert "tests/test_workflow_release_control.py" in hk_config
     assert "tests/fixtures/workflow-release-acceptance-matrix.json" in hk_config
     assert (
+        "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json"
+        in hk_config
+    )
+    assert (
         "uv run python eng/scripts/workflow_release_acceptance_gate.py"
         in hk_config
     )
     assert "actionlint" in hk_config
+    assert "id: workflow-release-control-tests" in pre_commit_config
+    assert r"\.github/workflows/ci-validate\.yml$" in pre_commit_config

@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).parents[2]
-MATRIX_PATH = (
-    REPO_ROOT / "tests/fixtures/workflow-release-acceptance-matrix.json"
+MATRIX_PATHS = (
+    REPO_ROOT / "tests/fixtures/workflow-release-acceptance-matrix.json",
+    REPO_ROOT
+    / "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json",
 )
 
 
@@ -23,6 +25,12 @@ def _collect_test_nodeids(document: dict[str, Any]) -> list[str]:
         "test_acceptance_matrix_rows_are_ci_actionable",
         "tests/test_workflow_release_control.py::"
         "test_acceptance_matrix_test_nodeids_are_collected_by_gate",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_acceptance_matrix_fixture_tracks_lld_scenarios",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_acceptance_matrix_rows_are_actionable",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_acceptance_matrix_preserves_no_publish_boundaries",
         "tests/test_workflow_release_control.py::"
         "test_confirmed_scope_descriptor_matrix_matches_current_descriptors",
         "tests/test_workflow_release_control.py::"
@@ -67,9 +75,15 @@ def _pytest_command(nodeids: list[str]) -> list[str]:
 
 def main() -> int:
     """Run the acceptance evidence pytest nodeids."""
-    document = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
+    documents = [
+        json.loads(matrix_path.read_text(encoding="utf-8"))
+        for matrix_path in MATRIX_PATHS
+    ]
+    merged_document = {
+        "rows": [row for document in documents for row in document["rows"]],
+    }
     try:
-        nodeids = _collect_test_nodeids(document)
+        nodeids = _collect_test_nodeids(merged_document)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2

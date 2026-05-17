@@ -1,0 +1,3311 @@
+{
+  "api-version": "three.release.ci-validation-acceptance-matrix/v1alpha1",
+  "kind": "workflow-release-ci-validation-acceptance-matrix",
+  "source": {
+    "design": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md",
+    "section": "17. Acceptance Traceability"
+  },
+  "evidence-columns": [
+    "design-contract",
+    "planning-evidence",
+    "execution-evidence",
+    "aggregate-or-verdict",
+    "no-publication-boundary"
+  ],
+  "rows": [
+    {
+      "id": "project-scoped-descriptor-backed-change",
+      "scenario": "Project-scoped descriptor-backed change",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_descriptor_backed_subject_scope"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_python_downstream_dependency_closure"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_descriptor_backed_subject_scope"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_python_downstream_dependency_closure"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "project-scoped-validation-only-change",
+      "scenario": "Project-scoped validation-only change",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_pnpm_workspace_globs_are_subjects"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_rejects_validation_only_no_capabilities"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_pnpm_workspace_globs_are_subjects"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_rejects_validation_only_no_capabilities"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ecosystem-scoped-change",
+      "scenario": "Ecosystem-scoped change",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_pnpm_workspace_globs_are_subjects"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_pnpm_workspace_globs_are_subjects"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_pnpm_workspace_globs_are_subjects"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "workflow-release-infrastructure-change",
+      "scenario": "Workflow-release infrastructure change",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_workflow_release_project_paths_are_tooling"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_build_execution_scope_covers_build_subjects"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_workflow_release_project_paths_are_tooling"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_build_execution_scope_covers_build_subjects"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "known-global-change",
+      "scenario": "Known global change",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_global_tooling_obligations_have_source_impacts"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_global_tooling_obligations_have_source_impacts"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_global_tooling_obligations_have_source_impacts"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scheduled-full-run",
+      "scenario": "Scheduled full run",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_scheduled_full_request_has_no_affected_range"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_scheduled_full_plan_requires_null_affected_endpoints"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_scheduled_full_request_has_no_affected_range"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_scheduled_full_plan_requires_null_affected_endpoints"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "known-non-impacting-change-with-no-executable-checks",
+      "scenario": "Known non-impacting change with no executable checks",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_known_non_impacting_scope"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_lightweight_policy_uses_frozen_scope"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_known_non_impacting_scope"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_lightweight_policy_uses_frozen_scope"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "known-non-impacting-change-with-executable-lightweight-checks",
+      "scenario": "Known non-impacting change with executable lightweight checks",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_known_non_impacting_scope"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_lightweight_policy_uses_frozen_scope"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_known_non_impacting_scope"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_lightweight_policy_uses_frozen_scope"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "known-non-impacting-lightweight-only-plan-attempts-subject-ecosystem-or-descriptor-scoped-lightw",
+      "scenario": "Known non-impacting lightweight-only plan attempts subject, ecosystem, or descriptor-scoped lightweight work",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_known_non_impacting_scope"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_lightweight_policy_uses_frozen_scope"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_known_non_impacting_scope"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_lightweight_policy_uses_frozen_scope"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "confirmed-zero-file-affected-range",
+      "scenario": "Confirmed zero-file affected range",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_zero_file_affected_range"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_control_plane_materializes_empty_plan"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_zero_file_affected_range"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_control_plane_materializes_empty_plan"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "wrong-run-or-producer-unverified-planner-facing-request",
+      "scenario": "Wrong-run or producer-unverified planner-facing request",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_digest_is_deterministic"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_uses_expected_artifact_ref_context"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_fails_closed_for_digest_mismatch"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_fails_closed_for_digest_mismatch"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-duplicate-unreadable-malformed-schema-invalid-producer-unverified-or-ref-unidentified-pl",
+      "scenario": "Missing, duplicate, unreadable, malformed, schema-invalid, producer-unverified, or ref-unidentified planner-facing request",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_digest_is_deterministic"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_uses_expected_artifact_ref_context"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_fails_closed_for_digest_mismatch"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_fails_closed_for_digest_mismatch"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "digest-mismatched-or-wrong-run-request-that-is-still-replayable-enough-to-freeze-request-ref-and",
+      "scenario": "Digest-mismatched or wrong-run request that is still replayable enough to freeze request ref and recomputed digest",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_digest_is_deterministic"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_uses_expected_artifact_ref_context"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_fails_closed_for_digest_mismatch"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_fails_closed_for_digest_mismatch"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "selector-materialization-receives-invalid-producer-unverified-identity-unverified-or-companion-m",
+      "scenario": "Selector materialization receives invalid, producer-unverified, identity-unverified, or companion-mismatched plan",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "structurally-valid-fail-closed-or-no-executable-plan",
+      "scenario": "Structurally valid fail-closed or no-executable plan",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_empty_selector_assignments_are_valid_for_no_executable_work"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_control_plane_materializes_empty_plan"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_empty_selector_assignments_are_valid_for_no_executable_work"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_control_plane_materializes_empty_plan"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mixed-project-ecosystem-infrastructure-non-impacting-change",
+      "scenario": "Mixed project/ecosystem/infrastructure/non-impacting change",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_mixed_changes_keep_canonical_paths"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_mixed_changes_keep_canonical_paths"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_mixed_changes_keep_canonical_paths"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "multiple-independent-selection-causes-for-the-same-subject-are-subsumed-before-freezing",
+      "scenario": "Multiple independent selection causes for the same subject are subsumed before freezing",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_accepts_supported_subsumption_kinds"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_accepts_supported_subsumption_kinds"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_accepts_supported_subsumption_kinds"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "policy-bearing-planner-classifier-fact-provider-change",
+      "scenario": "Policy-bearing planner/classifier/fact-provider change",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_workflow_release_project_paths_are_tooling"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_build_execution_scope_covers_build_subjects"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_workflow_release_project_paths_are_tooling"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_build_execution_scope_covers_build_subjects"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "affected-plan-omits-or-invents-changed-path-impact-coverage",
+      "scenario": "Affected plan omits or invents changed-path impact coverage",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_freeze_fallback_covers_changed_files"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_rejects_matched_paths_missing_changed_file"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_freeze_fallback_covers_changed_files"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_rejects_matched_paths_missing_changed_file"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pr-push-affected-range-unconfirmed",
+      "scenario": "PR/push affected range unconfirmed",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_unavailable_range_accepts_explicit_nullable_fields"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_unavailable_range_accepts_explicit_nullable_fields"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "project-scoped-change-with-insufficient-downstream-facts",
+      "scenario": "Project-scoped change with insufficient downstream facts",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_dependency_read_failures_fail_closed"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_transitive_downstream_dependency_basis"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_dependency_read_failures_fail_closed"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_transitive_downstream_dependency_basis"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "unclassifiable-workflow-release-infrastructure-impact",
+      "scenario": "Unclassifiable workflow-release infrastructure impact",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_workflow_release_project_paths_are_tooling"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_build_execution_scope_covers_build_subjects"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_workflow_release_project_paths_are_tooling"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_build_execution_scope_covers_build_subjects"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "unknown-path",
+      "scenario": "Unknown path",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_unknown_paths_fail_closed"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_unknown_paths_fail_closed"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_unknown_paths_fail_closed"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "invalid-descriptor-blocking-derivation",
+      "scenario": "Invalid descriptor blocking derivation",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_descriptor_mapping_uses_scoped_planned_obligations"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_descriptor_receipt_binds_descriptor_fields_to_facts"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_descriptor_receipt_rejects_fact_field_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_descriptor_receipt_preserves_descriptor_diagnostic"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_descriptor_receipt_preserves_descriptor_diagnostic"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate-descriptor-paths-appear-in-the-fact-snapshot",
+      "scenario": "Duplicate descriptor paths appear in the fact snapshot",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_descriptor_mapping_uses_scoped_planned_obligations"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_descriptor_receipt_binds_descriptor_fields_to_facts"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_descriptor_receipt_rejects_fact_field_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_descriptor_receipt_preserves_descriptor_diagnostic"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_descriptor_receipt_preserves_descriptor_diagnostic"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "descriptor-validation-receipt-omits-or-mismatches-its-bound-descriptor-obligation",
+      "scenario": "Descriptor-validation receipt omits or mismatches its bound descriptor obligation",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_descriptor_mapping_uses_scoped_planned_obligations"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_descriptor_receipt_binds_descriptor_fields_to_facts"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_descriptor_receipt_rejects_fact_field_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_descriptor_receipt_preserves_descriptor_diagnostic"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_descriptor_receipt_preserves_descriptor_diagnostic"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-unreadable-malformed-schema-invalid-duplicate-producer-unverified-or-digest-mismatched-v",
+      "scenario": "Missing, unreadable, malformed, schema-invalid, duplicate, producer-unverified, or digest-mismatched validation plan",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_invalid_plan_mode_does_not_create_inadmissible_receipt_failures"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "structurally-invalid-but-schema-digest-valid-validation-plan",
+      "scenario": "Structurally invalid but schema/digest-valid validation plan",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_invalid_plan_mode_does_not_create_inadmissible_receipt_failures"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "release-shaped-artifact-obligation-references-a-mismatched-subject-descriptor-owner-validation-o",
+      "scenario": "Release-shaped artifact obligation references a mismatched subject, descriptor owner, validation obligation, work group, ecosystem, or runner",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_artifact_obligations_keep_shape_granularity"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_binds_artifact_obligation_fields"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_rejects_planned_artifact_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "work-group-has-a-missing-or-mismatched-ecosystem-for-ecosystem-specific-execution",
+      "scenario": "Work group has a missing or mismatched ecosystem for ecosystem-specific execution",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_freeze_rejects_wrong_runner_for_descriptor_ecosystem_work"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_freeze_rejects_wrong_runner_for_descriptor_ecosystem_work"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-unexpected-duplicate-producer-unverified-malformed-ref-mismatched-noncanonical-or-digest",
+      "scenario": "Missing, unexpected, duplicate, producer-unverified, malformed, ref-mismatched, noncanonical, or digest-mismatched companion planning snapshot",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_invalid_plan_mode_does_not_create_inadmissible_receipt_failures"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "validation-obligation-references-a-mismatched-or-shared-work-group-evidence-expectation",
+      "scenario": "Validation obligation references a mismatched or shared work group/evidence expectation",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "executable-work-group-or-evidence-expectation-is-not-referenced-by-its-required-source-obligatio",
+      "scenario": "Executable work group or evidence expectation is not referenced by its required source obligation chain",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-duplicate-producer-unverified-plan-mismatched-or-structurally-invalid-selector-assignmen",
+      "scenario": "Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_invalid_plan_mode_does_not_create_inadmissible_receipt_failures"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "logical-boundary-mapped-to-missing-or-wrong-platform-job-identity",
+      "scenario": "Logical boundary mapped to missing or wrong platform job identity",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "logical-contract-artifact-ref-maps-ambiguously-or-incorrectly-to-a-physical-artifact-name",
+      "scenario": "Logical contract artifact ref maps ambiguously or incorrectly to a physical artifact name",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "prefixed-physical-artifact-does-not-match-any-expected-non-receipt-contract-ref-during-receipt-n",
+      "scenario": "Prefixed physical artifact does not match any expected non-receipt contract ref during receipt namespace closure",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "writer-observation-artifact-is-expected-by-the-verified-selector-assignment-manifest",
+      "scenario": "Writer-observation artifact is expected by the verified selector-assignment manifest",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_writer_observation_binds_assignment_and_artifact_instance"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_writer_observation_validate_rejects_forged_assignment_mapping"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_manifest_writer_identity_mismatch_is_inadmissible"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "request-payload-artifact-ref-or-physical-artifact-name-mismatches-the-contract-owned-request-ref",
+      "scenario": "Request payload artifact ref or physical artifact name mismatches the contract-owned request ref",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_digest_is_deterministic"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_uses_expected_artifact_ref_context"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_fails_closed_for_digest_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "aggregate-cannot-replay-verify-the-request-artifact-ref-or-digest-frozen-into-an-otherwise-struc",
+      "scenario": "Aggregate cannot replay-verify the request artifact ref or digest frozen into an otherwise structurally valid plan",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_digest_is_deterministic"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_uses_expected_artifact_ref_context"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_request_normalization_fails_closed_for_digest_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-receipt",
+      "scenario": "Missing receipt",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_reports_required_evidence_failures"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_evidence_results_drive_failures_counts_and_verdict"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_reports_required_evidence_failures"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_evidence_results_drive_failures_counts_and_verdict"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "planned-validation-work-skipped-or-failed",
+      "scenario": "Planned validation work skipped or failed",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_reports_required_evidence_failures"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_evidence_results_drive_failures_counts_and_verdict"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_reports_required_evidence_failures"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_evidence_results_drive_failures_counts_and_verdict"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ecosystem-gate-omits-a-capability-enabled-by-selected-subject-provider-facts",
+      "scenario": "Ecosystem gate omits a capability enabled by selected subject/provider facts",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_evidence_preserves_per_capability_outcomes"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_rejects_mismatched_gate_capabilities"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_evidence_preserves_per_capability_outcomes"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_rejects_mismatched_gate_capabilities"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "upstream-selector-emits-a-valid-blocking-failure-receipt",
+      "scenario": "Upstream selector emits a valid `blocking-failure` receipt",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "receipt-emitted-after-validation-on-the-wrong-or-unverifiable-execution-tree",
+      "scenario": "Receipt emitted after validation on the wrong or unverifiable execution tree",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_rejects_mismatched_execution_tree"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_rejects_mismatched_execution_tree"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_rejects_mismatched_execution_tree"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "unreadable-or-unclassified-prefixed-receipt-artifact-appears-in-the-receipt-intake-namespace",
+      "scenario": "Unreadable or unclassified prefixed receipt artifact appears in the receipt intake namespace",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "aggregate-mirrors-an-unreadable-or-unclassified-prefixed-receipt-artifact",
+      "scenario": "Aggregate mirrors an unreadable or unclassified prefixed receipt artifact",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "release-shaped-artifact-receipt-with-empty-partial-extra-or-unavailable-expected-artifact-covera",
+      "scenario": "Release-shaped artifact receipt with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked expected release receipt, or mismatched planned shape",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_artifact_obligations_keep_shape_granularity"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_binds_artifact_obligation_fields"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_rejects_planned_artifact_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dependency-blocked-release-shaped-artifact-receipt",
+      "scenario": "Dependency-blocked release-shaped artifact receipt",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_artifact_obligations_keep_shape_granularity"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_binds_artifact_obligation_fields"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_rejects_planned_artifact_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_dependency_blocking_uses_declared_prerequisites"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_accepts_dependency_blocked_skip"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "receipt-top-level-artifact-refs-are-populated-for-non-artifact-evidence-or-differ-from-release-s",
+      "scenario": "Receipt top-level artifact refs are populated for non-artifact evidence or differ from release-shaped observed refs",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_artifact_obligations_keep_shape_granularity"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_binds_artifact_obligation_fields"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_rejects_planned_artifact_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_rejects_non_release_artifact_refs"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightweight-preflight-or-workflow-release-tooling-receipt-omits-or-mismatches-its-required-detai",
+      "scenario": "Lightweight-preflight or workflow-release-tooling receipt omits or mismatches its required detail profile or subcheck results",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_known_non_impacting_scope"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_lightweight_policy_uses_frozen_scope"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_detail_profile_category_diagnostic_keeps_detail_success"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_detail_profile_rejects_blocking_subcheck_failure_mismatch"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_detail_profile_rejects_blocking_subcheck_failure_mismatch"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "invalid-or-mismatched-receipt",
+      "scenario": "Invalid or mismatched receipt",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_inadmissible_observed_receipts_require_failures"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_supplied_manifest_rejects_rebound_writer_binding"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_inadmissible_observed_receipts_require_failures"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_supplied_manifest_rejects_rebound_writer_binding"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "forged-or-producer-unverified-writer-observation",
+      "scenario": "Forged or producer-unverified writer observation",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_writer_observation_binds_assignment_and_artifact_instance"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_writer_observation_validate_rejects_forged_assignment_mapping"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_manifest_writer_identity_mismatch_is_inadmissible"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_manifest_writer_identity_mismatch_is_inadmissible"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "valid-required-receipt-plus-extra-inadmissible-receipt",
+      "scenario": "Valid required receipt plus extra inadmissible receipt",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_inadmissible_observed_receipts_require_failures"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_supplied_manifest_rejects_rebound_writer_binding"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_inadmissible_observed_receipts_require_failures"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_supplied_manifest_rejects_rebound_writer_binding"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "receipt-like-artifact-appears-after-receipt-namespace-closure",
+      "scenario": "Receipt-like artifact appears after receipt namespace closure",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "same-attempt-finalization-retry-with-occupied-final-manifest-or-aggregate",
+      "scenario": "Same-attempt finalization retry with occupied final manifest or aggregate",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "aggregate-exists-at-the-final-ref-but-the-final-manifest-is-missing",
+      "scenario": "Aggregate exists at the final ref but the final manifest is missing",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "final-manifest-or-aggregate-finalization-reconciliation-fails-despite-a-passing-computed-validat",
+      "scenario": "Final manifest or aggregate finalization/reconciliation fails despite a passing computed validation verdict",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-duplicate-malformed-wrong-run-wrong-producer-or-mutually-mismatched-final-manifest-or-ag",
+      "scenario": "Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched final manifest or aggregate",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "final-manifest-or-aggregate-json-is-not-rfc-8785-canonical-utf-8-json",
+      "scenario": "Final manifest or aggregate JSON is not RFC 8785 canonical UTF-8 JSON",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_digest_helpers_are_canonical_and_raw"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_digest_helpers_are_canonical_and_raw"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "unknown-verdict-relevant-diagnostic-family-or-detail-appears-in-contract-evidence",
+      "scenario": "Unknown verdict-relevant diagnostic family or detail appears in contract evidence",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_diagnostic_vocabularies_are_closed_and_exported"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_evidence_failure_kinds_reject_wrong_diagnostic_families"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_diagnostic_vocabularies_are_closed_and_exported"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_evidence_failure_kinds_reject_wrong_diagnostic_families"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "unconfirmed-artifact-shape",
+      "scenario": "Unconfirmed artifact shape",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_artifact_obligations_keep_shape_granularity"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_binds_artifact_obligation_fields"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_rejects_planned_artifact_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "unconfirmed-pr-context",
+      "scenario": "Unconfirmed PR context",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_unavailable_range_accepts_explicit_nullable_fields"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_requests.py::test_unavailable_range_accepts_explicit_nullable_fields"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "accidental-publication-or-remote-publish-state-validation",
+      "scenario": "Accidental publication or remote publish-state validation",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "all-ci-validation-modes-have-no-configured-publication-authority",
+      "scenario": "All CI validation modes have no configured publication authority",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    }
+  ]
+}
