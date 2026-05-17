@@ -1910,7 +1910,64 @@ def _build_plan_records(
             surface,
             sorted(scope.source_impacts_by_tooling_surface.get(surface, set())),
         )
+    _assign_work_group_dependencies(records, selected)
     return records
+
+
+def _assign_work_group_dependencies(
+    records: _PlanRecords,
+    subjects: Sequence[Mapping[str, object]],
+) -> None:
+    """Order executable work groups by the facts they validate."""
+    descriptor_group_by_path = {
+        str(cast("Mapping[str, object]", item["coverage-target"])["id"]): str(
+            item["work-group-id"]
+        )
+        for item in records.descriptor_obligations
+    }
+    descriptor_path_by_subject = {
+        str(subject["subject-id"]): str(
+            cast("Mapping[str, object]", subject["descriptor"])["path"]
+        )
+        for subject in subjects
+        if subject.get("capability-class") == "descriptor-backed"
+        and isinstance(subject.get("descriptor"), Mapping)
+        and isinstance(
+            cast("Mapping[str, object]", subject["descriptor"]).get("path"),
+            str,
+        )
+    }
+    gate_group_by_subject = {
+        str(cast("Mapping[str, object]", item["coverage-target"])["id"]): str(
+            item["work-group-id"]
+        )
+        for item in records.validation_obligations
+        if item.get("kind") == "ecosystem-gate"
+    }
+    dependencies_by_group: dict[str, set[str]] = {}
+    for subject_id, gate_group_id in gate_group_by_subject.items():
+        descriptor_group_id = descriptor_group_by_path.get(
+            descriptor_path_by_subject.get(subject_id, "")
+        )
+        if descriptor_group_id is not None:
+            dependencies_by_group.setdefault(gate_group_id, set()).add(
+                descriptor_group_id
+            )
+    for obligation in records.artifact_obligations:
+        work_group_id = str(obligation["work-group-id"])
+        dependencies = dependencies_by_group.setdefault(work_group_id, set())
+        descriptor_group_id = descriptor_group_by_path.get(
+            str(obligation["descriptor-path"])
+        )
+        if descriptor_group_id is not None:
+            dependencies.add(descriptor_group_id)
+        gate_group_id = gate_group_by_subject.get(str(obligation["subject-id"]))
+        if gate_group_id is not None:
+            dependencies.add(gate_group_id)
+    for group in records.work_groups:
+        work_group_id = str(group["work-group-id"])
+        if work_group_id in dependencies_by_group:
+            group["depends-on"] = sorted(dependencies_by_group[work_group_id])
 
 
 def _sort_plan_records(records: _PlanRecords) -> None:

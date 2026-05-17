@@ -472,7 +472,9 @@ def no_authoritative_plan_report(  # noqa: PLR0913
             "jobs": {
                 "plan": {"conclusion": planning_conclusion},
                 "materialize-work-groups": {"conclusion": "skipped"},
-                "validation-work-groups": {"conclusion": "skipped"},
+                "validation-work-groups-layer-0": {"conclusion": "skipped"},
+                "validation-work-groups-layer-1": {"conclusion": "skipped"},
+                "validation-work-groups-layer-2": {"conclusion": "skipped"},
                 "aggregate-evidence": {"conclusion": "failure"},
             },
             "run": {"conclusion": "failure"},

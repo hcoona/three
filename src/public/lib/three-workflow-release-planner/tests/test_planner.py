@@ -2983,6 +2983,47 @@ def test_ci_validation_plans_artifact_obligations_keep_shape_granularity() -> (
     )
 
 
+def test_ci_validation_plans_order_artifact_work_after_prerequisites() -> None:
+    """Release-shaped artifact work waits for descriptor and gate work."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs(["src/public/lib/nbgv-python/pyproject.toml"]),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["work-groups"],
+    )
+    by_id = {str(item["work-group-id"]): item for item in work_groups}
+    artifact_obligations = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["artifact-obligations"],
+    )
+    artifact_obligation = next(
+        item
+        for item in artifact_obligations
+        if item["subject-id"] == "python.src-public-lib-nbgv-python"
+    )
+    artifact_group = by_id[str(artifact_obligation["work-group-id"])]
+    dependencies = {
+        by_id[str(dependency)]["kind"]
+        for dependency in cast("Sequence[str]", artifact_group["depends-on"])
+    }
+
+    assert dependencies == {"descriptor-validation", "ecosystem-gate"}
+
+
 def test_ci_validation_fact_snapshot_workflow_release_owns_catalog_facts() -> (
     None
 ):

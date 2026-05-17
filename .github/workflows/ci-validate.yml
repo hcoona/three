@@ -173,6 +173,13 @@ jobs:
     outputs:
       has-work-groups: ${{ steps.materialize.outputs.has_work_groups }}
       work-group-matrix: ${{ steps.materialize.outputs.work_group_matrix }}
+      work-group-layers: ${{ steps.materialize.outputs.work_group_layers }}
+      has-work-group-layer-0: ${{ steps.materialize.outputs.has_work_group_layer_0 }}
+      work-group-layer-0-matrix: ${{ steps.materialize.outputs.work_group_layer_0_matrix }}
+      has-work-group-layer-1: ${{ steps.materialize.outputs.has_work_group_layer_1 }}
+      work-group-layer-1-matrix: ${{ steps.materialize.outputs.work_group_layer_1_matrix }}
+      has-work-group-layer-2: ${{ steps.materialize.outputs.has_work_group_layer_2 }}
+      work-group-layer-2-matrix: ${{ steps.materialize.outputs.work_group_layer_2_matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -219,18 +226,18 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  validation-work-groups:
-    name: validation-work-groups
+  validation-work-groups-layer-0:
+    name: validation-work-groups-layer-0
     needs:
       - normalize-input
       - plan
       - materialize-work-groups
-    if: needs.materialize-work-groups.outputs.has-work-groups == 'true'
+    if: always() && needs.materialize-work-groups.outputs.has-work-group-layer-0 == 'true'
     runs-on: ${{ matrix.work-group.runner == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        work-group: ${{ fromJson(needs.materialize-work-groups.outputs.work-group-matrix) }}
+        work-group: ${{ fromJson(needs.materialize-work-groups.outputs.work-group-layer-0-matrix) }}
     permissions:
       contents: read
       actions: read
@@ -263,12 +270,19 @@ jobs:
         with:
           name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
           path: .three-ci-validation/plan
+      - name: Download prerequisite validation artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: three-ci-validation-*
+          path: .three-ci-validation/observed-artifacts
       - name: Write placeholder validation receipt
         id: receipt
         shell: bash
         env:
           WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
           MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          WRITER_JOB: ${{ matrix.work-group.writer-job }}
         run: |
           mkdir -p .three-ci-validation/work
           uv run python eng/scripts/workflow_release_control.py write-ci-validation-placeholder-receipt \
@@ -279,7 +293,8 @@ jobs:
             --work-group-id "$WORK_GROUP_ID" \
             --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
             --workflow "CI Validation" \
-            --job "validation-work-groups" \
+            --job "$WRITER_JOB" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$GITHUB_SHA" \
             --receipt-out .three-ci-validation/work/receipt.json \
             --github-output "$GITHUB_OUTPUT"
@@ -298,6 +313,7 @@ jobs:
         env:
           WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
           MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          WRITER_JOB: ${{ matrix.work-group.writer-job }}
           RECEIPT_ARTIFACT_ID: ${{ steps.upload-receipt.outputs.artifact-id }}
         run: |
           uv run python eng/scripts/workflow_release_control.py write-ci-validation-writer-observation \
@@ -308,7 +324,238 @@ jobs:
             --work-group-id "$WORK_GROUP_ID" \
             --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
             --workflow "CI Validation" \
-            --job "validation-work-groups" \
+            --job "$WRITER_JOB" \
+            --artifact-instance-id "$RECEIPT_ARTIFACT_ID" \
+            --observation-out .three-ci-validation/work/writer-observation.json \
+            --metadata-out .three-ci-validation/work/receipt-artifact-metadata.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload writer observation
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.writer-observation.outputs.writer_observation_artifact_name }}
+          path: |
+            .three-ci-validation/work/writer-observation.json
+            .three-ci-validation/work/receipt-artifact-metadata.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  validation-work-groups-layer-1:
+    name: validation-work-groups-layer-1
+    needs:
+      - normalize-input
+      - plan
+      - materialize-work-groups
+      - validation-work-groups-layer-0
+    if: always() && needs.materialize-work-groups.outputs.has-work-group-layer-1 == 'true'
+    runs-on: ${{ matrix.work-group.runner == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        work-group: ${{ fromJson(needs.materialize-work-groups.outputs.work-group-layer-1-matrix) }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          path: .three-ci-validation/plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
+          path: .three-ci-validation/materialize
+      - name: Download changed-files snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Download fact snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Download prerequisite validation artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: three-ci-validation-*
+          path: .three-ci-validation/observed-artifacts
+      - name: Write placeholder validation receipt
+        id: receipt
+        shell: bash
+        env:
+          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          WRITER_JOB: ${{ matrix.work-group.writer-job }}
+        run: |
+          mkdir -p .three-ci-validation/work
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-placeholder-receipt \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --work-group-id "$WORK_GROUP_ID" \
+            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --workflow "CI Validation" \
+            --job "$WRITER_JOB" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --observed-commit-sha "$GITHUB_SHA" \
+            --receipt-out .three-ci-validation/work/receipt.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload validation receipt
+        id: upload-receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.receipt.outputs.receipt_artifact_name }}
+          path: .three-ci-validation/work/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Write receipt writer observation
+        id: writer-observation
+        shell: bash
+        env:
+          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          WRITER_JOB: ${{ matrix.work-group.writer-job }}
+          RECEIPT_ARTIFACT_ID: ${{ steps.upload-receipt.outputs.artifact-id }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-writer-observation \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --work-group-id "$WORK_GROUP_ID" \
+            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --workflow "CI Validation" \
+            --job "$WRITER_JOB" \
+            --artifact-instance-id "$RECEIPT_ARTIFACT_ID" \
+            --observation-out .three-ci-validation/work/writer-observation.json \
+            --metadata-out .three-ci-validation/work/receipt-artifact-metadata.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload writer observation
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.writer-observation.outputs.writer_observation_artifact_name }}
+          path: |
+            .three-ci-validation/work/writer-observation.json
+            .three-ci-validation/work/receipt-artifact-metadata.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  validation-work-groups-layer-2:
+    name: validation-work-groups-layer-2
+    needs:
+      - normalize-input
+      - plan
+      - materialize-work-groups
+      - validation-work-groups-layer-0
+      - validation-work-groups-layer-1
+    if: always() && needs.materialize-work-groups.outputs.has-work-group-layer-2 == 'true'
+    runs-on: ${{ matrix.work-group.runner == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        work-group: ${{ fromJson(needs.materialize-work-groups.outputs.work-group-layer-2-matrix) }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          path: .three-ci-validation/plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
+          path: .three-ci-validation/materialize
+      - name: Download changed-files snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Download fact snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Download prerequisite validation artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: three-ci-validation-*
+          path: .three-ci-validation/observed-artifacts
+      - name: Write placeholder validation receipt
+        id: receipt
+        shell: bash
+        env:
+          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          WRITER_JOB: ${{ matrix.work-group.writer-job }}
+        run: |
+          mkdir -p .three-ci-validation/work
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-placeholder-receipt \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --work-group-id "$WORK_GROUP_ID" \
+            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --workflow "CI Validation" \
+            --job "$WRITER_JOB" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --observed-commit-sha "$GITHUB_SHA" \
+            --receipt-out .three-ci-validation/work/receipt.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload validation receipt
+        id: upload-receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.receipt.outputs.receipt_artifact_name }}
+          path: .three-ci-validation/work/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Write receipt writer observation
+        id: writer-observation
+        shell: bash
+        env:
+          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          WRITER_JOB: ${{ matrix.work-group.writer-job }}
+          RECEIPT_ARTIFACT_ID: ${{ steps.upload-receipt.outputs.artifact-id }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-writer-observation \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --work-group-id "$WORK_GROUP_ID" \
+            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --workflow "CI Validation" \
+            --job "$WRITER_JOB" \
             --artifact-instance-id "$RECEIPT_ARTIFACT_ID" \
             --observation-out .three-ci-validation/work/writer-observation.json \
             --metadata-out .three-ci-validation/work/receipt-artifact-metadata.json \
@@ -330,7 +577,9 @@ jobs:
       - normalize-input
       - plan
       - materialize-work-groups
-      - validation-work-groups
+      - validation-work-groups-layer-0
+      - validation-work-groups-layer-1
+      - validation-work-groups-layer-2
     if: always()
     runs-on: ubuntu-latest
     permissions:

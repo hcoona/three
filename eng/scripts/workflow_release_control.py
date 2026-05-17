@@ -65,6 +65,7 @@ from three_workflow_release_contracts import (  # noqa: E402
     freeze_ci_validation_writer_observation,
     load_ci_validation_receipt_payload,
     validate_ci_validation_plan,
+    validate_ci_validation_receipt,
     validate_ci_validation_request,
     validate_ci_validation_selector_assignments,
     validate_ci_validation_writer_observation,
@@ -93,6 +94,7 @@ _TOPOLOGIES = (
     "external-oidc-caller-workflow",
     "external-oidc-reusable-workflow",
 )
+_CI_WORK_GROUP_WORKFLOW_LAYER_CAPACITY = 3
 _REGISTRY_JSON_TIMEOUT_SECONDS = 15
 _NUGET_IDENTITY_NUMERIC_PARTS = 3
 _NUGET_MAX_NUMERIC_PARTS = 4
@@ -286,6 +288,7 @@ def _add_write_ci_validation_receipt(
     parser.add_argument("--matrix-work-group-json", required=True)
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--job", required=True)
+    parser.add_argument("--observed-artifacts-dir", default="")
     parser.add_argument("--observed-commit-sha", required=True)
     parser.add_argument("--created-at")
     parser.add_argument("--receipt-out", required=True)
@@ -783,14 +786,22 @@ def _cmd_materialize_ci_work_groups(args: argparse.Namespace) -> int:
     plan = _read_json(Path(args.plan))
     changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
     fact_snapshot = _read_optional_json(args.fact_snapshot)
+    layer_by_work_group = _ci_work_group_dependency_layers(plan)
     matrix = [
-        _ci_work_group_matrix_entry(group)
+        _ci_work_group_matrix_entry(
+            group,
+            dependency_layer=layer_by_work_group[str(group["work-group-id"])],
+            writer_job=(
+                f"{args.writer_job}-layer-"
+                f"{layer_by_work_group[str(group['work-group-id'])]}"
+            ),
+        )
         for group in _ci_executable_work_groups(plan)
     ]
     trusted_writer_ids = {
         str(entry["work-group-id"]): ci_validation_writer_id(
             workflow=args.workflow,
-            job=args.writer_job,
+            job=str(entry["writer-job"]),
             matrix={"work-group": entry},
         )
         for entry in matrix
@@ -804,12 +815,30 @@ def _cmd_materialize_ci_work_groups(args: argparse.Namespace) -> int:
     )
     _write_json(Path(args.assignments_out), assignments)
     work_group_ids = [str(entry["work-group-id"]) for entry in matrix]
+    layers = _ci_work_group_matrix_layers(matrix)
+    if len(layers) > _CI_WORK_GROUP_WORKFLOW_LAYER_CAPACITY:
+        msg = (
+            "CI validation plan requires "
+            f"{len(layers)} dependency layers, but workflow materialization "
+            f"supports {_CI_WORK_GROUP_WORKFLOW_LAYER_CAPACITY}"
+        )
+        raise RuntimeError(msg)
+    layer_outputs: dict[str, str] = {}
+    for index in range(_CI_WORK_GROUP_WORKFLOW_LAYER_CAPACITY):
+        layer = layers[index] if index < len(layers) else []
+        layer_outputs[f"has_work_group_layer_{index}"] = _bool_str(bool(layer))
+        layer_outputs[f"work_group_layer_{index}_matrix"] = json.dumps(
+            layer,
+            separators=(",", ":"),
+        )
     _write_outputs(
         args.github_output,
         {
             "has_work_groups": _bool_str(bool(matrix)),
             "work_group_matrix": json.dumps(matrix, separators=(",", ":")),
+            "work_group_layers": json.dumps(layers, separators=(",", ":")),
             "work_group_ids": json.dumps(work_group_ids, separators=(",", ":")),
+            **layer_outputs,
         },
     )
     return 0
@@ -832,7 +861,19 @@ def _cmd_write_ci_validation_receipt(args: argparse.Namespace) -> int:
             "observed workflow matrix writer identity does not match assignment"
         )
         raise RuntimeError(msg)
-    outcome = _ci_placeholder_outcome(plan, args.work_group_id)
+    dependency_blocked = _ci_dependency_blocked(
+        plan=plan,
+        assignments=assignments,
+        work_group_id=args.work_group_id,
+        observed_artifacts_dir=getattr(args, "observed_artifacts_dir", ""),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    outcome = _ci_placeholder_outcome(
+        plan,
+        args.work_group_id,
+        dependency_blocked=dependency_blocked,
+    )
     receipt = freeze_ci_validation_receipt(
         plan=plan,
         selector_assignments_manifest=assignments,
@@ -868,6 +909,7 @@ def _cmd_write_ci_validation_receipt(args: argparse.Namespace) -> int:
                 str(assignment["writer-observation-ref"])
             ),
             "observed_writer_id": observed_writer_id,
+            "dependency_blocked": _bool_str(dependency_blocked),
         },
     )
     return 0
@@ -3825,13 +3867,131 @@ def _executable_ci_work_group_ids(plan: Mapping[str, object]) -> list[str]:
     ]
 
 
-def _ci_work_group_matrix_entry(group: Mapping[str, Any]) -> Json:
+def _ci_work_group_matrix_entry(
+    group: Mapping[str, Any],
+    *,
+    dependency_layer: int,
+    writer_job: str,
+) -> Json:
     return {
         "work-group-id": str(group["work-group-id"]),
         "kind": str(group.get("kind")),
         "runner": str(group.get("runner-family", "ubuntu")),
+        "depends-on": [
+            str(item)
+            for item in cast("Sequence[object]", group.get("depends-on", []))
+        ],
+        "dependency-layer": dependency_layer,
+        "writer-job": writer_job,
         "placeholder": True,
     }
+
+
+def _ci_work_group_dependency_layers(
+    plan: Mapping[str, object],
+) -> dict[str, int]:
+    groups = {
+        str(group["work-group-id"]): group
+        for group in _ci_executable_work_groups(plan)
+    }
+    layers: dict[str, int] = {}
+
+    def layer(work_group_id: str, visiting: set[str]) -> int:
+        if work_group_id in layers:
+            return layers[work_group_id]
+        if work_group_id in visiting:
+            msg = f"work group dependency cycle includes {work_group_id}"
+            raise RuntimeError(msg)
+        visiting.add(work_group_id)
+        group = groups[work_group_id]
+        dependencies = [
+            str(item)
+            for item in cast("Sequence[object]", group.get("depends-on", []))
+            if str(item) in groups
+        ]
+        value = (
+            max(layer(dependency, visiting) for dependency in dependencies)
+            + 1
+            if dependencies
+            else 0
+        )
+        visiting.remove(work_group_id)
+        layers[work_group_id] = value
+        return value
+
+    for work_group_id in sorted(groups):
+        layer(work_group_id, set())
+    return layers
+
+
+def _ci_work_group_matrix_layers(matrix: Sequence[Mapping[str, object]]) -> list[list[Json]]:
+    layer_count = (
+        max(int(item["dependency-layer"]) for item in matrix) + 1
+        if matrix
+        else 0
+    )
+    return [
+        [
+            dict(item)
+            for item in matrix
+            if int(item["dependency-layer"]) == layer_index
+        ]
+        for layer_index in range(layer_count)
+    ]
+
+
+def _ci_dependency_blocked(
+    *,
+    plan: Mapping[str, object],
+    assignments: Mapping[str, object],
+    work_group_id: str,
+    observed_artifacts_dir: str,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+) -> bool:
+    dependencies = [
+        str(item)
+        for item in cast(
+            "Sequence[object]",
+            _ci_work_group(plan, work_group_id).get("depends-on", []),
+        )
+    ]
+    if not dependencies:
+        return False
+    observed_by_work_group = {
+        str(item.manifest_entry.get("writer-work-group-id")): item
+        for item in _ci_observed_receipt_inputs(
+            plan=plan,
+            assignments=assignments,
+            observed_artifacts_dir=observed_artifacts_dir,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
+        if item.manifest_entry.get("writer-work-group-id") in dependencies
+    }
+    for dependency in dependencies:
+        assignment = _ci_assignment_for_work_group(assignments, dependency)
+        observed = observed_by_work_group.get(dependency)
+        if observed is None or observed.receipt is None:
+            return True
+        if observed.manifest_entry.get("observed-writer-id") != assignment.get(
+            "trusted-writer-id"
+        ):
+            return True
+        try:
+            validate_ci_validation_receipt(
+                observed.receipt,
+                plan=plan,
+                selector_assignments_manifest=assignments,
+                assignment=assignment,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+            )
+        except ContractValidationError:
+            return True
+        if observed.receipt.get("outcome") != "success":
+            return True
+    return False
 
 
 def _ci_assignment_for_work_group(
@@ -3892,13 +4052,12 @@ def _ci_validation_placeholder_diagnostic(
 def _ci_placeholder_outcome(
     plan: Mapping[str, object],
     work_group_id: str,
+    *,
+    dependency_blocked: bool,
 ) -> ReceiptOutcome:
-    group = _ci_work_group(plan, work_group_id)
-    if group.get("kind") == "release-shaped-artifact" and not group.get(
-        "depends-on"
-    ):
-        return "blocking-failure"
-    return "skipped"
+    if dependency_blocked:
+        return "skipped"
+    return "blocking-failure"
 
 
 def _ci_placeholder_evidence(

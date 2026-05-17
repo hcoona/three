@@ -618,7 +618,9 @@ def test_no_authoritative_plan_report_does_not_forge_plan() -> None:
         "jobs": {
             "plan": {"conclusion": "failure"},
             "materialize-work-groups": {"conclusion": "skipped"},
-            "validation-work-groups": {"conclusion": "skipped"},
+            "validation-work-groups-layer-0": {"conclusion": "skipped"},
+            "validation-work-groups-layer-1": {"conclusion": "skipped"},
+            "validation-work-groups-layer-2": {"conclusion": "skipped"},
             "aggregate-evidence": {"conclusion": "failure"},
         },
         "run": {"conclusion": "failure"},
