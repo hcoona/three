@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import io
 import json
@@ -14,7 +15,7 @@ import tarfile
 from copy import deepcopy
 from itertools import pairwise
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 import yaml
@@ -23,8 +24,10 @@ from three_workflow_release_build import execute_build
 from three_workflow_release_contracts import (
     ArtifactNameInputs,
     artifact_name,
+    artifact_physical_name,
     ci_validation_writer_id,
     validate_ci_validation_aggregate,
+    validate_ci_validation_receipt,
     validate_contract,
 )
 from three_workflow_release_planner import (
@@ -39,7 +42,7 @@ from three_workflow_release_proof import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
@@ -4828,19 +4831,28 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     )
 
 
-def test_ci_validation_workflow_placeholders_fail_closed() -> None:
-    """Skeleton validation fan-out is explicit and does not fake receipts."""
+def test_ci_validation_workflow_placeholders_emit_trusted_receipts() -> None:
+    """Skeleton validation fan-out emits trusted placeholder receipts."""
     workflow = _workflow("ci-validate.yml")
-    placeholder = _step_block(
+    receipt = _step_block(
         workflow,
-        "Explicit validation executor placeholder",
+        "Write placeholder validation receipt",
     )
+    observation = _step_block(workflow, "Write receipt writer observation")
+    upload = _step_block(workflow, "Upload validation receipt")
     aggregate = _step_block(workflow, "Aggregate validation evidence")
 
-    assert "not executed by this Group 9 skeleton" in placeholder
-    assert "No ecosystem validation receipt is emitted" in placeholder
-    assert "exit 1" in placeholder
+    assert "write-ci-validation-placeholder-receipt" in receipt
+    assert "MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}" in receipt
+    assert "steps.receipt.outputs.receipt_artifact_name" in upload
+    assert "steps.upload-receipt.outputs.artifact-id" in observation
+    assert "write-ci-validation-writer-observation" in observation
     assert "aggregate-ci-evidence" in aggregate
+    assert (
+        "--observed-artifacts-dir .three-ci-validation/observed-artifacts"
+        in aggregate
+    )
+    assert "observed_receipts=[]" not in workflow
 
 
 def test_ci_validation_artifact_refs_include_planner_diagnostics() -> None:
@@ -5311,6 +5323,654 @@ def test_ci_validation_materializer_uses_workflow_matrix_writer_ids() -> None:
             )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa: PLR0915
+    """Observed placeholder receipts are manifested and fail as skipped."""
+    scratch = SCRATCH / "ci-validation-placeholder-receipts"
+    if scratch.exists():
+        shutil.rmtree(scratch)
+    scratch.mkdir(parents=True)
+    try:
+        request = _ci_validation_push_request(
+            [
+                (
+                    "src/public/lib/three-workflow-release-planner/src/"
+                    "three_workflow_release_planner/ci_validation_planner.py"
+                )
+            ],
+        )
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=request,
+                repo_root=REPO_ROOT,
+                expected_run_id="25887422010",
+                expected_run_attempt="1",
+                created_at="2026-05-14T21:09:21Z",
+            )
+        )
+        plan_path = scratch / "validation-plan.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        assignments_path = scratch / "selector-assignments.json"
+        materialize_outputs_path = scratch / "materialize-outputs.txt"
+        receipt_outputs_path = scratch / "receipt-outputs.txt"
+        observation_outputs_path = scratch / "observation-outputs.txt"
+        receipt_path = scratch / "receipt.json"
+        observation_path = scratch / "writer-observation.json"
+        metadata_path = scratch / "receipt-artifact-metadata.json"
+        manifest_path = scratch / "receipt-manifest.json"
+        aggregate_path = scratch / "aggregate.json"
+        aggregate_outputs_path = scratch / "aggregate-outputs.txt"
+        observed_root = scratch / "observed-artifacts"
+        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(plan_snapshot.changed_files_snapshot),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(plan_snapshot.fact_snapshot),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_materialize_ci_work_groups(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    workflow="CI Validation",
+                    writer_job="validation-work-groups",
+                    created_at="2026-05-14T21:09:21Z",
+                    assignments_out=str(assignments_path),
+                    github_output=str(materialize_outputs_path),
+                )
+            )
+            == 0
+        )
+        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
+        assert len(assignments["assignments"]) >= 4
+        matrix = {
+            item["work-group-id"]: item
+            for item in json.loads(
+                _github_outputs(materialize_outputs_path)["work_group_matrix"]
+            )
+        }
+        placeholder_receipt_assignments = [
+            assignment
+            for assignment in assignments["assignments"]
+            if matrix[assignment["work-group-id"]]["kind"]
+            in {"lightweight-preflight", "workflow-release-tooling"}
+        ]
+        assert len(placeholder_receipt_assignments) >= 2
+        assignment = placeholder_receipt_assignments[0]
+        tampered_assignment = placeholder_receipt_assignments[1]
+        remaining_assignments = [
+            item for item in assignments["assignments"] if item != assignment
+        ]
+        malformed_assignment = remaining_assignments[0]
+        missing_receipt_assignment = remaining_assignments[1]
+        work_group_id = assignment["work-group-id"]
+        matrix_json = json.dumps(matrix[work_group_id], separators=(",", ":"))
+
+        assert (
+            control._cmd_write_ci_validation_receipt(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=work_group_id,
+                    matrix_work_group_json=matrix_json,
+                    workflow="CI Validation",
+                    job="validation-work-groups",
+                    observed_commit_sha="b" * 40,
+                    created_at="2026-05-14T21:09:21Z",
+                    receipt_out=str(receipt_path),
+                    github_output=str(receipt_outputs_path),
+                )
+            )
+            == 0
+        )
+        assert (
+            control._cmd_write_ci_validation_writer_observation(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=work_group_id,
+                    matrix_work_group_json=matrix_json,
+                    workflow="CI Validation",
+                    job="validation-work-groups",
+                    artifact_instance_id="987654321",
+                    created_at="2026-05-14T21:09:22Z",
+                    observation_out=str(observation_path),
+                    metadata_out=str(metadata_path),
+                    github_output=str(observation_outputs_path),
+                )
+            )
+            == 0
+        )
+        receipt_dir = observed_root / artifact_physical_name(
+            assignment["receipt-artifact-ref"]
+        )
+        observation_dir = observed_root / artifact_physical_name(
+            assignment["writer-observation-ref"]
+        )
+        receipt_dir.mkdir(parents=True)
+        observation_dir.mkdir(parents=True)
+        shutil.copyfile(receipt_path, receipt_dir / "receipt.json")
+        shutil.copyfile(
+            observation_path,
+            observation_dir / "writer-observation.json",
+        )
+        shutil.copyfile(
+            metadata_path,
+            observation_dir / "receipt-artifact-metadata.json",
+        )
+        raw_receipt = json.dumps(
+            json.loads(receipt_path.read_text(encoding="utf-8")),
+            indent=4,
+        ).encode()
+        (receipt_dir / "receipt.json").write_bytes(raw_receipt)
+
+        malformed_work_group_id = malformed_assignment["work-group-id"]
+        malformed_observation_path = scratch / "malformed-observation.json"
+        malformed_metadata_path = scratch / "malformed-receipt-metadata.json"
+        assert (
+            control._cmd_write_ci_validation_writer_observation(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=malformed_work_group_id,
+                    matrix_work_group_json=json.dumps(
+                        matrix[malformed_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    workflow="CI Validation",
+                    job="validation-work-groups",
+                    artifact_instance_id="malformed-receipt-artifact",
+                    created_at="2026-05-14T21:09:22Z",
+                    observation_out=str(malformed_observation_path),
+                    metadata_out=str(malformed_metadata_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        malformed_receipt_dir = observed_root / artifact_physical_name(
+            malformed_assignment["receipt-artifact-ref"]
+        )
+        malformed_observation_dir = observed_root / artifact_physical_name(
+            malformed_assignment["writer-observation-ref"]
+        )
+        malformed_receipt_dir.mkdir(parents=True)
+        malformed_observation_dir.mkdir(parents=True)
+        malformed_bytes = b"{ malformed receipt json"
+        (malformed_receipt_dir / "receipt.json").write_bytes(malformed_bytes)
+        shutil.copyfile(
+            malformed_observation_path,
+            malformed_observation_dir / "writer-observation.json",
+        )
+        shutil.copyfile(
+            malformed_metadata_path,
+            malformed_observation_dir / "receipt-artifact-metadata.json",
+        )
+
+        tampered_work_group_id = tampered_assignment["work-group-id"]
+        tampered_receipt_path = scratch / "tampered-receipt.json"
+        tampered_observation_path = scratch / "tampered-observation.json"
+        tampered_metadata_path = scratch / "tampered-receipt-metadata.json"
+        assert (
+            control._cmd_write_ci_validation_receipt(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=tampered_work_group_id,
+                    matrix_work_group_json=json.dumps(
+                        matrix[tampered_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    workflow="CI Validation",
+                    job="validation-work-groups",
+                    observed_commit_sha="b" * 40,
+                    created_at="2026-05-14T21:09:21Z",
+                    receipt_out=str(tampered_receipt_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        assert (
+            control._cmd_write_ci_validation_writer_observation(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=tampered_work_group_id,
+                    matrix_work_group_json=json.dumps(
+                        matrix[tampered_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    workflow="CI Validation",
+                    job="validation-work-groups",
+                    artifact_instance_id="claimed-receipt-artifact",
+                    created_at="2026-05-14T21:09:22Z",
+                    observation_out=str(tampered_observation_path),
+                    metadata_out=str(tampered_metadata_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        tampered_metadata = json.loads(
+            tampered_metadata_path.read_text(encoding="utf-8")
+        )
+        tampered_metadata["artifact-instance-id"] = (
+            "independent-receipt-artifact"
+        )
+        tampered_metadata_path.write_text(
+            json.dumps(tampered_metadata),
+            encoding="utf-8",
+        )
+        tampered_receipt_dir = observed_root / artifact_physical_name(
+            tampered_assignment["receipt-artifact-ref"]
+        )
+        tampered_observation_dir = observed_root / artifact_physical_name(
+            tampered_assignment["writer-observation-ref"]
+        )
+        tampered_receipt_dir.mkdir(parents=True)
+        tampered_observation_dir.mkdir(parents=True)
+        shutil.copyfile(
+            tampered_receipt_path, tampered_receipt_dir / "receipt.json"
+        )
+        shutil.copyfile(
+            tampered_observation_path,
+            tampered_observation_dir / "writer-observation.json",
+        )
+        shutil.copyfile(
+            tampered_metadata_path,
+            tampered_observation_dir / "receipt-artifact-metadata.json",
+        )
+
+        missing_observation_path = scratch / "missing-receipt-observation.json"
+        missing_metadata_path = scratch / "missing-receipt-metadata.json"
+        missing_work_group_id = missing_receipt_assignment["work-group-id"]
+        assert (
+            control._cmd_write_ci_validation_writer_observation(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=missing_work_group_id,
+                    matrix_work_group_json=json.dumps(
+                        matrix[missing_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    workflow="CI Validation",
+                    job="validation-work-groups",
+                    artifact_instance_id="missing-receipt-artifact",
+                    created_at="2026-05-14T21:09:22Z",
+                    observation_out=str(missing_observation_path),
+                    metadata_out=str(missing_metadata_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        missing_receipt_dir = observed_root / artifact_physical_name(
+            missing_receipt_assignment["receipt-artifact-ref"]
+        )
+        missing_observation_dir = observed_root / artifact_physical_name(
+            missing_receipt_assignment["writer-observation-ref"]
+        )
+        missing_receipt_dir.mkdir(parents=True)
+        missing_observation_dir.mkdir(parents=True)
+        shutil.copyfile(
+            missing_observation_path,
+            missing_observation_dir / "writer-observation.json",
+        )
+        shutil.copyfile(
+            missing_metadata_path,
+            missing_observation_dir / "receipt-artifact-metadata.json",
+        )
+
+        unexpected_name = "three-ci-validation-" + ("f" * 64)
+        unexpected_dir = observed_root / unexpected_name
+        unexpected_dir.mkdir(parents=True)
+        unexpected_bytes = b"{"
+        (unexpected_dir / "receipt.json").write_bytes(unexpected_bytes)
+        unassigned_ref = (
+            "ci-validation/receipts/25887422010/1/"
+            "unassigned-readable/receipt.json"
+        )
+        unassigned_name = artifact_physical_name(unassigned_ref)
+        unassigned_dir = observed_root / unassigned_name
+        unassigned_dir.mkdir(parents=True)
+        unassigned_receipt = json.loads(
+            receipt_path.read_text(encoding="utf-8")
+        )
+        unassigned_receipt.update(
+            {
+                "artifact-ref": unassigned_ref,
+                "work-group-id": "unassigned-readable",
+                "assignment-id": "unassigned-readable",
+                "receipt-id": "unassigned-readable-receipt",
+            }
+        )
+        unassigned_bytes = json.dumps(
+            unassigned_receipt,
+            sort_keys=True,
+        ).encode()
+        (unassigned_dir / "receipt.json").write_bytes(unassigned_bytes)
+        cross_attempt_ref = (
+            "ci-validation/receipts/25887422010/2/"
+            "unassigned-cross-attempt/receipt.json"
+        )
+        cross_attempt_name = artifact_physical_name(cross_attempt_ref)
+        cross_attempt_dir = observed_root / cross_attempt_name
+        cross_attempt_dir.mkdir(parents=True)
+        cross_attempt_receipt = dict(unassigned_receipt)
+        cross_attempt_receipt.update(
+            {
+                "artifact-ref": cross_attempt_ref,
+                "work-group-id": "unassigned-cross-attempt",
+                "assignment-id": "unassigned-cross-attempt",
+                "receipt-id": "unassigned-cross-attempt-receipt",
+            }
+        )
+        cross_attempt_bytes = json.dumps(
+            cross_attempt_receipt,
+            sort_keys=True,
+        ).encode()
+        (cross_attempt_dir / "receipt.json").write_bytes(cross_attempt_bytes)
+        bad_work_group_ref = (
+            "ci-validation/receipts/25887422010/1/BAD/receipt.json"
+        )
+        bad_work_group_name = artifact_physical_name(bad_work_group_ref)
+        bad_work_group_dir = observed_root / bad_work_group_name
+        bad_work_group_dir.mkdir(parents=True)
+        bad_work_group_receipt = dict(unassigned_receipt)
+        bad_work_group_receipt.update(
+            {
+                "artifact-ref": bad_work_group_ref,
+                "work-group-id": "BAD",
+                "assignment-id": "BAD",
+                "receipt-id": "bad-work-group-receipt",
+            }
+        )
+        bad_work_group_bytes = json.dumps(
+            bad_work_group_receipt,
+            sort_keys=True,
+        ).encode()
+        (bad_work_group_dir / "receipt.json").write_bytes(bad_work_group_bytes)
+
+        result = control._cmd_aggregate_ci_evidence(
+            argparse.Namespace(
+                repository="hcoona/three",
+                workflow="CI Validation",
+                run_id="25887422010",
+                run_attempt="1",
+                plan=str(plan_path),
+                changed_files_snapshot=str(changed_files_path),
+                fact_snapshot=str(fact_snapshot_path),
+                assignments=str(assignments_path),
+                observed_artifacts_dir=str(observed_root),
+                created_at="2026-05-14T21:09:23Z",
+                receipt_manifest_out=str(manifest_path),
+                aggregate_out=str(aggregate_path),
+                github_output=str(aggregate_outputs_path),
+            )
+        )
+
+        assert result == 1
+        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        entries_by_physical_name = {
+            entry["physical-artifact-name"]: entry
+            for entry in manifest["entries"]
+        }
+        assert len(manifest["entries"]) == 8
+        assert aggregate["reason"]["invalid-plan"] is False
+        assert (
+            entries_by_physical_name[receipt_dir.name]["receipt-content-digest"]
+            == hashlib.sha256(raw_receipt).hexdigest()
+        )
+        assert (
+            entries_by_physical_name[malformed_receipt_dir.name][
+                "receipt-content-digest"
+            ]
+            == hashlib.sha256(malformed_bytes).hexdigest()
+        )
+        assert (
+            entries_by_physical_name[missing_receipt_dir.name][
+                "receipt-content-digest"
+            ]
+            is None
+        )
+        assert entries_by_physical_name[unexpected_name]["artifact-ref"] is None
+        assert (
+            entries_by_physical_name[unexpected_name]["receipt-content-digest"]
+            == hashlib.sha256(unexpected_bytes).hexdigest()
+        )
+        unassigned_entry = entries_by_physical_name[unassigned_name]
+        assert unassigned_entry["artifact-ref"] == unassigned_ref
+        assert unassigned_entry["receipt-id"] == "unassigned-readable-receipt"
+        assert (
+            unassigned_entry["receipt-content-digest"]
+            == hashlib.sha256(unassigned_bytes).hexdigest()
+        )
+        assert unassigned_entry["assignment-id"] is None
+        assert unassigned_entry["writer-work-group-id"] is None
+        assert unassigned_entry["trusted-writer-id"] is None
+        assert unassigned_entry["observed-writer-id"] is None
+        assert unassigned_entry["writer-observation-ref"] is None
+        cross_attempt_entry = entries_by_physical_name[cross_attempt_name]
+        assert cross_attempt_entry["artifact-ref"] is None
+        assert cross_attempt_entry["receipt-id"] is None
+        assert (
+            cross_attempt_entry["receipt-content-digest"]
+            == hashlib.sha256(cross_attempt_bytes).hexdigest()
+        )
+        assert cross_attempt_entry["assignment-id"] is None
+        assert cross_attempt_entry["writer-work-group-id"] is None
+        assert cross_attempt_entry["trusted-writer-id"] is None
+        assert cross_attempt_entry["observed-writer-id"] is None
+        assert cross_attempt_entry["writer-observation-ref"] is None
+        bad_work_group_entry = entries_by_physical_name[bad_work_group_name]
+        assert bad_work_group_entry["artifact-ref"] is None
+        assert bad_work_group_entry["receipt-id"] is None
+        assert (
+            bad_work_group_entry["receipt-content-digest"]
+            == hashlib.sha256(bad_work_group_bytes).hexdigest()
+        )
+        assert bad_work_group_entry["assignment-id"] is None
+        assert bad_work_group_entry["writer-work-group-id"] is None
+        assert bad_work_group_entry["trusted-writer-id"] is None
+        assert bad_work_group_entry["observed-writer-id"] is None
+        assert bad_work_group_entry["writer-observation-ref"] is None
+        observed_by_physical_name = {
+            receipt["physical-artifact-name"]: receipt
+            for receipt in aggregate["observed-receipts"]
+        }
+        assert (
+            observed_by_physical_name[receipt_dir.name]["admissibility"]
+            == "valid"
+        )
+        assert (
+            observed_by_physical_name[malformed_receipt_dir.name][
+                "admissibility"
+            ]
+            == "inadmissible"
+        )
+        assert (
+            observed_by_physical_name[tampered_receipt_dir.name][
+                "admissibility"
+            ]
+            == "inadmissible"
+        )
+        assert (
+            observed_by_physical_name[missing_receipt_dir.name]["admissibility"]
+            == "inadmissible"
+        )
+        assert (
+            observed_by_physical_name[unexpected_name]["admissibility"]
+            == "inadmissible"
+        )
+        assert (
+            observed_by_physical_name[unassigned_name]["admissibility"]
+            == "inadmissible"
+        )
+        assert (
+            observed_by_physical_name[cross_attempt_name]["admissibility"]
+            == "inadmissible"
+        )
+        assert (
+            observed_by_physical_name[bad_work_group_name]["admissibility"]
+            == "inadmissible"
+        )
+        assert aggregate["reason"]["required-evidence-skipped"] is True
+        assert aggregate["reason"]["inadmissible-receipt"] is True
+        assert aggregate["verdict"] == "failed"
+        validate_ci_validation_aggregate(
+            aggregate,
+            plan=plan_snapshot.plan,
+            receipt_manifest=manifest,
+            selector_assignments_manifest=assignments,
+            changed_files_snapshot=plan_snapshot.changed_files_snapshot,
+            fact_snapshot=plan_snapshot.fact_snapshot,
+        )
+    finally:
+        if scratch.exists():
+            shutil.rmtree(scratch)
+
+
+def test_ci_validation_release_shaped_placeholder_receipt_is_valid() -> None:
+    """Root release-shaped placeholders use blocking-failure evidence."""
+    scratch = SCRATCH / "ci-validation-release-shaped-placeholder"
+    if scratch.exists():
+        shutil.rmtree(scratch)
+    scratch.mkdir(parents=True)
+    try:
+        request = _ci_validation_push_request(
+            [
+                (
+                    "src/public/lib/three-workflow-release-planner/src/"
+                    "three_workflow_release_planner/ci_validation_planner.py"
+                )
+            ],
+        )
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=request,
+                repo_root=REPO_ROOT,
+                expected_run_id="25887422010",
+                expected_run_attempt="1",
+                created_at="2026-05-14T21:09:21Z",
+            )
+        )
+        plan_path = scratch / "validation-plan.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        assignments_path = scratch / "selector-assignments.json"
+        output_path = scratch / "outputs.txt"
+        receipt_path = scratch / "receipt.json"
+        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(plan_snapshot.changed_files_snapshot),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(plan_snapshot.fact_snapshot),
+            encoding="utf-8",
+        )
+        assert (
+            control._cmd_materialize_ci_work_groups(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    workflow="CI Validation",
+                    writer_job="validation-work-groups",
+                    created_at="2026-05-14T21:09:21Z",
+                    assignments_out=str(assignments_path),
+                    github_output=str(output_path),
+                )
+            )
+            == 0
+        )
+        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
+        matrix = {
+            item["work-group-id"]: item
+            for item in json.loads(
+                _github_outputs(output_path)["work_group_matrix"]
+            )
+        }
+        release_assignment = next(
+            assignment
+            for assignment in assignments["assignments"]
+            if matrix[assignment["work-group-id"]]["kind"]
+            == "release-shaped-artifact"
+        )
+        release_work_group_id = release_assignment["work-group-id"]
+        work_groups = cast(
+            "Sequence[Mapping[str, object]]",
+            plan_snapshot.plan["work-groups"],
+        )
+        release_work_group = next(
+            group
+            for group in work_groups
+            if group["work-group-id"] == release_work_group_id
+        )
+        assert release_work_group["depends-on"] == []
+
+        assert (
+            control._cmd_write_ci_validation_receipt(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=release_work_group_id,
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    workflow="CI Validation",
+                    job="validation-work-groups",
+                    observed_commit_sha="b" * 40,
+                    created_at="2026-05-14T21:09:22Z",
+                    receipt_out=str(receipt_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        validate_ci_validation_receipt(
+            receipt,
+            plan=plan_snapshot.plan,
+            selector_assignments_manifest=assignments,
+            assignment=release_assignment,
+            changed_files_snapshot=plan_snapshot.changed_files_snapshot,
+            fact_snapshot=plan_snapshot.fact_snapshot,
+        )
+        assert receipt["outcome"] == "blocking-failure"
+        result = receipt["evidence"]["category-result"]["detail"][
+            "artifact-obligation-results"
+        ][0]
+        assert result["outcome"] == "blocking-failure"
+        assert result["descriptor"]["identity"] is not None
+    finally:
+        if scratch.exists():
+            shutil.rmtree(scratch)
 
 
 def test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan() -> (

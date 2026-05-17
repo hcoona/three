@@ -251,6 +251,7 @@ class CiValidationObservedReceiptInput:
 
     manifest_entry: Mapping[str, object]
     receipt: Mapping[str, object] | None = None
+    raw_receipt_bytes: bytes | None = None
 
 
 def ci_validation_observed_entry_id(
@@ -888,11 +889,14 @@ def _payload_digest(value: Mapping[str, object], name: str) -> str:
 
 
 def _receipt_digest_matches_payload(
-    entry: Mapping[str, object], receipt: Mapping[str, object]
+    entry: Mapping[str, object],
+    raw_receipt_bytes: bytes | None,
 ) -> bool:
     try:
+        if raw_receipt_bytes is None:
+            return False
         observed_digest = ci_validation_receipt_content_digest(
-            canonical_json_bytes(receipt)
+            raw_receipt_bytes
         )
     except (ContractValidationError, TypeError, ValueError):
         return False
@@ -962,12 +966,16 @@ def _normalize_observed_inputs(
         elif isinstance(item, Mapping):
             entry = item.get("manifest-entry")
             receipt = item.get("receipt")
+            raw_receipt_bytes = item.get("raw-receipt-bytes")
             if not isinstance(entry, Mapping):
                 entry = item
             normalized.append(
                 CiValidationObservedReceiptInput(
                     manifest_entry=entry,
                     receipt=receipt if isinstance(receipt, Mapping) else None,
+                    raw_receipt_bytes=raw_receipt_bytes
+                    if isinstance(raw_receipt_bytes, bytes)
+                    else None,
                 )
             )
     return normalized
@@ -1016,7 +1024,10 @@ def _receipt_summaries(  # noqa: C901,PLR0913
                 DiagnosticDetail.MALFORMED_RECEIPT.value,
                 "Readable receipt artifact is missing observed content digest",
             )
-        elif not _receipt_digest_matches_payload(entry, receipt):
+        elif not _receipt_digest_matches_payload(
+            entry,
+            item.raw_receipt_bytes,
+        ):
             diagnostic = _inadmissible_diagnostic(
                 entry_id,
                 DiagnosticDetail.MISMATCHED_EVIDENCE_PAYLOAD.value,
@@ -1065,9 +1076,7 @@ def _receipt_summaries(  # noqa: C901,PLR0913
                 "artifact-ref": entry.get("artifact-ref"),
                 "physical-artifact-name": entry.get("physical-artifact-name"),
                 "artifact-instance-id": entry.get("artifact-instance-id"),
-                "receipt-id": receipt.get("receipt-id")
-                if isinstance(receipt, Mapping)
-                else entry.get("receipt-id"),
+                "receipt-id": entry.get("receipt-id"),
                 "work-group-id": work_group_id,
                 "receipt-content-digest": entry.get("receipt-content-digest"),
                 "admissibility": "valid" if valid else "inadmissible",
@@ -1726,7 +1735,7 @@ def _manifest_entry_aggregate_projection(
         "physical-artifact-name": entry.get("physical-artifact-name"),
         "artifact-instance-id": entry.get("artifact-instance-id"),
         "receipt-id": entry.get("receipt-id"),
-        "work-group-id": entry.get("writer-work-group-id"),
+        "work-group-id": _work_group_id_from_ref(entry.get("artifact-ref")),
         "receipt-content-digest": entry.get("receipt-content-digest"),
     }
 
@@ -3442,16 +3451,6 @@ def _validate_manifest_entry(
         f"{path}.receipt-content-digest",
         issues,
     )
-    if (
-        entry.get("artifact-ref") is not None
-        and entry.get("receipt-content-digest") is None
-    ):
-        issues.append(
-            ValidationIssue(
-                f"{path}.receipt-content-digest",
-                "must be present for classified receipt artifacts",
-            )
-        )
     ref_work_group = _work_group_id_from_ref(artifact_ref)
     if ref_work_group is None:
         for key in (
@@ -3471,6 +3470,7 @@ def _validate_manifest_entry(
                 )
     if (
         ref_work_group is not None
+        and entry.get("writer-work-group-id") is not None
         and entry.get("writer-work-group-id") != ref_work_group
     ):
         issues.append(

@@ -221,7 +221,10 @@ jobs:
 
   validation-work-groups:
     name: validation-work-groups
-    needs: materialize-work-groups
+    needs:
+      - normalize-input
+      - plan
+      - materialize-work-groups
     if: needs.materialize-work-groups.outputs.has-work-groups == 'true'
     runs-on: ${{ matrix.work-group.runner == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
@@ -232,14 +235,94 @@ jobs:
       contents: read
       actions: read
     steps:
-      - name: Explicit validation executor placeholder
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          path: .three-ci-validation/plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
+          path: .three-ci-validation/materialize
+      - name: Download changed-files snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Download fact snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          path: .three-ci-validation/plan
+      - name: Write placeholder validation receipt
+        id: receipt
         shell: bash
         env:
           WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
         run: |
-          echo "Planned CI validation work group '${WORK_GROUP_ID}' is not executed by this Group 9 skeleton." >&2
-          echo "No ecosystem validation receipt is emitted by placeholder boundaries." >&2
-          exit 1
+          mkdir -p .three-ci-validation/work
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-placeholder-receipt \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --work-group-id "$WORK_GROUP_ID" \
+            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --workflow "CI Validation" \
+            --job "validation-work-groups" \
+            --observed-commit-sha "$GITHUB_SHA" \
+            --receipt-out .three-ci-validation/work/receipt.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload validation receipt
+        id: upload-receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.receipt.outputs.receipt_artifact_name }}
+          path: .three-ci-validation/work/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Write receipt writer observation
+        id: writer-observation
+        shell: bash
+        env:
+          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          RECEIPT_ARTIFACT_ID: ${{ steps.upload-receipt.outputs.artifact-id }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-writer-observation \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --work-group-id "$WORK_GROUP_ID" \
+            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --workflow "CI Validation" \
+            --job "validation-work-groups" \
+            --artifact-instance-id "$RECEIPT_ARTIFACT_ID" \
+            --observation-out .three-ci-validation/work/writer-observation.json \
+            --metadata-out .three-ci-validation/work/receipt-artifact-metadata.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload writer observation
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.writer-observation.outputs.writer_observation_artifact_name }}
+          path: |
+            .three-ci-validation/work/writer-observation.json
+            .three-ci-validation/work/receipt-artifact-metadata.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
 
   aggregate-evidence:
     name: aggregate-evidence
@@ -286,6 +369,12 @@ jobs:
         with:
           name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
           path: .three-ci-validation/plan
+      - name: Download observed validation artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: three-ci-validation-*
+          path: .three-ci-validation/observed-artifacts
       - name: Aggregate validation evidence
         env:
           CI_REPOSITORY: ${{ github.repository }}
@@ -300,6 +389,7 @@ jobs:
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
             --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --receipt-manifest-out .three-ci-validation/aggregate/receipt-manifest.json \
             --aggregate-out .three-ci-validation/aggregate/ci-validation-aggregate.json
       - name: Upload receipt manifest

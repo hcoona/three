@@ -19,7 +19,7 @@ import urllib.request
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -35,15 +35,23 @@ for _WORKSPACE_SRC in (
 from three_workflow_release_contracts import (  # noqa: E402
     API_VERSIONS_BY_KIND,
     CiValidationKind,
+    CiValidationObservedReceiptInput,
     ContractValidationError,
     DiagnosticDetail,
+    DiagnosticFamily,
+    DiagnosticSeverity,
+    DiagnosticVerdictEffect,
+    ReceiptOutcome,
     artifact_physical_name,
     canonical_json_digest,
     ci_validation_aggregate_artifact_ref,
     ci_validation_changed_files_snapshot_artifact_ref,
+    ci_validation_diagnostic,
     ci_validation_fact_snapshot_artifact_ref,
+    ci_validation_observed_entry_id,
     ci_validation_plan_artifact_ref,
     ci_validation_planner_diagnostics_artifact_ref,
+    ci_validation_receipt_content_digest,
     ci_validation_receipt_manifest_artifact_ref,
     ci_validation_request_artifact_ref,
     ci_validation_request_projection,
@@ -51,11 +59,15 @@ from three_workflow_release_contracts import (  # noqa: E402
     ci_validation_writer_id,
     freeze_ci_validation_aggregate,
     freeze_ci_validation_invalid_plan_aggregate,
+    freeze_ci_validation_receipt,
     freeze_ci_validation_receipt_manifest,
     freeze_ci_validation_selector_assignments,
+    freeze_ci_validation_writer_observation,
+    load_ci_validation_receipt_payload,
     validate_ci_validation_plan,
     validate_ci_validation_request,
     validate_ci_validation_selector_assignments,
+    validate_ci_validation_writer_observation,
     validate_contract,
 )
 from three_workflow_release_contracts.artifact_names import (  # noqa: E402
@@ -74,6 +86,7 @@ _PERMISSION_RANK = {
     "maintain": 4,
     "admin": 5,
 }
+_CI_LOCAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _TOPOLOGIES = (
     "github-token",
     "external-oidc-entry-workflow",
@@ -112,6 +125,8 @@ def main() -> int:
     _add_write_ci_validation_request(subparsers)
     _add_ci_validation_artifact_refs(subparsers)
     _add_materialize_ci_work_groups(subparsers)
+    _add_write_ci_validation_receipt(subparsers)
+    _add_write_ci_validation_writer_observation(subparsers)
     _add_aggregate_ci_evidence(subparsers)
     _add_plan_gate(subparsers)
     _add_matrix_outputs(subparsers)
@@ -251,11 +266,51 @@ def _add_aggregate_ci_evidence(
     parser.add_argument("--changed-files-snapshot", default="")
     parser.add_argument("--fact-snapshot", default="")
     parser.add_argument("--assignments", default="")
+    parser.add_argument("--observed-artifacts-dir", default="")
     parser.add_argument("--created-at")
     parser.add_argument("--receipt-manifest-out", required=True)
     parser.add_argument("--aggregate-out", required=True)
     parser.add_argument("--github-output")
     parser.set_defaults(func=_cmd_aggregate_ci_evidence)
+
+
+def _add_write_ci_validation_receipt(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("write-ci-validation-placeholder-receipt")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--changed-files-snapshot", default="")
+    parser.add_argument("--fact-snapshot", default="")
+    parser.add_argument("--assignments", required=True)
+    parser.add_argument("--work-group-id", required=True)
+    parser.add_argument("--matrix-work-group-json", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--job", required=True)
+    parser.add_argument("--observed-commit-sha", required=True)
+    parser.add_argument("--created-at")
+    parser.add_argument("--receipt-out", required=True)
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_write_ci_validation_receipt)
+
+
+def _add_write_ci_validation_writer_observation(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("write-ci-validation-writer-observation")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--changed-files-snapshot", default="")
+    parser.add_argument("--fact-snapshot", default="")
+    parser.add_argument("--assignments", required=True)
+    parser.add_argument("--work-group-id", required=True)
+    parser.add_argument("--matrix-work-group-json", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--job", required=True)
+    parser.add_argument("--artifact-instance-id", required=True)
+    parser.add_argument("--created-at")
+    parser.add_argument("--observation-out", required=True)
+    parser.add_argument("--metadata-out", default="")
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_write_ci_validation_writer_observation)
 
 
 def _add_plan_gate(
@@ -760,6 +815,125 @@ def _cmd_materialize_ci_work_groups(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_write_ci_validation_receipt(args: argparse.Namespace) -> int:
+    plan = _read_json(Path(args.plan))
+    assignments = _read_json(Path(args.assignments))
+    changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
+    fact_snapshot = _read_optional_json(args.fact_snapshot)
+    assignment = _ci_assignment_for_work_group(assignments, args.work_group_id)
+    matrix_work_group = _read_json_value(args.matrix_work_group_json)
+    observed_writer_id = ci_validation_writer_id(
+        workflow=args.workflow,
+        job=args.job,
+        matrix={"work-group": matrix_work_group},
+    )
+    if observed_writer_id != assignment.get("trusted-writer-id"):
+        msg = (
+            "observed workflow matrix writer identity does not match assignment"
+        )
+        raise RuntimeError(msg)
+    outcome = _ci_placeholder_outcome(plan, args.work_group_id)
+    receipt = freeze_ci_validation_receipt(
+        plan=plan,
+        selector_assignments_manifest=assignments,
+        assignment=assignment,
+        receipt_id=str(assignment["assignment-id"]),
+        created_at=args.created_at or _utc_now(),
+        execution_observed_commit_sha=args.observed_commit_sha,
+        outcome=outcome,
+        evidence=_ci_placeholder_evidence(
+            plan,
+            args.work_group_id,
+            outcome=outcome,
+            fact_snapshot=fact_snapshot,
+        ),
+        diagnostics=[
+            _ci_validation_placeholder_diagnostic(args.work_group_id, outcome),
+        ],
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    _write_json(Path(args.receipt_out), receipt)
+    _write_outputs(
+        args.github_output,
+        {
+            "receipt_artifact_ref": str(assignment["receipt-artifact-ref"]),
+            "receipt_artifact_name": artifact_physical_name(
+                str(assignment["receipt-artifact-ref"])
+            ),
+            "writer_observation_artifact_ref": str(
+                assignment["writer-observation-ref"]
+            ),
+            "writer_observation_artifact_name": artifact_physical_name(
+                str(assignment["writer-observation-ref"])
+            ),
+            "observed_writer_id": observed_writer_id,
+        },
+    )
+    return 0
+
+
+def _cmd_write_ci_validation_writer_observation(
+    args: argparse.Namespace,
+) -> int:
+    plan = _read_json(Path(args.plan))
+    assignments = _read_json(Path(args.assignments))
+    changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
+    fact_snapshot = _read_optional_json(args.fact_snapshot)
+    assignment = _ci_assignment_for_work_group(assignments, args.work_group_id)
+    matrix_work_group = _read_json_value(args.matrix_work_group_json)
+    observed_writer_id = ci_validation_writer_id(
+        workflow=args.workflow,
+        job=args.job,
+        matrix={"work-group": matrix_work_group},
+    )
+    observation = freeze_ci_validation_writer_observation(
+        plan=plan,
+        selector_assignments_manifest=assignments,
+        assignment=assignment,
+        artifact_instance_id=str(args.artifact_instance_id),
+        observed_writer_id=observed_writer_id,
+        created_at=args.created_at or _utc_now(),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    validate_ci_validation_writer_observation(
+        observation,
+        plan=plan,
+        selector_assignments_manifest=assignments,
+        assignment=assignment,
+        expected_artifact_instance_id=str(args.artifact_instance_id),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    _write_json(Path(args.observation_out), observation)
+    if getattr(args, "metadata_out", ""):
+        _write_json(
+            Path(args.metadata_out),
+            {
+                "artifact-ref": assignment["receipt-artifact-ref"],
+                "physical-artifact-name": artifact_physical_name(
+                    str(assignment["receipt-artifact-ref"])
+                ),
+                "artifact-instance-id": str(args.artifact_instance_id),
+                "source": "actions-upload-artifact-output",
+            },
+        )
+    _write_outputs(
+        args.github_output,
+        {
+            "writer_observation_artifact_ref": str(
+                assignment["writer-observation-ref"]
+            ),
+            "writer_observation_artifact_name": artifact_physical_name(
+                str(assignment["writer-observation-ref"])
+            ),
+            "observed_writer_id": observed_writer_id,
+        },
+    )
+    return 0
+
+
 def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
     owner, name = _split_repository(args.repository)
     created_at = args.created_at or _utc_now()
@@ -844,11 +1018,28 @@ def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
             )
         else:
             try:
+                observed_receipts = _ci_observed_receipt_inputs(
+                    plan=plan,
+                    assignments=assignments,
+                    observed_artifacts_dir=getattr(
+                        args, "observed_artifacts_dir", ""
+                    ),
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                )
+                manifest = freeze_ci_validation_receipt_manifest(
+                    plan=plan,
+                    entries=[item.manifest_entry for item in observed_receipts],
+                    created_at=created_at,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                )
+                _write_json(Path(args.receipt_manifest_out), manifest)
                 aggregate = freeze_ci_validation_aggregate(
                     plan=plan,
                     receipt_manifest=manifest,
                     selector_assignments_manifest=assignments,
-                    observed_receipts=[],
+                    observed_receipts=observed_receipts,
                     created_at=created_at,
                     changed_files_snapshot=changed_files_snapshot,
                     fact_snapshot=fact_snapshot,
@@ -3641,6 +3832,682 @@ def _ci_work_group_matrix_entry(group: Mapping[str, Any]) -> Json:
         "runner": str(group.get("runner-family", "ubuntu")),
         "placeholder": True,
     }
+
+
+def _ci_assignment_for_work_group(
+    assignments: Mapping[str, object],
+    work_group_id: str,
+) -> Mapping[str, object]:
+    items = assignments.get("assignments")
+    if not isinstance(items, Sequence) or isinstance(items, str | bytes):
+        msg = "selector assignments must contain an assignments array"
+        raise TypeError(msg)
+    for item in items:
+        if (
+            isinstance(item, Mapping)
+            and item.get("work-group-id") == work_group_id
+        ):
+            return item
+    msg = f"work group {work_group_id!r} is not assigned"
+    raise KeyError(msg)
+
+
+def _read_json_value(value: str) -> object:
+    return json.loads(value)
+
+
+def _ci_validation_placeholder_diagnostic(
+    work_group_id: str,
+    outcome: str,
+) -> Json:
+    if outcome == "blocking-failure":
+        return ci_validation_diagnostic(
+            diagnostic_id=f"validation-work-failed/{work_group_id}/placeholder",
+            code=DiagnosticFamily.VALIDATION_WORK_FAILED.value,
+            detail=DiagnosticDetail.TOOLING.value,
+            message=(
+                "Validation executor plumbing emitted an explicit placeholder "
+                "failure; real ecosystem validation is not implemented yet."
+            ),
+            source_type="work-group",
+            source_id=work_group_id,
+            severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+            verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+        )
+    return ci_validation_diagnostic(
+        diagnostic_id=f"validation-work-skipped/{work_group_id}/placeholder",
+        code=DiagnosticFamily.VALIDATION_WORK_SKIPPED.value,
+        detail=DiagnosticDetail.DEPENDENCY_BLOCKED.value,
+        message=(
+            "Validation executor plumbing emitted an explicit placeholder "
+            "receipt; real ecosystem validation is not implemented yet."
+        ),
+        source_type="work-group",
+        source_id=work_group_id,
+        severity=DiagnosticSeverity.WARNING.value,
+        verdict_effect=DiagnosticVerdictEffect.NONE.value,
+    )
+
+
+def _ci_placeholder_outcome(
+    plan: Mapping[str, object],
+    work_group_id: str,
+) -> ReceiptOutcome:
+    group = _ci_work_group(plan, work_group_id)
+    if group.get("kind") == "release-shaped-artifact" and not group.get(
+        "depends-on"
+    ):
+        return "blocking-failure"
+    return "skipped"
+
+
+def _ci_placeholder_evidence(
+    plan: Mapping[str, object],
+    work_group_id: str,
+    *,
+    outcome: str,
+    fact_snapshot: Mapping[str, object] | None,
+) -> Json:
+    expectation = _ci_evidence_expectation(plan, work_group_id)
+    category = str(expectation["category"])
+    diagnostic = _ci_validation_placeholder_diagnostic(work_group_id, outcome)
+    if isinstance(expectation.get("planned-capabilities"), Sequence):
+        capabilities = [
+            str(item)
+            for item in cast(
+                "Sequence[object]",
+                expectation["planned-capabilities"],
+            )
+        ]
+        return {
+            "category": category,
+            "planned-capabilities": capabilities,
+            "capability-results": [
+                {
+                    "capability": capability,
+                    "outcome": outcome,
+                    "diagnostics": [diagnostic],
+                }
+                for capability in capabilities
+            ],
+            "artifact-refs": [],
+        }
+    category_result: Json = {
+        "outcome": outcome,
+        "diagnostics": [diagnostic],
+        "detail": _ci_placeholder_detail(
+            plan,
+            work_group_id,
+            category,
+            diagnostic,
+            outcome=outcome,
+            fact_snapshot=fact_snapshot,
+        ),
+    }
+    return {
+        "category": category,
+        "planned-capabilities": None,
+        "category-result": category_result,
+        "artifact-refs": [],
+    }
+
+
+def _ci_placeholder_detail(
+    plan: Mapping[str, object],
+    work_group_id: str,
+    category: str,
+    diagnostic: Mapping[str, object],
+    *,
+    outcome: str,
+    fact_snapshot: Mapping[str, object] | None,
+) -> Json:
+    if category in {"lightweight-preflight", "workflow-release-tooling"}:
+        return _ci_detail_profile_placeholder(
+            plan,
+            work_group_id,
+            category,
+            diagnostic,
+            outcome=outcome,
+        )
+    if category == "descriptor-validation":
+        return {
+            "descriptor-obligation-results": [
+                _ci_descriptor_placeholder_result(
+                    obligation,
+                    diagnostic,
+                    outcome=outcome,
+                    fact_snapshot=fact_snapshot,
+                )
+                for obligation in _ci_plan_records_for_work_group(
+                    plan, "descriptor-obligations", work_group_id
+                )
+            ],
+        }
+    if category == "release-shaped-artifact":
+        return {
+            "artifact-obligation-results": [
+                _ci_artifact_placeholder_result(
+                    obligation,
+                    diagnostic,
+                    fact_snapshot=fact_snapshot,
+                    outcome=outcome,
+                )
+                for obligation in _ci_plan_records_for_work_group(
+                    plan, "artifact-obligations", work_group_id
+                )
+            ],
+        }
+    return {}
+
+
+def _ci_detail_profile_placeholder(
+    plan: Mapping[str, object],
+    work_group_id: str,
+    category: str,
+    diagnostic: Mapping[str, object],
+    *,
+    outcome: str,
+) -> Json:
+    group = _ci_work_group(plan, work_group_id)
+    expectation = _ci_evidence_expectation(plan, work_group_id)
+    profile = _ci_detail_profile(plan, str(expectation["detail-profile"]))
+    detail: Json = {
+        "work-group-id": work_group_id,
+        "detail-profile": expectation["detail-profile"],
+        "coverage-target": group["coverage-target"],
+        "selector-variant": group.get("selector-variant"),
+        "runner-family": group["runner-family"],
+        "outcome": outcome,
+        "subcheck-results": [
+            {
+                "subcheck-id": item["subcheck-id"],
+                "outcome": outcome,
+                "diagnostics": [diagnostic],
+            }
+            for item in cast(
+                "Sequence[Mapping[str, object]]",
+                profile["required-subchecks"],
+            )
+        ],
+        "diagnostics": [diagnostic],
+    }
+    if category == "workflow-release-tooling":
+        detail["ecosystem"] = group.get("ecosystem")
+    return detail
+
+
+def _ci_descriptor_placeholder_result(
+    obligation: Mapping[str, object],
+    diagnostic: Mapping[str, object],
+    *,
+    outcome: str,
+    fact_snapshot: Mapping[str, object] | None,
+) -> Json:
+    descriptor_path = _ci_descriptor_obligation_path(obligation)
+    fact = _ci_descriptor_fact(fact_snapshot, descriptor_path)
+    return {
+        "descriptor-obligation-id": obligation["descriptor-obligation-id"],
+        "descriptor": {
+            "path": descriptor_path,
+            "identity": fact.get("descriptor-identity") if fact else None,
+            "owner-subject-id": fact.get("owner-subject-id") if fact else None,
+            "source": fact.get("source") if fact else "ecosystem-provider",
+        },
+        "descriptor-scope": obligation["descriptor-scope"],
+        "outcome": outcome,
+        "diagnostics": [diagnostic],
+    }
+
+
+def _ci_artifact_placeholder_result(
+    obligation: Mapping[str, object],
+    diagnostic: Mapping[str, object],
+    *,
+    fact_snapshot: Mapping[str, object] | None,
+    outcome: str,
+) -> Json:
+    artifact = dict(cast("Mapping[str, object]", obligation["artifact"]))
+    receipt = dict(cast("Mapping[str, object]", obligation["release-receipt"]))
+    descriptor_path = str(obligation["descriptor-path"])
+    descriptor_fact = _ci_descriptor_fact(fact_snapshot, descriptor_path)
+    return {
+        "artifact-obligation-id": obligation["artifact-obligation-id"],
+        "descriptor": {
+            "path": descriptor_path,
+            "identity": descriptor_fact.get("descriptor-identity")
+            if descriptor_fact is not None
+            else None,
+        },
+        "profile-coverage": obligation["profile-coverage"],
+        "artifact": {
+            "planned": artifact,
+            "observed": {"refs": [], "digests": []},
+            "outcome": outcome,
+            "diagnostics": [diagnostic],
+        },
+        "release-receipt": {
+            "planned": receipt,
+            "expected": True,
+            "schema-checked": False,
+            "outcome": outcome,
+            "diagnostics": [diagnostic],
+        },
+        "outcome": outcome,
+        "diagnostics": [diagnostic],
+    }
+
+
+def _ci_evidence_expectation(
+    plan: Mapping[str, object],
+    work_group_id: str,
+) -> Mapping[str, object]:
+    for item in _ci_plan_records_for_work_group(
+        plan, "evidence-expectations", work_group_id
+    ):
+        return item
+    msg = f"work group {work_group_id!r} has no evidence expectation"
+    raise KeyError(msg)
+
+
+def _ci_work_group(
+    plan: Mapping[str, object],
+    work_group_id: str,
+) -> Mapping[str, object]:
+    for item in _ci_plan_records_for_work_group(
+        plan, "work-groups", work_group_id
+    ):
+        return item
+    msg = f"work group {work_group_id!r} does not exist"
+    raise KeyError(msg)
+
+
+def _ci_detail_profile(
+    plan: Mapping[str, object],
+    profile_id: str,
+) -> Mapping[str, object]:
+    profiles = plan.get("detail-profiles")
+    if isinstance(profiles, Sequence) and not isinstance(profiles, str | bytes):
+        for item in profiles:
+            if (
+                isinstance(item, Mapping)
+                and item.get("detail-profile-id") == profile_id
+            ):
+                return item
+    msg = f"detail profile {profile_id!r} does not exist"
+    raise KeyError(msg)
+
+
+def _ci_plan_records_for_work_group(
+    plan: Mapping[str, object],
+    key: str,
+    work_group_id: str,
+) -> list[Mapping[str, object]]:
+    records = plan.get(key)
+    if not isinstance(records, Sequence) or isinstance(records, str | bytes):
+        return []
+    return [
+        item
+        for item in records
+        if isinstance(item, Mapping)
+        and item.get("work-group-id") == work_group_id
+    ]
+
+
+def _ci_descriptor_obligation_path(obligation: Mapping[str, object]) -> str:
+    target = obligation.get("coverage-target")
+    if isinstance(target, Mapping) and isinstance(target.get("id"), str):
+        return str(target["id"])
+    return str(obligation.get("descriptor-path"))
+
+
+def _ci_descriptor_fact(
+    fact_snapshot: Mapping[str, object] | None,
+    descriptor_path: str,
+) -> Mapping[str, object] | None:
+    if fact_snapshot is None:
+        return None
+    providers = fact_snapshot.get("providers")
+    if not isinstance(providers, Sequence) or isinstance(
+        providers, str | bytes
+    ):
+        return None
+    for provider in providers:
+        if not isinstance(provider, Mapping):
+            continue
+        descriptors = provider.get("descriptors")
+        if not isinstance(descriptors, Sequence) or isinstance(
+            descriptors, str | bytes
+        ):
+            continue
+        for descriptor in descriptors:
+            if (
+                isinstance(descriptor, Mapping)
+                and descriptor.get("descriptor-path") == descriptor_path
+            ):
+                return descriptor
+    return None
+
+
+def _ci_observed_receipt_inputs(
+    *,
+    plan: Mapping[str, object],
+    assignments: Mapping[str, object],
+    observed_artifacts_dir: str,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+) -> list[CiValidationObservedReceiptInput]:
+    if not observed_artifacts_dir:
+        return []
+    root = Path(observed_artifacts_dir)
+    if not root.is_dir():
+        return []
+    items = assignments.get("assignments")
+    if not isinstance(items, Sequence) or isinstance(items, str | bytes):
+        return []
+    assignment_by_receipt_name = {
+        artifact_physical_name(str(item["receipt-artifact-ref"])): item
+        for item in items
+        if isinstance(item, Mapping)
+        and isinstance(item.get("receipt-artifact-ref"), str)
+    }
+    excluded_names = _ci_excluded_observed_artifact_names(plan, assignments)
+    observed: list[CiValidationObservedReceiptInput] = []
+    for artifact_dir in sorted(root.iterdir(), key=lambda item: item.name):
+        if not artifact_dir.is_dir() or artifact_dir.name in excluded_names:
+            continue
+        assignment = assignment_by_receipt_name.get(artifact_dir.name)
+        observed_input = _ci_observed_receipt_input(
+            plan=plan,
+            assignments=assignments,
+            assignment=assignment,
+            artifact_dir=artifact_dir,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
+        observed.append(observed_input)
+    return observed
+
+
+def _ci_observed_receipt_input(
+    *,
+    plan: Mapping[str, object],
+    assignments: Mapping[str, object],
+    assignment: Mapping[str, object] | None,
+    artifact_dir: Path,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+) -> CiValidationObservedReceiptInput:
+    if assignment is None:
+        return _ci_unassigned_observed_receipt_input(artifact_dir, plan=plan)
+    receipt_ref = str(assignment["receipt-artifact-ref"])
+    observation_ref = str(assignment["writer-observation-ref"])
+    receipt_path = artifact_dir / "receipt.json"
+    observation_path = (
+        artifact_dir.parent
+        / artifact_physical_name(observation_ref)
+        / "writer-observation.json"
+    )
+    metadata_path = (
+        artifact_dir.parent
+        / artifact_physical_name(observation_ref)
+        / "receipt-artifact-metadata.json"
+    )
+    receipt: Mapping[str, object] | None = None
+    raw_receipt: bytes | None = None
+    try:
+        raw_receipt = receipt_path.read_bytes()
+        receipt = load_ci_validation_receipt_payload(raw_receipt)
+    except (
+        ContractValidationError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ):
+        receipt = None
+    observation = None
+    artifact_instance_id = _ci_independent_artifact_instance_id(
+        metadata_path,
+        receipt_ref=receipt_ref,
+    )
+    try:
+        candidate_observation = _read_json(observation_path)
+        if artifact_instance_id is not None:
+            validate_ci_validation_writer_observation(
+                candidate_observation,
+                plan=plan,
+                selector_assignments_manifest=assignments,
+                assignment=assignment,
+                expected_artifact_instance_id=artifact_instance_id,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+            )
+            observation = candidate_observation
+    except (
+        ContractValidationError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ):
+        observation = None
+    content_digest = (
+        ci_validation_receipt_content_digest(raw_receipt)
+        if raw_receipt is not None
+        else None
+    )
+    artifact_instance_id = artifact_instance_id or artifact_dir.name
+    entry = {
+        "observed-entry-id": ci_validation_observed_entry_id(
+            run_id=str(cast("Mapping[str, object]", plan["run"])["run-id"]),
+            run_attempt=str(
+                cast("Mapping[str, object]", plan["run"])["run-attempt"]
+            ),
+            artifact_ref=receipt_ref,
+            artifact_instance_id=artifact_instance_id,
+        ),
+        "artifact-ref": receipt_ref,
+        "physical-artifact-name": artifact_physical_name(receipt_ref),
+        "artifact-instance-id": artifact_instance_id,
+        "assignment-id": assignment["assignment-id"],
+        "writer-work-group-id": assignment["work-group-id"],
+        "trusted-writer-id": assignment["trusted-writer-id"],
+        "observed-writer-id": observation.get("observed-writer-id")
+        if observation is not None
+        else None,
+        "writer-observation-ref": observation_ref,
+        "receipt-id": receipt.get("receipt-id")
+        if receipt is not None
+        else None,
+        "receipt-content-digest": content_digest,
+    }
+    return CiValidationObservedReceiptInput(
+        manifest_entry=entry,
+        receipt=receipt,
+        raw_receipt_bytes=raw_receipt,
+    )
+
+
+def _ci_unassigned_observed_receipt_input(
+    artifact_dir: Path,
+    *,
+    plan: Mapping[str, object],
+) -> CiValidationObservedReceiptInput:
+    raw_receipt: bytes | None
+    receipt: Mapping[str, object] | None
+    try:
+        raw_receipt = (artifact_dir / "receipt.json").read_bytes()
+    except OSError:
+        raw_receipt = None
+        receipt = None
+    else:
+        try:
+            receipt = load_ci_validation_receipt_payload(raw_receipt)
+        except (
+            ContractValidationError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+        ):
+            receipt = None
+    artifact_ref = _ci_verified_unassigned_receipt_ref(
+        receipt,
+        physical_name=artifact_dir.name,
+        plan=plan,
+    )
+    return CiValidationObservedReceiptInput(
+        manifest_entry=_ci_unassigned_receipt_manifest_entry(
+            artifact_dir,
+            plan=plan,
+            artifact_ref=artifact_ref,
+            receipt_id=receipt.get("receipt-id")
+            if receipt is not None and artifact_ref is not None
+            else None,
+            raw_receipt=raw_receipt,
+        ),
+        receipt=receipt,
+        raw_receipt_bytes=raw_receipt,
+    )
+
+
+def _ci_unassigned_receipt_manifest_entry(
+    artifact_dir: Path,
+    *,
+    plan: Mapping[str, object],
+    artifact_ref: str | None,
+    receipt_id: object,
+    raw_receipt: bytes | None,
+) -> Mapping[str, object]:
+    run = cast("Mapping[str, object]", plan["run"])
+    physical_name = artifact_dir.name
+    return {
+        "observed-entry-id": ci_validation_observed_entry_id(
+            run_id=str(run["run-id"]),
+            run_attempt=str(run["run-attempt"]),
+            artifact_ref=artifact_ref,
+            artifact_instance_id=physical_name,
+        ),
+        "artifact-ref": artifact_ref,
+        "physical-artifact-name": physical_name,
+        "artifact-instance-id": physical_name,
+        "assignment-id": None,
+        "writer-work-group-id": None,
+        "trusted-writer-id": None,
+        "observed-writer-id": None,
+        "writer-observation-ref": None,
+        "receipt-id": receipt_id if isinstance(receipt_id, str) else None,
+        "receipt-content-digest": ci_validation_receipt_content_digest(
+            raw_receipt
+        )
+        if raw_receipt is not None
+        else None,
+    }
+
+
+def _ci_verified_unassigned_receipt_ref(
+    receipt: Mapping[str, object] | None,
+    *,
+    physical_name: str,
+    plan: Mapping[str, object],
+) -> str | None:
+    if receipt is None:
+        return None
+    artifact_ref = receipt.get("artifact-ref")
+    if not isinstance(artifact_ref, str):
+        return None
+    run = cast("Mapping[str, object]", plan["run"])
+    match = re.fullmatch(
+        r"ci-validation/receipts/([^/]+)/([^/]+)/([^/]+)/receipt\.json",
+        artifact_ref,
+    )
+    if (
+        match is None
+        or match.group(1) != str(run["run-id"])
+        or match.group(2) != str(run["run-attempt"])
+        or _CI_LOCAL_ID_RE.fullmatch(match.group(3)) is None
+    ):
+        return None
+    try:
+        expected_physical_name = artifact_physical_name(artifact_ref)
+    except ContractValidationError:
+        return None
+    if expected_physical_name != physical_name:
+        return None
+    return artifact_ref
+
+
+def _ci_independent_artifact_instance_id(
+    metadata_path: Path,
+    *,
+    receipt_ref: str,
+) -> str | None:
+    try:
+        metadata = _read_json(metadata_path)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if metadata.get("artifact-ref") != receipt_ref:
+        return None
+    if metadata.get("physical-artifact-name") != artifact_physical_name(
+        receipt_ref
+    ):
+        return None
+    artifact_instance_id = metadata.get("artifact-instance-id")
+    if not isinstance(artifact_instance_id, str) or artifact_instance_id == "":
+        return None
+    return artifact_instance_id
+
+
+def _ci_excluded_observed_artifact_names(
+    plan: Mapping[str, object],
+    assignments: Mapping[str, object],
+) -> set[str]:
+    run = cast("Mapping[str, object]", plan["run"])
+    run_id = str(run["run-id"])
+    run_attempt = str(run["run-attempt"])
+    refs = {
+        ci_validation_request_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        ci_validation_plan_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        ci_validation_planner_diagnostics_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        ci_validation_changed_files_snapshot_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        ci_validation_fact_snapshot_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        ci_validation_selector_assignments_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        ci_validation_receipt_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+        ci_validation_aggregate_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
+    }
+    items = assignments.get("assignments")
+    if isinstance(items, Sequence) and not isinstance(items, str | bytes):
+        refs.update(
+            str(item["writer-observation-ref"])
+            for item in items
+            if isinstance(item, Mapping)
+            and isinstance(item.get("writer-observation-ref"), str)
+        )
+    return {artifact_physical_name(ref) for ref in refs}
 
 
 def _parse_bool(value: str | bool) -> bool:

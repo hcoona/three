@@ -188,6 +188,17 @@ def _entry_for_assignment(
     }
 
 
+def _observed_input(
+    entry: dict[str, object],
+    receipt: dict[str, object] | None,
+) -> dict[str, object]:
+    raw = canonical_json_bytes(receipt) if receipt is not None else None
+    result: dict[str, object] = {"manifest-entry": entry, "receipt": receipt}
+    if raw is not None:
+        result["raw-receipt-bytes"] = raw
+    return result
+
+
 def _manifest(
     entries: list[dict[str, object]],
 ) -> tuple[dict[str, object], object, dict[str, object]]:
@@ -216,7 +227,7 @@ def _valid_aggregate() -> tuple[Any, dict[str, object]]:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -292,36 +303,74 @@ def test_freeze_manifest_sorts_entries_and_closes_namespace() -> None:
     )
 
 
-def test_manifest_rejects_readable_receipt_without_content_digest() -> None:
-    """Readable classified receipts must carry an observed content digest."""
-    receipt, snapshot, _selector_manifest, _assignment = _valid_receipt()
+def test_aggregate_rejects_readable_receipt_without_content_digest() -> None:
+    """Readable receipts without observed raw-byte digests are inadmissible."""
+    receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
     entry["receipt-content-digest"] = None
 
-    with pytest.raises(ContractValidationError, match="content-digest"):
-        freeze_ci_validation_receipt_manifest(
-            plan=snapshot.plan,
-            entries=[entry],
-            created_at=CREATED_AT,
-            changed_files_snapshot=snapshot.changed_files_snapshot,
-            fact_snapshot=snapshot.fact_snapshot,
-        )
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[_observed_input(entry, receipt)],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    observed = cast("list[dict[str, object]]", aggregate["observed-receipts"])
+    reason = cast("dict[str, object]", aggregate["reason"])
+    assert observed[0]["admissibility"] == "inadmissible"
+    assert reason["inadmissible-receipt"] is True
 
 
-def test_manifest_rejects_classified_ref_without_receipt_id_or_digest() -> None:
-    """Classified receipt artifacts require digest evidence."""
+def test_aggregate_rejects_parsed_receipt_without_raw_bytes() -> None:
+    """Parsed receipts are inadmissible without observed raw artifact bytes."""
+    receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
+    entry = _entry(receipt)
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    aggregate = freeze_ci_validation_aggregate(
+        plan=snapshot.plan,
+        receipt_manifest=manifest,
+        selector_assignments_manifest=selector_manifest,
+        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+    observed = cast("list[dict[str, object]]", aggregate["observed-receipts"])
+    assert observed[0]["admissibility"] == "inadmissible"
+
+
+def test_manifest_allows_classified_ref_without_receipt_id_or_digest() -> None:
+    """Classified unreadable receipt entries can omit payload-only fields."""
     receipt, snapshot, _selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt, receipt_id=None)
     entry["receipt-content-digest"] = None
 
-    with pytest.raises(ContractValidationError, match="content-digest"):
-        freeze_ci_validation_receipt_manifest(
-            plan=snapshot.plan,
-            entries=[entry],
-            created_at=CREATED_AT,
-            changed_files_snapshot=snapshot.changed_files_snapshot,
-            fact_snapshot=snapshot.fact_snapshot,
-        )
+    manifest = freeze_ci_validation_receipt_manifest(
+        plan=snapshot.plan,
+        entries=[entry],
+        created_at=CREATED_AT,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert manifest["entries"] == [entry]
 
 
 def test_freeze_manifest_rejects_missing_observed_entry_id() -> None:
@@ -409,7 +458,7 @@ def test_manifest_writer_identity_mismatch_is_inadmissible(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -442,7 +491,7 @@ def test_aggregate_rejects_valid_observed_receipt_without_digest() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -570,7 +619,7 @@ def test_freeze_aggregate_passes_with_matching_manifest_and_receipt() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -606,7 +655,7 @@ def test_aggregate_rejects_unjustified_fail_closed_failure() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -663,7 +712,7 @@ def test_aggregate_rejects_unjustified_evidence_failure() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -717,7 +766,7 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[{"manifest-entry": first, "receipt": receipt}],
+            observed_receipts=[_observed_input(first, receipt)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -728,8 +777,8 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
         observed_receipts=[
-            {"manifest-entry": first, "receipt": receipt},
-            {"manifest-entry": second, "receipt": receipt},
+            _observed_input(first, receipt),
+            _observed_input(second, receipt),
         ],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -754,8 +803,8 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
         observed_receipts=[
-            {"manifest-entry": first, "receipt": receipt},
-            {"manifest-entry": second, "receipt": receipt},
+            _observed_input(first, receipt),
+            _observed_input(second, receipt),
         ],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -814,9 +863,7 @@ def test_aggregate_reports_required_evidence_failures() -> None:
         plan=snapshot.plan,
         receipt_manifest=skipped_manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[
-            {"manifest-entry": skipped_entry, "receipt": skipped_receipt}
-        ],
+        observed_receipts=[_observed_input(skipped_entry, skipped_receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -843,9 +890,7 @@ def test_aggregate_reports_required_evidence_failures() -> None:
         plan=snapshot.plan,
         receipt_manifest=failed_manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[
-            {"manifest-entry": failed_entry, "receipt": failed_receipt}
-        ],
+        observed_receipts=[_observed_input(failed_entry, failed_receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -865,9 +910,7 @@ def test_aggregate_reports_required_evidence_failures() -> None:
         plan=snapshot.plan,
         receipt_manifest=bad_manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[
-            {"manifest-entry": bad_entry, "receipt": wrong_plan_receipt}
-        ],
+        observed_receipts=[_observed_input(bad_entry, wrong_plan_receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -935,9 +978,7 @@ def test_evidence_failure_kinds_reject_wrong_diagnostic_families() -> None:
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[
-                {"manifest-entry": entry, "receipt": non_success}
-            ],
+            observed_receipts=[_observed_input(entry, non_success)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -1012,7 +1053,7 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+            observed_receipts=[_observed_input(entry, receipt)],
             final_evidence_diagnostics=[
                 ci_validation_diagnostic(
                     diagnostic_id=(
@@ -1046,9 +1087,7 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[
-                {"manifest-entry": entry, "receipt": wrong_plan_receipt}
-            ],
+            observed_receipts=[_observed_input(entry, wrong_plan_receipt)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -1078,9 +1117,7 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[
-                {"manifest-entry": entry, "receipt": skipped_receipt}
-            ],
+            observed_receipts=[_observed_input(entry, skipped_receipt)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -1147,7 +1184,7 @@ def test_aggregate_evidence_results_drive_failures_counts_and_verdict() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -1197,7 +1234,7 @@ def test_missing_evidence_result_rejects_existing_valid_observed_receipt() -> (
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -1272,7 +1309,7 @@ def test_aggregate_evidence_results_must_cover_plan_expectations() -> None:
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+            observed_receipts=[_observed_input(entry, receipt)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -1375,9 +1412,7 @@ def test_inadmissible_observed_receipts_require_failures() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[
-            {"manifest-entry": entry, "receipt": wrong_plan_receipt}
-        ],
+        observed_receipts=[_observed_input(entry, wrong_plan_receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -1495,7 +1530,7 @@ def test_aggregate_receipt_manifest_ref_binding_is_unconditional() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -1889,7 +1924,7 @@ def test_invalid_plan_aggregate_rejects_valid_observed_receipts() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2065,7 +2100,7 @@ def test_satisfied_evidence_result_requires_observed_receipt_binding() -> None:
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+            observed_receipts=[_observed_input(entry, receipt)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -2167,9 +2202,7 @@ def test_non_success_evidence_results_require_observed_receipt_binding() -> (
                 plan=snapshot.plan,
                 receipt_manifest=manifest,
                 selector_assignments_manifest=selector_manifest,
-                observed_receipts=[
-                    {"manifest-entry": entry, "receipt": receipt}
-                ],
+                observed_receipts=[_observed_input(entry, receipt)],
                 created_at=CREATED_AT,
                 changed_files_snapshot=snapshot.changed_files_snapshot,
                 fact_snapshot=snapshot.fact_snapshot,
@@ -2309,7 +2342,7 @@ def test_failed_descriptor_receipt_preserves_descriptor_diagnostic() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2374,7 +2407,7 @@ def test_failed_artifact_receipt_preserves_artifact_shape_diagnostic() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2423,9 +2456,7 @@ def test_evidence_failures_mirror_receipt_fields_and_diagnostic() -> None:
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[
-                {"manifest-entry": entry, "receipt": failed_receipt}
-            ],
+            observed_receipts=[_observed_input(entry, failed_receipt)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -2498,9 +2529,7 @@ def test_inadmissible_failures_mirror_receipt_fields_and_diagnostic() -> None:
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[
-                {"manifest-entry": entry, "receipt": wrong_plan_receipt}
-            ],
+            observed_receipts=[_observed_input(entry, wrong_plan_receipt)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -2615,7 +2644,7 @@ def test_aggregate_rejects_manifest_digest_mismatch() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2649,7 +2678,7 @@ def test_aggregate_validates_supplied_manifest_before_binding() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2685,7 +2714,7 @@ def test_aggregate_rejects_manifest_with_wrong_run_attempt() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2721,7 +2750,7 @@ def test_aggregate_rejects_manifest_bound_to_wrong_plan() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2767,9 +2796,9 @@ def test_duplicate_unreadable_and_unclassified_entries_fail_closed() -> None:
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
         observed_receipts=[
-            {"manifest-entry": duplicate_b, "receipt": receipt},
-            {"manifest-entry": unclassified, "receipt": None},
-            {"manifest-entry": duplicate_a, "receipt": receipt},
+            _observed_input(duplicate_b, receipt),
+            _observed_input(unclassified, None),
+            _observed_input(duplicate_a, receipt),
         ],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2813,9 +2842,7 @@ def test_terminal_aggregation_receipt_is_inadmissible() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[
-            {"manifest-entry": terminal_entry, "receipt": receipt}
-        ],
+        observed_receipts=[_observed_input(terminal_entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2851,7 +2878,7 @@ def test_validate_recomputes_null_ref_receipt_admissibility() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": null_entry, "receipt": None}],
+        observed_receipts=[_observed_input(null_entry, None)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2890,8 +2917,8 @@ def test_validate_recomputes_duplicate_receipt_admissibility() -> None:
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
         observed_receipts=[
-            {"manifest-entry": duplicate_b, "receipt": receipt},
-            {"manifest-entry": duplicate_a, "receipt": receipt},
+            _observed_input(duplicate_b, receipt),
+            _observed_input(duplicate_a, receipt),
         ],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2939,9 +2966,7 @@ def test_validate_recomputes_terminal_receipt_admissibility() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[
-            {"manifest-entry": terminal_entry, "receipt": receipt}
-        ],
+        observed_receipts=[_observed_input(terminal_entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -2978,7 +3003,7 @@ def test_validate_rejects_valid_receipt_with_inadmissible_diagnostics() -> None:
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -3138,7 +3163,7 @@ def test_aggregate_supplied_manifest_rejects_rebound_writer_binding(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -3176,7 +3201,7 @@ def test_aggregate_supplied_manifest_rejects_coherent_rebound_writer_ids() -> (
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
-        observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+        observed_receipts=[_observed_input(entry, receipt)],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -3224,7 +3249,7 @@ def test_freeze_aggregate_rejects_non_final_evidence_diagnostics() -> None:
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+            observed_receipts=[_observed_input(entry, receipt)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -3277,7 +3302,7 @@ def test_final_evidence_failure_diagnostic_requires_detail() -> None:
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
-            observed_receipts=[{"manifest-entry": entry, "receipt": receipt}],
+            observed_receipts=[_observed_input(entry, receipt)],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
