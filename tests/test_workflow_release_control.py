@@ -8103,6 +8103,7 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
             str(item)
             for item in cast("Sequence[object]", release_group["depends-on"])
         }
+        blocking_failure_dependency = sorted(dependencies)[0]
         unrelated_id = next(
             work_group_id
             for work_group_id, entry in matrix.items()
@@ -8117,9 +8118,16 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
                 assignments=assignments,
                 matrix=matrix,
                 work_group_id=dependency,
-                outcome="success",
+                outcome=(
+                    "blocking-failure"
+                    if dependency == blocking_failure_dependency
+                    else "success"
+                ),
                 changed_files_snapshot=plan_snapshot.changed_files_snapshot,
-                fact_snapshot=plan_snapshot.fact_snapshot,
+                fact_snapshot=cast(
+                    "Mapping[str, object]",
+                    plan_snapshot.fact_snapshot,
+                ),
             )
         _stage_ci_observed_receipt(
             scratch=scratch,
@@ -8129,8 +8137,78 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
             matrix=matrix,
             work_group_id=unrelated_id,
             outcome="skipped",
-            changed_files_snapshot=plan_snapshot.changed_files_snapshot,
-            fact_snapshot=plan_snapshot.fact_snapshot,
+            changed_files_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.changed_files_snapshot,
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]",
+                plan_snapshot.fact_snapshot,
+            ),
+        )
+        blocking_failure_dependency_outputs = (
+            scratch / "blocking-failure-dependency-gate-outputs.txt"
+        )
+        assert (
+            control._cmd_check_ci_validation_dependencies(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=dependent_id,
+                    observed_artifacts_dir=str(observed_root),
+                    github_output=str(blocking_failure_dependency_outputs),
+                )
+            )
+            == 0
+        )
+        assert (
+            _github_outputs(blocking_failure_dependency_outputs)[
+                "dependency_blocked"
+            ]
+            == "false"
+        )
+        skipped_dependency_observed_root = (
+            scratch / "observed-artifacts-skipped-dependency"
+        )
+        skipped_dependency = sorted(dependencies)[-1]
+        for dependency in dependencies:
+            _stage_ci_observed_receipt(
+                scratch=scratch,
+                observed_root=skipped_dependency_observed_root,
+                plan=plan_snapshot.plan,
+                assignments=assignments,
+                matrix=matrix,
+                work_group_id=dependency,
+                outcome=(
+                    "skipped" if dependency == skipped_dependency else "success"
+                ),
+                changed_files_snapshot=plan_snapshot.changed_files_snapshot,
+                fact_snapshot=plan_snapshot.fact_snapshot,
+            )
+        skipped_dependency_outputs = (
+            scratch / "skipped-dependency-gate-outputs.txt"
+        )
+        assert (
+            control._cmd_check_ci_validation_dependencies(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=dependent_id,
+                    observed_artifacts_dir=str(
+                        skipped_dependency_observed_root
+                    ),
+                    github_output=str(skipped_dependency_outputs),
+                )
+            )
+            == 0
+        )
+        assert (
+            _github_outputs(skipped_dependency_outputs)["dependency_blocked"]
+            == "true"
         )
 
         dependent_outputs = scratch / "dependent-outputs.txt"
