@@ -231,6 +231,17 @@ not authoritative acceptance evidence. Payload fields, artifact names supplied b
 executable validation commands, logs, and job conclusions never prove producer
 authority.
 
+The GitHub Actions implementation enforces this with two independent
+control-plane checks before a gating artifact is consumed: the run artifact
+namespace is enumerated and must contain exactly one live instance at the
+contract-owned physical name, and the enumerated artifact instance ID must match
+the upload output observed from the workflow job mapped to that logical boundary.
+Consumers download producer-verified inputs by artifact ID where the workflow can
+fail immediately. The final aggregation job performs the same namespace and
+producer-boundary verification for its inputs before accepting a plan, and verifies
+the receipt manifest and aggregate uploads after publication; any missing,
+duplicated, stale, or producer-mismatched artifact remains fail-closed.
+
 `artifact-ref` values in this document are logical contract refs, not physical
 GitHub artifact names. Every logical ref maps to one fixed-length physical
 artifact name with this digest mapping:

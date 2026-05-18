@@ -25,6 +25,7 @@ from three_workflow_release_build import execute_build
 from three_workflow_release_contracts import (
     ArtifactNameInputs,
     CiValidationObservedReceiptInput,
+    GitHubActionsArtifactMetadata,
     artifact_name,
     artifact_physical_name,
     ci_validation_plan_digest,
@@ -4994,6 +4995,9 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         jobs["normalize-input"]["outputs"]["planner-diagnostics-artifact-name"]
         == "${{ steps.refs.outputs.planner_diagnostics_artifact_name }}"
     )
+    assert jobs["normalize-input"]["outputs"]["request-artifact-id"] == (
+        "${{ steps.upload-request.outputs.artifact-id }}"
+    )
     assert set(jobs) >= {
         "normalize-input",
         "plan",
@@ -5021,6 +5025,10 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "work-group-layer-1-matrix"
         in jobs["materialize-work-groups"]["outputs"]
     )
+    assert (
+        "selector-assignments-artifact-id"
+        in jobs["materialize-work-groups"]["outputs"]
+    )
     assert jobs["aggregate-evidence"]["name"] == "aggregate-evidence"
     assert "id-token" not in workflow["permissions"]
     plan_steps = jobs["plan"]["steps"]
@@ -5032,6 +5040,37 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     assert diagnostics_upload["with"]["name"] == (
         "${{ needs.normalize-input.outputs.planner-diagnostics-artifact-name }}"
     )
+
+
+def test_ci_validation_artifact_id_downloads_merge_to_consumer_paths() -> None:
+    """Artifact-id downloads preserve flat paths consumed by scripts."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    optional_snapshot_outputs = {
+        "${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}",
+        "${{ needs.plan.outputs.fact-snapshot-artifact-id }}",
+    }
+
+    artifact_id_downloads = []
+    optional_snapshot_downloads = []
+    for job in workflow["jobs"].values():
+        for step in job.get("steps", []):
+            if step.get("uses") != "actions/download-artifact@v4":
+                continue
+            with_args = step.get("with", {})
+            artifact_ids = with_args.get("artifact-ids")
+            if artifact_ids is None:
+                continue
+
+            artifact_id_downloads.append(step)
+            assert with_args.get("merge-multiple") is True
+            if artifact_ids in optional_snapshot_outputs:
+                optional_snapshot_downloads.append(step)
+                output_expr = artifact_ids[4:-3].strip()
+                expected_if = f"${{{{ {output_expr} != '' }}}}"
+                assert step.get("if") == expected_if
+
+    assert artifact_id_downloads
+    assert len(optional_snapshot_downloads) == 8
 
 
 def test_ci_validation_workflow_executes_mapped_commands_before_receipts() -> (
@@ -5050,9 +5089,21 @@ def test_ci_validation_workflow_executes_mapped_commands_before_receipts() -> (
     )
     observation = _step_block(workflow, "Write receipt writer observation")
     upload = _step_block(workflow, "Upload validation receipt")
+    gating_verify = _step_block(
+        workflow,
+        "Verify gating artifact producer boundaries",
+    )
     aggregate = _step_block(workflow, "Aggregate validation evidence")
+    final_verify = _step_block(
+        workflow,
+        "Verify final artifact producer boundaries",
+    )
 
     assert "check-ci-validation-dependencies" in dependency_gate
+    assert "verify-ci-validation-artifact-boundaries" in gating_verify
+    assert (
+        "artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}" in workflow
+    )
     assert (
         "steps.dependency-gate.outputs.dependency_blocked != 'true'"
         in validation
@@ -5091,6 +5142,17 @@ def test_ci_validation_workflow_executes_mapped_commands_before_receipts() -> (
         "--observed-artifacts-dir .three-ci-validation/observed-artifacts"
         in aggregate
     )
+    assert "--expected-plan-artifact-id" in aggregate
+    assert 'if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then' in gating_verify
+    assert 'if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then' in gating_verify
+    assert (
+        "needs.plan.outputs.changed-files-snapshot-artifact-id != ''"
+        in workflow
+    )
+    assert "aggregate_args=(" in aggregate
+    assert "--expected-changed-files-snapshot-artifact-id" in aggregate
+    assert "verify-ci-validation-artifact-boundaries" in final_verify
+    assert "steps.upload-aggregate.outputs.artifact-id" in final_verify
     assert "observed_receipts=[]" not in workflow
 
 
@@ -5495,6 +5557,318 @@ def test_ci_validation_artifact_refs_include_planner_diagnostics() -> None:
         )
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def _ci_artifact_metadata(
+    artifact_ref: str,
+    *,
+    artifact_id: int,
+    run_id: int = 25887422010,
+) -> GitHubActionsArtifactMetadata:
+    return GitHubActionsArtifactMetadata(
+        artifact_id=artifact_id,
+        name=artifact_physical_name(artifact_ref),
+        created_at="2026-05-14T21:09:21Z",
+        expired=False,
+        workflow_run_id=run_id,
+    )
+
+
+def _ci_expected_artifact(
+    artifact_ref: str,
+    *,
+    artifact_id: int | str,
+    boundary: str,
+    job: str,
+) -> dict[str, object]:
+    return {
+        "artifact-ref": artifact_ref,
+        "artifact-instance-id": str(artifact_id),
+        "producer-boundary": boundary,
+        "producer-job": job,
+    }
+
+
+def test_ci_validation_producer_boundary_accepts_expected_artifact() -> None:
+    """Exact one artifact plus expected producer job output is admissible."""
+    plan_ref = control.ci_validation_plan_artifact_ref(
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[_ci_artifact_metadata(plan_ref, artifact_id=7001)],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                plan_ref,
+                artifact_id=7001,
+                boundary="plan",
+                job="plan",
+            )
+        ],
+        workflow="CI Validation",
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    assert diagnostics == []
+
+
+@pytest.mark.parametrize(
+    ("artifacts", "artifact_id", "expected_detail"),
+    [
+        ([], 7001, "plan-missing"),
+        (
+            [
+                7001,
+                7002,
+            ],
+            7001,
+            "plan-duplicate",
+        ),
+        ([7002], 7001, "plan-producer-unverified"),
+    ],
+)
+def test_ci_validation_producer_boundary_fails_closed_for_bad_instances(
+    artifacts: list[int],
+    artifact_id: int,
+    expected_detail: str,
+) -> None:
+    """Missing, duplicate, or mismatched control artifacts fail closed."""
+    plan_ref = control.ci_validation_plan_artifact_ref(
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[
+            _ci_artifact_metadata(plan_ref, artifact_id=item)
+            for item in artifacts
+        ],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                plan_ref,
+                artifact_id=artifact_id,
+                boundary="plan",
+                job="plan",
+            )
+        ],
+        workflow="CI Validation",
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    assert diagnostics
+    assert diagnostics[0]["detail"] == expected_detail
+
+
+def test_ci_validation_producer_boundary_rejects_wrong_boundary_job() -> None:
+    """Artifact names and payload refs do not override producer authority."""
+    request_ref = control.ci_validation_request_artifact_ref(
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[_ci_artifact_metadata(request_ref, artifact_id=7001)],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                request_ref,
+                artifact_id=7001,
+                boundary="plan",
+                job="plan",
+            )
+        ],
+        workflow="CI Validation",
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    assert diagnostics
+    assert diagnostics[0]["detail"] == "request-producer-unverified"
+
+
+@pytest.mark.parametrize(
+    ("artifact_ref", "case_id"),
+    [
+        (
+            control.ci_validation_changed_files_snapshot_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            "scheduled-full-or-unavailable-changed-files",
+        ),
+        (
+            control.ci_validation_fact_snapshot_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            "no-fact-snapshot",
+        ),
+    ],
+)
+def test_ci_validation_producer_boundary_omits_empty_optional_snapshot_ids(
+    artifact_ref: str,
+    case_id: str,
+) -> None:
+    """Empty optional snapshot upload outputs do not become requirements."""
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                artifact_ref,
+                artifact_id="",
+                boundary="plan",
+                job="plan",
+            )
+        ],
+        workflow="CI Validation",
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    assert diagnostics == [], case_id
+
+
+def test_ci_validation_aggregate_expected_inputs_skip_empty_optional_ids() -> (
+    None
+):
+    """Aggregate producer-boundary inputs only include uploaded snapshots."""
+    expected = control._ci_expected_aggregate_input_artifacts(
+        argparse.Namespace(
+            run_id="25887422010",
+            run_attempt="1",
+            expected_request_artifact_id="6001",
+            expected_plan_artifact_id="7001",
+            expected_changed_files_snapshot_artifact_id="",
+            expected_fact_snapshot_artifact_id="",
+            expected_selector_assignments_artifact_id="8001",
+        )
+    )
+
+    refs = {item["artifact-ref"] for item in expected}
+    assert (
+        control.ci_validation_changed_files_snapshot_artifact_ref(
+            run_id="25887422010",
+            run_attempt="1",
+        )
+        not in refs
+    )
+    assert (
+        control.ci_validation_fact_snapshot_artifact_ref(
+            run_id="25887422010",
+            run_attempt="1",
+        )
+        not in refs
+    )
+    assert len(expected) == 3
+
+
+@pytest.mark.parametrize(
+    ("artifact_ref", "artifacts", "artifact_id", "expected_detail"),
+    [
+        (
+            control.ci_validation_changed_files_snapshot_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            [7001, 7002],
+            7001,
+            "changed-files-snapshot-duplicate",
+        ),
+        (
+            control.ci_validation_fact_snapshot_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            [7002],
+            7001,
+            "fact-snapshot-producer-unverified",
+        ),
+    ],
+)
+def test_ci_validation_producer_boundary_fails_closed_for_present_optional_ids(
+    artifact_ref: str,
+    artifacts: list[int],
+    artifact_id: int,
+    expected_detail: str,
+) -> None:
+    """Uploaded optional snapshots still get fail-closed boundary checks."""
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[
+            _ci_artifact_metadata(artifact_ref, artifact_id=item)
+            for item in artifacts
+        ],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                artifact_ref,
+                artifact_id=artifact_id,
+                boundary="plan",
+                job="plan",
+            )
+        ],
+        workflow="CI Validation",
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    assert diagnostics
+    assert diagnostics[0]["detail"] == expected_detail
+
+
+def test_ci_validation_aggregate_fails_closed_for_duplicate_plan_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Aggregation rejects duplicated producer-boundary plan artifacts."""
+    scratch = SCRATCH / "ci-validation-duplicate-plan-boundary"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan_ref = control.ci_validation_plan_artifact_ref(
+            run_id="25887422010",
+            run_attempt="1",
+        )
+        monkeypatch.setattr(
+            control,
+            "_github_actions_run_artifacts",
+            lambda **_kwargs: [
+                _ci_artifact_metadata(plan_ref, artifact_id=7001),
+                _ci_artifact_metadata(plan_ref, artifact_id=7002),
+            ],
+        )
+        manifest_path = scratch / "receipt-manifest.json"
+        aggregate_path = scratch / "aggregate.json"
+
+        result = control._cmd_aggregate_ci_evidence(
+            argparse.Namespace(
+                repository="hcoona/three",
+                workflow="CI Validation",
+                run_id="25887422010",
+                run_attempt="1",
+                plan=str(scratch / "validation-plan.json"),
+                changed_files_snapshot="",
+                fact_snapshot="",
+                assignments="",
+                observed_artifacts_dir="",
+                expected_request_artifact_id=None,
+                expected_plan_artifact_id="7001",
+                expected_changed_files_snapshot_artifact_id=None,
+                expected_fact_snapshot_artifact_id=None,
+                expected_selector_assignments_artifact_id=None,
+                created_at="2026-05-14T21:09:21Z",
+                receipt_manifest_out=str(manifest_path),
+                aggregate_out=str(aggregate_path),
+                github_output=None,
+            )
+        )
+
+        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+        assert result == 1
+        assert aggregate["verdict"] == "failed"
+        assert aggregate["reason"]["invalid-plan"] is True
+        assert aggregate["diagnostics"][0]["detail"] == "plan-duplicate"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_release_workflow_uv_setup_precedes_uv_run() -> None:

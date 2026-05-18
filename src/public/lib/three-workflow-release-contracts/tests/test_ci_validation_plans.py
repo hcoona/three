@@ -2475,6 +2475,7 @@ def test_fail_closed_plan_freezes_terminal_aggregation_only() -> None:
     )
 
     assert snapshot.plan["verdict-intent"] == "fail-closed"
+    assert snapshot.fact_snapshot is None
     assert snapshot.plan["work-groups"] == [
         {
             "work-group-id": "evidence-aggregation",

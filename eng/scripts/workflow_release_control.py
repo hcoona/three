@@ -19,7 +19,7 @@ import urllib.request
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 
@@ -41,6 +41,7 @@ from three_workflow_release_authoring import (  # noqa: E402
 )
 from three_workflow_release_contracts import (  # noqa: E402
     API_VERSIONS_BY_KIND,
+    DETAILS_BY_DIAGNOSTIC_CODE,
     CiValidationKind,
     CiValidationObservedReceiptInput,
     ContractValidationError,
@@ -49,6 +50,7 @@ from three_workflow_release_contracts import (  # noqa: E402
     DiagnosticSeverity,
     DiagnosticVerdictEffect,
     ReceiptOutcome,
+    admit_exactly_one_artifact,
     artifact_physical_name,
     canonical_json_digest,
     ci_validation_aggregate_artifact_ref,
@@ -64,6 +66,7 @@ from three_workflow_release_contracts import (  # noqa: E402
     ci_validation_request_projection,
     ci_validation_selector_assignments_artifact_ref,
     ci_validation_writer_id,
+    collect_artifacts_by_name,
     freeze_ci_validation_aggregate,
     freeze_ci_validation_invalid_plan_aggregate,
     freeze_ci_validation_receipt,
@@ -84,6 +87,11 @@ from three_workflow_release_contracts.artifact_names import (  # noqa: E402
     github_release_asset_binding_json,
     immutable_binding_json,
 )
+
+if TYPE_CHECKING:
+    from three_workflow_release_contracts.actions_artifacts import (
+        GitHubActionsArtifactMetadata,
+    )
 
 Json = dict[str, Any]
 _PERMISSION_RANK = {
@@ -122,6 +130,16 @@ _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset(
         "hcoona-release-smoke-wxt",
     }
 )
+_CI_CONTROL_ARTIFACT_PRODUCERS = {
+    "ci-validation/requests": ("normalize-input", "normalize-input"),
+    "ci-validation/planning": ("plan", "plan"),
+    "ci-validation/assignments": (
+        "materialize-work-groups",
+        "materialize-work-groups",
+    ),
+    "ci-validation/manifests": ("aggregate-evidence", "aggregate-evidence"),
+    "ci-validation/aggregate": ("aggregate-evidence", "aggregate-evidence"),
+}
 
 
 def main() -> int:
@@ -133,6 +151,7 @@ def main() -> int:
     _add_write_request(subparsers)
     _add_write_ci_validation_request(subparsers)
     _add_ci_validation_artifact_refs(subparsers)
+    _add_verify_ci_validation_artifact_boundaries(subparsers)
     _add_materialize_ci_work_groups(subparsers)
     _add_check_ci_validation_dependencies(subparsers)
     _add_validate_ci_validation_lightweight_policy(subparsers)
@@ -252,6 +271,26 @@ def _add_ci_validation_artifact_refs(
     parser.set_defaults(func=_cmd_ci_validation_artifact_refs)
 
 
+def _add_verify_ci_validation_artifact_boundaries(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("verify-ci-validation-artifact-boundaries")
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--run-attempt", required=True)
+    parser.add_argument(
+        "--expected-artifact",
+        action="append",
+        default=[],
+        help=(
+            "JSON object with artifact-ref, artifact-instance-id, "
+            "producer-boundary, and producer-job"
+        ),
+    )
+    parser.set_defaults(func=_cmd_verify_ci_validation_artifact_boundaries)
+
+
 def _add_materialize_ci_work_groups(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -280,6 +319,17 @@ def _add_aggregate_ci_evidence(
     parser.add_argument("--fact-snapshot", default="")
     parser.add_argument("--assignments", default="")
     parser.add_argument("--observed-artifacts-dir", default="")
+    parser.add_argument("--expected-request-artifact-id", default=None)
+    parser.add_argument("--expected-plan-artifact-id", default=None)
+    parser.add_argument(
+        "--expected-changed-files-snapshot-artifact-id",
+        default=None,
+    )
+    parser.add_argument("--expected-fact-snapshot-artifact-id", default=None)
+    parser.add_argument(
+        "--expected-selector-assignments-artifact-id",
+        default=None,
+    )
     parser.add_argument("--created-at")
     parser.add_argument("--receipt-manifest-out", required=True)
     parser.add_argument("--aggregate-out", required=True)
@@ -855,6 +905,308 @@ def _cmd_ci_validation_artifact_refs(args: argparse.Namespace) -> int:
         },
     )
     return 0
+
+
+def _cmd_verify_ci_validation_artifact_boundaries(
+    args: argparse.Namespace,
+) -> int:
+    try:
+        expected = [
+            _ci_expected_artifact_from_json(value)
+            for value in args.expected_artifact
+        ]
+        artifacts = _github_actions_run_artifacts(
+            repository=args.repository,
+            run_id=str(args.run_id),
+        )
+        diagnostics = _ci_verify_expected_artifact_producer_boundaries(
+            artifacts=artifacts,
+            expected_artifacts=expected,
+            workflow=args.workflow,
+            run_id=str(args.run_id),
+            run_attempt=str(args.run_attempt),
+        )
+    except (
+        ContractValidationError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if diagnostics:
+        for diagnostic in diagnostics:
+            print(str(diagnostic["message"]), file=sys.stderr)
+        return 1
+    return 0
+
+
+def _ci_expected_artifact_from_json(value: str) -> Json:
+    payload = _read_json_value(value)
+    if not isinstance(payload, dict):
+        msg = "expected artifact must be a JSON object"
+        raise TypeError(msg)
+    return payload
+
+
+def _ci_verify_expected_artifact_producer_boundaries(
+    *,
+    artifacts: Sequence[GitHubActionsArtifactMetadata | Mapping[str, object]],
+    expected_artifacts: Sequence[Mapping[str, object]],
+    workflow: str,
+    run_id: str,
+    run_attempt: str,
+) -> list[Mapping[str, object]]:
+    groups = collect_artifacts_by_name(artifacts)
+    diagnostics: list[Mapping[str, object]] = []
+    for index, expected in _ci_expected_artifacts_requiring_boundary_check(
+        expected_artifacts
+    ):
+        artifact_ref = expected.get("artifact-ref")
+        artifact_instance_id = expected.get("artifact-instance-id")
+        producer_boundary = expected.get("producer-boundary")
+        producer_job = expected.get("producer-job")
+        source_id = str(artifact_ref) if isinstance(artifact_ref, str) else None
+        if not isinstance(artifact_ref, str) or not artifact_ref:
+            diagnostics.append(
+                _ci_boundary_diagnostic(
+                    index=index,
+                    detail=DiagnosticDetail.STRUCTURALLY_INVALID.value,
+                    message="expected artifact ref is missing or malformed",
+                    source_id=source_id,
+                )
+            )
+            continue
+        expected_boundary, expected_job = (
+            _ci_expected_control_artifact_producer(artifact_ref)
+        )
+        if expected_boundary is None or expected_job is None:
+            diagnostics.append(
+                _ci_boundary_diagnostic(
+                    index=index,
+                    detail=DiagnosticDetail.STRUCTURALLY_INVALID.value,
+                    message=(
+                        "artifact ref is not a registered CI control-plane "
+                        "gating artifact"
+                    ),
+                    source_id=source_id,
+                )
+            )
+            continue
+        if (
+            producer_boundary != expected_boundary
+            or producer_job != expected_job
+            or not isinstance(workflow, str)
+            or not workflow
+        ):
+            diagnostics.append(
+                _ci_boundary_diagnostic(
+                    index=index,
+                    detail=_ci_producer_unverified_detail(artifact_ref),
+                    message=(
+                        "artifact producer boundary does not match the "
+                        "contract boundary identity map"
+                    ),
+                    source_id=source_id,
+                )
+            )
+            continue
+        try:
+            admission = admit_exactly_one_artifact(
+                groups,
+                logical_ref=artifact_ref,
+            )
+        except ContractValidationError as exc:
+            diagnostics.append(
+                _ci_boundary_diagnostic(
+                    index=index,
+                    detail=_ci_count_failure_detail(artifact_ref, exc),
+                    message=str(exc),
+                    source_id=source_id,
+                )
+            )
+            continue
+        if (
+            not isinstance(artifact_instance_id, str)
+            or not artifact_instance_id
+        ):
+            diagnostics.append(
+                _ci_boundary_diagnostic(
+                    index=index,
+                    detail=_ci_producer_unverified_detail(artifact_ref),
+                    message="expected artifact instance id is missing",
+                    source_id=source_id,
+                )
+            )
+            continue
+        if str(admission.artifact.artifact_id) != artifact_instance_id:
+            diagnostics.append(
+                _ci_boundary_diagnostic(
+                    index=index,
+                    detail=_ci_producer_unverified_detail(artifact_ref),
+                    message=(
+                        "enumerated artifact instance does not match the "
+                        "producer job upload output"
+                    ),
+                    source_id=source_id,
+                )
+            )
+            continue
+        if str(admission.artifact.workflow_run_id) != str(run_id):
+            diagnostics.append(
+                _ci_boundary_diagnostic(
+                    index=index,
+                    detail=_ci_producer_unverified_detail(artifact_ref),
+                    message="artifact metadata does not bind to this workflow run",
+                    source_id=source_id,
+                )
+            )
+            continue
+        if f"/{run_id}/{run_attempt}/" not in artifact_ref:
+            diagnostics.append(
+                _ci_boundary_diagnostic(
+                    index=index,
+                    detail=_ci_producer_unverified_detail(artifact_ref),
+                    message="artifact ref does not bind to this run attempt",
+                    source_id=source_id,
+                )
+            )
+    return diagnostics
+
+
+def _ci_expected_artifacts_requiring_boundary_check(
+    expected_artifacts: Sequence[Mapping[str, object]],
+) -> list[tuple[int, Mapping[str, object]]]:
+    checked: list[tuple[int, Mapping[str, object]]] = []
+    for index, expected in enumerate(expected_artifacts):
+        artifact_ref = expected.get("artifact-ref")
+        artifact_instance_id = expected.get("artifact-instance-id")
+        if (
+            isinstance(artifact_ref, str)
+            and _ci_is_optional_control_artifact_ref(artifact_ref)
+            and (
+                artifact_instance_id is None or str(artifact_instance_id) == ""
+            )
+        ):
+            continue
+        checked.append((index, expected))
+    return checked
+
+
+def _ci_is_optional_control_artifact_ref(artifact_ref: str) -> bool:
+    return _ci_control_artifact_kind(artifact_ref) in {
+        "changed-files-snapshot",
+        "fact-snapshot",
+    }
+
+
+def _ci_expected_control_artifact_producer(
+    artifact_ref: str,
+) -> tuple[str | None, str | None]:
+    for prefix, producer in _CI_CONTROL_ARTIFACT_PRODUCERS.items():
+        if artifact_ref.startswith(prefix + "/"):
+            return producer
+    return None, None
+
+
+def _ci_boundary_diagnostic(
+    *,
+    index: int,
+    detail: str,
+    message: str,
+    source_id: str | None,
+) -> Mapping[str, object]:
+    code = DiagnosticFamily.INVALID_PLAN.value
+    if detail.startswith("request-"):
+        code = DiagnosticFamily.REQUEST_INVALID.value
+    elif detail.startswith("final-") or detail == (
+        DiagnosticDetail.AGGREGATE_WITHOUT_MANIFEST.value
+    ):
+        code = DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value
+    return ci_validation_diagnostic(
+        diagnostic_id=f"producer-boundary/{index:03d}",
+        code=code,
+        detail=detail,
+        message=message,
+        source_type="aggregation",
+        source_id=source_id,
+        severity=DiagnosticSeverity.FAIL_CLOSED.value,
+        verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+    )
+
+
+def _ci_count_failure_detail(
+    artifact_ref: str,
+    exc: ContractValidationError,
+) -> str:
+    message = str(exc)
+    kind = _ci_control_artifact_kind(artifact_ref)
+    if "duplicate candidate" in message:
+        return {
+            "request": DiagnosticDetail.REQUEST_DUPLICATE.value,
+            "plan": DiagnosticDetail.PLAN_DUPLICATE.value,
+            "changed-files-snapshot": (
+                DiagnosticDetail.CHANGED_FILES_SNAPSHOT_DUPLICATE.value
+            ),
+            "fact-snapshot": DiagnosticDetail.FACT_SNAPSHOT_DUPLICATE.value,
+            "selector-assignment": (
+                DiagnosticDetail.SELECTOR_ASSIGNMENT_DUPLICATE.value
+            ),
+            "final-manifest": DiagnosticDetail.FINAL_MANIFEST_DUPLICATE.value,
+            "final-aggregate": DiagnosticDetail.FINAL_AGGREGATE_DUPLICATE.value,
+        }.get(kind, DiagnosticDetail.STRUCTURALLY_INVALID.value)
+    if "missing candidate" in message:
+        return {
+            "request": DiagnosticDetail.REQUEST_MISSING.value,
+            "plan": DiagnosticDetail.PLAN_MISSING.value,
+            "changed-files-snapshot": (
+                DiagnosticDetail.CHANGED_FILES_SNAPSHOT_MISSING.value
+            ),
+            "fact-snapshot": DiagnosticDetail.FACT_SNAPSHOT_MISSING.value,
+            "selector-assignment": (
+                DiagnosticDetail.SELECTOR_ASSIGNMENT_MISSING.value
+            ),
+            "final-manifest": DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
+            "final-aggregate": DiagnosticDetail.FINAL_AGGREGATE_MISSING.value,
+        }.get(kind, DiagnosticDetail.STRUCTURALLY_INVALID.value)
+    return _ci_producer_unverified_detail(artifact_ref)
+
+
+def _ci_producer_unverified_detail(artifact_ref: str) -> str:
+    kind = _ci_control_artifact_kind(artifact_ref)
+    return {
+        "request": DiagnosticDetail.REQUEST_PRODUCER_UNVERIFIED.value,
+        "plan": DiagnosticDetail.PLAN_PRODUCER_UNVERIFIED.value,
+        "changed-files-snapshot": (
+            DiagnosticDetail.CHANGED_FILES_SNAPSHOT_PRODUCER_UNVERIFIED.value
+        ),
+        "fact-snapshot": DiagnosticDetail.FACT_SNAPSHOT_PRODUCER_UNVERIFIED.value,
+        "selector-assignment": (
+            DiagnosticDetail.SELECTOR_ASSIGNMENT_PRODUCER_UNVERIFIED.value
+        ),
+        "final-manifest": DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value,
+        "final-aggregate": DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value,
+    }.get(kind, DiagnosticDetail.STRUCTURALLY_INVALID.value)
+
+
+def _ci_control_artifact_kind(artifact_ref: str) -> str:
+    suffixes = {
+        "/ci-validation-request.json": "request",
+        "/validation-plan.json": "plan",
+        "/changed-files-snapshot.json": "changed-files-snapshot",
+        "/fact-snapshot.json": "fact-snapshot",
+        "/selector-assignments.json": "selector-assignment",
+        "/receipt-manifest.json": "final-manifest",
+        "/ci-validation-aggregate.json": "final-aggregate",
+    }
+    return next(
+        (
+            kind
+            for suffix, kind in suffixes.items()
+            if artifact_ref.endswith(suffix)
+        ),
+        "unknown",
+    )
 
 
 def _cmd_materialize_ci_work_groups(args: argparse.Namespace) -> int:
@@ -2278,6 +2630,19 @@ def _cmd_write_ci_validation_writer_observation(
 def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
     owner, name = _split_repository(args.repository)
     created_at = args.created_at or _utc_now()
+    boundary_diagnostics = _ci_aggregate_control_artifact_boundary_diagnostics(
+        args,
+    )
+    if boundary_diagnostics:
+        return _write_invalid_ci_aggregate(
+            args,
+            owner=owner,
+            name=name,
+            created_at=created_at,
+            diagnostic_detail=_ci_invalid_plan_detail_from_boundary(
+                str(boundary_diagnostics[0]["detail"]),
+            ),
+        )
     try:
         plan = _read_optional_json(args.plan)
         changed_files_snapshot = _read_optional_json(
@@ -2413,6 +2778,7 @@ def _write_invalid_ci_aggregate(
     owner: str,
     name: str,
     created_at: str,
+    diagnostic_detail: str = DiagnosticDetail.STRUCTURALLY_INVALID.value,
 ) -> int:
     manifest = freeze_ci_validation_receipt_manifest(
         plan=None,
@@ -2432,7 +2798,7 @@ def _write_invalid_ci_aggregate(
         workflow=args.workflow,
         run_id=str(args.run_id),
         run_attempt=str(args.run_attempt),
-        diagnostic_detail=DiagnosticDetail.STRUCTURALLY_INVALID.value,
+        diagnostic_detail=diagnostic_detail,
         receipt_manifest=manifest,
     )
     _write_json(Path(args.aggregate_out), aggregate)
@@ -2471,6 +2837,120 @@ def _invalid_ci_aggregate_for_valid_plan(
         changed_files_snapshot=changed_files_snapshot,
         fact_snapshot=fact_snapshot,
     )
+
+
+def _ci_aggregate_control_artifact_boundary_diagnostics(
+    args: argparse.Namespace,
+) -> list[Mapping[str, object]]:
+    expected = _ci_expected_aggregate_input_artifacts(args)
+    if not expected:
+        return []
+    try:
+        artifacts = _github_actions_run_artifacts(
+            repository=args.repository,
+            run_id=str(args.run_id),
+        )
+        return _ci_verify_expected_artifact_producer_boundaries(
+            artifacts=artifacts,
+            expected_artifacts=expected,
+            workflow=args.workflow,
+            run_id=str(args.run_id),
+            run_attempt=str(args.run_attempt),
+        )
+    except (
+        ContractValidationError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return [
+            _ci_boundary_diagnostic(
+                index=0,
+                detail=DiagnosticDetail.PLAN_PRODUCER_UNVERIFIED.value,
+                message=str(exc),
+                source_id=None,
+            )
+        ]
+
+
+def _ci_invalid_plan_detail_from_boundary(detail: str) -> str:
+    if (
+        detail
+        in DETAILS_BY_DIAGNOSTIC_CODE[DiagnosticFamily.INVALID_PLAN.value]
+    ):
+        return detail
+    return DiagnosticDetail.PLAN_PRODUCER_UNVERIFIED.value
+
+
+def _ci_expected_aggregate_input_artifacts(
+    args: argparse.Namespace,
+) -> list[Mapping[str, object]]:
+    run_id = str(args.run_id)
+    run_attempt = str(args.run_attempt)
+    specs = [
+        (
+            "expected_request_artifact_id",
+            ci_validation_request_artifact_ref(
+                run_id=run_id,
+                run_attempt=run_attempt,
+            ),
+            "normalize-input",
+            "normalize-input",
+        ),
+        (
+            "expected_plan_artifact_id",
+            ci_validation_plan_artifact_ref(
+                run_id=run_id,
+                run_attempt=run_attempt,
+            ),
+            "plan",
+            "plan",
+        ),
+        (
+            "expected_changed_files_snapshot_artifact_id",
+            ci_validation_changed_files_snapshot_artifact_ref(
+                run_id=run_id,
+                run_attempt=run_attempt,
+            ),
+            "plan",
+            "plan",
+        ),
+        (
+            "expected_fact_snapshot_artifact_id",
+            ci_validation_fact_snapshot_artifact_ref(
+                run_id=run_id,
+                run_attempt=run_attempt,
+            ),
+            "plan",
+            "plan",
+        ),
+        (
+            "expected_selector_assignments_artifact_id",
+            ci_validation_selector_assignments_artifact_ref(
+                run_id=run_id,
+                run_attempt=run_attempt,
+            ),
+            "materialize-work-groups",
+            "materialize-work-groups",
+        ),
+    ]
+    expected: list[Mapping[str, object]] = []
+    for attr, artifact_ref, boundary, job in specs:
+        artifact_id = getattr(args, attr, None)
+        if artifact_id is None or (
+            _ci_is_optional_control_artifact_ref(artifact_ref)
+            and str(artifact_id) == ""
+        ):
+            continue
+        expected.append(
+            {
+                "artifact-ref": artifact_ref,
+                "artifact-instance-id": str(artifact_id),
+                "producer-boundary": boundary,
+                "producer-job": job,
+            }
+        )
+    return expected
 
 
 def _cmd_plan_gate(args: argparse.Namespace) -> int:
@@ -5017,6 +5497,42 @@ def _gh_api_paginated(repository: str, endpoint: str) -> list[Any]:
     if all(isinstance(page, list) for page in payload):
         return [item for page in payload for item in page]
     return payload
+
+
+def _github_actions_run_artifacts(
+    *,
+    repository: str,
+    run_id: str,
+) -> list[Mapping[str, object]]:
+    pages = _gh_api_paginated(
+        repository,
+        f"repos/{repository}/actions/runs/{run_id}/artifacts?per_page=100",
+    )
+    artifacts: list[Mapping[str, object]] = []
+    for index, page in enumerate(pages):
+        if isinstance(page, Mapping):
+            page_artifacts = page.get("artifacts")
+            if not isinstance(page_artifacts, Sequence) or isinstance(
+                page_artifacts,
+                str | bytes,
+            ):
+                msg = f"artifact API page {index} is missing artifacts array"
+                raise TypeError(msg)
+            for artifact in page_artifacts:
+                if not isinstance(artifact, Mapping):
+                    msg = f"artifact API page {index} contains non-object"
+                    raise TypeError(msg)
+                artifacts.append(artifact)
+        elif isinstance(page, Sequence) and not isinstance(page, str | bytes):
+            for artifact in page:
+                if not isinstance(artifact, Mapping):
+                    msg = f"artifact API page {index} contains non-object"
+                    raise TypeError(msg)
+                artifacts.append(artifact)
+        else:
+            msg = f"artifact API page {index} has unsupported shape"
+            raise TypeError(msg)
+    return artifacts
 
 
 def _publish_node_diagnostic(

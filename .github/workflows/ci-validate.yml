@@ -28,6 +28,7 @@ jobs:
       selector-assignments-artifact-name: ${{ steps.refs.outputs.selector_assignments_artifact_name }}
       receipt-manifest-artifact-name: ${{ steps.refs.outputs.receipt_manifest_artifact_name }}
       aggregate-artifact-name: ${{ steps.refs.outputs.aggregate_artifact_name }}
+      request-artifact-id: ${{ steps.upload-request.outputs.artifact-id }}
       mode: ${{ steps.mode.outputs.mode }}
     steps:
       - uses: actions/checkout@v4
@@ -273,6 +274,7 @@ jobs:
             "${range_args[@]}" \
             --out .three-ci-validation/normalize/ci-validation-request.json
       - name: Upload planner-facing request
+        id: upload-request
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.refs.outputs.request_artifact_name }}
@@ -288,6 +290,10 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      plan-artifact-id: ${{ steps.upload-plan.outputs.artifact-id }}
+      changed-files-snapshot-artifact-id: ${{ steps.upload-changed-files.outputs.artifact-id }}
+      fact-snapshot-artifact-id: ${{ steps.upload-fact-snapshot.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -298,9 +304,22 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Verify request producer boundary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST_REF: ci-validation/requests/${{ github.run_id }}/${{ github.run_attempt }}/ci-validation-request.json
+          REQUEST_ARTIFACT_ID: ${{ needs.normalize-input.outputs.request-artifact-id }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --expected-artifact "{\"artifact-ref\":\"${REQUEST_REF}\",\"artifact-instance-id\":\"${REQUEST_ARTIFACT_ID}\",\"producer-boundary\":\"normalize-input\",\"producer-job\":\"normalize-input\"}"
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.request-artifact-name }}
+          artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/request
       - name: Run CI validation planner
         run: |
@@ -317,6 +336,7 @@ jobs:
             --fact-snapshot-out .three-ci-validation/plan/fact-snapshot.json \
             --diagnostics-out .three-ci-validation/plan/planner-diagnostics.json
       - name: Upload validation plan
+        id: upload-plan
         uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
@@ -334,6 +354,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
       - name: Upload changed-files snapshot
+        id: upload-changed-files
         uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
@@ -342,6 +363,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
       - name: Upload fact snapshot
+        id: upload-fact-snapshot
         uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
@@ -370,6 +392,7 @@ jobs:
       work-group-layer-1-matrix: ${{ steps.materialize.outputs.work_group_layer_1_matrix }}
       has-work-group-layer-2: ${{ steps.materialize.outputs.has_work_group_layer_2 }}
       work-group-layer-2-matrix: ${{ steps.materialize.outputs.work_group_layer_2_matrix }}
+      selector-assignments-artifact-id: ${{ steps.upload-assignments.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -380,21 +403,51 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Verify planning artifact producer boundaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
+          CHANGED_FILES_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/changed-files-snapshot.json
+          FACT_SNAPSHOT_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/fact-snapshot.json
+          PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
+          CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+        run: |
+          expected_artifacts=(
+            --expected-artifact "{\"artifact-ref\":\"${PLAN_REF}\",\"artifact-instance-id\":\"${PLAN_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}"
+          )
+          if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
+            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${CHANGED_FILES_REF}\",\"artifact-instance-id\":\"${CHANGED_FILES_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
+          fi
+          if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
+            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${FACT_SNAPSHOT_REF}\",\"artifact-instance-id\":\"${FACT_SNAPSHOT_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
+          fi
+          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            "${expected_artifacts[@]}"
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download changed-files snapshot
+        if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download fact snapshot
+        if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Materialize selector assignments
         id: materialize
@@ -409,6 +462,7 @@ jobs:
             --assignments-out .three-ci-validation/materialize/selector-assignments.json \
             --github-output "$GITHUB_OUTPUT"
       - name: Upload selector assignments
+        id: upload-assignments
         uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
@@ -451,25 +505,57 @@ jobs:
         if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
         shell: bash
         run: corepack enable pnpm
+      - name: Verify gating artifact producer boundaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
+          CHANGED_FILES_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/changed-files-snapshot.json
+          FACT_SNAPSHOT_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/fact-snapshot.json
+          ASSIGNMENTS_REF: ci-validation/assignments/${{ github.run_id }}/${{ github.run_attempt }}/selector-assignments.json
+          PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
+          CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          ASSIGNMENTS_ARTIFACT_ID: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+        run: |
+          expected_artifacts=(
+            --expected-artifact "{\"artifact-ref\":\"${PLAN_REF}\",\"artifact-instance-id\":\"${PLAN_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}"
+            --expected-artifact "{\"artifact-ref\":\"${ASSIGNMENTS_REF}\",\"artifact-instance-id\":\"${ASSIGNMENTS_ARTIFACT_ID}\",\"producer-boundary\":\"materialize-work-groups\",\"producer-job\":\"materialize-work-groups\"}"
+          )
+          if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
+            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${CHANGED_FILES_REF}\",\"artifact-instance-id\":\"${CHANGED_FILES_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
+          fi
+          if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
+            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${FACT_SNAPSHOT_REF}\",\"artifact-instance-id\":\"${FACT_SNAPSHOT_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
+          fi
+          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            "${expected_artifacts[@]}"
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
+          artifact-ids: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
-        continue-on-error: true
+        if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download fact snapshot
-        continue-on-error: true
+        if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download prerequisite validation artifacts
         continue-on-error: true
@@ -617,25 +703,57 @@ jobs:
         if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
         shell: bash
         run: corepack enable pnpm
+      - name: Verify gating artifact producer boundaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
+          CHANGED_FILES_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/changed-files-snapshot.json
+          FACT_SNAPSHOT_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/fact-snapshot.json
+          ASSIGNMENTS_REF: ci-validation/assignments/${{ github.run_id }}/${{ github.run_attempt }}/selector-assignments.json
+          PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
+          CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          ASSIGNMENTS_ARTIFACT_ID: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+        run: |
+          expected_artifacts=(
+            --expected-artifact "{\"artifact-ref\":\"${PLAN_REF}\",\"artifact-instance-id\":\"${PLAN_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}"
+            --expected-artifact "{\"artifact-ref\":\"${ASSIGNMENTS_REF}\",\"artifact-instance-id\":\"${ASSIGNMENTS_ARTIFACT_ID}\",\"producer-boundary\":\"materialize-work-groups\",\"producer-job\":\"materialize-work-groups\"}"
+          )
+          if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
+            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${CHANGED_FILES_REF}\",\"artifact-instance-id\":\"${CHANGED_FILES_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
+          fi
+          if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
+            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${FACT_SNAPSHOT_REF}\",\"artifact-instance-id\":\"${FACT_SNAPSHOT_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
+          fi
+          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            "${expected_artifacts[@]}"
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
+          artifact-ids: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
-        continue-on-error: true
+        if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download fact snapshot
-        continue-on-error: true
+        if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download prerequisite validation artifacts
         continue-on-error: true
@@ -784,25 +902,57 @@ jobs:
         if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
         shell: bash
         run: corepack enable pnpm
+      - name: Verify gating artifact producer boundaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
+          CHANGED_FILES_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/changed-files-snapshot.json
+          FACT_SNAPSHOT_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/fact-snapshot.json
+          ASSIGNMENTS_REF: ci-validation/assignments/${{ github.run_id }}/${{ github.run_attempt }}/selector-assignments.json
+          PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
+          CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          ASSIGNMENTS_ARTIFACT_ID: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+        run: |
+          expected_artifacts=(
+            --expected-artifact "{\"artifact-ref\":\"${PLAN_REF}\",\"artifact-instance-id\":\"${PLAN_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}"
+            --expected-artifact "{\"artifact-ref\":\"${ASSIGNMENTS_REF}\",\"artifact-instance-id\":\"${ASSIGNMENTS_ARTIFACT_ID}\",\"producer-boundary\":\"materialize-work-groups\",\"producer-job\":\"materialize-work-groups\"}"
+          )
+          if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
+            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${CHANGED_FILES_REF}\",\"artifact-instance-id\":\"${CHANGED_FILES_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
+          fi
+          if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
+            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${FACT_SNAPSHOT_REF}\",\"artifact-instance-id\":\"${FACT_SNAPSHOT_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
+          fi
+          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            "${expected_artifacts[@]}"
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
+          artifact-ids: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
-        continue-on-error: true
+        if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download fact snapshot
-        continue-on-error: true
+        if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download prerequisite validation artifacts
         continue-on-error: true
@@ -952,12 +1102,14 @@ jobs:
           name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
+        if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
           path: .three-ci-validation/plan
       - name: Download fact snapshot
+        if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
@@ -972,22 +1124,39 @@ jobs:
       - name: Aggregate validation evidence
         env:
           CI_REPOSITORY: ${{ github.repository }}
+          REQUEST_ARTIFACT_ID: ${{ needs.normalize-input.outputs.request-artifact-id }}
+          PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
+          CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          ASSIGNMENTS_ARTIFACT_ID: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
         run: |
           mkdir -p .three-ci-validation/aggregate
-          uv run python eng/scripts/workflow_release_control.py aggregate-ci-evidence \
-            --repository "$CI_REPOSITORY" \
-            --workflow "CI Validation" \
-            --run-id "$GITHUB_RUN_ID" \
-            --run-attempt "$GITHUB_RUN_ATTEMPT" \
-            --plan .three-ci-validation/plan/validation-plan.json \
-            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
-            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
-            --receipt-manifest-out .three-ci-validation/aggregate/receipt-manifest.json \
+          aggregate_args=(
+            --repository "$CI_REPOSITORY"
+            --workflow "CI Validation"
+            --run-id "$GITHUB_RUN_ID"
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+            --plan .three-ci-validation/plan/validation-plan.json
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json
+            --assignments .three-ci-validation/materialize/selector-assignments.json
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts
+            --expected-request-artifact-id "$REQUEST_ARTIFACT_ID"
+            --expected-plan-artifact-id "$PLAN_ARTIFACT_ID"
+            --expected-selector-assignments-artifact-id "$ASSIGNMENTS_ARTIFACT_ID"
+            --receipt-manifest-out .three-ci-validation/aggregate/receipt-manifest.json
             --aggregate-out .three-ci-validation/aggregate/ci-validation-aggregate.json
+          )
+          if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
+            aggregate_args+=(--expected-changed-files-snapshot-artifact-id "$CHANGED_FILES_ARTIFACT_ID")
+          fi
+          if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
+            aggregate_args+=(--expected-fact-snapshot-artifact-id "$FACT_SNAPSHOT_ARTIFACT_ID")
+          fi
+          uv run python eng/scripts/workflow_release_control.py aggregate-ci-evidence "${aggregate_args[@]}"
       - name: Upload receipt manifest
         if: always()
+        id: upload-receipt-manifest
         uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.receipt-manifest-artifact-name }}
@@ -997,6 +1166,7 @@ jobs:
           retention-days: 30
       - name: Upload aggregate evidence
         if: always()
+        id: upload-aggregate
         uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.normalize-input.outputs.aggregate-artifact-name }}
@@ -1004,3 +1174,19 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 30
+      - name: Verify final artifact producer boundaries
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST_REF: ci-validation/manifests/${{ github.run_id }}/${{ github.run_attempt }}/receipt-manifest.json
+          AGGREGATE_REF: ci-validation/aggregate/${{ github.run_id }}/${{ github.run_attempt }}/ci-validation-aggregate.json
+          MANIFEST_ARTIFACT_ID: ${{ steps.upload-receipt-manifest.outputs.artifact-id }}
+          AGGREGATE_ARTIFACT_ID: ${{ steps.upload-aggregate.outputs.artifact-id }}
+        run: |
+          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --expected-artifact "{\"artifact-ref\":\"${MANIFEST_REF}\",\"artifact-instance-id\":\"${MANIFEST_ARTIFACT_ID}\",\"producer-boundary\":\"aggregate-evidence\",\"producer-job\":\"aggregate-evidence\"}" \
+            --expected-artifact "{\"artifact-ref\":\"${AGGREGATE_REF}\",\"artifact-instance-id\":\"${AGGREGATE_ARTIFACT_ID}\",\"producer-boundary\":\"aggregate-evidence\",\"producer-job\":\"aggregate-evidence\"}"
