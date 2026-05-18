@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -855,6 +856,29 @@ def _step_block(workflow: str, step_name: str) -> str:
     if end == -1:
         end = len(workflow)
     return workflow[start:end]
+
+
+def _ci_range_derivation_python() -> str:
+    """Return the embedded CI affected-range derivation Python program."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    steps = workflow["jobs"]["normalize-input"]["steps"]
+    run = next(
+        step["run"]
+        for step in steps
+        if step.get("name") == "Write planner-facing request"
+    )
+    marker = "uv run python - <<'PY'\n"
+    start = run.index(marker) + len(marker)
+    end = run.index("\nPY", start)
+    return run[start:end]
+
+
+def _read_ci_range_args(path: Path) -> list[str]:
+    """Parse the generated shell range_args assignment."""
+    assignment = path.read_text(encoding="utf-8")
+    return shlex.split(
+        assignment.removeprefix("range_args=(").removesuffix(")\n"),
+    )
 
 
 def test_acceptance_matrix_fixture_tracks_design_scenarios() -> None:
@@ -5068,6 +5092,381 @@ def test_ci_validation_workflow_executes_mapped_commands_before_receipts() -> (
         in aggregate
     )
     assert "observed_receipts=[]" not in workflow
+
+
+def test_ci_validation_workflow_derives_normal_event_ranges() -> None:
+    """Normal PR/push CI requests pass confirmed affected ranges."""
+    workflow = _workflow("ci-validate.yml")
+    normalize = _step_block(workflow, "Write planner-facing request")
+
+    assert 'validation_commit_sha="$(git rev-parse HEAD)"' in normalize
+    assert 'event_path = os.environ["GITHUB_EVENT_PATH"]' in normalize
+    assert 'if [ "$CI_MODE" != "scheduled_full" ]; then' in normalize
+    assert '"--range-status"' in normalize
+    assert '"available"' in normalize
+    assert '"--changed-files-json"' in normalize
+    assert '"--base-tip-sha"' in normalize
+    assert 'unavailable("incomplete")' in normalize
+    assert 'unavailable("unconfirmed-provenance")' in normalize
+    assert (
+        "--range-status unavailable --range-diagnostic-detail incomplete"
+        not in (normalize)
+    )
+    assert 'validation_ref="refs/pull/${CI_EVENT_NUMBER}/head"' in normalize
+    assert '--event-number "$CI_EVENT_NUMBER"' in normalize
+    assert '--validation-commit-sha "$validation_commit_sha"' in normalize
+    assert '--validation-ref "$validation_ref"' in normalize
+    assert '"${range_args[@]}"' in normalize
+
+
+@pytest.mark.parametrize(
+    ("mode", "event", "expected_args"),
+    [
+        (
+            "push",
+            {"before": "a" * 40, "after": "b" * 40},
+            [
+                "--range-status",
+                "available",
+                "--base-sha",
+                "a" * 40,
+                "--head-sha",
+                "b" * 40,
+                "--changed-files-json",
+                '["README.md","src/public/lib/example.py"]',
+            ],
+        ),
+        (
+            "pull_request",
+            {
+                "pull_request": {
+                    "base": {"sha": "c" * 40},
+                    "head": {"sha": "b" * 40},
+                },
+            },
+            [
+                "--range-status",
+                "available",
+                "--base-sha",
+                "a" * 40,
+                "--base-tip-sha",
+                "c" * 40,
+                "--head-sha",
+                "b" * 40,
+                "--changed-files-json",
+                '["README.md","src/public/lib/example.py"]',
+            ],
+        ),
+    ],
+)
+def test_ci_validation_workflow_range_derivation_emits_available_args(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    event: Mapping[str, object],
+    expected_args: list[str],
+) -> None:
+    """Embedded derivation confirms PR/push range endpoints and file lists."""
+    scratch = SCRATCH / f"ci-validation-range-available-{mode}"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    (scratch / ".three-ci-validation/normalize").mkdir(parents=True)
+    event_path = scratch / "event.json"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    known_commits = {"a" * 40, "b" * 40, "c" * 40}
+    raw_diff = b"M\0src/public/lib/example.py\0M\0README.md\0"
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        check = bool(kwargs.get("check", False))
+        if args[:2] == ["git", "rev-parse"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=b"b" * 40 + b"\n",
+            )
+        if args[:2] == ["git", "cat-file"]:
+            return subprocess.CompletedProcess(
+                args,
+                0 if args[3].split("^{", 1)[0] in known_commits else 1,
+                stdout=b"",
+            )
+        if args[:2] == ["git", "merge-base"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=b"a" * 40 + b"\n",
+            )
+        if args[:4] == ["git", "diff", "--name-status", "--find-renames"]:
+            return subprocess.CompletedProcess(args, 0, stdout=raw_diff)
+        if check:
+            raise subprocess.CalledProcessError(1, args)
+        return subprocess.CompletedProcess(args, 1, stdout=b"")
+
+    try:
+        monkeypatch.chdir(scratch)
+        monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+        monkeypatch.setenv("CI_MODE", mode)
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        exec(_ci_range_derivation_python(), {})  # noqa: S102
+
+        assert (
+            _read_ci_range_args(
+                scratch / ".three-ci-validation/normalize/range-args.sh",
+            )
+            == expected_args
+        )
+    finally:
+        monkeypatch.chdir(REPO_ROOT)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_workflow_range_derivation_fails_closed_when_unconfirmed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unconfirmable endpoints remain unavailable instead of being guessed."""
+    scratch = SCRATCH / "ci-validation-range-unconfirmed"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    (scratch / ".three-ci-validation/normalize").mkdir(parents=True)
+    event_path = scratch / "event.json"
+    event_path.write_text(
+        json.dumps({"before": "a" * 40, "after": "b" * 40}),
+        encoding="utf-8",
+    )
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        check = bool(kwargs.get("check", False))
+        if args[:2] == ["git", "rev-parse"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=b"b" * 40 + b"\n",
+            )
+        if args[:2] in (["git", "cat-file"], ["git", "fetch"]):
+            return subprocess.CompletedProcess(args, 1, stdout=b"")
+        if check:
+            raise subprocess.CalledProcessError(1, args)
+        return subprocess.CompletedProcess(args, 1, stdout=b"")
+
+    try:
+        monkeypatch.chdir(scratch)
+        monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+        monkeypatch.setenv("CI_MODE", "push")
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        exec(_ci_range_derivation_python(), {})  # noqa: S102
+
+        assert _read_ci_range_args(
+            scratch / ".three-ci-validation/normalize/range-args.sh",
+        ) == [
+            "--range-status",
+            "unavailable",
+            "--range-diagnostic-detail",
+            "incomplete",
+        ]
+    finally:
+        monkeypatch.chdir(REPO_ROOT)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case_id", "raw_diff"),
+    [
+        ("backslash", b"M\0src\\bad.py\0"),
+        ("dot-prefix", b"M\0./README.md\0"),
+        ("trailing-slash", b"M\0docs/\0"),
+        ("empty-segment", b"M\0src//file.py\0"),
+        ("dot-segment", b"M\0src/./file.py\0"),
+        ("duplicate", b"M\0README.md\0M\0README.md\0"),
+        ("invalid-utf8", b"M\0src/\xff.py\0"),
+    ],
+)
+def test_ci_validation_workflow_marks_bad_changed_paths_inconsistent(
+    monkeypatch: pytest.MonkeyPatch,
+    case_id: str,
+    raw_diff: bytes,
+) -> None:
+    """Bad git-diff paths fail closed as inconsistent."""
+    scratch = SCRATCH / f"ci-validation-range-{case_id}"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    (scratch / ".three-ci-validation/normalize").mkdir(parents=True)
+    base_sha = "a" * 40
+    head_sha = "b" * 40
+    event_path = scratch / "event.json"
+    event_path.write_text(
+        json.dumps({"before": base_sha, "after": head_sha}),
+        encoding="utf-8",
+    )
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        check = bool(kwargs.get("check", False))
+        if args[:2] == ["git", "rev-parse"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=f"{head_sha}\n".encode(),
+            )
+        if args[:2] == ["git", "cat-file"]:
+            return subprocess.CompletedProcess(args, 0, stdout=b"")
+        if args[:4] == ["git", "diff", "--name-status", "--find-renames"]:
+            return subprocess.CompletedProcess(args, 0, stdout=raw_diff)
+        if check:
+            raise subprocess.CalledProcessError(1, args)
+        return subprocess.CompletedProcess(args, 1, stdout=b"")
+
+    try:
+        monkeypatch.chdir(scratch)
+        monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+        monkeypatch.setenv("CI_MODE", "push")
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        exec(_ci_range_derivation_python(), {})  # noqa: S102
+
+        assert (
+            (
+                scratch / ".three-ci-validation/normalize/range-args.sh"
+            ).read_text(encoding="utf-8")
+            == "range_args=( --range-status unavailable "
+            "--range-diagnostic-detail inconsistent)\n"
+        )
+    finally:
+        monkeypatch.chdir(REPO_ROOT)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_workflow_checks_canonical_changed_paths() -> None:
+    """Embedded range derivation matches request changed-file path rules."""
+    normalize = _step_block(
+        _workflow("ci-validate.yml"),
+        "Write planner-facing request",
+    )
+
+    assert "def is_canonical_repo_path(value):" in normalize
+    assert 'value.startswith(("/", "./"))' in normalize
+    assert 'value.endswith("/")' in normalize
+    assert '"\\\\" in value' in normalize
+    assert 'part not in {"", ".", ".."}' in normalize
+    assert "NonCanonicalChangedPathError" in normalize
+    assert "or value in seen" in normalize
+    assert 'unavailable("inconsistent")' in normalize
+
+
+def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
+    """PR validation executes on the confirmed head boundary, not merge refs."""
+    workflow = _workflow("ci-validate.yml")
+    checkout_count = workflow.count("uses: actions/checkout@v4")
+
+    assert checkout_count > 0
+    assert (
+        workflow.count(
+            "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+        )
+        == checkout_count
+    )
+
+
+def test_ci_validation_receipts_observe_checked_out_head() -> None:
+    """Validation receipts bind to the checked-out tree, not merge refs."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+
+    for layer in range(3):
+        steps = workflow["jobs"][f"validation-work-groups-layer-{layer}"][
+            "steps"
+        ]
+        receipt_step = next(
+            step
+            for step in steps
+            if step.get("name") == "Write validation receipt"
+        )
+        run = receipt_step["run"]
+
+        assert 'observed_commit_sha="$(git rev-parse HEAD)"' in run
+        assert '--observed-commit-sha "$observed_commit_sha"' in run
+        assert '--observed-commit-sha "$GITHUB_SHA"' not in run
+
+
+def test_write_ci_validation_request_accepts_available_pr_and_push_ranges() -> (
+    None
+):
+    """Request writer preserves available ranges for normal CI events."""
+    scratch = SCRATCH / "ci-validation-available-ranges"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        cases = [
+            {
+                "mode": "pull_request",
+                "event_number": "42",
+                "validation_ref": "refs/pull/42/head",
+                "base_sha": "a" * 40,
+                "base_tip_sha": "c" * 40,
+                "head_sha": "b" * 40,
+                "changed_files": [
+                    "src/public/lib/nbgv-python/pyproject.toml",
+                    "README.md",
+                ],
+            },
+            {
+                "mode": "push",
+                "event_number": "",
+                "validation_ref": "refs/heads/main",
+                "base_sha": "d" * 40,
+                "base_tip_sha": "",
+                "head_sha": "e" * 40,
+                "changed_files": ["README.md"],
+            },
+        ]
+        for case in cases:
+            out = scratch / f"{case['mode']}.json"
+            assert (
+                control._cmd_write_ci_validation_request(
+                    argparse.Namespace(
+                        mode=case["mode"],
+                        repository="hcoona/three",
+                        workflow="CI Validation",
+                        run_id="25887422010",
+                        run_attempt="1",
+                        event_name=case["mode"],
+                        event_number=case["event_number"],
+                        actor="octocat",
+                        validation_commit_sha=case["head_sha"],
+                        validation_ref=case["validation_ref"],
+                        base_sha=case["base_sha"],
+                        base_tip_sha=case["base_tip_sha"],
+                        head_sha=case["head_sha"],
+                        changed_files_json=json.dumps(
+                            list(reversed(case["changed_files"])),
+                        ),
+                        range_status="available",
+                        range_diagnostic_detail="missing",
+                        created_at="2026-05-14T21:09:21Z",
+                        out=str(out),
+                        github_output=None,
+                    ),
+                )
+                == 0
+            )
+            request = json.loads(out.read_text(encoding="utf-8"))
+            affected = request["affected-range"]
+            assert affected["status"] == "available"
+            assert affected["base-sha"] == case["base_sha"]
+            assert affected["head-sha"] == case["head_sha"]
+            assert affected["base-tip-sha"] == (case["base_tip_sha"] or None)
+            assert affected["changed-files"] == sorted(case["changed_files"])
+            assert affected["diagnostic"] is None
+            assert affected["diagnostic-detail"] is None
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_ci_validation_artifact_refs_include_planner_diagnostics() -> None:

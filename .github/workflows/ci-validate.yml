@@ -34,6 +34,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -61,15 +62,202 @@ jobs:
         env:
           CI_ACTOR: ${{ github.actor }}
           CI_EVENT_NAME: ${{ github.event_name }}
-          CI_HEAD_SHA: ${{ github.sha }}
+          CI_EVENT_NUMBER: ${{ github.event.pull_request.number || '' }}
           CI_MODE: ${{ steps.mode.outputs.mode }}
           CI_REF: ${{ github.ref }}
           CI_REPOSITORY: ${{ github.repository }}
         run: |
           mkdir -p .three-ci-validation/normalize
+          validation_commit_sha="$(git rev-parse HEAD)"
+          validation_ref="$CI_REF"
+          if [ "$CI_MODE" = "pull_request" ] && [ -n "$CI_EVENT_NUMBER" ]; then
+            validation_ref="refs/pull/${CI_EVENT_NUMBER}/head"
+          fi
           range_args=()
           if [ "$CI_MODE" != "scheduled_full" ]; then
-            range_args=(--range-status unavailable --range-diagnostic-detail incomplete)
+            uv run python - <<'PY'
+          import json
+          import os
+          import shlex
+          import subprocess
+
+          ZERO_SHA = "0" * 40
+          OUT = ".three-ci-validation/normalize/range-args.sh"
+
+
+          def emit(args):
+              with open(OUT, "w", encoding="utf-8") as handle:
+                  handle.write("range_args=(")
+                  for arg in args:
+                      handle.write(" " + shlex.quote(str(arg)))
+                  handle.write(")\n")
+
+
+          def unavailable(detail):
+              emit(["--range-status", "unavailable", "--range-diagnostic-detail", detail])
+
+
+          def git(*args):
+              return subprocess.run(
+                  ["git", *args],
+                  check=True,
+                  capture_output=True,
+                  text=False,
+              ).stdout
+
+
+          def is_sha(value):
+              return (
+                  isinstance(value, str)
+                  and len(value) == 40
+                  and value != ZERO_SHA
+                  and all(char in "0123456789abcdefABCDEF" for char in value)
+              )
+
+
+          def commit_exists(value):
+              if not is_sha(value):
+                  return False
+              return subprocess.run(
+                  ["git", "cat-file", "-e", f"{value}^{{commit}}"],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  check=False,
+              ).returncode == 0
+
+
+          def ensure_commit(value):
+              if commit_exists(value):
+                  return True
+              if not is_sha(value):
+                  return False
+              subprocess.run(
+                  ["git", "fetch", "--no-tags", "--depth=1", "origin", value],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  check=False,
+              )
+              return commit_exists(value)
+
+
+          class NonCanonicalChangedPathError(ValueError):
+              pass
+
+
+          def is_canonical_repo_path(value):
+              if any(0xD800 <= ord(char) <= 0xDFFF for char in value):
+                  return False
+              if (
+                  value == ""
+                  or value.startswith(("/", "./"))
+                  or value.endswith("/")
+                  or "\\" in value
+              ):
+                  return False
+              return all(part not in {"", ".", ".."} for part in value.split("/"))
+
+
+          def check_path(value, seen):
+              if not is_canonical_repo_path(value) or value in seen:
+                  raise NonCanonicalChangedPathError(
+                      "non-canonical or duplicated changed path"
+                  )
+              seen.add(value)
+              return value
+
+
+          def changed_files(base, head):
+              raw = git("diff", "--name-status", "--find-renames", "-z", base, head)
+              try:
+                  fields = raw.decode("utf-8", "strict").split("\0")
+              except UnicodeDecodeError as exc:
+                  raise NonCanonicalChangedPathError(
+                      "non-UTF-8 changed path"
+                  ) from exc
+              if fields and fields[-1] == "":
+                  fields.pop()
+              changed = []
+              seen = set()
+              index = 0
+              while index < len(fields):
+                  status = fields[index]
+                  index += 1
+                  if not status:
+                      continue
+                  kind = status[0]
+                  if kind in {"R", "C"}:
+                      if index + 1 >= len(fields):
+                          raise ValueError("incomplete rename/copy record")
+                      changed.append(check_path(fields[index], seen))
+                      changed.append(check_path(fields[index + 1], seen))
+                      index += 2
+                      continue
+                  if index >= len(fields):
+                      raise ValueError("incomplete changed-file record")
+                  changed.append(check_path(fields[index], seen))
+                  index += 1
+              return sorted(changed)
+
+
+          def available(base_sha, head_sha, files, base_tip_sha=None):
+              args = [
+                  "--range-status",
+                  "available",
+                  "--base-sha",
+                  base_sha,
+                  "--head-sha",
+                  head_sha,
+                  "--changed-files-json",
+                  json.dumps(files, ensure_ascii=False, separators=(",", ":")),
+              ]
+              if base_tip_sha is not None:
+                  args[4:4] = ["--base-tip-sha", base_tip_sha]
+              emit(args)
+
+
+          try:
+              event_path = os.environ["GITHUB_EVENT_PATH"]
+              with open(event_path, encoding="utf-8") as handle:
+                  event = json.load(handle)
+              mode = os.environ["CI_MODE"]
+              validation_commit_sha = git("rev-parse", "HEAD").decode().strip()
+              if mode == "push":
+                  base_sha = event.get("before")
+                  head_sha = event.get("after")
+                  if not ensure_commit(base_sha) or not ensure_commit(head_sha):
+                      unavailable("incomplete")
+                  elif validation_commit_sha != head_sha:
+                      unavailable("unconfirmed-provenance")
+                  else:
+                      available(base_sha, head_sha, changed_files(base_sha, head_sha))
+              elif mode == "pull_request":
+                  pull_request = event.get("pull_request") or {}
+                  base_tip_sha = (pull_request.get("base") or {}).get("sha")
+                  head_sha = (pull_request.get("head") or {}).get("sha")
+                  if not ensure_commit(base_tip_sha) or not ensure_commit(head_sha):
+                      unavailable("incomplete")
+                  elif validation_commit_sha != head_sha:
+                      unavailable("unconfirmed-provenance")
+                  else:
+                      base_sha = git("merge-base", base_tip_sha, head_sha).decode().strip()
+                      if not ensure_commit(base_sha):
+                          unavailable("incomplete")
+                      else:
+                          available(
+                              base_sha,
+                              head_sha,
+                              changed_files(base_sha, head_sha),
+                              base_tip_sha=base_tip_sha,
+                          )
+              else:
+                  unavailable("missing")
+          except NonCanonicalChangedPathError:
+              unavailable("inconsistent")
+          except (KeyError, OSError, subprocess.CalledProcessError, UnicodeError, ValueError, json.JSONDecodeError):
+              unavailable("incomplete")
+          PY
+            # shellcheck source=/dev/null
+            source .three-ci-validation/normalize/range-args.sh
           fi
           uv run python eng/scripts/workflow_release_control.py write-ci-validation-request \
             --mode "$CI_MODE" \
@@ -78,9 +266,10 @@ jobs:
             --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --event-name "$CI_EVENT_NAME" \
+            --event-number "$CI_EVENT_NUMBER" \
             --actor "$CI_ACTOR" \
-            --validation-commit-sha "$CI_HEAD_SHA" \
-            --validation-ref "$CI_REF" \
+            --validation-commit-sha "$validation_commit_sha" \
+            --validation-ref "$validation_ref" \
             "${range_args[@]}" \
             --out .three-ci-validation/normalize/ci-validation-request.json
       - name: Upload planner-facing request
@@ -104,6 +293,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -185,6 +375,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -246,6 +437,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -330,6 +522,7 @@ jobs:
         run: |
           mkdir -p .three-ci-validation/work
           validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"
+          observed_commit_sha="$(git rev-parse HEAD)"
           uv run python eng/scripts/workflow_release_control.py write-ci-validation-receipt \
             --plan .three-ci-validation/plan/validation-plan.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
@@ -340,7 +533,7 @@ jobs:
             --workflow "CI Validation" \
             --job "$WRITER_JOB" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
-            --observed-commit-sha "$GITHUB_SHA" \
+            --observed-commit-sha "$observed_commit_sha" \
             --validation-result .three-ci-validation/work/validation-result.json \
             --validation-outcome "$validation_outcome" \
             --receipt-out .three-ci-validation/work/receipt.json \
@@ -410,6 +603,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -494,6 +688,7 @@ jobs:
         run: |
           mkdir -p .three-ci-validation/work
           validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"
+          observed_commit_sha="$(git rev-parse HEAD)"
           uv run python eng/scripts/workflow_release_control.py write-ci-validation-receipt \
             --plan .three-ci-validation/plan/validation-plan.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
@@ -504,7 +699,7 @@ jobs:
             --workflow "CI Validation" \
             --job "$WRITER_JOB" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
-            --observed-commit-sha "$GITHUB_SHA" \
+            --observed-commit-sha "$observed_commit_sha" \
             --validation-result .three-ci-validation/work/validation-result.json \
             --validation-outcome "$validation_outcome" \
             --receipt-out .three-ci-validation/work/receipt.json \
@@ -575,6 +770,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -659,6 +855,7 @@ jobs:
         run: |
           mkdir -p .three-ci-validation/work
           validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"
+          observed_commit_sha="$(git rev-parse HEAD)"
           uv run python eng/scripts/workflow_release_control.py write-ci-validation-receipt \
             --plan .three-ci-validation/plan/validation-plan.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
@@ -669,7 +866,7 @@ jobs:
             --workflow "CI Validation" \
             --job "$WRITER_JOB" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
-            --observed-commit-sha "$GITHUB_SHA" \
+            --observed-commit-sha "$observed_commit_sha" \
             --validation-result .three-ci-validation/work/validation-result.json \
             --validation-outcome "$validation_outcome" \
             --receipt-out .three-ci-validation/work/receipt.json \
@@ -737,6 +934,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:

@@ -2651,6 +2651,58 @@ def test_cli_ci_plan_failure_writes_planner_diagnostics_contract() -> None:
         _remove_flat_scratch(scratch)
 
 
+def test_ci_validation_unavailable_affected_range_fails_closed() -> None:
+    """Real affected range derivation failures remain fail-closed."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticDetail,
+        DiagnosticFamily,
+        canonical_json_digest,
+        ci_validation_request_projection,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    inputs = _ci_inputs([])
+    request = dict(inputs.request)
+    request["affected-range"] = {
+        "status": "unavailable",
+        "base-sha": None,
+        "base-tip-sha": None,
+        "head-sha": None,
+        "changed-files": None,
+        "source": "pull_request",
+        "diagnostic": DiagnosticFamily.RANGE_UNCONFIRMED.value,
+        "diagnostic-detail": DiagnosticDetail.INCOMPLETE.value,
+    }
+    request["request-digest"] = canonical_json_digest(
+        ci_validation_request_projection(request),
+    )
+
+    snapshot = plan_ci_validation_from_repo(replace(inputs, request=request))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "fail-closed"
+    assert snapshot.changed_files_snapshot is None
+    assert snapshot.fact_snapshot is None
+    diagnostics = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["diagnostics"],
+    )
+    assert diagnostics[0]["code"] == DiagnosticFamily.RANGE_UNCONFIRMED.value
+    assert diagnostics[0]["detail"] == DiagnosticDetail.INCOMPLETE.value
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["work-groups"],
+    )
+    assert all(item["kind"] == "evidence-aggregation" for item in work_groups)
+
+
 def test_ci_validation_plans_zero_file_affected_range() -> None:
     """Confirmed zero-file affected ranges are executable no-work plans."""
     from three_workflow_release_contracts import (  # noqa: PLC0415
