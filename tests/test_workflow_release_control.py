@@ -6035,7 +6035,7 @@ def test_ci_validation_success_requires_result_identity_match() -> None:
 def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
     None
 ):
-    """Release-shaped validation fails closed without reuse evidence."""
+    """Release-shaped validation fails closed without source evidence."""
     scratch = SCRATCH / "ci-validation-release-shaped-success"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -6114,7 +6114,7 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
         assert validation_result["outcome"] == "blocking-failure"
         command = validation_result["commands"][0]
         assert command["builtin"] == "release-shaped-artifact"
-        assert "reuse release-shaped evidence" in command["error"]
+        assert "source proof is unavailable" in command["error"]
         assert (
             control._ci_validation_outcome(
                 plan,
@@ -6426,6 +6426,166 @@ def test_ci_validation_release_shaped_sidecar_helpers_reject_extra_commands(
         )
         is None
     )
+
+
+def test_ci_validation_release_receipt_write_accepts_first_source_receipt() -> (
+    None
+):
+    """Release-shaped validation can emit the first source-backed receipt."""
+    scratch = SCRATCH / "ci-validation-release-shaped-first-source"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=_ci_validation_push_request(
+                    ["src/public/lib/nbgv-python/pyproject.toml"],
+                ),
+                repo_root=REPO_ROOT,
+                expected_run_id="25887422010",
+                expected_run_attempt="1",
+                created_at="2026-05-14T21:09:21Z",
+            )
+        )
+        plan_path = scratch / "validation-plan.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        assignments_path = scratch / "selector-assignments.json"
+        materialize_outputs_path = scratch / "materialize-outputs.txt"
+        validation_result_path = scratch / "validation-result.json"
+        receipt_path = scratch / "receipt.json"
+        observed_root = scratch / "observed-artifacts"
+        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(plan_snapshot.changed_files_snapshot),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(plan_snapshot.fact_snapshot),
+            encoding="utf-8",
+        )
+        assert (
+            control._cmd_materialize_ci_work_groups(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    workflow="CI Validation",
+                    writer_job="validation-work-groups",
+                    created_at="2026-05-14T21:09:21Z",
+                    assignments_out=str(assignments_path),
+                    github_output=str(materialize_outputs_path),
+                )
+            )
+            == 0
+        )
+        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
+        matrix = {
+            item["work-group-id"]: item
+            for item in json.loads(
+                _github_outputs(materialize_outputs_path)["work_group_matrix"]
+            )
+        }
+        release_group = next(
+            group
+            for group in cast(
+                "Sequence[Mapping[str, object]]",
+                plan_snapshot.plan["work-groups"],
+            )
+            if group["kind"] == "release-shaped-artifact"
+        )
+        release_work_group_id = str(release_group["work-group-id"])
+        for dependency in cast("Sequence[str]", release_group["depends-on"]):
+            _stage_ci_observed_receipt(
+                scratch=scratch,
+                observed_root=observed_root,
+                plan=plan_snapshot.plan,
+                assignments=assignments,
+                matrix=matrix,
+                work_group_id=dependency,
+                outcome="success",
+                changed_files_snapshot=cast(
+                    "Mapping[str, object]",
+                    plan_snapshot.changed_files_snapshot,
+                ),
+                fact_snapshot=cast(
+                    "Mapping[str, object]",
+                    plan_snapshot.fact_snapshot,
+                ),
+            )
+
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    observed_artifacts_dir=str(observed_root),
+                    observed_commit_sha="b" * 40,
+                    repo_root=str(REPO_ROOT),
+                    result_out=str(validation_result_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        validation_result = json.loads(
+            validation_result_path.read_text(encoding="utf-8")
+        )
+        command = validation_result["commands"][0]
+        assert validation_result["outcome"] == "success"
+        assert command["evidence-source"] == "no-publish-validation"
+        assert command["source-proof"]["kind"] == "no-publish-validation-result"
+
+        assert (
+            control._cmd_write_ci_validation_receipt(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    work_group_id=release_work_group_id,
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    workflow="CI Validation",
+                    job=matrix[release_work_group_id]["writer-job"],
+                    observed_artifacts_dir=str(observed_root),
+                    observed_commit_sha="b" * 40,
+                    validation_result=str(validation_result_path),
+                    validation_outcome="success",
+                    created_at="2026-05-14T21:09:24Z",
+                    receipt_out=str(receipt_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        assignment = control._ci_assignment_for_work_group(
+            assignments,
+            release_work_group_id,
+        )
+        validate_ci_validation_receipt(
+            receipt,
+            plan=plan_snapshot.plan,
+            selector_assignments_manifest=assignments,
+            assignment=assignment,
+            changed_files_snapshot=plan_snapshot.changed_files_snapshot,
+            fact_snapshot=plan_snapshot.fact_snapshot,
+        )
+        detail = receipt["evidence"]["category-result"]["detail"]
+        assert receipt["outcome"] == "success"
+        assert detail["evidence-source"] == "no-publish-validation"
+        assert detail["source-proof"] == command["source-proof"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_ci_validation_release_receipt_write_accepts_observed_reuse() -> (  # noqa: PLR0915

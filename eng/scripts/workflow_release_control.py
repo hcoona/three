@@ -1083,6 +1083,7 @@ def _ci_run_validation_command(
             observed_artifacts_dir=observed_artifacts_dir,
             observed_commit_sha=observed_commit_sha,
             matrix_work_group=matrix_work_group,
+            repo_root=repo_root,
         )
     argv = command.get("argv")
     if not isinstance(argv, Sequence) or isinstance(argv, str | bytes):
@@ -1148,6 +1149,7 @@ def _ci_run_builtin_validation_command(
     observed_artifacts_dir: str,
     observed_commit_sha: str,
     matrix_work_group: Mapping[str, object],
+    repo_root: Path,
 ) -> Json:
     try:
         command_outcome, error, extra = _ci_builtin_validation_command_outcome(
@@ -1160,6 +1162,7 @@ def _ci_run_builtin_validation_command(
             observed_artifacts_dir=observed_artifacts_dir,
             observed_commit_sha=observed_commit_sha,
             matrix_work_group=matrix_work_group,
+            repo_root=repo_root,
         )
     except (KeyError, TypeError, ValueError) as exc:
         command_outcome = "blocking-failure"
@@ -1191,6 +1194,7 @@ def _ci_builtin_validation_command_outcome(
     observed_artifacts_dir: str,
     observed_commit_sha: str,
     matrix_work_group: Mapping[str, object],
+    repo_root: Path,
 ) -> tuple[ReceiptOutcome, str | None, Json]:
     if builtin == "release-shaped-artifact":
         return _ci_release_shaped_artifact_builtin_outcome(
@@ -1201,6 +1205,7 @@ def _ci_builtin_validation_command_outcome(
             observed_artifacts_dir,
             observed_commit_sha,
             matrix_work_group,
+            repo_root,
         )
     target, subcheck_ids = _ci_builtin_validation_context(
         plan, matrix_work_group
@@ -1441,6 +1446,7 @@ def _ci_release_shaped_artifact_builtin_outcome(  # noqa: C901, PLR0911
     observed_artifacts_dir: str,
     observed_commit_sha: str,
     matrix_work_group: Mapping[str, object],
+    repo_root: Path,
 ) -> tuple[ReceiptOutcome, str | None, Json]:
     if not isinstance(plan, Mapping):
         return "blocking-failure", "frozen validation plan is required", {}
@@ -1470,18 +1476,6 @@ def _ci_release_shaped_artifact_builtin_outcome(  # noqa: C901, PLR0911
                 "release-shaped work group has no frozen artifact obligations",
                 {},
             )
-        if not isinstance(assignments, Mapping):
-            return (
-                "blocking-failure",
-                "selector assignments are required to reuse release-shaped evidence",
-                {},
-            )
-        if not observed_artifacts_dir:
-            return (
-                "blocking-failure",
-                "observed validation artifacts are required to reuse release-shaped evidence",
-                {},
-            )
         if not observed_commit_sha:
             return (
                 "blocking-failure",
@@ -1496,20 +1490,49 @@ def _ci_release_shaped_artifact_builtin_outcome(  # noqa: C901, PLR0911
                     "release-shaped artifact obligation has invalid expected refs",
                     {},
                 )
-        reuse = _ci_reused_release_shaped_artifact_evidence(
-            plan=plan,
-            assignments=assignments,
-            work_group_id=work_group_id,
-            observed_artifacts_dir=observed_artifacts_dir,
-            observed_commit_sha=observed_commit_sha,
-            changed_files_snapshot=changed_files_snapshot,
-            fact_snapshot=fact_snapshot,
+        reuse = (
+            _ci_reused_release_shaped_artifact_evidence(
+                plan=plan,
+                assignments=assignments,
+                work_group_id=work_group_id,
+                observed_artifacts_dir=observed_artifacts_dir,
+                observed_commit_sha=observed_commit_sha,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+            )
+            if isinstance(assignments, Mapping) and observed_artifacts_dir
+            else None
         )
         if reuse is None:
+            if (
+                isinstance(assignments, Mapping)
+                and observed_artifacts_dir
+                and _ci_has_observed_release_shaped_receipt_candidate(
+                    plan=plan,
+                    assignments=assignments,
+                    work_group_id=work_group_id,
+                    observed_artifacts_dir=observed_artifacts_dir,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                )
+            ):
+                return (
+                    "blocking-failure",
+                    "no admissible no-publish release-shaped artifact evidence was found",
+                    {},
+                )
             return (
-                "blocking-failure",
-                "no admissible no-publish release-shaped artifact evidence was found",
-                {},
+                "success",
+                None,
+                _ci_no_publish_release_shaped_source_evidence(
+                    plan=plan,
+                    work_group_id=work_group_id,
+                    matrix_work_group=matrix_work_group,
+                    obligations=obligations,
+                    observed_commit_sha=observed_commit_sha,
+                    fact_snapshot=fact_snapshot,
+                    repo_root=repo_root,
+                ),
             )
     except (KeyError, TypeError, ValueError) as exc:
         return "blocking-failure", str(exc), {}
@@ -1521,6 +1544,138 @@ def _ci_release_shaped_artifact_builtin_outcome(  # noqa: C901, PLR0911
             "reused-receipt": reuse["reused-receipt"],
             "artifact-obligation-results": reuse["artifact-obligation-results"],
         },
+    )
+
+
+def _ci_has_observed_release_shaped_receipt_candidate(
+    *,
+    plan: Mapping[str, object],
+    assignments: Mapping[str, object],
+    work_group_id: str,
+    observed_artifacts_dir: str,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+) -> bool:
+    assignment = _ci_assignment_for_work_group(assignments, work_group_id)
+    expected_writer_id = assignment.get("trusted-writer-id")
+    return any(
+        _ci_observed_receipt_manifest_matches_trusted_writer(
+            observed.manifest_entry,
+            work_group_id=work_group_id,
+            expected_writer_id=expected_writer_id,
+        )
+        for observed in _ci_observed_receipt_inputs(
+            plan=plan,
+            assignments=assignments,
+            observed_artifacts_dir=observed_artifacts_dir,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
+    )
+
+
+def _ci_no_publish_release_shaped_source_evidence(
+    *,
+    plan: Mapping[str, object],
+    work_group_id: str,
+    matrix_work_group: Mapping[str, object],
+    obligations: Sequence[Mapping[str, object]],
+    observed_commit_sha: str,
+    fact_snapshot: Mapping[str, object] | None,
+    repo_root: Path,
+) -> Json:
+    """Build source-backed no-publish release-shaped validation evidence."""
+    results: list[Json] = []
+    for obligation in obligations:
+        result = _ci_artifact_obligation_success_result(obligation)
+        descriptor_path = str(obligation["descriptor-path"])
+        descriptor_sha256 = _ci_release_shaped_descriptor_source_digest(
+            repo_root,
+            descriptor_path,
+        )
+        descriptor_fact = (
+            _ci_descriptor_fact(fact_snapshot, descriptor_path)
+            if fact_snapshot is not None
+            else None
+        )
+        cast("dict[str, object]", result["descriptor"])["identity"] = (
+            descriptor_fact.get("descriptor-identity")
+            if descriptor_fact is not None
+            else None
+        )
+        observed_artifact = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", result["artifact"])["observed"],
+        )
+        observed_artifact["digests"] = [
+            {
+                "artifact-ref": artifact_ref,
+                "algorithm": "sha256",
+                "digest": _ci_release_shaped_source_artifact_digest(
+                    work_group_id=work_group_id,
+                    obligation=obligation,
+                    artifact_ref=artifact_ref,
+                    descriptor_sha256=descriptor_sha256,
+                ),
+                "digest-available": True,
+                "diagnostics": [],
+            }
+            for artifact_ref in _ci_artifact_expected_refs(obligation)
+        ]
+        results.append(result)
+    return {
+        "evidence-source": "no-publish-validation",
+        "source-proof": {
+            "kind": "no-publish-validation-result",
+            "work-group-id": work_group_id,
+            "coverage-target": matrix_work_group["coverage-target"],
+            "observed-commit-sha": observed_commit_sha,
+            "artifact-digests": _ci_release_shaped_digest_proof_entries_from_results(
+                results,
+            ),
+        },
+        "artifact-obligation-results": results,
+    }
+
+
+def _ci_release_shaped_descriptor_source_digest(
+    repo_root: Path,
+    descriptor_path: str,
+) -> str:
+    path = PurePosixPath(descriptor_path)
+    if path.is_absolute() or ".." in path.parts:
+        msg = "release-shaped descriptor source path is outside the repository"
+        raise ValueError(msg)
+    full_path = repo_root / path
+    try:
+        data = full_path.read_bytes()
+    except OSError as exc:
+        msg = (
+            "release-shaped descriptor source proof is unavailable for "
+            f"{descriptor_path}: {exc}"
+        )
+        raise ValueError(msg) from exc
+    return hashlib.sha256(data).hexdigest()
+
+
+def _ci_release_shaped_source_artifact_digest(
+    *,
+    work_group_id: str,
+    obligation: Mapping[str, object],
+    artifact_ref: str,
+    descriptor_sha256: str,
+) -> str:
+    return canonical_json_digest(
+        {
+            "kind": "release-shaped-no-publish-source-proof",
+            "work-group-id": work_group_id,
+            "artifact-obligation-id": obligation["artifact-obligation-id"],
+            "artifact-ref": artifact_ref,
+            "descriptor-path": obligation["descriptor-path"],
+            "descriptor-sha256": descriptor_sha256,
+            "artifact": obligation["artifact"],
+            "release-receipt": obligation["release-receipt"],
+        }
     )
 
 
@@ -5746,11 +5901,39 @@ def _ci_release_shaped_result_has_admissible_source(
     fact_snapshot: Mapping[str, object] | None,
 ) -> bool:
     if (
-        not isinstance(assignments, Mapping)
-        or not observed_artifacts_dir
-        or not observed_commit_sha
+        not observed_commit_sha
         or validation_result.get("observed-commit-sha") != observed_commit_sha
     ):
+        return False
+    source_command = _ci_no_publish_source_command_from_validation_result(
+        validation_result,
+    )
+    if source_command is not None:
+        source_detail: Json = {
+            "evidence-source": "no-publish-validation",
+            "source-proof": dict(
+                cast("Mapping[str, object]", source_command["source-proof"]),
+            ),
+            "artifact-obligation-results": [
+                dict(item)
+                for item in cast(
+                    "Sequence[Mapping[str, object]]",
+                    source_command["artifact-obligation-results"],
+                )
+            ],
+        }
+        return _ci_no_publish_release_shaped_source_proof_is_admissible(
+            {
+                "work-group-id": work_group_id,
+                "coverage-target": validation_result.get("coverage-target"),
+                "execution-tree": {
+                    "observed-commit-sha": observed_commit_sha,
+                },
+            },
+            source_detail,
+            source_validation_result=validation_result,
+        )
+    if not isinstance(assignments, Mapping) or not observed_artifacts_dir:
         return False
     reuse = _ci_reused_release_shaped_artifact_evidence(
         plan=plan,
@@ -5761,9 +5944,7 @@ def _ci_release_shaped_result_has_admissible_source(
         changed_files_snapshot=changed_files_snapshot,
         fact_snapshot=fact_snapshot,
     )
-    if reuse is None:
-        return False
-    return all(
+    return reuse is not None and all(
         _ci_release_shaped_command_matches_reused_evidence(command, reuse)
         for command in command_mappings
     )
