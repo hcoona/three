@@ -2414,16 +2414,39 @@ true`.
   receipts, wrong-plan receipts, and receipts with an unknown or mismatched
   `work-group-id` are inadmissible for satisfying evidence expectations.
 - When multiple otherwise admissible receipts match the same evidence
-  expectation, the receipt with the lowest `observed-entry-id` is the only
-  candidate that may satisfy the expectation; every other matching receipt is
-  inadmissible with `duplicate-receipt`. Receipts that are inadmissible for other
-  reasons do not participate in choosing the satisfying receipt.
+  expectation, aggregation fails closed to duplicate handling by default: the
+  receipt with the lowest `observed-entry-id` is the only candidate that may
+  satisfy the expectation, and every other matching receipt is inadmissible with
+  `duplicate-receipt`. Receipts that are inadmissible for other reasons do not
+  participate in choosing the satisfying receipt.
+- The only duplicate-admissibility exception is a validated release-shaped
+  reused-receipt chain for one `release-shaped-artifact` work group. Multiple
+  receipts in that chain may remain admissible only when aggregation validates
+  all of these constraints: every chain receipt is for the same work group and
+  same target/scope identity, including `coverage-target` and the bound artifact
+  obligation; every reused source receipt is linked by `artifact-ref`,
+  `receipt-id`, and `receipt-content-digest`; the observed source receipt was
+  emitted by the trusted writer authorized for that work group; the source and
+  current receipts are bound to the observed commit/tree/source proof, or an
+  equivalent admissible source binding, required by the release-shaped evidence
+  source; and the set of duplicate receipts has exactly one validated maximal
+  reused-receipt chain membership. Within that exception, aggregation may choose
+  the chain tip as the satisfying receipt while keeping the validated source
+  receipts admissible.
+- Ambiguous duplicates, non-chain duplicates, malformed chains, self-asserted or
+  cyclic chains, multiple maximal chains, mismatched work-group or target/scope
+  identities, missing writer authority, missing observed source proof or
+  equivalent admissible source binding, unsupported evidence sources, or
+  otherwise unsupported duplicate patterns are not covered by the exception and
+  remain fail-closed `duplicate-receipt` cases.
 - Any observed inadmissible receipt contributes to a failing aggregated outcome
   with `inadmissible-receipt`; a valid receipt does not offset an extra
   inadmissible receipt.
 - A required evidence expectation passes aggregation only when exactly one valid
-  matching receipt satisfies it; zero valid receipts or only inadmissible receipts
-  aggregate as `required-evidence-missing`.
+  matching receipt satisfies it, or when the validated release-shaped
+  reused-receipt chain exception provides exactly one satisfying chain tip; zero
+  valid receipts or only inadmissible receipts aggregate as
+  `required-evidence-missing`.
 - A valid required receipt with `blocking-failure` contributes to a failing
   aggregated outcome.
 - Missing required receipts contribute to a failing aggregated outcome.
