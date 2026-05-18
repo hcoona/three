@@ -4,6 +4,10 @@ namespace Hcoona.VsCodeCopilotTelegramHook;
 
 internal static class UserHookConfigurationManager
 {
+    private const int SessionStartTimeoutSeconds = 10;
+    private const int UserPromptSubmitTimeoutSeconds = 10;
+    private const int StopTimeoutSeconds = 20;
+
     private static readonly JsonSerializerOptions WriteIndentedOptions = new(
         AppJsonSerializerContext.Default.Options)
     {
@@ -107,7 +111,7 @@ internal static class UserHookConfigurationManager
             entry: CreateManagedHookEntry(
                 sessionStartCommand,
                 "SessionStart",
-                timeoutSeconds: 10,
+                timeoutSeconds: SessionStartTimeoutSeconds,
                 format),
             isManagedEntryToReplace);
 
@@ -122,7 +126,7 @@ internal static class UserHookConfigurationManager
             entry: CreateManagedHookEntry(
                 userPromptSubmitCommand,
                 "UserPromptSubmit",
-                timeoutSeconds: 10,
+                timeoutSeconds: UserPromptSubmitTimeoutSeconds,
                 format),
             isManagedEntryToReplace);
 
@@ -137,7 +141,7 @@ internal static class UserHookConfigurationManager
             entry: CreateManagedHookEntry(
                 stopCommand,
                 "Stop",
-                timeoutSeconds: 20,
+                timeoutSeconds: StopTimeoutSeconds,
                 format),
             isManagedEntryToReplace);
 
@@ -259,6 +263,40 @@ internal static class UserHookConfigurationManager
             && HasManagedCopilotCliEntry(rootDocument.Hooks, "Stop");
     }
 
+    public static bool IsManagedCopilotCliHookFileInstalled(
+        string hookFilePath,
+        string installedBinaryPath)
+    {
+        UserHookSettingsDocument? rootDocument = TryParseSettings(hookFilePath);
+        if (rootDocument is null)
+        {
+            return false;
+        }
+
+        return rootDocument.Version == 1
+            && rootDocument.Hooks is not null
+            && HasStrictManagedCopilotCliEntry(
+                rootDocument.Hooks,
+                eventName: "SessionStart",
+                command: CreateCopilotCliHookCommand(installedBinaryPath, "session-start"),
+                timeoutSeconds: SessionStartTimeoutSeconds)
+            && HasStrictManagedCopilotCliEntry(
+                rootDocument.Hooks,
+                eventName: "UserPromptSubmit",
+                command: CreateCopilotCliHookCommand(installedBinaryPath, "user-prompt-submit"),
+                timeoutSeconds: UserPromptSubmitTimeoutSeconds)
+            && HasStrictManagedCopilotCliEntry(
+                rootDocument.Hooks,
+                eventName: "Stop",
+                command: CreateCopilotCliHookCommand(installedBinaryPath, "stop"),
+                timeoutSeconds: StopTimeoutSeconds);
+    }
+
+    public static string CreateCopilotCliHookCommand(
+        string installedBinaryPath,
+        string subcommand)
+        => $"\"{installedBinaryPath}\" hook {subcommand}";
+
     private static ConfigurationApplyResult? TryLoadExistingHookFileForInstall(
         string hookFilePath,
         UserHookSettingsDocument desiredDocument,
@@ -363,16 +401,26 @@ internal static class UserHookConfigurationManager
             Hooks = new Dictionary<string, List<UserHookEntry>>(StringComparer.Ordinal)
             {
                 ["SessionStart"] = [
-                    CreateManagedHookEntry(sessionStartCommand, "SessionStart", 10, format)
+                    CreateManagedHookEntry(
+                        sessionStartCommand,
+                        "SessionStart",
+                        SessionStartTimeoutSeconds,
+                        format)
                 ],
                 ["UserPromptSubmit"] = [
                     CreateManagedHookEntry(
                         userPromptSubmitCommand,
                         "UserPromptSubmit",
-                        10,
+                        UserPromptSubmitTimeoutSeconds,
                         format)
                 ],
-                ["Stop"] = [CreateManagedHookEntry(stopCommand, "Stop", 20, format)],
+                ["Stop"] = [
+                    CreateManagedHookEntry(
+                        stopCommand,
+                        "Stop",
+                        StopTimeoutSeconds,
+                        format)
+                ],
             },
         };
     }
@@ -486,6 +534,26 @@ internal static class UserHookConfigurationManager
         return hookEntries.Any(IsManagedCopilotCliHookEntry);
     }
 
+    private static bool HasStrictManagedCopilotCliEntry(
+        Dictionary<string, List<UserHookEntry>> hooks,
+        string eventName,
+        string command,
+        int timeoutSeconds)
+    {
+        if (!hooks.TryGetValue(eventName, out List<UserHookEntry>? hookEntries)
+            || hookEntries is null)
+        {
+            return false;
+        }
+
+        return hookEntries.Any(
+            entry => IsStrictManagedCopilotCliHookEntry(
+                entry,
+                eventName,
+                command,
+                timeoutSeconds));
+    }
+
     private static bool IsManagedHookEntry(UserHookEntry? entry)
     {
         if (entry?.Env is null)
@@ -526,6 +594,23 @@ internal static class UserHookConfigurationManager
                 surfaceValue,
                 AppConstants.ManagedHookCopilotCliSurfaceValue,
                 StringComparison.Ordinal);
+    }
+
+    private static bool IsStrictManagedCopilotCliHookEntry(
+        UserHookEntry? entry,
+        string eventName,
+        string command,
+        int timeoutSeconds)
+    {
+        return IsManagedCopilotCliHookEntry(entry)
+            && entry is not null
+            && string.Equals(entry.Type, "command", StringComparison.Ordinal)
+            && string.Equals(entry.Command, command, StringComparison.Ordinal)
+            && entry.TimeoutSec == timeoutSeconds
+            && entry.Env.TryGetValue(
+                AppConstants.ManagedHookEventEnvironmentVariable,
+                out string? entryEventName)
+            && string.Equals(entryEventName, eventName, StringComparison.Ordinal);
     }
 
     private static bool CanDeleteManagedHookFile(

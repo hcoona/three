@@ -22,10 +22,16 @@ internal sealed class UserCommandService(
             ValidateUserArtifactPaths(userPaths, sourceBinaryPath);
 
             string currentTimestamp = GetCurrentUtcTimestamp();
-            string sessionStartCommand = $"\"{userPaths.InstalledBinaryPath}\" hook session-start";
+            string sessionStartCommand = UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                userPaths.InstalledBinaryPath,
+                "session-start");
             string userPromptSubmitCommand =
-                $"\"{userPaths.InstalledBinaryPath}\" hook user-prompt-submit";
-            string stopCommand = $"\"{userPaths.InstalledBinaryPath}\" hook stop";
+                UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                    userPaths.InstalledBinaryPath,
+                    "user-prompt-submit");
+            string stopCommand = UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                userPaths.InstalledBinaryPath,
+                "stop");
             ConfigurationApplyResult? copilotCliHookFilePreflightResult =
                 UserHookConfigurationManager.PreflightManagedCopilotCliHookFile(
                     userPaths.CopilotCliHookFilePath,
@@ -340,7 +346,8 @@ internal sealed class UserCommandService(
                     userPaths.ManagedHookFilePath);
             bool copilotCliHookFileInstalled =
                 UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
-                    userPaths.CopilotCliHookFilePath);
+                    userPaths.CopilotCliHookFilePath,
+                    userPaths.InstalledBinaryPath);
             List<VsCodeSettingsStatus> hookRegistrationStatuses = GetVsCodeSettingsStatuses(
                 userPaths.VsCodeSettingsTargets,
                 userPaths.ManagedHookFilePath);
@@ -413,7 +420,8 @@ internal sealed class UserCommandService(
                     userPaths.ManagedHookFilePath);
             bool copilotCliHookFileInstalled =
                 UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
-                    userPaths.CopilotCliHookFilePath);
+                    userPaths.CopilotCliHookFilePath,
+                    userPaths.InstalledBinaryPath);
             List<VsCodeSettingsStatus> hookRegistrationStatuses = GetVsCodeSettingsStatuses(
                 userPaths.VsCodeSettingsTargets,
                 userPaths.ManagedHookFilePath);

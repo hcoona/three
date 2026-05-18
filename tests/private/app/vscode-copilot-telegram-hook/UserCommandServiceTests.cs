@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Hcoona.VsCodeCopilotTelegramHook.Commands;
 using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Hcoona.VsCodeCopilotTelegramHook.Notifications;
@@ -108,7 +109,8 @@ public sealed class UserCommandServiceTests
                     managedHookFilePath));
             Assert.True(
                 UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
-                    CreateCopilotCliHookFilePath(installRoot)));
+                    CreateCopilotCliHookFilePath(installRoot),
+                    Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName())));
             Assert.All(
                 vsCodeSettingsPaths,
                 settingsPath => Assert.True(
@@ -707,6 +709,70 @@ public sealed class UserCommandServiceTests
                     vsCodeSettingsPaths[0],
                     managedHookFilePath));
             Assert.False(File.Exists(vsCodeSettingsPaths[1]));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("wrong-command")]
+    [InlineData("wrong-type")]
+    [InlineData("wrong-timeout")]
+    [InlineData("wrong-event-env")]
+    [InlineData("missing-event-env")]
+    public async Task HealthAsyncRejectsInvalidCopilotCliHookEntries(string invalidEntryKind)
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string copilotCliHookFilePath = CreateCopilotCliHookFilePath(installRoot);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+        VsCodeSettingsTarget[] settingsTargets = CreateVsCodeSettingsTargets(
+            vsCodeSettingsPaths,
+            serverApplicable: false);
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                new FakeInteractiveConsole(canPrompt: false));
+
+            int installExitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    VsCodeSettingsTargets = settingsTargets,
+                    SkipSecretPrompt = true,
+                },
+                CancellationToken.None);
+            TamperCopilotCliHookFile(copilotCliHookFilePath, invalidEntryKind);
+
+            int healthExitCode = await service.HealthAsync(
+                new UserPathOverrides
+                {
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    VsCodeSettingsTargets = settingsTargets,
+                },
+                CancellationToken.None);
+
+            Assert.Equal(0, installExitCode);
+            Assert.Equal(1, healthExitCode);
         }
         finally
         {
@@ -2118,6 +2184,48 @@ public sealed class UserCommandServiceTests
             installRoot.FullName,
             "copilot-cli-hooks",
             AppConstants.CopilotCliHookFileName);
+
+    private static void TamperCopilotCliHookFile(string hookFilePath, string invalidEntryKind)
+    {
+        UserHookSettingsDocument document = JsonSerializer.Deserialize(
+                File.ReadAllText(hookFilePath),
+                AppJsonSerializerContext.Default.UserHookSettingsDocument)
+            ?? throw new InvalidOperationException("Expected a valid hook settings document.");
+
+        UserHookEntry sessionStartEntry = document.Hooks["SessionStart"][0];
+        UserHookEntry userPromptSubmitEntry = document.Hooks["UserPromptSubmit"][0];
+        UserHookEntry stopEntry = document.Hooks["Stop"][0];
+        switch (invalidEntryKind)
+        {
+            case "wrong-command":
+                userPromptSubmitEntry.Command = sessionStartEntry.Command;
+                break;
+            case "wrong-type":
+                sessionStartEntry.Type = "shell";
+                break;
+            case "wrong-timeout":
+                stopEntry.TimeoutSec = 10;
+                break;
+            case "wrong-event-env":
+                userPromptSubmitEntry.Env[AppConstants.ManagedHookEventEnvironmentVariable] =
+                    "SessionStart";
+                break;
+            case "missing-event-env":
+                stopEntry.Env.Remove(AppConstants.ManagedHookEventEnvironmentVariable);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(invalidEntryKind),
+                    invalidEntryKind,
+                    "Unexpected invalid entry kind.");
+        }
+
+        File.WriteAllText(
+            hookFilePath,
+            JsonSerializer.Serialize(
+                document,
+                AppJsonSerializerContext.Default.UserHookSettingsDocument));
+    }
 
     private static FileInfo[] CreateVsCodeSettingsOverrides(IEnumerable<string> settingsPaths)
         => [.. settingsPaths.Select(static settingsPath => new FileInfo(settingsPath))];

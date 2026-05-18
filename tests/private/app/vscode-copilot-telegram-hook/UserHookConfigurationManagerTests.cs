@@ -177,18 +177,29 @@ public sealed class UserHookConfigurationManagerTests
             string hookFilePath = Path.Combine(
                 tempDirectory.FullName,
                 AppConstants.CopilotCliHookFileName);
+            string installedBinaryPath = Path.Combine(tempDirectory.FullName, "hook-binary");
 
             ConfigurationApplyResult installResult =
                 UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
                     hookFilePath,
-                    "managed session-start",
-                    "managed user-prompt-submit",
-                    "managed stop",
+                    UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                        installedBinaryPath,
+                        "session-start"),
+                    UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                        installedBinaryPath,
+                        "user-prompt-submit"),
+                    UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                        installedBinaryPath,
+                        "stop"),
                     "2026-03-13T12:34:56.789Z");
 
             Assert.True(installResult.Applied);
             Assert.True(
                 UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(hookFilePath));
+            Assert.True(
+                UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
+                    hookFilePath,
+                    installedBinaryPath));
 
             string rawJson = File.ReadAllText(hookFilePath);
             Assert.Contains("\"version\": 1", rawJson, StringComparison.Ordinal);
