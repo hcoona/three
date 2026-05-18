@@ -73,6 +73,52 @@ public sealed class HookCommandServiceTests
     }
 
     [Fact]
+    public async Task HandleSessionStartAsyncWritesCopilotCliOutputWhenSurfaceIsCopilotCli()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            HookCommandService service = CreateHookCommandService(
+                new RecordingHttpMessageHandler(),
+                surface: HookSurface.CopilotCli);
+            SessionStartHookInput sessionStartInput = new()
+            {
+                Cwd = tempDirectory.FullName,
+                SessionId = "session-123",
+                Timestamp = "2026-03-14T15:51:50.783Z",
+                Source = "new",
+            };
+            await using MemoryStream output = new();
+
+            int exitCode = await service.HandleSessionStartAsync(
+                CreateJsonStream(
+                    sessionStartInput,
+                    AppJsonSerializerContext.Default.SessionStartHookInput),
+                output,
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+
+            CopilotCliHookOutput response = await DeserializeCopilotCliHookOutputAsync(output);
+            Assert.Contains(
+                "Notification summary handoff is enabled",
+                response.AdditionalContext,
+                StringComparison.Ordinal);
+            Assert.Null(response.Decision);
+            Assert.Null(response.Reason);
+            Assert.DoesNotContain(
+                "hookSpecificOutput",
+                ReadOutputString(output),
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task HandleSessionStartAsyncWritesSessionStartContextLogEntry()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
@@ -350,6 +396,75 @@ public sealed class HookCommandServiceTests
             Assert.Contains(
                 "turn_id must equal",
                 updatedTurnState.LastStopValidationError,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandleStopAsyncWritesCopilotCliBlockOutputWhenSurfaceIsCopilotCli()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            TurnState turnState = await stateStore.StartTurnAsync(
+                new UserPromptSubmitHookInput
+                {
+                    Cwd = tempDirectory.FullName,
+                    SessionId = "session-123",
+                    TranscriptPath = "/tmp/transcript.json",
+                    Prompt = "Summarize the latest changes.",
+                },
+                CancellationToken.None);
+
+            await WriteSummaryAsync(
+                tempDirectory.FullName,
+                "session-123",
+                new SummaryRecord
+                {
+                    SessionId = "session-123",
+                    TurnId = "another-turn",
+                    UpdatedAt = "2026-03-14T15:51:50.783Z",
+                    Summary = "stale summary",
+                },
+                CancellationToken.None);
+
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(
+                handler,
+                stateStore,
+                surface: HookSurface.CopilotCli);
+            StopHookInput stopInput = new()
+            {
+                Cwd = tempDirectory.FullName,
+                SessionId = "session-123",
+                Timestamp = "2026-03-14T15:51:50.783Z",
+                TranscriptPath = "/tmp/transcript.json",
+            };
+            await using MemoryStream output = new();
+
+            int exitCode = await service.HandleStopAsync(
+                CreateJsonStream(stopInput, AppJsonSerializerContext.Default.StopHookInput),
+                output,
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+            Assert.Empty(handler.Requests);
+
+            CopilotCliHookOutput response = await DeserializeCopilotCliHookOutputAsync(output);
+            Assert.Equal("block", response.Decision);
+            Assert.Contains(turnState.TurnId, response.Reason, StringComparison.Ordinal);
+            Assert.Null(response.AdditionalContext);
+            Assert.DoesNotContain(
+                "hookSpecificOutput",
+                ReadOutputString(output),
                 StringComparison.Ordinal);
         }
         finally
@@ -934,7 +1049,8 @@ public sealed class HookCommandServiceTests
         RecordingHttpMessageHandler handler,
         WorkspaceStateStore? stateStore = null,
         ILoggerFactory? loggerFactory = null,
-        SessionLogFileContext? logContext = null)
+        SessionLogFileContext? logContext = null,
+        HookSurface? surface = null)
     {
         HttpClient httpClient = new(handler)
         {
@@ -960,6 +1076,7 @@ public sealed class HookCommandServiceTests
             credentialProvider,
             gitRepositoryProbe,
             context,
+            new HookExecutionContext(surface),
             CreateLogger<HookCommandService>(loggerFactory));
     }
 
@@ -994,6 +1111,20 @@ public sealed class HookCommandServiceTests
                 CancellationToken.None)
             ?? throw new InvalidOperationException("Expected a valid hook response.");
     }
+
+    private static async Task<CopilotCliHookOutput> DeserializeCopilotCliHookOutputAsync(
+        MemoryStream output)
+    {
+        output.Position = 0;
+        return await JsonSerializer.DeserializeAsync(
+                output,
+                AppJsonSerializerContext.Default.CopilotCliHookOutput,
+                CancellationToken.None)
+            ?? throw new InvalidOperationException("Expected a valid Copilot CLI hook output.");
+    }
+
+    private static string ReadOutputString(MemoryStream output)
+        => System.Text.Encoding.UTF8.GetString(output.ToArray());
 
     private static async Task WriteSummaryAsync(
         string workspacePath,

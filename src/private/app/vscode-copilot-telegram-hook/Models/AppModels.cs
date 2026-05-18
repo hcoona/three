@@ -73,6 +73,18 @@ internal sealed class HookResponse
     public HookSpecificOutput? HookSpecificOutput { get; set; }
 }
 
+internal sealed class CopilotCliHookOutput
+{
+    [JsonPropertyName("additionalContext")]
+    public string? AdditionalContext { get; init; }
+
+    [JsonPropertyName("decision")]
+    public string? Decision { get; init; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+}
+
 internal sealed class HookSpecificOutput
 {
     [JsonPropertyName("hookEventName")]
@@ -227,6 +239,9 @@ internal sealed class TelegramApiResponse
 
 internal sealed class UserHookSettingsDocument
 {
+    [JsonPropertyName("version")]
+    public int? Version { get; set; }
+
     [JsonPropertyName("hooks")]
     public Dictionary<string, List<UserHookEntry>> Hooks { get; set; } =
         new(StringComparer.Ordinal);
@@ -254,6 +269,9 @@ internal sealed class UserHookEntry
 
     [JsonPropertyName("timeout")]
     public int? Timeout { get; set; }
+
+    [JsonPropertyName("timeoutSec")]
+    public int? TimeoutSec { get; set; }
 
     [JsonPropertyName("env")]
     public Dictionary<string, string> Env { get; set; } =
@@ -292,6 +310,8 @@ internal class UserPathOverrides
     public DirectoryInfo? InstallRoot { get; init; }
 
     public FileInfo? ManagedHookFilePath { get; init; }
+
+    public FileInfo? CopilotCliHookFilePath { get; init; }
 
     public IReadOnlyList<FileInfo>? VsCodeSettingsPaths { get; init; }
 
@@ -332,6 +352,7 @@ internal sealed record UserInstallationPaths(
     string InstallRoot,
     string InstalledBinaryPath,
     string ManagedHookFilePath,
+    string CopilotCliHookFilePath,
     IReadOnlyList<VsCodeSettingsTarget> VsCodeSettingsTargets,
     string UserLogFilePath);
 

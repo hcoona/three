@@ -25,6 +25,7 @@ internal static class Program
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<SessionLogFileContext>();
+        builder.Services.AddSingleton<HookExecutionContext>();
         builder.Services.AddSingleton<ILoggerProvider, SessionFileLoggerProvider>();
         builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
         builder.Services.AddSingleton<IInteractiveConsole, SystemInteractiveConsole>();
