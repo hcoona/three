@@ -259,6 +259,7 @@ internal sealed class VsCodeUserSettingsDocument
     public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 }
 
+[JsonConverter(typeof(UserHookEntryJsonConverter))]
 internal sealed class UserHookEntry
 {
     [JsonPropertyName("type")]
@@ -270,6 +271,9 @@ internal sealed class UserHookEntry
     [JsonPropertyName("timeout")]
     public int? Timeout { get; set; }
 
+    [JsonIgnore]
+    public bool TimeoutPropertyPresent { get; set; }
+
     [JsonPropertyName("timeoutSec")]
     public int? TimeoutSec { get; set; }
 
@@ -279,6 +283,208 @@ internal sealed class UserHookEntry
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
+}
+
+internal sealed class UserHookEntryJsonConverter : JsonConverter<UserHookEntry>
+{
+    public override UserHookEntry Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            throw new JsonException("Expected a hook entry object.");
+        }
+
+        UserHookEntry entry = new();
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+            {
+                return entry;
+            }
+
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                throw new JsonException("Expected a hook entry property name.");
+            }
+
+            string propertyName = reader.GetString()
+                ?? throw new JsonException("Expected a hook entry property name.");
+            if (!reader.Read())
+            {
+                throw new JsonException("Expected a hook entry property value.");
+            }
+
+            switch (propertyName)
+            {
+                case "type":
+                    entry.Type = ReadNullableString(ref reader);
+                    break;
+                case "command":
+                    entry.Command = ReadNullableString(ref reader);
+                    break;
+                case "timeout":
+                    entry.TimeoutPropertyPresent = true;
+                    entry.Timeout = ReadNullableInt32(ref reader);
+                    break;
+                case "timeoutSec":
+                    entry.TimeoutSec = ReadNullableInt32(ref reader);
+                    break;
+                case "env":
+                    entry.Env = ReadEnv(ref reader);
+                    break;
+                default:
+                    entry.AdditionalProperties ??= new Dictionary<string, JsonElement>(
+                        StringComparer.Ordinal);
+                    entry.AdditionalProperties[propertyName] = JsonElement.ParseValue(ref reader);
+                    break;
+            }
+        }
+
+        throw new JsonException("Expected the end of a hook entry object.");
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        UserHookEntry value,
+        JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        WriteStringPropertyIfNotNull(writer, "type", value.Type);
+        WriteStringPropertyIfNotNull(writer, "command", value.Command);
+        if (value.Timeout is not null)
+        {
+            writer.WriteNumber("timeout", value.Timeout.Value);
+        }
+        else if (value.TimeoutPropertyPresent)
+        {
+            writer.WriteNull("timeout");
+        }
+
+        if (value.TimeoutSec is not null)
+        {
+            writer.WriteNumber("timeoutSec", value.TimeoutSec.Value);
+        }
+
+        if (value.Env is not null)
+        {
+            writer.WritePropertyName("env");
+            writer.WriteStartObject();
+            foreach (KeyValuePair<string, string> item in value.Env)
+            {
+                if (item.Value is null)
+                {
+                    writer.WriteNull(item.Key);
+                }
+                else
+                {
+                    writer.WriteString(item.Key, item.Value);
+                }
+            }
+
+            writer.WriteEndObject();
+        }
+
+        if (value.AdditionalProperties is not null)
+        {
+            foreach (KeyValuePair<string, JsonElement> item in value.AdditionalProperties)
+            {
+                if (IsKnownProperty(item.Key))
+                {
+                    continue;
+                }
+
+                writer.WritePropertyName(item.Key);
+                item.Value.WriteTo(writer);
+            }
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static string? ReadNullableString(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("Expected a string value.");
+        }
+
+        return reader.GetString();
+    }
+
+    private static int? ReadNullableInt32(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        if (reader.TokenType != JsonTokenType.Number || !reader.TryGetInt32(out int value))
+        {
+            throw new JsonException("Expected an integer value.");
+        }
+
+        return value;
+    }
+
+    private static Dictionary<string, string> ReadEnv(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null!;
+        }
+
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            throw new JsonException("Expected an env object.");
+        }
+
+        Dictionary<string, string> env = new(StringComparer.Ordinal);
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+            {
+                return env;
+            }
+
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                throw new JsonException("Expected an env property name.");
+            }
+
+            string propertyName = reader.GetString()
+                ?? throw new JsonException("Expected an env property name.");
+            if (!reader.Read())
+            {
+                throw new JsonException("Expected an env property value.");
+            }
+
+            env[propertyName] = ReadNullableString(ref reader)!;
+        }
+
+        throw new JsonException("Expected the end of an env object.");
+    }
+
+    private static void WriteStringPropertyIfNotNull(
+        Utf8JsonWriter writer,
+        string propertyName,
+        string? value)
+    {
+        if (value is not null)
+        {
+            writer.WriteString(propertyName, value);
+        }
+    }
+
+    private static bool IsKnownProperty(string propertyName)
+        => propertyName is "type" or "command" or "timeout" or "timeoutSec" or "env";
 }
 
 internal sealed record VsCodeSettingsTarget(
