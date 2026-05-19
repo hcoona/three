@@ -102,11 +102,6 @@
         "resolved": "8.0.0",
         "contentHash": "dk9JPxTCIevS75HyEQ0E4OVAFhB2N+V9ShCXf8Q6FkUQZDkgLI12y679Nym1YqsiSysuQskT7Z+6nUf3yab6Vw=="
       },
-      "OpenMcdf": {
-        "type": "Transitive",
-        "resolved": "3.1.3",
-        "contentHash": "TJTdAIhyqx8LUfF2PnrhXCjuUiKVi19zUNe7FzO1skd0zyJFur44KGxLFEosl1KrKQzsFCxTMTQE8VFkXIHMZQ=="
-      },
       "ShimSkiaSharp": {
         "type": "Transitive",
         "resolved": "3.0.4",
@@ -162,6 +157,12 @@
         "requested": "[1.0.3351.48, )",
         "resolved": "1.0.3351.48",
         "contentHash": "UIzXdl3x3H2MX2es7+BHYT3pLkLoT7090omqla9S3MQQCma0slwiY+CXBM6x0LmdLTpksoQ6XUqOAXrtxjtklQ=="
+      },
+      "OpenMcdf": {
+        "type": "CentralTransitive",
+        "requested": "[3.1.3, )",
+        "resolved": "3.1.3",
+        "contentHash": "TJTdAIhyqx8LUfF2PnrhXCjuUiKVi19zUNe7FzO1skd0zyJFur44KGxLFEosl1KrKQzsFCxTMTQE8VFkXIHMZQ=="
       }
     },
     "net10.0-windows10.0.22000/win-x64": {

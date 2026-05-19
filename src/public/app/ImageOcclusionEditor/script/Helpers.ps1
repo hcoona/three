@@ -147,7 +147,10 @@ function Invoke-CycloneDX {
     #>
     param(
         [Parameter(Mandatory)][string]$ProjectPath,
-        [Parameter(Mandatory)][string]$OutDir
+        [Parameter(Mandatory)][string]$OutDir,
+        [string]$TargetFramework,
+        [string]$RuntimeIdentifier,
+        [switch]$DisablePackageRestore
     )
     # Ensure output directory exists
     if (-not (Test-Path -LiteralPath $OutDir)) {
@@ -161,6 +164,9 @@ function Invoke-CycloneDX {
         '--exclude-test-projects',
         '--output-format', 'Json'
     )
+    if ($TargetFramework) { $cdxArguments += @('--framework', $TargetFramework) }
+    if ($RuntimeIdentifier) { $cdxArguments += @('--runtime', $RuntimeIdentifier) }
+    if ($DisablePackageRestore) { $cdxArguments += '--disable-package-restore' }
 
     $cmds = @(
         @{
