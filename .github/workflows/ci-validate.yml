@@ -511,6 +511,7 @@ jobs:
         with:
           ruby-version: '3.3'
       - name: Verify gating artifact producer boundaries
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
@@ -714,6 +715,7 @@ jobs:
         with:
           ruby-version: '3.3'
       - name: Verify gating artifact producer boundaries
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
@@ -918,6 +920,7 @@ jobs:
         with:
           ruby-version: '3.3'
       - name: Verify gating artifact producer boundaries
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
