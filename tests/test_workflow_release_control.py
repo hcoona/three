@@ -6580,6 +6580,10 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
                 "subject-id": "js-subject",
                 "root": "src/public/lib/hcoona-release-smoke-npm",
             },
+            {
+                "subject-id": "ruby-subject",
+                "root": "src/public/lib/hcoona-release-smoke-rubygems",
+            },
         ]
     }
     dotnet_group = {
@@ -6611,11 +6615,23 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
         "runner-family": "ubuntu",
         "depends-on": ["wg-js"],
     }
+    ruby_group = {
+        "work-group-id": "wg-ruby",
+        "kind": "ecosystem-gate",
+        "coverage-target": {"type": "subject", "id": "ruby-subject"},
+        "ecosystem": "ruby",
+        "runner-family": "ubuntu",
+        "depends-on": [],
+        "expected-evidence": {
+            "planned-capabilities": ["build"],
+        },
+    }
 
     dotnet_commands = control._ci_validation_commands(plan, dotnet_group)
     fallback_commands = control._ci_validation_commands({}, dotnet_group)
     js_commands = control._ci_validation_commands(plan, js_group)
     release_commands = control._ci_validation_commands(plan, release_group)
+    ruby_commands = control._ci_validation_commands(plan, ruby_group)
 
     assert ["dotnet", "build", "src/public/lib/CircularList"] in [
         command["argv"] for command in dotnet_commands
@@ -6686,6 +6702,21 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
     ] in [command["argv"] for command in js_commands]
     assert all("--if-present" not in command["argv"] for command in js_commands)
     assert all(command["argv"][-1] != "format" for command in js_commands)
+    assert any(
+        command["capability"] == "build"
+        and command["argv"] == ["dotnet", "tool", "restore"]
+        for command in ruby_commands
+    )
+    assert any(
+        command["capability"] == "build"
+        and command["argv"][:2] == ["ruby", "-e"]
+        and command["argv"][-2:]
+        == [
+            "src/public/lib/hcoona-release-smoke-rubygems",
+            ".three-ci-validation/work/validation-build.gem",
+        ]
+        for command in ruby_commands
+    )
     assert release_commands == [
         {
             "label": "validate release-shaped artifact obligations",

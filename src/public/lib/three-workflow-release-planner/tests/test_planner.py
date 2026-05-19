@@ -2875,6 +2875,38 @@ def test_ci_validation_plans_mixed_changes_keep_canonical_paths() -> None:
     assert lightweight_obligations[0]["source-impact-ids"] == [readme_impact_id]
 
 
+def test_ci_validation_plans_repository_infrastructure_paths() -> None:
+    """Repository infrastructure changes are classified without fail-closed unknowns."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    changed_files = sorted([
+        ".config/dotnet-tools.json",
+        ".github/hooks/telegram-notify.json",
+        ".github/workflows/ci-validate.yml",
+        ".gitignore",
+        ".pre-commit-config.yaml",
+        "Directory.Build.targets",
+        "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json",
+        "tests/fixtures/workflow-release-acceptance-matrix.json",
+        "tests/test_workflow_release_control.py",
+    ])
+
+    snapshot = plan_ci_validation_from_repo(_ci_inputs(changed_files))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    assert snapshot.plan["diagnostics"] == []
+
+
 def test_ci_validation_plans_python_downstream_dependency_closure() -> None:
     """Project-scoped Python changes include downstream package dependents."""
     from three_workflow_release_contracts import (  # noqa: PLC0415

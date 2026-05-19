@@ -5806,6 +5806,8 @@ def _ci_ecosystem_validation_commands(
         return _ci_python_validation_commands(root, capabilities)
     if ecosystem in {"javascript", "typescript"}:
         return _ci_javascript_validation_commands(root, capabilities)
+    if ecosystem == "ruby":
+        return _ci_ruby_validation_commands(root, capabilities)
     return []
 
 
@@ -5960,6 +5962,42 @@ def _ci_javascript_validation_commands(
                     ".",
                 ],
                 capability="format",
+            )
+        )
+    return commands
+
+
+def _ci_ruby_validation_commands(
+    root: str,
+    capabilities: Sequence[str],
+) -> list[Json]:
+    commands: list[Json] = []
+    if "build" in capabilities:
+        commands.append(
+            _ci_command(
+                "ruby versioning tool restore",
+                ["dotnet", "tool", "restore"],
+                capability="build",
+            )
+        )
+        commands.append(
+            _ci_command(
+                "ruby gem build",
+                [
+                    "ruby",
+                    "-e",
+                    (
+                        "root=ARGV.fetch(0); "
+                        "out=ARGV.fetch(1); "
+                        "gemspec=Dir[File.join(root, '*.gemspec')].sort.first; "
+                        "abort(\"no gemspec found under #{root}\") unless gemspec; "
+                        "system('gem', 'build', gemspec, '--output', out) "
+                        "or exit($?.exitstatus || 1)"
+                    ),
+                    root,
+                    ".three-ci-validation/work/validation-build.gem",
+                ],
+                capability="build",
             )
         )
     return commands

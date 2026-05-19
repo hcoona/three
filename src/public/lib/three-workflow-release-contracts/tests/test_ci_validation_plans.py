@@ -553,8 +553,8 @@ def _subject() -> dict[str, object]:
 
 def _unsupported_subject(
     *,
-    subject_id: str = "ruby.unsupported-example",
-    ecosystem: str = "ruby",
+    subject_id: str = "zzzz.unsupported-example",
+    ecosystem: str = "other",
 ) -> dict[str, object]:
     subject = _subject()
     subject["subject-id"] = subject_id
@@ -3550,7 +3550,7 @@ def test_release_artifact_requires_selected_descriptor_backed_subject(
 def test_subject_schema_rejects_unsupported_ecosystem_capabilities() -> None:
     """Unsupported ecosystems must be inactive and capability-free."""
     subject = _subject()
-    subject["ecosystem"] = "ruby"
+    subject["ecosystem"] = "other"
     subject["activity-status"] = "active"
 
     with pytest.raises(ContractValidationError, match="inactive"):
@@ -7681,7 +7681,7 @@ def test_unsupported_subject_rejected_from_provider_facts() -> None:
     provider = _fact_provider()
     provider["subjects"] = [
         "python.src-public-lib-example",
-        "ruby.unsupported-example",
+        "zzzz.unsupported-example",
     ]
 
     with pytest.raises(ContractValidationError, match="provider"):
@@ -7709,7 +7709,7 @@ def test_unsupported_subject_rejected_from_coverage_targets() -> None:
         "status": "available",
         "id": ci_validation_subject_universe_id(subjects),
     }
-    target = {"type": "subject", "id": "ruby.unsupported-example"}
+    target = {"type": "subject", "id": "zzzz.unsupported-example"}
     for section in (
         "work-groups",
         "evidence-expectations",
@@ -7914,7 +7914,7 @@ def test_unsupported_subject_rejected_from_selection_provenance() -> None:
         "list[dict[str, object]]",
         classification["subject-selection-provenance"],
     )
-    provenance[0]["subject-id"] = "ruby.unsupported-example"
+    provenance[0]["subject-id"] = "zzzz.unsupported-example"
     _redigest_plan(plan)
 
     with pytest.raises(ContractValidationError, match="unsupported subject"):

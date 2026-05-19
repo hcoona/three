@@ -55,8 +55,10 @@ _EXECUTABLE_WORK_GROUP_KINDS = frozenset(
 _WORK_GROUP_KINDS = _EXECUTABLE_WORK_GROUP_KINDS | frozenset(
     {"evidence-aggregation"},
 )
-_ECOSYSTEMS = frozenset({"dotnet", "python", "javascript", "typescript"})
-_SUBJECT_ECOSYSTEMS = _ECOSYSTEMS | frozenset({"ruby", "other"})
+_ECOSYSTEMS = frozenset(
+    {"dotnet", "python", "javascript", "typescript", "ruby"}
+)
+_SUBJECT_ECOSYSTEMS = _ECOSYSTEMS | frozenset({"other"})
 _ACTIVITY_STATUSES = frozenset({"active", "explicitly-excluded", "inactive"})
 _SELECTION_STATUSES = frozenset({"selected", "not-selected"})
 _CAPABILITY_CLASSES = frozenset({"descriptor-backed", "validation-only"})
@@ -194,7 +196,7 @@ _CREDENTIAL_POSTURES = frozenset(
     {"credential-free", "unsigned-equivalent", "unavailable"},
 )
 _PROVIDER_IDS = frozenset(
-    {"dotnet", "python", "javascript-typescript", "workflow-release"},
+    {"dotnet", "python", "javascript-typescript", "ruby", "workflow-release"},
 )
 _DEPENDENCY_RELATIONS = frozenset(
     {"project-reference", "package-reference", "workspace", "tooling"},
@@ -1374,6 +1376,8 @@ def _provider_ecosystems(provider: str) -> frozenset[str]:
         return frozenset({"python"})
     if provider == "javascript-typescript":
         return frozenset({"javascript", "typescript"})
+    if provider == "ruby":
+        return frozenset({"ruby"})
     return frozenset()
 
 
@@ -1424,7 +1428,7 @@ def _validate_subject(
     )
     _validate_subject_inclusion(subject.get("inclusion"), path, issues)
     _validate_subject_exclusion(subject.get("exclusion"), path, issues)
-    if ecosystem in {"ruby", "other"}:
+    if ecosystem not in _ECOSYSTEMS:
         _validate_unsupported_subject(subject, path, issues)
     _validate_subject_status_rules(subject, path, capabilities, issues)
     if subject_id is not None and "/" in subject_id:
@@ -7993,7 +7997,7 @@ def _validate_unsupported_subject_isolation(  # noqa: PLR0913
         str(subject.get("subject-id"))
         for subject in subjects_value
         if isinstance(subject, Mapping)
-        and subject.get("ecosystem") in {"ruby", "other"}
+        and subject.get("ecosystem") not in _ECOSYSTEMS
         and isinstance(subject.get("subject-id"), str)
     }
     if not unsupported_ids:

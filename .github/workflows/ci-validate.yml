@@ -505,6 +505,11 @@ jobs:
         if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
         shell: bash
         run: corepack enable pnpm
+      - name: Install Ruby for RubyGems validation
+        if: ${{ matrix.work-group.ecosystem == 'ruby' }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
       - name: Verify gating artifact producer boundaries
         env:
           GH_TOKEN: ${{ github.token }}
@@ -703,6 +708,11 @@ jobs:
         if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
         shell: bash
         run: corepack enable pnpm
+      - name: Install Ruby for RubyGems validation
+        if: ${{ matrix.work-group.ecosystem == 'ruby' }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
       - name: Verify gating artifact producer boundaries
         env:
           GH_TOKEN: ${{ github.token }}
@@ -902,6 +912,11 @@ jobs:
         if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
         shell: bash
         run: corepack enable pnpm
+      - name: Install Ruby for RubyGems validation
+        if: ${{ matrix.work-group.ecosystem == 'ruby' }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
       - name: Verify gating artifact producer boundaries
         env:
           GH_TOKEN: ${{ github.token }}

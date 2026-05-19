@@ -51,19 +51,21 @@ ImpactCategory = Literal[
 ]
 
 _SUPPORTED_ECOSYSTEMS = frozenset(
-    {"dotnet", "python", "javascript", "typescript"}
+    {"dotnet", "python", "javascript", "typescript", "ruby"}
 )
 _PROVIDER_BY_ECOSYSTEM = {
     "dotnet": "dotnet",
     "python": "python",
     "javascript": "javascript-typescript",
     "typescript": "javascript-typescript",
+    "ruby": "ruby",
 }
 _RUNNER_BY_ECOSYSTEM = {
     "dotnet": "windows",
     "python": "ubuntu",
     "javascript": "ubuntu",
     "typescript": "ubuntu",
+    "ruby": "ubuntu",
 }
 _TOOLING_SURFACES = (
     "authoring-validation",
@@ -108,6 +110,9 @@ _ARTIFACT_SURFACES = frozenset(
 )
 _GLOBAL_PATHS = frozenset(
     {
+        ".config/dotnet-tools.json",
+        ".pre-commit-config.yaml",
+        "Directory.Build.targets",
         "Directory.Packages.props",
         "dirs.proj",
         "global.json",
@@ -123,6 +128,8 @@ _GLOBAL_PATHS = frozenset(
 )
 _MAX_READABLE_TOKEN_LENGTH = 72
 _KNOWN_NON_IMPACTING_GLOBS = (
+    ".github/hooks/**",
+    ".gitignore",
     "README.md",
     "AGENTS.md",
     "docs/**",
@@ -147,8 +154,12 @@ _WORKFLOW_RELEASE_SURFACE_GLOBS: tuple[tuple[str, str], ...] = (
     ),
     ("eng/release/**", "target-catalog"),
     ("eng/scripts/workflow_release_*.py", "workflow-orchestration"),
+    (".github/workflows/*.yml", "workflow-orchestration"),
+    (".github/workflows/*.yaml", "workflow-orchestration"),
     (".github/workflows/release-*.yml", "workflow-orchestration"),
     (".github/workflows/release-*.yaml", "workflow-orchestration"),
+    ("tests/test_workflow_release_control.py", "workflow-orchestration"),
+    ("tests/fixtures/workflow-release-*.json", "smoke-validation"),
     (
         "docs/wiki/analyses/workflow-release-*.md",
         "descriptor-schema-documentation",
@@ -795,7 +806,7 @@ def _fact_providers(
     dependency_edges: Sequence[Mapping[str, object]],
 ) -> tuple[Json, ...]:
     providers: list[Json] = []
-    for provider_id in ("dotnet", "javascript-typescript", "python"):
+    for provider_id in ("dotnet", "javascript-typescript", "python", "ruby"):
         provider_subjects = [
             item.subject
             for item in subjects.values()
@@ -2379,7 +2390,9 @@ def _classification(
 ) -> Json:
     return {
         "impacts": [_impact_record(impact) for impact in impacts],
-        "broad-expansions": [dict(item) for item in broad_expansions],
+        "broad-expansions": _dedupe_records(
+            broad_expansions, "expansion-id"
+        ),
         "subject-selection-provenance": _dedupe_records(
             provenance, "provenance-id"
         ),
