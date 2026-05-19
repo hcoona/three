@@ -37,10 +37,11 @@ async def main() -> None:
     logger.info(f"Found {len(nodes)} nodes without embeddings.")
 
     embeddings = {}
+    embedding_model = os.environ["EMBEDDING_MODEL"]
     for index, node in enumerate(nodes):
         logger.info(f"Processing node {node['id']}...")
         result = await openai_client.embeddings.create(
-            model=os.getenv("EMBEDDING_MODEL"),
+            model=embedding_model,
             input=node["content"],
         )
 
@@ -66,7 +67,9 @@ async def main() -> None:
                         batch,
                     )
                     conn.commit()
-                    logger.info(f"Inserted {len(batch)} records into the database.")
+                    logger.info(
+                        f"Inserted {len(batch)} records into the database."
+                    )
                     batch = []
 
             # Insert any remaining records

@@ -2,13 +2,15 @@ import asyncio
 import json
 import logging
 import os
-import platform
+import sys
 
 import psycopg
 from psycopg.types.json import Json
 
-if platform.system() == "Windows":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+if sys.platform == "win32":
+    from asyncio import WindowsSelectorEventLoopPolicy
+
+    asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())
 
 
 def get_args():
@@ -21,7 +23,9 @@ def get_args():
     parser.add_argument(
         "--name", help="Optional name for the document (without extension)"
     )
-    parser.add_argument("--metadata", help="Optional JSON metadata", default="{}")
+    parser.add_argument(
+        "--metadata", help="Optional JSON metadata", default="{}"
+    )
     parser.add_argument("--dbname", help="Database name")
     parser.add_argument("--user", help="Database user")
     parser.add_argument("--password", help="Database password")
@@ -41,9 +45,15 @@ async def main():
     file_ext = os.path.splitext(filepath)[1][1:].lower()
     valid_types = ("epub", "azw3", "md", "txt", "html")
     if file_ext not in valid_types:
-        raise ValueError(f"Invalid file type: {file_ext}. Must be one of {valid_types}")
+        raise ValueError(
+            f"Invalid file type: {file_ext}. Must be one of {valid_types}"
+        )
 
-    name = args.name if args.name else os.path.splitext(os.path.basename(filepath))[0]
+    name = (
+        args.name
+        if args.name
+        else os.path.splitext(os.path.basename(filepath))[0]
+    )
 
     with open(filepath, "rb") as f:
         content = f.read()

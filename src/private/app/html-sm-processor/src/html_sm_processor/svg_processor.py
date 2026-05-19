@@ -11,7 +11,7 @@ import niquests as requests
 from .constants import _DEFAULT_DPI
 
 
-def convert_svg_base64(data_base64: str) -> bytes:
+def convert_svg_base64(data_base64: str) -> bytes | None:
     """
     Convert base64 encoded SVG data to PNG bytes.
     """
@@ -23,7 +23,9 @@ def convert_svg_base64(data_base64: str) -> bytes:
         return None
 
 
-def convert_svg_relative_path(root_path: str, relative_path: str) -> bytes:
+def convert_svg_relative_path(
+    root_path: str, relative_path: str
+) -> bytes | None:
     """
     Convert SVG file at a relative path to PNG bytes.
 
@@ -34,14 +36,20 @@ def convert_svg_relative_path(root_path: str, relative_path: str) -> bytes:
     """
 
     if root_path.startswith("http://") or root_path.startswith("https://"):
-        if relative_path.startswith("http://") or relative_path.startswith("https://"):
+        if relative_path.startswith("http://") or relative_path.startswith(
+            "https://"
+        ):
             response = requests.get(relative_path)
             response.raise_for_status()
         else:
-            response = requests.get(urllib.parse.urljoin(root_path, relative_path))
+            response = requests.get(
+                urllib.parse.urljoin(root_path, relative_path)
+            )
             response.raise_for_status()
 
         svg_bytes = response.content
+        if svg_bytes is None:
+            return None
     else:
         if relative_path.startswith("/"):
             svg_bytes = pathlib.Path(relative_path).read_bytes()

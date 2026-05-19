@@ -31,7 +31,9 @@ def _get_decoded_math_tag_text(tag: Tag) -> str:
     :param tag: The tag to decode.
     :return: The decoded text.
     """
-    return html.unescape(tag.get_text(separator="", strip=True)).replace("\n", " ")
+    return html.unescape(tag.get_text(separator="", strip=True)).replace(
+        "\n", " "
+    )
 
 
 def _get_png_size(filepath: str) -> tuple[int, int]:
@@ -68,6 +70,11 @@ def _get_png_size(filepath: str) -> tuple[int, int]:
         return width, height
 
 
+def _get_str_attr(tag: Tag, name: str) -> str | None:
+    value = tag.get(name)
+    return value if isinstance(value, str) else None
+
+
 def main():
     """Process the HTML file for SuperMemo.
 
@@ -100,7 +107,9 @@ def main():
     if args.input.startswith("http://") or args.input.startswith("https://"):
         response = requests.get(args.input)
         response.raise_for_status()
-        html = response.text
+        html_content = response.text
+        if html_content is None:
+            raise ValueError(f"No HTML content returned from {args.input}")
 
         output_filename = urllib.parse.urlsplit(args.input).path.split("/")[-1]
 
@@ -108,11 +117,11 @@ def main():
             is_d2l_ai = True
     else:
         with open(args.input, mode="r", encoding="utf-8") as f:
-            html = f.read()
+            html_content = f.read()
 
         output_filename = pathlib.Path(args.input).name
 
-    input_sha256 = hashlib.sha256(html.encode("utf-8")).hexdigest()
+    input_sha256 = hashlib.sha256(html_content.encode("utf-8")).hexdigest()
     output_filename_without_extension = output_filename.split(".")[0]
     unique_prefix = f"{input_sha256[:8]}_{output_filename_without_extension}"
 
@@ -121,7 +130,7 @@ def main():
 
     init_matplotlib(use_tex=args.use_tex)
 
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html_content, "lxml")
 
     if is_d2l_ai:
         document = d2l_ai_extract_document(soup=soup)
@@ -130,25 +139,43 @@ def main():
     else:
         document = soup
 
-    svg_url_images = document.find_all("img", src=lambda src: src.endswith(".svg"))
+    svg_url_images = document.find_all(
+        "img", src=lambda src: isinstance(src, str) and src.endswith(".svg")
+    )
     for svg_url_image in svg_url_images:
-        svg_url = svg_url_image["src"]
-        data = convert_svg_relative_path(root_path=args.input, relative_path=svg_url)
+        if not isinstance(svg_url_image, Tag):
+            continue
+        svg_url = _get_str_attr(svg_url_image, "src")
+        if svg_url is None:
+            continue
+        data = convert_svg_relative_path(
+            root_path=args.input, relative_path=svg_url
+        )
+        if data is None:
+            continue
 
-        filename_with_png_extension = (
-            svg_url_image["src"].split("/")[-1].replace(".svg", ".png")
+        filename_with_png_extension = svg_url.split("/")[-1].replace(
+            ".svg", ".png"
         )
         (output_directory / filename_with_png_extension).write_bytes(data)
         svg_url_image["src"] = filename_with_png_extension
 
     svg_unique_image_counter = 0
     for svg_data_image in document.find_all(
-        "img", src=lambda src: src.startswith("data:image/svg+xml;base64")
+        "img",
+        src=lambda src: isinstance(src, str)
+        and src.startswith("data:image/svg+xml;base64"),
     ):
+        if not isinstance(svg_data_image, Tag):
+            continue
         svg_unique_image_counter += 1
 
-        svg_data = svg_data_image["src"]
+        svg_data = _get_str_attr(svg_data_image, "src")
+        if svg_data is None:
+            continue
         data = convert_svg_base64(data_base64=svg_data.split(",")[1])
+        if data is None:
+            continue
 
         filename_with_png_extension = (
             f"{unique_prefix}_svg_{svg_unique_image_counter}.png"
@@ -158,6 +185,8 @@ def main():
 
     inline_math_tags = soup.find_all("span", class_="math")
     for i, math_tag in enumerate(inline_math_tags):
+        if not isinstance(math_tag, Tag):
+            continue
         latex_string = _get_decoded_math_tag_text(math_tag)
         filename = f"inline_math_{i}.png"
         output_path = output_directory / filename
@@ -196,8 +225,11 @@ def main():
 
     standalone_math_tags = soup.find_all("div", class_="math")
     for i, math_tag in enumerate(standalone_math_tags):
+        if not isinstance(math_tag, Tag):
+            continue
         eqno_span = math_tag.find("span", class_="eqno")
-        eqno_span.extract()
+        if eqno_span is not None:
+            eqno_span.extract()
 
         latex_string = _get_decoded_math_tag_text(math_tag)
         filename = f"{unique_prefix}_math_standalone_{i}.png"
@@ -219,12 +251,16 @@ def main():
                 )
                 continue
 
-        new_math_tag = math_tag.copy_self()
-        new_math_tag.append(eqno_span)
+        new_math_tag = soup.new_tag(math_tag.name or "div")
+        new_math_tag.attrs = math_tag.attrs.copy()
+        if eqno_span is not None:
+            new_math_tag.append(eqno_span)
         new_math_tag.append(soup.new_tag("img", src=filename, alt=latex_string))
         math_tag.replace_with(new_math_tag)
 
-    with open(output_directory / output_filename, mode="w", encoding="utf-8") as f:
+    with open(
+        output_directory / output_filename, mode="w", encoding="utf-8"
+    ) as f:
         f.write(str(document))
 
 

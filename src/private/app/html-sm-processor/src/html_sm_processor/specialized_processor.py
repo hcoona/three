@@ -10,7 +10,7 @@ def d2l_ai_extract_document(soup: BeautifulSoup) -> Tag:
     Extract the main content of the document from the soup.
     """
     document_div = soup.find("div", class_="document")
-    if document_div is None:
+    if not isinstance(document_div, Tag):
         raise ValueError("No document found in the soup.")
 
     for headerlink in soup.find_all("a", class_="headerlink"):
@@ -19,7 +19,8 @@ def d2l_ai_extract_document(soup: BeautifulSoup) -> Tag:
     n = soup.find("div", class_="d2l-tabs")
     n.decompose() if n else None
     n = soup.find(id="SageMaker_Studio_Lab")
-    n.parent.decompose() if n else None
+    if n and n.parent:
+        n.parent.decompose()
     n = soup.find(string=" Open the notebook in SageMaker Studio Lab")
     n.decompose() if n else None
 

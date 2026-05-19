@@ -43,7 +43,9 @@ async def search_embedding(
     """
     async with aconn.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
-            sql.SQL("SET LOCAL vchordrq.probes = {};").format(sql.Literal(probe or ""))
+            sql.SQL("SET LOCAL vchordrq.probes = {};").format(
+                sql.Literal(probe or "")
+            )
         )
         await cursor.execute(
             """
@@ -132,7 +134,7 @@ async def rag_main(question: str) -> str:
     )
 
     embedding_response = await openai_client.embeddings.create(
-        model=os.getenv("EMBEDDING_MODEL"),
+        model=os.environ["EMBEDDING_MODEL"],
         input=question,
     )
     query_embedding = embedding_response.data[0].embedding
@@ -157,7 +159,10 @@ async def rag_main(question: str) -> str:
     ):
         st.markdown(
             "\n".join(
-                ["1. " + q for q in result.final_output_as(RewrittenQueries).queries]
+                [
+                    "1. " + q
+                    for q in result.final_output_as(RewrittenQueries).queries
+                ]
             )
         )
 
@@ -207,7 +212,8 @@ async def rag_main(question: str) -> str:
                 [
                     node
                     for node in bm25_nodes
-                    if node["id"] not in node_ids and not node_ids.add(node["id"])
+                    if node["id"] not in node_ids
+                    and not node_ids.add(node["id"])
                 ]
             )
 
@@ -216,19 +222,23 @@ async def rag_main(question: str) -> str:
         ):
             st.table(
                 {
-                    "Index": [i for i in range(len(bm25_deduplicated_flatten_nodes))],
+                    "Index": [
+                        i for i in range(len(bm25_deduplicated_flatten_nodes))
+                    ],
                     "Document": [
-                        node["content"] for node in bm25_deduplicated_flatten_nodes
+                        node["content"]
+                        for node in bm25_deduplicated_flatten_nodes
                     ],
                     "Metadata": [
-                        node["metadata"] for node in bm25_deduplicated_flatten_nodes
+                        node["metadata"]
+                        for node in bm25_deduplicated_flatten_nodes
                     ],
                 }
             )
 
-    node_ids_list: list[list[int]] = [[node["id"] for node in embedding_nodes]] + [
-        [node["id"] for node in bm25_nodes] for bm25_nodes in bm25_nodes_list
-    ]
+    node_ids_list: list[list[int]] = [
+        [node["id"] for node in embedding_nodes]
+    ] + [[node["id"] for node in bm25_nodes] for bm25_nodes in bm25_nodes_list]
 
     total_node_count = sum(len(node_ids) for node_ids in node_ids_list)
     weights = [
@@ -268,11 +278,10 @@ async def rag_main(question: str) -> str:
     with st.spinner("Re-ranking..."):
         start = time.monotonic_ns()
         rerank_response: cohere.V2RerankResponse = await cohere_client.rerank(
-            model=os.getenv("RERANKING_MODEL"),
+            model=os.environ["RERANKING_MODEL"],
             query=question,
             documents=[node["content"] for node in rrf_nodes],
             top_n=_TOP_N_RERANK,
-            return_documents=False,
         )
 
     with st.expander(
@@ -282,10 +291,12 @@ async def rag_main(question: str) -> str:
             {
                 "Index": [r.index for r in rerank_response.results],
                 "Document": [
-                    rrf_nodes[r.index]["content"] for r in rerank_response.results
+                    rrf_nodes[r.index]["content"]
+                    for r in rerank_response.results
                 ],
                 "Metadata": [
-                    rrf_nodes[r.index]["metadata"] for r in rerank_response.results
+                    rrf_nodes[r.index]["metadata"]
+                    for r in rerank_response.results
                 ],
                 "Score": [r.relevance_score for r in rerank_response.results],
             }
@@ -324,8 +335,13 @@ Make sure to read all documents carefully before answering.\n\n"""
             temperature=0,
         )
 
-    st.write(f"Answer generated in {(time.monotonic_ns() - start) / 1_000_000} ms.")
-    return answer_response.choices[0].message.content.strip()
+    st.write(
+        f"Answer generated in {(time.monotonic_ns() - start) / 1_000_000} ms."
+    )
+    answer_content = answer_response.choices[0].message.content
+    if answer_content is None:
+        raise ValueError("OpenAI returned no answer.")
+    return answer_content.strip()
 
 
 load_dotenv()

@@ -2,7 +2,7 @@
 
 from typing import Callable, Iterable, TypeVar
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from bs4._typing import _OneElement
 from pydantic import BaseModel, Field
 
@@ -20,19 +20,25 @@ class SplitResult(BaseModel):
     """Result of the split operation."""
 
     metadata: Metadata = Field(...)
-    chunks: list[str] = Field(..., description="The splitted chunks of the document.")
+    chunks: list[str] = Field(
+        ..., description="The splitted chunks of the document."
+    )
 
 
 class ExtractResult(BaseModel):
     """Result of the extraction operation."""
 
-    remaining_text: str = Field(..., description="The remaining text after extraction.")
+    remaining_text: str = Field(
+        ..., description="The remaining text after extraction."
+    )
     extracted_texts: list[str] = Field(
         ..., description="The extracted texts from the document."
     )
 
 
-def _split_by(elements: Iterable[T], predicate: Callable[[T], bool]) -> list[str]:
+def _split_by(
+    elements: Iterable[T], predicate: Callable[[T], bool]
+) -> list[str]:
     """
     Split an iterable of elements into sections. A new section starts when predicate(el) is True.
     The matching element is included at the start of its section. Leading elements before
@@ -54,7 +60,11 @@ def _split_by(elements: Iterable[T], predicate: Callable[[T], bool]) -> list[str
     return [section.strip() for section in sections if section.strip()]
 
 
-def _split_front_matter(fm_title: _OneElement) -> SplitResult:
+def _tag_has_class(tag: Tag, class_name: str) -> bool:
+    return class_name in tag.get_attribute_list("class")
+
+
+def _split_front_matter(fm_title: Tag) -> SplitResult:
     """
     Extract the front matter title from the document.
 
@@ -67,6 +77,8 @@ def _split_front_matter(fm_title: _OneElement) -> SplitResult:
     """
     title = fm_title.get_text().strip()
     parent = fm_title.parent
+    if not isinstance(parent, Tag):
+        raise ValueError("Front matter title has no parent element.")
     fm_title.decompose()
 
     return SplitResult(
@@ -110,9 +122,14 @@ def _split_chapter_to_sections(soup: BeautifulSoup) -> SplitResult:
     title_node.decompose()
     title_nor_node.decompose()
 
+    if soup.body is None:
+        raise ValueError("No <body> found in the document.")
+
     sections = _split_by(
         soup.body.children,
-        lambda el: getattr(el, "name", None) == "h1" and "sec" in el.get("class", []),
+        lambda el: isinstance(el, Tag)
+        and el.name == "h1"
+        and _tag_has_class(el, "sec"),
     )
 
     return SplitResult(
@@ -145,12 +162,16 @@ def split_top_level_document(text: str) -> SplitResult:
         # The part number is not a chapter title, but we still want to
         # return it as the metadata.
         return SplitResult(
-            metadata=Metadata(title=part_no.get_text().strip(), type_="part_number"),
+            metadata=Metadata(
+                title=part_no.get_text().strip(), type_="part_number"
+            ),
             chunks=[],
         )
 
     fm_title = soup.find("h1", class_="fm-title1")
     if fm_title:
+        if not isinstance(fm_title, Tag):
+            raise ValueError("<h1 class='fm-title1'> is not an element.")
         # Early return if we find a front matter title.
         #
         # This is a special case for the front matter in the book.
@@ -186,8 +207,9 @@ def split_section_to_subsections(text: str) -> SplitResult:
 
     subsections = _split_by(
         soup.body.children,
-        lambda el: getattr(el, "name", None) == "h1"
-        and "sec1" in el.get("class", [])
+        lambda el: isinstance(el, Tag)
+        and el.name == "h1"
+        and _tag_has_class(el, "sec1")
         and el.get("id", None) is not None,
     )
 
@@ -213,13 +235,16 @@ def extract_boxes(text: str) -> ExtractResult:
         boxes.append(str(box).strip())
         box.decompose()
 
+    if soup.body is None:
+        raise ValueError(f"No <body> found in the document: {text}.")
+
     return ExtractResult(
         remaining_text=soup.body.decode_contents().strip(),
         extracted_texts=boxes,
     )
 
 
-def split_subsection_into_paragraph_groups(text: str) -> SplitResult | None:
+def split_subsection_into_paragraph_groups(text: str) -> SplitResult:
     """
     Split at the level 4 file.
 
@@ -244,9 +269,14 @@ def split_subsection_into_paragraph_groups(text: str) -> SplitResult | None:
         title_text = title.get_text().strip()
         title.decompose()
 
+    if soup.body is None:
+        raise ValueError(f"No <body> found in the document: {text}.")
+
     chunks = _split_by(
         soup.body.children,
-        lambda el: getattr(el, "name", None) == "p" and "parast" in el.get("class", []),
+        lambda el: isinstance(el, Tag)
+        and el.name == "p"
+        and _tag_has_class(el, "parast"),
     )
 
     return SplitResult(

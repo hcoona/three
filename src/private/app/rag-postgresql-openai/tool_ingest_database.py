@@ -4,6 +4,8 @@ import asyncio
 import logging
 import os
 import sys
+from types import TracebackType
+from typing import Self
 
 import psycopg
 from html2text import html2text
@@ -14,6 +16,9 @@ from rag_postgresql_openai.specialized_splitter.caring_for_your_baby_and_young_c
     split_subsection_into_paragraph_groups,
     split_top_level_document,
 )
+
+MetadataValue = str | int | None
+MetadataDict = dict[str, MetadataValue]
 
 
 class CaringForYourBabyAndYoungChildProcessor:
@@ -27,18 +32,27 @@ class CaringForYourBabyAndYoungChildProcessor:
 
         self._url = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@localhost:5432/{os.getenv('POSTGRES_DB')}"
         self._document_id = document_id
+        self._conn: psycopg.AsyncConnection | None = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         self._conn = await psycopg.AsyncConnection.connect(self._url)
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        if hasattr(self, "_conn") and self._conn:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        if self._conn:
             await self._conn.close()
             self._conn = None
 
-    async def run(self, text, metadata={}) -> None:
+    async def run(
+        self, text: str, metadata: MetadataDict | None = None
+    ) -> None:
         """Process the text."""
+        metadata = metadata or {}
         result = split_top_level_document(text)
         if not result.chunks:
             return
@@ -78,7 +92,7 @@ class CaringForYourBabyAndYoungChildProcessor:
     async def _run_for_section(
         self,
         section: str,
-        metadata: dict[str, str],
+        metadata: MetadataDict,
     ) -> None:
         try:
             result = split_section_to_subsections(section)
@@ -102,7 +116,7 @@ class CaringForYourBabyAndYoungChildProcessor:
             )
 
     async def _run_for_subsection(
-        self, subsection: str, metadata: dict[str, str]
+        self, subsection: str, metadata: MetadataDict
     ) -> None:
         result = extract_boxes(subsection)
 
@@ -137,8 +151,10 @@ class CaringForYourBabyAndYoungChildProcessor:
                 )
 
     async def _write_node_into_database(
-        self, text: str, metadata: dict[str, str]
+        self, text: str, metadata: MetadataDict
     ) -> None:
+        if self._conn is None:
+            raise RuntimeError("Database connection is not open.")
         async with self._conn.cursor() as cur:
             await cur.execute(
                 """
@@ -189,7 +205,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    import platform
     import warnings
 
     from bs4 import XMLParsedAsHTMLWarning
@@ -201,7 +216,9 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
 
-    if platform.system() == "Windows":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    if sys.platform == "win32":
+        from asyncio import WindowsSelectorEventLoopPolicy
+
+        asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())
 
     asyncio.run(main())

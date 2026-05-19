@@ -1,17 +1,28 @@
 import asyncio
 import logging
 import os
+import sys
 
 import psycopg
+from psycopg import sql
 
 
 async def main() -> None:
     url = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@localhost:5432/{os.getenv('POSTGRES_DB')}"
+    embedding_dimension = os.environ["EMBEDDING_DIMENSION"]
+    if not embedding_dimension.isdecimal():
+        raise ValueError("EMBEDDING_DIMENSION must be a positive integer.")
     async with await psycopg.AsyncConnection.connect(url) as conn:
         async with conn.cursor() as cursor:
-            await cursor.execute("CREATE EXTENSION IF NOT EXISTS vchord CASCADE;")
-            await cursor.execute("CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;")
-            await cursor.execute("CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;")
+            await cursor.execute(
+                "CREATE EXTENSION IF NOT EXISTS vchord CASCADE;"
+            )
+            await cursor.execute(
+                "CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;"
+            )
+            await cursor.execute(
+                "CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;"
+            )
             await conn.commit()
 
         async with conn.cursor() as cursor:
@@ -66,12 +77,14 @@ async def main() -> None:
                 """
             )
             await cursor.execute(
-                f"""
+                sql.SQL(
+                    """
                 CREATE TABLE IF NOT EXISTS node_embedding (
                     node_id INTEGER PRIMARY KEY REFERENCES node(id) ON DELETE CASCADE,
-                    embedding vector({os.getenv("EMBEDDING_DIMENSION")}) NOT NULL
+                    embedding vector({}) NOT NULL
                 )
                 """
+                ).format(sql.Literal(int(embedding_dimension)))
             )
             await cursor.execute(
                 """
@@ -110,14 +123,14 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    import platform
-
     from dotenv import load_dotenv
 
     load_dotenv()
 
-    if platform.system() == "Windows":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    if sys.platform == "win32":
+        from asyncio import WindowsSelectorEventLoopPolicy
+
+        asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())
 
     logging.basicConfig(level=logging.INFO)
 

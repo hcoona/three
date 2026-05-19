@@ -75,19 +75,22 @@ def matplotlib_render_math_to_png(
         fig, ax = plt.subplots(figsize=(0.01, 0.01))
 
         # Render text and turn off axis
-        text_obj = ax.text(0, 0, latex_string, fontsize=10, ha="left", va="bottom")
+        text_obj = ax.text(
+            0, 0, latex_string, fontsize=10, ha="left", va="bottom"
+        )
         ax.axis("off")
 
         # Calculate bounding box and set figure size to content
         fig.canvas.draw()  # Important to draw canvas before getting extent
-        renderer = fig.canvas.get_renderer()
-        bbox = text_obj.get_window_extent(renderer=renderer).transformed(
+        bbox = text_obj.get_window_extent().transformed(
             fig.dpi_scale_trans.inverted()
         )
 
         # Add a small padding
         pad_inches = 0.02 if is_inline else 0.1  # Smaller padding for inline
-        fig.set_size_inches(bbox.width + 2 * pad_inches, bbox.height + 2 * pad_inches)
+        fig.set_size_inches(
+            bbox.width + 2 * pad_inches, bbox.height + 2 * pad_inches
+        )
 
         # After resizing, the text needs to be repositioned to the new bottom-left (plus padding)
         text_obj.set_position((pad_inches, pad_inches))
@@ -111,7 +114,9 @@ def matplotlib_render_math_to_png(
         return False
 
 
-def webtex_render_math_to_png(latex_string: str, output_path: pathlib.Path) -> bool:
+def webtex_render_math_to_png(
+    latex_string: str, output_path: pathlib.Path
+) -> bool:
     """
     Renders a LaTeX string to a PNG image using WebTeX.
 
@@ -133,7 +138,7 @@ def webtex_render_math_to_png(latex_string: str, output_path: pathlib.Path) -> b
     response = requests.get(
         r"https://latex.codecogs.com/png.latex?\dpi{300}" + latex_string
     )
-    if response.status_code == 200:
+    if response.status_code == 200 and response.content is not None:
         with open(output_path, "wb") as f:
             f.write(response.content)
         logging.info(f"Rendered math with webtex to {output_path}")

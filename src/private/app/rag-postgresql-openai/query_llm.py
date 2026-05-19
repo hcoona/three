@@ -22,7 +22,7 @@ async def main() -> None:
     )
 
     result = await openai_client.embeddings.create(
-        model=os.getenv("EMBEDDING_MODEL"),
+        model=os.environ["EMBEDDING_MODEL"],
         input=QUERY,
     )
     query_embedding = result.data[0].embedding

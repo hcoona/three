@@ -37,7 +37,10 @@ async def main() -> None:
             }
         ],
     )
-    rewritten_query = result.choices[0].message.content.strip()
+    rewritten_query_content = result.choices[0].message.content
+    if rewritten_query_content is None:
+        raise ValueError("OpenAI returned no rewritten query.")
+    rewritten_query = rewritten_query_content.strip()
     logger.info(f"Rewritten query: {rewritten_query}")
 
     with psycopg.connect(url) as conn:
