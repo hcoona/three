@@ -18,7 +18,7 @@ license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 classifiers = ["Private :: Do Not Upload"]
 
 [dependency-groups]
-dev = ["pyrefly>=0.25.0", "pytest>=8.3.4", "ruff>=0.11.8"]
+dev = ["pyrefly>=1.0.0", "pytest>=8.3.4", "ruff>=0.11.8"]
 
 [tool.uv.workspace]
 # The current Python workspace is rooted under src/; legacy OnePython paths are retired.
@@ -59,29 +59,29 @@ three-workflow-release-publish = { workspace = true }
 [tool.pyrefly]
 # Keep type-check coverage aligned with the root uv workspace membership.
 project-includes = [
-  "src/lab/azure-document-intelligence-lab",
-  "src/private/app/factorio-cycle-calculator",
-  "src/private/app/git-commit-heatmap",
-  "src/private/app/html-sm-processor",
-  "src/private/app/llm-text-splitter",
-  "src/private/app/music-flash-card-generator",
-  "src/private/app/rag-postgresql-openai",
-  "src/private/app/supermemo-mcp",
-  "src/private/app/transcribe",
-  "src/public/app/markdown-hybrid-search-mcp",
-  "src/public/lib/hcoona-release-smoke",
-  "src/public/lib/hcoona-release-smoke-pypi",
-  "src/public/lib/nbgv-python",
-  "src/public/lib/three-workflow-release-contracts",
-  "src/public/lib/three-workflow-release-authoring",
-  "src/public/lib/three-workflow-release-build",
-  "src/public/lib/three-workflow-release-metadata",
-  "src/public/lib/three-workflow-release-planner",
-  "src/public/lib/three-workflow-release-publish",
-  "src/public/lib/three-workflow-release-proof",
-  "src/sample/nbgv-hatch-demo",
+  "src/private/app/factorio-cycle-calculator/**/*.py",
+  "src/private/app/git-commit-heatmap/**/*.py",
+  "src/private/app/html-sm-processor/**/*.py",
+  "src/private/app/llm-text-splitter/**/*.py",
+  "src/private/app/music-flash-card-generator/**/*.py",
+  "src/private/app/rag-postgresql-openai/**/*.py",
+  "src/private/app/supermemo-mcp/**/*.py",
+  "src/private/app/transcribe/**/*.py",
+  "src/public/app/markdown-hybrid-search-mcp/src/**/*.py",
+  "src/public/lib/hcoona-release-smoke/src/**/*.py",
+  "src/public/lib/hcoona-release-smoke-pypi/src/**/*.py",
+  "src/public/lib/nbgv-python/**/*.py",
+  "src/public/lib/three-workflow-release-contracts/**/*.py",
+  "src/public/lib/three-workflow-release-authoring/**/*.py",
+  "src/public/lib/three-workflow-release-build/**/*.py",
+  "src/public/lib/three-workflow-release-metadata/**/*.py",
+  "src/public/lib/three-workflow-release-planner/**/*.py",
+  "src/public/lib/three-workflow-release-publish/**/*.py",
+  "src/public/lib/three-workflow-release-proof/**/*.py",
+  "src/sample/nbgv-hatch-demo/**/*.py",
 ]
 project-excludes = ['.venv/**', 'dist/**']
+disable-project-excludes-heuristics = true
 
 [tool.ruff]
 target-version = "py312" # Keep a conservative repo-wide lint target until package-level overrides are needed.
