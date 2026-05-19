@@ -137,6 +137,7 @@ function Convert-HtmlToText {
     param([Parameter(Mandatory = $true)][string]$Html)
     try {
         $text = ($Html -replace '(?s)<script.*?</script>', '') -replace '(?s)<style.*?</style>', ''
+        $text = $text -replace '(?<=[\p{L}\p{N}])(?:<[^>]+>)+(?=[\p{L}\p{N}])', ''
         $text = ($text -replace '<[^>]+>', ' ')
         $text = [System.Net.WebUtility]::HtmlDecode($text)
         # Normalize whitespace
@@ -179,7 +180,7 @@ function Get-NuGetLocalPackageDirectory {
     return $null
 }
 
-function ConvertFrom-NuGetNuspecMetadata {
+function ConvertFrom-NuGetNuspecMetadatum {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$Content,
@@ -228,7 +229,7 @@ function Get-NuGetPackageInfo {
         $nuspec = Get-ChildItem -LiteralPath $packageDir -Filter '*.nuspec' -File | Select-Object -First 1
         if ($nuspec) {
             try {
-                return ConvertFrom-NuGetNuspecMetadata -Content ([System.IO.File]::ReadAllText($nuspec.FullName)) -PackageDirectory $packageDir
+                return ConvertFrom-NuGetNuspecMetadatum -Content ([System.IO.File]::ReadAllText($nuspec.FullName)) -PackageDirectory $packageDir
             }
             catch {
                 Write-Verbose "[NuGet] Failed to parse local nuspec for $($Id)@$($Version): $($_.Exception.Message)"
@@ -280,7 +281,7 @@ function Get-NuGetPackageInfo {
     $resp2 = Invoke-WebRequestSafe -Uri $nuspecUrl
     if ($resp2 -and $resp2.Content) {
         try {
-            return ConvertFrom-NuGetNuspecMetadata -Content $resp2.Content -PackageDirectory $packageDir
+            return ConvertFrom-NuGetNuspecMetadatum -Content $resp2.Content -PackageDirectory $packageDir
         }
         catch {
             Write-Verbose "[NuGet] Failed to parse nuspec XML for $($Id)@$($Version): $($_.Exception.Message)"
@@ -378,6 +379,7 @@ function Test-LicenseContentMatchesExpression {
 
 function Test-StandardizedLicenseTextNeedsPackageCopyright {
     [CmdletBinding()]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory = $true)][string]$Content,
         [Parameter(Mandatory = $true)][string]$Expression
@@ -563,7 +565,7 @@ function Write-Notice([string]$OutputPath, $components) {
         }
         if ($isGitHubRepo -and $repositoryCommit -and
             (-not $licenseExpression -or -not $licenseContent -or
-                (Test-StandardizedLicenseTextNeedsPackageCopyright -Content $licenseContent -Expression $licenseExpression))) {
+            (Test-StandardizedLicenseTextNeedsPackageCopyright -Content $licenseContent -Expression $licenseExpression))) {
             $licenseGuess = Get-GitHubLicenseContent -RepoUrl $githubRepoUrl -Ref $repositoryCommit
             if ($licenseGuess) {
                 $githubLicenseContent = [string]$licenseGuess.Content
