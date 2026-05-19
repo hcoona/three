@@ -15,7 +15,9 @@ from pydub import AudioSegment
 def build_arg_parser():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Transcribe audio using OpenAI API.")
+    parser = argparse.ArgumentParser(
+        description="Transcribe audio using OpenAI API."
+    )
     parser.add_argument(
         "file",
         type=str,
@@ -54,6 +56,8 @@ async def main() -> None:
         )
 
     audio = AudioSegment.from_file(args.file)
+    if not isinstance(audio, AudioSegment):
+        raise TypeError("Expected decoded audio to be an AudioSegment.")
     total_duration_seconds = math.ceil(len(audio) / 1000.0)
 
     segment_duration_seconds = 180  # 3 minutes
@@ -71,6 +75,8 @@ async def main() -> None:
                 break
 
             segment = audio[start * 1000 : end * 1000]
+            if not isinstance(segment, AudioSegment):
+                raise TypeError("Expected sliced audio to be an AudioSegment.")
             start += segment_duration_seconds - segment_overlap_seconds
             index += 1
 

@@ -11,8 +11,9 @@ Windows API 封装模块
 """
 
 import ctypes
+import sys
 from ctypes import POINTER, Structure, byref, create_unicode_buffer, wintypes
-from typing import Optional
+from typing import Any, Optional, cast
 
 
 # Windows 常量定义
@@ -157,9 +158,21 @@ class WindowsAPI:
 
         加载必要的 Windows 库并设置 API 函数原型。
         """
+        if sys.platform != "win32":
+            message = "WindowsAPI is only available on Windows."
+            raise OSError(message)
+
+        windll = getattr(ctypes, "windll", None)
+        winfunctype = getattr(ctypes, "WINFUNCTYPE", None)
+        if windll is None or winfunctype is None:
+            message = "Windows ctypes APIs are not available."
+            raise OSError(message)
+
         # 加载必要的 Windows API
-        self.user32 = ctypes.windll.user32
-        self.kernel32 = ctypes.windll.kernel32
+        self._windll = cast("Any", windll)
+        self._winfunctype = cast("Any", winfunctype)
+        self.user32 = self._windll.user32
+        self.kernel32 = self._windll.kernel32
 
         # 设置函数原型
         self._setup_api_prototypes()
@@ -281,7 +294,7 @@ class WindowsAPI:
         self.kernel32.CloseHandle.restype = wintypes.BOOL
 
         # GetModuleBaseName
-        self.psapi = ctypes.windll.psapi
+        self.psapi = self._windll.psapi
         self.psapi.GetModuleBaseNameW.argtypes = [
             wintypes.HANDLE,
             wintypes.HMODULE,
@@ -295,7 +308,7 @@ class WindowsAPI:
         self.user32.FindWindowW.restype = wintypes.HWND
 
         # EnumWindows callback type
-        self.enum_windows_proc_type = ctypes.WINFUNCTYPE(
+        self.enum_windows_proc_type = self._winfunctype(
             wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
         )
 

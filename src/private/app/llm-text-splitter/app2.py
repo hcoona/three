@@ -53,7 +53,12 @@ if submit_button:
         )
     )
 
-    for topic in split_text_result.topics:
-        st.subheader(f"{topic.topic}: [{','.join(map(str, topic.indices))}]")
-        for i in topic.indices:
-            st.write(utterances[i])
+    if split_text_result is None:
+        st.error("Failed to split text.")
+    else:
+        for topic in split_text_result.topics:
+            st.subheader(
+                f"{topic.topic}: [{','.join(map(str, topic.indices))}]"
+            )
+            for i in topic.indices:
+                st.write(utterances[i])
