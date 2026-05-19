@@ -8,7 +8,7 @@ It serves two use cases:
 1. The repository-local hook entry in `.github/hooks/telegram-notify.json`,
    used only for pre-release testing in this repository.
 2. A user-level installation that applies to any workspace in VS Code and
-   represents the formally supported product use case.
+   GitHub Copilot CLI and represents the formally supported product use case.
 
 The implementation follows the official VS Code Copilot hooks preview behavior:
 
@@ -16,6 +16,10 @@ The implementation follows the official VS Code Copilot hooks preview behavior:
 - The official VS Code hooks docs currently list `~/.claude/settings.json` as
   a default user hook location.
 - Workspace hooks take precedence over user hooks for the same event.
+- GitHub Copilot CLI loads user-level hook files from `*.json` files under
+  `$COPILOT_HOME/hooks/` when `COPILOT_HOME` is set, otherwise
+  `~/.copilot/hooks/` on Linux and macOS or `%USERPROFILE%\.copilot\hooks\` on
+  Windows.
 
 ## Files
 
@@ -78,6 +82,8 @@ The installer command:
 - asks before overwriting existing stored secrets and defaults to keeping them,
 - installs the published Native AOT binary into a user-owned data directory,
 - writes a dedicated managed hook JSON file under the install root,
+- writes a GitHub Copilot CLI user-level hook file under the CLI hooks
+  directory,
 - validates before writing side effects that the managed hook file path can be
   represented in VS Code as a supported `~/...` hook location,
 - registers that managed hook file in the supported same-host VS Code
@@ -98,8 +104,22 @@ paths or `~/...` entries in
 `chat.hookFilesLocations`, the installer writes the managed hook registration in
 supported `~/...` form rather than as an absolute path.
 
+For GitHub Copilot CLI, the installer writes
+`vscode-copilot-telegram-hook.json` into `$COPILOT_HOME/hooks/` when
+`COPILOT_HOME` is set, otherwise into `~/.copilot/hooks/` on Linux and macOS or
+`%USERPROFILE%\.copilot\hooks\` on Windows. That file uses the Copilot CLI hook
+schema with `version: 1`, `timeoutSec`, PascalCase event names
+(`SessionStart`, `UserPromptSubmit`, and `Stop`), and
+`HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE=copilot-cli`. The PascalCase
+event names make Copilot CLI send VS Code-compatible snake_case input payloads;
+the app-specific surface marker lets this application select
+Copilot CLI-compatible hook output.
+
 If you need to override the default VS Code settings targets, repeat
 `--vscode-settings-path` once per target file you want the installer to manage.
+If you need to override the default Copilot CLI hook file location, pass
+`--copilot-cli-hook-file-path` to `user install`, `user uninstall`,
+`user health`, or `user diagnose`.
 
 If you need to inspect or update stored Telegram secrets after installation,
 use the dedicated secret-management command:
@@ -115,8 +135,11 @@ binary="$app/bin/Release/net10.0/linux-x64/publish/vscode-copilot-telegram-hook"
 The CLI also provides:
 
 - `user uninstall`: remove the managed installation.
-- `user health`: validate the current installation and credential resolution.
-- `user diagnose`: print a detailed diagnostic report.
+- `user health`: validate the installed binary, VS Code managed hook file,
+  Copilot CLI managed hook file, VS Code settings registration, and credential
+  resolution.
+- `user diagnose`: print the resolved installation paths, VS Code settings
+  targets, Copilot CLI hook path, credential availability, and log locations.
 - `user secret`: read or update the stored Telegram secrets.
 - `user test-notification`: send a test Telegram message without waiting for a
   Copilot stop event.
