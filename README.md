@@ -121,7 +121,8 @@ The implementation uses the VS Code Copilot hook events that this repo actually 
 - `Stop` sends the Telegram notification for the matching session-and-turn summary snapshot
 
 Per the official VS Code hooks documentation, user-level hooks are loaded from `~/.claude/settings.json` by default, and workspace hooks take precedence over user hooks for the same event.
-That is why this repository keeps its own workspace hook entry while the installer also supports a machine-level user hook for other workspaces.
+GitHub Copilot CLI has a separate user-level hooks directory: `$COPILOT_HOME/hooks/` when `COPILOT_HOME` is set, otherwise `~/.copilot/hooks/` on Linux and macOS or `%USERPROFILE%\.copilot\hooks\` on Windows.
+That is why this repository keeps its own workspace hook entry while the installer also supports machine-level user hooks for VS Code and Copilot CLI.
 
 The user-level installer is the C# CLI. Publish the app and run:
 
@@ -134,9 +135,11 @@ binary="$app/bin/Release/net10.0/linux-x64/publish/vscode-copilot-telegram-hook"
 
 For headless installation, pass `--telegram-bot-token` and `--telegram-chat-id` (or set `TG_BOT_TOKEN` and `TG_CHAT_ID`) together with `--skip-secret-prompt`.
 
-The installer prompts for the Telegram bot token and chat ID when run interactively, validates their basic format, stores them in `gopass`, validates before side effects that the managed hook file path stays representable as a supported `~/...` VS Code hook location, installs the published binary into a stable user-owned directory, writes a dedicated managed hook JSON file, registers that managed hook file in the same host's supported VS Code settings targets through `chat.hookFilesLocations`, and installs a user-level VS Code GitHub Copilot instruction file under `~/.copilot/instructions` so task summaries are generated consistently.
+The installer prompts for the Telegram bot token and chat ID when run interactively, validates their basic format, stores them in `gopass`, validates before side effects that the managed hook file path stays representable as a supported `~/...` VS Code hook location, installs the published binary into a stable user-owned directory, writes a dedicated VS Code managed hook JSON file, writes a Copilot CLI user-level hook file, and registers the VS Code managed hook file in the same host's supported VS Code settings targets through `chat.hookFilesLocations`.
 The `gopass` prefix is fixed at `copilot/vscode-copilot-telegram-hook` so the user-level installation and this repository's workspace hook stay aligned.
 The managed installation intentionally avoids relying on `~/.claude/settings.json` as its steady-state target. On Linux, the default settings targets are `~/.config/Code/User/settings.json` and `~/.vscode-server/data/Machine/settings.json`; the managed hook file is registered there in supported `~/...` form rather than as an absolute path, even when the VS Code Server settings file does not exist yet.
+The Copilot CLI hook file is the managed file `vscode-copilot-telegram-hook.json` under the CLI hooks directory. It uses Copilot CLI hook schema `version: 1`, PascalCase events (`SessionStart`, `UserPromptSubmit`, and `Stop`), `timeoutSec`, and the marker environment variable `HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE=copilot-cli`.
+The same `user` command group supports health checks, diagnostics, and uninstall; use `--copilot-cli-hook-file-path` only when you need to override the default Copilot CLI hook path.
 
 At runtime, the hook resolves the active workspace from the hook input payload instead of the binary location.
 That keeps `.copilot/sessions/<session_id>/notify-session.json`, `notify-turn.json`, `notify-summary.json`, and `notify-last-sent.json` scoped to the actual workspace even after a user-level installation.

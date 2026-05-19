@@ -18,11 +18,46 @@ internal sealed class UserCommandService(
         try
         {
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            string sourceBinaryPath = ResolveInstallableBinaryPath(options.BinaryPath);
+            ValidateUserArtifactPaths(userPaths, sourceBinaryPath);
+
+            string currentTimestamp = GetCurrentUtcTimestamp();
+            string sessionStartCommand = UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                userPaths.InstalledBinaryPath,
+                "session-start");
+            string userPromptSubmitCommand =
+                UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                    userPaths.InstalledBinaryPath,
+                    "user-prompt-submit");
+            string stopCommand = UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                userPaths.InstalledBinaryPath,
+                "stop");
+            ConfigurationApplyResult? copilotCliHookFilePreflightResult =
+                UserHookConfigurationManager.PreflightManagedCopilotCliHookFile(
+                    userPaths.CopilotCliHookFilePath,
+                    sessionStartCommand,
+                    userPromptSubmitCommand,
+                    stopCommand,
+                    currentTimestamp);
+            if (copilotCliHookFilePreflightResult is not null)
+            {
+                await Console.Out.WriteLineAsync(copilotCliHookFilePreflightResult.Message);
+                if (copilotCliHookFilePreflightResult.CandidatePath is not null)
+                {
+                    await Console.Error.WriteLineAsync(
+                        "Copilot CLI hook file candidate: "
+                        + copilotCliHookFilePreflightResult.CandidatePath);
+                }
+
+                await Console.Out.WriteLineAsync(
+                    "Skipped user installation because the Copilot CLI hook file "
+                    + "could not be updated.");
+                return 1;
+            }
+
             using IDisposable logScope = sessionLogFileContext.UseLogFile(
                 userPaths.UserLogFilePath);
             AppLog.StartingUserInstall(logger);
-            string sourceBinaryPath = ResolveInstallableBinaryPath(options.BinaryPath);
-            string currentTimestamp = GetCurrentUtcTimestamp();
             if (!VsCodeSettingsManager.TryGetSupportedHookFileLocation(
                     userPaths.ManagedHookFilePath,
                     out _,
@@ -75,20 +110,35 @@ internal sealed class UserCommandService(
 
             CopyBinary(sourceBinaryPath, userPaths.InstalledBinaryPath);
 
-            string sessionStartCommand = $"\"{userPaths.InstalledBinaryPath}\" hook session-start";
-            string userPromptSubmitCommand =
-                $"\"{userPaths.InstalledBinaryPath}\" hook user-prompt-submit";
-            string stopCommand = $"\"{userPaths.InstalledBinaryPath}\" hook stop";
-            ConfigurationApplyResult hookFileResult =
-                UserHookConfigurationManager.InstallManagedHookFile(
-                    userPaths.ManagedHookFilePath,
-                    sessionStartCommand,
-                    userPromptSubmitCommand,
-                    stopCommand,
-                    currentTimestamp);
+            ConfigurationApplyResult hookFileResult;
+            ConfigurationApplyResult copilotCliHookFileResult;
+            try
+            {
+                hookFileResult = UserHookConfigurationManager.InstallManagedHookFile(
+                        userPaths.ManagedHookFilePath,
+                        sessionStartCommand,
+                        userPromptSubmitCommand,
+                        stopCommand,
+                        currentTimestamp);
+                copilotCliHookFileResult =
+                    UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
+                        userPaths.CopilotCliHookFilePath,
+                        sessionStartCommand,
+                        userPromptSubmitCommand,
+                        stopCommand,
+                        currentTimestamp);
+            }
+            catch
+            {
+                await CleanupFailedInstallArtifactsAsync(
+                    userPaths,
+                    preserveManagedArtifacts: false);
+                throw;
+            }
 
             await Console.Out.WriteLineAsync($"Installed binary: {userPaths.InstalledBinaryPath}");
             await Console.Out.WriteLineAsync(hookFileResult.Message);
+            await Console.Out.WriteLineAsync(copilotCliHookFileResult.Message);
 
             foreach (string secretMessage in secretMessages)
             {
@@ -104,11 +154,20 @@ internal sealed class UserCommandService(
                     $"Managed hook file candidate: {hookFileResult.CandidatePath}");
             }
 
-            if (!hookFileResult.Applied)
+            if (copilotCliHookFileResult.CandidatePath is not null)
+            {
+                await Console.Error.WriteLineAsync(
+                    $"Copilot CLI hook file candidate: {copilotCliHookFileResult.CandidatePath}");
+            }
+
+            if (!hookFileResult.Applied || !copilotCliHookFileResult.Applied)
             {
                 await Console.Out.WriteLineAsync(
-                    "Skipped VS Code settings registration because the managed hook file "
-                    + "was not updated.");
+                    "Skipped VS Code settings registration because one or more managed "
+                    + "hook files were not updated.");
+                await CleanupFailedInstallArtifactsAsync(
+                    userPaths,
+                    preserveManagedArtifacts: false);
                 AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded: false);
                 return 1;
             }
@@ -157,11 +216,29 @@ internal sealed class UserCommandService(
         try
         {
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            ValidateUserArtifactPaths(
+                userPaths,
+                includeVsCodeSettingsTarget: ShouldIncludeVsCodeSettingsTargetForUninstall);
+
             using IDisposable logScope = sessionLogFileContext.UseLogFile(
                 userPaths.UserLogFilePath);
             AppLog.StartingUserUninstall(logger);
 
             string currentTimestamp = GetCurrentUtcTimestamp();
+            ConfigurationApplyResult copilotCliHookFileResult =
+                UserHookConfigurationManager.UninstallManagedCopilotCliHookFile(
+                    userPaths.CopilotCliHookFilePath);
+            await Console.Out.WriteLineAsync(copilotCliHookFileResult.Message);
+            if (!copilotCliHookFileResult.Applied)
+            {
+                await Console.Out.WriteLineAsync(
+                    "Skipped uninstall cleanup because the Copilot CLI hook file "
+                    + "could not be updated. Remove its managed entries manually, "
+                    + "then run uninstall again.");
+                AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded: false);
+                return 1;
+            }
+
             List<VsCodeSettingsTarget> registrationTargets = GetUninstallRegistrationTargets(
                 userPaths.VsCodeSettingsTargets);
             List<(VsCodeSettingsTarget Target, ConfigurationPlanResult Plan)> registrationPlans =
@@ -206,6 +283,17 @@ internal sealed class UserCommandService(
                 UserHookConfigurationManager.UninstallManagedHookFile(
                     userPaths.ManagedHookFilePath);
 
+            await Console.Out.WriteLineAsync(hookFileResult.Message);
+            if (!hookFileResult.Applied)
+            {
+                await Console.Out.WriteLineAsync(
+                    "Skipped uninstall cleanup because the VS Code managed hook file "
+                    + "could not be updated. Remove its managed entries manually, "
+                    + "then run uninstall again.");
+                AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded: false);
+                return 1;
+            }
+
             DeleteManagedBinary(userPaths.InstalledBinaryPath);
 
             if (options.RemoveSecrets)
@@ -213,7 +301,6 @@ internal sealed class UserCommandService(
                 await telegramCredentialProvider.RemoveStoredSecretsAsync(cancellationToken);
             }
 
-            await Console.Out.WriteLineAsync(hookFileResult.Message);
             await Console.Out.WriteLineAsync(
                 $"Removed installed binary if it existed: {userPaths.InstalledBinaryPath}");
 
@@ -224,7 +311,8 @@ internal sealed class UserCommandService(
             }
 
             bool succeeded = registrationsApplied
-                && hookFileResult.Applied;
+                && hookFileResult.Applied
+                && copilotCliHookFileResult.Applied;
             AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded);
             return succeeded ? 0 : 1;
         }
@@ -243,6 +331,9 @@ internal sealed class UserCommandService(
         try
         {
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            ValidateUserArtifactPaths(
+                userPaths,
+                includeVsCodeSettingsTarget: ShouldIncludeVsCodeSettingsTargetForUninstall);
             using IDisposable logScope = sessionLogFileContext.UseLogFile(
                 userPaths.UserLogFilePath);
             AppLog.StartingUserHealth(logger);
@@ -253,6 +344,10 @@ internal sealed class UserCommandService(
             bool managedHookFileInstalled =
                 UserHookConfigurationManager.IsManagedHookFileInstalled(
                     userPaths.ManagedHookFilePath);
+            bool copilotCliHookFileInstalled =
+                UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
+                    userPaths.CopilotCliHookFilePath,
+                    userPaths.InstalledBinaryPath);
             List<VsCodeSettingsStatus> hookRegistrationStatuses = GetVsCodeSettingsStatuses(
                 userPaths.VsCodeSettingsTargets,
                 userPaths.ManagedHookFilePath);
@@ -264,6 +359,11 @@ internal sealed class UserCommandService(
                     "Managed hook file",
                     managedHookFileInstalled,
                     userPaths.ManagedHookFilePath));
+            await Console.Out.WriteLineAsync(
+                FormatCheck(
+                    "Copilot CLI hook file",
+                    copilotCliHookFileInstalled,
+                    userPaths.CopilotCliHookFilePath));
             foreach (VsCodeSettingsStatus status in hookRegistrationStatuses)
             {
                 await Console.Out.WriteLineAsync(FormatVsCodeSettingsCheck(status));
@@ -278,6 +378,7 @@ internal sealed class UserCommandService(
 
             bool isHealthy = binaryInstalled
                 && managedHookFileInstalled
+                && copilotCliHookFileInstalled
                 && hookRegistrationStatuses
                     .Where(static item => item.Target.IsApplicable)
                     .All(static item => item.IsRegistered)
@@ -300,6 +401,9 @@ internal sealed class UserCommandService(
         try
         {
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
+            ValidateUserArtifactPaths(
+                userPaths,
+                includeVsCodeSettingsTarget: ShouldIncludeVsCodeSettingsTargetForUninstall);
             using IDisposable logScope = sessionLogFileContext.UseLogFile(
                 userPaths.UserLogFilePath);
             AppLog.StartingUserDiagnose(logger);
@@ -314,6 +418,10 @@ internal sealed class UserCommandService(
             bool managedHookFileInstalled =
                 UserHookConfigurationManager.IsManagedHookFileInstalled(
                     userPaths.ManagedHookFilePath);
+            bool copilotCliHookFileInstalled =
+                UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
+                    userPaths.CopilotCliHookFilePath,
+                    userPaths.InstalledBinaryPath);
             List<VsCodeSettingsStatus> hookRegistrationStatuses = GetVsCodeSettingsStatuses(
                 userPaths.VsCodeSettingsTargets,
                 userPaths.ManagedHookFilePath);
@@ -332,6 +440,8 @@ internal sealed class UserCommandService(
                 $"Installed binary looks Native AOT : {installedBinaryLooksAot}");
             await Console.Out.WriteLineAsync(
                 $"Managed hook file path : {userPaths.ManagedHookFilePath}");
+            await Console.Out.WriteLineAsync(
+                $"Copilot CLI hook file path : {userPaths.CopilotCliHookFilePath}");
             await Console.Out.WriteLineAsync("VS Code settings targets :");
             foreach (VsCodeSettingsStatus status in hookRegistrationStatuses)
             {
@@ -340,6 +450,9 @@ internal sealed class UserCommandService(
             await Console.Out.WriteLineAsync(
                 $"Managed hook file installed : "
                 + $"{managedHookFileInstalled}");
+            await Console.Out.WriteLineAsync(
+                $"Copilot CLI hook file installed : "
+                + $"{copilotCliHookFileInstalled}");
             await Console.Out.WriteLineAsync($"gopass available : {secretStoreAvailable}");
             await Console.Out.WriteLineAsync(
                 $"Telegram credentials resolvable : {credentialsAvailable}");
@@ -571,6 +684,21 @@ internal sealed class UserCommandService(
         return !File.Exists(runtimeConfigPath);
     }
 
+    private static void ValidateUserArtifactPaths(
+        UserInstallationPaths userPaths,
+        string? sourceBinaryPath = null,
+        Func<VsCodeSettingsTarget, bool>? includeVsCodeSettingsTarget = null)
+    {
+        string? validationError = AppPaths.ValidateUserArtifactPathCollisions(
+            userPaths,
+            sourceBinaryPath,
+            includeVsCodeSettingsTarget);
+        if (validationError is not null)
+        {
+            throw new InvalidOperationException(validationError);
+        }
+    }
+
     private static string FormatCheck(string label, bool isSuccess, string details)
         => $"{(isSuccess ? "[OK]" : "[FAIL]")} {label}: {details}";
 
@@ -661,8 +789,12 @@ internal sealed class UserCommandService(
         IEnumerable<VsCodeSettingsTarget> targets)
         => [
             .. targets.Where(
-                static target => target.IsApplicable || File.Exists(target.SettingsPath))
+                ShouldIncludeVsCodeSettingsTargetForUninstall)
         ];
+
+    private static bool ShouldIncludeVsCodeSettingsTargetForUninstall(
+        VsCodeSettingsTarget target)
+        => target.IsApplicable || File.Exists(target.SettingsPath);
 
     private static string FormatVsCodeSettingsCheck(VsCodeSettingsStatus status)
     {
@@ -744,6 +876,19 @@ internal sealed class UserCommandService(
         UserInstallationPaths userPaths,
         bool preserveManagedArtifacts)
     {
+        bool copilotCliHookCleanupApplied = false;
+        bool vsCodeManagedHookCleanupApplied = false;
+        await TryRunCleanupStepAsync(
+            "Copilot CLI hook cleanup",
+            async () =>
+            {
+                ConfigurationApplyResult copilotCliHookCleanupResult =
+                    UserHookConfigurationManager.UninstallManagedCopilotCliHookFile(
+                        userPaths.CopilotCliHookFilePath);
+                await Console.Out.WriteLineAsync(copilotCliHookCleanupResult.Message);
+                copilotCliHookCleanupApplied = copilotCliHookCleanupResult.Applied;
+            });
+
         if (preserveManagedArtifacts)
         {
             await Console.Out.WriteLineAsync(
@@ -752,12 +897,47 @@ internal sealed class UserCommandService(
             return;
         }
 
-        ConfigurationApplyResult hookFileCleanupResult =
-            UserHookConfigurationManager.UninstallManagedHookFile(userPaths.ManagedHookFilePath);
-        await Console.Out.WriteLineAsync(hookFileCleanupResult.Message);
-        DeleteManagedBinary(userPaths.InstalledBinaryPath);
-        await Console.Out.WriteLineAsync(
-            $"Removed installed binary if it existed: {userPaths.InstalledBinaryPath}");
+        await TryRunCleanupStepAsync(
+            "VS Code managed hook cleanup",
+            async () =>
+            {
+                ConfigurationApplyResult hookFileCleanupResult =
+                    UserHookConfigurationManager.UninstallManagedHookFile(
+                        userPaths.ManagedHookFilePath);
+                await Console.Out.WriteLineAsync(hookFileCleanupResult.Message);
+                vsCodeManagedHookCleanupApplied = hookFileCleanupResult.Applied;
+            });
+        if (copilotCliHookCleanupApplied && vsCodeManagedHookCleanupApplied)
+        {
+            await TryRunCleanupStepAsync(
+                "installed binary cleanup",
+                async () =>
+                {
+                    DeleteManagedBinary(userPaths.InstalledBinaryPath);
+                    await Console.Out.WriteLineAsync(
+                        $"Removed installed binary if it existed: {userPaths.InstalledBinaryPath}");
+                });
+        }
+        else
+        {
+            await Console.Out.WriteLineAsync(
+                "Skipped installed binary cleanup because one or more hook cleanup steps did "
+                + $"not complete successfully: {userPaths.InstalledBinaryPath}");
+        }
+    }
+
+    private static async Task TryRunCleanupStepAsync(string stepName, Func<Task> cleanupStep)
+    {
+        try
+        {
+            await cleanupStep();
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or NotSupportedException
+                or InvalidOperationException)
+        {
+            await Console.Error.WriteLineAsync($"{stepName} failed during cleanup: {ex.Message}");
+        }
     }
 
     private async Task<bool> TryResolveCredentialsAsync(CancellationToken cancellationToken)

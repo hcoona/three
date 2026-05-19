@@ -8,10 +8,10 @@ packages:
   - src/private/app/im-acp-gateway/poc/*
 
 allowBuilds:
-  esbuild: set this to true or false
-  hexo-util: set this to true or false
-  sharp: set this to true or false
-  spawn-sync: set this to true or false
+  esbuild: true
+  hexo-util: true
+  sharp: true
+  spawn-sync: true
 
 linkWorkspacePackages: true
 

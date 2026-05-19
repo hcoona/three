@@ -14,6 +14,7 @@ internal sealed class HookCommandService(
     TelegramCredentialProvider telegramCredentialProvider,
     GitRepositoryProbe gitRepositoryProbe,
     SessionLogFileContext sessionLogFileContext,
+    HookExecutionContext hookExecutionContext,
     ILogger<HookCommandService> logger)
 {
     private const string UtcTimestampFormat = "yyyy-MM-ddTHH:mm:ss.fff'Z'";
@@ -54,16 +55,9 @@ internal sealed class HookCommandService(
                 hookInput,
                 cancellationToken);
 
-            await WriteHookResponseAsync(
+            await WriteSessionStartResponseAsync(
                 standardOutput,
-                new HookResponse
-                {
-                    HookSpecificOutput = new HookSpecificOutput
-                    {
-                        HookEventName = "SessionStart",
-                        AdditionalContext = BuildAdditionalContext(sessionState),
-                    },
-                },
+                BuildAdditionalContext(sessionState),
                 cancellationToken);
             AppLog.WroteSessionStartContext(logger, hookInput.SessionId);
         }
@@ -204,17 +198,9 @@ internal sealed class HookCommandService(
                         updatedTurnState.TurnId,
                         updatedTurnState.StopValidationFailureCount,
                         summaryValidation.FailureReason!);
-                    await WriteHookResponseAsync(
+                    await WriteStopBlockResponseAsync(
                         standardOutput,
-                        new HookResponse
-                        {
-                            HookSpecificOutput = new HookSpecificOutput
-                            {
-                                HookEventName = "Stop",
-                                Decision = "block",
-                                Reason = blockingReason,
-                            },
-                        },
+                        blockingReason,
                         cancellationToken);
                     return 0;
                 }
@@ -528,7 +514,69 @@ internal sealed class HookCommandService(
                 StringComparison.Ordinal);
     }
 
-    private static async Task WriteHookResponseAsync(
+    private async Task WriteSessionStartResponseAsync(
+        Stream standardOutput,
+        string additionalContext,
+        CancellationToken cancellationToken)
+    {
+        if (hookExecutionContext.GetSurface() == HookSurface.CopilotCli)
+        {
+            await WriteCopilotCliHookOutputAsync(
+                standardOutput,
+                new CopilotCliHookOutput
+                {
+                    AdditionalContext = additionalContext,
+                },
+                cancellationToken);
+            return;
+        }
+
+        await WriteVsCodeHookResponseAsync(
+            standardOutput,
+            new HookResponse
+            {
+                HookSpecificOutput = new HookSpecificOutput
+                {
+                    HookEventName = "SessionStart",
+                    AdditionalContext = additionalContext,
+                },
+            },
+            cancellationToken);
+    }
+
+    private async Task WriteStopBlockResponseAsync(
+        Stream standardOutput,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        if (hookExecutionContext.GetSurface() == HookSurface.CopilotCli)
+        {
+            await WriteCopilotCliHookOutputAsync(
+                standardOutput,
+                new CopilotCliHookOutput
+                {
+                    Decision = "block",
+                    Reason = reason,
+                },
+                cancellationToken);
+            return;
+        }
+
+        await WriteVsCodeHookResponseAsync(
+            standardOutput,
+            new HookResponse
+            {
+                HookSpecificOutput = new HookSpecificOutput
+                {
+                    HookEventName = "Stop",
+                    Decision = "block",
+                    Reason = reason,
+                },
+            },
+            cancellationToken);
+    }
+
+    private static async Task WriteVsCodeHookResponseAsync(
         Stream standardOutput,
         HookResponse response,
         CancellationToken cancellationToken)
@@ -537,6 +585,18 @@ internal sealed class HookCommandService(
             standardOutput,
             response,
             AppJsonSerializerContext.Default.HookResponse,
+            cancellationToken);
+    }
+
+    private static async Task WriteCopilotCliHookOutputAsync(
+        Stream standardOutput,
+        CopilotCliHookOutput output,
+        CancellationToken cancellationToken)
+    {
+        await JsonSerializer.SerializeAsync(
+            standardOutput,
+            output,
+            AppJsonSerializerContext.Default.CopilotCliHookOutput,
             cancellationToken);
     }
 

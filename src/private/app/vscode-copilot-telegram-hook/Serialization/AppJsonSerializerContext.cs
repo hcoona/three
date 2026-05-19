@@ -6,6 +6,7 @@ namespace Hcoona.VsCodeCopilotTelegramHook;
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(HookResponse))]
+[JsonSerializable(typeof(CopilotCliHookOutput))]
 [JsonSerializable(typeof(HookSpecificOutput))]
 [JsonSerializable(typeof(SessionStartHookInput))]
 [JsonSerializable(typeof(UserPromptSubmitHookInput))]

@@ -17,13 +17,18 @@ internal static class AppConstants
     public const string SessionLogFileName = "hook.log";
     public const string UserCommandLogFileName = "user-command.log";
     public const string ManagedHookFileName = "vscode-copilot-telegram-hook.hooks.json";
+    public const string CopilotCliHookFileName = "vscode-copilot-telegram-hook.json";
     public const string ChatHookFilesLocationsSettingName = "chat.hookFilesLocations";
 
     public const string ManagedHookEnvironmentVariable = "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK";
     public const string ManagedHookEnvironmentValue = "1";
     public const string ManagedHookEventEnvironmentVariable =
         "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_EVENT";
+    public const string ManagedHookSurfaceEnvironmentVariable =
+        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE";
+    public const string ManagedHookCopilotCliSurfaceValue = "copilot-cli";
 
+    public const string CopilotHomeEnvironmentVariable = "COPILOT_HOME";
     public const string TelegramBotTokenEnvironmentVariable = "TG_BOT_TOKEN";
     public const string TelegramChatIdEnvironmentVariable = "TG_CHAT_ID";
 
@@ -60,6 +65,24 @@ internal static class AppPaths
 
     public static string GetDefaultManagedHookFilePath(string installRoot)
         => Path.Combine(installRoot, AppConstants.ManagedHookFileName);
+
+    public static string GetDefaultCopilotCliHookFilePath()
+        => Path.Combine(GetDefaultCopilotCliHooksDirectory(), AppConstants.CopilotCliHookFileName);
+
+    public static string GetDefaultCopilotCliHooksDirectory()
+    {
+        string? copilotHome = Environment.GetEnvironmentVariable(
+            AppConstants.CopilotHomeEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(copilotHome))
+        {
+            return Path.Combine(Path.GetFullPath(copilotHome.Trim()), "hooks");
+        }
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            AppConstants.CopilotDirectoryName,
+            "hooks");
+    }
 
     public static string GetDefaultVsCodeSettingsPath()
     {
@@ -115,6 +138,9 @@ internal static class AppPaths
         string managedHookFilePath =
             overrides.ManagedHookFilePath?.FullName
             ?? GetDefaultManagedHookFilePath(installRoot);
+        string copilotCliHookFilePath =
+            overrides.CopilotCliHookFilePath?.FullName
+            ?? GetDefaultCopilotCliHookFilePath();
         IReadOnlyList<VsCodeSettingsTarget> vsCodeSettingsTargets =
             overrides.VsCodeSettingsTargets is { Count: > 0 }
                 ? GetDistinctSettingsTargets(overrides.VsCodeSettingsTargets)
@@ -134,8 +160,109 @@ internal static class AppPaths
             Path.GetFullPath(installRoot),
             Path.GetFullPath(installedBinaryPath),
             Path.GetFullPath(managedHookFilePath),
+            Path.GetFullPath(copilotCliHookFilePath),
             vsCodeSettingsTargets,
             Path.GetFullPath(userLogFilePath));
+    }
+
+    public static string? ValidateUserArtifactPathCollisions(
+        UserInstallationPaths paths,
+        string? sourceBinaryPath = null,
+        Func<VsCodeSettingsTarget, bool>? includeVsCodeSettingsTarget = null)
+    {
+        includeVsCodeSettingsTarget ??= static target => target.IsApplicable;
+        List<(string Label, string Path)> managedArtifactPaths =
+        [
+            ("installed binary", paths.InstalledBinaryPath),
+            (
+                "installed binary PDB companion",
+                Path.ChangeExtension(paths.InstalledBinaryPath, ".pdb")
+            ),
+            (
+                "installed binary debug companion",
+                Path.ChangeExtension(paths.InstalledBinaryPath, ".dbg")
+            ),
+            ("VS Code managed hook file", paths.ManagedHookFilePath),
+            ("Copilot CLI hook file", paths.CopilotCliHookFilePath),
+            .. paths.VsCodeSettingsTargets
+                .Where(includeVsCodeSettingsTarget)
+                .Select(static target =>
+                    ($"VS Code settings file ({target.DisplayName})", target.SettingsPath)),
+        ];
+
+        StringComparer comparer = GetPlatformPathComparer();
+        Dictionary<string, (string Label, string Path)> seenPaths = new(comparer);
+        Dictionary<FileSystemIdentity, (string Label, string Path)> seenIdentities = [];
+        Dictionary<FuturePathIdentity, (string Label, string Path)> seenFuturePaths =
+            new(new FuturePathIdentityComparer(comparer));
+        foreach ((string label, string path) in managedArtifactPaths)
+        {
+            string normalizedPath = Path.GetFullPath(path);
+            if (seenPaths.TryGetValue(normalizedPath, out (string Label, string Path) existing))
+            {
+                return FormatPathCollisionMessage(
+                    existing.Label,
+                    existing.Path,
+                    label,
+                    path,
+                    normalizedPath);
+            }
+
+            seenPaths.Add(normalizedPath, (label, path));
+            if (TryGetFileSystemIdentity(normalizedPath, out FileSystemIdentity identity))
+            {
+                if (seenIdentities.TryGetValue(identity, out existing))
+                {
+                    return FormatPathCollisionMessage(
+                        existing.Label,
+                        existing.Path,
+                        label,
+                        path,
+                        normalizedPath);
+                }
+
+                seenIdentities.Add(identity, (label, path));
+            }
+
+            FuturePathIdentity futurePath = GetFuturePathIdentity(normalizedPath);
+            if (seenFuturePaths.TryGetValue(futurePath, out existing))
+            {
+                return FormatPathCollisionMessage(
+                    existing.Label,
+                    existing.Path,
+                    label,
+                    path,
+                    futurePath.DisplayPath);
+            }
+
+            seenFuturePaths.Add(futurePath, (label, path));
+        }
+
+        if (!string.IsNullOrWhiteSpace(sourceBinaryPath))
+        {
+            foreach ((string sourceLabel, string sourcePath) in
+                EnumerateSourceArtifactPaths(sourceBinaryPath))
+            {
+                foreach ((string label, string path) in managedArtifactPaths)
+                {
+                    if (PathsReferToSameCurrentOrFutureFile(
+                            sourcePath,
+                            path,
+                            comparer,
+                            out string matchedPath))
+                    {
+                        return FormatPathCollisionMessage(
+                            sourceLabel,
+                            sourcePath,
+                            label,
+                            path,
+                            matchedPath);
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     public static string GetManagedExecutableName()
@@ -278,10 +405,7 @@ internal static class AppPaths
     private static List<VsCodeSettingsTarget> GetDistinctSettingsTargets(
         IEnumerable<VsCodeSettingsTarget> targets)
     {
-        HashSet<string> seenPaths = new(
-            OperatingSystem.IsWindows()
-                ? StringComparer.OrdinalIgnoreCase
-                : StringComparer.Ordinal);
+        HashSet<string> seenPaths = new(GetPlatformPathComparer());
         List<VsCodeSettingsTarget> distinctTargets = [];
 
         foreach (VsCodeSettingsTarget target in targets)
@@ -295,4 +419,220 @@ internal static class AppPaths
 
         return distinctTargets;
     }
+
+    private static StringComparer GetPlatformPathComparer()
+        => OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+
+    private static IEnumerable<(string Label, string Path)> EnumerateSourceArtifactPaths(
+        string sourceBinaryPath)
+    {
+        yield return ("source executable", sourceBinaryPath);
+
+        foreach (string extension in new[] { ".pdb", ".dbg" })
+        {
+            string sourceCompanionPath = Path.ChangeExtension(sourceBinaryPath, extension);
+            if (File.Exists(sourceCompanionPath))
+            {
+                yield return ($"source {extension} companion", sourceCompanionPath);
+            }
+        }
+    }
+
+    private static bool PathsReferToSameCurrentOrFutureFile(
+        string leftPath,
+        string rightPath,
+        StringComparer comparer,
+        out string matchedPath)
+    {
+        string normalizedLeftPath = Path.GetFullPath(leftPath);
+        string normalizedRightPath = Path.GetFullPath(rightPath);
+        if (comparer.Equals(normalizedLeftPath, normalizedRightPath))
+        {
+            matchedPath = normalizedRightPath;
+            return true;
+        }
+
+        if (TryGetFileSystemIdentity(normalizedLeftPath, out FileSystemIdentity leftIdentity)
+            && TryGetFileSystemIdentity(normalizedRightPath, out FileSystemIdentity rightIdentity)
+            && leftIdentity == rightIdentity)
+        {
+            matchedPath = normalizedRightPath;
+            return true;
+        }
+
+        FuturePathIdentity leftFuturePath = GetFuturePathIdentity(normalizedLeftPath);
+        FuturePathIdentity rightFuturePath = GetFuturePathIdentity(normalizedRightPath);
+        if (new FuturePathIdentityComparer(comparer).Equals(leftFuturePath, rightFuturePath))
+        {
+            matchedPath = rightFuturePath.DisplayPath;
+            return true;
+        }
+
+        matchedPath = string.Empty;
+        return false;
+    }
+
+    private static FuturePathIdentity GetFuturePathIdentity(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        Stack<string> remainingSegments = [];
+        string ancestorPath = fullPath;
+        while (!File.Exists(ancestorPath) && !Directory.Exists(ancestorPath))
+        {
+            string? segment = Path.GetFileName(ancestorPath);
+            if (!string.IsNullOrEmpty(segment))
+            {
+                remainingSegments.Push(segment);
+            }
+
+            string? parentPath = Path.GetDirectoryName(ancestorPath);
+            if (string.IsNullOrEmpty(parentPath)
+                || string.Equals(parentPath, ancestorPath, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            ancestorPath = parentPath;
+        }
+
+        string relativePath = string.Join(Path.DirectorySeparatorChar, remainingSegments);
+        FileSystemIdentity? ancestorIdentity =
+            TryGetFileSystemIdentity(ancestorPath, out FileSystemIdentity identity)
+                ? identity
+                : null;
+        string displayPath = string.IsNullOrEmpty(relativePath)
+            ? Path.GetFullPath(ancestorPath)
+            : Path.Combine(Path.GetFullPath(ancestorPath), relativePath);
+
+        return new FuturePathIdentity(
+            ancestorIdentity,
+            Path.GetFullPath(ancestorPath),
+            relativePath,
+            displayPath);
+    }
+
+    private static bool TryGetFileSystemIdentity(
+        string path,
+        out FileSystemIdentity identity)
+    {
+        identity = default;
+        if (!OperatingSystem.IsLinux())
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!File.Exists(path) && !Directory.Exists(path))
+            {
+                return false;
+            }
+
+            if (stat(path, out StatBuffer statBuffer) != 0)
+            {
+                return false;
+            }
+
+            identity = new FileSystemIdentity(statBuffer.Dev, statBuffer.Ino);
+            return true;
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or NotSupportedException
+                or DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    [DllImport("libc", EntryPoint = "stat", SetLastError = true)]
+    private static extern int stat(string path, out StatBuffer buffer);
+
+    private readonly record struct FileSystemIdentity(ulong Device, ulong Inode);
+
+    private readonly record struct FuturePathIdentity(
+        FileSystemIdentity? AncestorIdentity,
+        string AncestorPath,
+        string RelativePath,
+        string DisplayPath);
+
+    private sealed class FuturePathIdentityComparer(StringComparer pathComparer)
+        : IEqualityComparer<FuturePathIdentity>
+    {
+        public bool Equals(FuturePathIdentity left, FuturePathIdentity right)
+        {
+            if (left.AncestorIdentity is { } leftIdentity
+                && right.AncestorIdentity is { } rightIdentity)
+            {
+                return leftIdentity == rightIdentity
+                    && pathComparer.Equals(left.RelativePath, right.RelativePath);
+            }
+
+            if (left.AncestorIdentity is not null || right.AncestorIdentity is not null)
+            {
+                return false;
+            }
+
+            return pathComparer.Equals(left.AncestorPath, right.AncestorPath)
+                && pathComparer.Equals(left.RelativePath, right.RelativePath);
+        }
+
+        public int GetHashCode(FuturePathIdentity value)
+        {
+            HashCode hashCode = new();
+            if (value.AncestorIdentity is { } identity)
+            {
+                hashCode.Add(identity);
+            }
+            else
+            {
+                hashCode.Add(value.AncestorPath, pathComparer);
+            }
+
+            hashCode.Add(value.RelativePath, pathComparer);
+            return hashCode.ToHashCode();
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StatBuffer
+    {
+        public ulong Dev;
+        public ulong Ino;
+        public ulong Nlink;
+        public uint Mode;
+        public uint Uid;
+        public uint Gid;
+        public int Pad0;
+        public ulong Rdev;
+        public long Size;
+        public long Blksize;
+        public long Blocks;
+        public Timespec Atime;
+        public Timespec Mtime;
+        public Timespec Ctime;
+        public long Reserved0;
+        public long Reserved1;
+        public long Reserved2;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Timespec
+    {
+        public long Seconds;
+        public long Nanoseconds;
+    }
+
+    private static string FormatPathCollisionMessage(
+        string leftLabel,
+        string leftPath,
+        string rightLabel,
+        string rightPath,
+        string normalizedPath)
+        => "Invalid path configuration: "
+            + $"{leftLabel} ('{Path.GetFullPath(leftPath)}') and "
+            + $"{rightLabel} ('{Path.GetFullPath(rightPath)}') "
+            + "resolve to the same path "
+            + $"'{normalizedPath}'. Configure different paths.";
 }
