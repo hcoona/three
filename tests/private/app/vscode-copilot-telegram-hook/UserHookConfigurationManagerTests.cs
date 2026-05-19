@@ -19,19 +19,19 @@ public sealed class UserHookConfigurationManagerTests
                 hookFilePath,
                 """
                 {
-                                        "model": "gpt-5.4",
-                                        "hooks": {
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "echo custom-stop",
-                                                                "timeout": 15,
-                                                                "env": {
-                                                                        "CUSTOM_FLAG": "1"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "model": "gpt-5.4",
+                  "hooks": {
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "echo custom-stop",
+                        "timeout": 15,
+                        "env": {
+                          "CUSTOM_FLAG": "1"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """);
 
@@ -116,39 +116,39 @@ public sealed class UserHookConfigurationManagerTests
                 hookFilePath,
                 """
                 {
-                                        "version": 1,
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed session-start",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ],
-                                                "UserPromptSubmit": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed user-prompt-submit",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ],
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed stop",
-                                                                "timeout": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 1,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "managed session-start",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "managed user-prompt-submit",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "managed stop",
+                        "timeout": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """);
 
@@ -235,19 +235,19 @@ public sealed class UserHookConfigurationManagerTests
                 hookFilePath,
                 """
                 {
-                                        "version": 1,
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "custom session-start",
-                                                                "timeout": null,
-                                                                "env": {
-                                                                        "CUSTOM_FLAG": "1"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 1,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "custom session-start",
+                        "timeout": null,
+                        "env": {
+                          "CUSTOM_FLAG": "1"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """);
 
@@ -291,16 +291,16 @@ public sealed class UserHookConfigurationManagerTests
                 AppConstants.CopilotCliHookFileName);
             const string OriginalContent = """
                 {
-                                        "version": 2,
-                                        "hooks": {
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "future stop",
-                                                                "timeoutSec": 20
-                                                        }
-                                                ]
-                                        }
+                  "version": 2,
+                  "hooks": {
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "future stop",
+                        "timeoutSec": 20
+                      }
+                    ]
+                  }
                 }
                 """;
             File.WriteAllText(hookFilePath, OriginalContent);
@@ -342,15 +342,15 @@ public sealed class UserHookConfigurationManagerTests
                 AppConstants.CopilotCliHookFileName);
             const string OriginalContent = """
                 {
-                                        "hooks": {
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "missing version stop",
-                                                                "timeoutSec": 20
-                                                        }
-                                                ]
-                                        }
+                  "hooks": {
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "missing version stop",
+                        "timeoutSec": 20
+                      }
+                    ]
+                  }
                 }
                 """;
             File.WriteAllText(hookFilePath, OriginalContent);
@@ -383,7 +383,7 @@ public sealed class UserHookConfigurationManagerTests
     [Theory]
     [InlineData("\"version\": 2,")]
     [InlineData("")]
-    public void PreflightManagedCopilotCliHookFileRejectsUnsupportedOrMissingVersionWithoutCandidate(
+    public void PreflightManagedCopilotCliHookFileRejectsUnsupportedOrMissingVersion(
         string versionProperty)
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
@@ -396,16 +396,16 @@ public sealed class UserHookConfigurationManagerTests
             string originalContent =
                 $$"""
                 {
-                                        {{versionProperty}}
-                                        "hooks": {
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "existing stop",
-                                                                "timeoutSec": 20
-                                                        }
-                                                ]
-                                        }
+                  {{versionProperty}}
+                  "hooks": {
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "existing stop",
+                        "timeoutSec": 20
+                      }
+                    ]
+                  }
                 }
                 """;
             File.WriteAllText(hookFilePath, originalContent);
@@ -491,42 +491,42 @@ public sealed class UserHookConfigurationManagerTests
             const string OriginalContent =
                 """
                 {
-                                        "version": 2,
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed session-start",
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ],
-                                                "UserPromptSubmit": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed user-prompt-submit",
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ],
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed stop",
-                                                                "timeoutSec": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 2,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "managed session-start",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "managed user-prompt-submit",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "managed stop",
+                        "timeoutSec": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """;
             File.WriteAllText(hookFilePath, OriginalContent);
@@ -558,41 +558,41 @@ public sealed class UserHookConfigurationManagerTests
             const string OriginalContent =
                 """
                 {
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed session-start",
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ],
-                                                "UserPromptSubmit": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed user-prompt-submit",
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ],
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed stop",
-                                                                "timeoutSec": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "managed session-start",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "managed user-prompt-submit",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "managed stop",
+                        "timeoutSec": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """;
             File.WriteAllText(hookFilePath, OriginalContent);
@@ -625,57 +625,57 @@ public sealed class UserHookConfigurationManagerTests
                 hookFilePath,
                 """
                 {
-                                        "version": 1,
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic session-start",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        },
-                                                        {
-                                                                "type": "command",
-                                                                "command": "old cli session-start",
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ],
-                                                "UserPromptSubmit": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic user-prompt-submit",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ],
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic stop",
-                                                                "timeout": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        },
-                                                        {
-                                                                "type": "command",
-                                                                "command": "old cli stop",
-                                                                "timeoutSec": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 1,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "generic session-start",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      },
+                      {
+                        "type": "command",
+                        "command": "old cli session-start",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "generic user-prompt-submit",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "generic stop",
+                        "timeout": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      },
+                      {
+                        "type": "command",
+                        "command": "old cli stop",
+                        "timeoutSec": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """);
 
@@ -734,39 +734,39 @@ public sealed class UserHookConfigurationManagerTests
             string originalContent =
                 """
                 {
-                                        "version": 1,
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic session-start",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ],
-                                                "UserPromptSubmit": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic user-prompt-submit",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ],
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic stop",
-                                                                "timeout": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 1,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "generic session-start",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "generic user-prompt-submit",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "generic stop",
+                        "timeout": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """;
             File.WriteAllText(hookFilePath, originalContent);
@@ -809,66 +809,66 @@ public sealed class UserHookConfigurationManagerTests
                 hookFilePath,
                 """
                 {
-                                        "version": 1,
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic session-start",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        },
-                                                        {
-                                                                "type": "command",
-                                                                "command": "stale cli session-start",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ],
-                                                "UserPromptSubmit": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic user-prompt-submit",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        },
-                                                        {
-                                                                "type": "command",
-                                                                "command": "malformed cli user-prompt-submit",
-                                                                "timeout": 10,
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ],
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic stop",
-                                                                "timeout": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        },
-                                                        {
-                                                                "type": "command",
-                                                                "command": "malformed cli stop",
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 1,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "generic session-start",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      },
+                      {
+                        "type": "command",
+                        "command": "stale cli session-start",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "generic user-prompt-submit",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      },
+                      {
+                        "type": "command",
+                        "command": "malformed cli user-prompt-submit",
+                        "timeout": 10,
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "generic stop",
+                        "timeout": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      },
+                      {
+                        "type": "command",
+                        "command": "malformed cli stop",
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """);
 
@@ -910,36 +910,36 @@ public sealed class UserHookConfigurationManagerTests
                 hookFilePath,
                 """
                 {
-                                        "version": 1,
-                                        "hooks": {
-                                                "Notification": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "custom notification",
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "CUSTOM_FLAG": "1"
-                                                                }
-                                                        },
-                                                        {
-                                                                "type": "command",
-                                                                "command": "generic managed notification",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        },
-                                                        {
-                                                                "type": "command",
-                                                                "command": "stale cli notification",
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 1,
+                  "hooks": {
+                    "Notification": [
+                      {
+                        "type": "command",
+                        "command": "custom notification",
+                        "timeoutSec": 10,
+                        "env": {
+                          "CUSTOM_FLAG": "1"
+                        }
+                      },
+                      {
+                        "type": "command",
+                        "command": "generic managed notification",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      },
+                      {
+                        "type": "command",
+                        "command": "stale cli notification",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """);
 
@@ -980,39 +980,39 @@ public sealed class UserHookConfigurationManagerTests
                 hookFilePath,
                 """
                 {
-                                        "version": 1,
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed session-start",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ],
-                                                "UserPromptSubmit": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed user-prompt-submit",
-                                                                "timeout": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ],
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed stop",
-                                                                "timeout": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 1,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "managed session-start",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "managed user-prompt-submit",
+                        "timeout": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "managed stop",
+                        "timeout": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """);
 
@@ -1039,45 +1039,45 @@ public sealed class UserHookConfigurationManagerTests
                 hookFilePath,
                 """
                 {
-                                        "version": 1,
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed session-start",
-                                                                "timeout": null,
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ],
-                                                "UserPromptSubmit": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed user-prompt-submit",
-                                                                "timeout": null,
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ],
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed stop",
-                                                                "timeout": null,
-                                                                "timeoutSec": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 1,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "managed session-start",
+                        "timeout": null,
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "managed user-prompt-submit",
+                        "timeout": null,
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "managed stop",
+                        "timeout": null,
+                        "timeoutSec": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """);
 
@@ -1104,39 +1104,39 @@ public sealed class UserHookConfigurationManagerTests
                 hookFilePath,
                 """
                 {
-                                        "version": 1,
-                                        "hooks": {
-                                                "SessionStart": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed session-start",
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ],
-                                                "UserPromptSubmit": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed user-prompt-submit",
-                                                                "timeoutSec": 10,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ],
-                                                "Stop": [
-                                                        {
-                                                                "type": "command",
-                                                                "command": "managed stop",
-                                                                "timeoutSec": 20,
-                                                                "env": {
-                                                                        "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
-                                                                }
-                                                        }
-                                                ]
-                                        }
+                  "version": 1,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "managed session-start",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "managed user-prompt-submit",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "managed stop",
+                        "timeoutSec": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ]
+                  }
                 }
                 """);
 

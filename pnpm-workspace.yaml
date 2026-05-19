@@ -4,6 +4,12 @@ packages:
   # These private POC packages intentionally share the root workspace and lockfile.
   - src/private/app/im-acp-gateway/poc/*
 
+allowBuilds:
+  esbuild: true
+  hexo-util: true
+  sharp: true
+  spawn-sync: true
+
 linkWorkspacePackages: true
 
 onlyBuiltDependencies:

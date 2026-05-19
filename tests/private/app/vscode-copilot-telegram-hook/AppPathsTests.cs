@@ -77,7 +77,9 @@ public sealed class AppPathsTests
         Assert.Equal(
             Path.Combine(Path.GetFullPath(installRoot), AppConstants.ManagedHookFileName),
             resolvedPaths.ManagedHookFilePath);
-        Assert.Equal(Path.GetFullPath(copilotCliHookFilePath), resolvedPaths.CopilotCliHookFilePath);
+        Assert.Equal(
+            Path.GetFullPath(copilotCliHookFilePath),
+            resolvedPaths.CopilotCliHookFilePath);
         Assert.Collection(
             resolvedPaths.VsCodeSettingsTargets,
             target =>
