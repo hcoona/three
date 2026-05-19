@@ -159,6 +159,7 @@ def main() -> int:
     _add_run_ci_validation_commands(subparsers)
     _add_write_ci_validation_receipt(subparsers)
     _add_write_ci_validation_writer_observation(subparsers)
+    _add_download_ci_validation_observed_artifacts(subparsers)
     _add_aggregate_ci_evidence(subparsers)
     _add_plan_gate(subparsers)
     _add_matrix_outputs(subparsers)
@@ -335,6 +336,20 @@ def _add_aggregate_ci_evidence(
     parser.add_argument("--aggregate-out", required=True)
     parser.add_argument("--github-output")
     parser.set_defaults(func=_cmd_aggregate_ci_evidence)
+
+
+def _add_download_ci_validation_observed_artifacts(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser(
+        "download-ci-validation-observed-artifacts"
+    )
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--assignments", required=True)
+    parser.add_argument("--observed-artifacts-dir", required=True)
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_download_ci_validation_observed_artifacts)
 
 
 def _add_write_ci_validation_receipt(
@@ -2627,6 +2642,55 @@ def _cmd_write_ci_validation_writer_observation(
     return 0
 
 
+def _cmd_download_ci_validation_observed_artifacts(
+    args: argparse.Namespace,
+) -> int:
+    root = Path(args.observed_artifacts_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        assignments = _read_optional_json(args.assignments)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        assignments = None
+        print(
+            f"warning: failed to read selector assignments for observed "
+            f"artifact downloads: {exc}",
+            file=sys.stderr,
+        )
+    names = (
+        _ci_observed_artifact_download_names(assignments)
+        if assignments is not None
+        else []
+    )
+    downloaded: list[str] = []
+    failed: list[str] = []
+    for artifact_name_value in names:
+        try:
+            _download_artifact(
+                args.repository,
+                int(args.run_id),
+                artifact_name_value,
+                root / artifact_name_value,
+            )
+            downloaded.append(artifact_name_value)
+        except RuntimeError as exc:
+            failed.append(artifact_name_value)
+            print(f"warning: {exc}", file=sys.stderr)
+    _write_outputs(
+        args.github_output,
+        {
+            "attempted_artifact_count": str(len(names)),
+            "downloaded_artifact_count": str(len(downloaded)),
+            "failed_artifact_count": str(len(failed)),
+            "failed_artifact_names": json.dumps(
+                failed,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        },
+    )
+    return 0
+
+
 def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
     owner, name = _split_repository(args.repository)
     created_at = args.created_at or _utc_now()
@@ -3928,6 +3992,29 @@ def _download_artifact(
             f"{result.stderr.strip()}"
         )
         raise RuntimeError(msg)
+
+
+def _ci_observed_artifact_download_names(
+    assignments: Mapping[str, object],
+) -> list[str]:
+    items = assignments.get("assignments")
+    if not isinstance(items, Sequence) or isinstance(items, str | bytes):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        for field in ("receipt-artifact-ref", "writer-observation-ref"):
+            artifact_ref = item.get(field)
+            if not isinstance(artifact_ref, str) or not artifact_ref:
+                continue
+            name = artifact_physical_name(artifact_ref)
+            if name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+    return names
 
 
 def _workflow_artifact_ids_by_name(repository: str, run_id: int) -> Json:
@@ -7222,6 +7309,8 @@ def _ci_observed_receipt_inputs(
         if not artifact_dir.is_dir() or artifact_dir.name in excluded_names:
             continue
         assignment = assignment_by_receipt_name.get(artifact_dir.name)
+        if assignment is None and not (artifact_dir / "receipt.json").is_file():
+            continue
         observed_input = _ci_observed_receipt_input(
             plan=plan,
             assignments=assignments,

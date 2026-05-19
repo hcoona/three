@@ -1134,11 +1134,16 @@ jobs:
           name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
           path: .three-ci-validation/plan
       - name: Download observed validation artifacts
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: three-ci-validation-*
-          path: .three-ci-validation/observed-artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p .three-ci-validation/observed-artifacts
+          uv run python eng/scripts/workflow_release_control.py download-ci-validation-observed-artifacts \
+            --repository "$CI_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" \
+            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts
       - name: Aggregate validation evidence
         env:
           GH_TOKEN: ${{ github.token }}

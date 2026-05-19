@@ -8959,6 +8959,90 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_download_ci_validation_observed_artifacts_uses_assignment_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Observed artifact downloads are limited to selector assignments."""
+    assignments_path = tmp_path / "selector-assignments.json"
+    observed_root = tmp_path / "observed-artifacts"
+    receipt_ref = "ci-validation/receipts/123/1/work-group/receipt.json"
+    observation_ref = (
+        "ci-validation/writer-observations/123/1/work-group/"
+        "writer-observation.json"
+    )
+    assignments_path.write_text(
+        json.dumps(
+            {
+                "assignments": [
+                    {
+                        "receipt-artifact-ref": receipt_ref,
+                        "writer-observation-ref": observation_ref,
+                    },
+                    {
+                        "receipt-artifact-ref": receipt_ref,
+                        "writer-observation-ref": observation_ref,
+                    },
+                    {"receipt-artifact-ref": ""},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[tuple[str, int, str, Path]] = []
+
+    def fake_download_artifact(
+        repository: str,
+        run_id: int,
+        artifact_name_value: str,
+        destination: Path,
+    ) -> None:
+        destination.mkdir(parents=True)
+        calls.append((repository, run_id, artifact_name_value, destination))
+
+    monkeypatch.setattr(control, "_download_artifact", fake_download_artifact)
+
+    result = control._cmd_download_ci_validation_observed_artifacts(
+        argparse.Namespace(
+            repository="hcoona/three",
+            run_id="123",
+            assignments=str(assignments_path),
+            observed_artifacts_dir=str(observed_root),
+            github_output=None,
+        )
+    )
+
+    expected_receipt_name = artifact_physical_name(receipt_ref)
+    expected_observation_name = artifact_physical_name(observation_ref)
+    assert result == 0
+    assert calls == [
+        (
+            "hcoona/three",
+            123,
+            expected_receipt_name,
+            observed_root / expected_receipt_name,
+        ),
+        (
+            "hcoona/three",
+            123,
+            expected_observation_name,
+            observed_root / expected_observation_name,
+        ),
+    ]
+    calls.clear()
+    missing_result = control._cmd_download_ci_validation_observed_artifacts(
+        argparse.Namespace(
+            repository="hcoona/three",
+            run_id="123",
+            assignments=str(tmp_path / "missing-selector-assignments.json"),
+            observed_artifacts_dir=str(observed_root),
+            github_output=None,
+        )
+    )
+    assert missing_result == 0
+    assert calls == []
+
+
 def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa: PLR0915
     """Observed placeholder receipts are manifested and fail the aggregate."""
     scratch = SCRATCH / "ci-validation-placeholder-receipts"
@@ -9276,6 +9360,11 @@ def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa:
             missing_observation_dir / "receipt-artifact-metadata.json",
         )
 
+        stale_writer_only_name = "three-ci-validation-" + ("e" * 64)
+        stale_writer_only_dir = observed_root / stale_writer_only_name
+        stale_writer_only_dir.mkdir(parents=True)
+        (stale_writer_only_dir / "writer-observation.json").write_bytes(b"{")
+
         unexpected_name = "three-ci-validation-" + ("f" * 64)
         unexpected_dir = observed_root / unexpected_name
         unexpected_dir.mkdir(parents=True)
@@ -9372,6 +9461,7 @@ def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa:
             for entry in manifest["entries"]
         }
         assert len(manifest["entries"]) == 8
+        assert stale_writer_only_name not in entries_by_physical_name
         assert aggregate["reason"]["invalid-plan"] is False
         assert (
             entries_by_physical_name[receipt_dir.name]["receipt-content-digest"]
