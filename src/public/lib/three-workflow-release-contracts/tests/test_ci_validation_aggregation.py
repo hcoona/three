@@ -413,7 +413,7 @@ def test_freeze_manifest_sorts_entries_and_closes_namespace() -> None:
     )
 
     ids = [
-        item["observed-entry-id"]
+        cast("str", item["observed-entry-id"])
         for item in cast("list[dict[str, object]]", manifest["entries"])
     ]
     assert ids == sorted(ids)
@@ -3615,9 +3615,8 @@ def test_duplicate_unreadable_and_unclassified_entries_fail_closed() -> None:
         is True
     )
     observed = cast("list[dict[str, object]]", aggregate["observed-receipts"])
-    assert [item["observed-entry-id"] for item in observed] == sorted(
-        item["observed-entry-id"] for item in observed
-    )
+    observed_ids = [cast("str", item["observed-entry-id"]) for item in observed]
+    assert observed_ids == sorted(observed_ids)
     assert any(item["artifact-ref"] is None for item in observed)
 
 

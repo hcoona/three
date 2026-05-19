@@ -98,6 +98,13 @@ def _publish_nodes(plan: Mapping[str, object]) -> Mapping[str, object]:
     return cast("Mapping[str, object]", graph["publish-nodes"])
 
 
+def _execution_ids(
+    execution_sets: Mapping[str, object], key: str
+) -> Sequence[str]:
+    """Return a typed execution-set id list."""
+    return cast("Sequence[str]", execution_sets[key])
+
+
 def _assert_publish_nodes_embed_ids(plan: Mapping[str, object]) -> None:
     """Assert every publish node snapshot carries its containing id."""
     for node_id, node in _publish_nodes(plan).items():
@@ -519,8 +526,12 @@ def test_pypi_exact_satisfied_routes_to_skip_selector(
         ),
     )
 
-    assert node_id in result.execution_sets["skip-satisfied-publish-node-ids"]
-    assert node_id not in result.execution_sets["publish-intent-node-ids"]
+    assert node_id in _execution_ids(
+        result.execution_sets, "skip-satisfied-publish-node-ids"
+    )
+    assert node_id not in _execution_ids(
+        result.execution_sets, "publish-intent-node-ids"
+    )
 
 
 def test_live_pypi_without_remote_observation_remains_gateable(
@@ -580,8 +591,12 @@ def test_live_pypi_without_remote_observation_remains_gateable(
         ),
     )
 
-    assert pypi_node_id in result.execution_sets["publish-intent-node-ids"]
-    assert pypi_node_id in result.execution_sets["active-publish-node-ids"]
+    assert pypi_node_id in _execution_ids(
+        result.execution_sets, "publish-intent-node-ids"
+    )
+    assert pypi_node_id in _execution_ids(
+        result.execution_sets, "active-publish-node-ids"
+    )
 
 
 def test_official_github_release_conflicting_replay_fails_closed() -> None:
@@ -638,9 +653,9 @@ def test_official_github_release_absent_observation_plans_new_publication() -> (
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     assert node["publish-disposition"] == "publish"
     assert node["publish-mode"] == "create-only"
-    assert (
-        node_id
-        in result.execution_sets["active-github-release-publish-node-ids"]
+    assert node_id in _execution_ids(
+        result.execution_sets,
+        "active-github-release-publish-node-ids",
     )
 
 
@@ -719,7 +734,9 @@ def test_circular_list_github_release_absent_plans_successfully() -> None:
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     assert node["publish-disposition"] == "publish"
     assert node["publish-mode"] == "create-only"
-    assert node_id in result.execution_sets["active-publish-node-ids"]
+    assert node_id in _execution_ids(
+        result.execution_sets, "active-publish-node-ids"
+    )
 
 
 def test_github_packages_nuget_absent_observation_plans_first_publish() -> None:
@@ -756,7 +773,9 @@ def test_github_packages_nuget_absent_observation_plans_first_publish() -> None:
     assert node["target-instance-snapshot-id"] == "nuget/github-packages"
     assert node["publish-disposition"] == "publish"
     assert node["publish-mode"] == "create-only"
-    assert node_id in result.execution_sets["active-publish-node-ids"]
+    assert node_id in _execution_ids(
+        result.execution_sets, "active-publish-node-ids"
+    )
 
 
 def test_github_packages_nuget_exact_observation_skips_replay() -> None:
@@ -792,8 +811,12 @@ def test_github_packages_nuget_exact_observation_skips_replay() -> None:
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     assert node["target-instance-snapshot-id"] == "nuget/github-packages"
     assert node["publish-disposition"] == "skip-satisfied"
-    assert node_id in result.execution_sets["skip-satisfied-publish-node-ids"]
-    assert node_id not in result.execution_sets["active-publish-node-ids"]
+    assert node_id in _execution_ids(
+        result.execution_sets, "skip-satisfied-publish-node-ids"
+    )
+    assert node_id not in _execution_ids(
+        result.execution_sets, "active-publish-node-ids"
+    )
 
 
 @pytest.mark.parametrize(
@@ -854,14 +877,16 @@ def test_buddy_smoke_projects_plan_github_packages_publish(
     matching_nodes = [
         cast("Mapping[str, object]", node)
         for node in _publish_nodes(result.plan).values()
-        if node["target-instance-snapshot-id"] == target_id
+        if cast("Mapping[str, object]", node)["target-instance-snapshot-id"]
+        == target_id
     ]
 
     assert len(matching_nodes) == 1
     assert matching_nodes[0]["profile"] == "buddy"
-    assert matching_nodes[0]["resolved-publish-identity"]["package-name"] == (
-        package_name
+    identity = cast(
+        "Mapping[str, object]", matching_nodes[0]["resolved-publish-identity"]
     )
+    assert identity["package-name"] == package_name
 
 
 @pytest.mark.parametrize("profile", ["buddy", "official"])
@@ -3086,9 +3111,11 @@ def test_ci_validation_fact_snapshot_workflow_release_owns_catalog_facts() -> (
 
     snapshot = plan_ci_validation_from_repo(_ci_inputs([]))
 
+    fact_snapshot = snapshot.fact_snapshot
+    assert fact_snapshot is not None
     providers = cast(
         "Sequence[Mapping[str, object]]",
-        snapshot.fact_snapshot["providers"],
+        fact_snapshot["providers"],
     )
     providers_by_id = {
         str(provider["provider"]): provider for provider in providers

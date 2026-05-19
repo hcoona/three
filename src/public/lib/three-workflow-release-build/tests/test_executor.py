@@ -2040,7 +2040,12 @@ def test_node_executor_packs_each_projected_npm_artifact() -> None:
         receipts = _result_artifacts(result)
         assert {
             Path(
-                cast("Mapping[str, object]", receipt)["bundle-relative-path"]
+                cast(
+                    "str",
+                    cast("Mapping[str, object]", receipt)[
+                        "bundle-relative-path"
+                    ],
+                )
             ).name
             for receipt in receipts.values()
         } == {"example-1.2.3.tgz", "hcoona-example-1.2.3.tgz"}

@@ -4978,11 +4978,15 @@ def _validate_sorted_diagnostics(
     if not isinstance(value, Sequence) or isinstance(value, str | bytes):
         return
     ids = [
-        item.get("diagnostic-id") for item in value if isinstance(item, Mapping)
+        item_id
+        for item in value
+        if isinstance(item, Mapping)
+        for item_id in [item.get("diagnostic-id")]
     ]
     if any(not isinstance(item_id, str) for item_id in ids):
         return
-    if ids != sorted(ids):
+    sorted_ids = [item_id for item_id in ids if isinstance(item_id, str)]
+    if sorted_ids != sorted(sorted_ids):
         issues.append(ValidationIssue(path, "must be sorted by diagnostic-id"))
 
 
@@ -4992,13 +4996,15 @@ def _validate_sorted_evidence_results(
     if not isinstance(value, Sequence) or isinstance(value, str | bytes):
         return
     ids = [
-        item.get("evidence-expectation-id")
+        item_id
         for item in value
         if isinstance(item, Mapping)
+        for item_id in [item.get("evidence-expectation-id")]
     ]
     if any(not isinstance(item_id, str) for item_id in ids):
         return
-    if ids != sorted(ids):
+    sorted_ids = [item_id for item_id in ids if isinstance(item_id, str)]
+    if sorted_ids != sorted(sorted_ids):
         issues.append(ValidationIssue("$.evidence-results", "must be sorted"))
 
 

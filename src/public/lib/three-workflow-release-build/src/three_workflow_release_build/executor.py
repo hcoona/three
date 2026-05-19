@@ -513,25 +513,34 @@ def _validate_supported_artifacts(
 def _execute_ecosystem(
     ecosystem: str,
     context: _BuildContext,
-) -> dict[str, Path]:
+) -> dict[str, Path | _ProducedArtifact]:
     """Dispatch to the selected ecosystem build executor."""
     frozen_version = _frozen_version(context.request)
     if ecosystem == "python":
-        return _python_build(
-            context.artifacts,
-            context.project_root,
-            context.output_root,
-            context.runner,
-            frozen_version,
+        return _plain_produced_artifacts(
+            _python_build(
+                context.artifacts,
+                context.project_root,
+                context.output_root,
+                context.runner,
+                frozen_version,
+            )
         )
     if ecosystem == "node":
-        return _node_build(context, frozen_version)
+        return _plain_produced_artifacts(_node_build(context, frozen_version))
     if ecosystem == "ruby":
-        return _ruby_build(context, frozen_version)
+        return _plain_produced_artifacts(_ruby_build(context, frozen_version))
     if ecosystem == "dotnet":
         return _dotnet_build(context)
     msg = f"unsupported ecosystem {ecosystem!r}"
     raise BuildExecutorError(msg)
+
+
+def _plain_produced_artifacts(
+    produced: Mapping[str, Path],
+) -> dict[str, Path | _ProducedArtifact]:
+    """Return plain path artifacts with the executor-wide artifact type."""
+    return dict(produced)
 
 
 def _python_build(
@@ -1036,12 +1045,14 @@ def _ruby_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
     return produced
 
 
-def _dotnet_build(context: _BuildContext) -> dict[str, Path]:
+def _dotnet_build(
+    context: _BuildContext,
+) -> dict[str, Path | _ProducedArtifact]:
     """Build .NET package, executable, or Inno Setup artifacts."""
     kinds = {slot.concrete_kind for slot in context.artifacts}
     if kinds <= _DOTNET_PACKAGE_KINDS:
         frozen_version = _frozen_version(context.request)
-        return _dotnet_pack(context, frozen_version)
+        return _plain_produced_artifacts(_dotnet_pack(context, frozen_version))
     if kinds == {"executable"}:
         return _dotnet_publish_executable(
             context.request,
@@ -1051,7 +1062,7 @@ def _dotnet_build(context: _BuildContext) -> dict[str, Path]:
             context.runner,
         )
     if kinds == {"inno-setup"}:
-        return _dotnet_inno_setup(context)
+        return _plain_produced_artifacts(_dotnet_inno_setup(context))
     msg = f"unsupported .NET artifact kind set: {sorted(kinds)}"
     raise BuildExecutorError(msg)
 

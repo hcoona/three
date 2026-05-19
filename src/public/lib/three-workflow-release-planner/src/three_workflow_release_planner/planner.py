@@ -1411,7 +1411,7 @@ class _PlanBuilder:
             for node_id, node in self.publish_nodes.items()
             if node["publish-disposition"] == "publish"
         )
-        active_nodes = [] if self.inputs.dry_run else publish_intent
+        active_nodes: list[str] = [] if self.inputs.dry_run else publish_intent
         selected_gh = sorted(
             node_id
             for node_id, node in self.publish_nodes.items()
@@ -1431,7 +1431,9 @@ class _PlanBuilder:
                 if not self.inputs.dry_run or self.inputs.validation_build
             }
         )
-        selectors = {topology: [] for topology in _TOPOLOGIES}
+        selectors: dict[str, list[str]] = {
+            topology: [] for topology in _TOPOLOGIES
+        }
         for node_id in active_nodes:
             node = self.publish_nodes[node_id]
             instance = self.snapshot.target_instances[

@@ -230,7 +230,9 @@ def test_npm_executor_publishes_github_packages_with_github_token(
             "npm_config_//npm.pkg.github.com/:_authToken": "github-token",
             "npm_config_always_auth": "true",
         }
-        assert result["evidence"]["registry"] == "npm.pkg.github.com"
+        evidence = result["evidence"]
+        assert isinstance(evidence, dict)
+        assert evidence["registry"] == "npm.pkg.github.com"
     finally:
         _reset_scratch(scratch)
 
@@ -358,9 +360,9 @@ def test_nuget_executor_pushes_nuget_org_source(
             "nuget-token",
             "--skip-duplicate",
         ]
-        assert result["evidence"]["source"] == (
-            "https://api.nuget.org/v3/index.json"
-        )
+        evidence = result["evidence"]
+        assert isinstance(evidence, dict)
+        assert evidence["source"] == "https://api.nuget.org/v3/index.json"
     finally:
         _reset_scratch(scratch)
 
@@ -424,7 +426,9 @@ def test_nuget_org_executor_pushes_symbol_package(
                 "nuget-token",
                 "--skip-duplicate",
             ]
-        assert result["evidence"]["symbol-package-filename"] == symbols.name
+        evidence = result["evidence"]
+        assert isinstance(evidence, dict)
+        assert evidence["symbol-package-filename"] == symbols.name
     finally:
         _reset_scratch(scratch)
 
@@ -563,7 +567,9 @@ def test_github_packages_nuget_executor_pushes_symbol_package(
                 "--api-key",
                 "github-token",
             ]
-        assert result["evidence"]["symbol-package-filename"] == symbols.name
+        evidence = result["evidence"]
+        assert isinstance(evidence, dict)
+        assert evidence["symbol-package-filename"] == symbols.name
     finally:
         _reset_scratch(scratch)
 
