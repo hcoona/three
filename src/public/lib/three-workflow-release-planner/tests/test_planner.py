@@ -3651,6 +3651,64 @@ def test_ci_validation_freeze_fallback_covers_changed_files(
     } == {DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value}
 
 
+def test_ci_validation_capability_failures_cover_changed_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capability fail-closed plans do not retain unresolved coverage targets."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticFamily,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        ci_validation_planner,
+    )
+
+    def force_capability_failure(*_args: Any, **_kwargs: Any) -> list[dict[str, object]]:
+        return [
+            ci_validation_planner._diagnostic(  # noqa: SLF001
+                code=DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value,
+                detail=None,
+                message="forced capability failure",
+                source_type="subject",
+                source_id="subject-forced",
+                ordinal=1,
+            ),
+        ]
+
+    changed_files = ["src/public/lib/hcoona-release-smoke/pyproject.toml"]
+    monkeypatch.setattr(
+        ci_validation_planner,
+        "_capability_diagnostics",
+        force_capability_failure,
+    )
+
+    snapshot = ci_validation_planner.plan_ci_validation_from_repo(
+        _ci_inputs(changed_files),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "fail-closed"
+    classification = cast(
+        "Mapping[str, object]", snapshot.plan["classification"]
+    )
+    impacts = cast("Sequence[Mapping[str, object]]", classification["impacts"])
+    assert [
+        path
+        for impact in impacts
+        for path in cast("Sequence[str]", impact["matched-paths"])
+    ] == changed_files
+    assert {impact["category"] for impact in impacts} == {"unknown"}
+    coverage_target_types = {
+        cast("Mapping[str, object]", impact["coverage-target"])["type"]
+        for impact in impacts
+    }
+    assert coverage_target_types == {"none"}
+
+
 def test_ci_validation_authoring_validation_failure_covers_changed_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3743,3 +3801,74 @@ def test_ci_validation_plans_unknown_paths_fail_closed() -> None:
         snapshot.plan["diagnostics"],
     )
     assert diagnostics[0]["code"] == DiagnosticFamily.UNKNOWN_CHANGE.value
+
+
+def test_ci_validation_fail_closed_diagnostics_are_contract_ordered() -> None:
+    """Multiple fail-closed diagnostics are emitted in contract order."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticFamily,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs(["unknown-2.bin", "unknown-3.bin"]),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "fail-closed"
+    diagnostics = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["diagnostics"],
+    )
+    diagnostic_ids = [str(diagnostic["diagnostic-id"]) for diagnostic in diagnostics]
+    assert diagnostic_ids == sorted(diagnostic_ids)
+    assert {diagnostic["code"] for diagnostic in diagnostics} == {
+        DiagnosticFamily.UNKNOWN_CHANGE.value,
+    }
+
+
+def test_ci_validation_mixed_unknown_paths_cover_all_changes() -> None:
+    """Mixed known and unknown impacts fail closed with resolvable coverage."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        DiagnosticFamily,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    changed_files = [
+        "src/public/lib/hcoona-release-smoke/pyproject.toml",
+        "unknown-2.bin",
+    ]
+
+    snapshot = plan_ci_validation_from_repo(_ci_inputs(changed_files))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "fail-closed"
+    diagnostics = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["diagnostics"],
+    )
+    assert diagnostics[0]["code"] == DiagnosticFamily.UNKNOWN_CHANGE.value
+    classification = cast(
+        "Mapping[str, object]", snapshot.plan["classification"]
+    )
+    impacts = cast("Sequence[Mapping[str, object]]", classification["impacts"])
+    assert {
+        path
+        for impact in impacts
+        for path in cast("Sequence[str]", impact["matched-paths"])
+    } == set(changed_files)
+    assert {impact["category"] for impact in impacts} == {"unknown"}

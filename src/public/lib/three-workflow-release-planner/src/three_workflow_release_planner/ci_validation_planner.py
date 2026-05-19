@@ -356,6 +356,9 @@ def plan_ci_validation(
     impacts = _classify_request(request, facts)
     diagnostics = _impact_diagnostics(impacts)
     if diagnostics:
+        diagnostic_code = str(
+            diagnostics[0].get("code", DiagnosticFamily.UNKNOWN_CHANGE.value)
+        )
         return _freeze(
             request=request,
             plan_id=plan_id,
@@ -364,7 +367,7 @@ def plan_ci_validation(
             verdict_intent="fail-closed",
             diagnostics=diagnostics,
             classification=_classification(
-                impacts,
+                _fail_closed_impacts_from(impacts, diagnostic_code),
                 [],
                 [],
                 lightweight_only=False,
@@ -408,6 +411,11 @@ def plan_ci_validation(
         subjects, records.validation_obligations
     )
     if diagnostics:
+        diagnostic_code = str(
+            diagnostics[0].get(
+                "code", DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value
+            )
+        )
         return _freeze(
             request=request,
             plan_id=plan_id,
@@ -416,9 +424,9 @@ def plan_ci_validation(
             verdict_intent="fail-closed",
             diagnostics=diagnostics,
             classification=_classification(
-                impacts,
-                scope.broad_expansions,
-                scope.provenance,
+                _fail_closed_impacts_from(impacts, diagnostic_code),
+                [],
+                [],
                 lightweight_only=scope.lightweight_only,
             ),
             facts=None,
@@ -541,7 +549,7 @@ def _freeze(  # noqa: PLR0913
             work_groups=records.work_groups,
             evidence_expectations=records.evidence_expectations,
             detail_profiles=records.detail_profiles,
-            diagnostics=diagnostics,
+            diagnostics=_sorted_diagnostics(diagnostics),
             fact_snapshot_providers=providers,
             policy_version=policy_version,
         )
@@ -574,6 +582,15 @@ def _freeze(  # noqa: PLR0913
             fact_snapshot_providers=None,
             policy_version=policy_version,
         )
+
+
+def _sorted_diagnostics(
+    diagnostics: Sequence[Mapping[str, object]],
+) -> list[Mapping[str, object]]:
+    return sorted(
+        (dict(diagnostic) for diagnostic in diagnostics),
+        key=lambda diagnostic: str(diagnostic["diagnostic-id"]),
+    )
 
 
 def _discover_facts(
