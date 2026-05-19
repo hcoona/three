@@ -137,13 +137,83 @@ function Convert-HtmlToText {
     param([Parameter(Mandatory = $true)][string]$Html)
     try {
         $text = ($Html -replace '(?s)<script.*?</script>', '') -replace '(?s)<style.*?</style>', ''
+        $text = $text -replace '(?<=[\p{L}\p{N}])(?:<[^>]+>)+(?=[\p{L}\p{N}])', ''
         $text = ($text -replace '<[^>]+>', ' ')
         $text = [System.Net.WebUtility]::HtmlDecode($text)
         # Normalize whitespace
         $text = ($text -replace "\r\n|\r|\n", "`n") -replace ' +', ' '
-        return $text.Trim()
+        $lines = $text -split "`n" | ForEach-Object { $_.TrimEnd() }
+        return (($lines -join "`n").Trim())
     }
     catch { return $Html }
+}
+
+function Format-NoticeContent {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    $normalized = ($Text.Trim() -replace "\r\n|\r|\n", "`n") -replace "`t", '    '
+    $lines = $normalized -split "`n" | ForEach-Object { $_.TrimEnd() }
+    return ($lines -join [Environment]::NewLine)
+}
+
+function Get-NuGetLocalPackageDirectory {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Parameter(Mandatory = $true)][string]$Version
+    )
+
+    $roots = @()
+    if ($env:NUGET_PACKAGES) { $roots += $env:NUGET_PACKAGES }
+    $userProfile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    if ($userProfile) { $roots += (Join-Path $userProfile '.nuget/packages') }
+
+    $lowerId = $Id.ToLowerInvariant()
+    $lowerVer = $Version.ToLowerInvariant()
+    foreach ($root in ($roots | Select-Object -Unique)) {
+        $path = Join-Path (Join-Path $root $lowerId) $lowerVer
+        if (Test-Path -LiteralPath $path -PathType Container) {
+            return (Resolve-Path -LiteralPath $path).Path
+        }
+    }
+    return $null
+}
+
+function ConvertFrom-NuGetNuspecMetadatum {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Content,
+        [string]$PackageDirectory
+    )
+
+    [xml]$xml = $Content
+    $meta = $xml.package.metadata
+    $repoUrl = $null
+    $repoCommit = $null
+    $repoNode = $meta.repository
+    if ($repoNode) {
+        $repoUrl = $repoNode.GetAttribute('url')
+        $repoCommit = $repoNode.GetAttribute('commit')
+        if ([string]::IsNullOrWhiteSpace($repoUrl)) { $repoUrl = $null }
+        if ([string]::IsNullOrWhiteSpace($repoCommit)) { $repoCommit = $null }
+    }
+
+    $licenseNode = $meta.license
+    $licenseText = if ($licenseNode) { [string]$licenseNode.InnerText } else { $null }
+    $licenseType = if ($licenseNode) { $licenseNode.GetAttribute('type') } else { $null }
+    if ([string]::IsNullOrWhiteSpace($licenseType)) { $licenseType = $null }
+
+    return [pscustomobject]@{
+        ProjectUrl        = [string]$meta.projectUrl
+        RepositoryUrl     = $repoUrl
+        RepositoryCommit  = $repoCommit
+        LicenseUrl        = [string]$meta.licenseUrl
+        LicenseExpression = if ($licenseType -eq 'file') { $null } else { $licenseText }
+        LicenseFile       = if ($licenseType -eq 'file') { $licenseText } else { $null }
+        LicenseType       = $licenseType
+        PackageDirectory  = $PackageDirectory
+    }
 }
 
 function Get-NuGetPackageInfo {
@@ -152,6 +222,21 @@ function Get-NuGetPackageInfo {
         [Parameter(Mandatory = $true)][string]$Id,
         [Parameter(Mandatory = $true)][string]$Version
     )
+    # Prefer the locally restored package because it is the exact versioned
+    # package content used by this project, including embedded license files.
+    $packageDir = Get-NuGetLocalPackageDirectory -Id $Id -Version $Version
+    if ($packageDir) {
+        $nuspec = Get-ChildItem -LiteralPath $packageDir -Filter '*.nuspec' -File | Select-Object -First 1
+        if ($nuspec) {
+            try {
+                return ConvertFrom-NuGetNuspecMetadatum -Content ([System.IO.File]::ReadAllText($nuspec.FullName)) -PackageDirectory $packageDir
+            }
+            catch {
+                Write-Verbose "[NuGet] Failed to parse local nuspec for $($Id)@$($Version): $($_.Exception.Message)"
+            }
+        }
+    }
+
     # Try the NuGet registration API first.
     $lowerId = $Id.ToLowerInvariant()
     $lowerVer = $Version.ToLowerInvariant()
@@ -162,11 +247,27 @@ function Get-NuGetPackageInfo {
             $json = $resp.Content | ConvertFrom-Json
             if ($json -and $json.catalogEntry) {
                 $entry = $json.catalogEntry
+                $repositoryUrl = $null
+                $repositoryCommit = $null
+                if ($entry.PSObject.Properties.Match('repositoryUrl').Count -gt 0 -and $entry.repositoryUrl) {
+                    $repositoryUrl = $entry.repositoryUrl
+                }
+                elseif ($entry.PSObject.Properties.Match('repository').Count -gt 0 -and $entry.repository) {
+                    if ($entry.repository.PSObject.Properties.Match('url').Count -gt 0 -and $entry.repository.url) { $repositoryUrl = $entry.repository.url }
+                    if ($entry.repository.PSObject.Properties.Match('commit').Count -gt 0 -and $entry.repository.commit) { $repositoryCommit = $entry.repository.commit }
+                }
+                $projectUrl = if ($entry.PSObject.Properties.Match('projectUrl').Count -gt 0) { $entry.projectUrl } else { $null }
+                $licenseUrl = if ($entry.PSObject.Properties.Match('licenseUrl').Count -gt 0) { $entry.licenseUrl } else { $null }
+                $licenseExpression = if ($entry.PSObject.Properties.Match('licenseExpression').Count -gt 0) { $entry.licenseExpression } else { $null }
                 return [pscustomobject]@{
-                    ProjectUrl        = $entry.projectUrl
-                    RepositoryUrl     = if ($entry.repositoryUrl) { $entry.repositoryUrl } elseif ($entry.repository -and $entry.repository.url) { $entry.repository.url } else { $null }
-                    LicenseUrl        = $entry.licenseUrl
-                    LicenseExpression = $entry.licenseExpression
+                    ProjectUrl        = $projectUrl
+                    RepositoryUrl     = $repositoryUrl
+                    RepositoryCommit  = $repositoryCommit
+                    LicenseUrl        = $licenseUrl
+                    LicenseExpression = $licenseExpression
+                    LicenseFile       = $null
+                    LicenseType       = if ($licenseExpression) { 'expression' } else { $null }
+                    PackageDirectory  = $packageDir
                 }
             }
         }
@@ -180,16 +281,7 @@ function Get-NuGetPackageInfo {
     $resp2 = Invoke-WebRequestSafe -Uri $nuspecUrl
     if ($resp2 -and $resp2.Content) {
         try {
-            [xml]$xml = $resp2.Content
-            $meta = $xml.package.metadata
-            $repoUrl = $null
-            if ($meta.repository -and $meta.repository.url) { $repoUrl = [string]$meta.repository.url }
-            return [pscustomobject]@{
-                ProjectUrl        = [string]$meta.projectUrl
-                RepositoryUrl     = $repoUrl
-                LicenseUrl        = [string]$meta.licenseUrl
-                LicenseExpression = [string]$meta.license
-            }
+            return ConvertFrom-NuGetNuspecMetadatum -Content $resp2.Content -PackageDirectory $packageDir
         }
         catch {
             Write-Verbose "[NuGet] Failed to parse nuspec XML for $($Id)@$($Version): $($_.Exception.Message)"
@@ -198,15 +290,115 @@ function Get-NuGetPackageInfo {
     return $null
 }
 
+function Get-NuGetPackageLicenseNotice {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Parameter(Mandatory = $true)][string]$Version,
+        $PackageInfo
+    )
+
+    if (-not $PackageInfo) { return $null }
+
+    $availableAt = New-Object System.Collections.Generic.List[string]
+    $content = $null
+
+    if ($PackageInfo.PackageDirectory) {
+        $licenseFileNames = New-Object System.Collections.Generic.List[string]
+        if ($PackageInfo.LicenseFile) { $licenseFileNames.Add([string]$PackageInfo.LicenseFile) | Out-Null }
+        @(
+            'LICENSE', 'LICENSE.txt', 'LICENSE.md', 'LICENSE.TXT', 'License.txt',
+            'license', 'license.txt', 'license.md',
+            'LICENCE', 'LICENCE.txt', 'LICENCE.md', 'Licence', 'Licence.txt', 'Licence.md',
+            'licence', 'licence.txt', 'licence.md',
+            'NOTICE', 'NOTICE.txt', 'NOTICE.md'
+        ) | ForEach-Object { $licenseFileNames.Add($_) | Out-Null }
+
+        foreach ($licenseFileName in ($licenseFileNames | Select-Object -Unique)) {
+            $candidate = Join-Path ([string]$PackageInfo.PackageDirectory) $licenseFileName
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                $relativeName = $licenseFileName -replace '\\', '/'
+                $availableAt.Add("NuGet package $Id@$Version`: $relativeName") | Out-Null
+                $content = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $candidate))
+                break
+            }
+        }
+    }
+
+    if ($PackageInfo.LicenseUrl) {
+        $licenseUrl = [string]$PackageInfo.LicenseUrl
+        if ($licenseUrl -like 'https://go.microsoft.com/fwlink*') { $licenseUrl = Get-FinalUrl -Uri $licenseUrl }
+        if ($licenseUrl -match 'https?://github.com/.+') { $licenseUrl = Convert-GitHubBlobToRaw -Url $licenseUrl }
+        $availableAt.Add($licenseUrl) | Out-Null
+    }
+    elseif ($PackageInfo.LicenseExpression) {
+        $availableAt.Add("https://licenses.nuget.org/$($PackageInfo.LicenseExpression)") | Out-Null
+    }
+
+    if ($content -or $availableAt.Count -gt 0) {
+        return [pscustomobject]@{
+            AvailableAt = @($availableAt)
+            Content     = $content
+        }
+    }
+    return $null
+}
+
+function Test-LicenseContentMatchesExpression {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Content,
+        [Parameter(Mandatory = $true)][string]$Expression
+    )
+
+    $normalizedExpression = $Expression.Trim()
+    $normalizedContent = ($Content -replace "\r\n|\r|\n", "`n").Trim()
+
+    switch -Regex ($normalizedExpression) {
+        '^MIT$' {
+            return ($normalizedContent -match '(?im)^\s*(The\s+)?MIT License(\s*\(MIT\))?\s*$' -and
+                $normalizedContent -match 'Permission is hereby granted, free of charge' -and
+                $normalizedContent -notmatch 'Microsoft Public License')
+        }
+        '^MS-PL$' {
+            return ($normalizedContent -match 'Microsoft Public License' -and
+                $normalizedContent -match 'This license governs use of the accompanying software')
+        }
+        '^MPL-2\.0$' {
+            return ($normalizedContent -match 'Mozilla Public License Version 2\.0')
+        }
+        '^GPL-3\.0-or-later$' {
+            return ($normalizedContent -match 'GNU GENERAL PUBLIC LICENSE' -and
+                $normalizedContent -match 'Version 3')
+        }
+        default {
+            return $false
+        }
+    }
+}
+
+function Test-StandardizedLicenseTextNeedsPackageCopyright {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)][string]$Content,
+        [Parameter(Mandatory = $true)][string]$Expression
+    )
+
+    if ($Expression -ne 'MIT') { return $false }
+    return ($Content -match '<year>\s+<copyright holders>')
+}
+
 function Get-GitHubLicenseContent {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][string]$RepoUrl
+        [Parameter(Mandatory = $true)][string]$RepoUrl,
+        [string]$Ref
     )
     # Normalize repo URL to https://github.com/owner/name
     if ($RepoUrl -notmatch '^https?://github.com/[^/]+/[^/]+') { return $null }
     $prefix = ($RepoUrl -replace '/+$', '')
-    $branches = @('main', 'master')
+    $branches = if ($Ref) { @($Ref) } else { @('main', 'master') }
     $files = @(
         # Common US spelling
         'LICENSE', 'LICENSE.txt', 'LICENSE.md', 'LICENSE.TXT', 'License.txt',
@@ -224,6 +416,21 @@ function Get-GitHubLicenseContent {
                     return [pscustomobject]@{ Url = $raw; Content = $resp.Content }
                 }
             }
+        }
+    }
+    return $null
+}
+
+function Get-NuGetLicenseExpressionContent {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Expression)
+
+    $licenseUrl = "https://licenses.nuget.org/$Expression"
+    $resp = Invoke-WebRequestSafe -Uri $licenseUrl
+    if ($resp -and $resp.Content) {
+        return [pscustomobject]@{
+            Url     = $licenseUrl
+            Content = (Convert-HtmlToText -Html $resp.Content)
         }
     }
     return $null
@@ -342,17 +549,38 @@ function Write-Notice([string]$OutputPath, $components) {
         $ghFromProject = if ($projectUrl) { ConvertTo-GitHubRepoUrl -Url $projectUrl } else { $null }
         $githubRepoUrl = if ($ghFromRepo) { $ghFromRepo } elseif ($ghFromProject) { $ghFromProject } else { $null }
         $isGitHubRepo = [string]::IsNullOrEmpty($githubRepoUrl) -eq $false
-        # Only consider NuGet's licenseUrl when repo is not GitHub; for GitHub we want raw LICENSE content.
-        $licenseUrl = if (-not $isGitHubRepo -and $meta -and $meta.LicenseUrl) { $meta.LicenseUrl } else { $null }
-        if ($licenseUrl -and $licenseUrl -like 'https://go.microsoft.com/fwlink*') { $licenseUrl = Get-FinalUrl -Uri $licenseUrl }
-        if ($licenseUrl -and $licenseUrl -match 'https?://github.com/.+') { $licenseUrl = Convert-GitHubBlobToRaw -Url $licenseUrl }
-        if (-not $isGitHubRepo -and -not $licenseUrl -and $meta -and $meta.LicenseExpression) {
-            $licenseUrl = "https://licenses.nuget.org/" + ([string]$meta.LicenseExpression)
-        }
+        $packageLicense = Get-NuGetPackageLicenseNotice -Id $id -Version $ver -PackageInfo $meta
+        $licenseUrls = @()
+        if ($packageLicense) { $licenseUrls += @($packageLicense.AvailableAt) }
+        $licenseContent = if ($packageLicense -and $packageLicense.Content) { [string]$packageLicense.Content } else { $null }
+        $repositoryCommit = if ($meta -and $meta.RepositoryCommit) { [string]$meta.RepositoryCommit } else { $null }
         $licenseGuess = $null
-        if ($isGitHubRepo) {
+        $licenseExpression = if ($meta -and $meta.LicenseExpression) { [string]$meta.LicenseExpression } else { $null }
+        if (-not $licenseContent -and $meta -and $meta.LicenseExpression) {
+            $licenseGuess = Get-NuGetLicenseExpressionContent -Expression $licenseExpression
+            if ($licenseGuess) {
+                $licenseUrls += $licenseGuess.Url
+                $licenseContent = [string]$licenseGuess.Content
+            }
+        }
+        if ($isGitHubRepo -and $repositoryCommit -and
+            (-not $licenseExpression -or -not $licenseContent -or
+            (Test-StandardizedLicenseTextNeedsPackageCopyright -Content $licenseContent -Expression $licenseExpression))) {
+            $licenseGuess = Get-GitHubLicenseContent -RepoUrl $githubRepoUrl -Ref $repositoryCommit
+            if ($licenseGuess) {
+                $githubLicenseContent = [string]$licenseGuess.Content
+                if (-not $licenseExpression -or (Test-LicenseContentMatchesExpression -Content $githubLicenseContent -Expression $licenseExpression)) {
+                    $licenseUrls += $licenseGuess.Url
+                    $licenseContent = $githubLicenseContent
+                }
+            }
+        }
+        if (-not $licenseContent -and $isGitHubRepo -and -not $repositoryCommit -and -not $licenseExpression) {
             $licenseGuess = Get-GitHubLicenseContent -RepoUrl $githubRepoUrl
-            if (-not $licenseUrl -and $licenseGuess) { $licenseUrl = $licenseGuess.Url }
+            if ($licenseGuess) {
+                $licenseUrls += $licenseGuess.Url
+                $licenseContent = [string]$licenseGuess.Content
+            }
         }
 
         $section = @()
@@ -361,14 +589,14 @@ function Write-Notice([string]$OutputPath, $components) {
         $section += "-------------------------------"
         if ($projectUrl) { $section += ""; $section += $projectUrl }
         elseif ($repoUrl) { $section += ""; $section += $repoUrl }
-        if ($licenseUrl) {
+        if (@($licenseUrls).Count -gt 0) {
             $section += ""
             $section += "Available at"
-            $section += $licenseUrl
+            $section += ($licenseUrls | Select-Object -Unique)
         }
-        if ($licenseGuess -and $licenseGuess.Content) {
+        if ($licenseContent) {
             $section += ""
-            $section += $licenseGuess.Content.Trim()
+            $section += (Format-NoticeContent -Text $licenseContent)
         }
         $sectionText = ($section -join [Environment]::NewLine)
         Add-Content -LiteralPath $OutputPath -Value $sectionText -Encoding UTF8
@@ -393,7 +621,7 @@ function Write-Notice([string]$OutputPath, $components) {
             $resp = Invoke-WebRequestSafe -Uri $runtimeRaw
             if ($resp -and $resp.Content) {
                 $msSection += ""
-                $msSection += $resp.Content.Trim()
+                $msSection += (Format-NoticeContent -Text $resp.Content)
             }
         }
     }
@@ -424,10 +652,21 @@ try {
     $manifestPath = Join-Path $repoRoot $ManifestDir
     New-DirectoryIfMissing -Path $manifestPath
 
-    $bomPath = Invoke-CycloneDX -ProjectPath $projectPath -OutDir $manifestPath
+    $projectInfo = Get-ProjectInfo -CsprojPath $projectPath
+    if ($projectInfo.TargetFramework -match '-windows' -and -not $IsWindows -and -not $env:EnableWindowsTargeting) {
+        $env:EnableWindowsTargeting = 'true'
+    }
+
+    $restoreArgs = @('restore', $projectPath, '--locked-mode')
+    if ($projectInfo.TargetFramework -match '-windows') { $restoreArgs += '-p:EnableWindowsTargeting=true' }
+    if ($projectInfo.RuntimeIdentifier) { $restoreArgs += "-p:RuntimeIdentifier=$($projectInfo.RuntimeIdentifier)" }
+    & dotnet @restoreArgs
+    if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed with exit code $LASTEXITCODE." }
+
+    $bomPath = Invoke-CycloneDX -ProjectPath $projectPath -OutDir $manifestPath -TargetFramework $projectInfo.TargetFramework -RuntimeIdentifier $projectInfo.RuntimeIdentifier -DisablePackageRestore
     Write-Information "[CycloneDX] SBOM generated at: $bomPath"
 
-    $components = Read-Component -BomPath $bomPath
+    $components = @(Read-Component -BomPath $bomPath)
     Write-Information ("[Info] Components loaded: {0}" -f $components.Count)
 
     $outputPath = if ([IO.Path]::IsPathRooted($Output)) { $Output } else { Join-Path $repoRoot $Output }
