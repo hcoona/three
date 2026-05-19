@@ -1123,6 +1123,7 @@ jobs:
           path: .three-ci-validation/observed-artifacts
       - name: Aggregate validation evidence
         env:
+          GH_TOKEN: ${{ github.token }}
           CI_REPOSITORY: ${{ github.repository }}
           REQUEST_ARTIFACT_ID: ${{ needs.normalize-input.outputs.request-artifact-id }}
           PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
