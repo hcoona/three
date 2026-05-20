@@ -2876,7 +2876,7 @@ def test_ci_validation_plans_mixed_changes_keep_canonical_paths() -> None:
 
 
 def test_ci_validation_plans_repository_infrastructure_paths() -> None:
-    """Repository infrastructure changes are classified without fail-closed unknowns."""
+    """Repository infrastructure changes avoid fail-closed unknowns."""
     from three_workflow_release_contracts import (  # noqa: PLC0415
         validate_ci_validation_plan,
     )
@@ -2905,6 +2905,67 @@ def test_ci_validation_plans_repository_infrastructure_paths() -> None:
     )
     assert snapshot.plan["verdict-intent"] == "executable"
     assert snapshot.plan["diagnostics"] == []
+
+
+def test_ci_validation_derives_validation_only_capabilities() -> None:
+    """Validation-only subjects expose discovered project-scoped commands."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs([".github/workflows/ci-validate.yml"]),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    subjects = cast("Sequence[Mapping[str, object]]", snapshot.plan["subjects"])
+    capabilities_by_root = {
+        str(subject["root"]): cast(
+            "Mapping[str, object]",
+            subject["capabilities"],
+        )
+        for subject in subjects
+        if subject["capability-class"] == "validation-only"
+    }
+
+    private_python = capabilities_by_root[
+        "src/private/app/music-flash-card-generator"
+    ]
+    assert private_python["build"] is True
+    assert private_python["test"] is False
+    assert private_python["lint"] is False
+    assert private_python["format"] is False
+    assert private_python["type-check"] is True
+
+    planner_python = capabilities_by_root[
+        "src/public/lib/three-workflow-release-planner"
+    ]
+    assert planner_python["test"] is True
+    assert planner_python["lint"] is False
+    assert planner_python["format"] is False
+
+    telegram_bot = capabilities_by_root[
+        "src/private/app/im-acp-gateway/poc/telegram-bot-verifier"
+    ]
+    assert telegram_bot["build"] is True
+    assert telegram_bot["test"] is True
+    assert telegram_bot["lint"] is True
+    assert telegram_bot["format"] is False
+    assert telegram_bot["type-check"] is True
+
+    circular_list_tests = capabilities_by_root[
+        "tests/public/lib/CircularList.UnitTest"
+    ]
+    assert circular_list_tests["build"] is True
+    assert circular_list_tests["test"] is True
+    assert circular_list_tests["format"] is False
 
 
 def test_ci_validation_plans_python_downstream_dependency_closure() -> None:
@@ -3686,7 +3747,7 @@ def test_ci_validation_freeze_fallback_covers_changed_files(
 def test_ci_validation_capability_failures_cover_changed_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Capability fail-closed plans do not retain unresolved coverage targets."""
+    """Capability fail-closed plans do not keep unresolved targets."""
     from three_workflow_release_contracts import (  # noqa: PLC0415
         DiagnosticFamily,
         validate_ci_validation_plan,
@@ -3695,7 +3756,10 @@ def test_ci_validation_capability_failures_cover_changed_files(
         ci_validation_planner,
     )
 
-    def force_capability_failure(*_args: Any, **_kwargs: Any) -> list[dict[str, object]]:
+    def force_capability_failure(
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> list[dict[str, object]]:
         return [
             ci_validation_planner._diagnostic(  # noqa: SLF001
                 code=DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value,
@@ -3859,7 +3923,9 @@ def test_ci_validation_fail_closed_diagnostics_are_contract_ordered() -> None:
         "Sequence[Mapping[str, object]]",
         snapshot.plan["diagnostics"],
     )
-    diagnostic_ids = [str(diagnostic["diagnostic-id"]) for diagnostic in diagnostics]
+    diagnostic_ids = [
+        str(diagnostic["diagnostic-id"]) for diagnostic in diagnostics
+    ]
     assert diagnostic_ids == sorted(diagnostic_ids)
     assert {diagnostic["code"] for diagnostic in diagnostics} == {
         DiagnosticFamily.UNKNOWN_CHANGE.value,

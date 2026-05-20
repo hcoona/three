@@ -637,7 +637,13 @@ def _discover_facts(
             provider=_PROVIDER_BY_ECOSYSTEM.get(ecosystem),
         )
     for root in _uv_workspace_roots(repo_root):
-        _add_validation_only_subject(subjects, "python", root, "uv workspace")
+        _add_validation_only_subject(
+            subjects,
+            repo_root,
+            "python",
+            root,
+            "uv workspace",
+        )
     for root in _pnpm_workspace_roots(repo_root):
         ecosystem = (
             "typescript"
@@ -645,10 +651,20 @@ def _discover_facts(
             else "javascript"
         )
         _add_validation_only_subject(
-            subjects, ecosystem, root, "pnpm workspace"
+            subjects,
+            repo_root,
+            ecosystem,
+            root,
+            "pnpm workspace",
         )
     for root in _dotnet_project_roots(tracked_files):
-        _add_validation_only_subject(subjects, "dotnet", root, ".NET project")
+        _add_validation_only_subject(
+            subjects,
+            repo_root,
+            "dotnet",
+            root,
+            ".NET project",
+        )
     dependency_failures: list[Json] = []
     dependency_edges = _dependency_edges(
         repo_root, subjects, dependency_failures
@@ -695,6 +711,7 @@ def _fact_discovery_failure_impacts(
 
 def _add_validation_only_subject(
     subjects: dict[str, _SubjectFacts],
+    repo_root: Path,
     ecosystem: str,
     root: str,
     reason: str,
@@ -718,7 +735,11 @@ def _add_validation_only_subject(
                 capability_class="validation-only",
                 descriptor_path=None,
                 descriptor_identity=None,
-                capabilities=_validation_capabilities(),
+                capabilities=_validation_capabilities(
+                    repo_root,
+                    ecosystem,
+                    root,
+                ),
                 inclusion_source="workspace"
                 if ecosystem != "dotnet"
                 else "solution",
@@ -778,14 +799,173 @@ def _descriptor_capabilities(project: ProjectDescriptor) -> dict[str, bool]:
     }
 
 
-def _validation_capabilities() -> dict[str, bool]:
+def _validation_capabilities(
+    repo_root: Path,
+    ecosystem: str,
+    root: str,
+) -> dict[str, bool]:
+    if ecosystem == "python":
+        return _python_validation_capabilities(repo_root, root)
+    if ecosystem in {"javascript", "typescript"}:
+        return _javascript_validation_capabilities(repo_root, root)
+    if ecosystem == "dotnet":
+        return _dotnet_validation_capabilities(repo_root, root)
+    if ecosystem == "ruby":
+        return _ruby_validation_capabilities(repo_root, root)
+    return _empty_capabilities()
+
+
+def _python_validation_capabilities(
+    repo_root: Path,
+    root: str,
+) -> dict[str, bool]:
+    project_root = repo_root / root
     return {
-        "build": True,
-        "format": True,
-        "lint": True,
+        "build": (project_root / "pyproject.toml").is_file(),
+        "format": False,
+        "lint": False,
         "release-shaped-artifacts": False,
-        "test": True,
-        "type-check": True,
+        "test": _python_project_has_tests(repo_root, root),
+        "type-check": _root_pyrefly_project_includes_root(repo_root, root),
+    }
+
+
+def _python_project_has_tests(repo_root: Path, root: str) -> bool:
+    project_root = repo_root / root
+    if _has_files_matching(project_root, ("test_*.py", "*_test.py")):
+        return True
+    tests_root = repo_root / _project_tests_root(root)
+    return _has_files_matching(tests_root, ("test_*.py", "*_test.py"))
+
+
+def _project_tests_root(root: str) -> str:
+    if root.startswith("src/"):
+        return f"tests/{root[4:]}"
+    return f"tests/{root}"
+
+
+def _has_files_matching(root: Path, patterns: Sequence[str]) -> bool:
+    if not root.is_dir():
+        return False
+    return any(
+        path.is_file()
+        for pattern in patterns
+        for path in root.rglob(pattern)
+    )
+
+
+def _root_pyrefly_project_includes_root(repo_root: Path, root: str) -> bool:
+    pyproject_path = repo_root / "pyproject.toml"
+    if not pyproject_path.is_file():
+        return False
+    try:
+        pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    tool = pyproject.get("tool")
+    if not isinstance(tool, Mapping):
+        return False
+    pyrefly = tool.get("pyrefly")
+    if not isinstance(pyrefly, Mapping):
+        return False
+    includes = pyrefly.get("project-includes")
+    if not isinstance(includes, Sequence) or isinstance(includes, str | bytes):
+        return False
+    root_prefix = f"{root.rstrip('/')}/"
+    return any(
+        isinstance(include, str)
+        and (include == root or include.startswith(root_prefix))
+        for include in includes
+    )
+
+
+def _javascript_validation_capabilities(
+    repo_root: Path,
+    root: str,
+) -> dict[str, bool]:
+    scripts = _package_json_scripts(repo_root / root / "package.json")
+    return {
+        "build": "build" in scripts,
+        "format": "format:check" in scripts,
+        "lint": "lint" in scripts,
+        "release-shaped-artifacts": False,
+        "test": "test" in scripts,
+        "type-check": "typecheck" in scripts,
+    }
+
+
+def _package_json_scripts(package_json_path: Path) -> Mapping[str, object]:
+    if not package_json_path.is_file():
+        return {}
+    try:
+        package_json = json.loads(package_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    scripts = package_json.get("scripts")
+    if isinstance(scripts, Mapping):
+        return scripts
+    return {}
+
+
+def _dotnet_validation_capabilities(
+    repo_root: Path,
+    root: str,
+) -> dict[str, bool]:
+    project_root = repo_root / root
+    project_path = _single_dotnet_project_path(project_root)
+    is_test_project = _dotnet_project_is_test_project(project_path)
+    return {
+        "build": project_path is not None,
+        "format": False,
+        "lint": False,
+        "release-shaped-artifacts": False,
+        "test": is_test_project,
+        "type-check": False,
+    }
+
+
+def _single_dotnet_project_path(project_root: Path) -> Path | None:
+    projects = sorted(
+        path
+        for extension in ("*.csproj", "*.fsproj", "*.vbproj")
+        for path in project_root.glob(extension)
+    )
+    if len(projects) != 1:
+        return None
+    return projects[0]
+
+
+def _dotnet_project_is_test_project(project_path: Path | None) -> bool:
+    if project_path is None:
+        return False
+    if "/tests/" in project_path.as_posix():
+        return True
+    try:
+        root = ET.parse(project_path).getroot()  # noqa: S314
+    except (OSError, ET.ParseError):
+        return False
+    for property_group in root.findall("PropertyGroup"):
+        is_test_project = property_group.findtext("IsTestProject")
+        if (
+            isinstance(is_test_project, str)
+            and is_test_project.lower() == "true"
+        ):
+            return True
+    return False
+
+
+def _ruby_validation_capabilities(
+    repo_root: Path,
+    root: str,
+) -> dict[str, bool]:
+    project_root = repo_root / root
+    return {
+        "build": any(project_root.glob("*.gemspec")),
+        "format": False,
+        "lint": False,
+        "release-shaped-artifacts": False,
+        "test": False,
+        "type-check": False,
     }
 
 

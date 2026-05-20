@@ -5466,7 +5466,7 @@ def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
 
 
 def test_ci_validation_work_groups_use_full_checkout_for_nbgv() -> None:
-    """Dotnet validation commands need full history for NBGV version height."""
+    """Validation work groups need full history for NBGV version height."""
     workflow = yaml.safe_load(_workflow("ci-validate.yml"))
 
     for layer in range(3):
@@ -5477,9 +5477,7 @@ def test_ci_validation_work_groups_use_full_checkout_for_nbgv() -> None:
             step for step in steps if step.get("uses") == "actions/checkout@v4"
         )
 
-        assert checkout_step["with"]["fetch-depth"] == (
-            "${{ matrix.work-group.ecosystem == 'dotnet' && '0' || '1' }}"
-        )
+        assert checkout_step["with"]["fetch-depth"] == 0
 
 
 def test_ci_validation_receipts_observe_checked_out_head() -> None:
@@ -6665,6 +6663,10 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
                 "subject-id": "ruby-subject",
                 "root": "src/public/lib/hcoona-release-smoke-rubygems",
             },
+            {
+                "subject-id": "python-subject",
+                "root": "src/private/app/html-sm-processor",
+            },
         ]
     }
     dotnet_group = {
@@ -6707,12 +6709,24 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
             "planned-capabilities": ["build"],
         },
     }
+    python_group = {
+        "work-group-id": "wg-python",
+        "kind": "ecosystem-gate",
+        "coverage-target": {"type": "subject", "id": "python-subject"},
+        "ecosystem": "python",
+        "runner-family": "ubuntu",
+        "depends-on": [],
+        "expected-evidence": {
+            "planned-capabilities": ["type-check"],
+        },
+    }
 
     dotnet_commands = control._ci_validation_commands(plan, dotnet_group)
     fallback_commands = control._ci_validation_commands({}, dotnet_group)
     js_commands = control._ci_validation_commands(plan, js_group)
     release_commands = control._ci_validation_commands(plan, release_group)
     ruby_commands = control._ci_validation_commands(plan, ruby_group)
+    python_commands = control._ci_validation_commands(plan, python_group)
 
     assert ["dotnet", "build", "src/public/lib/CircularList"] in [
         command["argv"] for command in dotnet_commands
@@ -6783,6 +6797,16 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
     ] in [command["argv"] for command in js_commands]
     assert all("--if-present" not in command["argv"] for command in js_commands)
     assert all(command["argv"][-1] != "format" for command in js_commands)
+    assert [
+        "uv",
+        "run",
+        "pyrefly",
+        "check",
+    ] in [command["argv"] for command in python_commands]
+    assert all(
+        command["argv"][-1] != "src/private/app/html-sm-processor"
+        for command in python_commands
+    )
     assert any(
         command["capability"] == "build"
         and command["argv"] == ["dotnet", "tool", "restore"]

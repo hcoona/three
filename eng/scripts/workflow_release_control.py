@@ -6018,7 +6018,7 @@ def _ci_python_validation_commands(
         commands.append(
             _ci_command(
                 "python type check",
-                ["uv", "run", "pyrefly", "check", root],
+                ["uv", "run", "pyrefly", "check"],
                 capability="type-check",
             )
         )
