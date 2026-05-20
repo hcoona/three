@@ -341,9 +341,7 @@ def _add_aggregate_ci_evidence(
 def _add_download_ci_validation_observed_artifacts(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    parser = subparsers.add_parser(
-        "download-ci-validation-observed-artifacts"
-    )
+    parser = subparsers.add_parser("download-ci-validation-observed-artifacts")
     parser.add_argument("--repository", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--assignments", required=True)
@@ -5596,30 +5594,48 @@ def _github_actions_run_artifacts(
         f"repos/{repository}/actions/runs/{run_id}/artifacts?per_page=100",
     )
     artifacts: list[Mapping[str, object]] = []
+    seen_artifact_ids: set[str] = set()
     for index, page in enumerate(pages):
-        if isinstance(page, Mapping):
-            page_artifacts = page.get("artifacts")
-            if not isinstance(page_artifacts, Sequence) or isinstance(
-                page_artifacts,
-                str | bytes,
-            ):
-                msg = f"artifact API page {index} is missing artifacts array"
-                raise TypeError(msg)
-            for artifact in page_artifacts:
-                if not isinstance(artifact, Mapping):
-                    msg = f"artifact API page {index} contains non-object"
-                    raise TypeError(msg)
-                artifacts.append(artifact)
-        elif isinstance(page, Sequence) and not isinstance(page, str | bytes):
-            for artifact in page:
-                if not isinstance(artifact, Mapping):
-                    msg = f"artifact API page {index} contains non-object"
-                    raise TypeError(msg)
-                artifacts.append(artifact)
-        else:
-            msg = f"artifact API page {index} has unsupported shape"
-            raise TypeError(msg)
+        for artifact in _github_actions_run_artifact_page_items(page, index):
+            artifact_id = artifact.get("id")
+            if artifact_id is not None:
+                artifact_id_key = str(artifact_id)
+                if artifact_id_key in seen_artifact_ids:
+                    continue
+                seen_artifact_ids.add(artifact_id_key)
+            artifacts.append(artifact)
     return artifacts
+
+
+def _github_actions_run_artifact_page_items(
+    page: object,
+    index: int,
+) -> Sequence[Mapping[str, object]]:
+    if isinstance(page, Mapping):
+        page_artifacts = page.get("artifacts")
+        if not isinstance(page_artifacts, Sequence) or isinstance(
+            page_artifacts,
+            str | bytes,
+        ):
+            msg = f"artifact API page {index} is missing artifacts array"
+            raise TypeError(msg)
+        artifacts: list[Mapping[str, object]] = []
+        for artifact in page_artifacts:
+            if not isinstance(artifact, Mapping):
+                msg = f"artifact API page {index} contains non-object"
+                raise TypeError(msg)
+            artifacts.append(artifact)
+        return artifacts
+    if isinstance(page, Sequence) and not isinstance(page, str | bytes):
+        artifacts: list[Mapping[str, object]] = []
+        for artifact in page:
+            if not isinstance(artifact, Mapping):
+                msg = f"artifact API page {index} contains non-object"
+                raise TypeError(msg)
+            artifacts.append(artifact)
+        return artifacts
+    msg = f"artifact API page {index} has unsupported shape"
+    raise TypeError(msg)
 
 
 def _publish_node_diagnostic(
@@ -6077,7 +6093,7 @@ def _ci_ruby_validation_commands(
                         "root=ARGV.fetch(0); "
                         "out=ARGV.fetch(1); "
                         "gemspec=Dir[File.join(root, '*.gemspec')].sort.first; "
-                        "abort(\"no gemspec found under #{root}\") unless gemspec; "
+                        'abort("no gemspec found under #{root}") unless gemspec; '
                         "system('gem', 'build', gemspec, '--output', out) "
                         "or exit($?.exitstatus || 1)"
                     ),

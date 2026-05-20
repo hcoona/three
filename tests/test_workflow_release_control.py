@@ -5888,6 +5888,42 @@ def test_ci_validation_aggregate_fails_closed_for_duplicate_plan_artifact(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_github_actions_run_artifacts_dedupes_paginated_artifact_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Running workflows can repeat the same artifact across pages."""
+    artifact_ref = control.ci_validation_plan_artifact_ref(
+        run_id="25887422010",
+        run_attempt="1",
+    )
+    artifact_name = control.artifact_physical_name(artifact_ref)
+
+    monkeypatch.setattr(
+        control,
+        "_gh_api_paginated",
+        lambda *_args, **_kwargs: [
+            {
+                "artifacts": [
+                    {"id": 7001, "name": artifact_name},
+                    {"id": 7002, "name": artifact_name},
+                ],
+            },
+            {
+                "artifacts": [
+                    {"id": 7001, "name": artifact_name},
+                ],
+            },
+        ],
+    )
+
+    artifacts = control._github_actions_run_artifacts(
+        repository="hcoona/three",
+        run_id="25887422010",
+    )
+
+    assert [artifact["id"] for artifact in artifacts] == [7001, 7002]
+
+
 def test_release_workflow_uv_setup_precedes_uv_run() -> None:
     """Every release job installs pinned uv before invoking uv commands."""
     workflows = REPO_ROOT / ".github/workflows"
