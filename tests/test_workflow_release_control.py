@@ -5450,7 +5450,7 @@ def test_ci_validation_work_groups_use_full_checkout_for_nbgv() -> None:
         )
 
         assert checkout_step["with"]["fetch-depth"] == (
-            "${{ matrix.work-group.ecosystem == 'dotnet' && 0 || 1 }}"
+            "${{ matrix.work-group.ecosystem == 'dotnet' && '0' || '1' }}"
         )
 
 
