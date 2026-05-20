@@ -3,19 +3,23 @@
 This app is the source of truth for the repository's VS Code GitHub Copilot
 Telegram notification hooks.
 
-It serves two use cases:
+It serves the managed/user-level installation flow:
 
-1. The repository-local hook entry in `.github/hooks/telegram-notify.json`,
-   used only for pre-release testing in this repository.
-2. A user-level installation that applies to any workspace in VS Code and
-   GitHub Copilot CLI and represents the formally supported product use case.
+1. A managed VS Code hook JSON file registered through supported same-host VS
+   Code settings targets.
+2. A GitHub Copilot CLI hook JSON file under the CLI hooks directory.
+
+There is intentionally no repository-local `.github/hooks/telegram-notify.json`
+workspace hook entry.
 
 The implementation follows the official VS Code Copilot hooks preview behavior:
 
-- Workspace hooks are loaded from `.github/hooks/*.json`.
 - The official VS Code hooks docs currently list `~/.claude/settings.json` as
   a default user hook location.
-- Workspace hooks take precedence over user hooks for the same event.
+- Workspace hooks can be loaded from `.github/hooks/*.json`, but this repository
+  does not use a repo-local workspace hook for the Telegram notifier.
+- Workspace hooks take precedence over user hooks for the same event when they
+  exist.
 - GitHub Copilot CLI loads user-level hook files from `*.json` files under
   `$COPILOT_HOME/hooks/` when `COPILOT_HOME` is set, otherwise
   `~/.copilot/hooks/` on Linux and macOS or `%USERPROFILE%\.copilot\hooks\` on
@@ -183,16 +187,20 @@ under `.copilot/notifications/sessions/<safe-session-id>/`, including:
 - `turns/<notification-turn-id>/summary.json`: the exact per-turn summary handoff
   file authorized by the Notification Assignment.
 - `turns/<notification-turn-id>/stops/<stop-id>.json`: Stop observations.
+- `turns/<notification-turn-id>/claims/delivery.claim`: atomic turn delivery claim.
 - `turns/<notification-turn-id>/notifications/<notification-key>.json`: durable
   duplicate-suppression records.
+- `notifications/<notification-key>.json`: session-level durable records used for
+  degraded fallbacks and cross-path duplicate suppression.
+- `claims/<notification-key>.claim`: atomic Stop delivery claim keyed by the raw
+  Stop timestamp hash.
 - `hook.log`: always-on diagnostic log for the current Copilot session.
 
 These `.copilot/notifications/sessions/` files are runtime state and should
 remain ignored in git.
 
 The gopass prefix is fixed at `copilot/vscode-copilot-telegram-hook` so the
-user-level installation and this repository's workspace hook resolve the same
-secrets.
+managed VS Code hook file and Copilot CLI hook file resolve the same secrets.
 As of the current official VS Code docs, the documented default user-level hook
 file location is still `~/.claude/settings.json`, even when the feature is used
 from VS Code GitHub Copilot. However, manual verification recorded in
@@ -265,8 +273,10 @@ Use these documents as the authoritative sources:
   the VS Code Server Machine settings target belong to the same host for
   managed-installation purposes, and that default installation may target both.
 - [`docs/h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./docs/h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md):
-  later correction that removes the managed instruction dependency and moves
-  summary recovery into the `Stop` hook with bounded retries.
+  provenance for removing the managed instruction dependency. Its original
+  default `Stop`-blocking recovery direction is superseded by the current
+  non-blocking degraded fallback design; blocking recovery is future
+  strict/debug scope only.
 - [`docs/functional-requirements.md`](./docs/functional-requirements.md):
   current derived functional specification.
 - [nonfunctional constraints](./docs/nonfunctional-and-constraints-research.md):

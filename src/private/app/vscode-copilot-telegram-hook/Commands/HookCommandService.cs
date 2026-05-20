@@ -225,6 +225,10 @@ internal sealed class HookCommandService(
                 workspacePath,
                 hookInput.SessionId,
                 notificationKey);
+            string turnClaimPath = AppPaths.GetTurnDeliveryClaimPath(
+                workspacePath,
+                hookInput.SessionId,
+                turn.NotificationTurnId);
             if (await WorkspaceStateStore.WasNotificationAlreadySentAsync(
                     notificationPath,
                     cancellationToken)
@@ -246,6 +250,36 @@ internal sealed class HookCommandService(
                 return 0;
             }
 
+            if (!await WorkspaceStateStore.TryClaimStopNotificationAsync(
+                    turnClaimPath,
+                    claimedAt,
+                    cancellationToken))
+            {
+                WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);
+                return 0;
+            }
+
+            NotificationTurn? currentTurn = await workspaceStateStore.TryReadTurnAsync(
+                workspacePath,
+                hookInput.SessionId,
+                turn.NotificationTurnId,
+                cancellationToken);
+            if (currentTurn is null
+                || !string.Equals(currentTurn.Status, "open", StringComparison.Ordinal)
+                || await WorkspaceStateStore.HasDurableDeliveryRecordAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    turn.NotificationTurnId,
+                    cancellationToken))
+            {
+                WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);
+                return 0;
+            }
+
+            turn = currentTurn;
             bool notificationSent = false;
             try
             {
@@ -289,37 +323,40 @@ internal sealed class HookCommandService(
                 catch (TelegramSendMessagesException ex)
                 {
                     notificationSent = ex.SuccessfulMessageCount > 0;
+                    if (notificationSent)
+                    {
+                        await RecordTurnNotificationDeliveryAsync(
+                            hookInput,
+                            workspacePath,
+                            turn,
+                            notificationPath,
+                            sessionNotificationPath,
+                            notificationKey,
+                            sentAt,
+                            summary,
+                            degraded: true,
+                            reason: $"partial Telegram delivery: {ex.Message}",
+                            deliveryStatus: "partial",
+                            successfulMessageCount: ex.SuccessfulMessageCount,
+                            cancellationToken);
+                    }
+
                     throw;
                 }
 
-                await WorkspaceStateStore.RecordNotificationAsync(
-                    notificationPath,
-                    BuildNotificationRecord(
-                        hookInput,
-                        workspacePath,
-                        turn.NotificationTurnId,
-                        notificationKey,
-                        sentAt,
-                        summary,
-                        !summaryValidation.IsValid,
-                        summaryValidation.FailureReason),
-                    cancellationToken);
-                await WorkspaceStateStore.RecordNotificationAsync(
-                    sessionNotificationPath,
-                    BuildNotificationRecord(
-                        hookInput,
-                        workspacePath,
-                        turn.NotificationTurnId,
-                        notificationKey,
-                        sentAt,
-                        summary,
-                        !summaryValidation.IsValid,
-                        summaryValidation.FailureReason),
-                    cancellationToken);
-                await WorkspaceStateStore.MarkTurnNotifiedAsync(
+                await RecordTurnNotificationDeliveryAsync(
+                    hookInput,
                     workspacePath,
                     turn,
+                    notificationPath,
+                    sessionNotificationPath,
+                    notificationKey,
                     sentAt,
+                    summary,
+                    !summaryValidation.IsValid,
+                    summaryValidation.FailureReason,
+                    deliveryStatus: "sent",
+                    successfulMessageCount: null,
                     cancellationToken);
             }
             catch
@@ -327,6 +364,7 @@ internal sealed class HookCommandService(
                 if (!notificationSent)
                 {
                     WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                    WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
                 }
 
                 throw;
@@ -409,6 +447,24 @@ internal sealed class HookCommandService(
             catch (TelegramSendMessagesException ex)
             {
                 notificationSent = ex.SuccessfulMessageCount > 0;
+                if (notificationSent)
+                {
+                    await WorkspaceStateStore.RecordNotificationAsync(
+                        notificationPath,
+                        BuildNotificationRecord(
+                            hookInput,
+                            workspacePath,
+                            notificationTurnId: null,
+                            notificationKey,
+                            sentAt,
+                            summary: null,
+                            degraded: true,
+                            reason: $"partial Telegram delivery: {ex.Message}",
+                            deliveryStatus: "partial",
+                            successfulMessageCount: ex.SuccessfulMessageCount),
+                        cancellationToken);
+                }
+
                 throw;
             }
 
@@ -422,7 +478,9 @@ internal sealed class HookCommandService(
                     sentAt,
                     summary: null,
                     degraded: true,
-                    reason),
+                    reason,
+                    deliveryStatus: "sent",
+                    successfulMessageCount: null),
                 cancellationToken);
         }
         catch
@@ -483,7 +541,9 @@ internal sealed class HookCommandService(
         string sentAt,
         NotificationSummary? summary,
         bool degraded,
-        string? reason)
+        string? reason,
+        string deliveryStatus,
+        int? successfulMessageCount)
         => new()
         {
             SessionId = input.SessionId,
@@ -494,8 +554,51 @@ internal sealed class HookCommandService(
             SentAt = sentAt,
             SummaryUpdatedAt = summary?.UpdatedAt,
             Degraded = degraded,
+            DeliveryStatus = deliveryStatus,
+            SuccessfulMessageCount = successfulMessageCount,
             Reason = reason,
         };
+
+    private static async Task RecordTurnNotificationDeliveryAsync(
+        StopHookInput input,
+        string workspacePath,
+        NotificationTurn turn,
+        string notificationPath,
+        string sessionNotificationPath,
+        string notificationKey,
+        string sentAt,
+        NotificationSummary? summary,
+        bool degraded,
+        string? reason,
+        string deliveryStatus,
+        int? successfulMessageCount,
+        CancellationToken cancellationToken)
+    {
+        NotificationRecord record = BuildNotificationRecord(
+            input,
+            workspacePath,
+            turn.NotificationTurnId,
+            notificationKey,
+            sentAt,
+            summary,
+            degraded,
+            reason,
+            deliveryStatus,
+            successfulMessageCount);
+        await WorkspaceStateStore.RecordNotificationAsync(
+            notificationPath,
+            record,
+            cancellationToken);
+        await WorkspaceStateStore.RecordNotificationAsync(
+            sessionNotificationPath,
+            record,
+            cancellationToken);
+        await WorkspaceStateStore.MarkTurnNotifiedAsync(
+            workspacePath,
+            turn,
+            sentAt,
+            cancellationToken);
+    }
 
     private static PromptClassification ClassifyPrompt(UserPromptSubmitHookInput input)
     {

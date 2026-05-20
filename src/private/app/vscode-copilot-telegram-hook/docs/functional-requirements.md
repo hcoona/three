@@ -94,13 +94,20 @@ The summary handoff for a tracked result shall support, at minimum:
 
 The solution shall provide a way for Copilot to update the summary content before it finishes work for the current chat turn.
 
-### FR-009 Stop-mediated summary recovery
+### FR-009 Default non-blocking summary fallback
 
-When the current turn's summary record is missing or invalid at `Stop`, the solution shall be able to block stopping, explain the validation failure, and require Copilot to regenerate the summary record.
+When the current tracked result's summary record is missing or invalid at
+`Stop`, the default behavior shall not block stopping. The solution shall send a
+degraded fallback notification that explicitly indicates the summary is missing
+or unusable. Strict/debug summary-recovery modes, if introduced later, are
+outside the default functional scope.
 
-### FR-010 Bounded stop blocking
+### FR-010 No default Stop blocking
 
-The stop-mediated summary-recovery loop shall stop blocking after at most three validation failures for the same tracked result.
+The default `Stop` hook behavior shall not return a blocking decision for
+missing or invalid summary content. Bounded blocking recovery is superseded for
+the default notification flow and remains out of scope unless a future
+strict/debug mode explicitly opts into it.
 
 ### FR-011 Delivery independence from structured summary schema
 

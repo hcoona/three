@@ -273,6 +273,12 @@ internal sealed class NotificationRecord
     [JsonPropertyName("degraded")]
     public bool Degraded { get; set; }
 
+    [JsonPropertyName("delivery_status")]
+    public string DeliveryStatus { get; set; } = string.Empty;
+
+    [JsonPropertyName("successful_message_count")]
+    public int? SuccessfulMessageCount { get; set; }
+
     [JsonPropertyName("reason")]
     public string? Reason { get; set; }
 }

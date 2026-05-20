@@ -417,6 +417,15 @@ internal static class AppPaths
             AppConstants.ClaimsDirectoryName,
             $"{notificationKey}.claim");
 
+    public static string GetTurnDeliveryClaimPath(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId)
+        => Path.Combine(
+            GetTurnDirectoryPath(workspacePath, sessionId, notificationTurnId),
+            AppConstants.ClaimsDirectoryName,
+            "delivery.claim");
+
     public static string GetSessionLogPath(string workspacePath, string sessionId)
         => Path.Combine(
             GetSessionDirectoryPath(Path.GetFullPath(workspacePath), sessionId),

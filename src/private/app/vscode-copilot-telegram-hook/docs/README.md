@@ -55,7 +55,7 @@ as standalone H-series source documents.
 | H-005 | [`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md)                       | Preserves the manual verification of current hook input field names.               | This records that the current observed runtime uses `session_id` and `hook_event_name`, and that implementation should follow measurement when it conflicts with current external docs.                                                     |
 | H-006 | [`h-006-human-confirmation-2026-03-14-user-hook-location.md`](./h-006-human-confirmation-2026-03-14-user-hook-location.md)                               | Preserves the manual confirmation of current VS Code user-hook loading conditions. | This records that `~/.claude/settings.json` only took effect in the observed VS Code environment when `chat.useClaudeHooks` was enabled, and that future installation should still prefer an explicitly specified separate hook JSON path.  |
 | H-007 | [`h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md) | Preserves the later clarification about same-host VS Code settings targets.        | This records that the relevant desktop and VS Code Server settings targets belong to the same host for managed installation purposes, and that default installation may target both rather than treating the problem as cross-machine.      |
-| H-008 | [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)               | Preserves the later correction to the summary handoff design.                      | This records that the managed custom-instruction dependency should be removed, that `Stop` should block on invalid summary files and request regeneration, and that blocking should stop after three validation failures for the same turn. |
+| H-008 | [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)               | Preserves a superseded correction to the summary handoff design.                   | This remains provenance for removing the managed custom-instruction dependency. Its default `Stop`-blocking recovery direction is superseded by the current non-blocking degraded fallback design; blocking recovery is future strict/debug scope only. |
 
 ## Reference derivation rule
 
@@ -114,8 +114,10 @@ The current documentation flow is:
    target both by default without turning the problem into a cross-machine
    client-versus-server story.
 8. H-008 records the later correction that the unstable instruction-based
-   summary handoff should be replaced by a `Stop`-blocking validation and
-   regeneration flow with a three-failure bound.
+   summary handoff should be removed. Its `Stop`-blocking validation and
+   regeneration flow is superseded for default behavior by non-blocking
+   degraded fallback notifications; any blocking recovery is future
+   strict/debug scope only.
 9. D-002 and D-003 research the H-001 reference set, with D-002 also
    incorporating the later confirmed decisions from H-002, H-003, H-004,
    H-006, H-007, and H-008 where needed, and D-003 incorporating the later

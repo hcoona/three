@@ -217,7 +217,12 @@ internal sealed class WorkspaceStateStore(
                 cancellationToken);
             if (turn is not null
                 && string.Equals(turn.SessionId, sessionId, StringComparison.Ordinal)
-                && string.Equals(turn.Status, "open", StringComparison.Ordinal))
+                && string.Equals(turn.Status, "open", StringComparison.Ordinal)
+                && !await HasDurableDeliveryRecordAsync(
+                    Path.GetFullPath(workspacePath),
+                    sessionId,
+                    turn.NotificationTurnId,
+                    cancellationToken))
             {
                 turns.Add(turn);
             }
@@ -472,6 +477,92 @@ internal sealed class WorkspaceStateStore(
     }
 
     private static string CreateId(string prefix) => $"{prefix}-{Guid.NewGuid():n}";
+
+    public static async Task<bool> HasDurableDeliveryRecordAsync(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId,
+        CancellationToken cancellationToken)
+    {
+        string turnNotificationsDirectory = Path.Combine(
+            AppPaths.GetTurnDirectoryPath(workspacePath, sessionId, notificationTurnId),
+            AppConstants.NotificationsRecordsDirectoryName);
+        if (await HasDurableDeliveryRecordInDirectoryAsync(
+                turnNotificationsDirectory,
+                sessionId,
+                notificationTurnId,
+                cancellationToken))
+        {
+            return true;
+        }
+
+        string sessionNotificationsDirectory = Path.Combine(
+            AppPaths.GetSessionDirectoryPath(workspacePath, sessionId),
+            AppConstants.NotificationsRecordsDirectoryName);
+        return await HasDurableDeliveryRecordInDirectoryAsync(
+            sessionNotificationsDirectory,
+            sessionId,
+            notificationTurnId,
+            cancellationToken);
+    }
+
+    private static async Task<bool> HasDurableDeliveryRecordInDirectoryAsync(
+        string notificationsDirectory,
+        string sessionId,
+        string notificationTurnId,
+        CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(notificationsDirectory))
+        {
+            return false;
+        }
+
+        foreach (string notificationFile in Directory.EnumerateFiles(
+                     notificationsDirectory,
+                     "*.json",
+                     SearchOption.TopDirectoryOnly))
+        {
+            NotificationRecord? record = await ReadJsonFileAsync(
+                notificationFile,
+                AppJsonSerializerContext.Default.NotificationRecord,
+                cancellationToken);
+            if (record is not null
+                && string.Equals(record.SessionId, sessionId, StringComparison.Ordinal)
+                && string.Equals(
+                    record.NotificationTurnId,
+                    notificationTurnId,
+                    StringComparison.Ordinal)
+                && IsDurableDeliveryStatus(record.DeliveryStatus))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsDurableDeliveryStatus(string? deliveryStatus)
+        => string.Equals(deliveryStatus, "sent", StringComparison.Ordinal)
+            || string.Equals(deliveryStatus, "partial", StringComparison.Ordinal);
+
+    private static async Task<T?> ReadJsonFileAsync<T>(
+        string path,
+        JsonTypeInfo<T> jsonTypeInfo,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            await using FileStream stream = File.OpenRead(path);
+            return await JsonSerializer.DeserializeAsync(stream, jsonTypeInfo, cancellationToken);
+        }
+        catch (Exception ex) when (
+            ex is IOException or JsonException or UnauthorizedAccessException
+                or NotSupportedException)
+        {
+            return null;
+        }
+    }
 
     private static void EnsureOwnerOnlyParentDirectory(string path)
     {
