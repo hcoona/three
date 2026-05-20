@@ -5438,7 +5438,7 @@ def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
 
 
 def test_ci_validation_work_groups_use_full_checkout_for_nbgv() -> None:
-    """Validation commands need full history for NBGV version height."""
+    """Dotnet validation commands need full history for NBGV version height."""
     workflow = yaml.safe_load(_workflow("ci-validate.yml"))
 
     for layer in range(3):
@@ -5449,7 +5449,9 @@ def test_ci_validation_work_groups_use_full_checkout_for_nbgv() -> None:
             step for step in steps if step.get("uses") == "actions/checkout@v4"
         )
 
-        assert checkout_step["with"]["fetch-depth"] == 0
+        assert checkout_step["with"]["fetch-depth"] == (
+            "${{ matrix.work-group.ecosystem == 'dotnet' && 0 || 1 }}"
+        )
 
 
 def test_ci_validation_receipts_observe_checked_out_head() -> None:
