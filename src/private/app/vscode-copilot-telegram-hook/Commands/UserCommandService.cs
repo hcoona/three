@@ -1,3 +1,4 @@
+using System.Globalization;
 using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Hcoona.VsCodeCopilotTelegramHook.Notifications;
 using Microsoft.Extensions.Logging;
@@ -948,5 +949,5 @@ internal sealed class UserCommandService(
         => timeProvider
             .GetUtcNow()
             .UtcDateTime
-            .ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'");
+            .ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 }

@@ -360,7 +360,7 @@ internal sealed class WorkspaceStateStore(
         }
     }
 
-    public static async Task<bool> TryReclaimStaleTurnDeliveryClaimAsync(
+    public static async Task<bool> TryReclaimStaleClaimAsync(
         string path,
         string reclaimPath,
         string claimedAt,
@@ -473,7 +473,7 @@ internal sealed class WorkspaceStateStore(
         return timeProvider
             .GetUtcNow()
             .UtcDateTime
-            .ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'");
+            .ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
     }
 
     private async Task<NotificationSession> EnsureSessionAsync(

@@ -226,6 +226,10 @@ internal sealed class HookCommandService(
                 workspacePath,
                 hookInput.SessionId,
                 notificationKey);
+            string reclaimPath = AppPaths.GetSessionStopReclaimClaimPath(
+                workspacePath,
+                hookInput.SessionId,
+                notificationKey);
             string turnClaimPath = AppPaths.GetTurnDeliveryClaimPath(
                 workspacePath,
                 hookInput.SessionId,
@@ -234,8 +238,10 @@ internal sealed class HookCommandService(
                 workspacePath,
                 hookInput.SessionId,
                 turn.NotificationTurnId);
-            if (await WorkspaceStateStore.WasNotificationAlreadySentAsync(
-                    notificationPath,
+            if (await AnyPerTurnNotificationRecordExistsAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    notificationKey,
                     cancellationToken)
                 || await WorkspaceStateStore.WasNotificationAlreadySentAsync(
                     sessionNotificationPath,
@@ -246,10 +252,30 @@ internal sealed class HookCommandService(
             }
 
             string claimedAt = workspaceStateStore.GetCurrentUtcTimestamp();
-            if (!await WorkspaceStateStore.TryClaimStopNotificationAsync(
+            bool claimedSessionStop = await WorkspaceStateStore.TryClaimStopNotificationAsync(
+                claimPath,
+                claimedAt,
+                cancellationToken);
+            if (!claimedSessionStop)
+            {
+                claimedSessionStop = await WorkspaceStateStore.TryReclaimStaleClaimAsync(
                     claimPath,
+                    reclaimPath,
                     claimedAt,
-                    cancellationToken))
+                    TimeSpan.FromMinutes(AppConstants.TurnDeliveryClaimStaleAfterMinutes),
+                    async () =>
+                        await AnyPerTurnNotificationRecordExistsAsync(
+                            workspacePath,
+                            hookInput.SessionId,
+                            notificationKey,
+                            cancellationToken)
+                        || await WorkspaceStateStore.WasNotificationAlreadySentAsync(
+                            sessionNotificationPath,
+                            cancellationToken),
+                    cancellationToken);
+            }
+
+            if (!claimedSessionStop)
             {
                 AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);
                 return 0;
@@ -267,7 +293,7 @@ internal sealed class HookCommandService(
                     cancellationToken))
             {
                 claimedTurnDelivery =
-                    await WorkspaceStateStore.TryReclaimStaleTurnDeliveryClaimAsync(
+                    await WorkspaceStateStore.TryReclaimStaleClaimAsync(
                         turnClaimPath,
                         turnReclaimPath,
                         claimedAt,
@@ -437,6 +463,10 @@ internal sealed class HookCommandService(
             workspacePath,
             hookInput.SessionId,
             notificationKey);
+        string reclaimPath = AppPaths.GetSessionStopReclaimClaimPath(
+            workspacePath,
+            hookInput.SessionId,
+            notificationKey);
         if (await WorkspaceStateStore.WasNotificationAlreadySentAsync(
                 notificationPath,
                 cancellationToken))
@@ -446,10 +476,30 @@ internal sealed class HookCommandService(
         }
 
         string claimedAt = workspaceStateStore.GetCurrentUtcTimestamp();
-        if (!await WorkspaceStateStore.TryClaimStopNotificationAsync(
+        bool claimedSessionStop = await WorkspaceStateStore.TryClaimStopNotificationAsync(
+            claimPath,
+            claimedAt,
+            cancellationToken);
+        if (!claimedSessionStop)
+        {
+            claimedSessionStop = await WorkspaceStateStore.TryReclaimStaleClaimAsync(
                 claimPath,
+                reclaimPath,
                 claimedAt,
-                cancellationToken))
+                TimeSpan.FromMinutes(AppConstants.TurnDeliveryClaimStaleAfterMinutes),
+                async () =>
+                    await WorkspaceStateStore.WasNotificationAlreadySentAsync(
+                        notificationPath,
+                        cancellationToken)
+                    || await AnyPerTurnNotificationRecordExistsAsync(
+                        workspacePath,
+                        hookInput.SessionId,
+                        notificationKey,
+                        cancellationToken),
+                cancellationToken);
+        }
+
+        if (!claimedSessionStop)
         {
             AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, notificationKey);
             return;

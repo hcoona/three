@@ -1,3 +1,4 @@
+using System.Globalization;
 using Hcoona.VsCodeCopilotTelegramHook.State;
 using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Microsoft.Extensions.Logging;
@@ -8,6 +9,49 @@ namespace Hcoona.VsCodeCopilotTelegramHook.Tests;
 
 public sealed class WorkspaceStateStoreTests
 {
+    [Fact]
+    public void GetCurrentUtcTimestampUsesInvariantCulture()
+    {
+        CultureInfo originalCulture = CultureInfo.CurrentCulture;
+        CultureInfo originalUICulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo? nonInvariantCulture = CultureInfo
+                .GetCultures(CultureTypes.SpecificCultures)
+                .FirstOrDefault(c => c.Name.Length > 0);
+            if (nonInvariantCulture is null)
+            {
+                return;
+            }
+
+            CultureInfo.CurrentCulture = nonInvariantCulture;
+            CultureInfo.CurrentUICulture = nonInvariantCulture;
+            WorkspaceStateStore store = new(
+                new FixedTimeProvider(
+                    new DateTimeOffset(2026, 3, 14, 15, 51, 50, 783, TimeSpan.Zero)),
+                NullLogger<WorkspaceStateStore>.Instance);
+
+            string timestamp = store.GetCurrentUtcTimestamp();
+
+            Assert.Equal("2026-03-14T15:51:50.783Z", timestamp);
+            Assert.True(DateTimeOffset.TryParseExact(
+                timestamp,
+                "yyyy-MM-ddTHH:mm:ss.fff'Z'",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out DateTimeOffset parsed));
+            Assert.Equal(
+                new DateTimeOffset(2026, 3, 14, 15, 51, 50, 783, TimeSpan.Zero),
+                parsed);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUICulture;
+        }
+    }
+
     [Fact]
     public async Task CreateNotificationTurnAsyncWritesAuthoritativePerTurnFiles()
     {
@@ -193,5 +237,10 @@ public sealed class WorkspaceStateStoreTests
         {
             tempDirectory.Delete(recursive: true);
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }

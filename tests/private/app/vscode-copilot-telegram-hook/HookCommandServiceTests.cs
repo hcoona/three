@@ -744,7 +744,7 @@ public sealed class HookCommandServiceTests
         try
         {
             WorkspaceStateStore stateStore = new(
-                TimeProvider.System,
+                FixedUtcNow(),
                 NullLogger<WorkspaceStateStore>.Instance);
             RecordingHttpMessageHandler handler = new();
             HookCommandService service = CreateHookCommandService(handler, stateStore);
@@ -766,6 +766,49 @@ public sealed class HookCommandServiceTests
                 CancellationToken.None);
 
             Assert.Empty(handler.Requests);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandleStopAsyncReclaimsStaleSessionStopClaimForFallback()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                FixedUtcNow(),
+                NullLogger<WorkspaceStateStore>.Instance);
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler, stateStore);
+            const string stopTimestamp = "2026-03-14T15:51:50.783Z";
+            string notificationKey = CreateStopNotificationKeyForTest(stopTimestamp);
+            string claimPath = AppPaths.GetSessionStopClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey);
+            await WriteClaimAsync(claimPath, "2026-03-14T15:40:49.783Z");
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            TelegramSendMessageRequest payload = DeserializeTelegramPayload(
+                Assert.Single(handler.Requests));
+            Assert.Contains("摘要：当前轮未生成摘要。", payload.Text, StringComparison.Ordinal);
+            Assert.Equal(stopTimestamp, await File.ReadAllTextAsync(claimPath));
+            Assert.False(File.Exists(AppPaths.GetSessionStopReclaimClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey)));
         }
         finally
         {
@@ -952,6 +995,263 @@ public sealed class HookCommandServiceTests
                 tempDirectory.FullName,
                 "session-123",
                 turn.NotificationTurnId)));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandleStopAsyncSkipsFreshSessionStopClaim()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                FixedUtcNow(),
+                NullLogger<WorkspaceStateStore>.Instance);
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler, stateStore);
+            const string stopTimestamp = "2026-03-14T15:51:50.783Z";
+            NotificationTurn turn = await CreateTurnWithSummaryAsync(
+                stateStore,
+                tempDirectory.FullName,
+                stopTimestamp,
+                "A fresh session Stop claim must suppress delivery.");
+            string notificationKey = CreateStopNotificationKeyForTest(stopTimestamp);
+            string claimPath = AppPaths.GetSessionStopClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey);
+            await WriteClaimAsync(claimPath, "2026-03-14T15:51:49.783Z");
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            Assert.Empty(handler.Requests);
+            Assert.Equal("2026-03-14T15:51:49.783Z", await File.ReadAllTextAsync(claimPath));
+            Assert.False(File.Exists(AppPaths.GetTurnDeliveryClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                turn.NotificationTurnId)));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandleStopAsyncReclaimsStaleSessionStopClaimWithoutDurableRecord()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                FixedUtcNow(),
+                NullLogger<WorkspaceStateStore>.Instance);
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler, stateStore);
+            const string stopTimestamp = "2026-03-14T15:51:50.783Z";
+            _ = await CreateTurnWithSummaryAsync(
+                stateStore,
+                tempDirectory.FullName,
+                stopTimestamp,
+                "A stale session Stop claim may be reclaimed.");
+            string notificationKey = CreateStopNotificationKeyForTest(stopTimestamp);
+            string claimPath = AppPaths.GetSessionStopClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey);
+            await WriteClaimAsync(claimPath, "2026-03-14T15:40:49.783Z");
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            Assert.Single(handler.Requests);
+            Assert.Equal(stopTimestamp, await File.ReadAllTextAsync(claimPath));
+            Assert.False(File.Exists(AppPaths.GetSessionStopReclaimClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey)));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-timestamp")]
+    public async Task HandleStopAsyncSkipsFreshMalformedSessionStopClaim(string claimContent)
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                FixedUtcNow(),
+                NullLogger<WorkspaceStateStore>.Instance);
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler, stateStore);
+            const string stopTimestamp = "2026-03-14T15:51:50.783Z";
+            _ = await CreateTurnWithSummaryAsync(
+                stateStore,
+                tempDirectory.FullName,
+                stopTimestamp,
+                "A fresh malformed session Stop claim must suppress delivery.");
+            string notificationKey = CreateStopNotificationKeyForTest(stopTimestamp);
+            string claimPath = AppPaths.GetSessionStopClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey);
+            await WriteClaimAsync(claimPath, claimContent);
+            File.SetLastWriteTimeUtc(
+                claimPath,
+                new DateTime(2026, 3, 14, 15, 51, 49, 783, DateTimeKind.Utc));
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            Assert.Empty(handler.Requests);
+            Assert.Equal(claimContent, await File.ReadAllTextAsync(claimPath));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-timestamp")]
+    public async Task HandleStopAsyncReclaimsStaleMalformedSessionStopClaim(
+        string claimContent)
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                FixedUtcNow(),
+                NullLogger<WorkspaceStateStore>.Instance);
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler, stateStore);
+            const string stopTimestamp = "2026-03-14T15:51:50.783Z";
+            _ = await CreateTurnWithSummaryAsync(
+                stateStore,
+                tempDirectory.FullName,
+                stopTimestamp,
+                "A stale malformed session Stop claim may be reclaimed.");
+            string notificationKey = CreateStopNotificationKeyForTest(stopTimestamp);
+            string claimPath = AppPaths.GetSessionStopClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey);
+            await WriteClaimAsync(claimPath, claimContent);
+            File.SetLastWriteTimeUtc(
+                claimPath,
+                new DateTime(2026, 3, 14, 15, 40, 49, 783, DateTimeKind.Utc));
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            Assert.Single(handler.Requests);
+            Assert.Equal(stopTimestamp, await File.ReadAllTextAsync(claimPath));
+            Assert.False(File.Exists(AppPaths.GetSessionStopReclaimClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey)));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("sent")]
+    [InlineData("partial")]
+    public async Task HandleStopAsyncDoesNotReclaimStaleSessionStopClaimWithDurableRecord(
+        string deliveryStatus)
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                FixedUtcNow(),
+                NullLogger<WorkspaceStateStore>.Instance);
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler, stateStore);
+            const string stopTimestamp = "2026-03-14T15:51:50.783Z";
+            NotificationTurn turn = await CreateTurnWithSummaryAsync(
+                stateStore,
+                tempDirectory.FullName,
+                stopTimestamp,
+                "A durable record must suppress session Stop claim reclaim.");
+            string notificationKey = CreateStopNotificationKeyForTest(stopTimestamp);
+            string claimPath = AppPaths.GetSessionStopClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey);
+            await WriteClaimAsync(claimPath, "2026-03-14T15:40:49.783Z");
+            await WriteNotificationRecordAsync(
+                AppPaths.GetNotificationRecordPath(
+                    tempDirectory.FullName,
+                    "session-123",
+                    turn.NotificationTurnId,
+                    notificationKey),
+                new NotificationRecord
+                {
+                    SessionId = "session-123",
+                    NotificationTurnId = turn.NotificationTurnId,
+                    NotificationKey = notificationKey,
+                    WorkspacePath = tempDirectory.FullName,
+                    StopTimestamp = stopTimestamp,
+                    SentAt = "2026-03-14T15:51:51.783Z",
+                    DeliveryStatus = deliveryStatus,
+                    SuccessfulMessageCount = deliveryStatus == "partial" ? 1 : null,
+                });
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            Assert.Empty(handler.Requests);
+            Assert.Equal("2026-03-14T15:40:49.783Z", await File.ReadAllTextAsync(claimPath));
+            Assert.False(File.Exists(AppPaths.GetSessionStopReclaimClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey)));
         }
         finally
         {
