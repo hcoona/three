@@ -125,7 +125,10 @@ public sealed class WorkspaceStateStoreTests
             string logContent = await File.ReadAllTextAsync(
                 AppPaths.GetSessionLogPath(tempDirectory.FullName, sessionId),
                 CancellationToken.None);
-            Assert.Contains("Failed to read notification summary", logContent, StringComparison.Ordinal);
+            Assert.Contains(
+                "Failed to read notification summary",
+                logContent,
+                StringComparison.Ordinal);
         }
         finally
         {
@@ -158,6 +161,33 @@ public sealed class WorkspaceStateStoreTests
             Assert.False(secondClaim);
             Assert.True(File.Exists(claimPath));
             FileAssertions.AssertOwnerOnlyFileMode(claimPath);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task TryClaimStopNotificationAsyncRethrowsNonDuplicateCreateFailures()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            string claimPath = AppPaths.GetSessionStopClaimPath(
+                tempDirectory.FullName,
+                "session-123",
+                "stop-test");
+            Directory.CreateDirectory(claimPath);
+
+            Exception exception = await Assert.ThrowsAnyAsync<Exception>(
+                () => WorkspaceStateStore.TryClaimStopNotificationAsync(
+                    claimPath,
+                    "2026-03-14T15:51:49.783Z",
+                    CancellationToken.None));
+
+            Assert.True(exception is IOException or UnauthorizedAccessException);
         }
         finally
         {

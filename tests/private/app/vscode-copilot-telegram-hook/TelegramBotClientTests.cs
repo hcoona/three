@@ -106,6 +106,25 @@ public sealed class TelegramBotClientTests
         Assert.Single(handler.Requests);
     }
 
+    [Fact]
+    public async Task SendMessagesAsyncPreservesCallerCancellationAfterPartialSuccess()
+    {
+        using CancellationTokenSource cancellation = new();
+        CancelAfterFirstSendHandler handler = new(cancellation);
+        using ServiceProvider services = CreateServices(handler);
+        TelegramBotClient client = services.GetRequiredService<TelegramBotClient>();
+
+        OperationCanceledException exception =
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => client.SendMessagesAsync(
+                    new TelegramCredentials("123456:ABCdef_token", "7713476101", "environment"),
+                    ["<b>First</b>", "<b>Second</b>"],
+                    cancellation.Token));
+
+        Assert.IsNotType<TelegramSendMessagesException>(exception);
+        Assert.True(cancellation.IsCancellationRequested);
+    }
+
     private static ServiceProvider CreateServices(HttpMessageHandler handler)
     {
         ServiceCollection services = [];
@@ -131,5 +150,28 @@ public sealed class TelegramBotClientTests
                 request.Body,
                 AppJsonSerializerContext.Default.TelegramSendMessageRequest)
             ?? throw new InvalidOperationException("Expected a valid Telegram request payload.");
+    }
+
+    private sealed class CancelAfterFirstSendHandler(
+        CancellationTokenSource cancellation) : HttpMessageHandler
+    {
+        private int requestCount;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (requestCount++ == 0)
+            {
+                cancellation.Cancel();
+                return Task.FromResult(
+                    RecordingHttpMessageHandler.CreateJsonResponse(
+                        HttpStatusCode.OK,
+                        """{"ok":true}"""));
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new InvalidOperationException("Expected caller cancellation.");
+        }
     }
 }

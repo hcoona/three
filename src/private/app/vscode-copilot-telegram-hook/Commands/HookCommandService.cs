@@ -180,10 +180,11 @@ internal sealed class HookCommandService(
 
             AppLog.HandlingStopHook(logger, hookInput.SessionId, workspacePath);
 
-            IReadOnlyList<NotificationTurn> openTurns = await workspaceStateStore.ListOpenTurnsAsync(
-                workspacePath,
-                hookInput.SessionId,
-                cancellationToken);
+            IReadOnlyList<NotificationTurn> openTurns =
+                await workspaceStateStore.ListOpenTurnsAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    cancellationToken);
             IReadOnlyList<PromptObservation> promptObservations =
                 await workspaceStateStore.ListPromptObservationsAsync(
                     workspacePath,
@@ -613,7 +614,9 @@ internal sealed class HookCommandService(
             || trimmed.StartsWith("Contents of AGENTS.md", StringComparison.OrdinalIgnoreCase)
             || IsExplicitSubagentHandoff(trimmed)
             || trimmed.Contains("Coder subagent", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Contains("OA is not allowed to code directly", StringComparison.OrdinalIgnoreCase))
+            || trimmed.Contains(
+                "OA is not allowed to code directly",
+                StringComparison.OrdinalIgnoreCase))
         {
             return new PromptClassification(
                 "observation-only",
@@ -682,7 +685,8 @@ internal sealed class HookCommandService(
             {
                 return new StopResolution(
                     null,
-                    $"explicit observation-only subagent handoff intervened before Stop {stopTimestamp}");
+                    "explicit observation-only subagent handoff intervened before "
+                        + $"Stop {stopTimestamp}");
             }
 
             return new StopResolution(
@@ -699,7 +703,8 @@ internal sealed class HookCommandService(
 
         return new StopResolution(
             null,
-            $"ambiguous Stop {stopTimestamp}: {eligibleTurns.Length} eligible open notification turns");
+            $"ambiguous Stop {stopTimestamp}: "
+                + $"{eligibleTurns.Length} eligible open notification turns");
     }
 
     private static bool HasUnresolvedInterveningSubagentObservation(
@@ -1004,12 +1009,18 @@ internal sealed class HookCommandService(
             failures.Add($"session_id must equal '{turn.SessionId}'");
         }
 
-        if (!string.Equals(summary.NotificationTurnId, turn.NotificationTurnId, StringComparison.Ordinal))
+        if (!string.Equals(
+                summary.NotificationTurnId,
+                turn.NotificationTurnId,
+                StringComparison.Ordinal))
         {
             failures.Add($"notification_turn_id must equal '{turn.NotificationTurnId}'");
         }
 
-        if (!string.Equals(summary.NotificationNonce, turn.NotificationNonce, StringComparison.Ordinal))
+        if (!string.Equals(
+                summary.NotificationNonce,
+                turn.NotificationNonce,
+                StringComparison.Ordinal))
         {
             failures.Add("notification_nonce must equal the assigned nonce");
         }

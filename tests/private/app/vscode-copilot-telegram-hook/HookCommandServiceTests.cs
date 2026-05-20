@@ -49,10 +49,19 @@ public sealed class HookCommandServiceTests
             string additionalContext = Assert.IsType<string>(
                 response.HookSpecificOutput?.AdditionalContext);
             Assert.Contains("Notification Assignment", additionalContext, StringComparison.Ordinal);
-            Assert.Contains("only that exact assigned summary path", additionalContext, StringComparison.Ordinal);
+            Assert.Contains(
+                "only that exact assigned summary path",
+                additionalContext,
+                StringComparison.Ordinal);
             Assert.DoesNotContain("notify-turn.json", additionalContext, StringComparison.Ordinal);
-            Assert.DoesNotContain("notify-summary.json", additionalContext, StringComparison.Ordinal);
-            Assert.Contains("Recovery guidance is not a new task", additionalContext, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "notify-summary.json",
+                additionalContext,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "Recovery guidance is not a new task",
+                additionalContext,
+                StringComparison.Ordinal);
 
             NotificationSession? session = await stateStore.TryReadSessionAsync(
                 tempDirectory.FullName,
@@ -117,7 +126,7 @@ public sealed class HookCommandServiceTests
     }
 
     [Fact]
-    public async Task HandleUserPromptSubmitAsyncTreatsIndependentReviewerSubagentAsObservationOnly()
+    public async Task HandleUserPromptSubmitAsyncTreatsReviewerSubagentAsObservationOnly()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
 
@@ -198,7 +207,8 @@ public sealed class HookCommandServiceTests
                         SessionId = "session-123",
                         Timestamp = "2026-03-14T15:51:45.783Z",
                         TranscriptPath = "/workspace/transcript.json",
-                        Prompt = "You are an independent Reviewer subagent. Review Group 1 changes.",
+                        Prompt = "You are an independent Reviewer subagent. "
+                            + "Review Group 1 changes.",
                     },
                     AppJsonSerializerContext.Default.UserPromptSubmitHookInput),
                 new MemoryStream(),
@@ -229,9 +239,16 @@ public sealed class HookCommandServiceTests
                 CancellationToken.None);
 
             Assert.Equal(2, handler.Requests.Count);
-            TelegramSendMessageRequest mainStopPayload = DeserializeTelegramPayload(handler.Requests[1]);
-            Assert.Contains("摘要：The main turn summary remains valid.", mainStopPayload.Text, StringComparison.Ordinal);
-            Assert.Contains(turn.NotificationTurnId, mainStopPayload.Text, StringComparison.Ordinal);
+            TelegramSendMessageRequest mainStopPayload =
+                DeserializeTelegramPayload(handler.Requests[1]);
+            Assert.Contains(
+                "摘要：The main turn summary remains valid.",
+                mainStopPayload.Text,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                turn.NotificationTurnId,
+                mainStopPayload.Text,
+                StringComparison.Ordinal);
             NotificationTurn? notifiedTurn = await stateStore.TryReadTurnAsync(
                 tempDirectory.FullName,
                 "session-123",
@@ -281,7 +298,8 @@ public sealed class HookCommandServiceTests
                 "session-123",
                 CancellationToken.None));
             HookResponse response = await DeserializeHookResponseAsync(output);
-            string assignment = Assert.IsType<string>(response.HookSpecificOutput?.AdditionalContext);
+            string assignment = Assert.IsType<string>(
+                response.HookSpecificOutput?.AdditionalContext);
             Assert.Contains(AppPaths.GetSummaryStatePath(
                 tempDirectory.FullName,
                 "session-123",
@@ -437,8 +455,12 @@ public sealed class HookCommandServiceTests
                 CancellationToken.None);
 
             Assert.Equal(2, handler.Requests.Count);
-            TelegramSendMessageRequest secondPayload = DeserializeTelegramPayload(handler.Requests[1]);
-            Assert.Contains("stop-20260314t155250783z", secondPayload.Text, StringComparison.Ordinal);
+            TelegramSendMessageRequest secondPayload =
+                DeserializeTelegramPayload(handler.Requests[1]);
+            Assert.Contains(
+                "stop-20260314t155250783z",
+                secondPayload.Text,
+                StringComparison.Ordinal);
         }
         finally
         {
@@ -536,7 +558,10 @@ public sealed class HookCommandServiceTests
 
             TelegramSendMessageRequest firstPayload = DeserializeTelegramPayload(
                 Assert.Single(handler.Requests));
-            Assert.Contains("stop-20260314t155150783z", firstPayload.Text, StringComparison.Ordinal);
+            Assert.Contains(
+                "stop-20260314t155150783z",
+                firstPayload.Text,
+                StringComparison.Ordinal);
 
             NotificationTurn? storedLateCreatedTurn = await stateStore.TryReadTurnAsync(
                 tempDirectory.FullName,
@@ -974,7 +999,8 @@ public sealed class HookCommandServiceTests
                 CancellationToken.None);
 
             Assert.Equal(3, handler.Requests.Count);
-            TelegramSendMessageRequest laterStopPayload = DeserializeTelegramPayload(handler.Requests[2]);
+            TelegramSendMessageRequest laterStopPayload =
+                DeserializeTelegramPayload(handler.Requests[2]);
             Assert.Contains("摘要：当前轮未生成摘要。", laterStopPayload.Text, StringComparison.Ordinal);
             Assert.DoesNotContain(
                 "This long summary forces multiple Telegram messages.",
@@ -1084,7 +1110,10 @@ public sealed class HookCommandServiceTests
             input,
             new PromptClassification("main-user-prompt", "test"),
             CancellationToken.None);
-        return await stateStore.CreateNotificationTurnAsync(input, observation, CancellationToken.None);
+        return await stateStore.CreateNotificationTurnAsync(
+            input,
+            observation,
+            CancellationToken.None);
     }
 
     private static StopHookInput CreateStopInput(

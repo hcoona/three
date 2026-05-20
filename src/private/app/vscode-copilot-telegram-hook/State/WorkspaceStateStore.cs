@@ -317,22 +317,33 @@ internal sealed class WorkspaceStateStore(
     {
         cancellationToken.ThrowIfCancellationRequested();
         EnsureOwnerOnlyParentDirectory(path);
+
+        FileStream stream;
         try
         {
-            await using FileStream stream = OpenClaimFile(path);
-            await using StreamWriter writer = new(stream);
-            await writer.WriteAsync(claimedAt.AsMemory(), cancellationToken);
-            await writer.FlushAsync(cancellationToken);
-            await stream.FlushAsync(cancellationToken);
+            stream = OpenClaimFile(path);
+        }
+        catch (IOException) when (File.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            await using (stream)
+            {
+                await stream.WriteAsync(
+                    System.Text.Encoding.UTF8.GetBytes(claimedAt),
+                    cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+            }
+
             return true;
         }
-        catch (IOException)
+        catch
         {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
+            ReleaseStopNotificationClaim(path);
+            throw;
         }
     }
 
