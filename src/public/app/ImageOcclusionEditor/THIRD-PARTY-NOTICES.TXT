@@ -44,7 +44,7 @@ License: MIT AND .NET Library License
 
 License: MPL-2.0
 ----------------
-- OpenMcdf@3.1.3
+- OpenMcdf@3.1.4
 
 License: MS-PL
 --------------
