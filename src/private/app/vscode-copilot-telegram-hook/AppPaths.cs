@@ -45,6 +45,7 @@ internal static class AppConstants
     public const int MaxTelegramHtmlMessageLength = 3900;
     public const int SummaryReadRetryCount = 3;
     public const int SummaryReadRetryDelayMilliseconds = 50;
+    public const int TurnDeliveryClaimStaleAfterMinutes = 5;
 }
 
 internal static class AppPaths
@@ -425,6 +426,15 @@ internal static class AppPaths
             GetTurnDirectoryPath(workspacePath, sessionId, notificationTurnId),
             AppConstants.ClaimsDirectoryName,
             "delivery.claim");
+
+    public static string GetTurnDeliveryReclaimClaimPath(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId)
+        => Path.Combine(
+            GetTurnDirectoryPath(workspacePath, sessionId, notificationTurnId),
+            AppConstants.ClaimsDirectoryName,
+            "delivery.reclaim.claim");
 
     public static string GetSessionLogPath(string workspacePath, string sessionId)
         => Path.Combine(

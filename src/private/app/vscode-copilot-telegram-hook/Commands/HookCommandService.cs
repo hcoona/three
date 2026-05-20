@@ -230,6 +230,10 @@ internal sealed class HookCommandService(
                 workspacePath,
                 hookInput.SessionId,
                 turn.NotificationTurnId);
+            string turnReclaimPath = AppPaths.GetTurnDeliveryReclaimClaimPath(
+                workspacePath,
+                hookInput.SessionId,
+                turn.NotificationTurnId);
             if (await WorkspaceStateStore.WasNotificationAlreadySentAsync(
                     notificationPath,
                     cancellationToken)
@@ -251,10 +255,32 @@ internal sealed class HookCommandService(
                 return 0;
             }
 
-            if (!await WorkspaceStateStore.TryClaimStopNotificationAsync(
-                    turnClaimPath,
-                    claimedAt,
+            bool claimedTurnDelivery = await WorkspaceStateStore.TryClaimStopNotificationAsync(
+                turnClaimPath,
+                claimedAt,
+                cancellationToken);
+            if (!claimedTurnDelivery
+                && !await WorkspaceStateStore.HasDurableDeliveryRecordAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    turn.NotificationTurnId,
                     cancellationToken))
+            {
+                claimedTurnDelivery =
+                    await WorkspaceStateStore.TryReclaimStaleTurnDeliveryClaimAsync(
+                        turnClaimPath,
+                        turnReclaimPath,
+                        claimedAt,
+                        TimeSpan.FromMinutes(AppConstants.TurnDeliveryClaimStaleAfterMinutes),
+                        () => WorkspaceStateStore.HasDurableDeliveryRecordAsync(
+                            workspacePath,
+                            hookInput.SessionId,
+                            turn.NotificationTurnId,
+                            cancellationToken),
+                        cancellationToken);
+            }
+
+            if (!claimedTurnDelivery)
             {
                 WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
                 AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);

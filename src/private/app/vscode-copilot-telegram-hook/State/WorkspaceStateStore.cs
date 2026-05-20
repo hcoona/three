@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Hcoona.VsCodeCopilotTelegramHook.Logging;
@@ -359,6 +360,67 @@ internal sealed class WorkspaceStateStore(
         }
     }
 
+    public static async Task<bool> TryReclaimStaleTurnDeliveryClaimAsync(
+        string path,
+        string reclaimPath,
+        string claimedAt,
+        TimeSpan staleAfter,
+        Func<Task<bool>> hasDurableDeliveryRecordAsync,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!await IsClaimStaleAsync(path, claimedAt, staleAfter, cancellationToken))
+        {
+            return false;
+        }
+
+        if (await hasDurableDeliveryRecordAsync())
+        {
+            return false;
+        }
+
+        FileStream? staleReclaimLock = null;
+        bool claimedReclaim = await TryClaimStopNotificationAsync(
+            reclaimPath,
+            claimedAt,
+            cancellationToken);
+        if (!claimedReclaim)
+        {
+            staleReclaimLock = await TryAcquireStaleReclaimLockAsync(
+                reclaimPath,
+                claimedAt,
+                staleAfter,
+                cancellationToken);
+            claimedReclaim = staleReclaimLock is not null;
+        }
+
+        if (!claimedReclaim)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!await IsClaimStaleAsync(path, claimedAt, staleAfter, cancellationToken))
+            {
+                return false;
+            }
+
+            if (await hasDurableDeliveryRecordAsync())
+            {
+                return false;
+            }
+
+            ReleaseStopNotificationClaim(path);
+            return await TryClaimStopNotificationAsync(path, claimedAt, cancellationToken);
+        }
+        finally
+        {
+            staleReclaimLock?.Dispose();
+            ReleaseStopNotificationClaim(reclaimPath);
+        }
+    }
+
     public static async Task RecordStopObservationAsync(
         string workspacePath,
         NotificationTurn turn,
@@ -555,6 +617,123 @@ internal sealed class WorkspaceStateStore(
     private static bool IsDurableDeliveryStatus(string? deliveryStatus)
         => string.Equals(deliveryStatus, "sent", StringComparison.Ordinal)
             || string.Equals(deliveryStatus, "partial", StringComparison.Ordinal);
+
+    private static async Task<FileStream?> TryAcquireStaleReclaimLockAsync(
+        string path,
+        string claimedAt,
+        TimeSpan staleAfter,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseClaimedAt(claimedAt, out DateTimeOffset current))
+        {
+            return null;
+        }
+
+        FileStream stream;
+        try
+        {
+            stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.Asynchronous);
+        }
+        catch (Exception ex) when (
+            ex is FileNotFoundException
+                or DirectoryNotFoundException
+                or IOException
+                or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        try
+        {
+            using StreamReader reader = new(
+                stream,
+                System.Text.Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true,
+                leaveOpen: true);
+            string existingClaimedAt = await reader.ReadToEndAsync(cancellationToken);
+            DateTimeOffset existing = TryParseClaimedAt(
+                existingClaimedAt,
+                out DateTimeOffset parsedExisting)
+                ? parsedExisting
+                : GetClaimFileTimestamp(path);
+            if (current - existing < staleAfter)
+            {
+                stream.Dispose();
+                return null;
+            }
+
+            byte[] content = System.Text.Encoding.UTF8.GetBytes(claimedAt);
+            stream.Position = 0;
+            await stream.WriteAsync(content, cancellationToken);
+            stream.SetLength(content.Length);
+            await stream.FlushAsync(cancellationToken);
+            return stream;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    private static async Task<bool> IsClaimStaleAsync(
+        string path,
+        string currentClaimedAt,
+        TimeSpan staleAfter,
+        CancellationToken cancellationToken)
+    {
+        string existingClaimedAt;
+        try
+        {
+            existingClaimedAt = await File.ReadAllTextAsync(path, cancellationToken);
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+
+        if (!TryParseClaimedAt(currentClaimedAt, out DateTimeOffset current))
+        {
+            return false;
+        }
+
+        DateTimeOffset existing = TryParseClaimedAt(
+            existingClaimedAt,
+            out DateTimeOffset parsedExisting)
+            ? parsedExisting
+            : GetClaimFileTimestamp(path);
+        return current - existing >= staleAfter;
+    }
+
+    private static DateTimeOffset GetClaimFileTimestamp(string path)
+    {
+        DateTime lastWriteTime = File.GetLastWriteTimeUtc(path);
+        if (lastWriteTime != DateTime.MinValue)
+        {
+            return new DateTimeOffset(lastWriteTime, TimeSpan.Zero);
+        }
+
+        DateTime creationTime = File.GetCreationTimeUtc(path);
+        return new DateTimeOffset(creationTime, TimeSpan.Zero);
+    }
+
+    private static bool TryParseClaimedAt(string claimedAt, out DateTimeOffset timestamp)
+        => DateTimeOffset.TryParseExact(
+            claimedAt.Trim(),
+            "yyyy-MM-ddTHH:mm:ss.fff'Z'",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out timestamp);
 
     private static async Task<T?> ReadJsonFileAsync<T>(
         string path,
