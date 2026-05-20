@@ -5156,6 +5156,34 @@ def test_ci_validation_workflow_executes_mapped_commands_before_receipts() -> (
     assert "observed_receipts=[]" not in workflow
 
 
+def test_ci_validation_retries_uv_setup_failures() -> None:
+    """Matrix rows retry setup-uv after transient action failures."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    setup_action = "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b"
+    setup_count = 0
+
+    for job in workflow["jobs"].values():
+        steps = job["steps"]
+        for index, step in enumerate(steps):
+            if step.get("name") != "Install uv":
+                continue
+            setup_count += 1
+            retry_step = steps[index + 1]
+
+            assert step["id"] == "setup-uv"
+            assert step["continue-on-error"] is True
+            assert step["uses"] == setup_action
+            assert step["with"]["version"] == "0.10.9"
+            assert retry_step["name"] == "Retry uv installation"
+            assert (
+                retry_step["if"] == "${{ steps.setup-uv.outcome == 'failure' }}"
+            )
+            assert retry_step["uses"] == setup_action
+            assert retry_step["with"]["version"] == "0.10.9"
+
+    assert setup_count == 7
+
+
 def test_ci_validation_workflow_derives_normal_event_ranges() -> None:
     """Normal PR/push CI requests pass confirmed affected ranges."""
     workflow = _workflow("ci-validate.yml")
