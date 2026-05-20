@@ -3,7 +3,8 @@
 ## 1. Document Governance and Handoff Boundary
 
 Status: this page is the low-level design handoff baseline for implementing CI
-affected validation as a workflow-release entry point. It consumes the locked
+affected validation as a workflow-release entry point, rebaselined to a bounded
+execution-batch model. It consumes the locked
 [requirements](./workflow-release-ci-affected-validation-requirements.md),
 approved [high-level design](./workflow-release-ci-affected-validation-high-level-design.md),
 and approved
@@ -25,20 +26,20 @@ upstream decision must be escalated rather than silently rewritten here.
 
 ## 2. Low-Level Design Summary
 
-| Area               | Low-level decision                                                                                                                                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workflow shape     | Add one top-level CI validation entry workflow with `pull_request`, `push`, and `schedule` triggers, plus reusable internal validation units only if implementation benefits from them.                                   |
-| Plan format        | Emit one UTF-8 JSON validation plan with stable `api-version`, `kind`, `plan-id`, `mode`, provenance, classification, subject universe, obligations, work groups, evidence expectations, diagnostics, and verdict intent. |
-| Fail-closed        | Emit an inspectable fail-closed plan artifact and diagnostics, but the run conclusion must fail and no validation work groups execute.                                                                                    |
-| Subject universe   | Include discovered validation subjects with selected/excluded status, not only selected subjects.                                                                                                                         |
-| Classification     | Use a conservative ordered rule table: unknown/unclassifiable always fail closed; broad expansion only applies to recognized global, ecosystem, or infrastructure categories.                                             |
-| Downstream closure | Use ecosystem-provided dependency facts when sufficient for downstream closure; otherwise fail closed.                                                                                                                    |
-| Execution handoff  | Fan out from plan work-group selectors; post-planning jobs must not reclassify changes, rediscover subjects, or alter obligations.                                                                                        |
-| Receipts/evidence  | Emit validation-only JSON receipts per executable work group plus one aggregation report; all evidence is inadmissible as release immutable proof.                                                                        |
-| Credentials        | No publication credentials, release approvals, OIDC publish permissions, registry mutation, GitHub Release mutation, or release-tag mutation in CI validation.                                                            |
-| Runners/tools      | Preserve .NET on Windows, Python and JavaScript/TypeScript on Ubuntu when applicable, and prefer `mise` for tool provisioning.                                                                                            |
-| HK                 | Provide planner-aligned lightweight preflight only; HK output is local feedback, not CI evidence.                                                                                                                         |
-| Acceptance         | Trace acceptance to plan artifacts, selected scopes, work-group receipts, failure verdicts, and no-publication boundaries.                                                                                                |
+| Area               | Low-level decision                                                                                                                                                                                                                                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workflow shape     | Add one top-level CI validation entry workflow with `pull_request`, `push`, and `schedule` triggers, plus reusable internal validation units only if implementation benefits from them.                                                                                                                                    |
+| Plan format        | Emit one UTF-8 JSON validation plan with stable `api-version`, `kind`, `plan-id`, `mode`, provenance, classification, subject universe, planned obligations, logical work groups, stable selectors, evidence expectations, diagnostics, and verdict intent.                                                                |
+| Fail-closed        | Emit an inspectable fail-closed plan artifact and diagnostics, but the run conclusion must fail and no execution batches execute.                                                                                                                                                                                          |
+| Subject universe   | Include discovered validation subjects with selected/excluded status, not only selected subjects.                                                                                                                                                                                                                          |
+| Classification     | Use a conservative ordered rule table: unknown/unclassifiable always fail closed; broad expansion only applies to recognized global, ecosystem, or infrastructure categories.                                                                                                                                              |
+| Downstream closure | Use ecosystem-provided dependency facts when sufficient for downstream closure; otherwise fail closed.                                                                                                                                                                                                                     |
+| Execution handoff  | Materialize bounded execution batches after planning from logical work groups and stable selectors; post-planning execution must preserve selector semantics and per-work-group outcomes/evidence, and must not reclassify changes, rediscover subjects, silently drop obligations, downgrade obligations, or alter scope. |
+| Receipts/evidence  | Emit one validation-only batch evidence bundle per execution batch plus one aggregation report; descriptor, subject, and artifact obligations are evidence rows, and all evidence is inadmissible as release immutable proof.                                                                                              |
+| Credentials        | No publication credentials, release approvals, OIDC publish permissions, registry mutation, GitHub Release mutation, or release-tag mutation in CI validation.                                                                                                                                                             |
+| Runners/tools      | Preserve .NET on Windows, Python and JavaScript/TypeScript on Ubuntu when applicable, and prefer `mise` for tool provisioning.                                                                                                                                                                                             |
+| HK                 | Provide planner-aligned lightweight preflight only; HK output is local feedback, not CI evidence.                                                                                                                                                                                                                          |
+| Acceptance         | Trace acceptance to plan artifacts, selected scopes, batch evidence bundles, failure verdicts, and no-publication boundaries.                                                                                                                                                                                              |
 
 ## 3. Frozen Upstream Contracts and Non-Reopened Seams
 
@@ -67,15 +68,38 @@ This page does not reopen these upstream decisions:
   being reviewed, but the run still receives no release credentials or publication
   authority.
 
+Inside that upstream envelope, this LLD freezes the implementation-level
+performance and topology baseline without promoting it to a requirements, HLD, or
+MLD contract:
+
+- full, broad, and global validation target at most 12 minutes, with a hard
+  ceiling of 15 minutes;
+- total GitHub Actions jobs target 12 to 18, including 4 to 8 Windows jobs;
+- validation artifacts target at most 20;
+- final aggregation target 1 to 2 minutes;
+- work groups and selectors are logical validation obligations, not concrete
+  GitHub Actions jobs or matrix rows;
+- the physical execution unit is the execution batch, and each execution batch
+  produces one validation-only batch evidence bundle;
+- execution-batch count is capped by both the job budget and the current-run
+  artifact budget: maximum execution batches must be no more than 20 minus the
+  expected non-bundle validation artifact count; with 7 expected non-bundle
+  validation artifacts, the effective maximum is 13 execution batches;
+- batch DAG and intra-batch ordering preserve dependencies;
+- release-shaped validation may later coalesce compatible work by runner family,
+  ecosystem, build recipe, setup, no-publish behavior, and artifact family, while
+  descriptor, subject, and artifact obligations remain batch evidence rows rather
+  than default job boundaries.
+
 ## 4. Workflow and Job Boundary
 
 ### 4.1 Workflow Identity
 
 The CI validation entry point should be one checked-in workflow file:
 
-| File                                | Trigger shape                      | Stable responsibility                                                                                                                            |
-| ----------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `.github/workflows/ci-validate.yml` | `pull_request`, `push`, `schedule` | Normalize CI event input, run planning, fan out validation work groups, aggregate validation-only evidence, and publish inspectable diagnostics. |
+| File                                | Trigger shape                      | Stable responsibility                                                                                                                                              |
+| ----------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `.github/workflows/ci-validate.yml` | `pull_request`, `push`, `schedule` | Normalize CI event input, run planning, materialize execution batches, run the batch DAG, aggregate validation-only evidence, and publish inspectable diagnostics. |
 
 The workflow filename is a repository contract because branch protection and
 operator documentation may refer to CI check names. Unlike release publication
@@ -89,12 +113,12 @@ repository contracts:
 - required final check context: `CI Validation / aggregate-evidence`.
 
 Branch protection for this CI gate must bind to the final aggregate check
-context, not to fan-out validation job names or auxiliary checks. If the concrete
+context, not to execution-batch job names or auxiliary checks. If the concrete
 GitHub Actions job topology changes, the implementation must preserve that final
 check context or update branch protection and this design together.
 
 Implementation may introduce reusable internal workflow files or composite
-actions for validation work groups. Those internal files are implementation-owned
+actions for execution batches. Those internal files are implementation-owned
 unless later branch protection or external policy starts depending on them.
 
 ### 4.2 Logical Job Sequence
@@ -112,26 +136,40 @@ The top-level CI validation workflow preserves this logical sequence:
     - runs validation planning without publication credentials;
     - emits exactly one validation plan artifact at the contract-owned ref;
     - emits plan diagnostics when planning fails closed.
-3. **`materialize-work-groups`**
+3. **`materialize-execution-batches`**
     - reads the validation plan;
-    - materializes execution selectors from plan work groups;
-    - emits the selector-assignment manifest that binds each executable selector
-      to its authorized receipt writer;
-    - produces an empty selector set for fail-closed plans and lightweight-only
+    - materializes bounded execution batches from planned validation obligations
+      and evidence expectations;
+    - emits the execution-batch manifest that assigns each executable obligation
+      to exactly one batch without silently downgrading or dropping selected
+      obligations;
+    - coalesces obligations into fewer compatible batches as needed to satisfy the
+      job and artifact budgets, and fails closed if selected obligations cannot
+      fit those budgets without dropping required evidence or downgrading planned
+      obligations;
+    - produces an empty executable batch set for fail-closed plans and
+      lightweight-only
       plans with no executable lightweight obligations.
-4. **Validation work-group fan-out**
-    - runs executable work groups by selector;
-    - emits one validation-only receipt per work group;
-    - records writer observations for uploaded receipt artifact instances using
-      control-plane job context, outside receipt payload authority;
+4. **Execution-batch DAG**
+    - runs executable batches in a DAG that preserves inter-batch dependencies;
+    - preserves required intra-batch ordering when multiple obligations share a
+      compatible runner family, ecosystem, build recipe, setup, no-publish
+      behavior, and artifact family;
+    - emits one validation-only batch evidence bundle per execution batch;
+    - treats batch writer integrity as validation-grade batch integrity, not
+      release-proof-grade per-artifact or per-selector writer observation;
     - never changes planned scope or obligations.
 5. **`aggregate-evidence`**
-    - runs after planning and selector materialization are attempted, even when a
-      prior logical job fails to produce a readable plan or selector set;
-    - verifies selector assignments before admitting any receipt;
-    - verifies expected receipts;
+    - runs after planning and execution-batch materialization are attempted, even
+      when a prior logical job fails to produce a readable plan or batch set;
+    - verifies execution-batch assignments before admitting any batch evidence
+      bundle;
+    - verifies expected batch evidence bundles and concentrates strict artifact
+      namespace checks in final aggregation;
     - treats missing, unreadable, invalid, or unmaterializable plans as
-      `invalid-plan` with no executable selectors;
+      `invalid-plan` with no executable batches;
+    - continues collecting independent evidence after validation failures while
+      still blocking on control-plane and bundle write failures;
     - computes the CI validation verdict;
     - emits one aggregation report at the contract-owned ref;
     - fails the workflow when the aggregated validation outcome fails.
@@ -143,8 +181,8 @@ context remain intact.
 
 Logical handoff names are also producer-authority boundaries. The workflow
 contract must define a boundary identity map before execution that maps each
-logical boundary (`normalize-input`, `plan`, `materialize-work-groups`, trusted
-receipt/observation boundaries, and `aggregate-evidence`) to the allowed GitHub
+logical boundary (`normalize-input`, `plan`, `materialize-execution-batches`,
+execution-batch boundaries, and `aggregate-evidence`) to the allowed GitHub
 Actions job identifiers, reusable-workflow call-site job identifiers, and matrix
 identity dimensions that may produce artifacts for that boundary. This map is
 control-plane contract data, not a payload claim; artifact consumers verify
@@ -207,29 +245,31 @@ security or replay authority. `run.workflow`, `run.run-id`, and
 common-envelope run identity fields used by cross-artifact binding.
 
 Producer authority is not a payload self-claim. Any artifact that gates planning,
-selector materialization, receipt admission, or final acceptance must be tied to
-the expected logical boundary by non-payload control-plane evidence for the same
-`run-id` and `run-attempt`. The allowed producer-authority signals are:
+execution-batch materialization, batch evidence admission, or final acceptance
+must be tied to the expected logical boundary by non-payload control-plane
+evidence for the same `run-id` and `run-attempt`. The allowed
+producer-authority signals are:
 
-| Artifact class                                             | Required producer boundary        | Allowed non-payload authority signals                                                                                                                                               |
-| ---------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Planner-facing CI request                                  | `normalize-input`                 | Contract-owned request ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the input-normalization control-plane boundary               |
-| Validation plan, changed-files snapshot, and fact snapshot | `plan`                            | Contract-owned artifact ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the planning control-plane boundary for this run attempt    |
-| Selector-assignment manifest                               | `materialize-work-groups`         | Contract-owned artifact ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the selector-materialization control-plane boundary         |
-| CI validation receipt                                      | Assigned trusted receipt boundary | Selector assignment, contract-owned receipt ref, artifact instance ID, and matching writer-observation record derived from immutable job context rather than receipt payload fields |
-| Writer-observation record                                  | Trusted observation boundary      | Contract-owned observation ref and instance count plus immutable workflow/job context proving the record was emitted by the observation boundary after receipt upload               |
-| Receipt manifest and aggregate                             | `aggregate-evidence`              | Contract-owned final refs and instance counts plus immutable workflow/job context proving final artifacts were uploaded by the aggregation control-plane boundary                   |
+| Artifact class                                             | Required producer boundary        | Allowed non-payload authority signals                                                                                                                                              |
+| ---------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Planner-facing CI request                                  | `normalize-input`                 | Contract-owned request ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the input-normalization control-plane boundary              |
+| Validation plan, changed-files snapshot, and fact snapshot | `plan`                            | Contract-owned artifact ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the planning control-plane boundary for this run attempt   |
+| Execution-batch manifest                                   | `materialize-execution-batches`   | Contract-owned artifact ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the execution-batch-materialization control-plane boundary |
+| CI validation batch evidence bundle                        | Assigned execution-batch boundary | Execution-batch assignment, contract-owned bundle ref, artifact instance ID, and immutable workflow/job context proving the bundle was uploaded by the assigned batch boundary     |
+| Bundle manifest and aggregate                              | `aggregate-evidence`              | Contract-owned final refs and instance counts plus immutable workflow/job context proving final artifacts were uploaded by the aggregation control-plane boundary                  |
 
 The immutable workflow/job context must match the boundary identity map from
 section 4.2 for the required producer boundary. If the workflow platform or
 control-plane wrapper cannot expose those signals for an artifact class, or the
 observed platform identity is not allowed by the boundary identity map, that
 artifact is producer-unverified. Producer-unverified planning artifacts make the
-plan invalid, producer-unverified receipts or writer-observations are
-inadmissible, and producer-unverified final manifest or aggregate artifacts are
-not authoritative acceptance evidence. Payload fields, artifact names supplied by
-executable validation commands, logs, and job conclusions never prove producer
-authority.
+plan invalid, producer-unverified batch evidence bundles are inadmissible, and
+producer-unverified final manifest or aggregate artifacts are not authoritative
+acceptance evidence. Payload fields, artifact names supplied by executable
+validation commands, logs, and job conclusions never prove producer authority.
+Validation-grade batch writer integrity is metadata embedded in the batch
+evidence bundle and verified by final aggregation; it is not a separate artifact,
+ref, or namespace entry.
 
 The GitHub Actions implementation enforces this with two independent
 control-plane checks before a gating artifact is consumed: the run artifact
@@ -239,7 +279,7 @@ the upload output observed from the workflow job mapped to that logical boundary
 Consumers download producer-verified inputs by artifact ID where the workflow can
 fail immediately. The final aggregation job performs the same namespace and
 producer-boundary verification for its inputs before accepting a plan, and verifies
-the receipt manifest and aggregate uploads after publication; any missing,
+the bundle manifest and aggregate uploads after publication; any missing,
 duplicated, stale, or producer-mismatched artifact remains fail-closed.
 
 `artifact-ref` values in this document are logical contract refs, not physical
@@ -264,16 +304,15 @@ its payload fields resemble valid evidence; in closed namespaces, such an
 instance is an unexpected contract artifact.
 
 Because the physical artifact namespace is flat, aggregation must classify all
-prefixed physical artifacts against the complete set of expected non-receipt
-contract refs before closing the receipt namespace. The expected non-receipt set
+prefixed physical artifacts against the complete set of expected non-bundle
+contract refs before closing the bundle namespace. The expected non-bundle set
 contains the request, validation plan, changed-files snapshot, fact snapshot,
-selector-assignment manifest, selector-assignment-derived writer-observation,
-receipt manifest, and aggregate refs for the current run attempt. Any prefixed
-physical artifact that matches one of those expected non-receipt physical names is
-handled only by that contract's validation rules. Any remaining prefixed physical
-artifact that is not classifiable as an expected non-receipt artifact is
-receipt-like for receipt manifest enumeration, even when its payload is unreadable
-or does not reveal a logical receipt ref.
+execution-batch manifest, bundle manifest, and aggregate refs for the current run
+attempt. Any prefixed physical artifact that matches one of those expected
+non-bundle physical names is handled only by that contract's validation rules. Any
+remaining prefixed physical artifact that is not classifiable as an expected
+non-bundle artifact is bundle-like for bundle manifest enumeration, even when its
+payload is unreadable or does not reveal a logical bundle ref.
 
 `schema-diagnostics` uses the same shape as `diagnostic-record`, sorted by
 `diagnostic-id`. These diagnostics are producer-side schema or compatibility
@@ -281,7 +320,7 @@ warnings only: every entry must have `severity: warning` or `info` and
 `verdict-effect: none`, and aggregation must not treat them as validation
 failures. Schema diagnostics that indicate an artifact is unreadable, malformed,
 schema-invalid, or structurally invalid must instead be represented by the
-artifact-specific planner, receipt, or aggregation diagnostic paths defined
+artifact-specific planner, batch-evidence, or aggregation diagnostic paths defined
 below.
 
 Schema blocks below use `common-envelope: inherited` to avoid repeating those
@@ -390,10 +429,11 @@ Rules:
   fail-closed. Planning emits `verdict-intent: executable`,
   `classification.impacts: []`, `classification.lightweight-only: true`, no
   selected subjects, no descriptor/validation/artifact obligations, no executable
-  validation work groups, no evidence expectations, and only the terminal
-  `evidence-aggregation` work group. Aggregation passes only after validating the
+  logical work groups or stable selectors requiring post-plan execution-batch
+  materialization, no evidence expectations, and only the terminal
+  `evidence-aggregation` obligation. Aggregation passes only after validating the
   plan, empty changed-files companion snapshot, non-null `changed-files-hash`, and
-  final manifest/aggregate evidence; no validation receipt is required or
+  final manifest/aggregate evidence; no batch evidence bundle is required or
   expected.
 - Changed-file paths are canonical repository-relative Git paths. Each path uses
   `/` separators, is case-sensitive, and must not be empty, absolute, start with
