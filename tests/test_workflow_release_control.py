@@ -5437,6 +5437,21 @@ def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
     )
 
 
+def test_ci_validation_work_groups_use_full_checkout_for_nbgv() -> None:
+    """Validation commands need full history for NBGV version height."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+
+    for layer in range(3):
+        steps = workflow["jobs"][f"validation-work-groups-layer-{layer}"][
+            "steps"
+        ]
+        checkout_step = next(
+            step for step in steps if step.get("uses") == "actions/checkout@v4"
+        )
+
+        assert checkout_step["with"]["fetch-depth"] == 0
+
+
 def test_ci_validation_receipts_observe_checked_out_head() -> None:
     """Validation receipts bind to the checked-out tree, not merge refs."""
     workflow = yaml.safe_load(_workflow("ci-validate.yml"))
