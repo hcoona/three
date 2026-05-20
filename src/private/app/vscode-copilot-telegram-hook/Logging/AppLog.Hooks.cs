@@ -94,33 +94,6 @@ internal static partial class AppLog
         string turnId);
 
     [LoggerMessage(
-        EventId = 1511,
-        EventName = nameof(BlockingStopForSummaryValidation),
-        Level = LogLevel.Warning,
-        Message =
-            "Blocking Stop hook for session {SessionId} and turn {TurnId}; "
-            + "validationFailureCount={ValidationFailureCount}; reason={Reason}")]
-    public static partial void BlockingStopForSummaryValidation(
-        ILogger logger,
-        string sessionId,
-        string turnId,
-        int validationFailureCount,
-        string reason);
-
-    [LoggerMessage(
-        EventId = 1512,
-        EventName = nameof(AllowingStopAfterValidationFailures),
-        Level = LogLevel.Warning,
-        Message =
-            "Allowing Stop hook for session {SessionId} and turn {TurnId} after "
-            + "reaching the validation failure limit; reason={Reason}")]
-    public static partial void AllowingStopAfterValidationFailures(
-        ILogger logger,
-        string sessionId,
-        string turnId,
-        string reason);
-
-    [LoggerMessage(
         EventId = 1509,
         EventName = nameof(StopHookFailed),
         Level = LogLevel.Error,

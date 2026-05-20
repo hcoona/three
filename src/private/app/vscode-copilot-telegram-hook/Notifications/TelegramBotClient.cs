@@ -9,15 +9,34 @@ internal sealed class TelegramBotClient(
     HttpClient httpClient,
     ILogger<TelegramBotClient> logger)
 {
-    public async Task SendMessagesAsync(
+    public async Task<int> SendMessagesAsync(
         TelegramCredentials credentials,
         IReadOnlyList<string> htmlMessages,
         CancellationToken cancellationToken)
     {
+        int successfulMessageCount = 0;
         foreach (string htmlMessage in htmlMessages)
         {
-            await SendMessageAsync(credentials, htmlMessage, cancellationToken);
+            try
+            {
+                await SendMessageAsync(credentials, htmlMessage, cancellationToken);
+                successfulMessageCount++;
+            }
+            catch (Exception ex) when (ex is not TelegramSendMessagesException)
+            {
+                if (successfulMessageCount == 0)
+                {
+                    throw;
+                }
+
+                throw new TelegramSendMessagesException(
+                    ex.Message,
+                    successfulMessageCount,
+                    ex);
+            }
         }
+
+        return successfulMessageCount;
     }
 
     private async Task SendMessageAsync(
@@ -71,4 +90,12 @@ internal sealed class TelegramBotClient(
 
         throw new InvalidOperationException(description);
     }
+}
+
+internal sealed class TelegramSendMessagesException(
+    string message,
+    int successfulMessageCount,
+    Exception innerException) : InvalidOperationException(message, innerException)
+{
+    public int SuccessfulMessageCount { get; } = successfulMessageCount;
 }

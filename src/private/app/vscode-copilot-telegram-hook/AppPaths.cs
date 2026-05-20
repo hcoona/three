@@ -9,11 +9,17 @@ internal static class AppConstants
     public const int SchemaVersion = 1;
 
     public const string CopilotDirectoryName = ".copilot";
+    public const string NotificationsDirectoryName = "notifications";
     public const string SessionsDirectoryName = "sessions";
-    public const string SessionFileName = "notify-session.json";
-    public const string TurnFileName = "notify-turn.json";
-    public const string SummaryFileName = "notify-summary.json";
-    public const string LastSentFileName = "notify-last-sent.json";
+    public const string PromptsDirectoryName = "prompts";
+    public const string TurnsDirectoryName = "turns";
+    public const string StopsDirectoryName = "stops";
+    public const string NotificationsRecordsDirectoryName = "notifications";
+    public const string ClaimsDirectoryName = "claims";
+    public const string SessionFileName = "session.json";
+    public const string CurrentFileName = "current.json";
+    public const string TurnFileName = "turn.json";
+    public const string SummaryFileName = "summary.json";
     public const string SessionLogFileName = "hook.log";
     public const string UserCommandLogFileName = "user-command.log";
     public const string ManagedHookFileName = "vscode-copilot-telegram-hook.hooks.json";
@@ -37,7 +43,8 @@ internal static class AppConstants
     public const string TelegramChatIdSecretName = "telegram-chat-id";
 
     public const int MaxTelegramHtmlMessageLength = 3900;
-    public const int MaxStopSummaryValidationFailures = 3;
+    public const int SummaryReadRetryCount = 3;
+    public const int SummaryReadRetryDelayMilliseconds = 50;
 }
 
 internal static class AppPaths
@@ -276,6 +283,7 @@ internal static class AppPaths
     public static string GetWorkspaceSessionsDirectory(string workspacePath)
         => Path.Combine(
             GetWorkspaceCopilotDirectory(workspacePath),
+            AppConstants.NotificationsDirectoryName,
             AppConstants.SessionsDirectoryName);
 
     public static string GetWorkspaceLogPath(string workspacePath)
@@ -330,20 +338,84 @@ internal static class AppPaths
             GetSessionDirectoryPath(workspacePath, sessionId),
             AppConstants.SessionFileName);
 
-    public static string GetTurnStatePath(string workspacePath, string sessionId)
+    public static string GetCurrentStatePath(string workspacePath, string sessionId)
         => Path.Combine(
             GetSessionDirectoryPath(workspacePath, sessionId),
+            AppConstants.CurrentFileName);
+
+    public static string GetPromptObservationPath(
+        string workspacePath,
+        string sessionId,
+        string promptObservationId)
+        => Path.Combine(
+            GetSessionDirectoryPath(workspacePath, sessionId),
+            AppConstants.PromptsDirectoryName,
+            $"{promptObservationId}.json");
+
+    public static string GetTurnsDirectoryPath(string workspacePath, string sessionId)
+        => Path.Combine(
+            GetSessionDirectoryPath(workspacePath, sessionId),
+            AppConstants.TurnsDirectoryName);
+
+    public static string GetTurnDirectoryPath(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId)
+        => Path.Combine(GetTurnsDirectoryPath(workspacePath, sessionId), notificationTurnId);
+
+    public static string GetTurnStatePath(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId)
+        => Path.Combine(
+            GetTurnDirectoryPath(workspacePath, sessionId, notificationTurnId),
             AppConstants.TurnFileName);
 
-    public static string GetSummaryStatePath(string workspacePath, string sessionId)
+    public static string GetSummaryStatePath(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId)
         => Path.Combine(
-            GetSessionDirectoryPath(workspacePath, sessionId),
+            GetTurnDirectoryPath(workspacePath, sessionId, notificationTurnId),
             AppConstants.SummaryFileName);
 
-    public static string GetLastSentStatePath(string workspacePath, string sessionId)
+    public static string GetStopObservationPath(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId,
+        string stopId)
+        => Path.Combine(
+            GetTurnDirectoryPath(workspacePath, sessionId, notificationTurnId),
+            AppConstants.StopsDirectoryName,
+            $"{stopId}.json");
+
+    public static string GetNotificationRecordPath(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId,
+        string notificationKey)
+        => Path.Combine(
+            GetTurnDirectoryPath(workspacePath, sessionId, notificationTurnId),
+            AppConstants.NotificationsRecordsDirectoryName,
+            $"{notificationKey}.json");
+
+    public static string GetSessionNotificationRecordPath(
+        string workspacePath,
+        string sessionId,
+        string notificationKey)
         => Path.Combine(
             GetSessionDirectoryPath(workspacePath, sessionId),
-            AppConstants.LastSentFileName);
+            AppConstants.NotificationsRecordsDirectoryName,
+            $"{notificationKey}.json");
+
+    public static string GetSessionStopClaimPath(
+        string workspacePath,
+        string sessionId,
+        string notificationKey)
+        => Path.Combine(
+            GetSessionDirectoryPath(workspacePath, sessionId),
+            AppConstants.ClaimsDirectoryName,
+            $"{notificationKey}.claim");
 
     public static string GetSessionLogPath(string workspacePath, string sessionId)
         => Path.Combine(
@@ -365,20 +437,36 @@ internal static class AppPaths
         => GetRelativeSessionFilePath(sessionId, AppConstants.SessionFileName);
 
     public static string GetRelativeTurnStatePath(string sessionId)
-        => GetRelativeSessionFilePath(sessionId, AppConstants.TurnFileName);
+        => GetRelativeSessionFilePath(
+            sessionId,
+            AppConstants.TurnsDirectoryName,
+            "<notification_turn_id>",
+            AppConstants.TurnFileName);
 
     public static string GetRelativeSummaryStatePath(string sessionId)
-        => GetRelativeSessionFilePath(sessionId, AppConstants.SummaryFileName);
+        => GetRelativeSessionFilePath(
+            sessionId,
+            AppConstants.TurnsDirectoryName,
+            "<notification_turn_id>",
+            AppConstants.SummaryFileName);
 
-    private static string GetRelativeSessionFilePath(string sessionId, string fileName)
+    public static string GetRelativeSummaryStatePath(string sessionId, string notificationTurnId)
+        => GetRelativeSessionFilePath(
+            sessionId,
+            AppConstants.TurnsDirectoryName,
+            notificationTurnId,
+            AppConstants.SummaryFileName);
+
+    private static string GetRelativeSessionFilePath(string sessionId, params string[] pathSegments)
     {
         return string.Join(
             '/',
             [
                 AppConstants.CopilotDirectoryName,
+                AppConstants.NotificationsDirectoryName,
                 AppConstants.SessionsDirectoryName,
                 GetSessionDirectoryName(sessionId),
-                fileName,
+                .. pathSegments,
             ]);
     }
 

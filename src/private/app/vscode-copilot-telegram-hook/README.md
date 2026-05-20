@@ -29,8 +29,8 @@ The implementation follows the official VS Code Copilot hooks preview behavior:
 - `Commands/`: hook lifecycle commands and user-level install/diagnostic
   commands.
 - `Notifications/`: Telegram message composition and delivery.
-- `State/`: session-scoped `.copilot/sessions/<session_id>/*.json` state
-  management.
+- `State/`: session-scoped `.copilot/notifications/sessions/<safe-session-id>/*.json`
+  state management.
 - `docs/README.md`: tracks human-authored source inputs and derivation
   relationships for the documentation set in `docs/`.
 
@@ -152,7 +152,7 @@ The runtime now writes owner-only diagnostic logs where the operating system
 supports Unix file modes:
 
 - Hook logs for valid session-scoped events:
-  `.copilot/sessions/<session_id>/hook.log`
+  `.copilot/notifications/sessions/<safe-session-id>/hook.log`
 - Fallback hook log for malformed hook payloads before a session context is
   usable: `.copilot/hook.log`
 - User command log for `user install`, `user uninstall`, `user health`,
@@ -172,20 +172,23 @@ session log path pattern, workspace fallback hook log path, managed hook file
 path, and every targeted VS Code settings path for the directory where you run
 the command.
 
-During runtime, the hook maintains session-scoped state under
-`.copilot/sessions/<session_id>/`, including:
+During runtime, the hook maintains session-scoped notification protocol state
+under `.copilot/notifications/sessions/<safe-session-id>/`, including:
 
-- `notify-session.json`: session metadata for the current Copilot session.
-- `notify-turn.json`: the current turn identifier generated at
-  `UserPromptSubmit`.
-- `notify-summary.json`: the current turn's summary file validated by the
-  `Stop` hook before final notification delivery.
-- `notify-last-sent.json`: best-effort duplicate-suppression state for the
-  current session.
+- `session.json`: session metadata for the current Copilot session.
+- `current.json`: a cache pointing at the latest Notification Assignment.
+- `prompts/<prompt-observation-id>.json`: all observed prompt submissions,
+  including observation-only prompts that are not notifiable turns.
+- `turns/<notification-turn-id>/turn.json`: a hook-created notifiable turn.
+- `turns/<notification-turn-id>/summary.json`: the exact per-turn summary handoff
+  file authorized by the Notification Assignment.
+- `turns/<notification-turn-id>/stops/<stop-id>.json`: Stop observations.
+- `turns/<notification-turn-id>/notifications/<notification-key>.json`: durable
+  duplicate-suppression records.
 - `hook.log`: always-on diagnostic log for the current Copilot session.
 
-These `.copilot/sessions/` files are runtime state and should remain ignored in
-git.
+These `.copilot/notifications/sessions/` files are runtime state and should
+remain ignored in git.
 
 The gopass prefix is fixed at `copilot/vscode-copilot-telegram-hook` so the
 user-level installation and this repository's workspace hook resolve the same
@@ -207,13 +210,14 @@ The runtime honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process
 environment as explicit overrides, but `gopass` is the primary persisted
 mechanism for the managed user-level installation.
 
-For summary generation, the runtime now relies on the documented `Stop` hook
-blocking flow rather than on a separately installed custom-instruction file.
-If the current turn's `notify-summary.json` file is missing or invalid, the
-`Stop` hook blocks stopping, explains the validation failure, and asks Copilot
-to regenerate the file. The hook stops blocking after three validation
-failures for the same turn and then delivers a fallback missing-summary
-notification.
+For summary generation, the hook emits a Notification Assignment for
+high-confidence main user prompts. Only that assignment authorizes writing a
+summary, and the agent must write only the exact per-turn `summary.json` path
+with matching `session_id`, `notification_turn_id`, `notification_nonce`,
+`updated_at`, and non-empty `summary`. The default `Stop` behavior never blocks:
+valid summaries are sent normally, while missing, stale, ambiguous, or invalid
+handoffs produce a degraded fallback notification with durable duplicate
+suppression.
 
 ## Build and validation
 

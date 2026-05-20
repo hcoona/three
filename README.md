@@ -142,12 +142,12 @@ The Copilot CLI hook file is the managed file `vscode-copilot-telegram-hook.json
 The same `user` command group supports health checks, diagnostics, and uninstall; use `--copilot-cli-hook-file-path` only when you need to override the default Copilot CLI hook path.
 
 At runtime, the hook resolves the active workspace from the hook input payload instead of the binary location.
-That keeps `.copilot/sessions/<session_id>/notify-session.json`, `notify-turn.json`, `notify-summary.json`, and `notify-last-sent.json` scoped to the actual workspace even after a user-level installation.
+That keeps `.copilot/notifications/sessions/<safe-session-id>/` protocol files scoped to the actual workspace even after a user-level installation.
 
-A chat session can still contain multiple prompts. To avoid stale-summary reuse across turns, the Telegram hook correlates the official `sessionId` with a repository-defined `turn_id` created at `UserPromptSubmit`.
+A chat session can still contain multiple prompts. To avoid stale-summary reuse across turns, the Telegram hook correlates the official `sessionId` with a repository-defined `notification_turn_id` created for high-confidence main `UserPromptSubmit` prompts.
 That means a later completed task in the same session still produces a new Telegram message, while an identical replay of the same `Stop` payload is ignored.
 
-Each notification includes the VS Code `sessionId` together with the internal `turn_id`, so concurrent worktrees, sessions, and machines stay easy to tell apart.
+Each notification includes the VS Code `sessionId` together with the internal notification turn id, so concurrent worktrees, sessions, and machines stay easy to tell apart.
 For GitHub remotes, the repo field is displayed as `owner/repo` (for example, `hcoona/three`). If the remote URL does not match the GitHub patterns, the script falls back to the local repository folder name.
 
 The runtime still honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process environment as explicit overrides, but the default installation path uses `gopass`.
