@@ -183,7 +183,10 @@ execution-layer responsibilities.
 
 For project-scoped validation, the planner includes directly changed projects and
 downstream dependent projects when downstream impact can be computed safely. If
-safe downstream impact computation is unavailable, planning fails closed.
+an ecosystem lacks an approved dependency fact provider, planning may use a
+requirement-approved ecosystem-level expansion for that ecosystem. If an expected
+dependency fact provider fails to read or parse required metadata, planning fails
+closed rather than expanding from incomplete facts.
 
 For ecosystem-scoped validation, the planner selects all active validation
 subjects in the affected ecosystem and validates descriptors for
@@ -266,6 +269,10 @@ For all selected validation subjects:
 
 - CI runs existing ecosystem gates that apply to the selected scope, such as
   build, tests, lint, formatting checks, and type checks where those gates exist.
+- Affected modes narrow the selected scope before execution. Once a subject or
+  obligation is selected, the high-level validation semantics remain the same as
+  scheduled full validation unless a lighter validation class is explicitly
+  defined by requirements.
 
 Runner selection and tool provisioning remain execution concerns, but the
 execution design must preserve the high-level ecosystem expectations: .NET
@@ -275,22 +282,28 @@ be provisioned through `mise` where practical.
 
 The exact mapping from validation obligations to jobs, commands, receipts, and
 executor calls is deferred to middle-level design.
+This includes the concrete GitHub Actions job topology. A validation plan may
+describe logical work groups or execution selectors without requiring one
+workflow job, matrix row, or runner allocation per logical work group.
 
 ## Validation Evidence Boundary
 
 CI validation evidence is **strictly separate** from release immutable proof.
 
-CI evidence may be used to understand validation results and to connect CI jobs
-within a CI run. It must not be reused as `buddy` or `official` publish proof.
-CI evidence references the validation plan identity and resolved planning
-provenance so operators can identify the exact planned scope or fail-closed
-outcome it belongs to.
+CI evidence may be used to understand validation results and to connect CI
+execution within a CI run. It must not be reused as `buddy` or `official`
+publish proof. CI evidence references the validation plan identity and resolved
+planning provenance so operators can identify the exact planned scope or
+fail-closed outcome it belongs to.
 CI-produced receipts and evidence must carry validation-only provenance and must
 be excluded from release immutable-proof lookup and publication admissibility
 paths.
 
 This separation avoids coupling CI authority boundaries, scheduled runs, pull request
 events, and local validation evidence to release publication authorization.
+It also means high-level design requires checkable validation evidence, not a
+proof-grade release artifact boundary or a dedicated concrete job for every
+logical validation selector.
 
 ## HK Left-Shift Boundary
 

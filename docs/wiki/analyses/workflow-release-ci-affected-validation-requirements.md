@@ -85,10 +85,12 @@ formatting checks where applicable, but they must not be silently skipped.
 - The affected project set must also include downstream projects that depend on a
   changed project when the ecosystem dependency graph can identify such
   downstream impact.
-- If downstream dependency impact cannot be computed safely for an ecosystem, the
-  design must either use a requirement-approved ecosystem-level expansion for
-  that ecosystem or fail planning closed. It must not silently validate only a
-  partial downstream set.
+- If downstream dependency impact cannot be computed because an ecosystem lacks
+  an approved dependency fact provider, the design may use a requirement-approved
+  ecosystem-level expansion for that ecosystem. If an expected dependency fact
+  provider cannot read or parse required metadata, planning must fail closed
+  rather than expanding from incomplete facts. CI must not silently validate only
+  a partial downstream set.
 - Project-scoped validation must use the same build shape that release would use
   for the affected project where a release descriptor exists.
 - Project-scoped validation must also run the existing ecosystem gates that apply
@@ -127,7 +129,9 @@ formatting checks where applicable, but they must not be silently skipped.
   target catalog behavior, or workflow orchestration must validate the affected
   workflow-release tooling surface.
 - If such a change can affect multiple ecosystems or artifact kinds, CI must
-  expand to the related ecosystems or representative smoke coverage.
+  expand to the related ecosystems or artifact kinds. Representative smoke
+  coverage may be used as additional evidence, but it must not substitute for
+  broader validation when the affected scope is known.
 - If the affected workflow-release infrastructure surface cannot be classified
   safely, CI must fail planning closed rather than running partial validation.
 
@@ -157,6 +161,13 @@ formatting checks where applicable, but they must not be silently skipped.
   cover the union of artifacts required by all declared profiles. This validates
   that the `buddy` and `official` publication flows would have their required
   build outputs available without executing those publication flows.
+- `pull_request` and `push` validation narrow the selected scope by affected
+  files, while scheduled full validation selects the full repository scope. For
+  any subject or obligation selected by either mode, validation semantics must
+  remain equivalent unless this requirements baseline explicitly defines a
+  lighter validation class. Execution may use different batching, caching, or
+  job topology per mode, but it must not silently drop required selected
+  obligations.
 
 ## Confirmed CI Event, Schedule, and Trust Scope
 
@@ -169,6 +180,9 @@ formatting checks where applicable, but they must not be silently skipped.
 - `push` validation must derive the changed-file set from the pushed range for
   the branch.
 - Scheduled full validation must not depend on changed-file classification.
+- Scheduled full validation and affected validation may use different execution
+  strategies, but the difference is scope selection rather than silent
+  validation-depth reduction for selected subjects or obligations.
 - CI validation must not rely on publication credentials or release approval.
 - Pull request contexts without release authority must not receive publishing
   credentials or any other secret needed only for side-effecting release.
@@ -189,8 +203,10 @@ formatting checks where applicable, but they must not be silently skipped.
 
 - .NET validation in GitHub Actions should run on Windows runners.
 - Python and JavaScript/TypeScript validation may run on Ubuntu runners.
-- The design may introduce multiple jobs or matrices, but the runner split must
-  preserve the repository's ecosystem expectations.
+- The design may introduce multiple jobs, matrices, or batched execution groups,
+  but the runner split must preserve the repository's ecosystem expectations.
+  This requirement does not imply one GitHub Actions job or matrix row per
+  logical validation work group.
 - Ecosystem tools managed by `mise` should remain the preferred way to provision
   toolchains.
 - `hk` should be used to left-shift lightweight checks where practical so
@@ -213,9 +229,12 @@ formatting checks where applicable, but they must not be silently skipped.
     - known non-impacting lightweight selections;
     - fail-closed classification reasons;
     - scheduled full-run selection;
-    - validation jobs or build groups to run.
+    - logical validation work groups or equivalent execution selectors to run.
 - CI should emit validation evidence or receipts that can be checked by later
   jobs and inspected after failures.
+- Each required selected validation obligation should have checkable validation
+  evidence, but the evidence granularity does not require a dedicated GitHub
+  Actions job for each logical work group.
 - These CI outputs are validation artifacts only. They must not be treated as
   immutable publish proofs.
 - CI validation evidence and release immutable proof must remain strictly
@@ -270,8 +289,8 @@ formatting checks where applicable, but they must not be silently skipped.
   scoped, or global?
 - How should downstream dependency closure be computed for .NET, Python, and
   JavaScript/TypeScript?
-- Which workflow-release tooling changes require smoke-only validation, and which
-  require full ecosystem validation?
+- Which workflow-release tooling changes require only tooling-surface validation
+  plus optional smoke evidence, and which require broader ecosystem validation?
 - How should ecosystem-discovered non-releasable validation subjects and explicit
   exclusions be represented without making those subjects publish subjects?
 - Which lightweight checks should be left-shifted into `hk`, and which checks are

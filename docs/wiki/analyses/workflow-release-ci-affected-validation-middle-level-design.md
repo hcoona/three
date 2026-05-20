@@ -220,10 +220,12 @@ For project-scoped changes, the planner selects:
 - descriptor validation for affected descriptor-backed subjects;
 - ecosystem gates that apply to every selected subject.
 
-If safe downstream computation is unavailable, the planner either expands to the
-requirement-approved ecosystem scope for that ecosystem or emits a fail-closed
-planning outcome. It must not silently validate only the direct subject when
-downstream impact may exist.
+If downstream computation is unavailable because an ecosystem lacks an approved
+dependency fact provider, the planner may expand to the requirement-approved
+ecosystem scope for that ecosystem. If an expected dependency fact provider
+cannot read or parse required metadata, the planner emits a fail-closed planning
+outcome rather than expanding from incomplete facts. It must not silently
+validate only the direct subject when downstream impact may exist.
 
 ### Ecosystem-Scoped Changes
 
@@ -399,9 +401,11 @@ Each executable validation work group has:
 - input plan identity;
 - expected evidence category.
 
-Work group selectors are not command lines and are not GitHub Actions job names.
-The control plane may map selectors to concrete jobs in lower-level design, but
-it must preserve selector semantics and plan authority.
+Work group selectors are not command lines, GitHub Actions job names, matrix
+rows, or runner allocations. The control plane may map selectors to concrete
+jobs in lower-level design, including by batching multiple compatible selectors
+into one concrete job, but it must preserve selector semantics and plan
+authority.
 
 Evidence aggregation is a terminal control-plane work group. It collects and
 reports validation-only evidence, emits the aggregate verdict artifact, and is
@@ -456,14 +460,20 @@ Executors and post-planning jobs must not:
 - use CI evidence as release immutable proof;
 - query remote publish destinations to decide validation scope.
 
-The control plane may fan out work groups by ecosystem, runner family, capability,
-or artifact obligation. That mapping is lower-level design, but it must preserve:
+The control plane may fan out or batch work groups by ecosystem, runner family,
+dependency layer, capability, or artifact obligation. That mapping is
+lower-level design, but it must preserve:
 
 - .NET validation on Windows runners in GitHub Actions;
-- Python and JavaScript/TypeScript validation on Ubuntu runners when applicable;
+- Python and JavaScript/TypeScript validation may use Ubuntu runners when
+  applicable;
 - `mise` as the preferred toolchain provisioning path;
 - no publication credentials, release privileges, or OIDC publish permissions for
-  CI planning, fact collection, or validation execution.
+  CI planning, fact collection, or validation execution;
+- the ability to report a distinct outcome and expected evidence for every
+  required logical work group;
+- dependency ordering between logical work groups, whether enforced by separate
+  jobs, batched executor ordering, or another lower-level mechanism.
 
 When provider-reported runner facts conflict with these repository-level runner
 expectations, the repository-level expectations take precedence.
@@ -491,6 +501,11 @@ Each evidence item records:
 Evidence may be used by later CI jobs and operators to understand validation
 results. It must not be accepted by release proof lookup, `buddy` publication, or
 `official` publication.
+
+One concrete execution job may produce evidence for multiple logical work
+groups, provided each evidence item remains bound to its work group selector and
+the aggregate step can still detect missing evidence, unexpected evidence, and
+blocking failures per required work group.
 
 Evidence aggregation reports:
 
