@@ -9,6 +9,12 @@ internal interface ITextFileWriter
 
 internal static class AtomicTextFileWriter
 {
+    private const UnixFileMode OwnerOnlyDirectoryMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+    private const UnixFileMode OwnerOnlyFileMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
     private static readonly ITextFileWriter DefaultWriter = new DefaultAtomicTextFileWriter();
     private static readonly AsyncLocal<ITextFileWriter?> TestWriter = new();
 
@@ -47,7 +53,7 @@ internal static class AtomicTextFileWriter
             string directoryPath = Path.GetDirectoryName(fullPath)
                 ?? throw new InvalidOperationException(
                     $"Cannot determine the parent directory for '{path}'.");
-            Directory.CreateDirectory(directoryPath);
+            EnsureOwnerOnlyDirectory(directoryPath);
 
             string tempPath = Path.Combine(
                 directoryPath,
@@ -55,11 +61,7 @@ internal static class AtomicTextFileWriter
 
             try
             {
-                using (FileStream stream = new(
-                    tempPath,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None))
+                using (FileStream stream = OpenTempFile(tempPath))
                 using (StreamWriter writer = new(
                     stream,
                     new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
@@ -70,6 +72,7 @@ internal static class AtomicTextFileWriter
                 }
 
                 ReplaceFile(tempPath, fullPath);
+                EnsureOwnerOnlyFile(fullPath);
                 tempPath = string.Empty;
             }
             finally
@@ -89,6 +92,22 @@ internal static class AtomicTextFileWriter
             File.Move(tempPath, destinationPath, overwrite: true);
         }
 
+        private static FileStream OpenTempFile(string tempPath)
+        {
+            FileStreamOptions options = new()
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+            };
+            if (!OperatingSystem.IsWindows())
+            {
+                options.UnixCreateMode = OwnerOnlyFileMode;
+            }
+
+            return new FileStream(tempPath, options);
+        }
+
         private static void TryDeleteTempFile(string tempPath)
         {
             if (string.IsNullOrWhiteSpace(tempPath) || !File.Exists(tempPath))
@@ -103,6 +122,26 @@ internal static class AtomicTextFileWriter
             catch (Exception ex) when (
                 ex is IOException or UnauthorizedAccessException)
             {
+            }
+        }
+
+        private static void EnsureOwnerOnlyDirectory(string directoryPath)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Directory.CreateDirectory(directoryPath);
+                return;
+            }
+
+            Directory.CreateDirectory(directoryPath, OwnerOnlyDirectoryMode);
+            File.SetUnixFileMode(directoryPath, OwnerOnlyDirectoryMode);
+        }
+
+        private static void EnsureOwnerOnlyFile(string path)
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, OwnerOnlyFileMode);
             }
         }
     }

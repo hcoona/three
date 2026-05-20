@@ -100,7 +100,7 @@ internal sealed class HookSpecificOutput
     public string? Reason { get; init; }
 }
 
-internal sealed class SessionState
+internal sealed class NotificationSession
 {
     public int Version { get; set; } = AppConstants.SchemaVersion;
 
@@ -120,15 +120,53 @@ internal sealed class SessionState
     public string? TranscriptPath { get; set; }
 }
 
-internal sealed class TurnState
+internal sealed class PromptObservation
 {
     public int Version { get; set; } = AppConstants.SchemaVersion;
 
     [JsonPropertyName("session_id")]
     public string SessionId { get; set; } = string.Empty;
 
-    [JsonPropertyName("turn_id")]
-    public string TurnId { get; set; } = string.Empty;
+    [JsonPropertyName("prompt_observation_id")]
+    public string PromptObservationId { get; set; } = string.Empty;
+
+    [JsonPropertyName("workspace_path")]
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    [JsonPropertyName("observed_at")]
+    public string ObservedAt { get; set; } = string.Empty;
+
+    [JsonPropertyName("hook_event_name")]
+    public string HookEventName { get; set; } = string.Empty;
+
+    [JsonPropertyName("prompt")]
+    public string? Prompt { get; set; }
+
+    [JsonPropertyName("classification")]
+    public string Classification { get; set; } = string.Empty;
+
+    [JsonPropertyName("classification_reason")]
+    public string ClassificationReason { get; set; } = string.Empty;
+
+    [JsonPropertyName("transcript_path")]
+    public string? TranscriptPath { get; set; }
+}
+
+internal sealed class NotificationTurn
+{
+    public int Version { get; set; } = AppConstants.SchemaVersion;
+
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("notification_turn_id")]
+    public string NotificationTurnId { get; set; } = string.Empty;
+
+    [JsonPropertyName("notification_nonce")]
+    public string NotificationNonce { get; set; } = string.Empty;
+
+    [JsonPropertyName("prompt_observation_id")]
+    public string PromptObservationId { get; set; } = string.Empty;
 
     [JsonPropertyName("workspace_path")]
     public string WorkspacePath { get; set; } = string.Empty;
@@ -139,28 +177,25 @@ internal sealed class TurnState
     [JsonPropertyName("updated_at")]
     public string UpdatedAt { get; set; } = string.Empty;
 
-    [JsonPropertyName("stop_validation_failure_count")]
-    public int StopValidationFailureCount { get; set; }
-
-    [JsonPropertyName("last_stop_validation_error")]
-    public string? LastStopValidationError { get; set; }
-
-    [JsonPropertyName("last_stop_validation_failure_timestamp")]
-    public string? LastStopValidationFailureTimestamp { get; set; }
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = "open";
 
     [JsonPropertyName("transcript_path")]
     public string? TranscriptPath { get; set; }
 }
 
-internal sealed class SummaryRecord
+internal sealed class NotificationSummary
 {
     public int Version { get; set; } = AppConstants.SchemaVersion;
 
     [JsonPropertyName("session_id")]
     public string? SessionId { get; set; }
 
-    [JsonPropertyName("turn_id")]
-    public string? TurnId { get; set; }
+    [JsonPropertyName("notification_turn_id")]
+    public string? NotificationTurnId { get; set; }
+
+    [JsonPropertyName("notification_nonce")]
+    public string? NotificationNonce { get; set; }
 
     [JsonPropertyName("updated_at")]
     public string? UpdatedAt { get; set; }
@@ -181,15 +216,47 @@ internal sealed class SummaryRecord
     public List<string> NextSteps { get; set; } = [];
 }
 
-internal sealed class LastSentState
+internal sealed class StopObservation
 {
     public int Version { get; set; } = AppConstants.SchemaVersion;
 
     [JsonPropertyName("session_id")]
     public string SessionId { get; set; } = string.Empty;
 
-    [JsonPropertyName("turn_id")]
-    public string TurnId { get; set; } = string.Empty;
+    [JsonPropertyName("notification_turn_id")]
+    public string NotificationTurnId { get; set; } = string.Empty;
+
+    [JsonPropertyName("stop_id")]
+    public string StopId { get; set; } = string.Empty;
+
+    [JsonPropertyName("observed_at")]
+    public string ObservedAt { get; set; } = string.Empty;
+
+    [JsonPropertyName("stop_timestamp")]
+    public string StopTimestamp { get; set; } = string.Empty;
+
+    [JsonPropertyName("match_reason")]
+    public string MatchReason { get; set; } = string.Empty;
+
+    [JsonPropertyName("summary_valid")]
+    public bool SummaryValid { get; set; }
+
+    [JsonPropertyName("summary_failure_reason")]
+    public string? SummaryFailureReason { get; set; }
+}
+
+internal sealed class NotificationRecord
+{
+    public int Version { get; set; } = AppConstants.SchemaVersion;
+
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("notification_turn_id")]
+    public string? NotificationTurnId { get; set; }
+
+    [JsonPropertyName("notification_key")]
+    public string NotificationKey { get; set; } = string.Empty;
 
     [JsonPropertyName("workspace_path")]
     public string WorkspacePath { get; set; } = string.Empty;
@@ -202,6 +269,38 @@ internal sealed class LastSentState
 
     [JsonPropertyName("summary_updated_at")]
     public string? SummaryUpdatedAt { get; set; }
+
+    [JsonPropertyName("degraded")]
+    public bool Degraded { get; set; }
+
+    [JsonPropertyName("delivery_status")]
+    public string DeliveryStatus { get; set; } = string.Empty;
+
+    [JsonPropertyName("successful_message_count")]
+    public int? SuccessfulMessageCount { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+}
+
+internal sealed class CurrentNotificationState
+{
+    public int Version { get; set; } = AppConstants.SchemaVersion;
+
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("notification_turn_id")]
+    public string NotificationTurnId { get; set; } = string.Empty;
+
+    [JsonPropertyName("notification_nonce")]
+    public string NotificationNonce { get; set; } = string.Empty;
+
+    [JsonPropertyName("summary_path")]
+    public string SummaryPath { get; set; } = string.Empty;
+
+    [JsonPropertyName("updated_at")]
+    public string UpdatedAt { get; set; } = string.Empty;
 }
 
 internal sealed class TelegramSendMessageRequest

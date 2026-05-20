@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
@@ -45,7 +46,9 @@ internal sealed class SessionFileLoggerProvider(
         }
 
         StringBuilder builder = new();
-        builder.Append(DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'"));
+        builder.Append(DateTimeOffset.UtcNow.ToString(
+            "yyyy-MM-ddTHH:mm:ss.fff'Z'",
+            CultureInfo.InvariantCulture));
         builder.Append(' ');
         builder.Append('[');
         builder.Append(GetShortLevel(logLevel));

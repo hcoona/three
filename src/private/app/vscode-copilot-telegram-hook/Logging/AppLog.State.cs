@@ -56,4 +56,18 @@ internal static partial class AppLog
         Exception exception,
         string stateFileKind,
         string stateFilePath);
+
+    [LoggerMessage(
+        EventId = 1305,
+        EventName = nameof(RecordedPromptObservation),
+        Level = LogLevel.Information,
+        Message =
+            "Recorded prompt observation {PromptObservationId} for session {SessionId}; "
+            + "classification={Classification}; reason={Reason}")]
+    public static partial void RecordedPromptObservation(
+        ILogger logger,
+        string promptObservationId,
+        string sessionId,
+        string classification,
+        string reason);
 }
