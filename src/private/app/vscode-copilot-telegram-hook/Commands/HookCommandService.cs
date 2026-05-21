@@ -691,6 +691,7 @@ internal sealed class HookCommandService(
 
         string trimmed = prompt.TrimStart();
         if (trimmed.StartsWith("<system_reminder>", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("<system_notification>", StringComparison.OrdinalIgnoreCase)
             || trimmed.StartsWith("Contents of AGENTS.md", StringComparison.OrdinalIgnoreCase)
             || IsExplicitSubagentHandoff(trimmed)
             || trimmed.Contains("Coder subagent", StringComparison.OrdinalIgnoreCase)
@@ -861,7 +862,8 @@ internal sealed class HookCommandService(
                 $"notification_nonce='{turn.NotificationNonce}'.",
                 "updated_at must be a UTC timestamp in yyyy-MM-ddTHH:mm:ss.fffZ format.",
                 "summary must be a non-empty concise human-readable sentence;",
-                "prefer Chinese when practical, but a usable non-Chinese summary is allowed.",
+                "write summary in Chinese when practical,",
+                "but a usable non-Chinese summary is allowed.",
                 "details, changed_files, and next_steps must be JSON arrays.",
                 "Do not write legacy singleton notification files.",
             ]);

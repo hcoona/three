@@ -222,8 +222,9 @@ For summary generation, the hook emits a Notification Assignment for
 high-confidence main user prompts. Only that assignment authorizes writing a
 summary, and the agent must write only the exact per-turn `summary.json` path
 with matching `session_id`, `notification_turn_id`, `notification_nonce`,
-`updated_at`, and non-empty `summary`; prefer Chinese when practical, but a
-usable non-Chinese summary is allowed. The default `Stop` behavior never blocks:
+`updated_at`, and non-empty `summary`; write the summary in Chinese when
+practical, but a usable non-Chinese summary is allowed. The default `Stop`
+behavior never blocks:
 valid summaries are sent normally, while missing, stale, ambiguous, or invalid
 handoffs produce a degraded fallback notification with durable duplicate
 suppression.
