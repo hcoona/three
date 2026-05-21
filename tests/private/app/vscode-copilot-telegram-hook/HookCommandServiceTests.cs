@@ -434,7 +434,9 @@ public sealed class HookCommandServiceTests
                     - promptInput.Prompt.Length
                     - reminderStart.Length
                     - reminderEnd.Length);
-            Assert.Equal(promptInput.Prompt + reminderStart + assignment + reminderEnd, modifiedPrompt);
+            Assert.Equal(
+                promptInput.Prompt + reminderStart + assignment + reminderEnd,
+                modifiedPrompt);
             Assert.StartsWith("Notification Assignment", assignment, StringComparison.Ordinal);
             Assert.Contains(AppPaths.GetSummaryStatePath(
                 tempDirectory.FullName,
