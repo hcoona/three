@@ -26,20 +26,20 @@ upstream decision must be escalated rather than silently rewritten here.
 
 ## 2. Low-Level Design Summary
 
-| Area               | Low-level decision                                                                                                                                                                                                                                                                                                         |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workflow shape     | Add one top-level CI validation entry workflow with `pull_request`, `push`, and `schedule` triggers, plus reusable internal validation units only if implementation benefits from them.                                                                                                                                    |
-| Plan format        | Emit one UTF-8 JSON validation plan with stable `api-version`, `kind`, `plan-id`, `mode`, provenance, classification, subject universe, planned obligations, logical work groups, stable selectors, evidence expectations, diagnostics, and verdict intent.                                                                |
-| Fail-closed        | Emit an inspectable fail-closed plan artifact and diagnostics, but the run conclusion must fail and no execution batches execute.                                                                                                                                                                                          |
-| Subject universe   | Include discovered validation subjects with selected/excluded status, not only selected subjects.                                                                                                                                                                                                                          |
-| Classification     | Use a conservative ordered rule table: unknown/unclassifiable always fail closed; broad expansion only applies to recognized global, ecosystem, or infrastructure categories.                                                                                                                                              |
-| Downstream closure | Use ecosystem-provided dependency facts when sufficient for downstream closure; otherwise fail closed.                                                                                                                                                                                                                     |
-| Execution handoff  | Materialize bounded execution batches after planning from logical work groups and stable selectors; post-planning execution must preserve selector semantics and per-work-group outcomes/evidence, and must not reclassify changes, rediscover subjects, silently drop obligations, downgrade obligations, or alter scope. |
-| Receipts/evidence  | Emit one validation-only batch evidence bundle per execution batch plus one aggregation report; descriptor, subject, and artifact obligations are evidence rows, and all evidence is inadmissible as release immutable proof.                                                                                              |
-| Credentials        | No publication credentials, release approvals, OIDC publish permissions, registry mutation, GitHub Release mutation, or release-tag mutation in CI validation.                                                                                                                                                             |
-| Runners/tools      | Preserve .NET on Windows, Python and JavaScript/TypeScript on Ubuntu when applicable, and prefer `mise` for tool provisioning.                                                                                                                                                                                             |
-| HK                 | Provide planner-aligned lightweight preflight only; HK output is local feedback, not CI evidence.                                                                                                                                                                                                                          |
-| Acceptance         | Trace acceptance to plan artifacts, selected scopes, batch evidence bundles, failure verdicts, and no-publication boundaries.                                                                                                                                                                                              |
+| Area               | Low-level decision                                                                                                                                                                                                                                                                                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workflow shape     | Add one top-level CI validation entry workflow with `pull_request`, `push`, and `schedule` triggers, plus reusable internal validation units only if implementation benefits from them.                                                                                                                                       |
+| Plan format        | Emit one UTF-8 JSON validation plan with stable `api-version`, `kind`, `plan-id`, `mode`, provenance, classification, subject universe, planned obligations, logical work groups, stable selectors, evidence expectations, diagnostics, and verdict intent.                                                                   |
+| Fail-closed        | Emit an inspectable fail-closed plan artifact and diagnostics, but the run conclusion must fail and no execution batches execute.                                                                                                                                                                                             |
+| Subject universe   | Include discovered validation subjects with selected/excluded status, not only selected subjects.                                                                                                                                                                                                                             |
+| Classification     | Use a conservative ordered rule table: unknown/unclassifiable always fail closed; broad expansion only applies to recognized global, ecosystem, or infrastructure categories.                                                                                                                                                 |
+| Downstream closure | Use ecosystem-provided dependency facts when sufficient for downstream closure; otherwise fail closed.                                                                                                                                                                                                                        |
+| Execution handoff  | Materialize bounded execution batches after planning from logical work groups and stable selectors; post-planning execution must preserve selector semantics and per-selector outcomes/evidence rows, and must not reclassify changes, rediscover subjects, silently drop obligations, downgrade obligations, or alter scope. |
+| Receipts/evidence  | Emit one validation-only batch evidence bundle per execution batch plus one aggregation report; descriptor, subject, and artifact obligations are evidence rows, and all evidence is inadmissible as release immutable proof.                                                                                                 |
+| Credentials        | No publication credentials, release approvals, OIDC publish permissions, registry mutation, GitHub Release mutation, or release-tag mutation in CI validation.                                                                                                                                                                |
+| Runners/tools      | Preserve .NET on Windows, Python and JavaScript/TypeScript on Ubuntu when applicable, and prefer `mise` for tool provisioning.                                                                                                                                                                                                |
+| HK                 | Provide planner-aligned lightweight preflight only; HK output is local feedback, not CI evidence.                                                                                                                                                                                                                             |
+| Acceptance         | Trace acceptance to plan artifacts, selected scopes, batch evidence bundles, failure verdicts, and no-publication boundaries.                                                                                                                                                                                                 |
 
 ## 3. Frozen Upstream Contracts and Non-Reopened Seams
 
@@ -58,7 +58,7 @@ This page does not reopen these upstream decisions:
   validation scope while preserving different provenance.
 - Lightweight-only plans are allowed only when every changed path is known
   non-impacting.
-- Descriptor-backed projects validate release-shaped artifacts and receipts for
+- Descriptor-backed projects validate release-shaped artifacts and logical release-shaped receipt expectations for
   the union of artifacts required by all declared profiles, without publication
   side effects.
 - Validation-only subjects participate in validation but never become publish
@@ -1796,17 +1796,24 @@ Selector rules:
     The `compatibility-profile` is the post-plan handoff placeholder for setup and
     execution compatibility. It records only the runner family, ecosystem, setup,
     execution, and release-shaped compatibility dimensions needed to prove that
-    coalesced selectors can share one batch. It does not define release-shaped
-    build details, command lines, or evidence bundle schema. Those details remain
-    owned by later release-shaped execution and evidence-bundle sections.
+    coalesced selectors can share one batch. `setup-profile` and
+    `execution-profile` are stable path-safe profile identifiers whose digest
+    preimages and equality checks include the frozen platform, setup, executor,
+    and toolchain requirements not otherwise exposed as manifest enum fields. It
+    does not define release-shaped build details, command lines, or evidence
+    bundle schema. Those details remain owned by later release-shaped execution
+    and evidence-bundle sections.
     Any batch containing a `release-shaped-artifact` selector must set a non-null,
     stable, path-safe `release-shaped-profile` derived from the frozen artifact
-    and release-receipt obligations assigned to that batch. Every release-shaped
-    selector in the batch must share that exact proven profile. If the
-    materializer cannot prove shared release-shaped compatibility, it must split
-    the selectors into safe batches or fail post-plan materialization without
-    authorizing executable validation. Batches with no release-shaped selectors
-    may keep `release-shaped-profile: null`.
+    and release-receipt obligations assigned to that batch. Its digest preimage
+    and equality checks include the frozen release-shaped platform,
+    workflow-release executor/toolchain, no-publish posture, and artifact-family
+    requirements, in addition to the obligation identifiers and shape data. Every
+    release-shaped selector in the batch must share that exact proven profile. If
+    the materializer cannot prove shared release-shaped compatibility, it must
+    split the selectors into safe batches or fail post-plan materialization
+    without authorizing executable validation. Batches with no release-shaped
+    selectors may keep `release-shaped-profile: null`.
 
     `expected-evidence-slot` is a pre-execution expectation slot, not an execution
     result. It may identify the logical work group, evidence expectation,
@@ -1988,19 +1995,24 @@ Selector rules:
 
 ## 12. Execution Mapping
 
-The planner maps work groups to runner families:
+The planner maps logical work groups to runner families; it does not create
+concrete GitHub Actions jobs, matrix rows, batch IDs, or bundle refs.
+`materialize-execution-batches` is the first boundary that turns the frozen plan
+into physical execution. Its manifest maps each `execution-batch` to exactly one
+budget-counted concrete GitHub Actions job or matrix leg, and each executable
+work-group selector appears in exactly one batch `ordered-selectors` list.
 
-| Work group kind                                               | Default runner family                                                                                   | Notes                                                                       |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `lightweight-preflight`                                       | Ubuntu                                                                                                  | May run documentation, formatting, or policy checks when lightweight enough |
-| `ecosystem-gate` for .NET                                     | Windows                                                                                                 | Preserves .NET runner expectation                                           |
-| `ecosystem-gate` for Python                                   | Ubuntu                                                                                                  | Uses repository tool provisioning convention                                |
-| `ecosystem-gate` for JavaScript/TypeScript                    | Ubuntu                                                                                                  | Uses repository tool provisioning convention                                |
-| `descriptor-validation`                                       | Ubuntu, or the subject ecosystem runner when descriptor validation requires ecosystem-specific evidence | Must not publish or mutate release state                                    |
-| `release-shaped-artifact` for .NET                            | Windows                                                                                                 | Produces validation-only artifact receipts                                  |
-| `release-shaped-artifact` for Python or JavaScript/TypeScript | Ubuntu                                                                                                  | Produces validation-only artifact receipts                                  |
-| `workflow-release-tooling`                                    | Ubuntu, or Windows when the affected tooling surface requires Windows-only evidence                     | May fan out to related ecosystem runners when scope requires                |
-| `evidence-aggregation`                                        | Ubuntu                                                                                                  | Terminal control-plane aggregation; emits aggregate verdict artifact        |
+| Work group kind                                               | Default runner family                                                                                   | Notes                                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `lightweight-preflight`                                       | Ubuntu                                                                                                  | May run documentation, formatting, or policy checks when lightweight |
+| `ecosystem-gate` for .NET                                     | Windows                                                                                                 | Preserves .NET runner expectation                                    |
+| `ecosystem-gate` for Python                                   | Ubuntu                                                                                                  | Uses repository tool provisioning convention                         |
+| `ecosystem-gate` for JavaScript/TypeScript                    | Ubuntu                                                                                                  | Uses repository tool provisioning convention                         |
+| `descriptor-validation`                                       | Ubuntu, or the subject ecosystem runner when descriptor validation requires ecosystem-specific evidence | Must not publish or mutate release state                             |
+| `release-shaped-artifact` for .NET                            | Windows                                                                                                 | Emits validation-only batch evidence rows                            |
+| `release-shaped-artifact` for Python or JavaScript/TypeScript | Ubuntu                                                                                                  | Emits validation-only batch evidence rows                            |
+| `workflow-release-tooling`                                    | Ubuntu, or Windows when the affected tooling surface requires Windows-only evidence                     | Uses separate selectors only when scope requires separate evidence   |
+| `evidence-aggregation`                                        | Ubuntu                                                                                                  | Terminal control-plane aggregation; emits aggregate verdict artifact |
 
 The planner applies this table before freezing work groups and records the
 result in each executable selector. "Requires ecosystem runner" means the
@@ -2008,15 +2020,79 @@ descriptor validation must run with the same runner family as the selected
 subject or artifact-producing ecosystem; mixed requirements are represented by
 separate work groups with distinct non-null `selector-variant` values. "Requires
 Windows-only evidence" means the affected tooling surface validates
-Windows-specific .NET/build behavior. All other
-workflow-release-tooling work groups use Ubuntu. All runners provision tools
-through `mise` where practical. The concrete command lines and helper scripts are
-implementation-owned, but they must run the repository's existing ecosystem gates
-for selected scopes. Release-shaped artifact work groups must invoke the
-existing workflow-release build recipes/adapters in validation/no-publish mode
-where practical. Wrappers, artifact staging locations, and receipt emission may
-differ from release runs, but build semantics, descriptor interpretation, and
-artifact-contract checks must not use a separate simplified CI-only path.
+Windows-specific .NET/build behavior. All other workflow-release-tooling work
+groups use Ubuntu. All runners provision tools through `mise` where practical.
+The concrete command lines and helper scripts are implementation-owned, but they
+must run the repository's existing ecosystem gates for selected scopes.
+
+An execution-batch job is a validation control-plane boundary, not a raw command
+line and not one job per work group. Before running category-specific validation,
+the job must consume the frozen validation plan and its assigned
+execution-batch manifest entry and verify at least:
+
+- the manifest's `plan-id` and `plan-digest` match the frozen plan;
+- the current GitHub Actions job or matrix identity equals the batch writer
+  identity assigned to this `batch-id`;
+- the batch runner family, platform, ecosystem, setup, execution profile,
+  toolchain assumptions, and release-shaped profile are compatible with the
+  current job context;
+- every `ordered-selectors` entry resolves to the frozen work group and expected
+  evidence slot by exact identifier and dependency list;
+- every selector dependency is covered either by an earlier selector in this
+  batch or by a declared upstream batch whose bundle/result is available for
+  dependency gating;
+- budget invariants that can be checked from the job context and manifest remain
+  consistent, including the one-batch-to-one-budgeted-job mapping; and
+- no selected executable obligation assigned to the batch is missing, duplicated,
+  rewritten, downgraded, or replaced by a selector discovered during execution.
+
+The job executes `ordered-selectors` in manifest order. Category-specific
+commands may run inside that sequence, but they cannot reclassify changes,
+rediscover selected subjects, alter dependencies, or write contract-owned
+execution-batch manifests, final manifests, or aggregate verdicts. They may
+produce command-local material for the batch boundary to evaluate. The
+execution-batch boundary writes exactly one validation-only batch evidence bundle
+for each executable batch that reaches evidence writing. That bundle contains
+separate per-selector evidence/result rows for every assigned selector and
+expected evidence slot, preserving distinct outcomes even when selectors share a
+runner, workspace, setup, or release-shaped build invocation.
+
+Dependency gating is result-presence based, not success-only. A valid upstream
+selector row with `outcome: blocking-failure` is a produced dependency result and
+does not by itself dependency-block downstream selectors; aggregation later fails
+the final verdict from that blocking validation result. A selector is
+dependency-blocked only when a required dependency result is skipped, missing, or
+unavailable, or when an upstream batch/control-plane/bundle failure prevents the
+dependency result from being admitted for gating. When the batch can still write
+evidence, the dependency-blocked selector emits a skipped per-selector row with
+empty artifact refs and a `validation-work-skipped` diagnostic whose
+`diagnostic-detail` is `dependency-blocked`.
+
+Release-shaped selectors remain selected obligations. Execution must not drop,
+downgrade, or replace them with ordinary ecosystem gates because they are
+coalesced into a batch. Where applicable, release-shaped validation reuses the
+workflow-release build executor/tooling path in validation-only/no-publish mode
+for build and test behavior. CI evidence from that path is never release
+immutable proof and must not be accepted as publication evidence. CI validation
+must not configure or use publish credentials, release approvals, OIDC publish
+permission, registry mutation, GitHub Release mutation, release tag mutation, or
+release-environment side effects.
+
+Every batch containing a release-shaped selector must carry a non-null, stable,
+path-safe `compatibility-profile.release-shaped-profile` derived from the frozen
+artifact and logical release-shaped receipt obligations assigned to the batch.
+Release-shaped selectors may share one execution batch only when their frozen
+profile, runner family, platform, ecosystem, setup, execution profile,
+workflow-release executor/toolchain requirements, no-publish posture, and artifact
+family are compatible. Those dimensions are not advisory: they are bound into the
+manifest by the `setup-profile`, `execution-profile`, and
+`release-shaped-profile` digest preimages and equality checks before selectors
+may coalesce. If compatibility cannot be proven, `materialize-execution-batches`
+must split the selectors into separate safe batches or fail post-plan
+materialization within the fixed job/artifact budgets. Even when multiple
+release-shaped selectors reuse one build executor invocation, the batch bundle
+must retain one distinct selector result row per frozen artifact obligation and
+evidence expectation.
 
 Aggregation is mapped as the terminal control-plane job after all planned
 execution batches are complete, skipped by workflow construction, or otherwise
@@ -2034,117 +2110,145 @@ aggregate artifact.
 
 ## 13. Release-Shaped Artifact Validation
 
-For descriptor-backed subjects, release-shaped validation derives artifact
-obligations from release descriptors and the existing workflow-release artifact
-model.
+For descriptor-backed subjects, release-shaped validation derives selected
+artifact obligations from release descriptors and the existing workflow-release
+artifact model. Those obligations remain required validation obligations in CI;
+batching can change only their physical execution grouping, not their selected
+scope, evidence expectations, or verdict relevance.
 
 Artifact obligations are plan-level records in the top-level
-`artifact-obligations` section. Release-shaped validation work groups consume
-those frozen obligations by `artifact-obligation-id`.
+`artifact-obligations` section. Release-shaped validation selectors consume those
+frozen obligations by `artifact-obligation-id`, and execution-batch materialization
+assigns each selector to exactly one compatible batch.
 
-The `release-receipt` block describes the release-shaped receipt expectation
-that is validated alongside the artifact shape. It is the receipt shape being
-checked, not the CI validation receipt emitted by the work group.
+The `release-receipt` block describes the logical release-shaped receipt
+expectation that is validated alongside the artifact shape. It is the receipt
+shape being checked, not a standalone CI receipt artifact and not release
+immutable proof. Pending Group 4 bundle schema finalization, the minimum result
+shape below is authoritative only as the per-selector `category-result.detail`
+content inside the manifest-assigned batch evidence bundle.
 
 Rules:
 
 - The obligation set is the union required by all declared profiles.
 - `profile-coverage` values are descriptor-declared profile identifiers; current
   descriptors use `buddy` and `official`, but the field is not a closed enum.
-- No publish nodes, target remote state, overwrite policy, release tags, or GitHub
-  Release operations are planned.
+- No publish nodes, target remote state, overwrite policy, release tags, GitHub
+  Release operations, registry mutation, release approvals, OIDC publish
+  permission, release environment side effects, or publish credentials are
+  planned or available to CI validation.
 - If a descriptor is invalid enough to prevent derivation, planning fails closed.
 - If descriptor-validation work is executable and fails, the corresponding
-  descriptor-validation work group records a blocking validation failure.
+  descriptor-validation selector records a blocking validation failure.
 - If a shape cannot be confirmed without release-only credentials or side
-  effects, the work group records a blocking validation failure.
-- Artifact validation receipts are validation-only and inadmissible as immutable
+  effects, the selector records a blocking validation failure.
+- Release-shaped CI evidence is validation-only and inadmissible as immutable
   release proof.
-- A `release-shaped-artifact` receipt must use `category-result.detail` with this
-  minimum shape:
+- Where applicable, release-shaped execution uses the existing workflow-release
+  build executor/tooling path in validation-only/no-publish mode for build and
+  test behavior, instead of a simplified CI-only artifact path.
+- Every release-shaped batch has a non-null, stable, path-safe
+  `release-shaped-profile` derived from the frozen artifact and logical
+  release-shaped receipt obligations in that batch. Its digest preimage and
+  equality checks include the frozen platform, workflow-release executor/toolchain,
+  no-publish posture, and artifact-family requirements. Selectors may share a
+  batch only when that profile and their runner, platform, ecosystem, setup,
+  execution, toolchain, no-publish, and artifact-family requirements are
+  compatible.
 
-    ```yaml
-    artifact-obligation-results:
-        - artifact-obligation-id: string
-          descriptor:
-              path: string
-              identity: string | null
-          profile-coverage: [string]
-          artifact:
-              planned:
-                  kind-family: string
-                  concrete-kind: string
-                  logical-artifact-role: string
-                  variant-dimensions: object
-                  expected-artifact-refs: [string]
-              observed:
-                  refs: [string]
-                  digests:
-                      - artifact-ref: string
-                        algorithm: sha256
-                        digest: string
-                        digest-available: boolean
-                        diagnostics: [diagnostic-record]
-              outcome: success | blocking-failure | skipped
-              diagnostics: [diagnostic-record]
-          release-receipt:
-              planned:
-                  expected-family: string
-                  logical-receipt-role: string
-                  variant-dimensions: object
-              expected: boolean
-              schema-checked: boolean
-              outcome: success | blocking-failure | skipped
-              diagnostics: [diagnostic-record]
+A `release-shaped-artifact` per-selector batch evidence row uses
+`category-result.detail` with this minimum shape:
+
+```yaml
+artifact-obligation-results:
+    - artifact-obligation-id: string
+      descriptor:
+          path: string
+          identity: string | null
+      profile-coverage: [string]
+      artifact:
+          planned:
+              kind-family: string
+              concrete-kind: string
+              logical-artifact-role: string
+              variant-dimensions: object
+              expected-artifact-refs: [string]
+          observed:
+              refs: [string]
+              digests:
+                  - artifact-ref: string
+                    algorithm: sha256
+                    digest: string
+                    digest-available: boolean
+                    diagnostics: [diagnostic-record]
           outcome: success | blocking-failure | skipped
           diagnostics: [diagnostic-record]
-    ```
+      release-receipt:
+          planned:
+              expected-family: string
+              logical-receipt-role: string
+              variant-dimensions: object
+          expected: boolean
+          schema-checked: boolean
+          outcome: success | blocking-failure | skipped
+          diagnostics: [diagnostic-record]
+      outcome: success | blocking-failure | skipped
+      diagnostics: [diagnostic-record]
+```
 
-    The single planned `artifact-obligation-id` bound to the release-shaped work
-    group must appear exactly once, and no other artifact obligation may appear in
-    that receipt. `profile-coverage` is copied from the frozen obligation and
-    artifact `planned` plus release-receipt `planned` fields are copied from the
-    frozen artifact obligation and equality-checked by aggregation. The planned
-    `expected-artifact-refs` set is the complete required artifact coverage for
-    the obligation and must be non-empty. The `observed.refs` set must equal both
-    the refs checked by the work group and the frozen `expected-artifact-refs`;
-    empty, partial, or extra refs are a blocking release-shaped artifact
-    validation failure. `observed.digests` must contain exactly one entry per
-    expected ref with `algorithm: sha256`, matching `artifact-ref`, and a
-    lowercase hexadecimal SHA-256 `digest` when `digest-available: true`. A
-    missing, duplicate, mismatched, non-SHA-256, or unavailable digest is a
-    blocking release-shaped artifact validation failure with
-    `artifact-shape-unconfirmed`; unavailable digest entries must set
-    `digest-available: false`, use an empty digest string, and carry a diagnostic
-    explaining why the artifact bytes could not be content-bound without
-    publication credentials or side effects. A successful release-shaped artifact
-    result also requires `release-receipt.expected` and
-    `release-receipt.schema-checked` to be `true`, and
-    `release-receipt.outcome` to be `success`; unchecked or unexpected
-    release-shaped receipt outputs are blocking failures, not successful
-    validation evidence.
-    When the manifest-assigned release-shaped selector is skipped solely because
-    an upstream dependency result is skipped, missing, or unavailable, or because
-    an upstream batch/control-plane/bundle failure prevents dependency gating, the
-    batch evidence bundle records an admissible dependency-blocked per-selector
-    row rather than artifact-shape validation evidence. An upstream
-    `blocking-failure` result that was successfully written is still a produced
-    dependency result and does not by itself dependency-block this selector. In
-    the dependency-blocked row, the selector `outcome`, `category-result.outcome`,
-    the single obligation result `outcome`, `artifact.outcome`, and
-    `release-receipt.outcome` must all be `skipped`; selector
-    `evidence.artifact-refs` and `artifact.observed.refs` must both be `[]`;
-    `artifact.observed.digests` must be `[]`; `release-receipt.expected` remains
-    copied from the frozen obligation but `release-receipt.schema-checked` must be
-    `false`; and diagnostics must include `validation-work-skipped` with
-    `diagnostic-detail: dependency-blocked`. This batch evidence row never
-    satisfies the release-shaped artifact obligation as success: aggregation
-    records `required-evidence-skipped` and fails the final verdict.
+The single planned `artifact-obligation-id` bound to the release-shaped
+selector must appear exactly once in that selector row, and no other artifact
+obligation may appear in that row. `profile-coverage` is copied from the
+frozen obligation and artifact `planned` plus release-receipt `planned` fields
+are copied from the frozen artifact obligation and equality-checked by
+aggregation. The planned `expected-artifact-refs` set is the complete required
+artifact coverage for the obligation and must be non-empty. The
+`observed.refs` set must equal both the refs checked by the selector and the
+frozen `expected-artifact-refs`; empty, partial, or extra refs are a blocking
+release-shaped artifact validation failure. `observed.digests` must contain
+exactly one entry per expected ref with `algorithm: sha256`, matching
+`artifact-ref`, and a lowercase hexadecimal SHA-256 `digest` when
+`digest-available: true`. A missing, duplicate, mismatched, non-SHA-256, or
+unavailable digest is a blocking release-shaped artifact validation failure
+with `artifact-shape-unconfirmed`; unavailable digest entries must set
+`digest-available: false`, use an empty digest string, and carry a diagnostic
+explaining why the artifact bytes could not be content-bound without
+publication credentials or side effects. A successful release-shaped artifact
+result also requires `release-receipt.expected` and
+`release-receipt.schema-checked` to be `true`, and
+`release-receipt.outcome` to be `success`; unchecked or unexpected logical
+release-shaped receipt outputs are blocking failures, not successful
+validation evidence.
+
+When multiple compatible release-shaped selectors share one execution batch,
+each selector still emits its own result row with its own
+`artifact-obligation-id`, planned fields, observed refs/digests, logical
+release-shaped receipt check, outcome, and diagnostics. A shared executor or
+staged artifact set cannot collapse those rows into one batch-level pass/fail
+result.
+
+When the manifest-assigned release-shaped selector is skipped solely because
+an upstream dependency result is skipped, missing, or unavailable, or because
+an upstream batch/control-plane/bundle failure prevents dependency gating, the
+batch evidence bundle records an admissible dependency-blocked per-selector
+row rather than artifact-shape validation evidence. An upstream
+`blocking-failure` result that was successfully written is still a produced
+dependency result and does not by itself dependency-block this selector. In
+the dependency-blocked row, the selector `outcome`,
+`category-result.outcome`, the single obligation result `outcome`,
+`artifact.outcome`, and `release-receipt.outcome` must all be `skipped`;
+selector `evidence.artifact-refs` and `artifact.observed.refs` must both be
+`[]`; `artifact.observed.digests` must be `[]`; `release-receipt.expected`
+remains copied from the frozen obligation but
+`release-receipt.schema-checked` must be `false`; and diagnostics must include
+`validation-work-skipped` with `diagnostic-detail: dependency-blocked`. This batch
+evidence row never satisfies the release-shaped artifact obligation as success: aggregation records
+`required-evidence-skipped` and fails the final verdict.
 
 ## 14. Evidence and Receipt Files
 
 Transition note: this section still contains legacy receipt terminology pending
-the Group 4 evidence-bundle and aggregate rebaseline. For the Group 2 handoff,
+the Group 4 evidence-bundle and aggregate rebaseline. For the current Group 3 handoff,
 the authoritative execution unit is the execution batch, and each execution batch
 emits one validation-only batch evidence bundle. A separate per-work-group receipt
 artifact is not required by the current rebaseline. Until Group 4 replaces this
@@ -2227,8 +2331,8 @@ category-result branch:
         detail: object | null
 ```
 
-`lightweight-preflight` receipts must use `category-result.detail` with this
-minimum shape:
+`lightweight-preflight` compatibility rows use `category-result.detail` with this
+minimum shape pending Group 4:
 
 ```yaml
 lightweight-preflight:
@@ -2247,8 +2351,8 @@ lightweight-preflight:
     diagnostics: [diagnostic-record]
 ```
 
-`workflow-release-tooling` receipts must use `category-result.detail` with this
-minimum shape:
+`workflow-release-tooling` compatibility rows use `category-result.detail` with this
+minimum shape pending Group 4:
 
 ```yaml
 workflow-release-tooling:
@@ -2268,24 +2372,24 @@ workflow-release-tooling:
     diagnostics: [diagnostic-record]
 ```
 
-For required `lightweight-preflight` and `workflow-release-tooling` receipts,
+For required `lightweight-preflight` and `workflow-release-tooling` batch evidence rows,
 `category-result.detail` must be non-null and must contain exactly the matching
 category object above. Aggregation equality-checks `work-group-id`,
 `detail-profile`, `coverage-target`, `ecosystem` when present,
 `selector-variant`, `runner-family`, and `outcome` against the frozen work group,
-evidence expectation, and receipt outcome. Missing detail, the wrong detail
+evidence expectation, and selector outcome. Missing detail, the wrong detail
 object, an unplanned `detail-profile`, or any mismatched frozen field makes the
-receipt inadmissible with `mismatched-evidence-payload`.
+batch evidence row inadmissible with `mismatched-evidence-payload`.
 Aggregation also resolves the frozen `detail-profile-definition` and requires
 `subcheck-results` to contain exactly one entry for every required subcheck and no
 extra entries. A `success` category result is admissible only when every blocking
 subcheck result is `success`, all skipped or failed blocking subchecks carry
 diagnostics, and the category outcome equals the aggregate of its subcheck results.
-A receipt whose category-level outcome is successful while required subchecks are
+A batch evidence row whose category-level outcome is successful while required subchecks are
 missing, duplicated, extra, skipped, failed, or inconsistent is inadmissible with
 `mismatched-evidence-payload`, not merely a successful self-attestation.
 
-A `descriptor-validation` receipt must use `category-result.detail` with this
+A `descriptor-validation` batch evidence row uses `category-result.detail` with this
 minimum shape:
 
 ```yaml
@@ -2303,39 +2407,36 @@ descriptor-obligation-results:
 
 The single planned `descriptor-obligation-id` bound to the
 `descriptor-validation` work group must appear exactly once, and no other
-descriptor obligation may appear in that receipt. `descriptor.path`,
+descriptor obligation may appear in that row. `descriptor.path`,
 `descriptor.identity`, `descriptor.owner-subject-id`, `descriptor.source`, and
 `descriptor-scope` are copied from the frozen descriptor obligation and its
 digest-bound fact snapshot descriptor record, then equality-checked by
-aggregation. A descriptor-validation receipt that omits the bound obligation,
+aggregation. A descriptor-validation batch evidence row that omits the bound obligation,
 adds another obligation, or reports descriptor fields that do not match the
 frozen plan and fact snapshot is inadmissible with `mismatched-evidence-payload`.
 
-Receipt rules:
+Legacy receipt compatibility rules, non-authoritative for Group 3 execution
+mapping:
 
-- The receipt intake boundary is a closed control-plane-owned manifest-indexed
-  namespace for validation receipts. Aggregation enumerates every receipt-like
-  entry in that boundary and does not treat ordinary logs or auxiliary artifacts
-  outside that boundary as observed receipts.
-- The closed receipt intake boundary is the run-attempt-scoped artifact namespace
-  `ci-validation/receipts/<run-id>/<run-attempt>/`. The trusted receipt boundary
-  for an executable work-group job is authorized to write only that selector's
-  own receipt artifacts in that namespace; category-specific validation commands
-  are not authorized writers for contract-owned receipt artifacts. Each expected
-  receipt artifact ref is derived from the frozen selector, not from receipt
-  payload claims:
-  `ci-validation/receipts/<run-id>/<run-attempt>/<work-group-id>/receipt.json`.
-  If one concrete job batches multiple selectors, it must still write one receipt
-  artifact at the derived ref for each covered `work-group-id`.
-  Because physical artifact names are digest-only, this logical namespace is made
-  observable by the section 5 classification rule: aggregation first removes every
-  prefixed artifact matching an expected non-receipt contract ref for the current
-  run attempt, then treats all remaining prefixed artifacts as receipt-like
-  entries for manifest closure. This deliberately fails closed on unexpected
-  prefixed artifacts rather than proving receipt membership from unreadable
-  payloads or physical-name prefixes.
-  Final receipt manifest and aggregate artifacts must be serialized as RFC 8785
-  canonical UTF-8 JSON bytes before upload. Any rule below that refers to raw
+- The current authoritative evidence unit is the manifest-assigned batch evidence
+  bundle. Execution batches are not required to emit separate per-work-group or
+  per-selector receipt artifacts, and no standalone receipt artifact satisfies a
+  required evidence expectation outside its containing batch bundle.
+- The legacy receipt intake boundary below remains only a Group 4 compatibility
+  placeholder for diagnostic mirroring of receipt-like artifacts that may appear
+  during migration. It must not be used to infer selector assignment, writer
+  authority, dependency gating, release proof, or batch success.
+- If legacy receipt-like artifacts are present under
+  `ci-validation/receipts/<run-id>/<run-attempt>/`, aggregation may enumerate them
+  for diagnostics after first classifying expected non-bundle contract refs for
+  the current run attempt. Unexpected prefixed artifacts fail closed only under
+  the legacy compatibility rules; the current Group 3 admissibility path remains
+  the execution-batch manifest plus expected batch evidence bundle refs.
+- The nested receipt-manifest wording below is legacy/non-authoritative until
+  Group 4 replaces it with final batch-bundle schema and namespace rules. If it
+  is retained for diagnostics during migration, final receipt manifest and
+  aggregate artifacts must be serialized as RFC 8785 canonical UTF-8 JSON bytes
+  before upload. Any rule below that refers to raw
   manifest or aggregate artifact bytes, content digests, or replay recomputation
   uses those canonical bytes; semantically equivalent but non-canonical JSON is
   malformed final evidence.
@@ -2371,8 +2472,8 @@ Receipt rules:
 
     Receipt manifest entries always record the observed `physical-artifact-name`.
     `artifact-ref` is the logical receipt ref only after aggregation can establish
-    it from the selector-assignment expected receipt ref or from a readable
-    receipt payload whose `artifact-ref` recomputes to the observed physical name;
+    it from a legacy expected receipt ref or from a readable receipt payload whose
+    `artifact-ref` recomputes to the observed physical name;
     otherwise it is `null`. Unreadable, malformed, unparseable, or otherwise
     unclassified prefixed artifacts remain observed receipt-like entries with
     `artifact-ref: null`, `writer-work-group-id: null`, and
@@ -2383,7 +2484,7 @@ Receipt rules:
     first authoritative aggregation pass for the run attempt. Aggregation may
     declare the namespace closed only after execution-batch materialization is
     complete
-    and all executable work-group jobs that can write trusted receipts have
+    and all executable execution-batch jobs that can write batch bundles have
     reached a terminal state. The closure's `closed-receipt-count` and
     `observed-entry-ids` must equal the manifest entries. Post-run acceptance and
     same-attempt aggregation retries must re-enumerate the receipt intake
@@ -2413,7 +2514,7 @@ Receipt rules:
     missing or malformed.
     `assignment-id`, `trusted-writer-id`, `observed-writer-id`, and
     `writer-observation-ref` are legacy receipt-manifest placeholder fields pending
-    Group 4. They are not current Group 2 admissibility gates, and
+    Group 4. They are not current Group 3 admissibility gates, and
     selector-assignment or writer-observation artifacts are not required
     contract-owned artifacts under the execution-batch handoff. Current batch
     bundle admissibility is gated by the verified execution-batch manifest,
@@ -2430,7 +2531,7 @@ Receipt rules:
     cross-attempt artifacts, and unreadable receipt artifacts are observed
     inadmissible entries and must appear in aggregate diagnostics/failures. Missing
     or mismatched legacy writer identity placeholders are diagnostic-only pending
-    Group 4 and are not current Group 2 inadmissibility criteria. A pre-existing
+    Group 4 and are not current Group 3 inadmissibility criteria. A pre-existing
     manifest
     uploaded by an executable work group in the receipt intake namespace is
     treated as an unexpected receipt-like artifact, not as aggregation authority.
@@ -2472,7 +2573,7 @@ Receipt rules:
   admissible until a structurally valid plan, current post-plan execution-batch
   manifest, and matching plan identity are verified. The older
   selector-assignment manifest wording in this section is legacy pending Group 4
-  and is not a current Group 2 admissibility requirement.
+  and is not a current Group 3 admissibility requirement.
 - `receipt-id` is an opaque stable identifier for the receipt emission within the
   run attempt or equivalent execution provenance. It must not be derived from a
   representation that includes itself.
@@ -2489,16 +2590,16 @@ Receipt rules:
   plan envelope; scheduled-full receipts carry `affected-range.status:
 not-applicable`, null affected-range SHAs and hash, and `scheduled-full.enabled:
 true`.
-- The trusted receipt boundary must observe the checkout or execution tree before
-  running validation and bind it to the planned tree in the receipt. For
-  executable work groups, `execution-tree.observed-commit-sha` must equal the
-  frozen `validation-tree.commit-sha`, `execution-tree.source` is
-  `trusted-receipt-boundary`, and `execution-tree.verified` must be `true` for a
-  receipt to be admissible. The category-specific validation command may not
+- The execution-batch boundary must observe the checkout or execution tree before
+  running validation and bind it to the planned tree in the batch evidence row.
+  For executable selectors, `execution-tree.observed-commit-sha` must equal the
+  frozen `validation-tree.commit-sha`, `execution-tree.source` is the
+  execution-batch boundary, and `execution-tree.verified` must be `true` for the
+  row to be admissible. The category-specific validation command may not
   self-attest the execution tree. A missing, unverifiable, or mismatched execution
-  tree makes the receipt inadmissible with `mismatched-evidence-payload`; if the
-  trusted receipt boundary cannot verify the tree before validation, it must emit
-  a blocking receipt or no receipt rather than a successful one.
+  tree makes the row inadmissible with `mismatched-evidence-payload`; if the
+  execution-batch boundary cannot verify the tree before validation, it must emit
+  a blocking row or no row rather than a successful one.
 - Receipts and aggregates copy `changed-files-hash` from the frozen plan. They
   must not rediscover or reorder changed files; aggregation only recomputes the
   hash from the companion changed-files snapshot artifact. A receipt mismatch is
@@ -2564,10 +2665,11 @@ true`.
   `duplicate-receipt`. Receipts that are inadmissible for other reasons do not
   participate in choosing the satisfying receipt.
 - The previous release-shaped reused-receipt-chain exception is legacy and
-  non-authoritative pending Group 3 release-shaped compatibility rules and Group 4
-  evidence-bundle finalization. Until those groups define safe reuse semantics,
-  duplicate release-shaped receipt or bundle evidence is not accepted by this
-  Group 2 handoff; it remains fail-closed duplicate evidence.
+  non-authoritative pending Group 4 evidence-bundle finalization. Group 3 now
+  allows sharing only through one compatible manifest-assigned execution batch
+  with distinct per-selector rows; duplicate release-shaped receipt-like or
+  bundle evidence is not accepted by this current Group 3 handoff and remains
+  fail-closed duplicate evidence.
 - Ambiguous duplicates, malformed chains, self-asserted or cyclic chains,
   multiple maximal chains, mismatched work-group or target/scope identities,
   missing writer authority, missing observed source proof or equivalent admissible
@@ -2689,7 +2791,7 @@ The `receipt-manifest`, `observed-receipts`, `receipt-id`, and
 `receipt-artifact-ref` fields in this aggregate shape are compatibility
 placeholders until Group 4 replaces receipt-manifest finalization with batch
 bundle finalization. They must not be read as requiring separate per-work-group
-receipt artifacts under the Group 2 execution-batch handoff; batch evidence
+receipt artifacts under the current Group 3 execution-batch handoff; batch evidence
 bundles remain the authoritative evidence unit for this rebaseline.
 
 The aggregation report is the only CI-level verdict artifact and is emitted at
@@ -3016,7 +3118,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Upstream selector emits a valid `blocking-failure` batch evidence row                                                                                                                                                  | The batch can still write evidence for dependency gating, downstream selectors are not dependency-blocked solely by that validation outcome, and aggregation fails the final verdict from the batch evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Batch evidence row emitted after validation on the wrong or unverifiable execution tree                                                                                                                                | Aggregation treats the batch evidence row as inadmissible with `mismatched-evidence-payload`; copied plan provenance is insufficient without execution-tree evidence from the execution-batch boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Legacy receipt-like artifact appears in the compatibility intake namespace                                                                                                                                             | Pending Group 4, receipt-like artifact handling is compatibility/diagnostic placeholder behavior and does not replace the current execution-batch manifest and batch evidence bundle requirements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Aggregate mirrors an unreadable or unclassified legacy receipt-like artifact                                                                                                                                           | Pending Group 4, `observed-receipts` compatibility fields may record the manifest entry for diagnostics, but current Group 2 acceptance relies on batch evidence bundles                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Aggregate mirrors an unreadable or unclassified legacy receipt-like artifact                                                                                                                                           | Pending Group 4, `observed-receipts` compatibility fields may record the manifest entry for diagnostics, but current Group 3 acceptance relies on batch evidence bundles                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Release-shaped artifact batch evidence row with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked logical release-shaped receipt check, or mismatched planned shape | Aggregation records `artifact-shape-unconfirmed` or `mismatched-evidence-payload` and fails the final verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Dependency-blocked release-shaped artifact batch evidence row                                                                                                                                                          | The batch evidence row may use the explicit skipped form with empty observed artifact refs and digests plus `validation-work-skipped: dependency-blocked`; aggregation treats it as required evidence skipped and fails the final verdict, not as successful artifact-shape validation                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Legacy receipt compatibility row has top-level artifact refs populated for non-artifact evidence or differing from release-shaped observed refs                                                                        | Pending Group 4, this remains a compatibility placeholder; current batch evidence rows must keep artifact refs aligned with the category-specific release-shaped observed refs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
