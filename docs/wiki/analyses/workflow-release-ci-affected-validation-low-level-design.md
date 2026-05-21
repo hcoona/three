@@ -35,7 +35,7 @@ upstream decision must be escalated rather than silently rewritten here.
 | Classification     | Use a conservative ordered rule table: unknown/unclassifiable always fail closed; broad expansion only applies to recognized global, ecosystem, or infrastructure categories.                                                                                                                                                 |
 | Downstream closure | Use ecosystem-provided dependency facts when sufficient for downstream closure; otherwise fail closed.                                                                                                                                                                                                                        |
 | Execution handoff  | Materialize bounded execution batches after planning from logical work groups and stable selectors; post-planning execution must preserve selector semantics and per-selector outcomes/evidence rows, and must not reclassify changes, rediscover subjects, silently drop obligations, downgrade obligations, or alter scope. |
-| Receipts/evidence  | Emit one validation-only batch evidence bundle per execution batch plus one aggregation report; descriptor, subject, and artifact obligations are evidence rows, and all evidence is inadmissible as release immutable proof.                                                                                                 |
+| Evidence           | Emit one validation-only batch evidence bundle per execution batch plus two final aggregation artifacts: an aggregate evidence manifest and an aggregate summary; descriptor, subject, and artifact obligations are evidence rows, and all evidence is inadmissible as release immutable proof.                               |
 | Credentials        | No publication credentials, release approvals, OIDC publish permissions, registry mutation, GitHub Release mutation, or release-tag mutation in CI validation.                                                                                                                                                                |
 | Runners/tools      | Preserve .NET on Windows, Python and JavaScript/TypeScript on Ubuntu when applicable, and prefer `mise` for tool provisioning.                                                                                                                                                                                                |
 | HK                 | Provide planner-aligned lightweight preflight only; HK output is local feedback, not CI evidence.                                                                                                                                                                                                                             |
@@ -138,7 +138,8 @@ The top-level CI validation workflow preserves this logical sequence:
 2. **`plan`**
     - checks out the validation tree;
     - runs validation planning without publication credentials;
-    - emits exactly one validation plan artifact at the contract-owned ref;
+    - emits exactly one validation plan artifact at the contract-owned ref when
+      the request boundary is replayable and a plan is expected;
     - emits plan diagnostics when planning fails closed.
 3. **`materialize-execution-batches`**
     - reads the validation plan;
@@ -175,7 +176,7 @@ The top-level CI validation workflow preserves this logical sequence:
     - continues collecting independent evidence after validation failures while
       still blocking on control-plane and bundle write failures;
     - computes the CI validation verdict;
-    - emits one aggregation report at the contract-owned ref;
+    - emits the aggregate evidence manifest and aggregate summary at their contract-owned refs;
     - fails the workflow when the aggregated validation outcome fails.
 
 These job names are logical handoff names. The implementer may map them to
@@ -260,7 +261,7 @@ producer-authority signals are:
 | Validation plan, changed-files snapshot, and fact snapshot | `plan`                            | Contract-owned artifact ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the planning control-plane boundary for this run attempt   |
 | Execution-batch manifest                                   | `materialize-execution-batches`   | Contract-owned artifact ref and instance count plus immutable workflow/job context proving the artifact was uploaded by the execution-batch-materialization control-plane boundary |
 | CI validation batch evidence bundle                        | Assigned execution-batch boundary | Execution-batch assignment, contract-owned bundle ref, artifact instance ID, and immutable workflow/job context proving the bundle was uploaded by the assigned batch boundary     |
-| Bundle manifest and aggregate                              | `aggregate-evidence`              | Contract-owned final refs and instance counts plus immutable workflow/job context proving final artifacts were uploaded by the aggregation control-plane boundary                  |
+| Aggregate evidence manifest and aggregate summary          | `aggregate-evidence`              | Contract-owned final refs and instance counts plus immutable workflow/job context proving final artifacts were uploaded by the aggregation control-plane boundary                  |
 
 The immutable workflow/job context must match the boundary identity map from
 section 4.2 for the required producer boundary. If the workflow platform or
@@ -283,8 +284,9 @@ the upload output observed from the workflow job mapped to that logical boundary
 Consumers download producer-verified inputs by artifact ID where the workflow can
 fail immediately. The final aggregation job performs the same namespace and
 producer-boundary verification for its inputs before accepting a plan, and verifies
-the bundle manifest and aggregate uploads after publication; any missing,
-duplicated, stale, or producer-mismatched artifact remains fail-closed.
+the aggregate evidence manifest and aggregate summary uploads after publication.
+Any missing, duplicated, stale, or producer-mismatched artifact remains
+fail-closed.
 
 `artifact-ref` values in this document are logical contract refs, not physical
 GitHub artifact names. Every logical ref maps to one fixed-length physical
@@ -308,15 +310,29 @@ its payload fields resemble valid evidence; in closed namespaces, such an
 instance is an unexpected contract artifact.
 
 Because the physical artifact namespace is flat, aggregation must classify all
-prefixed physical artifacts against the complete set of expected non-bundle
-contract refs before closing the bundle namespace. The expected non-bundle set
-contains the request, validation plan, changed-files snapshot, fact snapshot,
-execution-batch manifest, bundle manifest, and aggregate refs for the current run
-attempt. Any prefixed physical artifact that matches one of those expected
-non-bundle physical names is handled only by that contract's validation rules. Any
-remaining prefixed physical artifact that is not classifiable as an expected
-non-bundle artifact is bundle-like for bundle manifest enumeration, even when its
-payload is unreadable or does not reveal a logical bundle ref.
+prefixed physical artifacts against the complete set of pre-final input
+non-bundle contract refs before closing the pre-final bundle namespace. That set
+always includes the request, validation plan, changed-files snapshot, fact
+snapshot, and execution-batch manifest refs, each with expected cardinality `0` or
+`1` for the run attempt. The request ref is always expected with cardinality `1`;
+missing, invalid, or unreplayable request input prevents an authoritative plan or
+produces the existing request-invalid fail-closed path rather than becoming a
+not-required artifact. Changed-files and fact snapshot refs use cardinality `1`
+only when required by their plan fields and cardinality `0` otherwise.
+Contract-owned aggregate evidence manifest and aggregate summary refs are always
+classified as final-artifact refs whenever present, including during same-attempt
+retry or partial-finalization reconciliation; they are excluded from pre-final
+bundle classification and are handled only by post-publication final artifact
+verification. Any prefixed physical artifact that matches a pre-final input
+non-bundle physical name is handled only by that contract's cardinality and
+validation rules, including the cardinality-`0` unexpected case; it is never
+reclassified as bundle-like evidence. Any remaining prefixed physical artifact
+that is not classifiable as a pre-final input non-bundle artifact or a final
+aggregate artifact ref is batch-bundle-like for aggregate evidence namespace
+enumeration, even when its payload is unreadable or does not reveal a logical
+bundle ref. After final publication or on retry with occupied final refs,
+aggregation performs a second producer-authority and count verification for the
+aggregate evidence manifest and aggregate summary refs.
 
 `schema-diagnostics` uses the same shape as `diagnostic-record`, sorted by
 `diagnostic-id`. These diagnostics are producer-side schema or compatibility
@@ -1744,7 +1760,10 @@ Selector rules:
         actual-windows-jobs: integer
         max-validation-artifacts: integer
         actual-validation-artifacts: integer
+        expected-input-non-bundle-validation-artifacts: integer
+        expected-final-validation-artifacts: integer
         expected-non-bundle-validation-artifacts: integer
+        pre-final-validation-artifacts: integer
         max-execution-batches: integer
         actual-execution-batches: integer
         aggregate-target-duration-seconds: integer
@@ -1755,8 +1774,11 @@ Selector rules:
           compatibility-profile:
               ecosystem: dotnet | python | javascript | typescript | null
               setup-profile: string
+              setup-profile-digest: string
               execution-profile: string
+              execution-profile-digest: string
               release-shaped-profile: string | null
+              release-shaped-profile-digest: string | null
           depends-on-batches: [batch-id]
           ordered-selectors:
               - work-group-id: string
@@ -1794,33 +1816,37 @@ Selector rules:
     manifest structurally invalid.
 
     The `compatibility-profile` is the post-plan handoff placeholder for setup and
-    execution compatibility. It records only the runner family, ecosystem, setup,
+    execution compatibility. It records the runner family, ecosystem, setup,
     execution, and release-shaped compatibility dimensions needed to prove that
     coalesced selectors can share one batch. `setup-profile` and
-    `execution-profile` are stable path-safe profile identifiers whose digest
-    preimages and equality checks include the frozen platform, setup, executor,
-    and toolchain requirements not otherwise exposed as manifest enum fields. It
-    does not define release-shaped build details, command lines, or evidence
-    bundle schema. Those details remain owned by later release-shaped execution
-    and evidence-bundle sections.
+    `execution-profile` are stable path-safe profile identifiers. Their matching
+    `setup-profile-digest` and `execution-profile-digest` fields are lowercase
+    SHA-256 digests of the RFC 8785 canonical preimages that include the frozen
+    platform, setup, executor, and toolchain requirements not otherwise exposed as
+    manifest enum fields. The batch bundle must copy these identifiers and
+    digests exactly; aggregation does not admit a bundle whose compatibility
+    profile differs from the manifest.
     Any batch containing a `release-shaped-artifact` selector must set a non-null,
-    stable, path-safe `release-shaped-profile` derived from the frozen artifact
-    and release-receipt obligations assigned to that batch. Its digest preimage
-    and equality checks include the frozen release-shaped platform,
-    workflow-release executor/toolchain, no-publish posture, and artifact-family
-    requirements, in addition to the obligation identifiers and shape data. Every
-    release-shaped selector in the batch must share that exact proven profile. If
-    the materializer cannot prove shared release-shaped compatibility, it must
-    split the selectors into safe batches or fail post-plan materialization
-    without authorizing executable validation. Batches with no release-shaped
-    selectors may keep `release-shaped-profile: null`.
+    stable, path-safe `release-shaped-profile` and `release-shaped-profile-digest`
+    derived from the frozen artifact and release-receipt obligations assigned to
+    that batch. Its digest preimage and equality checks include the frozen
+    release-shaped platform, workflow-release executor/toolchain, no-publish
+    posture, and artifact-family requirements, in addition to the obligation
+    identifiers and shape data. Every release-shaped selector in the batch must
+    share that exact proven profile. If the materializer cannot prove shared
+    release-shaped compatibility, it must split the selectors into safe batches or
+    fail post-plan materialization without authorizing executable validation.
+    Batches with no release-shaped selectors must set both release-shaped profile
+    fields to `null`. The compatibility profile does not define release-shaped
+    command lines; those details remain owned by release-shaped execution while
+    preserving the manifest-bound digest equality checks.
 
     `expected-evidence-slot` is a pre-execution expectation slot, not an execution
     result. It may identify the logical work group, evidence expectation,
     category, planned capabilities, detail profile, coverage target, and the
     placeholder shape that the later batch bundle must fill. It must not contain
     outcome, success/failure state, diagnostics, observed artifact refs, observed
-    digests, command output, or any other execution-produced data. Group 4 owns the
+    digests, command output, or any other execution-produced data. Section 14 defines the
     detailed batch output result schema.
 
     `expected-batch-evidence-bundle-ref` is the single validation-only bundle ref
@@ -1847,8 +1873,14 @@ Selector rules:
     The materializer must compute `actual-total-jobs` from
     `non-batch-control-plane-job-count + actual-execution-batches`, compute
     `actual-windows-jobs` from Windows execution batches plus any Windows
-    non-batch control-plane jobs, and compute `actual-validation-artifacts` from
-    expected non-bundle validation artifacts plus expected batch evidence bundles.
+    non-batch control-plane jobs, compute
+    `pre-final-validation-artifacts` from expected input non-bundle validation
+    artifacts plus expected batch evidence bundles, and compute
+    `actual-validation-artifacts` from expected non-bundle validation artifacts
+    plus expected batch evidence bundles. `expected-final-validation-artifacts` is
+    currently `2` for the aggregate evidence manifest and aggregate summary.
+    `expected-non-bundle-validation-artifacts` is the sum of expected input
+    non-bundle artifacts and expected final validation artifacts.
 
     The artifact-derived execution-batch allowance is
     `20 - expected-non-bundle-validation-artifacts`. The job-derived
@@ -1863,7 +1895,9 @@ Selector rules:
     manifests where applicable: `max-total-jobs` and `actual-total-jobs` must be at
     most 18, `max-windows-jobs` and `actual-windows-jobs` must be at most 8,
     `max-validation-artifacts` and `actual-validation-artifacts` must be at most
-    20, and `aggregate-max-duration-seconds` must be at most 120. Lower-bound
+    20, `pre-final-validation-artifacts` must be at most
+    `20 - expected-final-validation-artifacts`, and
+    `aggregate-max-duration-seconds` must be at most 120. Lower-bound
     topology targets apply only to executable broad, full, or global
     materializations with non-empty batch sets: those manifests must keep
     `min-total-jobs` at least 12 and `min-windows-jobs` at least 4, and actual
@@ -1914,8 +1948,9 @@ Selector rules:
     manifest.
     Aggregation must also recompute or verify the manifest's current-run budget
     totals before admitting any batch bundle: batch count equals `batches.length`,
-    artifact count equals declared `actual-validation-artifacts`, total and
-    Windows job counts equal their declared actual fields, each execution batch
+    pre-final artifact count equals declared `pre-final-validation-artifacts`,
+    enough final artifact slots remain for `expected-final-validation-artifacts`,
+    total and Windows job counts equal their declared actual fields, each execution batch
     maps to one budget-counted concrete job or matrix leg, the aggregate duration
     budget fields use seconds with target less than or equal to max and max no
     greater than 120 seconds, max caps never exceed 18 total jobs, 8 Windows jobs,
@@ -1925,12 +1960,15 @@ Selector rules:
     the job-derived allowance implied by total and Windows job caps. Any mismatch,
     hidden budget-relevant job, relaxed cap, invalid lower-bound use, or overflow
     is a post-plan control-plane/materialization failure reported through the
-    invalid execution-batch manifest path.
+    invalid execution-batch manifest path. After publishing final aggregate
+    artifacts, aggregation verifies that the observed final artifact count makes
+    the complete `actual-validation-artifacts` equal the declared total and remain
+    within the 20-artifact cap.
     The `aggregate-evidence` boundary must measure its actual aggregate duration
     in seconds and fail the final required check if the actual duration exceeds
     `aggregate-max-duration-seconds`. That actual duration is execution-produced
-    final evidence, not pre-execution manifest data; the later Group 4 aggregate
-    report schema must record it with the final evidence.
+    final evidence, not pre-execution manifest data; the section 14 aggregate
+    summary schema must record it with the final evidence.
 
 - Category-specific validation commands may produce provisional result material
   inside an execution batch, but they must not have authority to write
@@ -2097,9 +2135,9 @@ evidence expectation.
 Aggregation is mapped as the terminal control-plane job after all planned
 execution batches are complete, skipped by workflow construction, or otherwise
 known missing. It reads the frozen plan, required companion planning snapshots,
-the execution-batch manifest, and validation batch evidence bundles, emits
-`ci-validation-aggregate`, and does not emit normal executable validation
-evidence.
+the execution-batch manifest, and validation batch evidence bundles, emits the
+aggregate evidence manifest plus `ci-validation-aggregate` aggregate summary, and
+does not emit normal executable validation evidence.
 
 Aggregation uses always-run failure-reporting semantics after the planning and
 execution-batch materialization attempts. If planning emits no readable plan,
@@ -2124,9 +2162,9 @@ assigns each selector to exactly one compatible batch.
 The `release-receipt` block describes the logical release-shaped receipt
 expectation that is validated alongside the artifact shape. It is the receipt
 shape being checked, not a standalone CI receipt artifact and not release
-immutable proof. Pending Group 4 bundle schema finalization, the minimum result
-shape below is authoritative only as the per-selector `category-result.detail`
-content inside the manifest-assigned batch evidence bundle.
+immutable proof. The minimum result shape below is authoritative as the per-selector
+`category-result.detail` content inside the manifest-assigned batch evidence
+bundle.
 
 Rules:
 
@@ -2245,35 +2283,334 @@ remains copied from the frozen obligation but
 evidence row never satisfies the release-shaped artifact obligation as success: aggregation records
 `required-evidence-skipped` and fails the final verdict.
 
-## 14. Evidence and Receipt Files
+## 14. Evidence, Aggregation, and Artifact Budget
 
-Transition note: this section still contains legacy receipt terminology pending
-the Group 4 evidence-bundle and aggregate rebaseline. For the current Group 3 handoff,
-the authoritative execution unit is the execution batch, and each execution batch
-emits one validation-only batch evidence bundle. A separate per-work-group receipt
-artifact is not required by the current rebaseline. Until Group 4 replaces this
-section, the receipt shape below is a compatibility placeholder for logical
-per-selector result rows inside a batch evidence bundle, not an authoritative
-requirement that every executable validation work group upload its own artifact.
+This section is the current authoritative Group 4 evidence contract. The
+validation evidence unit is the manifest-assigned batch evidence bundle. The
+current schema has no standalone per-work-group receipt authority, no selector
+assignment artifact, no writer-observation artifact, and no unbounded receipt
+intake namespace. Legacy receipt-like files, if any appear during migration, are
+non-authoritative unexpected artifacts and cannot satisfy an evidence expectation,
+prove writer identity, authorize selector assignment, or serve as release proof.
+
+### 14.1 Current Contract Artifact Namespace
+
+The validation artifact namespace is closed in two phases so aggregation does not
+need a final artifact to describe its own uploaded instance before that upload
+exists.
+
+**Pre-final input namespace closure** happens before bundle admission. It covers
+all input non-bundle refs with explicit expected cardinality, plus the bundle refs
+from the execution-batch manifest:
+
+| Artifact class           | Logical ref                                                                            | Producer boundary                 | Count                                                                                                                                            |
+| ------------------------ | -------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Planner-facing request   | `ci-validation/requests/<run-id>/<run-attempt>/ci-validation-request.json`             | `normalize-input`                 | exactly one for every run attempt                                                                                                                |
+| Frozen validation plan   | `ci-validation/planning/<run-id>/<run-attempt>/validation-plan.json`                   | `plan`                            | exactly one when the request boundary is replayable and a plan is expected; otherwise zero only for explicit no-authoritative-plan request cases |
+| Changed-files snapshot   | `ci-validation/planning/<run-id>/<run-attempt>/changed-files-snapshot.json`            | `plan`                            | exactly one when `changed-files-hash` is non-null; otherwise zero                                                                                |
+| Fact snapshot            | `ci-validation/planning/<run-id>/<run-attempt>/fact-snapshot.json`                     | `plan`                            | exactly one when `fact-snapshot.status: available`; otherwise zero                                                                               |
+| Execution-batch manifest | `ci-validation/execution-batches/<run-id>/<run-attempt>/execution-batch-manifest.json` | `materialize-execution-batches`   | exactly one for every authoritative plan with reliable materialization; zero when no authoritative plan or reliable batch set exists             |
+| Batch evidence bundle    | `ci-validation/bundles/<run-id>/<run-attempt>/<batch-id>/batch-evidence-bundle.json`   | assigned execution-batch boundary | exactly one per executable execution batch and zero for empty manifests                                                                          |
+
+**Post-publication final artifact verification** happens after aggregation writes
+its final artifacts:
+
+| Artifact class              | Logical ref                                                                       | Producer boundary    | Count                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------- |
+| Aggregate evidence manifest | `ci-validation/aggregate/<run-id>/<run-attempt>/aggregate-evidence-manifest.json` | `aggregate-evidence` | exactly one aggregation-authored pre-final namespace closure manifest  |
+| Aggregate summary           | `ci-validation/aggregate/<run-id>/<run-attempt>/ci-validation-aggregate.json`     | `aggregate-evidence` | exactly one aggregation-authored verdict summary bound to the manifest |
+
+The validation artifact cap is still at most 20 contract artifacts for the run
+attempt. Before bundle admission, aggregation verifies the pre-final budget
+without pretending final artifacts already exist:
+
+```text
+pre-final-validation-artifacts = expected-input-non-bundle-validation-artifacts + actual-execution-batches
+pre-final-validation-artifacts <= 20 - expected-final-validation-artifacts
+```
+
+`expected-final-validation-artifacts` is currently `2`: the aggregate evidence
+manifest and aggregate summary. The aggregate summary payload records expected and
+reserved final counts only; authoritative observed final counts are external to
+the payload and are verified after publication by artifact enumeration:
+
+```text
+expected-actual-validation-artifacts = pre-final-validation-artifacts + expected-final-validation-artifacts
+expected-actual-validation-artifacts <= 20
+post-publication observed final count must equal expected-final-validation-artifacts
+post-publication observed total validation artifacts must equal expected-actual-validation-artifacts
+```
+
+One executable execution batch maps to one budget-counted concrete GitHub Actions
+job or matrix leg and to one budget-counted batch evidence bundle. The materializer
+must fail post-plan rather than emit a manifest whose executable batch set cannot
+fit the job and artifact caps, including the two reserved final artifact slots,
+without dropping selected obligations, downgrading required evidence, or violating
+dependencies. A structurally valid fail-closed plan, a no-work plan, or a plan
+with no executable validation work uses the zero-execution profile: the manifest
+has `batches: []`, aggregation expects no batch evidence bundles, and the terminal
+aggregate evidence records the failing or passing no-work verdict.
+
+The aggregate evidence manifest is an aggregation-authored pre-final namespace
+closure, not a receipt manifest and not a self-referential final-artifact record.
+It records every input non-bundle ref with expected cardinality `0` or `1`, plus
+every expected bundle slot from the execution-batch manifest and the observed
+candidates at that expected bundle ref before writing final artifacts. A bundle
+candidate is recorded in its expected slot even when it is missing, duplicate,
+producer-unverified, wrong-producer, malformed, or otherwise inadmissible; only
+`valid` admitted bundle candidates require producer verification.
 
 ```yaml
 common-envelope: inherited
-api-version: three.ci.validation.receipt/v1alpha1
-kind: ci-validation-receipt
+api-version: three.ci.validation.aggregate-evidence-manifest/v1alpha1
+kind: ci-validation-aggregate-evidence-manifest
 artifact-ref: string
-receipt-id: string
+plan-id: string | null
+plan-digest: string | null
+input-artifacts:
+    request:
+        artifact-ref: string | null
+        artifact-instance-id: string | null
+        content-digest: string | null
+        required: true
+        expected-cardinality: 1
+        admissibility: valid | inadmissible | missing
+        diagnostics: [diagnostic-record]
+    validation-plan:
+        artifact-ref: string | null
+        artifact-instance-id: string | null
+        content-digest: string | null
+        required: boolean
+        expected-cardinality: 0 | 1
+        admissibility: valid | inadmissible | missing | not-required
+        diagnostics: [diagnostic-record]
+    changed-files-snapshot:
+        artifact-ref: string | null
+        artifact-instance-id: string | null
+        content-digest: string | null
+        required: boolean
+        expected-cardinality: 0 | 1
+        admissibility: valid | inadmissible | missing | not-required
+        diagnostics: [diagnostic-record]
+    fact-snapshot:
+        artifact-ref: string | null
+        artifact-instance-id: string | null
+        content-digest: string | null
+        required: boolean
+        expected-cardinality: 0 | 1
+        admissibility: valid | inadmissible | missing | not-required
+        diagnostics: [diagnostic-record]
+    execution-batch-manifest:
+        artifact-ref: string | null
+        artifact-instance-id: string | null
+        content-digest: string | null
+        required: boolean
+        expected-cardinality: 0 | 1
+        admissibility: valid | inadmissible | missing | not-required
+        diagnostics: [diagnostic-record]
+batch-bundles:
+    - batch-id: string
+      artifact-ref: string
+      expected-cardinality: 1
+      slot-admissibility: valid | inadmissible | missing | duplicate
+      admitted-candidate-id: string | null
+      observed-candidates:
+          - candidate-id: string
+            artifact-instance-id: string | null
+            content-digest: string | null
+            producer-verification: verified | producer-unverified | wrong-producer | not-checked
+            payload-readable: boolean
+            admissibility: valid | inadmissible
+            diagnostics: [diagnostic-record]
+      diagnostics: [diagnostic-record]
+unexpected-contract-artifacts:
+    - physical-artifact-name: string
+      artifact-instance-id: string | null
+      classification: unexpected | unreadable | wrong-ref | wrong-producer
+      diagnostics: [diagnostic-record]
+namespace-overflow:
+    detected: boolean
+    observed-prefixed-artifact-count-lower-bound: integer
+    max-prefixed-validation-artifacts: integer
+    diagnostics: [diagnostic-record]
+pre-final-validation-artifacts: integer
+namespace-closed-at: string
+proof-admissibility: validation-only
+```
+
+Each `batch-bundles` entry represents an expected bundle slot, not only admitted
+bundle evidence. `observed-candidates` records all observed artifact instances at
+that expected bundle ref, including duplicate instances and candidates whose
+producer cannot be verified from non-payload control-plane metadata. A
+producer-unverified or wrong-producer candidate is inadmissible, remains associated
+with the expected bundle slot for replay diagnostics, and uses the closed
+`inadmissible-batch-evidence` detail `bundle-producer-unverified`; it must not be
+promoted to valid evidence or moved only to `unexpected-contract-artifacts`.
+`unexpected-contract-artifacts` is reserved for prefixed artifacts that do not map
+to an input non-bundle ref, final aggregate ref, or expected bundle ref.
+`candidate-id` is derived as
+`"candidate-" + lowercase_sha256(RFC8785({"run-id", "run-attempt", "batch-id",
+"artifact-ref", "artifact-instance-id", "physical-artifact-name"}))`, using the
+empty string for unavailable nullable fields. `observed-candidates` are sorted by
+`candidate-id`. Unexpected artifact entries have an implicit deterministic ID
+`"unexpected-" + lowercase_sha256(RFC8785({"run-id", "run-attempt",
+"physical-artifact-name", "artifact-instance-id", "classification"}))`, again
+using the empty string for unavailable nullable fields; the
+`unexpected-contract-artifacts` array is sorted by that implicit ID before RFC
+8785 serialization.
+
+For the request entry, `required` is always `true`, `expected-cardinality` is
+always `1`, and `admissibility: not-required` is not allowed. Missing, duplicate,
+unreadable, malformed, wrong-run, digest-mismatched, or producer-unverified
+request artifacts drive the existing request-invalid fail-closed or
+no-authoritative-plan behavior. For the validation-plan entry,
+`expected-cardinality` is `1` whenever the request boundary is replayable and a
+plan is expected; a missing expected plan is `invalid-plan`, not a zero-cardinality
+observation. The validation-plan cardinality is `0` only for explicit
+no-authoritative-plan request cases where planning was not authorized to emit a
+plan. For changed-files and fact snapshots, `expected-cardinality` is `1` only
+when the frozen plan fields require the snapshot and `0` otherwise; an artifact
+instance at a cardinality-`0` input ref is unexpected input evidence and cannot be
+reclassified as a batch bundle. For the execution-batch-manifest entry,
+`expected-cardinality` is `1` for every authoritative plan whose materialization
+produces a reliable batch set, including valid fail-closed, no-work, and
+zero-execution plans with `batches: []`. It is `0` only when no authoritative plan
+exists or materialization fails before a reliable batch set exists; in that path no
+bundle is admissible and aggregation follows the invalid-plan/no-bundle path.
+
+Contract-owned aggregate evidence manifest and aggregate summary refs are final
+artifact refs even when they are observed before a retry starts; aggregation must
+not classify them as batch bundles or unexpected pre-final bundle-like evidence.
+The aggregate evidence manifest must not contain its own artifact instance ID or
+content digest and must not contain the aggregate summary artifact instance ID or
+content digest. Aggregation verifies those two final artifacts only after upload:
+it uploads the aggregate evidence manifest, verifies exactly one producer-verified
+instance at that ref and computes its digest, then uploads the aggregate summary
+that records `aggregate-evidence-manifest.content-digest`. Finally it verifies
+exactly one producer-verified aggregate summary instance at its ref and recomputes
+that summary digest for post-run acceptance. The summary cannot contain its own
+content digest; consumers verify it from the artifact bytes and producer metadata.
+
+Aggregation may declare the pre-final namespace closed only after planning,
+execution-batch materialization, and every executable execution-batch job that can
+write a bundle have reached a terminal state. Same-attempt retries and post-run
+acceptance re-enumerate the prefixed physical artifact namespace and require exact
+equality with the manifest's closed pre-final artifact instance IDs, logical refs
+where known, and content digests, plus the separately verified final aggregate
+artifact instances. A late, missing, duplicate, wrong-producer, or mismatched
+contract artifact makes final evidence non-authoritative and fails the final
+required check.
+
+All prefixed validation artifacts considered by aggregation are bounded by the
+same 20-artifact validation cap. Aggregation must enumerate at most the cap plus
+one sentinel prefixed artifact before declaring overflow. If enumeration observes
+more than 20 prefixed validation artifacts, or the artifact service cannot prove
+that at most 20 prefixed artifacts exist for the run attempt, aggregation records a
+bounded `namespace-overflow` diagnostic, fails namespace closure/final evidence,
+and must not keep collecting an unbounded artifact list. The
+`unexpected-contract-artifacts` array is therefore bounded; overflow is represented
+by `namespace-overflow` rather than by appending unbounded entries.
+
+Aggregation must never upload a second artifact instance at an occupied final ref.
+If a final aggregate summary exists without its aggregate evidence manifest, the
+final state is non-authoritative and must not be repaired by recreating a manifest
+for the existing summary.
+
+### 14.2 Batch Evidence Bundle Schema
+
+Each executable execution batch writes exactly one bundle with this minimum
+shape:
+
+```yaml
+common-envelope: inherited
+api-version: three.ci.validation.batch-evidence-bundle/v1alpha1
+kind: ci-validation-batch-evidence-bundle
+artifact-ref: string
+bundle-id: string
 plan-id: string
 plan-digest: string
-work-group-id: string
-assignment-id: string
 mode: pull_request | push | scheduled_full
 validation-tree:
     commit-sha: string
     ref: string | null
+affected-range:
+    status: available | unavailable | not-applicable
+    base-sha: string | null
+    base-tip-sha: string | null
+    head-sha: string | null
+    changed-files-hash: string | null
+scheduled-full:
+    enabled: boolean
+execution-batch-manifest:
+    artifact-ref: string
+    content-digest: string
+batch:
+    batch-id: string
+    runner-family: windows | ubuntu
+    compatibility-profile:
+        ecosystem: dotnet | python | javascript | typescript | null
+        setup-profile: string
+        setup-profile-digest: string
+        execution-profile: string
+        execution-profile-digest: string
+        release-shaped-profile: string | null
+        release-shaped-profile-digest: string | null
+    depends-on-batches: [batch-id]
+writer:
+    identity-source: github-actions-job-context
+    expected-boundary: execution-batch
+    expected-job-identity: string
+    observed-workflow: string
+    observed-job: string
+    observed-matrix: object | null
 execution-tree:
     observed-commit-sha: string | null
-    source: trusted-receipt-boundary
+    source: execution-batch-boundary
     verified: boolean
+started-at: string
+completed-at: string
+selector-results:
+    - selector-result
+batch-diagnostics: [diagnostic-record]
+proof-admissibility: validation-only
+```
+
+`artifact-ref` must equal the manifest's `expected-batch-evidence-bundle-ref` for
+that `batch-id`. `bundle-id` is stable within the run attempt and derived from the
+run identity, `batch-id`, manifest digest, and bundle artifact ref; it is not a
+writer-selected authority. `plan-id`, `plan-digest`, the manifest ref, the manifest
+digest, `batch.batch-id`, `batch.runner-family`, `batch.depends-on-batches`, and
+the complete compatibility profile, `mode`, `validation-tree`, `affected-range`,
+and `scheduled-full` are equality-checked against the frozen plan and
+execution-batch manifest before any selector row is admitted.
+
+The compatibility profile fields prove that coalesced selectors actually ran
+under the materialized platform, setup, executor/toolchain, no-publish posture,
+and release-shaped artifact-family assumptions. `setup-profile-digest`,
+`execution-profile-digest`, and `release-shaped-profile-digest` are lowercase
+SHA-256 digests of the same canonical preimages used by the materializer. A
+release-shaped selector requires non-null `release-shaped-profile` and
+`release-shaped-profile-digest`; a non-release-shaped batch uses `null` for both.
+
+`writer` records validation-grade writer provenance inside the bundle, but it does
+not claim producer authority. Aggregation verifies producer authority only from
+non-payload platform/control-plane metadata and the boundary identity map, and may
+report producer verification or admission status only in aggregation outputs.
+Payload writer fields are insufficient by themselves. There is no separate
+writer-integrity, writer-observation, or selector-assignment artifact in the
+current design.
+
+Each `selector-result` has:
+
+```yaml
+work-group-id: string
+selector-index: integer
+expected-evidence-id: string
+expected-evidence-slot-digest: string
+mode: pull_request | push | scheduled_full
+validation-tree:
+    commit-sha: string
+    ref: string | null
 affected-range:
     status: available | unavailable | not-applicable
     base-sha: string | null
@@ -2285,9 +2622,19 @@ scheduled-full:
 coverage-target:
     type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
+ecosystem: dotnet | python | javascript | typescript | null
+runner-family: windows | ubuntu
+selector-variant: string | null
+depends-on: [work-group-id]
+dependency-results:
+    - work-group-id: string
+      source-batch-id: string
+      outcome: success | blocking-failure | skipped
+      admitted-for-gating: boolean
 outcome: success | blocking-failure | skipped
+skip-reason: dependency-blocked | not-applicable | null
 evidence:
-    category: string
+    category: lightweight-preflight | ecosystem-gate | descriptor-validation | release-shaped-artifact | workflow-release-tooling
     planned-capabilities: [build | test | lint | format | type-check] | null
     capability-results: [capability-result] | absent
     category-result: category-result | absent
@@ -2295,6 +2642,25 @@ evidence:
 diagnostics: [diagnostic-record]
 proof-admissibility: validation-only
 ```
+
+`selector-index` and `expected-evidence-id` must match the manifest's
+`ordered-selectors` entry. `expected-evidence-slot-digest` is the lowercase
+SHA-256 digest of the RFC 8785 canonical JSON bytes of that manifest entry's
+`expected-evidence-slot`; aggregation uses it to prove the result filled the
+pre-execution slot rather than a rewritten execution-local expectation. Before
+admitting a selector row, aggregation equality-checks all frozen selector identity
+and evidence-shape fields against the manifest `ordered-selectors` entry, its
+`expected-evidence-slot`, and the frozen plan work group/evidence expectation.
+This includes `work-group-id`, `selector-index`, `expected-evidence-id`,
+`coverage-target`, `ecosystem`, `runner-family`, `selector-variant`, `depends-on`,
+`evidence.category`, `evidence.planned-capabilities`, the selected evidence union
+branch, and any other frozen selector identity or evidence-shape field carried in
+the expected slot. Each selector result's `mode`, `validation-tree`,
+`affected-range`, and `scheduled-full` fields must exactly equal the batch-level
+values and the frozen plan envelope. Aggregation rejects any mismatch as
+`mismatched-evidence-payload`. Every ordered selector assigned to the batch must
+have exactly one selector result row, rows must appear in manifest order, and no
+extra selector row may appear.
 
 `capability-result` has:
 
@@ -2312,27 +2678,36 @@ diagnostics: [diagnostic-record]
 detail: object | null
 ```
 
-The `evidence` union determines which result branch appears:
+The `evidence` union is selected by `planned-capabilities`. Ecosystem gates with
+non-null `planned-capabilities` include exactly one `capability-results` entry for
+each planned capability and omit `category-result`. Descriptor, release-shaped,
+lightweight, and workflow-release-tooling selectors use `planned-capabilities:
+null`, omit `capability-results`, and include exactly one `category-result`.
+`null`, empty-array, or empty-object placeholders for the omitted branch are
+inadmissible.
 
-```yaml
-capability-result branch:
-    planned-capabilities: non-empty [build | test | lint | format | type-check]
-    capability-results:
-        - capability: build | test | lint | format | type-check
-          outcome: success | blocking-failure | skipped
-          diagnostics: [diagnostic-record]
-    category-result: absent
-category-result branch:
-    planned-capabilities: null
-    capability-results: absent
-    category-result:
-        outcome: success | blocking-failure | skipped
-        diagnostics: [diagnostic-record]
-        detail: object | null
-```
+`evidence.artifact-refs` is constrained by evidence category. It must be `[]` for
+`lightweight-preflight`, `ecosystem-gate`, `descriptor-validation`, and
+`workflow-release-tooling` rows; any non-empty value for those categories is
+inadmissible with `mismatched-evidence-payload`. For `release-shaped-artifact`
+rows, it must exactly equal the sole nested
+`category-result.detail.artifact-obligation-results[0].artifact.observed.refs`
+set for the selector row, including the explicit dependency-blocked skipped form
+where both sets are `[]`. Missing, extra, reordered, or mismatched artifact refs
+are inadmissible with `mismatched-evidence-payload`.
 
-`lightweight-preflight` compatibility rows use `category-result.detail` with this
-minimum shape pending Group 4:
+For capability evidence, the selector `outcome` is derived from the capability
+rows: any `blocking-failure` makes the selector `blocking-failure`; otherwise any
+`skipped` makes it `skipped`; all planned capabilities succeeding makes it
+`success`. For category evidence, the selector `outcome` must match
+`category-result.outcome` and the category-specific detail rules below. A mismatch
+between row outcome, nested outcome, diagnostics, or skipped semantics makes the
+row inadmissible with `mismatched-evidence-payload`.
+
+### 14.3 Category Detail Rows
+
+`lightweight-preflight` rows use `category-result.detail` with this minimum
+shape:
 
 ```yaml
 lightweight-preflight:
@@ -2351,8 +2726,8 @@ lightweight-preflight:
     diagnostics: [diagnostic-record]
 ```
 
-`workflow-release-tooling` compatibility rows use `category-result.detail` with this
-minimum shape pending Group 4:
+`workflow-release-tooling` rows use `category-result.detail` with this minimum
+shape:
 
 ```yaml
 workflow-release-tooling:
@@ -2372,25 +2747,23 @@ workflow-release-tooling:
     diagnostics: [diagnostic-record]
 ```
 
-For required `lightweight-preflight` and `workflow-release-tooling` batch evidence rows,
-`category-result.detail` must be non-null and must contain exactly the matching
-category object above. Aggregation equality-checks `work-group-id`,
-`detail-profile`, `coverage-target`, `ecosystem` when present,
-`selector-variant`, `runner-family`, and `outcome` against the frozen work group,
-evidence expectation, and selector outcome. Missing detail, the wrong detail
-object, an unplanned `detail-profile`, or any mismatched frozen field makes the
-batch evidence row inadmissible with `mismatched-evidence-payload`.
-Aggregation also resolves the frozen `detail-profile-definition` and requires
-`subcheck-results` to contain exactly one entry for every required subcheck and no
-extra entries. A `success` category result is admissible only when every blocking
-subcheck result is `success`, all skipped or failed blocking subchecks carry
-diagnostics, and the category outcome equals the aggregate of its subcheck results.
-A batch evidence row whose category-level outcome is successful while required subchecks are
-missing, duplicated, extra, skipped, failed, or inconsistent is inadmissible with
-`mismatched-evidence-payload`, not merely a successful self-attestation.
+For required lightweight and workflow-release-tooling rows, aggregation
+first equality-checks frozen identity fields in the detail payload against the
+frozen work group, evidence expectation, and detail profile. `work-group-id`,
+`detail-profile`, `coverage-target`, `runner-family`, `ecosystem` when present,
+and `selector-variant` must match the frozen selector row and expected evidence
+slot exactly. Detail `outcome` is execution-produced result data and is not
+compared to the frozen expected evidence slot. A frozen identity mismatch is
+inadmissible with `mismatched-evidence-payload`. Aggregation then resolves the
+frozen `detail-profile-definition` and requires exactly one `subcheck-results`
+entry for every required subcheck and no extra entries. Detail `outcome` must
+match the enclosing selector/category outcome and the outcome derived from the
+subcheck aggregate. A successful detail result is admissible only when every
+blocking subcheck succeeds, skipped or failed blocking subchecks carry diagnostics,
+and the category outcome equals the aggregate of its subcheck results.
 
-A `descriptor-validation` batch evidence row uses `category-result.detail` with this
-minimum shape:
+A `descriptor-validation` row uses `category-result.detail` with this minimum
+shape:
 
 ```yaml
 descriptor-obligation-results:
@@ -2405,324 +2778,139 @@ descriptor-obligation-results:
       diagnostics: [diagnostic-record]
 ```
 
-The single planned `descriptor-obligation-id` bound to the
-`descriptor-validation` work group must appear exactly once, and no other
-descriptor obligation may appear in that row. `descriptor.path`,
-`descriptor.identity`, `descriptor.owner-subject-id`, `descriptor.source`, and
-`descriptor-scope` are copied from the frozen descriptor obligation and its
-digest-bound fact snapshot descriptor record, then equality-checked by
-aggregation. A descriptor-validation batch evidence row that omits the bound obligation,
-adds another obligation, or reports descriptor fields that do not match the
-frozen plan and fact snapshot is inadmissible with `mismatched-evidence-payload`.
+The single planned `descriptor-obligation-id` bound to the selector must appear
+exactly once, and no other descriptor obligation may appear in that row.
+Descriptor path, identity, owner, source, and scope are copied from the frozen
+plan and digest-bound fact snapshot, then equality-checked by aggregation.
 
-Legacy receipt compatibility rules, non-authoritative for Group 3 execution
-mapping:
+A `release-shaped-artifact` row uses the section 13 `category-result.detail`
+shape. Those rows may contain logical release-shaped receipt checks because CI is
+validating the release-shaped output contract, but the row, bundle, aggregate
+manifest, and aggregate summary are validation-only evidence. They are not release
+immutable proof and cannot be reused to satisfy release publication evidence.
+Release-shaped rows must preserve one distinct selector result per frozen artifact
+obligation even when a shared validation-only/no-publish executor invocation
+produces multiple staged artifacts. The selector-level `evidence.artifact-refs`
+set must exactly equal that row's single nested `artifact.observed.refs` set; the
+nested release-shaped detail remains the authority for planned-vs-observed artifact
+shape checks.
 
-- The current authoritative evidence unit is the manifest-assigned batch evidence
-  bundle. Execution batches are not required to emit separate per-work-group or
-  per-selector receipt artifacts, and no standalone receipt artifact satisfies a
-  required evidence expectation outside its containing batch bundle.
-- The legacy receipt intake boundary below remains only a Group 4 compatibility
-  placeholder for diagnostic mirroring of receipt-like artifacts that may appear
-  during migration. It must not be used to infer selector assignment, writer
-  authority, dependency gating, release proof, or batch success.
-- If legacy receipt-like artifacts are present under
-  `ci-validation/receipts/<run-id>/<run-attempt>/`, aggregation may enumerate them
-  for diagnostics after first classifying expected non-bundle contract refs for
-  the current run attempt. Unexpected prefixed artifacts fail closed only under
-  the legacy compatibility rules; the current Group 3 admissibility path remains
-  the execution-batch manifest plus expected batch evidence bundle refs.
-- The nested receipt-manifest wording below is legacy/non-authoritative until
-  Group 4 replaces it with final batch-bundle schema and namespace rules. If it
-  is retained for diagnostics during migration, final receipt manifest and
-  aggregate artifacts must be serialized as RFC 8785 canonical UTF-8 JSON bytes
-  before upload. Any rule below that refers to raw
-  manifest or aggregate artifact bytes, content digests, or replay recomputation
-  uses those canonical bytes; semantically equivalent but non-canonical JSON is
-  malformed final evidence.
-  Aggregation owns manifest creation and finalization: at aggregation start it
-  enumerates the closed namespace, computes observed digests from the artifact
-  bytes it reads, and writes the control-plane manifest
-  `ci-validation/manifests/<run-id>/<run-attempt>/receipt-manifest.json` as an observed
-  enumeration artifact. Manifest entries have:
+### 14.4 Skipped, Failed, and Dependency-Blocked Semantics
 
-    ```yaml
-    common-envelope: inherited
-    api-version: three.ci.validation.receipt-manifest/v1alpha1
-    kind: ci-validation-receipt-manifest
-    plan-id: string | null
-    plan-digest: string | null
-    receipt-namespace-closure:
-        source: aggregate-evidence
-        closed-receipt-count: integer
-        observed-entry-ids: [string]
-    entries:
-        - observed-entry-id: string
-          artifact-ref: string | null
-          physical-artifact-name: string
-          artifact-instance-id: string
-          assignment-id: string | null
-          writer-work-group-id: string | null
-          trusted-writer-id: string | null
-          observed-writer-id: string | null
-          writer-observation-ref: string | null
-          receipt-id: string | null
-          receipt-content-digest: string | null
-    ```
+Validation failures do not block independent selectors. A valid upstream selector
+row with `outcome: blocking-failure` is a produced dependency result and may be
+used for dependency gating; aggregation later fails the final verdict from that
+blocking validation result. A selector is dependency-blocked only when a required
+dependency result is skipped, missing, unavailable, or not admitted for gating, or
+when an upstream batch/control-plane/bundle failure prevents the dependency result
+from being admitted.
 
-    Receipt manifest entries always record the observed `physical-artifact-name`.
-    `artifact-ref` is the logical receipt ref only after aggregation can establish
-    it from a legacy expected receipt ref or from a readable receipt payload whose
-    `artifact-ref` recomputes to the observed physical name;
-    otherwise it is `null`. Unreadable, malformed, unparseable, or otherwise
-    unclassified prefixed artifacts remain observed receipt-like entries with
-    `artifact-ref: null`, `writer-work-group-id: null`, and
-    `receipt-id: null`; they are inadmissible unexpected receipt artifacts rather
-    than ignored artifacts.
+When a dependency-blocked selector is assigned to a batch that can still write its
+bundle, the bundle must contain one skipped selector row for that selector:
 
-    `receipt-namespace-closure` records the closed receipt set observed by the
-    first authoritative aggregation pass for the run attempt. Aggregation may
-    declare the namespace closed only after execution-batch materialization is
-    complete
-    and all executable execution-batch jobs that can write batch bundles have
-    reached a terminal state. The closure's `closed-receipt-count` and
-    `observed-entry-ids` must equal the manifest entries. Post-run acceptance and
-    same-attempt aggregation retries must re-enumerate the receipt intake
-    namespace and require exact equality with the manifest's closed physical
-    artifact names, logical artifact refs when non-null, artifact instance IDs,
-    and observed entry IDs. Any receipt-like artifact instance that appears after
-    closure, or any missing closed instance, makes final evidence
-    non-authoritative rather than extending the observed receipt set.
+- `outcome: skipped`;
+- `skip-reason: dependency-blocked`;
+- `evidence.artifact-refs: []`;
+- nested capability or category outcomes set to `skipped`;
+- no observed artifact refs or digests in category-specific detail; and
+- a `validation-work-skipped` diagnostic with `diagnostic-detail:
+dependency-blocked`.
 
-    `observed-entry-id` is a stable aggregation-assigned identifier for one
-    observed receipt-like artifact instance. It is derived from `run-id`,
-    `run-attempt`, `artifact-ref`, and the artifact service or control-plane
-    enumeration `artifact-instance-id`. Aggregation validates the plan and
-    required post-plan control artifacts before authoritative receipt
-    admissibility classification. If the artifact store cannot provide a stable
-    per-instance ID after the plan and current execution-batch manifest are
-    authoritative, the receipt namespace is unenumerable and aggregation emits a
-    failed aggregate with `reason.inadmissible-receipt: true`, a failure with
-    `kind: inadmissible-receipt`, and diagnostic detail
-    `unstable-artifact-instance-id` rather than collapsing duplicates. If the
-    plan or post-plan control contract is invalid, unstable receipt instance IDs
-    remain inspection-only observations and must not create
-    `inadmissible-receipt` failures.
-    `writer-work-group-id` is derived from the logical artifact-ref path segment
-    after aggregation has established `artifact-ref`, not from the receipt payload
-    alone or from the digest physical name; it is `null` when the logical ref is
-    missing or malformed.
-    `assignment-id`, `trusted-writer-id`, `observed-writer-id`, and
-    `writer-observation-ref` are legacy receipt-manifest placeholder fields pending
-    Group 4. They are not current Group 3 admissibility gates, and
-    selector-assignment or writer-observation artifacts are not required
-    contract-owned artifacts under the execution-batch handoff. Current batch
-    bundle admissibility is gated by the verified execution-batch manifest,
-    expected batch evidence bundle refs, batch writer provenance embedded in the
-    manifest or bundle metadata, and platform/control-plane producer authority.
-    `receipt-content-digest` in the manifest is the aggregator-observed SHA-256
-    digest, not a writer claim. The receipt manifest artifact content digest is
-    the lowercase hexadecimal SHA-256 digest of the raw manifest artifact bytes
-    written at the contract-owned manifest ref. Aggregation is the only
-    authorized writer for the manifest and the only reader that derives the
-    CI-level verdict. Entries are sorted by `observed-entry-id`. Duplicate
-    observed entries, artifact refs that do not match the derived pattern,
-    writer/work-group mismatches between artifact ref and receipt payload,
-    cross-attempt artifacts, and unreadable receipt artifacts are observed
-    inadmissible entries and must appear in aggregate diagnostics/failures. Missing
-    or mismatched legacy writer identity placeholders are diagnostic-only pending
-    Group 4 and are not current Group 3 inadmissibility criteria. A pre-existing
-    manifest
-    uploaded by an executable work group in the receipt intake namespace is
-    treated as an unexpected receipt-like artifact, not as aggregation authority.
-    Re-running aggregation for the same `run-id` and `run-attempt` never adds to
-    the observed receipt set once an authoritative manifest has closed the
-    namespace. Same-attempt finalization is manifest-first. Aggregation first
-    computes or verifies the final manifest from the closed receipt set, then
-    emits or verifies the aggregate that binds that exact manifest digest. If
-    neither final ref exists, aggregation uploads the manifest, verifies the
-    uploaded manifest instance and digest, then uploads the aggregate that records
-    that manifest digest. Their `created-at` values become the replay-stable final
-    timestamps for those raw artifacts. If the manifest exists and the aggregate
-    is missing, aggregation verifies the occupied manifest's raw content digest by
-    recomputing the manifest with that artifact's existing `created-at`, then
-    uploads the missing aggregate bound to the occupied manifest digest. If both
-    final refs already have one artifact instance, aggregation verifies each raw
-    digest by preserving that artifact's own `created-at` value and verifies the
-    aggregate's recorded `receipt-manifest.content-digest` equals the occupied
-    manifest digest. If the aggregate exists while the manifest is missing, the
-    final state is non-recoverable and non-authoritative for that run attempt:
-    aggregation must not recreate a manifest to satisfy an existing aggregate
-    claim because the aggregate already binds exact manifest bytes. It must never
-    upload a second artifact instance at an occupied final ref. A duplicate final
-    instance, digest mismatch after preserving the occupied final `created-at`,
-    unreadable occupied final artifact, namespace-closure mismatch,
-    aggregate-without-manifest final state, or occupied ref whose producer
-    authority cannot be verified makes finalization fail and leaves post-run
-    acceptance without authoritative final evidence.
+Dependency-blocked evidence is admissible as a produced skipped row, but it never
+satisfies a required evidence expectation as successful validation. Aggregation
+records `required-evidence-skipped` and fails the final verdict. Missing rows,
+malformed skipped rows, and skipped rows without the required diagnostic are
+inadmissible and also produce `required-evidence-missing` when no valid row
+satisfies the expected slot.
 
-    Post-run acceptance evidence requires exactly one authoritative receipt
-    manifest artifact instance at the contract-owned manifest ref. A missing,
-    duplicate, unreadable, malformed, or wrong-run manifest is non-authoritative
-    acceptance evidence even if the workflow produced other logs or auxiliary
-    artifacts.
+### 14.5 Aggregate-Evidence Behavior and Summary Schema
 
-- When aggregation cannot verify a readable plan identity, the manifest
-  `plan-id` and `plan-digest` are `null`. Manifest entries still record observed
-  receipt-like artifacts in the closed intake namespace, but no entry can be
-  admissible until a structurally valid plan, current post-plan execution-batch
-  manifest, and matching plan identity are verified. The older
-  selector-assignment manifest wording in this section is legacy pending Group 4
-  and is not a current Group 3 admissibility requirement.
-- `receipt-id` is an opaque stable identifier for the receipt emission within the
-  run attempt or equivalent execution provenance. It must not be derived from a
-  representation that includes itself.
-- `plan-id`, `plan-digest`, and `work-group-id` must match the validation plan.
-  `plan-digest` matching means equality to the recomputed digest defined in
-  section 6.1, not merely equality to an unverified string copied from the plan.
-  `assignment-id` is a legacy placeholder pending Group 4; receipt payloads cannot
-  create, change, or authorize current execution-batch assignment.
-- Because each executable `work-group-id` has exactly one evidence expectation in
-  the plan, aggregation matches receipts to evidence expectations by `plan-id`
-  and `work-group-id`.
-- Receipts must mirror the plan provenance: affected-mode receipts carry
-  `validation-tree`, `affected-range`, and `scheduled-full` fields matching the
-  plan envelope; scheduled-full receipts carry `affected-range.status:
-not-applicable`, null affected-range SHAs and hash, and `scheduled-full.enabled:
-true`.
-- The execution-batch boundary must observe the checkout or execution tree before
-  running validation and bind it to the planned tree in the batch evidence row.
-  For executable selectors, `execution-tree.observed-commit-sha` must equal the
-  frozen `validation-tree.commit-sha`, `execution-tree.source` is the
-  execution-batch boundary, and `execution-tree.verified` must be `true` for the
-  row to be admissible. The category-specific validation command may not
-  self-attest the execution tree. A missing, unverifiable, or mismatched execution
-  tree makes the row inadmissible with `mismatched-evidence-payload`; if the
-  execution-batch boundary cannot verify the tree before validation, it must emit
-  a blocking row or no row rather than a successful one.
-- Receipts and aggregates copy `changed-files-hash` from the frozen plan. They
-  must not rediscover or reorder changed files; aggregation only recomputes the
-  hash from the companion changed-files snapshot artifact. A receipt mismatch is
-  inadmissible as `wrong-plan` or `mismatched-evidence-payload`; a missing or
-  mismatched companion snapshot makes the plan invalid.
-- `receipt-content-digest` is the lowercase hexadecimal SHA-256 digest of the raw
-  receipt artifact bytes as observed by aggregation. It is recorded for every
-  observed receipt artifact, including malformed or inadmissible artifacts, and
-  must match `^[0-9a-f]{64}$` when the artifact bytes are readable.
-- Receipt payload fields must match the frozen plan's matched work group and
-  evidence expectation: `coverage-target`, evidence `category`, and
-  `planned-capabilities` are equality-checked against the plan. Mismatches are
-  inadmissible.
-- Receipt top-level `evidence.artifact-refs` is not independent verdict evidence.
-  It must be `[]` for every receipt category except `release-shaped-artifact`. For
-  `release-shaped-artifact` receipts, it must equal the canonical
-  `category-result.detail.artifact-obligation-results[0].artifact.observed.refs`
-  set, which is already equality-checked against the frozen artifact obligation's
-  `expected-artifact-refs`, except for the explicit dependency-blocked skipped
-  release-shaped form where both values are `[]` and the receipt outcome is
-  `skipped`. A missing, extra, or mismatched top-level `artifact-refs` value makes
-  the receipt inadmissible with `mismatched-evidence-payload`.
-- `proof-admissibility` is always `validation-only`.
-- Receipt `evidence` is a discriminated union on `planned-capabilities`. Receipts
-  with non-null `planned-capabilities` must include exactly one
-  `capability-results` entry for each planned capability in the corresponding
-  work group, must have at least one planned capability, and must omit
-  `category-result`. Receipts with null
-  `planned-capabilities` must include exactly one `category-result` and must omit
-  `capability-results`; they must not invent capability-level coverage. `null`,
-  empty-array, or empty-object substitutes for the omitted branch are
-  inadmissible.
-- For receipts with capability results, top-level `outcome` is derived from those
-  results: any `blocking-failure` capability makes the receipt
-  `blocking-failure`; otherwise any `skipped` capability makes the receipt
-  `skipped`; all planned capabilities succeeding makes it `success`. A top-level
-  outcome that disagrees with capability results is inadmissible.
-- For null-capability receipts, top-level `outcome` is derived from
-  `category-result` and, for detail-profile categories, from the profile subcheck
-  results: `success` is admissible only when every blocking subcheck and the
-  category-specific validation completed successfully and no blocking diagnostic is
-  present; `blocking-failure` is admissible only when category-specific validation
-  failed, a blocking subcheck failed, or a blocking diagnostic is present; `skipped`
-  is admissible only when category-specific validation was intentionally not
-  executed or a blocking subcheck was skipped and the receipt carries a diagnostic
-  explaining the skip. A mismatch between top-level `outcome`, `category-result`,
-  profile subcheck results, diagnostics, or skipped rules is inadmissible.
-- Receipt diagnostics are verdict-affecting according to their own
-  `verdict-effect` and location. Capability diagnostics affect their containing
-  capability result; `category-result.diagnostics` affect the category result;
-  top-level receipt diagnostics affect the whole receipt. A diagnostic with
-  `verdict-effect: failed` makes the containing result `blocking-failure`;
-  `verdict-effect: fail-closed` is not valid inside an executable work-group
-  receipt and is inadmissible unless the low-level design registers a specific
-  receipt diagnostic family for it.
-- Malformed receipts, duplicate receipts for the same expectation, unexpected
-  receipts, wrong-plan receipts, and receipts with an unknown or mismatched
-  `work-group-id` are inadmissible for satisfying evidence expectations.
-- When multiple otherwise admissible receipts match the same evidence
-  expectation, aggregation fails closed to duplicate handling by default: the
-  receipt with the lowest `observed-entry-id` is the only candidate that may
-  satisfy the expectation, and every other matching receipt is inadmissible with
-  `duplicate-receipt`. Receipts that are inadmissible for other reasons do not
-  participate in choosing the satisfying receipt.
-- The previous release-shaped reused-receipt-chain exception is legacy and
-  non-authoritative pending Group 4 evidence-bundle finalization. Group 3 now
-  allows sharing only through one compatible manifest-assigned execution batch
-  with distinct per-selector rows; duplicate release-shaped receipt-like or
-  bundle evidence is not accepted by this current Group 3 handoff and remains
-  fail-closed duplicate evidence.
-- Ambiguous duplicates, malformed chains, self-asserted or cyclic chains,
-  multiple maximal chains, mismatched work-group or target/scope identities,
-  missing writer authority, missing observed source proof or equivalent admissible
-  source binding, unsupported evidence sources, or otherwise unsupported duplicate
-  patterns remain fail-closed `duplicate-receipt` cases.
-- Any observed inadmissible receipt contributes to a failing aggregated outcome
-  with `inadmissible-receipt`; a valid receipt does not offset an extra
-  inadmissible receipt.
-- A required evidence expectation passes aggregation only when exactly one valid
-  matching receipt satisfies it; zero valid receipts, duplicate evidence, or only
-  inadmissible receipts aggregate as `required-evidence-missing`.
-- A valid required receipt with `blocking-failure` contributes to a failing
-  aggregated outcome.
-- Missing required receipts contribute to a failing aggregated outcome.
-- A valid required receipt with `skipped` contributes to a failing aggregated
-  outcome with `required-evidence-skipped`.
-- A concrete job may upload additional logs, but logs are not a substitute for the
-  machine-readable receipt.
-- Release-shaped validation receipts may carry evidence that both the planned
-  artifact shape and the planned release-shaped receipt expectation were checked.
-  The CI validation receipt is not itself the release-shaped receipt being
-  validated.
-- The terminal `evidence-aggregation` work group does not emit
-  `ci-validation-receipt`; it emits `ci-validation-aggregate`.
-- Before emitting the aggregate for any structurally valid plan, aggregation must
-  recompute `subject-universe.id` from the canonical frozen `subjects` section
-  when `subject-universe.status` is `available`; when it is `unavailable`,
-  aggregation verifies `subject-universe.id: null`, empty `subjects`, and
-  explanatory diagnostics instead. Aggregation must also verify the companion
-  fact snapshot artifact when `fact-snapshot.status` is `available`, including
-  provider subject IDs, dependency-edge subject IDs, roots, tooling-surface IDs,
-  descriptor facts, target-catalog facts, exact subject-universe-to-provider
-  coverage for every provider-bound frozen subject, unsupported-subject audit
-  constraints, subject-selection provenance dependency-edge basis, and
-  descriptor/artifact-obligation fact backing against the frozen plan namespaces.
-  Aggregation also verifies the companion changed-files snapshot artifact when
-  `changed-files-hash` is non-null. Missing, malformed,
-  schema-invalid, cross-reference-invalid, or digest-mismatched companion
-  artifacts, snapshot IDs, or fact-to-obligation bindings make the plan invalid
-  and produce an `invalid-plan` aggregate.
+`aggregate-evidence` attempts to consume the frozen validation plan, required
+companion planning snapshots, the execution-batch manifest when one is expected,
+and the expected batch evidence bundles. Before admitting bundle evidence, it
+verifies the pre-final input namespace:
 
-The aggregation report uses:
+- exactly one authoritative request artifact for every run attempt; a missing,
+  invalid, or unreplayable request follows the existing request-invalid
+  fail-closed/no-authoritative-plan path and is never treated as not-required;
+- every pre-final input non-bundle ref with expected cardinality `0` or `1`:
+  changed-files and fact snapshots require exactly one authoritative artifact when
+  their frozen plan fields require them, and require zero instances otherwise;
+- exactly one authoritative plan artifact when the request boundary is replayable
+  and a plan is expected, including schema, digest, producer authority, and
+  companion snapshot bindings; a missing expected plan is `invalid-plan`, not a
+  zero-cardinality observation;
+- zero validation-plan cardinality only for explicit no-authoritative-plan request
+  cases where planning was not authorized to emit a plan;
+- exactly one authoritative execution-batch manifest when an authoritative plan
+  exists and materialization produces a reliable batch set, with matching
+  `plan-id`, `plan-digest`, dependency DAG, selector assignment coverage,
+  expected evidence slots, writer identities, compatibility-profile digests, and
+  fixed budget caps;
+- empty-manifest semantics for authoritative fail-closed, no-work, and
+  zero-execution plans, which still require exactly one manifest with `batches:
+[]`;
+- zero execution-batch-manifest cardinality only when no authoritative plan exists
+  or materialization fails before a reliable batch set exists; in that path no
+  bundle is admissible and aggregation emits the invalid-plan/no-bundle result;
+- one expected bundle slot for each executable batch and no bundle slot for an
+  empty manifest; each executable slot must have exactly one producer-verified
+  admitted candidate to be valid, while missing, duplicate, producer-unverified,
+  wrong-producer, malformed, or otherwise inadmissible candidates remain recorded
+  under that slot for replay diagnostics;
+- bundle identity, manifest binding, writer provenance, runner/platform/profile
+  compatibility proofs and digests, execution-tree binding, and per-selector row
+  completeness;
+- dependency coverage across admitted upstream bundle rows and earlier in-batch
+  selector rows;
+- pre-final artifact count, job count, Windows job count, aggregate target
+  duration, and aggregate maximum duration caps from the manifest and observed
+  workflow state, with final artifact slots reserved but not yet producer-verified;
+- no unexpected, duplicate, wrong-producer, wrong-run, unreadable, malformed,
+  wrong-ref, or overflowed prefixed contract artifact in the bounded pre-final
+  namespace; and
+- no publication authority or release side effects in any evidence path.
+
+After bundle admission and verdict computation, aggregation writes and verifies the
+aggregate evidence manifest and then writes and verifies the aggregate summary. The
+post-publication verification recomputes final artifact digests from uploaded
+bytes, verifies producer authority and instance counts for both final refs, and
+checks that adding those final artifacts keeps the complete validation artifact
+count at or below 20.
+
+Aggregation measures its own duration in seconds. The target remains 1 to 2
+minutes, and `aggregate-max-duration-seconds` must be no greater than 120 seconds.
+If observed aggregate duration exceeds the manifest maximum, the aggregate summary
+records `reason.aggregate-duration-exceeded: true`, emits a
+`final-evidence-failure` diagnostic with `diagnostic-detail:
+aggregate-duration-exceeded`, and fails the final required check even when all
+validation rows otherwise pass.
+
+The aggregate summary uses:
 
 ```yaml
 common-envelope: inherited
 api-version: three.ci.validation.aggregate/v1alpha1
 kind: ci-validation-aggregate
+artifact-ref: string
 plan-id: string | null
 plan-digest: string | null
 mode: pull_request | push | scheduled_full | unknown
-receipt-manifest:
+aggregate-evidence-manifest:
     artifact-ref: string | null
+    artifact-instance-id: string | null
     content-digest: string | null
+final-artifacts:
+    aggregate-evidence-manifest:
+        artifact-ref: string
+        artifact-instance-id: string | null
+        content-digest: string | null
+        producer-verified: boolean
+    aggregate-summary:
+        artifact-ref: string
+        artifact-instance-id: absent
+        content-digest: absent
+        producer-verified-after-upload: external-to-payload
 validation-tree:
     commit-sha: string | null
     ref: string | null
@@ -2744,37 +2932,45 @@ reason:
     required-evidence-missing: boolean
     required-evidence-skipped: boolean
     blocking-validation-failure: boolean
-    inadmissible-receipt: boolean
+    inadmissible-batch-evidence: boolean
+    namespace-closure-failure: boolean
+    aggregate-duration-exceeded: boolean
     final-evidence-failure: boolean
+budgets:
+    pre-final-validation-artifacts: integer
+    expected-final-validation-artifacts: integer
+    expected-actual-validation-artifacts: integer
+    max-validation-artifacts: integer
+    actual-execution-batches: integer
+    actual-total-jobs: integer
+    actual-windows-jobs: integer
+    aggregate-duration-seconds: integer
+    aggregate-target-duration-seconds: integer
+    aggregate-max-duration-seconds: integer
 diagnostics:
     - diagnostic-record
-observed-receipts:
-    - observed-entry-id: string
-      artifact-ref: string | null
-      physical-artifact-name: string
-      artifact-instance-id: string
-      receipt-id: string | null
-      work-group-id: string | null
-      receipt-content-digest: string | null
-      admissibility: valid | inadmissible
+batch-bundles:
+    - batch-id: string
+      artifact-ref: string
+      bundle-id: string | null
+      admitted-candidate-id: string | null
+      candidate-count: integer
+      admissibility: valid | inadmissible | missing | duplicate
       diagnostics: [diagnostic-record]
 evidence-results:
     - evidence-expectation-id: string
       work-group-id: string
-      receipt-id: string | null
-      observed-entry-id: string | null
-      receipt-artifact-ref: string | null
-      receipt-content-digest: string | null
+      batch-id: string | null
+      bundle-id: string | null
+      selector-index: integer | null
       outcome: satisfied | missing | skipped | failed
       diagnostics: [diagnostic-record]
 failures:
     - kind: failure-kind
+      batch-id: string | null
       work-group-id: string | null
       evidence-expectation-id: string | null
-      receipt-id: string | null
-      observed-entry-id: string | null
-      receipt-artifact-ref: string | null
-      receipt-content-digest: string | null
+      bundle-id: string | null
       diagnostic: diagnostic-record
       message: string
 work-groups:
@@ -2787,108 +2983,53 @@ work-groups:
 proof-admissibility: validation-only
 ```
 
-The `receipt-manifest`, `observed-receipts`, `receipt-id`, and
-`receipt-artifact-ref` fields in this aggregate shape are compatibility
-placeholders until Group 4 replaces receipt-manifest finalization with batch
-bundle finalization. They must not be read as requiring separate per-work-group
-receipt artifacts under the current Group 3 execution-batch handoff; batch evidence
-bundles remain the authoritative evidence unit for this rebaseline.
+`budgets.expected-final-validation-artifacts` and
+`budgets.expected-actual-validation-artifacts` are pre-upload expectations, not
+observed final artifact counts. The authoritative `observed-final-validation-artifacts`
+and final `actual-validation-artifacts` values are external-to-payload results of
+post-publication artifact enumeration. `final-artifacts.aggregate-summary.artifact-instance-id`
+and `final-artifacts.aggregate-summary.content-digest` are explicitly absent
+because the summary cannot contain the instance ID or digest of its own uploaded
+artifact. Post-run acceptance and same-attempt retry verification compute the
+aggregate summary digest from the artifact bytes and compare producer authority,
+instance identity, and final observed artifact counts outside the summary payload.
 
-The aggregation report is the only CI-level verdict artifact and is emitted at
-the contract-owned ref
-`ci-validation/aggregate/<run-id>/<run-attempt>/ci-validation-aggregate.json`.
-`receipt-manifest.artifact-ref` is the contract-owned manifest ref,
-`ci-validation/manifests/<run-id>/<run-attempt>/receipt-manifest.json`, and
-`receipt-manifest.content-digest` is the lowercase hexadecimal SHA-256 digest of
-the raw manifest artifact bytes. Both are `null` only if aggregation cannot write
-or verify the manifest artifact; in that case the aggregate must be failed and is
-not authoritative acceptance evidence. Post-run acceptance must load the single
-authoritative manifest artifact, recompute its digest, and reject any
-manifest/aggregate mismatch as non-authoritative final evidence.
-Post-run acceptance evidence requires exactly one authoritative aggregate
-artifact instance at that ref. A missing, duplicate, unreadable, malformed, or
-wrong-run aggregate is non-authoritative CI verdict evidence; logs, job
-conclusions, or auxiliary artifacts cannot substitute for it. Post-run acceptance
-must also verify that the final manifest and aggregate artifacts were produced by
-the `aggregate-evidence` control-plane boundary for the same run attempt. A
-manifest or aggregate artifact authored by an executable validation command, a
-non-aggregation job, or an unverified artifact instance is non-authoritative even
-if its payload, schema, and digest bindings match. The same-attempt finalization
-reconciliation above is the only replay/idempotency contract for both final
-artifacts; consumers must not choose among multiple final instances by timestamp,
-job conclusion, or payload self-claims. Any final manifest or aggregate
-finalization/reconciliation failure must fail the `aggregate-evidence` job and
-the final required check even when the computed validation verdict would
-otherwise be `passed`. Workflow conclusion must fail when `verdict` is `failed`.
+`evidence-results` is the normalized machine-readable result for every evidence
+expectation. Every evidence expectation is verdict-relevant: `missing`, `skipped`,
+and `failed` results must have corresponding `failures` entries. `failure-kind` is
+one of `invalid-plan`, `required-evidence-missing`, `required-evidence-skipped`,
+`blocking-validation-failure`, `inadmissible-batch-evidence`,
+`namespace-closure-failure`, `final-evidence-failure`, or `fail-closed`.
+
 For structurally valid plans, `plan-digest`, `mode`, `validation-tree`,
-`affected-range`, `request`, and `scheduled-full` are copied from the frozen plan;
-the aggregator must verify they match the plan before emitting the report.
-Aggregation and post-run acceptance must use `request.artifact-ref` and
-`request.request-digest` to verify the authoritative normalized request artifact
-for executable plans, fail-closed plans, and replayable `request-invalid`
-fail-closed plans: exactly one artifact instance at the frozen request ref,
-matching common-envelope run identity, `normalize-input` producer authority,
-schema validity, matching payload `artifact-ref`, and recomputed request digest.
-For replayable `request-invalid` plans, aggregation verifies the request replay
-boundary and then preserves the planner's `request-invalid` fail-closed diagnostic;
-it does not require the request to be semantically valid. If request replay
-verification itself fails for an otherwise structurally valid plan, aggregation
-emits `invalid-plan` rather than treating the plan as detached from its original
-request.
-Summary booleans and counts are for quick inspection. `evidence-results` is the
-normalized machine-readable result for every evidence expectation. Every evidence
-expectation is verdict-relevant, so
-`missing`, `skipped`, and `failed` results must have corresponding `failures`
-entries. Finalization/reconciliation failures that leave no authoritative final
-evidence must produce `reason.final-evidence-failure: true` and a corresponding
-`failure` when an aggregate can be written; if no authoritative aggregate can be
-written, the final required check still fails under the no-authoritative-final-
-evidence contract. `failure-kind` is one of `invalid-plan`,
-`required-evidence-missing`, `required-evidence-skipped`,
-`blocking-validation-failure`, `inadmissible-receipt`,
-`final-evidence-failure`, or `fail-closed`.
-`observed-receipts` records every artifact instance in the closed intake
-boundary, including valid, malformed, unexpected, wrong-plan, duplicate, and
-otherwise inadmissible receipt artifacts. Evidence results and failures reference
-the observed entry, receipt artifact, and digest that caused the result when one
-exists. For unreadable or unclassified prefixed receipt artifacts,
-`artifact-ref` is `null` and `physical-artifact-name` is still recorded so the
-aggregate mirrors the receipt manifest without inventing a logical ref.
+`affected-range`, `request`, and `scheduled-full` are copied from the frozen plan
+after aggregation verifies the plan and request replay boundary. If aggregation
+cannot parse, schema-validate, digest-verify, producer-verify, or structurally
+validate the plan, it emits a failed aggregate with `reason.invalid-plan: true`,
+`reason.fail-closed: false`, unverified plan-derived fields set to `null` or
+`unknown`, empty `evidence-results`, zero executable counts, and exactly the
+applicable `invalid-plan` failure. If the plan is valid but a required post-plan
+control artifact or companion planning snapshot is invalid, no bundle is
+admissible and the aggregate follows the same `invalid-plan` path while retaining
+verified plan fields for inspection.
+
+For a structurally valid fail-closed plan, aggregation verifies the empty manifest,
+admits no batch bundle, copies planner fail-closed diagnostics into the aggregate,
+sets `reason.fail-closed: true`, records fail-closed failures, and fails the
+workflow conclusion. For no-work and zero-execution success cases, aggregation
+verifies the empty manifest, admits no batch bundle, records zero executable
+required work groups, and may pass only after final aggregate evidence validation
+succeeds.
 
 Aggregate arrays use canonical ordering to keep reruns and retries stable:
-`diagnostics` by `diagnostic-id`; `observed-receipts` by `observed-entry-id`;
-`evidence-results` by `evidence-expectation-id`; and `failures` by `(kind,
-work-group-id, evidence-expectation-id, observed-entry-id,
-diagnostic.diagnostic-id)` with `null` before strings. Nested diagnostics use the
-same `diagnostic-id` ordering.
-
-If aggregation cannot parse, schema-validate, digest-verify, or structurally
-validate the plan, it emits a failed aggregate with `reason.invalid-plan: true`
-and `reason.fail-closed: false`. In that mode, unverified plan-derived fields are
-`null` or `unknown`, `evidence-results` is empty, counts are zero except
-`terminal-aggregation: present`, `reason.inadmissible-receipt` is `false`, and
-`failures` contains only an `invalid-plan` failure with an `invalid-plan`
-diagnostic. Observed receipt-like artifacts may still be listed in
-`observed-receipts` for inspection with `admissibility: inadmissible`, but they
-must not create `inadmissible-receipt` failures because no verified plan exists
-against which receipt admissibility can be authoritative. The aggregate must not
-copy unverified plan fields merely because they were present in the unreadable or
-invalid input.
-
-If aggregation verifies the plan identity, schema, digest, and structural
-validity but a required post-plan control artifact is invalid, such as a missing
-or mismatched companion snapshot or execution-batch manifest, it emits a
-failed aggregate with `reason.invalid-plan: true` and `reason.fail-closed: false`.
-In that post-plan-contract-invalid mode, verified plan-derived fields may be
-copied from the frozen plan for inspection, but no receipt can be admissible,
-`evidence-results` is empty, counts are zero except `terminal-aggregation:
-present`, `reason.inadmissible-receipt` is `false`, and `failures` contains only
-the applicable `invalid-plan` failure. Observed receipt-like artifacts may still
-be listed for inspection with `admissibility: inadmissible`, but they must not
-create `inadmissible-receipt` failures because the selector and receipt
-admission contracts are not authoritative under an invalid plan.
-`reason.fail-closed` is reserved for structurally valid planner fail-closed
-plans and must be `true` for those plans.
+`diagnostics` by `diagnostic-id`; `batch-bundles` by `batch-id`;
+`batch-bundles[].observed-candidates` by `candidate-id`;
+`unexpected-contract-artifacts` by the implicit deterministic unexpected-artifact
+ID defined in section 14.1; `evidence-results` by `evidence-expectation-id`; and
+`failures` by `(kind, batch-id, work-group-id, evidence-expectation-id,
+diagnostic.diagnostic-id)` with `null` before strings. The aggregate evidence manifest and aggregate summary are
+serialized as RFC 8785 canonical UTF-8 JSON bytes before upload. Semantic JSON
+equivalence is insufficient for final digest replay.
 
 ## 15. Diagnostics
 
@@ -2911,7 +3052,8 @@ Planner and aggregation diagnostics use a small registered vocabulary:
 | `known-non-impacting`                 | planner                                     | inspectable non-failure                                                               |
 | `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
 | `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
-| `inadmissible-receipt`                | aggregation                                 | failed verdict                                                                        |
+| `inadmissible-batch-evidence`         | aggregation                                 | failed verdict                                                                        |
+| `namespace-closure-failure`           | aggregation                                 | failed verdict or no authoritative final aggregate                                    |
 | `final-evidence-failure`              | aggregation                                 | failed verdict or no authoritative final aggregate                                    |
 | `invalid-plan`                        | aggregation                                 | failed verdict with `reason.invalid-plan: true` and `reason.fail-closed: false`       |
 
@@ -2935,19 +3077,23 @@ machine-readable reasons. `request-invalid` details are:
 - `inconsistent`;
 - `unconfirmed-provenance`.
 
-`inadmissible-receipt` details include:
+`inadmissible-batch-evidence` details include:
 
 - `malformed-artifact-ref`;
-- `malformed-receipt`;
+- `malformed-bundle`;
+- `malformed-selector-row`;
 - `wrong-plan`;
 - `unknown-work-group`;
 - `mismatched-work-group`;
 - `mismatched-writer-identity`;
 - `mismatched-evidence-payload`;
 - `mismatched-outcome`;
-- `duplicate-receipt`;
+- `duplicate-bundle`;
+- `bundle-producer-unverified`;
+- `duplicate-selector-row`;
 - `unstable-artifact-instance-id`;
-- `unexpected-receipt`.
+- `unexpected-bundle`;
+- `unexpected-contract-artifact`.
 
 `invalid-plan` details include:
 
@@ -3011,25 +3157,27 @@ machine-readable reasons. `request-invalid` details are:
 
 `final-evidence-failure` details include:
 
-- `final-manifest-missing`;
-- `final-manifest-duplicate`;
-- `final-manifest-unreadable`;
-- `final-manifest-malformed`;
-- `final-manifest-non-canonical`;
-- `final-manifest-digest-mismatch`;
-- `final-aggregate-missing`;
-- `final-aggregate-duplicate`;
-- `final-aggregate-unreadable`;
-- `final-aggregate-malformed`;
-- `final-aggregate-non-canonical`;
-- `final-aggregate-digest-mismatch`;
+- `aggregate-evidence-manifest-missing`;
+- `aggregate-evidence-manifest-duplicate`;
+- `aggregate-evidence-manifest-unreadable`;
+- `aggregate-evidence-manifest-malformed`;
+- `aggregate-evidence-manifest-non-canonical`;
+- `aggregate-evidence-manifest-digest-mismatch`;
+- `aggregate-summary-missing`;
+- `aggregate-summary-duplicate`;
+- `aggregate-summary-unreadable`;
+- `aggregate-summary-malformed`;
+- `aggregate-summary-non-canonical`;
+- `aggregate-summary-digest-mismatch`;
 - `final-producer-unverified`;
 - `final-namespace-closure-mismatch`;
-- `aggregate-without-manifest`.
+- `aggregate-duration-exceeded`;
+- `namespace-overflow`;
+- `aggregate-summary-without-manifest`.
 
 Executable validation work groups use `validation-work-failed` for
-`blocking-failure` receipts unless a more specific registered diagnostic family
-applies.
+`blocking-failure` selector rows unless a more specific registered diagnostic
+family applies.
 
 Every planner diagnostic with `verdict-effect: fail-closed` must be copied into
 the aggregate `diagnostics` and represented in `failures` with `kind:
@@ -3037,12 +3185,13 @@ fail-closed`. When an affected request fails closed with `range-unconfirmed`,
 its `diagnostic-detail` must be propagated to the planner diagnostic and the
 aggregate failure under this general rule.
 
-When aggregation sees an inadmissible receipt, it must record
-`inadmissible-receipt` with the applicable diagnostic detail and fail the
-aggregate verdict. When a required expectation has no valid matching receipt
+When aggregation sees inadmissible batch evidence or an unexpected contract
+artifact in the closed evidence namespace, it must record
+`inadmissible-batch-evidence` with the applicable diagnostic detail and fail the
+aggregate verdict. When a required expectation has no valid matching selector row
 because all observed candidates were inadmissible, aggregation must also record
-`required-evidence-missing` for that expectation rather than allowing an
-inadmissible receipt to satisfy it.
+`required-evidence-missing` for that expectation rather than allowing
+inadmissible evidence to satisfy it.
 
 Diagnostic families and `diagnostic-detail` values are closed for this
 `v1alpha1` low-level contract. A verdict-relevant diagnostic family or detail not
@@ -3108,7 +3257,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Missing, duplicate, producer-unverified, plan-mismatched, budget-overflowing, unmaterializable, or structurally invalid execution-batch manifest                                                                       | Aggregation emits `invalid-plan` rather than admitting batch evidence bundles                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Logical boundary mapped to missing or wrong platform job identity                                                                                                                                                      | Producer authority verification rejects the artifact as producer-unverified using the boundary identity map; payload producer claims, logs, and job conclusions do not substitute                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Logical contract artifact ref maps ambiguously or incorrectly to a physical artifact name                                                                                                                              | Artifact instance counting, duplicate detection, and namespace enumeration use the canonical fixed-length SHA-256 physical-name mapping; prefixed artifacts whose payload refs do not recompute to the observed physical name are non-authoritative or unexpected in closed namespaces                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Prefixed physical artifact does not match any expected non-bundle contract ref during evidence namespace closure                                                                                                       | Aggregation treats it as unexpected evidence with `artifact-ref: null`; expected non-bundle artifacts are classified first and handled only by their own contract rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Prefixed physical artifact does not match any expected non-bundle contract ref during evidence namespace closure                                                                                                       | Aggregation classifies expected non-bundle artifacts first, classifies aggregate evidence manifest and aggregate summary refs as final-artifact refs whenever present, then classifies remaining prefixed artifacts against expected batch bundle refs from the execution-batch manifest; only artifacts matching none of those sets are unexpected evidence / unexpected contract artifacts                                                                                                                                                                                                                                                                                                            |
 | Batch evidence bundle has missing or mismatched validation-grade writer provenance                                                                                                                                     | Aggregation treats the bundle as inadmissible; batch writer identity is verified from manifest or bundle metadata and platform provenance, without a separate writer-observation artifact                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Request payload artifact ref or physical artifact name mismatches the contract-owned request ref                                                                                                                       | Planning fails closed with `request-invalid` and `diagnostic-detail: request-ref-mismatch`, or emits no authoritative plan                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Aggregate cannot replay-verify the request artifact ref or digest frozen into an otherwise structurally valid plan                                                                                                     | Aggregation emits `invalid-plan`; copied plan semantics are insufficient without the authoritative normalized request artifact identity and digest                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -3117,21 +3266,19 @@ Implementation acceptance must include at least these evidence scenarios:
 | Ecosystem gate omits a capability enabled by selected subject/provider facts                                                                                                                                           | Plan is fail-closed with `fact-provider-insufficient` or structurally invalid; batch evidence cannot pass by matching an under-planned capability set                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Upstream selector emits a valid `blocking-failure` batch evidence row                                                                                                                                                  | The batch can still write evidence for dependency gating, downstream selectors are not dependency-blocked solely by that validation outcome, and aggregation fails the final verdict from the batch evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Batch evidence row emitted after validation on the wrong or unverifiable execution tree                                                                                                                                | Aggregation treats the batch evidence row as inadmissible with `mismatched-evidence-payload`; copied plan provenance is insufficient without execution-tree evidence from the execution-batch boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Legacy receipt-like artifact appears in the compatibility intake namespace                                                                                                                                             | Pending Group 4, receipt-like artifact handling is compatibility/diagnostic placeholder behavior and does not replace the current execution-batch manifest and batch evidence bundle requirements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Aggregate mirrors an unreadable or unclassified legacy receipt-like artifact                                                                                                                                           | Pending Group 4, `observed-receipts` compatibility fields may record the manifest entry for diagnostics, but current Group 3 acceptance relies on batch evidence bundles                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Standalone receipt-like artifact appears in the contract artifact namespace                                                                                                                                            | Aggregation treats it as a non-authoritative unexpected contract artifact; it cannot replace the current execution-batch manifest, batch evidence bundle, aggregate evidence manifest, or aggregate summary requirements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Release-shaped artifact batch evidence row with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked logical release-shaped receipt check, or mismatched planned shape | Aggregation records `artifact-shape-unconfirmed` or `mismatched-evidence-payload` and fails the final verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Dependency-blocked release-shaped artifact batch evidence row                                                                                                                                                          | The batch evidence row may use the explicit skipped form with empty observed artifact refs and digests plus `validation-work-skipped: dependency-blocked`; aggregation treats it as required evidence skipped and fails the final verdict, not as successful artifact-shape validation                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Legacy receipt compatibility row has top-level artifact refs populated for non-artifact evidence or differing from release-shaped observed refs                                                                        | Pending Group 4, this remains a compatibility placeholder; current batch evidence rows must keep artifact refs aligned with the category-specific release-shaped observed refs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Lightweight-preflight or workflow-release-tooling batch evidence row omits or mismatches its required detail profile or subcheck results                                                                               | Aggregation treats the batch evidence row as inadmissible with `mismatched-evidence-payload`; category-result detail must match the frozen work group, evidence expectation, and profile subcheck contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Invalid or mismatched batch evidence row or bundle                                                                                                                                                                     | Inadmissible batch evidence does not satisfy required evidence; aggregation fails with the applicable inadmissibility reason, and also `required-evidence-missing` when no valid matching batch evidence exists                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Forged or producer-unverified batch writer metadata                                                                                                                                                                    | Matching payload fields are insufficient; aggregation treats the batch evidence bundle as inadmissible and fails the final verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Valid required batch evidence plus extra inadmissible batch evidence                                                                                                                                                   | Required evidence is satisfied by the valid batch evidence, but aggregation still fails for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Batch evidence bundle appears after evidence namespace closure                                                                                                                                                         | Post-run acceptance or same-attempt retry treats final evidence as non-authoritative rather than extending the closed evidence set                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Same-attempt finalization retry with occupied final manifest or aggregate                                                                                                                                              | Aggregation preserves the occupied artifact's `created-at` while recomputing raw digest equality; digest mismatch or duplicate final artifact leaves no authoritative final evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Aggregate exists at the final ref but the final manifest is missing                                                                                                                                                    | Same-attempt retry treats the final state as non-recoverable and non-authoritative; it does not recreate a manifest to satisfy the aggregate's existing final-manifest content-digest claim                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Final manifest or aggregate finalization/reconciliation fails despite a passing computed validation verdict                                                                                                            | The aggregate records `reason.final-evidence-failure` and `failure-kind: final-evidence-failure` when it can be written; otherwise the `aggregate-evidence` job and final required check fail under the no-authoritative-final-evidence contract                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched final manifest or aggregate                                                                                                           | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Final manifest or aggregate JSON is not RFC 8785 canonical UTF-8 JSON                                                                                                                                                  | Final evidence is malformed/non-authoritative or records `final-evidence-failure`; semantic JSON equivalence is insufficient for final digest replay                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Same-attempt finalization retry with occupied aggregate evidence manifest or aggregate summary                                                                                                                         | Aggregation preserves the occupied artifact's `created-at` while recomputing raw digest equality; digest mismatch or duplicate final artifact leaves no authoritative final evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Aggregate summary exists at the final ref but the aggregate evidence manifest is missing                                                                                                                               | Same-attempt retry treats the final state as non-recoverable and non-authoritative; it does not recreate a manifest to satisfy the aggregate's existing aggregate-evidence-manifest content-digest claim                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Aggregate evidence manifest or aggregate summary finalization/reconciliation fails despite a passing computed validation verdict                                                                                       | The aggregate records `reason.final-evidence-failure` and `failure-kind: final-evidence-failure` when it can be written; otherwise the `aggregate-evidence` job and final required check fail under the no-authoritative-final-evidence contract                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched aggregate evidence manifest or aggregate summary                                                                                      | Post-run acceptance treats the final evidence as non-authoritative; logs, job conclusions, or auxiliary artifacts cannot replace the exact contract-owned manifest and aggregate artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Aggregate evidence manifest or aggregate summary JSON is not RFC 8785 canonical UTF-8 JSON                                                                                                                             | Final evidence is malformed/non-authoritative or records `final-evidence-failure`; semantic JSON equivalence is insufficient for final digest replay                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Unknown verdict-relevant diagnostic family or detail appears in contract evidence                                                                                                                                      | Schema or aggregation rejects it under the closed `v1alpha1` diagnostic vocabulary unless the LLD/schema/api-version contract has been updated                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Unconfirmed artifact shape                                                                                                                                                                                             | Blocking validation failure, no release-proof admissibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Unconfirmed PR context                                                                                                                                                                                                 | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -3153,8 +3300,7 @@ The following remain implementation-owned for the single senior engineer:
 - exact JSON Schema file locations and type-generation approach;
 - temporary directories and log formatting;
 - upload names for logs and auxiliary artifacts other than contract-owned
-  execution-batch manifests, batch evidence bundles, receipt compatibility
-  artifacts, and final manifests;
+  execution-batch manifests, batch evidence bundles, aggregate evidence manifests, and aggregate summaries;
 - batching strategy for work-group selectors;
 - exact HK profile names and step ordering;
 - internal test organization.
@@ -3162,8 +3308,8 @@ The following remain implementation-owned for the single senior engineer:
 The following are not implementation-owned:
 
 - CI belonging to workflow-release rather than a separate CI truth;
-- validation plan, execution-batch manifest, batch evidence bundle, and receipt
-  compatibility `api-version`/`kind` families;
+- validation plan, execution-batch manifest, batch evidence bundle, aggregate
+  evidence manifest, and aggregate summary `api-version`/`kind` families;
 - plan authority over classification, subjects, obligations, work groups, and
   diagnostics;
 - unknown/unclassifiable fail-closed behavior;
@@ -3176,8 +3322,7 @@ The following are not implementation-owned:
   `execution-batch-manifest.json`;
 - contract-owned batch evidence bundle refs/names, including
   `batch-evidence-bundle.json`;
-- contract-owned receipt compatibility artifact refs, intake namespace, and
-  aggregate manifest location pending Group 4 replacement.
+- contract-owned aggregate evidence manifest and aggregate summary refs/names.
 
 ## 19. Outcome
 
@@ -3186,6 +3331,6 @@ affected validation without prescribing code internals. It freezes the workflow
 entry boundary, logical job sequence, request and plan files, subject snapshot
 shape, fact-provider realization, semantic path classification families, scope
 resolution rules, work-group selectors, execution mapping, artifact-validation
-obligations, validation-only receipts, diagnostics, HK relationship, and
+obligations, validation-only batch evidence, diagnostics, HK relationship, and
 acceptance evidence. Concrete code structure and command implementation remain
 owned by the senior engineer as long as these contracts are preserved.
