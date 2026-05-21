@@ -1899,14 +1899,18 @@ Selector rules:
     `20 - expected-final-validation-artifacts`, and
     `aggregate-max-duration-seconds` must be at most 120. Lower-bound
     topology targets apply only to executable broad, full, or global
-    materializations with non-empty batch sets: those manifests must keep
-    `min-total-jobs` at least 12 and `min-windows-jobs` at least 4, and actual
-    counts must satisfy those lower bounds. Fail-closed, no-executable,
-    lightweight-only with no executable checks, and zero-file no-work
+    materializations with non-empty batch sets that are not lightweight-only:
+    those manifests must keep `min-total-jobs` at least 12 and
+    `min-windows-jobs` at least 4, and actual counts must satisfy those lower
+    bounds. Lower bounds are waived for fail-closed, no-executable, all
+    lightweight-only manifests including executable lightweight selectors/checks,
+    and zero-work materializations. Fail-closed, no-executable, and zero-work
     materializations use a zero-execution budget profile with `batches: []`; they
     preserve fail-closed or no-work aggregation semantics and are not invalid
     merely because actual total or Windows jobs are below the broad/full/global
-    lower-bound targets.
+    lower-bound targets. Lightweight-only manifests with executable
+    selectors/checks still declare and observe the corresponding counts, and
+    those counts must satisfy the applicable maximum caps.
 
     Actual counts must match the declared manifest fields and stay within the
     applicable declared ranges and `max-validation-artifacts`.
@@ -1950,20 +1954,27 @@ Selector rules:
     totals before admitting any batch bundle: batch count equals `batches.length`,
     pre-final artifact count equals declared `pre-final-validation-artifacts`,
     enough final artifact slots remain for `expected-final-validation-artifacts`,
-    total and Windows job counts equal their declared actual fields, each execution batch
-    maps to one budget-counted concrete job or matrix leg, the aggregate duration
-    budget fields use seconds with target less than or equal to max and max no
-    greater than 120 seconds, max caps never exceed 18 total jobs, 8 Windows jobs,
-    or 20 validation artifacts, and lower bounds are enforced only for executable
-    broad/full/global manifests with non-empty batches. It must also verify
-    `budget.max-execution-batches` against both the artifact-derived allowance and
-    the job-derived allowance implied by total and Windows job caps. Any mismatch,
-    hidden budget-relevant job, relaxed cap, invalid lower-bound use, or overflow
-    is a post-plan control-plane/materialization failure reported through the
-    invalid execution-batch manifest path. After publishing final aggregate
-    artifacts, aggregation verifies that the observed final artifact count makes
-    the complete `actual-validation-artifacts` equal the declared total and remain
-    within the 20-artifact cap.
+    total and Windows job counts equal their declared actual fields, each
+    execution batch maps to one budget-counted concrete job or matrix leg, the
+    aggregate duration budget fields use seconds with target less than or equal to
+    max and max no greater than 120 seconds, max caps never exceed 18 total jobs,
+    8 Windows jobs, or 20 validation artifacts, and lower bounds are enforced only
+    for executable broad/full/global manifests with non-empty batch sets that are
+    not lightweight-only. Applying those lower bounds to lightweight-only
+    manifests, including executable lightweight selectors/checks, is invalid
+    lower-bound misuse; maximum caps still apply wherever the corresponding
+    topology counts exist. It must also verify `budget.max-execution-batches`
+    against both the artifact-derived allowance and the job-derived allowance
+    implied by total and Windows job caps. Any mismatch, hidden budget-relevant
+    job, relaxed cap, invalid lower-bound use, or overflow is a post-plan
+    control-plane/materialization failure
+    reported through the invalid execution-batch manifest path with the applicable
+    registered `invalid-plan` diagnostic detail for topology count mismatch,
+    hidden budget-relevant job mismatch, topology lower-bound underflow or misuse,
+    or budget overflow. After publishing final aggregate artifacts, aggregation
+    verifies that the observed final artifact count makes the complete
+    `actual-validation-artifacts` equal the declared total and remain within the
+    20-artifact cap.
     The `aggregate-evidence` boundary must measure its actual aggregate duration
     in seconds and fail the final required check if the actual duration exceeds
     `aggregate-max-duration-seconds`. That actual duration is execution-produced
@@ -2448,6 +2459,12 @@ with the expected bundle slot for replay diagnostics, and uses the closed
 promoted to valid evidence or moved only to `unexpected-contract-artifacts`.
 `unexpected-contract-artifacts` is reserved for prefixed artifacts that do not map
 to an input non-bundle ref, final aggregate ref, or expected bundle ref.
+`classification` intentionally remains the coarse aggregate classification
+(`unexpected`, `unreadable`, `wrong-ref`, or `wrong-producer`). Specific namespace
+conditions such as duplicate, malformed, schema-invalid, wrong-run,
+digest-mismatched, late, or overflow are represented in the closest
+`diagnostics[].diagnostic-detail` on the unexpected artifact entry, expected slot,
+namespace-overflow record, or final-artifact diagnostic as applicable.
 `candidate-id` is derived as
 `"candidate-" + lowercase_sha256(RFC8785({"run-id", "run-attempt", "batch-id",
 "artifact-ref", "artifact-instance-id", "physical-artifact-name"}))`, using the
@@ -2502,14 +2519,21 @@ contract artifact makes final evidence non-authoritative and fails the final
 required check.
 
 All prefixed validation artifacts considered by aggregation are bounded by the
-same 20-artifact validation cap. Aggregation must enumerate at most the cap plus
-one sentinel prefixed artifact before declaring overflow. If enumeration observes
-more than 20 prefixed validation artifacts, or the artifact service cannot prove
-that at most 20 prefixed artifacts exist for the run attempt, aggregation records a
-bounded `namespace-overflow` diagnostic, fails namespace closure/final evidence,
-and must not keep collecting an unbounded artifact list. The
-`unexpected-contract-artifacts` array is therefore bounded; overflow is represented
-by `namespace-overflow` rather than by appending unbounded entries.
+same 20-artifact validation cap. During pre-final namespace closure, aggregation
+must enumerate at most `20 - expected-final-validation-artifacts` pre-final
+artifacts plus one sentinel prefixed artifact before declaring overflow. If
+pre-final enumeration exceeds that reserved-slot limit, or the artifact service
+cannot prove that the final aggregate slots remain reserved, aggregation records a
+bounded `namespace-overflow` diagnostic, fails namespace closure, and must not
+keep collecting an unbounded artifact list. During complete post-publication
+final reconciliation, aggregation enumerates at most the full 20-artifact cap
+plus one sentinel prefixed artifact before declaring overflow. If final
+reconciliation observes more than 20 prefixed validation artifacts, or the
+artifact service cannot prove that at most 20 prefixed artifacts exist for the run
+attempt, aggregation records a bounded `namespace-overflow`, fails final
+evidence, and must not keep collecting an unbounded artifact list. The
+`unexpected-contract-artifacts` array is therefore bounded; overflow is
+represented by `namespace-overflow` rather than by appending unbounded entries.
 
 Aggregation must never upload a second artifact instance at an occupied final ref.
 If a final aggregate summary exists without its aggregate evidence manifest, the
@@ -2852,7 +2876,9 @@ verifies the pre-final input namespace:
 []`;
 - zero execution-batch-manifest cardinality only when no authoritative plan exists
   or materialization fails before a reliable batch set exists; in that path no
-  bundle is admissible and aggregation emits the invalid-plan/no-bundle result;
+  bundle is admissible, no frozen executable evidence expectations are emitted
+  for no-authoritative-plan terminal handling, and aggregation emits the
+  invalid-plan/no-bundle result;
 - one expected bundle slot for each executable batch and no bundle slot for an
   empty manifest; each executable slot must have exactly one producer-verified
   admitted candidate to be valid, while missing, duplicate, producer-unverified,
@@ -3033,7 +3059,14 @@ equivalence is insufficient for final digest replay.
 
 ## 15. Diagnostics
 
-Planner and aggregation diagnostics use a small registered vocabulary:
+Planner, execution-batch, and aggregation diagnostics use a closed registered
+vocabulary. Contract diagnostics are carried inside the validation plan, batch
+evidence bundles, aggregate evidence manifest, and aggregate summary. They are
+not supplied by standalone per-work-group receipts, selector-assignment
+artifacts, writer-observation artifacts, or unbounded receipt uploads. Legacy
+receipt-like files, if observed during migration, are diagnostic inputs only
+through the bounded artifact namespace checks below; they are never current
+authority for selector assignment, writer identity, or validation success.
 
 | Diagnostic family                     | Producer                                    | CI verdict effect                                                                     |
 | ------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -3091,9 +3124,11 @@ machine-readable reasons. `request-invalid` details are:
 - `duplicate-bundle`;
 - `bundle-producer-unverified`;
 - `duplicate-selector-row`;
-- `unstable-artifact-instance-id`;
-- `unexpected-bundle`;
-- `unexpected-contract-artifact`.
+- `unstable-artifact-instance-id`.
+
+These details are limited to expected bundle slots and their observed
+candidates. Prefixed contract artifacts outside admitted refs are namespace
+closure failures, not inadmissible batch evidence.
 
 `invalid-plan` details include:
 
@@ -3139,6 +3174,10 @@ machine-readable reasons. `request-invalid` details are:
 - `execution-batch-manifest-producer-unverified`;
 - `execution-batch-manifest-structurally-invalid`;
 - `execution-batch-manifest-budget-overflow`;
+- `execution-batch-manifest-topology-lower-bound-underflow`;
+- `execution-batch-manifest-topology-lower-bound-misuse`;
+- `execution-batch-manifest-topology-count-mismatch`;
+- `execution-batch-manifest-hidden-budget-relevant-job-mismatch`;
 - `execution-batch-manifest-unmaterializable-obligation`;
 - `structurally-invalid`.
 
@@ -3154,6 +3193,34 @@ machine-readable reasons. `request-invalid` details are:
 `validation-work-skipped` details are:
 
 - `dependency-blocked`.
+
+`required-evidence-missing` details are:
+
+- `missing-bundle`;
+- `missing-selector-row`;
+- `inadmissible-candidates-only`.
+
+`required-evidence-skipped` details are:
+
+- `dependency-blocked`.
+
+`namespace-closure-failure` details are:
+
+- `unexpected-contract-artifact`;
+- `duplicate-contract-artifact`;
+- `unreadable-contract-artifact`;
+- `malformed-contract-artifact`;
+- `schema-invalid-contract-artifact`;
+- `digest-mismatched-contract-artifact`;
+- `wrong-producer-contract-artifact`;
+- `wrong-run-contract-artifact`;
+- `wrong-ref-contract-artifact`;
+- `late-contract-artifact`;
+- `namespace-overflow`.
+
+These details apply to pre-final bounded namespace closure before final
+aggregate publication. Post-publication reconciliation mismatches, including
+final namespace closure mismatches, use `final-evidence-failure`.
 
 `final-evidence-failure` details include:
 
@@ -3185,13 +3252,29 @@ fail-closed`. When an affected request fails closed with `range-unconfirmed`,
 its `diagnostic-detail` must be propagated to the planner diagnostic and the
 aggregate failure under this general rule.
 
-When aggregation sees inadmissible batch evidence or an unexpected contract
-artifact in the closed evidence namespace, it must record
-`inadmissible-batch-evidence` with the applicable diagnostic detail and fail the
-aggregate verdict. When a required expectation has no valid matching selector row
-because all observed candidates were inadmissible, aggregation must also record
-`required-evidence-missing` for that expectation rather than allowing
-inadmissible evidence to satisfy it.
+When aggregation sees inadmissible batch evidence for an expected bundle slot, it
+must record `inadmissible-batch-evidence` with the applicable diagnostic detail
+and fail the aggregate verdict. When it sees a prefixed contract artifact outside
+the admitted request, plan, companion snapshot, execution-batch manifest, expected
+batch bundle, aggregate evidence manifest, or aggregate summary refs, it must
+record `namespace-closure-failure` with the applicable namespace detail. If the
+pre-final bounded namespace count exceeds
+`20 - expected-final-validation-artifacts`, or the platform cannot prove enough
+final aggregate slots remain, aggregation records `namespace-closure-failure`
+with `diagnostic-detail: namespace-overflow` instead of appending an unbounded
+artifact list. If post-publication final reconciliation overflows the 20-artifact
+validation cap, aggregation records `final-evidence-failure` with
+`diagnostic-detail: namespace-overflow`.
+
+Observed candidates may be preserved in aggregate diagnostics for replay, but
+only producer-verified admitted batch bundle candidates can satisfy evidence
+expectations. When a required expectation has no valid matching selector row
+because all observed candidates were missing, duplicate, producer-unverified,
+wrong-producer, malformed, wrong-plan, unknown-work-group, or otherwise
+inadmissible, aggregation must also record `required-evidence-missing` for that
+expectation rather than allowing inadmissible evidence to satisfy it. Payload
+writer fields, command logs, job conclusions, selector-assignment files, and
+receipt-like files do not satisfy evidence by themselves.
 
 Diagnostic families and `diagnostic-detail` values are closed for this
 `v1alpha1` low-level contract. A verdict-relevant diagnostic family or detail not
@@ -3227,12 +3310,18 @@ Implementation acceptance must include at least these evidence scenarios:
 | Workflow-release infrastructure change                                                                                                                                                                                 | Plan selects affected tooling surface, related subjects/ecosystems, and all discovered descriptors only for descriptor semantics, authoring validation, planning, contracts, build execution, publish execution, or smoke validation impacts; execution-batch manifest, batch evidence bundles, and per-selector evidence/result rows cover the selected executable obligations                                                                                                                                                                                                                                                                                                                         |
 | Known global change                                                                                                                                                                                                    | Plan selects scheduled-full-equivalent scope with global provenance and required workflow-release-tooling work groups for every closed tooling surface; execution-batch manifest, batch evidence bundles, and per-selector evidence/result rows cover the selected executable obligations                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Scheduled full run                                                                                                                                                                                                     | Plan selects full repository scope with required workflow-release-tooling work groups for every closed tooling surface and scheduled provenance records using `selection-kind: scheduled-full`, empty impact/expansion refs, `scheduled-full-source: true`, and `scheduled-full.enabled: true`; execution-batch manifest, batch evidence bundles, and per-selector evidence/result rows cover the selected executable obligations                                                                                                                                                                                                                                                                       |
+| Executable plan with multiple logical selectors coalesced into fewer concrete execution batches                                                                                                                        | The frozen plan remains authoritative for logical work groups, selectors, dependencies, and evidence expectations; the execution-batch manifest assigns each executable selector exactly once to one execution batch, each execution batch maps to one budget-counted concrete job or matrix leg, may place multiple compatible selectors in one batch, and batch bundles preserve one result row per assigned selector without requiring one job or artifact per logical selector/work group                                                                                                                                                                                                           |
+| Broad, global, or scheduled-full executable materialization with non-empty batches                                                                                                                                     | Execution-batch manifest and aggregate evidence show bounded topology: total jobs stay within 12 to 18, Windows jobs stay within 4 to 8 for executable broad/full/global non-empty batch sets, each execution batch maps to exactly one budget-counted concrete job or matrix leg, lower job-count bounds are waived for fail-closed, no-executable, all lightweight-only manifests including executable lightweight selectors/checks, and zero-work manifests, and maximum caps still apply wherever the corresponding topology count is present                                                                                                                                                       |
+| Validation artifact budget at normal finalization                                                                                                                                                                      | The run has at most 20 prefixed validation artifacts total, including input non-bundle artifacts, one batch evidence bundle per executable batch, the aggregate evidence manifest, and the aggregate summary; acceptance does not require or allow one artifact per selector/work group and treats overflow as bounded namespace failure                                                                                                                                                                                                                                                                                                                                                                |
+| Full, broad, or global validation performance evidence                                                                                                                                                                 | Aggregate summary and workflow evidence show the full/broad/global target remains at or below 12 minutes with a hard ceiling of 15 minutes for the overall validation workflow; no per-batch duration cap is inferred from this acceptance goal                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Aggregate duration budget evidence                                                                                                                                                                                     | Execution-batch manifest declares aggregate target/max duration in seconds with max no greater than 120, aggregate summary records observed aggregate duration, and the final required check fails with `aggregate-duration-exceeded` when observed aggregation exceeds the declared max                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Known non-impacting change with no executable checks                                                                                                                                                                   | Lightweight-only plan passes without heavy work, remains inspectable, has no executable validation work groups, uses a verified empty execution-batch manifest, has no batch evidence bundles, and has terminal aggregate evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Known non-impacting change with executable lightweight checks                                                                                                                                                          | Verified execution-batch manifest assigns the lightweight selectors, and lightweight work appears as per-selector success evidence/result rows in the assigned batch evidence bundle for pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Known non-impacting lightweight-only plan attempts subject, ecosystem, or descriptor-scoped lightweight work                                                                                                           | The plan is structurally invalid; lightweight-only executable checks must use `lightweight-policy` or workflow-release `tooling-surface` coverage targets rather than implying selected validation subjects                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Confirmed zero-file affected range                                                                                                                                                                                     | Affected request has `affected-range.status: available`, empty `changed-files`, non-null canonical `changed-files-hash`, executable lightweight-only plan with available discovered subjects all marked `not-selected`, an available provider fact snapshot whose provider subject IDs exactly match the provider-bound frozen subject universe, unsupported audit subjects only when they satisfy the unsupported-subject constraints, no selected subjects, no executable validation work groups, no evidence expectations, verified empty execution-batch manifest, no batch evidence bundles or per-selector evidence rows, and passing terminal aggregate evidence after final evidence validation |
 | Wrong-run or producer-unverified planner-facing request                                                                                                                                                                | Planning does not trust affected-range or scheduled-full payload claims; it either fails closed with `request-invalid` or emits no authoritative plan unless the request ref, digest, instance count, envelope, and `normalize-input` producer authority verify; authoritative plans and aggregates freeze the verified request ref and digest for replay                                                                                                                                                                                                                                                                                                                                               |
 | Missing, duplicate, unreadable, malformed, schema-invalid, producer-unverified, or ref-unidentified planner-facing request                                                                                             | No authoritative validation plan is emitted because the request cannot satisfy the replayable request boundary needed for plan request binding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| No authoritative plan path reaches aggregation                                                                                                                                                                         | Aggregation emits a failed terminal aggregate with `invalid-plan` or the request-invalid/no-authoritative-plan diagnostic path as applicable, admits no execution-batch manifest or batch evidence bundles, preserves bounded diagnostics, emits no missing evidence expectations for the no-authoritative-plan terminal path, and does not treat missing executable evidence as a passing zero-work result                                                                                                                                                                                                                                                                                             |
 | Digest-mismatched or wrong-run request that is still replayable enough to freeze request ref and recomputed digest                                                                                                     | Planning may emit a fail-closed plan with `request-invalid`; aggregation replay-verifies the request artifact boundary and preserves the fail-closed diagnostic rather than converting it to `invalid-plan`; the fail-closed handoff has no executable validation work groups, a verified empty execution-batch manifest, no batch evidence bundles, and terminal aggregate evidence                                                                                                                                                                                                                                                                                                                    |
 | Execution-batch materialization receives invalid, producer-unverified, identity-unverified, or companion-mismatched plan                                                                                               | `materialize-execution-batches` emits no executable batch set unless it can verify plan identity and all authoritative plan plus companion snapshot checks; fan-out never runs from a plan that has not passed that validation                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Structurally valid fail-closed or no-executable plan                                                                                                                                                                   | No executable validation work groups, exactly one verified empty execution-batch manifest, no batch evidence bundles, and terminal aggregate evidence preserve fail-closed or no-work semantics instead of reporting `invalid-plan`                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -3267,12 +3356,13 @@ Implementation acceptance must include at least these evidence scenarios:
 | Upstream selector emits a valid `blocking-failure` batch evidence row                                                                                                                                                  | The batch can still write evidence for dependency gating, downstream selectors are not dependency-blocked solely by that validation outcome, and aggregation fails the final verdict from the batch evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Batch evidence row emitted after validation on the wrong or unverifiable execution tree                                                                                                                                | Aggregation treats the batch evidence row as inadmissible with `mismatched-evidence-payload`; copied plan provenance is insufficient without execution-tree evidence from the execution-batch boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Standalone receipt-like artifact appears in the contract artifact namespace                                                                                                                                            | Aggregation treats it as a non-authoritative unexpected contract artifact; it cannot replace the current execution-batch manifest, batch evidence bundle, aggregate evidence manifest, or aggregate summary requirements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Selector-assignment or writer-observation artifact appears during migration                                                                                                                                            | Aggregation treats it as non-authoritative and, when it uses the prefixed contract namespace, as an unexpected contract artifact; selector assignment comes only from the execution-batch manifest, and writer admission comes only from manifest/bundle metadata plus platform producer authority                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Release-shaped artifact batch evidence row with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked logical release-shaped receipt check, or mismatched planned shape | Aggregation records `artifact-shape-unconfirmed` or `mismatched-evidence-payload` and fails the final verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Dependency-blocked release-shaped artifact batch evidence row                                                                                                                                                          | The batch evidence row may use the explicit skipped form with empty observed artifact refs and digests plus `validation-work-skipped: dependency-blocked`; aggregation treats it as required evidence skipped and fails the final verdict, not as successful artifact-shape validation                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Lightweight-preflight or workflow-release-tooling batch evidence row omits or mismatches its required detail profile or subcheck results                                                                               | Aggregation treats the batch evidence row as inadmissible with `mismatched-evidence-payload`; category-result detail must match the frozen work group, evidence expectation, and profile subcheck contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Invalid or mismatched batch evidence row or bundle                                                                                                                                                                     | Inadmissible batch evidence does not satisfy required evidence; aggregation fails with the applicable inadmissibility reason, and also `required-evidence-missing` when no valid matching batch evidence exists                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Forged or producer-unverified batch writer metadata                                                                                                                                                                    | Matching payload fields are insufficient; aggregation treats the batch evidence bundle as inadmissible and fails the final verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Valid required batch evidence plus extra inadmissible batch evidence                                                                                                                                                   | Required evidence is satisfied by the valid batch evidence, but aggregation still fails for the extra malformed, duplicate, unexpected, wrong-plan, unknown-work-group, or mismatched-work-group evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Valid required batch evidence plus extra inadmissible batch evidence                                                                                                                                                   | Required evidence is satisfied by the valid batch evidence, but aggregation still fails for the extra malformed, duplicate, wrong-plan, unknown-work-group, or mismatched-work-group evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Batch evidence bundle appears after evidence namespace closure                                                                                                                                                         | Post-run acceptance or same-attempt retry treats final evidence as non-authoritative rather than extending the closed evidence set                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Same-attempt finalization retry with occupied aggregate evidence manifest or aggregate summary                                                                                                                         | Aggregation preserves the occupied artifact's `created-at` while recomputing raw digest equality; digest mismatch or duplicate final artifact leaves no authoritative final evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Aggregate summary exists at the final ref but the aggregate evidence manifest is missing                                                                                                                               | Same-attempt retry treats the final state as non-recoverable and non-authoritative; it does not recreate a manifest to satisfy the aggregate's existing aggregate-evidence-manifest content-digest claim                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -3284,6 +3374,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Unconfirmed PR context                                                                                                                                                                                                 | No publication credentials, release environment, or OIDC publish permission exposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Accidental publication or remote publish-state validation                                                                                                                                                              | Static workflow/config/code review and batch-evidence/aggregate inspection show no work group, command output, batch evidence field, aggregate field, registry query, GitHub Release lookup, tag lookup, or remote publish-state observation is used as validation evidence                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | All CI validation modes have no configured publication authority                                                                                                                                                       | Static workflow/config/code review covers `pull_request`, `push`, and `scheduled_full`; no publication credentials, OIDC publish permission, release environment, registry mutation, GitHub Release mutation, or release tag mutation is configured                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| CI validation evidence is presented to release proof lookup or publication admissibility                                                                                                                               | Release proof consumers reject batch bundles, aggregate evidence manifests, aggregate summaries, and logical release-shaped receipt checks because every current CI evidence path is `proof-admissibility: validation-only` and cannot satisfy release immutable proof                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 These scenarios are acceptance contracts, not prescribed test framework or file
 layout. The implementer may choose the concrete test harness.
