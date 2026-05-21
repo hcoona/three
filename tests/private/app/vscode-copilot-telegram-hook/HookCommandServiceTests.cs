@@ -444,6 +444,7 @@ public sealed class HookCommandServiceTests
                 "session-123",
                 turn.NotificationTurnId), assignment, StringComparison.Ordinal);
             Assert.Contains(turn.NotificationNonce, assignment, StringComparison.Ordinal);
+            Assert.Contains("prefer Chinese when practical", assignment, StringComparison.Ordinal);
         }
         finally
         {
