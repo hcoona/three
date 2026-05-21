@@ -298,6 +298,7 @@ public sealed class HookCommandServiceTests
                 "session-123",
                 CancellationToken.None));
             HookResponse response = await DeserializeHookResponseAsync(output);
+            Assert.Equal("UserPromptSubmit", response.HookSpecificOutput?.HookEventName);
             string assignment = Assert.IsType<string>(
                 response.HookSpecificOutput?.AdditionalContext);
             Assert.Contains(AppPaths.GetSummaryStatePath(
@@ -306,6 +307,140 @@ public sealed class HookCommandServiceTests
                 turn.NotificationTurnId), assignment, StringComparison.Ordinal);
             Assert.Contains(turn.NotificationNonce, assignment, StringComparison.Ordinal);
             Assert.DoesNotContain("notify-summary.json", assignment, StringComparison.Ordinal);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandleUserPromptSubmitAsyncUsesHookSpecificContextForVsCodeSurface()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            HookCommandService service = CreateHookCommandService(
+                new RecordingHttpMessageHandler(),
+                stateStore: stateStore,
+                surface: HookSurface.VsCode);
+            UserPromptSubmitHookInput promptInput = new()
+            {
+                Cwd = tempDirectory.FullName,
+                SessionId = "session-123",
+                Timestamp = "2026-03-14T15:51:50.783Z",
+                TranscriptPath = "/workspace/transcript.json",
+                Prompt = "Ship the notification redesign.",
+            };
+            await using MemoryStream output = new();
+
+            int exitCode = await service.HandleUserPromptSubmitAsync(
+                CreateJsonStream(
+                    promptInput,
+                    AppJsonSerializerContext.Default.UserPromptSubmitHookInput),
+                output,
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+            NotificationTurn turn = Assert.Single(await stateStore.ListOpenTurnsAsync(
+                tempDirectory.FullName,
+                "session-123",
+                CancellationToken.None));
+            JsonElement root = ReadJsonRootElement(output);
+            AssertJsonProperties(root, "hookSpecificOutput");
+            JsonElement hookSpecificOutput = root.GetProperty("hookSpecificOutput");
+            AssertJsonProperties(
+                hookSpecificOutput,
+                "hookEventName",
+                "additionalContext");
+            Assert.Equal(
+                "UserPromptSubmit",
+                hookSpecificOutput.GetProperty("hookEventName").GetString());
+            Assert.False(root.TryGetProperty("modifiedPrompt", out _));
+            Assert.False(root.TryGetProperty("additionalContext", out _));
+            HookResponse response = await DeserializeHookResponseAsync(output);
+            Assert.Equal("UserPromptSubmit", response.HookSpecificOutput?.HookEventName);
+            string assignment = Assert.IsType<string>(
+                response.HookSpecificOutput?.AdditionalContext);
+            Assert.Contains(AppPaths.GetSummaryStatePath(
+                tempDirectory.FullName,
+                "session-123",
+                turn.NotificationTurnId), assignment, StringComparison.Ordinal);
+            Assert.Contains(turn.NotificationNonce, assignment, StringComparison.Ordinal);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandleUserPromptSubmitAsyncUsesModifiedPromptForCopilotCliAssignment()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            HookCommandService service = CreateHookCommandService(
+                new RecordingHttpMessageHandler(),
+                stateStore: stateStore,
+                surface: HookSurface.CopilotCli);
+            UserPromptSubmitHookInput promptInput = new()
+            {
+                Cwd = tempDirectory.FullName,
+                SessionId = "session-123",
+                Timestamp = "2026-03-14T15:51:50.783Z",
+                TranscriptPath = "/workspace/transcript.json",
+                Prompt = "Ship the notification redesign.",
+            };
+            await using MemoryStream output = new();
+
+            int exitCode = await service.HandleUserPromptSubmitAsync(
+                CreateJsonStream(
+                    promptInput,
+                    AppJsonSerializerContext.Default.UserPromptSubmitHookInput),
+                output,
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+            NotificationTurn turn = Assert.Single(await stateStore.ListOpenTurnsAsync(
+                tempDirectory.FullName,
+                "session-123",
+                CancellationToken.None));
+            JsonElement root = ReadJsonRootElement(output);
+            AssertJsonProperties(root, "modifiedPrompt");
+            Assert.False(root.TryGetProperty("hookSpecificOutput", out _));
+            Assert.False(root.TryGetProperty("additionalContext", out _));
+            CopilotCliHookOutput response = await DeserializeCopilotCliHookOutputAsync(output);
+            Assert.Null(response.AdditionalContext);
+            string modifiedPrompt = Assert.IsType<string>(response.ModifiedPrompt);
+            const string reminderStart = "\n\n<system_reminder>\n";
+            const string reminderEnd = "\n</system_reminder>";
+            Assert.StartsWith(
+                promptInput.Prompt + reminderStart,
+                modifiedPrompt,
+                StringComparison.Ordinal);
+            Assert.EndsWith(reminderEnd, modifiedPrompt, StringComparison.Ordinal);
+            string assignment = modifiedPrompt.Substring(
+                promptInput.Prompt.Length + reminderStart.Length,
+                modifiedPrompt.Length
+                    - promptInput.Prompt.Length
+                    - reminderStart.Length
+                    - reminderEnd.Length);
+            Assert.Equal(promptInput.Prompt + reminderStart + assignment + reminderEnd, modifiedPrompt);
+            Assert.StartsWith("Notification Assignment", assignment, StringComparison.Ordinal);
+            Assert.Contains(AppPaths.GetSummaryStatePath(
+                tempDirectory.FullName,
+                "session-123",
+                turn.NotificationTurnId), assignment, StringComparison.Ordinal);
+            Assert.Contains(turn.NotificationNonce, assignment, StringComparison.Ordinal);
         }
         finally
         {
@@ -1762,6 +1897,34 @@ public sealed class HookCommandServiceTests
                 AppJsonSerializerContext.Default.HookResponse,
                 CancellationToken.None)
             ?? throw new InvalidOperationException("Expected a valid hook response.");
+    }
+
+    private static async Task<CopilotCliHookOutput> DeserializeCopilotCliHookOutputAsync(
+        MemoryStream output)
+    {
+        output.Position = 0;
+        return await JsonSerializer.DeserializeAsync(
+                output,
+                AppJsonSerializerContext.Default.CopilotCliHookOutput,
+                CancellationToken.None)
+            ?? throw new InvalidOperationException("Expected a valid Copilot CLI hook output.");
+    }
+
+    private static JsonElement ReadJsonRootElement(MemoryStream output)
+    {
+        using JsonDocument document = JsonDocument.Parse(output.ToArray());
+        return document.RootElement.Clone();
+    }
+
+    private static void AssertJsonProperties(JsonElement element, params string[] expectedNames)
+    {
+        string[] actualNames = element.EnumerateObject()
+            .Select(static property => property.Name)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(
+            expectedNames.Order(StringComparer.Ordinal).ToArray(),
+            actualNames);
     }
 
     private static async Task WriteSummaryAsync(

@@ -75,8 +75,14 @@ internal sealed class HookResponse
 
 internal sealed class CopilotCliHookOutput
 {
+    [JsonPropertyName("modifiedPrompt")]
+    public string? ModifiedPrompt { get; init; }
+
     [JsonPropertyName("additionalContext")]
     public string? AdditionalContext { get; init; }
+
+    [JsonPropertyName("suppressOutput")]
+    public bool? SuppressOutput { get; init; }
 
     [JsonPropertyName("decision")]
     public string? Decision { get; init; }
