@@ -408,7 +408,8 @@ into one concrete job, but it must preserve selector semantics and plan
 authority.
 
 Evidence aggregation is a terminal control-plane work group. It collects and
-reports validation-only evidence, emits the aggregate verdict artifact, and is
+reports validation-only evidence, emits the aggregate evidence manifest and
+aggregate summary, and is
 not a normal executable validation work group.
 
 ## Release-Shaped Artifact Validation Contract

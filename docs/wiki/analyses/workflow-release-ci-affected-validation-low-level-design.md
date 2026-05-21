@@ -453,8 +453,8 @@ Rules:
   materialization, no evidence expectations, and only the terminal
   `evidence-aggregation` obligation. Aggregation passes only after validating the
   plan, empty changed-files companion snapshot, non-null `changed-files-hash`, and
-  final manifest/aggregate evidence; no batch evidence bundle is required or
-  expected.
+  aggregate evidence manifest and aggregate summary final artifacts; no batch
+  evidence bundle is required or expected.
 - Changed-file paths are canonical repository-relative Git paths. Each path uses
   `/` separators, is case-sensitive, and must not be empty, absolute, start with
   `./`, contain `\`, contain empty path segments, contain `.` or `..` path
@@ -1486,8 +1486,14 @@ Provider failure rules:
   `fact-provider-insufficient`.
 
 Fact collection must not perform build, test, packaging, release-shaped artifact
-validation, publication, or remote publish-state observation. Those activities
-belong to execution-layer work groups authorized by the validation plan.
+validation, publication, or remote publish-state observation. For the listed
+release/build activities, build, test, packaging, and release-shaped artifact
+validation may belong to execution-layer work groups authorized by the validation
+plan; other plan-authorized validation-only checks, including lint, format,
+type-check, descriptor validation, workflow-release-tooling validation, and
+lightweight preflight, may also belong to execution-layer work groups.
+Publication and remote publish-state observation are never planned, executed, or
+accepted as CI validation evidence.
 
 The exact commands used to query ecosystem tools are implementation-owned, but
 the provider outputs must be deterministic and plan-inspectable.
@@ -2033,8 +2039,8 @@ Selector rules:
   execution batch that can emit into the closed batch evidence boundary. All such
   batches and their assigned logical work groups are verdict-relevant under this
   design. Aggregation reads the plan, execution-batch manifest, and batch evidence
-  bundles, emits the aggregate verdict artifact, and does not produce executable
-  validation evidence.
+  bundles, emits the aggregate evidence manifest and aggregate summary, and does
+  not produce executable validation evidence.
 - The terminal `evidence-aggregation` work group must be downstream of every
   executable work group, either by direct `depends-on` references or by the
   transitive dependency graph. A fail-closed plan has no executable work groups,
@@ -2061,7 +2067,7 @@ work-group selector appears in exactly one batch `ordered-selectors` list.
 | `release-shaped-artifact` for .NET                            | Windows                                                                                                 | Emits validation-only batch evidence rows                            |
 | `release-shaped-artifact` for Python or JavaScript/TypeScript | Ubuntu                                                                                                  | Emits validation-only batch evidence rows                            |
 | `workflow-release-tooling`                                    | Ubuntu, or Windows when the affected tooling surface requires Windows-only evidence                     | Uses separate selectors only when scope requires separate evidence   |
-| `evidence-aggregation`                                        | Ubuntu                                                                                                  | Terminal control-plane aggregation; emits aggregate verdict artifact |
+| `evidence-aggregation`                                        | Ubuntu                                                                                                  | Terminal control-plane aggregation; emits final aggregate artifacts  |
 
 The planner applies this table before freezing work groups and records the
 result in each executable selector. "Requires ecosystem runner" means the
@@ -2155,7 +2161,7 @@ execution-batch materialization attempts. If planning emits no readable plan,
 emits an invalid plan, or execution-batch materialization fails before producing a
 reliable executable batch set, aggregation emits an `invalid-plan` aggregate with
 zero executable batches rather than allowing the workflow to end without an
-aggregate artifact.
+aggregate evidence manifest and aggregate summary.
 
 ## 13. Release-Shaped Artifact Validation
 
@@ -3034,7 +3040,12 @@ cannot parse, schema-validate, digest-verify, producer-verify, or structurally
 validate the plan, it emits a failed aggregate with `reason.invalid-plan: true`,
 `reason.fail-closed: false`, unverified plan-derived fields set to `null` or
 `unknown`, empty `evidence-results`, zero executable counts, and exactly the
-applicable `invalid-plan` failure. If the plan is valid but a required post-plan
+applicable `invalid-plan` failure. If no authoritative plan exists because the
+request boundary is missing or unreplayable, aggregation uses
+`invalid-plan` detail `request-boundary-invalid`, must emit the applicable
+aggregation-produced `request-invalid` detail for every missing or unreplayable
+request-boundary path, sets `reason.required-evidence-missing: false`, admits no
+bundle, and emits the invalid-plan/no-bundle aggregate. If the plan is valid but a required post-plan
 control artifact or companion planning snapshot is invalid, no bundle is
 admissible and the aggregate follows the same `invalid-plan` path while retaining
 verified plan fields for inspection.
@@ -3068,27 +3079,27 @@ receipt-like files, if observed during migration, are diagnostic inputs only
 through the bounded artifact namespace checks below; they are never current
 authority for selector assignment, writer identity, or validation success.
 
-| Diagnostic family                     | Producer                                    | CI verdict effect                                                                     |
-| ------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `request-invalid`                     | planner                                     | fail-closed                                                                           |
-| `range-unconfirmed`                   | planner                                     | fail-closed                                                                           |
-| `unknown-change`                      | planner                                     | fail-closed                                                                           |
-| `subject-unresolved`                  | planner                                     | fail-closed                                                                           |
-| `dependency-impact-insufficient`      | planner                                     | fail-closed                                                                           |
-| `fact-provider-insufficient`          | planner                                     | fail-closed                                                                           |
-| `no-validation-capability`            | planner                                     | fail-closed                                                                           |
-| `infrastructure-surface-unclassified` | planner                                     | fail-closed                                                                           |
-| `descriptor-invalid`                  | planner or descriptor-validation work group | fail-closed when obligations cannot be derived; otherwise blocking validation failure |
-| `artifact-shape-unconfirmed`          | release-shaped validation work group        | blocking validation failure                                                           |
-| `validation-work-failed`              | executable validation work group            | blocking validation failure                                                           |
-| `validation-work-skipped`             | executable validation work group            | required evidence skipped                                                             |
-| `known-non-impacting`                 | planner                                     | inspectable non-failure                                                               |
-| `required-evidence-missing`           | aggregation                                 | failed verdict                                                                        |
-| `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                        |
-| `inadmissible-batch-evidence`         | aggregation                                 | failed verdict                                                                        |
-| `namespace-closure-failure`           | aggregation                                 | failed verdict or no authoritative final aggregate                                    |
-| `final-evidence-failure`              | aggregation                                 | failed verdict or no authoritative final aggregate                                    |
-| `invalid-plan`                        | aggregation                                 | failed verdict with `reason.invalid-plan: true` and `reason.fail-closed: false`       |
+| Diagnostic family                     | Producer                                    | CI verdict effect                                                                             |
+| ------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `request-invalid`                     | planner or aggregation                      | fail-closed when planner-produced; invalid-plan/no-bundle aggregate when aggregation-produced |
+| `range-unconfirmed`                   | planner                                     | fail-closed                                                                                   |
+| `unknown-change`                      | planner                                     | fail-closed                                                                                   |
+| `subject-unresolved`                  | planner                                     | fail-closed                                                                                   |
+| `dependency-impact-insufficient`      | planner                                     | fail-closed                                                                                   |
+| `fact-provider-insufficient`          | planner                                     | fail-closed                                                                                   |
+| `no-validation-capability`            | planner                                     | fail-closed                                                                                   |
+| `infrastructure-surface-unclassified` | planner                                     | fail-closed                                                                                   |
+| `descriptor-invalid`                  | planner or descriptor-validation work group | fail-closed when obligations cannot be derived; otherwise blocking validation failure         |
+| `artifact-shape-unconfirmed`          | release-shaped validation work group        | blocking validation failure                                                                   |
+| `validation-work-failed`              | executable validation work group            | blocking validation failure                                                                   |
+| `validation-work-skipped`             | executable validation work group            | required evidence skipped                                                                     |
+| `known-non-impacting`                 | planner                                     | inspectable non-failure                                                                       |
+| `required-evidence-missing`           | aggregation                                 | failed verdict                                                                                |
+| `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                                |
+| `inadmissible-batch-evidence`         | aggregation                                 | failed verdict                                                                                |
+| `namespace-closure-failure`           | aggregation                                 | failed verdict or no authoritative final aggregate                                            |
+| `final-evidence-failure`              | aggregation                                 | failed verdict or no authoritative final aggregate                                            |
+| `invalid-plan`                        | aggregation                                 | failed verdict with `reason.invalid-plan: true` and `reason.fail-closed: false`               |
 
 `diagnostic-detail` is a stable subcode for diagnostic families that need
 machine-readable reasons. `request-invalid` details are:
@@ -3102,6 +3113,16 @@ machine-readable reasons. `request-invalid` details are:
 - `request-digest-mismatch`;
 - `request-wrong-run-attempt`;
 - `request-producer-unverified`.
+
+Planner-produced `request-invalid` diagnostics require an authoritative
+fail-closed plan. When request input is missing or unreplayable and no
+authoritative plan exists, aggregation must emit the applicable
+aggregation-produced `request-invalid` diagnostic detail with the same closed
+detail taxonomy for every no-authoritative-plan request-boundary path. That
+aggregate path sets `reason.invalid-plan: true`, `reason.fail-closed: false`,
+and `reason.required-evidence-missing: false`; no execution-batch manifest or
+bundle is admissible, and the aggregate records the invalid-plan/no-bundle
+result.
 
 `range-unconfirmed` details are:
 
@@ -3139,6 +3160,7 @@ closure failures, not inadmissible batch evidence.
 - `schema-invalid`;
 - `plan-producer-unverified`;
 - `plan-digest-mismatch`;
+- `request-boundary-invalid`;
 - `subject-universe-digest-mismatch`;
 - `changed-files-impact-coverage-mismatch`;
 - `changed-files-snapshot-missing`;
