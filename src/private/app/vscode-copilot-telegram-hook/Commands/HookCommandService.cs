@@ -20,6 +20,10 @@ internal sealed class HookCommandService(
     ILogger<HookCommandService> logger)
 {
     private const string UtcTimestampFormat = "yyyy-MM-ddTHH:mm:ss.fff'Z'";
+    private static readonly HookOutputAdapter VsCodeAdapter =
+        new HookSpecificOutputAdapter();
+    private static readonly HookOutputAdapter CopilotCliAdapter =
+        new CopilotCliOutputAdapter();
 
     public async Task<int> HandleSessionStartAsync(
         Stream standardInput,
@@ -127,9 +131,9 @@ internal sealed class HookCommandService(
                 hookInput,
                 observation,
                 cancellationToken);
-            await WriteAdditionalContextResponseAsync(
+            await WriteUserPromptSubmitResponseAsync(
                 standardOutput,
-                "UserPromptSubmit",
+                hookInput.Prompt ?? string.Empty,
                 BuildNotificationAssignmentContext(workspacePath, turn),
                 cancellationToken);
         }
@@ -1149,19 +1153,38 @@ internal sealed class HookCommandService(
         string hookEventName,
         string additionalContext,
         CancellationToken cancellationToken)
-    {
-        if (hookExecutionContext.GetSurface() == HookSurface.CopilotCli)
-        {
-            await WriteCopilotCliHookOutputAsync(
-                standardOutput,
-                new CopilotCliHookOutput
-                {
-                    AdditionalContext = additionalContext,
-                },
-                cancellationToken);
-            return;
-        }
+        => await GetHookOutputAdapter().WriteAdditionalContextResponseAsync(
+            standardOutput,
+            hookEventName,
+            additionalContext,
+            cancellationToken);
 
+    private async Task WriteUserPromptSubmitResponseAsync(
+        Stream standardOutput,
+        string prompt,
+        string additionalContext,
+        CancellationToken cancellationToken)
+        => await GetHookOutputAdapter().WriteUserPromptSubmitResponseAsync(
+            standardOutput,
+            prompt,
+            additionalContext,
+            cancellationToken);
+
+    private HookOutputAdapter GetHookOutputAdapter()
+        => hookExecutionContext.GetSurface() switch
+        {
+            HookSurface.CopilotCli => CopilotCliAdapter,
+            HookSurface.VsCode => VsCodeAdapter,
+            _ => throw new InvalidOperationException(
+                $"Unsupported hook surface '{hookExecutionContext.GetSurface()}'."),
+        };
+
+    private static async Task WriteHookSpecificOutputResponseAsync(
+        Stream standardOutput,
+        string hookEventName,
+        string additionalContext,
+        CancellationToken cancellationToken)
+    {
         await WriteVsCodeHookResponseAsync(
             standardOutput,
             new HookResponse
@@ -1174,6 +1197,11 @@ internal sealed class HookCommandService(
             },
             cancellationToken);
     }
+
+    private static string BuildCopilotCliUserPromptSubmitModifiedPrompt(
+        string prompt,
+        string additionalContext)
+        => $"{prompt}\n\n<system_reminder>\n{additionalContext}\n</system_reminder>";
 
     private static async Task WriteVsCodeHookResponseAsync(
         Stream standardOutput,
@@ -1197,6 +1225,77 @@ internal sealed class HookCommandService(
             output,
             AppJsonSerializerContext.Default.CopilotCliHookOutput,
             cancellationToken);
+    }
+
+    private abstract class HookOutputAdapter
+    {
+        public abstract Task WriteAdditionalContextResponseAsync(
+            Stream standardOutput,
+            string hookEventName,
+            string additionalContext,
+            CancellationToken cancellationToken);
+
+        public abstract Task WriteUserPromptSubmitResponseAsync(
+            Stream standardOutput,
+            string prompt,
+            string additionalContext,
+            CancellationToken cancellationToken);
+    }
+
+    private sealed class HookSpecificOutputAdapter : HookOutputAdapter
+    {
+        public override Task WriteAdditionalContextResponseAsync(
+            Stream standardOutput,
+            string hookEventName,
+            string additionalContext,
+            CancellationToken cancellationToken)
+            => WriteHookSpecificOutputResponseAsync(
+                standardOutput,
+                hookEventName,
+                additionalContext,
+                cancellationToken);
+
+        public override Task WriteUserPromptSubmitResponseAsync(
+            Stream standardOutput,
+            string prompt,
+            string additionalContext,
+            CancellationToken cancellationToken)
+            => WriteHookSpecificOutputResponseAsync(
+                standardOutput,
+                "UserPromptSubmit",
+                additionalContext,
+                cancellationToken);
+    }
+
+    private sealed class CopilotCliOutputAdapter : HookOutputAdapter
+    {
+        public override Task WriteAdditionalContextResponseAsync(
+            Stream standardOutput,
+            string hookEventName,
+            string additionalContext,
+            CancellationToken cancellationToken)
+            => WriteCopilotCliHookOutputAsync(
+                standardOutput,
+                new CopilotCliHookOutput
+                {
+                    AdditionalContext = additionalContext,
+                },
+                cancellationToken);
+
+        public override Task WriteUserPromptSubmitResponseAsync(
+            Stream standardOutput,
+            string prompt,
+            string additionalContext,
+            CancellationToken cancellationToken)
+            => WriteCopilotCliHookOutputAsync(
+                standardOutput,
+                new CopilotCliHookOutput
+                {
+                    ModifiedPrompt = BuildCopilotCliUserPromptSubmitModifiedPrompt(
+                        prompt,
+                        additionalContext),
+                },
+                cancellationToken);
     }
 
     private sealed record SummaryValidationResult(

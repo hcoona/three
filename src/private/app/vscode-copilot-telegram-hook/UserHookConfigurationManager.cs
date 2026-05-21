@@ -587,13 +587,8 @@ internal static class UserHookConfigurationManager
     private static bool IsManagedCopilotCliHookEntryForRemoval(UserHookEntry? entry)
     {
         return IsManagedHookEntry(entry)
-            && entry?.Env.TryGetValue(
-                AppConstants.ManagedHookSurfaceEnvironmentVariable,
-                out string? surfaceValue) == true
-            && string.Equals(
-                surfaceValue,
-                AppConstants.ManagedHookCopilotCliSurfaceValue,
-                StringComparison.Ordinal);
+            && (IsManagedCopilotCliSurfaceEntry(entry)
+                || IsLegacyManagedCopilotCliEntry(entry));
     }
 
     private static bool IsStrictManagedCopilotCliHookEntry(
@@ -611,6 +606,25 @@ internal static class UserHookConfigurationManager
                 AppConstants.ManagedHookEventEnvironmentVariable,
                 out string? entryEventName)
             && string.Equals(entryEventName, eventName, StringComparison.Ordinal);
+    }
+
+    private static bool IsManagedCopilotCliSurfaceEntry(UserHookEntry? entry)
+    {
+        return entry?.Env.TryGetValue(
+            AppConstants.ManagedHookSurfaceEnvironmentVariable,
+            out string? surfaceValue) == true
+            && string.Equals(
+                surfaceValue,
+                AppConstants.ManagedHookCopilotCliSurfaceValue,
+                StringComparison.Ordinal);
+    }
+
+    private static bool IsLegacyManagedCopilotCliEntry(UserHookEntry? entry)
+    {
+        return entry is not null
+            && entry.TimeoutSec is not null
+            && !entry.TimeoutPropertyPresent
+            && !entry.Env.ContainsKey(AppConstants.ManagedHookSurfaceEnvironmentVariable);
     }
 
     private static bool CanDeleteManagedHookFile(

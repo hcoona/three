@@ -222,6 +222,104 @@ public sealed class UserHookConfigurationManagerTests
     }
 
     [Fact]
+    public void InstallManagedCopilotCliHookFileMigratesLegacyManagedTimeoutSecEntries()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            string hookFilePath = Path.Combine(
+                tempDirectory.FullName,
+                AppConstants.CopilotCliHookFileName);
+            File.WriteAllText(
+                hookFilePath,
+                """
+                {
+                  "version": 1,
+                  "hooks": {
+                    "SessionStart": [
+                      {
+                        "type": "command",
+                        "command": "custom session-start",
+                        "timeoutSec": 10,
+                        "env": {
+                          "CUSTOM_FLAG": "1"
+                        }
+                      },
+                      {
+                        "type": "command",
+                        "command": "legacy managed session-start",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "UserPromptSubmit": [
+                      {
+                        "type": "command",
+                        "command": "legacy managed user-prompt-submit",
+                        "timeoutSec": 10,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ],
+                    "Stop": [
+                      {
+                        "type": "command",
+                        "command": "legacy managed stop",
+                        "timeoutSec": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
+                        }
+                      }
+                    ]
+                  }
+                }
+                """);
+
+            ConfigurationApplyResult installResult =
+                UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
+                    hookFilePath,
+                    "managed session-start",
+                    "managed user-prompt-submit",
+                    "managed stop",
+                    "2026-03-13T12:34:56.789Z");
+
+            Assert.True(installResult.Applied);
+            UserHookSettingsDocument installedSettings = ReadSettings(hookFilePath);
+            Assert.True(
+                UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(hookFilePath));
+            Assert.DoesNotContain(
+                installedSettings.Hooks.SelectMany(static pair => pair.Value),
+                static entry => entry.Command?.StartsWith(
+                    "legacy managed ",
+                    StringComparison.Ordinal) == true);
+            Assert.Contains(
+                installedSettings.Hooks["SessionStart"],
+                static entry => entry.Command == "custom session-start");
+
+            foreach (string eventName in new[] { "SessionStart", "UserPromptSubmit", "Stop" })
+            {
+                UserHookEntry managedEntry = Assert.Single(
+                    installedSettings.Hooks[eventName],
+                    entry => entry.Env.TryGetValue(
+                        AppConstants.ManagedHookSurfaceEnvironmentVariable,
+                        out string? surface)
+                        && surface == AppConstants.ManagedHookCopilotCliSurfaceValue);
+                Assert.Equal(
+                    eventName,
+                    managedEntry.Env[AppConstants.ManagedHookEventEnvironmentVariable]);
+            }
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void InstallManagedCopilotCliHookFilePreservesExplicitNullTimeoutOnUnrelatedEntries()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();

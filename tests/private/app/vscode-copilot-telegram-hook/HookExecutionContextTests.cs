@@ -37,4 +37,16 @@ public sealed class HookExecutionContextTests : IDisposable
 
         Assert.Equal(HookSurface.CopilotCli, context.GetSurface());
     }
+
+    [Fact]
+    public void GetSurfaceDefaultsToVsCodeForUnknownSurfaceEnvironmentVariable()
+    {
+        Environment.SetEnvironmentVariable(
+            AppConstants.ManagedHookSurfaceEnvironmentVariable,
+            "unknown-surface");
+
+        HookExecutionContext context = new();
+
+        Assert.Equal(HookSurface.VsCode, context.GetSurface());
+    }
 }
