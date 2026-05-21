@@ -169,6 +169,55 @@ public sealed class HookCommandServiceTests
     }
 
     [Fact]
+    public async Task HandleUserPromptSubmitAsyncTreatsSystemNotificationAsObservationOnly()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            HookCommandService service = CreateHookCommandService(
+                new RecordingHttpMessageHandler(),
+                stateStore: stateStore);
+            UserPromptSubmitHookInput promptInput = new()
+            {
+                Cwd = tempDirectory.FullName,
+                SessionId = "session-123",
+                Timestamp = "2026-03-14T15:51:45.783Z",
+                TranscriptPath = "/workspace/transcript.json",
+                Prompt = string.Join(
+                    '\n',
+                    [
+                        "<system_notification>",
+                        "Agent finished processing.",
+                        "</system_notification>",
+                    ]),
+            };
+            await using MemoryStream output = new();
+
+            int exitCode = await service.HandleUserPromptSubmitAsync(
+                CreateJsonStream(
+                    promptInput,
+                    AppJsonSerializerContext.Default.UserPromptSubmitHookInput),
+                output,
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(0, output.Length);
+            Assert.Empty(await stateStore.ListOpenTurnsAsync(
+                tempDirectory.FullName,
+                "session-123",
+                CancellationToken.None));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ReviewerSubagentStopDoesNotCloseMainTurnAndLaterMainStopCanNotify()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
@@ -371,6 +420,10 @@ public sealed class HookCommandServiceTests
                 "session-123",
                 turn.NotificationTurnId), assignment, StringComparison.Ordinal);
             Assert.Contains(turn.NotificationNonce, assignment, StringComparison.Ordinal);
+            Assert.Contains(
+                "write summary in Chinese when practical",
+                assignment,
+                StringComparison.Ordinal);
         }
         finally
         {
@@ -443,6 +496,10 @@ public sealed class HookCommandServiceTests
                 "session-123",
                 turn.NotificationTurnId), assignment, StringComparison.Ordinal);
             Assert.Contains(turn.NotificationNonce, assignment, StringComparison.Ordinal);
+            Assert.Contains(
+                "write summary in Chinese when practical",
+                assignment,
+                StringComparison.Ordinal);
         }
         finally
         {
