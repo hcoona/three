@@ -7,7 +7,7 @@ import importlib.util
 from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import pytest
 from three_workflow_release_contracts import (
@@ -30,21 +30,35 @@ from three_workflow_release_contracts import (
     ci_validation_changed_files_snapshot_artifact_ref,
     ci_validation_execution_batch_manifest_artifact_ref,
     ci_validation_execution_batch_manifest_payload_digest,
+    ci_validation_execution_batch_matrix,
     ci_validation_fact_snapshot_artifact_ref,
     ci_validation_fact_snapshot_id,
     ci_validation_plan_artifact_ref,
     ci_validation_plan_digest,
     ci_validation_request_artifact_ref,
     ci_validation_request_projection,
+    ci_validation_subject_universe_id,
+    ci_validation_writer_id,
     freeze_ci_validation_aggregate_evidence_manifest,
     freeze_ci_validation_aggregate_summary,
     freeze_ci_validation_batch_evidence_bundle,
     freeze_ci_validation_execution_batch_manifest,
+    materialize_ci_validation_execution_batches,
     validate_ci_validation_aggregate_evidence_manifest,
     validate_ci_validation_aggregate_summary,
     validate_ci_validation_batch_evidence_bundle,
     validate_ci_validation_diagnostic_record,
     validate_ci_validation_execution_batch_manifest,
+)
+from three_workflow_release_contracts.ci_validation_batches import (
+    _execution_batch_matrix_identity,
+    _freeze_ci_validation_aggregate_evidence_manifest,
+    _materializer_artifact_obligations_by_work_group,
+    _materializer_batch_id,
+    _materializer_compatibility_key,
+    _materializer_compatibility_profile,
+    _validate_ci_validation_aggregate_evidence_manifest,
+    _validate_ci_validation_execution_batch_manifest,
 )
 
 if TYPE_CHECKING:
@@ -66,6 +80,10 @@ CREATED_AT = cast("str", _PLANS_MODULE.CREATED_AT)
 RUN_ATTEMPT = cast("str", _PLANS_MODULE.RUN_ATTEMPT)
 RUN_ID = cast("str", _PLANS_MODULE.RUN_ID)
 TREE_SHA = cast("str", _PLANS_MODULE.TREE_SHA)
+_BATCH_ID = (
+    "batch-exec-ecosystem-gate-python-python-"
+    "9e950ffb771ae95b7919ec4083bf6258d4dc6f96bdefff99ca4089e3efa74774"
+)
 _plan_snapshot = _PLANS_MODULE.__dict__["_plan_snapshot"]
 _scheduled_full_plan_snapshot = _PLANS_MODULE.__dict__[
     "_scheduled_full_plan_snapshot"
@@ -85,6 +103,14 @@ _OBSOLETE_FINAL_EVIDENCE_DETAILS = (
     "final-aggregate-non-canonical",
     "final-aggregate-digest-mismatch",
 )
+
+
+class _AuthorizingContextKwargs(TypedDict):
+    request: dict[str, object]
+    changed_files_snapshot: dict[str, object]
+    fact_snapshot: dict[str, object]
+    expected_run_id: str
+    expected_run_attempt: str
 
 
 def _diagnostic(  # noqa: PLR0913
@@ -145,19 +171,88 @@ def _fact_snapshot_document() -> dict[str, object]:
     return cast("dict[str, object]", deepcopy(fact_snapshot))
 
 
+def _authorizing_context_kwargs() -> _AuthorizingContextKwargs:
+    return {
+        "request": _request_document(),
+        "changed_files_snapshot": _changed_files_snapshot_document(),
+        "fact_snapshot": _fact_snapshot_document(),
+        "expected_run_id": RUN_ID,
+        "expected_run_attempt": RUN_ATTEMPT,
+    }
+
+
+def _release_plan_snapshot():
+    return _PLANS_MODULE.__dict__["freeze_ci_validation_plan"](
+        request=_PLANS_MODULE.__dict__["_normalized_request"](),
+        plan_id=cast("str", _PLANS_MODULE.__dict__["PLAN_ID"]),
+        created_at=CREATED_AT,
+        observed_commit_sha=TREE_SHA,
+        verdict_intent="executable",
+        classification=_PLANS_MODULE.__dict__["_classification"](),
+        subjects=[_PLANS_MODULE.__dict__["_descriptor_backed_subject"]()],
+        validation_obligations=[
+            _PLANS_MODULE.__dict__["_artifact_validation_obligation"](),
+            _PLANS_MODULE.__dict__["_validation_obligation"](),
+        ],
+        descriptor_obligations=[
+            _PLANS_MODULE.__dict__["_descriptor_obligation"]()
+        ],
+        artifact_obligations=[_PLANS_MODULE.__dict__["_artifact_obligation"]()],
+        work_groups=[
+            _PLANS_MODULE.__dict__["_artifact_work_group"](),
+            _PLANS_MODULE.__dict__["_descriptor_work_group"](),
+            _PLANS_MODULE.__dict__["_ecosystem_gate_work_group"](),
+        ],
+        evidence_expectations=[
+            _PLANS_MODULE.__dict__["_artifact_evidence_expectation"](),
+            _PLANS_MODULE.__dict__["_descriptor_evidence_expectation"](),
+            _PLANS_MODULE.__dict__["_evidence_expectation"](),
+        ],
+        fact_snapshot_providers=[
+            _PLANS_MODULE.__dict__["_descriptor_fact_provider"]()
+        ],
+    )
+
+
+def _release_plan_and_manifest() -> tuple[dict[str, object], dict[str, object]]:
+    snapshot = _release_plan_snapshot()
+    plan = cast("dict[str, object]", deepcopy(snapshot.plan))
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        request=_request_document(),
+        changed_files_snapshot=cast(
+            "dict[str, object]", snapshot.changed_files_snapshot
+        ),
+        fact_snapshot=cast("dict[str, object]", snapshot.fact_snapshot),
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
+    )
+    return plan, cast("dict[str, object]", materialization.manifest)
+
+
 def _compatibility_profile() -> dict[str, object]:
     return {
         "ecosystem": "python",
-        "setup-profile": "python-default",
-        "setup-profile-digest": "1" * 64,
-        "execution-profile": "python-build-test-type-check",
-        "execution-profile-digest": "2" * 64,
+        "setup-profile": "setup-ubuntu-python",
+        "setup-profile-digest": (
+            "86c40df02f2fa25adfc52b9e71c1d9dc00cbefcdc83c825d0ebadc69ecdf1a2c"
+        ),
+        "execution-profile": "exec-ecosystem-gate-python",
+        "execution-profile-digest": (
+            "acd7fc3c7f59881b60b25f216eb7ff93e22362ba23da443c9b4687dc0338d862"
+        ),
         "release-shaped-profile": None,
         "release-shaped-profile-digest": None,
     }
 
 
 def _batch(plan: dict[str, object]) -> dict[str, object]:
+    batch_id = (
+        "batch-exec-ecosystem-gate-python-python-"
+        "9e950ffb771ae95b7919ec4083bf6258d4dc6f96bdefff99ca4089e3efa74774"
+    )
     work_group = next(
         item
         for item in cast("list[dict[str, object]]", plan["work-groups"])
@@ -172,10 +267,21 @@ def _batch(plan: dict[str, object]) -> dict[str, object]:
         "evidence": {
             "category": evidence["category"],
             "planned-capabilities": evidence["planned-capabilities"],
+            "detail-profile": evidence.get("detail-profile"),
         },
     }
+    bundle_ref = ci_validation_batch_evidence_bundle_artifact_ref(
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        batch_id=batch_id,
+    )
+    matrix_identity = {
+        "batch-id": batch_id,
+        "runner-family": "ubuntu",
+        "expected-batch-evidence-bundle-ref": bundle_ref,
+    }
     return {
-        "batch-id": "batch-python-gate",
+        "batch-id": batch_id,
         "runner-family": "ubuntu",
         "compatibility-profile": _compatibility_profile(),
         "depends-on-batches": [],
@@ -188,24 +294,21 @@ def _batch(plan: dict[str, object]) -> dict[str, object]:
                 "expected-evidence-slot": slot,
             },
         ],
-        "expected-batch-evidence-bundle-ref": (
-            ci_validation_batch_evidence_bundle_artifact_ref(
-                run_id=RUN_ID,
-                run_attempt=RUN_ATTEMPT,
-                batch_id="batch-python-gate",
-            )
-        ),
+        "expected-batch-evidence-bundle-ref": bundle_ref,
         "batch-writer": {
             "identity-source": "github-actions-job-context",
             "expected-boundary": "execution-batch",
-            "expected-job-identity": "github-actions-job:" + "3" * 64,
+            "expected-job-identity": ci_validation_writer_id(
+                workflow="CI Validation",
+                job="execution-batch",
+                matrix=matrix_identity,
+            ),
             "provenance-fields": ["workflow", "job", "matrix"],
         },
     }
 
 
-def _budget(batch_count: int) -> dict[str, object]:
-    input_count = 5
+def _budget(batch_count: int, *, input_count: int = 5) -> dict[str, object]:
     return {
         "min-total-jobs": batch_count,
         "max-total-jobs": 18,
@@ -227,12 +330,32 @@ def _budget(batch_count: int) -> dict[str, object]:
     }
 
 
-def _manifest(plan: dict[str, object]) -> dict[str, object]:
+def _manifest(
+    plan: dict[str, object],
+    *,
+    authorizing: bool = True,
+) -> dict[str, object]:
+    affected_range = cast("dict[str, object]", plan["affected-range"])
+    fact_snapshot = cast("dict[str, object]", plan["fact-snapshot"])
+    input_count = 3
+    if affected_range.get("changed-files-hash") is not None:
+        input_count += 1
+    if fact_snapshot.get("status") == "available":
+        input_count += 1
+    if authorizing:
+        return freeze_ci_validation_execution_batch_manifest(
+            plan=plan,
+            **_authorizing_context_kwargs(),
+            batches=[_batch(plan)],
+            budget=_budget(1, input_count=input_count),
+            created_at=CREATED_AT,
+        )
     return freeze_ci_validation_execution_batch_manifest(
         plan=plan,
         batches=[_batch(plan)],
-        budget=_budget(1),
+        budget=_budget(1, input_count=input_count),
         created_at=CREATED_AT,
+        authorizing=False,
     )
 
 
@@ -253,6 +376,7 @@ def _add_dependent_work_group(plan: dict[str, object]) -> None:
     dependent_group = cast("dict[str, object]", deepcopy(base_group))
     dependent_group["work-group-id"] = "wg-dependent-gate"
     dependent_group["depends-on"] = [base_group["work-group-id"]]
+    dependent_group["ecosystem"] = "javascript"
     dependent_group["selector-variant"] = "dependent"
     work_groups.insert(-1, dependent_group)
     terminal_group = next(
@@ -306,12 +430,16 @@ def _add_extra_work_group(
     extra_group["work-group-id"] = work_group_id
     extra_group["depends-on"] = []
     work_groups.insert(-1, extra_group)
+    work_groups.sort(key=lambda item: str(item["work-group-id"]))
     extra_evidence = cast(
         "dict[str, object]", deepcopy(evidence_expectations[0])
     )
     extra_evidence["evidence-expectation-id"] = evidence_id
     extra_evidence["work-group-id"] = work_group_id
     evidence_expectations.append(extra_evidence)
+    evidence_expectations.sort(
+        key=lambda item: str(item["evidence-expectation-id"])
+    )
     plan["plan-digest"] = ci_validation_plan_digest(plan)
 
 
@@ -324,14 +452,6 @@ def _retarget_batch(
     plan: dict[str, object],
 ) -> dict[str, object]:
     retargeted = cast("dict[str, object]", deepcopy(batch))
-    retargeted["batch-id"] = batch_id
-    retargeted["expected-batch-evidence-bundle-ref"] = (
-        ci_validation_batch_evidence_bundle_artifact_ref(
-            run_id=RUN_ID,
-            run_attempt=RUN_ATTEMPT,
-            batch_id=batch_id,
-        )
-    )
     selector = cast("list[dict[str, object]]", retargeted["ordered-selectors"])[
         0
     ]
@@ -353,6 +473,8 @@ def _retarget_batch(
     cast("dict[str, object]", selector["expected-evidence-slot"])[
         "coverage-target"
     ] = group["coverage-target"]
+    slot = cast("dict[str, object]", selector["expected-evidence-slot"])
+    slot["ecosystem"] = group["ecosystem"]
     cast("dict[str, object]", selector["expected-evidence-slot"])[
         "selector-variant"
     ] = group["selector-variant"]
@@ -361,8 +483,100 @@ def _retarget_batch(
     ] = {
         "category": evidence["category"],
         "planned-capabilities": evidence["planned-capabilities"],
+        "detail-profile": evidence.get("detail-profile"),
     }
+    artifacts = _materializer_artifact_obligations_by_work_group(plan)
+    key = _materializer_compatibility_key(group, artifact_obligations=artifacts)
+    groups = {
+        cast("str", item["work-group-id"]): item
+        for item in cast("list[dict[str, object]]", plan["work-groups"])
+    }
+    profile = _materializer_compatibility_profile(
+        groups=groups,
+        work_group_ids=[work_group_id],
+        key_payload=key,
+    )
+    batch_id = _materializer_batch_id(
+        profile=profile,
+        work_group_ids=[work_group_id],
+    )
+    bundle_ref = ci_validation_batch_evidence_bundle_artifact_ref(
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        batch_id=batch_id,
+    )
+    retargeted["batch-id"] = batch_id
+    retargeted["compatibility-profile"] = profile
+    retargeted["expected-batch-evidence-bundle-ref"] = bundle_ref
+    writer = cast("dict[str, object]", retargeted["batch-writer"])
+    writer["expected-job-identity"] = ci_validation_writer_id(
+        workflow="CI Validation",
+        job="execution-batch",
+        matrix={
+            "batch-id": batch_id,
+            "runner-family": retargeted["runner-family"],
+            "expected-batch-evidence-bundle-ref": bundle_ref,
+        },
+    )
     return retargeted
+
+
+def _retarget_plan_to_ruby(
+    plan: dict[str, object],
+    fact_snapshot: dict[str, object],
+) -> None:
+    subjects = cast("list[dict[str, object]]", plan["subjects"])
+    work_groups = cast("list[dict[str, object]]", plan["work-groups"])
+    evidence_expectations = cast(
+        "list[dict[str, object]]", plan["evidence-expectations"]
+    )
+    validation_obligations = cast(
+        "list[dict[str, object]]", plan["validation-obligations"]
+    )
+    ruby_subject_id = "ruby.src-public-lib-example"
+    subject = subjects[0]
+    subject["subject-id"] = ruby_subject_id
+    subject["ecosystem"] = "ruby"
+    cast("dict[str, object]", subject["capabilities"])["type-check"] = False
+    cast("dict[str, object]", subject["inclusion"])["reason"] = "ruby workspace"
+    cast("dict[str, object]", plan["subject-universe"])["id"] = (
+        ci_validation_subject_universe_id(subjects)
+    )
+    for group in work_groups:
+        if group.get("kind") != "evidence-aggregation":
+            group["ecosystem"] = "ruby"
+            cast("dict[str, object]", group["coverage-target"])["id"] = (
+                ruby_subject_id
+            )
+            cast("dict[str, object]", group["expected-evidence"])[
+                "planned-capabilities"
+            ] = ["build", "test"]
+    for expectation in evidence_expectations:
+        cast("dict[str, object]", expectation["coverage-target"])["id"] = (
+            ruby_subject_id
+        )
+        expectation["planned-capabilities"] = ["build", "test"]
+    for obligation in validation_obligations:
+        cast("dict[str, object]", obligation["coverage-target"])["id"] = (
+            ruby_subject_id
+        )
+    classification = cast("dict[str, object]", plan["classification"])
+    impact = cast("list[dict[str, object]]", classification["impacts"])[0]
+    cast("dict[str, object]", impact["coverage-target"])["id"] = ruby_subject_id
+    provenance = cast(
+        "list[dict[str, object]]",
+        classification["subject-selection-provenance"],
+    )[0]
+    provenance["subject-id"] = ruby_subject_id
+    providers = cast("list[dict[str, object]]", fact_snapshot["providers"])
+    provider = providers[0]
+    provider["provider"] = "ruby"
+    provider["provider-version"] = "bundler-workspace/v1"
+    provider["subjects"] = [ruby_subject_id]
+    fact_snapshot_id = ci_validation_fact_snapshot_id(providers)
+    fact_snapshot["fact-snapshot-id"] = fact_snapshot_id
+    cast("dict[str, object]", plan["fact-snapshot"])["id"] = fact_snapshot_id
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
 
 
 def _dependent_batches(plan: dict[str, object]) -> list[dict[str, object]]:
@@ -381,14 +595,14 @@ def _dependent_batches(plan: dict[str, object]) -> list[dict[str, object]]:
         evidence_id="evidence-dependent-gate",
         plan=plan,
     )
-    second["depends-on-batches"] = ["batch-base-gate"]
+    second["depends-on-batches"] = [first["batch-id"]]
     return [first, second]
 
 
 def _selector_result(
     plan: dict[str, object],
     manifest: dict[str, object],
-    batch_id: str = "batch-python-gate",
+    batch_id: str = _BATCH_ID,
 ) -> dict[str, object]:
     batch = next(
         item
@@ -441,19 +655,13 @@ def _bundle(
     plan: dict[str, object],
     manifest: dict[str, object],
 ) -> dict[str, object]:
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
     return freeze_ci_validation_batch_evidence_bundle(
         plan=plan,
         execution_batch_manifest=manifest,
-        batch_id="batch-python-gate",
+        batch_id=_BATCH_ID,
         selector_results=[_selector_result(plan, manifest)],
-        writer={
-            "identity-source": "github-actions-job-context",
-            "expected-boundary": "execution-batch",
-            "expected-job-identity": "github-actions-job:" + "3" * 64,
-            "observed-workflow": "CI Validation",
-            "observed-job": "ci-validation-batch",
-            "observed-matrix": {"batch-id": "batch-python-gate"},
-        },
+        writer=_writer_for_batch(manifest, cast("str", batch["batch-id"])),
         execution_tree={
             "observed-commit-sha": TREE_SHA,
             "source": "execution-batch-boundary",
@@ -463,6 +671,26 @@ def _bundle(
         completed_at=CREATED_AT,
         created_at=CREATED_AT,
     )
+
+
+def _writer_for_batch(
+    manifest: dict[str, object],
+    batch_id: str,
+) -> dict[str, object]:
+    batch = next(
+        item
+        for item in cast("list[dict[str, object]]", manifest["batches"])
+        if item["batch-id"] == batch_id
+    )
+    batch_writer = cast("dict[str, object]", batch["batch-writer"])
+    return {
+        "identity-source": "github-actions-job-context",
+        "expected-boundary": "execution-batch",
+        "expected-job-identity": batch_writer["expected-job-identity"],
+        "observed-workflow": "CI Validation",
+        "observed-job": manifest["execution-job"],
+        "observed-matrix": _execution_batch_matrix_identity(batch),
+    }
 
 
 def _input_artifact(
@@ -496,7 +724,7 @@ def _aggregate_evidence_manifest(
     candidate_id = ci_validation_batch_evidence_candidate_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
-        batch_id="batch-python-gate",
+        batch_id=_BATCH_ID,
         artifact_ref=batch_ref,
         artifact_instance_id="2001",
         physical_artifact_name=physical_name,
@@ -589,7 +817,7 @@ def _aggregate_evidence_manifest(
         input_artifacts=input_artifacts,
         batch_bundles=[
             {
-                "batch-id": "batch-python-gate",
+                "batch-id": _BATCH_ID,
                 "artifact-ref": batch_ref,
                 "expected-cardinality": 1,
                 "slot-admissibility": "valid",
@@ -763,7 +991,7 @@ def _aggregate_summary(
         diagnostics=[],
         batch_bundles=[
             {
-                "batch-id": "batch-python-gate",
+                "batch-id": _BATCH_ID,
                 "artifact-ref": bundle["artifact-ref"],
                 "bundle-id": bundle_id,
                 "admitted-candidate-id": cast(
@@ -779,7 +1007,7 @@ def _aggregate_summary(
             {
                 "evidence-expectation-id": "evidence-python-gate",
                 "work-group-id": "wg-python-gate",
-                "batch-id": "batch-python-gate",
+                "batch-id": _BATCH_ID,
                 "bundle-id": bundle_id,
                 "selector-index": 0,
                 "outcome": "satisfied",
@@ -830,6 +1058,37 @@ def _set_input_absent(
     artifact["admissibility"] = admissibility
 
 
+def _zero_batch_execution_manifest(
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    result = deepcopy(manifest)
+    result["batches"] = []
+    budget = cast("dict[str, object]", manifest["budget"])
+    input_count = cast(
+        "int",
+        budget["expected-input-non-bundle-validation-artifacts"],
+    )
+    result["budget"] = _budget(0, input_count=input_count)
+    return result
+
+
+def _mark_aggregate_manifest_no_authority(
+    aggregate_manifest: dict[str, object],
+) -> None:
+    aggregate_manifest["batch-bundles"] = []
+    aggregate_manifest["projection-authority"] = None
+    aggregate_manifest["pre-final-validation-artifacts"] = 5
+    cast("dict[str, object]", aggregate_manifest["namespace-overflow"])[
+        "observed-prefixed-artifact-count-lower-bound"
+    ] = 5
+    _set_input_absent(
+        aggregate_manifest,
+        "validation-plan",
+        required=True,
+        admissibility="missing",
+    )
+
+
 def _batch_bundle_slot(batch_id: str) -> dict[str, object]:
     artifact_ref = ci_validation_batch_evidence_bundle_artifact_ref(
         run_id=RUN_ID,
@@ -863,6 +1122,199 @@ def _batch_bundle_slot(batch_id: str) -> dict[str, object]:
         ],
         "diagnostics": [],
     }
+
+
+def test_batch_bundle_rejects_planless_non_empty_execution_manifest() -> None:
+    """Planless bundle validation cannot authorize non-empty batches."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            execution_batch_manifest=manifest,
+        )
+
+    assert any(issue.path == "authorizing" for issue in exc_info.value.issues)
+
+
+def test_summary_rejects_planless_non_empty_execution_manifest() -> None:
+    """Planless summary validation cannot bind non-empty batch manifests."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle, manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            execution_batch_manifest=manifest,
+            _require_aggregate_evidence_manifest=False,
+        )
+
+    assert any(issue.path == "authorizing" for issue in exc_info.value.issues)
+
+
+def test_public_aggregate_validator_rejects_bypass_kwargs() -> None:
+    """Public aggregate validation does not expose internal bypass flags."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    validator = cast("Any", validate_ci_validation_aggregate_evidence_manifest)
+
+    with pytest.raises(TypeError):
+        validator(
+            aggregate_manifest,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            _require_authoritative_snapshot_inputs=False,
+        )
+
+
+def test_public_aggregate_freezer_rejects_bypass_kwargs() -> None:
+    """Public aggregate freezing does not expose internal bypass flags."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    freezer = cast("Any", freeze_ci_validation_aggregate_evidence_manifest)
+
+    with pytest.raises(TypeError):
+        freezer(
+            created_at=CREATED_AT,
+            repository_owner="hcoona",
+            repository_name="three",
+            workflow="CI Validation",
+            run_id=RUN_ID,
+            run_attempt=RUN_ATTEMPT,
+            input_artifacts={},
+            batch_bundles=[],
+            unexpected_contract_artifacts=[],
+            namespace_overflow={
+                "detected": False,
+                "observed-prefixed-artifact-count-lower-bound": 0,
+                "max-prefixed-validation-artifacts": 18,
+                "diagnostics": [],
+            },
+            pre_final_validation_artifacts=0,
+            namespace_closed_at=CREATED_AT,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            _require_authoritative_snapshot_inputs=False,
+        )
+
+
+def test_no_authority_aggregate_rejects_stale_plan_identity() -> None:
+    """No-authority aggregate manifests must not carry stale plan identity."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    _mark_aggregate_manifest_no_authority(aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            execution_batch_manifest=_zero_batch_execution_manifest(manifest),
+        )
+
+    assert any(issue.path == "$.plan-id" for issue in exc_info.value.issues)
+    assert any(issue.path == "$.plan-digest" for issue in exc_info.value.issues)
+
+
+def test_no_authority_summary_rejects_stale_plan_identity() -> None:
+    """No-authority aggregate summaries must not carry stale plan identity."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle, manifest)
+    _mark_aggregate_manifest_no_authority(aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            aggregate_evidence_manifest=aggregate_manifest,
+            execution_batch_manifest=_zero_batch_execution_manifest(manifest),
+        )
+
+    assert any(issue.path == "$.plan-id" for issue in exc_info.value.issues)
+    assert any(issue.path == "$.plan-digest" for issue in exc_info.value.issues)
+
+
+def test_summary_without_authority_rejects_stale_plan_identity() -> None:
+    """Summary-only validation cannot bind stale plan identity."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_missing_aggregate_manifest(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            execution_batch_manifest=_zero_batch_execution_manifest(manifest),
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+            _require_aggregate_evidence_manifest=False,
+        )
+
+    assert {
+        "$.plan-id",
+        "$.plan-digest",
+    }.issubset({issue.path for issue in exc_info.value.issues})
+
+
+def test_summary_freezer_without_authority_nulls_plan_identity() -> None:
+    """Summary freezing cannot use stale execution manifest identity."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    template = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_missing_aggregate_manifest(template)
+
+    summary = freeze_ci_validation_aggregate_summary(
+        created_at=CREATED_AT,
+        repository_owner="hcoona",
+        repository_name="three",
+        workflow="CI Validation",
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        aggregate_evidence_manifest=cast(
+            "dict[str, object]",
+            template["aggregate-evidence-manifest"],
+        ),
+        final_artifacts=cast("dict[str, object]", template["final-artifacts"]),
+        validation_tree=cast("dict[str, object]", template["validation-tree"]),
+        affected_range=cast("dict[str, object]", template["affected-range"]),
+        request=cast("dict[str, object]", template["request"]),
+        scheduled_full=cast("dict[str, object]", template["scheduled-full"]),
+        verdict=cast("str", template["verdict"]),
+        reason=cast("dict[str, object]", template["reason"]),
+        budgets=cast("dict[str, object]", template["budgets"]),
+        diagnostics=cast("list[dict[str, object]]", template["diagnostics"]),
+        batch_bundles=cast(
+            "list[dict[str, object]]",
+            template["batch-bundles"],
+        ),
+        evidence_results=cast(
+            "list[dict[str, object]]",
+            template["evidence-results"],
+        ),
+        failures=cast("list[dict[str, object]]", template["failures"]),
+        work_groups=cast("dict[str, object]", template["work-groups"]),
+        execution_batch_manifest=_zero_batch_execution_manifest(manifest),
+        request_document=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+    assert summary["plan-id"] is None
+    assert summary["plan-digest"] is None
 
 
 def _unexpected_artifact(index: int) -> dict[str, object]:
@@ -1133,7 +1585,7 @@ def _mark_summary_missing_evidence(summary: dict[str, object]) -> None:
         kind="inadmissible-batch-evidence",
         diagnostic_id="inadmissible-batch-evidence",
         message="Required batch evidence was not admissible.",
-        related_ids={"batch-id": "batch-python-gate"},
+        related_ids={"batch-id": _BATCH_ID},
     )
 
 
@@ -1297,15 +1749,17 @@ def _dependent_bundle_fixture() -> tuple[
     _add_dependent_work_group(plan)
     manifest = freeze_ci_validation_execution_batch_manifest(
         plan=plan,
+        **_authorizing_context_kwargs(),
         batches=_dependent_batches(plan),
         budget=_budget(2),
         created_at=CREATED_AT,
     )
-    result = _selector_result(plan, manifest, "batch-dependent-gate")
+    base_batch_id, dependent_batch_id = _dependent_batch_ids(manifest)
+    result = _selector_result(plan, manifest, dependent_batch_id)
     result["dependency-results"] = [
         {
             "work-group-id": "wg-python-gate",
-            "source-batch-id": "batch-base-gate",
+            "source-batch-id": base_batch_id,
             "outcome": "satisfied",
             "admitted-for-gating": True,
         }
@@ -1313,16 +1767,9 @@ def _dependent_bundle_fixture() -> tuple[
     bundle = freeze_ci_validation_batch_evidence_bundle(
         plan=plan,
         execution_batch_manifest=manifest,
-        batch_id="batch-dependent-gate",
+        batch_id=dependent_batch_id,
         selector_results=[result],
-        writer={
-            "identity-source": "github-actions-job-context",
-            "expected-boundary": "execution-batch",
-            "expected-job-identity": "github-actions-job:" + "3" * 64,
-            "observed-workflow": "CI Validation",
-            "observed-job": "ci-validation-batch",
-            "observed-matrix": {"batch-id": "batch-dependent-gate"},
-        },
+        writer=_writer_for_batch(manifest, dependent_batch_id),
         execution_tree={
             "observed-commit-sha": TREE_SHA,
             "source": "execution-batch-boundary",
@@ -1333,6 +1780,19 @@ def _dependent_bundle_fixture() -> tuple[
         created_at=CREATED_AT,
     )
     return plan, manifest, bundle
+
+
+def _dependent_batch_ids(manifest: dict[str, object]) -> tuple[str, str]:
+    by_work_group: dict[str, str] = {}
+    for batch in cast("list[dict[str, object]]", manifest["batches"]):
+        for selector in cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        ):
+            by_work_group[cast("str", selector["work-group-id"])] = cast(
+                "str", batch["batch-id"]
+            )
+    return by_work_group["wg-python-gate"], by_work_group["wg-dependent-gate"]
 
 
 def _bundle_for_batch(
@@ -1350,14 +1810,7 @@ def _bundle_for_batch(
             if selector_result is None
             else selector_result
         ],
-        writer={
-            "identity-source": "github-actions-job-context",
-            "expected-boundary": "execution-batch",
-            "expected-job-identity": "github-actions-job:" + "3" * 64,
-            "observed-workflow": "CI Validation",
-            "observed-job": "ci-validation-batch",
-            "observed-matrix": {"batch-id": batch_id},
-        },
+        writer=_writer_for_batch(manifest, batch_id),
         execution_tree={
             "observed-commit-sha": TREE_SHA,
             "source": "execution-batch-boundary",
@@ -1381,16 +1834,18 @@ def _dependent_admitted_fixture() -> tuple[
     _add_dependent_work_group(plan)
     manifest = freeze_ci_validation_execution_batch_manifest(
         plan=plan,
+        **_authorizing_context_kwargs(),
         batches=_dependent_batches(plan),
         budget=_budget(2),
         created_at=CREATED_AT,
     )
-    base_bundle = _bundle_for_batch(plan, manifest, "batch-base-gate")
-    result = _selector_result(plan, manifest, "batch-dependent-gate")
+    base_batch_id, dependent_batch_id = _dependent_batch_ids(manifest)
+    base_bundle = _bundle_for_batch(plan, manifest, base_batch_id)
+    result = _selector_result(plan, manifest, dependent_batch_id)
     result["dependency-results"] = [
         {
             "work-group-id": "wg-python-gate",
-            "source-batch-id": "batch-base-gate",
+            "source-batch-id": base_batch_id,
             "outcome": "satisfied",
             "admitted-for-gating": True,
         }
@@ -1398,7 +1853,7 @@ def _dependent_admitted_fixture() -> tuple[
     dependent_bundle = _bundle_for_batch(
         plan,
         manifest,
-        "batch-dependent-gate",
+        dependent_batch_id,
         result,
     )
     aggregate_manifest = _aggregate_evidence_manifest_for_bundles(
@@ -1538,7 +1993,7 @@ def _aggregate_evidence_manifest_for_bundles(
     manifest: dict[str, object],
     bundles: list[dict[str, object]],
 ) -> dict[str, object]:
-    return freeze_ci_validation_aggregate_evidence_manifest(
+    return _freeze_ci_validation_aggregate_evidence_manifest(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -1988,9 +2443,9 @@ def test_artifact_refs_follow_execution_batch_layout() -> None:
     assert ci_validation_batch_evidence_bundle_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
-        batch_id="batch-python-gate",
+        batch_id=_BATCH_ID,
     ) == (
-        "ci-validation/bundles/25887422010/1/batch-python-gate/"
+        f"ci-validation/bundles/25887422010/1/{_BATCH_ID}/"
         "batch-evidence-bundle.json"
     )
     assert ci_validation_aggregate_evidence_manifest_artifact_ref(
@@ -2013,7 +2468,11 @@ def test_execution_batch_manifest_freezes_and_validates() -> None:
     plan = _plan()
     manifest = _manifest(plan)
 
-    validate_ci_validation_execution_batch_manifest(manifest, plan=plan)
+    validate_ci_validation_execution_batch_manifest(
+        manifest,
+        plan=plan,
+        authorizing=False,
+    )
 
     assert manifest["kind"] == CiValidationKind.EXECUTION_BATCH_MANIFEST.value
     assert (
@@ -2027,6 +2486,357 @@ def test_execution_batch_manifest_freezes_and_validates() -> None:
     )
 
 
+def test_execution_batch_manifest_rejects_forged_writer_id() -> None:
+    """Batch writer IDs are recomputed from workflow, job, and matrix."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    writer = cast("dict[str, object]", batch["batch-writer"])
+    writer["expected-job-identity"] = "github-actions-job:" + "f" * 64
+
+    with pytest.raises(ContractValidationError, match="expected-job-identity"):
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+
+def test_execution_batch_matrix_recomputes_writer_ids() -> None:
+    """Matrix projection emits writer IDs from explicit identity payload."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    row = cast(
+        "list[dict[str, object]]",
+        ci_validation_execution_batch_matrix(
+            manifest,
+            plan=plan,
+            **_authorizing_context_kwargs(),
+        )["include"],
+    )[0]
+
+    expected = ci_validation_writer_id(
+        workflow="CI Validation",
+        job=cast("str", manifest["execution-job"]),
+        matrix={
+            "batch-id": batch["batch-id"],
+            "runner-family": batch["runner-family"],
+            "expected-batch-evidence-bundle-ref": batch[
+                "expected-batch-evidence-bundle-ref"
+            ],
+        },
+    )
+    assert row["identity-matrix"] == {
+        "batch-id": batch["batch-id"],
+        "runner-family": batch["runner-family"],
+        "expected-batch-evidence-bundle-ref": batch[
+            "expected-batch-evidence-bundle-ref"
+        ],
+    }
+    assert row["expected-job-identity"] == expected
+    full_row_identity = ci_validation_writer_id(
+        workflow="CI Validation",
+        job=cast("str", manifest["execution-job"]),
+        matrix=row,
+    )
+    assert row["expected-job-identity"] != full_row_identity
+
+
+def test_materializer_binds_custom_execution_job() -> None:
+    """Custom execution job names flow into manifest, writer, and matrix IDs."""
+    snapshot = _PLANS_MODULE.__dict__["_plan_snapshot"]()
+    execution_job = "custom-execution-batch"
+
+    materialization = materialize_ci_validation_execution_batches(
+        plan=cast("dict[str, object]", snapshot.plan),
+        request=_request_document(),
+        changed_files_snapshot=cast(
+            "dict[str, object]", snapshot.changed_files_snapshot
+        ),
+        fact_snapshot=cast("dict[str, object]", snapshot.fact_snapshot),
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+        execution_job=execution_job,
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
+    )
+    manifest = cast("dict[str, object]", materialization.manifest)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    identity = _execution_batch_matrix_identity(batch)
+    expected_writer_id = ci_validation_writer_id(
+        workflow="CI Validation",
+        job=execution_job,
+        matrix=identity,
+    )
+    row = cast(
+        "list[dict[str, object]]",
+        materialization.matrix["include"],
+    )[0]
+
+    assert manifest["execution-job"] == execution_job
+    assert (
+        cast("dict[str, object]", batch["batch-writer"])[
+            "expected-job-identity"
+        ]
+        == expected_writer_id
+    )
+    assert row["identity-matrix"] == identity
+    assert row["expected-job-identity"] == expected_writer_id
+
+
+def test_materializer_supports_ruby_batch_compatibility() -> None:
+    """Ruby work groups materialize into registered compatibility profiles."""
+    snapshot = _PLANS_MODULE.__dict__["_plan_snapshot"]()
+    plan = cast("dict[str, object]", deepcopy(snapshot.plan))
+    fact_snapshot = cast(
+        "dict[str, object]",
+        deepcopy(snapshot.fact_snapshot),
+    )
+    _retarget_plan_to_ruby(plan, fact_snapshot)
+
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        request=_request_document(),
+        changed_files_snapshot=cast(
+            "dict[str, object]", snapshot.changed_files_snapshot
+        ),
+        fact_snapshot=fact_snapshot,
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
+    )
+    batches = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", materialization.manifest)["batches"],
+    )
+    ruby_batches = [
+        batch
+        for batch in batches
+        if cast("dict[str, object]", batch["compatibility-profile"])[
+            "ecosystem"
+        ]
+        == "ruby"
+    ]
+
+    assert len(ruby_batches) == 1
+    assert (
+        cast(
+            "dict[str, object]",
+            ruby_batches[0]["compatibility-profile"],
+        )["setup-profile"]
+        == "setup-ubuntu-ruby"
+    )
+    assert any(
+        row["batch-id"] == ruby_batches[0]["batch-id"]
+        for row in cast(
+            "list[dict[str, object]]",
+            materialization.matrix["include"],
+        )
+    )
+
+
+def test_materializer_rejects_ruby_windows_runner_family() -> None:
+    """Ruby materialization inherits the Ubuntu-only runner constraint."""
+    snapshot = _PLANS_MODULE.__dict__["_plan_snapshot"]()
+    plan = cast("dict[str, object]", deepcopy(snapshot.plan))
+    fact_snapshot = cast(
+        "dict[str, object]",
+        deepcopy(snapshot.fact_snapshot),
+    )
+    _retarget_plan_to_ruby(plan, fact_snapshot)
+    for group in cast("list[dict[str, object]]", plan["work-groups"]):
+        if group["kind"] != "evidence-aggregation":
+            group["runner-family"] = "windows"
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+
+    with pytest.raises(ContractValidationError, match="runner-family"):
+        materialize_ci_validation_execution_batches(
+            plan=plan,
+            request=_request_document(),
+            changed_files_snapshot=cast(
+                "dict[str, object]", snapshot.changed_files_snapshot
+            ),
+            fact_snapshot=fact_snapshot,
+            created_at=CREATED_AT,
+            execution_workflow="CI Validation",
+            expected_run_id=RUN_ID,
+            expected_run_attempt=RUN_ATTEMPT,
+        )
+
+
+def test_materializer_requires_explicit_current_run_inputs() -> None:
+    """Materialization cannot fall back to stale plan-envelope run context."""
+    snapshot = _PLANS_MODULE.__dict__["_plan_snapshot"]()
+
+    with pytest.raises(ContractValidationError, match="expected-run-id"):
+        materialize_ci_validation_execution_batches(
+            plan=cast("dict[str, object]", snapshot.plan),
+            request=_request_document(),
+            changed_files_snapshot=cast(
+                "dict[str, object]", snapshot.changed_files_snapshot
+            ),
+            fact_snapshot=cast("dict[str, object]", snapshot.fact_snapshot),
+            created_at=CREATED_AT,
+            execution_workflow="CI Validation",
+            expected_run_attempt=RUN_ATTEMPT,
+        )
+    with pytest.raises(ContractValidationError, match="expected-run-attempt"):
+        materialize_ci_validation_execution_batches(
+            plan=cast("dict[str, object]", snapshot.plan),
+            request=_request_document(),
+            changed_files_snapshot=cast(
+                "dict[str, object]", snapshot.changed_files_snapshot
+            ),
+            fact_snapshot=cast("dict[str, object]", snapshot.fact_snapshot),
+            created_at=CREATED_AT,
+            execution_workflow="CI Validation",
+            expected_run_id=RUN_ID,
+        )
+    with pytest.raises(ContractValidationError, match="execution-workflow"):
+        materialize_ci_validation_execution_batches(
+            plan=cast("dict[str, object]", snapshot.plan),
+            request=_request_document(),
+            changed_files_snapshot=cast(
+                "dict[str, object]", snapshot.changed_files_snapshot
+            ),
+            fact_snapshot=cast("dict[str, object]", snapshot.fact_snapshot),
+            created_at=CREATED_AT,
+            expected_run_id=RUN_ID,
+            expected_run_attempt=RUN_ATTEMPT,
+        )
+
+
+def test_materializer_splits_release_batches_by_receipt_shape_only() -> None:
+    """Receipt-only release obligation changes affect profile digests."""
+    provider = _PLANS_MODULE.__dict__["_descriptor_fact_provider"]()
+    catalog = cast("dict[str, object]", provider["target-catalog"])
+    entries = cast("list[dict[str, object]]", catalog["entries"])
+    receipt_entry = deepcopy(entries[0])
+    receipt_entry["profile"] = "wheel-alt-receipt"
+    cast("dict[str, object]", receipt_entry["release-receipt"])[
+        "logical-receipt-role"
+    ] = "build-alt"
+    entries.append(receipt_entry)
+
+    base_obligation = _PLANS_MODULE.__dict__["_artifact_obligation"]()
+    receipt_obligation = deepcopy(base_obligation)
+    receipt_obligation["artifact-obligation-id"] = (
+        "artifact-example-alt-receipt"
+    )
+    receipt_obligation["validation-obligation-id"] = (
+        "validation-artifact-alt-receipt"
+    )
+    receipt_obligation["profile-coverage"] = ["wheel-alt-receipt"]
+    receipt_obligation["work-group-id"] = "wg-artifact-alt-receipt"
+    receipt_obligation["expected-evidence-id"] = "evidence-artifact-alt-receipt"
+    cast("dict[str, object]", receipt_obligation["release-receipt"])[
+        "logical-receipt-role"
+    ] = "build-alt"
+
+    receipt_work_group = _PLANS_MODULE.__dict__["_artifact_work_group"]()
+    receipt_work_group["work-group-id"] = "wg-artifact-alt-receipt"
+    receipt_work_group["coverage-target"] = {
+        "type": "artifact-obligation",
+        "id": "artifact-example-alt-receipt",
+    }
+    receipt_evidence = _PLANS_MODULE.__dict__[
+        "_artifact_evidence_expectation"
+    ]()
+    receipt_evidence["evidence-expectation-id"] = (
+        "evidence-artifact-alt-receipt"
+    )
+    receipt_evidence["work-group-id"] = "wg-artifact-alt-receipt"
+    receipt_evidence["coverage-target"] = {
+        "type": "artifact-obligation",
+        "id": "artifact-example-alt-receipt",
+    }
+    receipt_validation = _PLANS_MODULE.__dict__[
+        "_artifact_validation_obligation"
+    ]()
+    receipt_validation["validation-obligation-id"] = (
+        "validation-artifact-alt-receipt"
+    )
+    receipt_validation["coverage-target"] = {
+        "type": "artifact-obligation",
+        "id": "artifact-example-alt-receipt",
+    }
+    receipt_validation["work-group-id"] = "wg-artifact-alt-receipt"
+    receipt_validation["expected-evidence-id"] = "evidence-artifact-alt-receipt"
+
+    snapshot = _PLANS_MODULE.__dict__["freeze_ci_validation_plan"](
+        request=_PLANS_MODULE.__dict__["_normalized_request"](),
+        plan_id=cast("str", _PLANS_MODULE.__dict__["PLAN_ID"]),
+        created_at=CREATED_AT,
+        observed_commit_sha=TREE_SHA,
+        verdict_intent="executable",
+        classification=_PLANS_MODULE.__dict__["_classification"](),
+        subjects=[_PLANS_MODULE.__dict__["_descriptor_backed_subject"]()],
+        validation_obligations=[
+            _PLANS_MODULE.__dict__["_artifact_validation_obligation"](),
+            receipt_validation,
+            _PLANS_MODULE.__dict__["_validation_obligation"](),
+        ],
+        descriptor_obligations=[
+            _PLANS_MODULE.__dict__["_descriptor_obligation"]()
+        ],
+        artifact_obligations=[base_obligation, receipt_obligation],
+        work_groups=[
+            _PLANS_MODULE.__dict__["_artifact_work_group"](),
+            receipt_work_group,
+            _PLANS_MODULE.__dict__["_descriptor_work_group"](),
+            _PLANS_MODULE.__dict__["_ecosystem_gate_work_group"](),
+        ],
+        evidence_expectations=[
+            _PLANS_MODULE.__dict__["_artifact_evidence_expectation"](),
+            receipt_evidence,
+            _PLANS_MODULE.__dict__["_descriptor_evidence_expectation"](),
+            _PLANS_MODULE.__dict__["_evidence_expectation"](),
+        ],
+        fact_snapshot_providers=[provider],
+    )
+    materialization = materialize_ci_validation_execution_batches(
+        plan=cast("dict[str, object]", snapshot.plan),
+        request=_request_document(),
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
+    )
+
+    release_batches = [
+        batch
+        for batch in cast(
+            "list[dict[str, object]]",
+            materialization.manifest["batches"],
+        )
+        if cast("dict[str, object]", batch["compatibility-profile"])[
+            "release-shaped-profile"
+        ]
+        is not None
+    ]
+    expected_release_batch_count = 2
+    assert len(release_batches) == expected_release_batch_count
+    assert (
+        len({batch["batch-id"] for batch in release_batches})
+        == expected_release_batch_count
+    )
+    assert (
+        len(
+            {
+                cast("dict[str, object]", batch["compatibility-profile"])[
+                    "release-shaped-profile-digest"
+                ]
+                for batch in release_batches
+            }
+        )
+        == expected_release_batch_count
+    )
+
+
 def test_execution_batch_manifest_rejects_selector_loss() -> None:
     """Batch materialization cannot drop selected executable work groups."""
     plan = _plan()
@@ -2036,20 +2846,456 @@ def test_execution_batch_manifest_rejects_selector_loss() -> None:
     ] = []
 
     with pytest.raises(ContractValidationError):
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+
+_PLAN_IDENTIFIER_ARRAYS = (
+    ("work-groups", "work-group-id"),
+    ("evidence-expectations", "evidence-expectation-id"),
+    ("validation-obligations", "validation-obligation-id"),
+    ("descriptor-obligations", "descriptor-obligation-id"),
+    ("artifact-obligations", "artifact-obligation-id"),
+    ("diagnostics", "diagnostic-id"),
+)
+_MIN_UNORDERED_RECORDS = 2
+
+
+@pytest.mark.parametrize(("section", "id_key"), _PLAN_IDENTIFIER_ARRAYS)
+def test_execution_batch_manifest_rejects_duplicate_plan_identifier_arrays(
+    section: str,
+    id_key: str,
+) -> None:
+    """Plan-bound validation rejects every self-digested duplicate id array."""
+    plan, manifest = _release_plan_and_manifest()
+    records = cast("list[dict[str, object]]", plan[section])
+    if records:
+        records.append(deepcopy(records[0]))
+    else:
+        records.extend([{id_key: "duplicate-id"}, {id_key: "duplicate-id"}])
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+    manifest["plan-digest"] = plan["plan-digest"]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+    assert any(
+        issue.path in {f"$.{section}", section} for issue in error.value.issues
+    )
+
+
+@pytest.mark.parametrize(("section", "id_key"), _PLAN_IDENTIFIER_ARRAYS)
+def test_execution_batch_manifest_rejects_unordered_plan_identifier_arrays(
+    section: str,
+    id_key: str,
+) -> None:
+    """Plan-bound validation rejects every self-digested unordered id array."""
+    plan, manifest = _release_plan_and_manifest()
+    records = cast("list[dict[str, object]]", plan[section])
+    if len(records) >= _MIN_UNORDERED_RECORDS:
+        records[0], records[1] = records[1], records[0]
+    else:
+        records[:] = [{id_key: "zzzz-unordered"}, {id_key: "aaaa-unordered"}]
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+    manifest["plan-digest"] = plan["plan-digest"]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+    assert any(
+        issue.path in {f"$.{section}", section} for issue in error.value.issues
+    )
+
+
+def test_execution_batch_manifest_rejects_structurally_invalid_plan() -> None:
+    """Plan-bound validation runs full executable-binding plan validation."""
+    plan, manifest = _release_plan_and_manifest()
+    validation_obligations = cast(
+        "list[dict[str, object]]",
+        plan["validation-obligations"],
+    )
+    obligation = validation_obligations[0]
+    obligation["expected-evidence-id"] = "missing-evidence"
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+    manifest["plan-digest"] = plan["plan-digest"]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+    assert any(
+        issue.path.startswith("$.validation-obligations")
+        or issue.path == "$.executable-bindings"
+        for issue in error.value.issues
+    )
+
+
+@pytest.mark.parametrize("field", ("artifact", "release-receipt"))  # noqa: PT007
+@pytest.mark.parametrize("replacement", ("delete", "empty"))  # noqa: PT007
+def test_execution_batch_manifest_rejects_malformed_release_obligation_payload(
+    field: str,
+    replacement: str,
+) -> None:
+    """Release-shaped artifact obligations require complete payload blocks."""
+    plan, manifest = _release_plan_and_manifest()
+    artifact_obligations = cast(
+        "list[dict[str, object]]",
+        plan["artifact-obligations"],
+    )
+    obligation = artifact_obligations[0]
+    if replacement == "delete":
+        del obligation[field]
+    else:
+        obligation[field] = {}
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+    manifest["plan-digest"] = plan["plan-digest"]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+    expected_path = f"artifact-obligation.{field}"
+    assert any(
+        issue.path == expected_path
+        or issue.path.startswith(f"{expected_path}.")
+        for issue in error.value.issues
+    )
+
+
+def _authorize_execution_batch_helper(  # noqa: PLR0913
+    helper: str,
+    *,
+    plan: dict[str, object],
+    manifest: dict[str, object],
+    request: dict[str, object] | None,
+    changed_files_snapshot: dict[str, object] | None,
+    fact_snapshot: dict[str, object] | None,
+) -> None:
+    if helper == "validate":
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=RUN_ID,
+            expected_run_attempt=RUN_ATTEMPT,
+        )
+        return
+    if helper == "matrix":
+        ci_validation_execution_batch_matrix(
+            manifest,
+            plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=RUN_ID,
+            expected_run_attempt=RUN_ATTEMPT,
+        )
+        return
+    freeze_ci_validation_execution_batch_manifest(
+        plan=plan,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
+        batches=cast("list[dict[str, object]]", manifest["batches"]),
+        budget=cast("dict[str, object]", manifest["budget"]),
+        created_at=CREATED_AT,
+        execution_job=cast("str", manifest["execution-job"]),
+    )
+
+
+def _authorize_execution_batch_helper_without_request_current_run(
+    helper: str,
+    *,
+    plan: dict[str, object],
+    manifest: dict[str, object],
+) -> None:
+    changed_files_snapshot = _changed_files_snapshot_document()
+    fact_snapshot = _fact_snapshot_document()
+    if helper == "validate":
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            request=None,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            authorizing=True,
+        )
+        return
+    if helper == "matrix":
+        ci_validation_execution_batch_matrix(
+            manifest,
+            plan=plan,
+            request=None,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
+        return
+    freeze_ci_validation_execution_batch_manifest(
+        plan=plan,
+        request=None,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        batches=cast("list[dict[str, object]]", manifest["batches"]),
+        budget=cast("dict[str, object]", manifest["budget"]),
+        created_at=CREATED_AT,
+        execution_job=cast("str", manifest["execution-job"]),
+    )
+
+
+def _default_authorizing_execution_batch_helper_without_context(
+    helper: str,
+    *,
+    plan: dict[str, object],
+    manifest: dict[str, object],
+) -> None:
+    if helper == "validate":
         validate_ci_validation_execution_batch_manifest(manifest, plan=plan)
+        return
+    if helper == "matrix":
+        ci_validation_execution_batch_matrix(manifest, plan=plan)
+        return
+    freeze_ci_validation_execution_batch_manifest(
+        plan=plan,
+        batches=cast("list[dict[str, object]]", manifest["batches"]),
+        budget=cast("dict[str, object]", manifest["budget"]),
+        created_at=CREATED_AT,
+        execution_job=cast("str", manifest["execution-job"]),
+    )
 
 
-def test_execution_batch_manifest_rejects_empty_batches_without_plan() -> None:
-    """Standalone execution manifests cannot self-authorize empty topology."""
+@pytest.mark.parametrize("helper", ("validate", "matrix", "freeze"))  # noqa: PT007
+def test_plan_bound_helpers_default_to_authorizing_context(
+    helper: str,
+) -> None:
+    """Public helper defaults fail closed without authorization context."""
+    plan = _plan()
+    manifest = _manifest(plan)
+
+    with pytest.raises(ContractValidationError) as error:
+        _default_authorizing_execution_batch_helper_without_context(
+            helper,
+            plan=plan,
+            manifest=manifest,
+        )
+
+    issue_paths = {issue.path for issue in error.value.issues}
+    assert {"request", "expected-run-id", "expected-run-attempt"}.issubset(
+        issue_paths,
+    )
+
+
+@pytest.mark.parametrize("helper", ("validate", "matrix", "freeze"))  # noqa: PT007
+def test_plan_bound_authorizing_helpers_reject_missing_request_and_current_run(
+    helper: str,
+) -> None:
+    """Authorizing helpers require explicit request and current-run context."""
+    plan = _plan()
+    manifest = _manifest(plan)
+
+    with pytest.raises(ContractValidationError) as error:
+        _authorize_execution_batch_helper_without_request_current_run(
+            helper,
+            plan=plan,
+            manifest=manifest,
+        )
+
+    issue_paths = {issue.path for issue in error.value.issues}
+    assert {"request", "expected-run-id", "expected-run-attempt"}.issubset(
+        issue_paths,
+    )
+
+
+def test_materializer_rejects_missing_request_and_current_run_context() -> None:
+    """Materialization requires the request and current run before batching."""
+    snapshot = _PLANS_MODULE.__dict__["_plan_snapshot"]()
+
+    with pytest.raises(ContractValidationError) as error:
+        materialize_ci_validation_execution_batches(
+            plan=cast("dict[str, object]", snapshot.plan),
+            request=cast("Any", None),
+            changed_files_snapshot=cast(
+                "dict[str, object]", snapshot.changed_files_snapshot
+            ),
+            fact_snapshot=cast("dict[str, object]", snapshot.fact_snapshot),
+            created_at=CREATED_AT,
+            execution_workflow="CI Validation",
+        )
+
+    issue_paths = {issue.path for issue in error.value.issues}
+    assert {"request", "expected-run-id", "expected-run-attempt"}.issubset(
+        issue_paths,
+    )
+
+
+@pytest.mark.parametrize("helper", ("validate", "matrix", "freeze"))  # noqa: PT007
+def test_plan_bound_helpers_require_companions_for_authorization(
+    helper: str,
+) -> None:
+    """Authorizing low-level helpers fail closed without companion snapshots."""
+    plan = _plan()
+    manifest = _manifest(plan)
+
+    with pytest.raises(ContractValidationError) as error:
+        _authorize_execution_batch_helper(
+            helper,
+            plan=plan,
+            manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=None,
+            fact_snapshot=None,
+        )
+
+    assert {
+        "$.changed-files-snapshot",
+        "$.fact-snapshot",
+    }.issubset({issue.path for issue in error.value.issues})
+
+
+@pytest.mark.parametrize("helper", ("validate", "matrix", "freeze"))  # noqa: PT007
+def test_plan_bound_helpers_reject_stale_authorizing_request(
+    helper: str,
+) -> None:
+    """Authorizing low-level helpers bind the request to the current run."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    request = _request_document()
+    cast("dict[str, object]", request["run"])["run-id"] = "00000000000"
+    request["artifact-ref"] = ci_validation_request_artifact_ref(
+        run_id="00000000000",
+        run_attempt=RUN_ATTEMPT,
+    )
+    request["request-digest"] = canonical_json_digest(
+        ci_validation_request_projection(request)
+    )
+
+    with pytest.raises(ContractValidationError) as error:
+        _authorize_execution_batch_helper(
+            helper,
+            plan=plan,
+            manifest=manifest,
+            request=request,
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path in {"$.run.run-id", "request.artifact-ref"}
+        or issue.path == "ci-validation-request"
+        for issue in error.value.issues
+    )
+
+
+def test_execution_batch_manifest_accepts_empty_batches_without_plan() -> None:
+    """Standalone zero-batch handoff is valid when budget is self-consistent."""
     plan = _plan()
     manifest = _manifest(plan)
     manifest["batches"] = []
     manifest["budget"] = _budget(0)
 
-    with pytest.raises(ContractValidationError) as error:
-        validate_ci_validation_execution_batch_manifest(manifest)
+    validate_ci_validation_execution_batch_manifest(manifest, authorizing=False)
+    assert ci_validation_execution_batch_matrix(
+        manifest,
+        authorizing=False,
+    ) == {"include": []}
 
-    assert any(issue.path == "$.batches" for issue in error.value.issues)
+
+def test_planless_non_authorizing_batches_require_plan() -> None:
+    """Direct validation rejects non-empty batches without a plan."""
+    with pytest.raises(ContractValidationError, match="authorizing"):
+        validate_ci_validation_execution_batch_manifest(
+            _manifest(_plan()),
+            authorizing=False,
+        )
+
+
+def test_planless_authorizing_batches_require_plan() -> None:
+    """Authorizing validation rejects executable batches without a plan."""
+    with pytest.raises(ContractValidationError, match="authorizing"):
+        validate_ci_validation_execution_batch_manifest(_manifest(_plan()))
+
+
+def test_public_execution_batch_validator_rejects_planless_escape_hatch() -> (
+    None
+):
+    """Public callers cannot bypass planless non-empty batch rejection."""
+    validator = cast("Any", validate_ci_validation_execution_batch_manifest)
+    manifest = _manifest(_plan())
+
+    with pytest.raises(
+        TypeError,
+        match="_allow_planless_non_authorizing_batches",
+    ):
+        validator(
+            manifest,
+            authorizing=False,
+            _allow_planless_non_authorizing_batches=True,
+        )
+
+    with pytest.raises(
+        TypeError,
+        match="_allow_planless_non_authorizing_batches",
+    ):
+        validator(
+            manifest,
+            authorizing=True,
+            _allow_planless_non_authorizing_batches=True,
+        )
+
+
+def test_private_planless_non_authorizing_diagnostic_batches_do_not_raise() -> (
+    None
+):
+    """The private diagnostic path can inspect non-empty planless manifests."""
+    _validate_ci_validation_execution_batch_manifest(
+        _manifest(_plan()),
+        plan=None,
+        authorizing=False,
+        _allow_planless_non_authorizing_batches=True,
+    )
+
+
+def test_non_authorizing_matrix_rejects_non_empty_batches() -> None:
+    """Non-authorizing matrix handoff is limited to no-work manifests."""
+    with pytest.raises(ContractValidationError, match="authorizing"):
+        ci_validation_execution_batch_matrix(
+            _manifest(_plan()),
+            authorizing=False,
+        )
+
+
+def test_non_authorizing_freeze_rejects_non_empty_batches() -> None:
+    """Non-authorizing freeze cannot create executable batch handoffs."""
+    plan = _plan()
+
+    with pytest.raises(ContractValidationError, match="authorizing"):
+        freeze_ci_validation_execution_batch_manifest(
+            plan=plan,
+            batches=[_batch(plan)],
+            budget=_budget(1),
+            created_at=CREATED_AT,
+            authorizing=False,
+        )
 
 
 def test_execution_batch_manifest_rejects_extra_empty_batch() -> None:
@@ -2074,7 +3320,11 @@ def test_execution_batch_manifest_rejects_extra_empty_batch() -> None:
     manifest["budget"] = _budget(2)
 
     with pytest.raises(ContractValidationError) as error:
-        validate_ci_validation_execution_batch_manifest(manifest, plan=plan)
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
     assert any(
         issue.path.endswith(".ordered-selectors")
         for issue in error.value.issues
@@ -2108,7 +3358,11 @@ def test_g1_contract_roots_reject_extra_keys(contract_name: str) -> None:
 
     def validate_document(item: dict[str, object]) -> None:
         if contract_name == "execution-batch-manifest":
-            validate_ci_validation_execution_batch_manifest(item, plan=plan)
+            validate_ci_validation_execution_batch_manifest(
+                item,
+                plan=plan,
+                authorizing=False,
+            )
         elif contract_name == "batch-evidence-bundle":
             validate_ci_validation_batch_evidence_bundle(
                 item,
@@ -2142,12 +3396,17 @@ def test_execution_batch_manifest_accepts_exact_plan_batch_dag() -> None:
     _add_dependent_work_group(plan)
     manifest = freeze_ci_validation_execution_batch_manifest(
         plan=plan,
+        **_authorizing_context_kwargs(),
         batches=_dependent_batches(plan),
         budget=_budget(2),
         created_at=CREATED_AT,
     )
 
-    validate_ci_validation_execution_batch_manifest(manifest, plan=plan)
+    validate_ci_validation_execution_batch_manifest(
+        manifest,
+        plan=plan,
+        authorizing=False,
+    )
 
 
 def test_execution_batch_manifest_rejects_missing_plan_batch_edge() -> None:
@@ -2173,7 +3432,7 @@ def test_execution_batch_manifest_rejects_stale_plan_batch_edge() -> None:
     batches = _dependent_batches(plan)
     batches[1]["depends-on-batches"] = []
     cast("list[object]", batches[0]["depends-on-batches"]).append(
-        "batch-dependent-gate"
+        batches[1]["batch-id"]
     )
 
     with pytest.raises(ContractValidationError):
@@ -2224,7 +3483,156 @@ def test_execution_batch_manifest_rejects_direct_plan_identity_mismatch(
     manifest[field] = "other-plan" if field == "plan-id" else "0" * 64
 
     with pytest.raises(ContractValidationError):
-        validate_ci_validation_execution_batch_manifest(manifest, plan=plan)
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["ecosystem", "profile-digest", "batch-id", "release-fields"],
+)
+def test_execution_batch_manifest_recomputes_plan_bound_batch_identity(
+    mutation: str,
+) -> None:
+    """Plan-bound validation rejects forged compatibility and batch IDs."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    profile = cast("dict[str, object]", batch["compatibility-profile"])
+    if mutation == "ecosystem":
+        profile["ecosystem"] = "dotnet"
+    elif mutation == "profile-digest":
+        profile["execution-profile-digest"] = "0" * 64
+    elif mutation == "batch-id":
+        batch["batch-id"] = "batch-forged-gate"
+        batch["expected-batch-evidence-bundle-ref"] = (
+            ci_validation_batch_evidence_bundle_artifact_ref(
+                run_id=RUN_ID,
+                run_attempt=RUN_ATTEMPT,
+                batch_id="batch-forged-gate",
+            )
+        )
+    else:
+        profile["release-shaped-profile"] = "release-forged"
+        profile["release-shaped-profile-digest"] = "1" * 64
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+    assert any(
+        issue.path.endswith(("compatibility-profile", "batch-id"))
+        for issue in error.value.issues
+    )
+
+
+def test_execution_batch_manifest_rejects_forged_repartitioning() -> None:
+    """Plan-bound validation recomputes exact materializer partitions."""
+    plan = _plan()
+    _add_extra_work_group(
+        plan,
+        work_group_id="wg-extra-python-gate",
+        evidence_id="evidence-extra-python-gate",
+    )
+    manifest = _manifest(_plan())
+    base_batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    first = _retarget_batch(
+        base_batch,
+        batch_id="unused",
+        work_group_id="wg-python-gate",
+        evidence_id="evidence-python-gate",
+        plan=plan,
+    )
+    second = _retarget_batch(
+        base_batch,
+        batch_id="unused",
+        work_group_id="wg-extra-python-gate",
+        evidence_id="evidence-extra-python-gate",
+        plan=plan,
+    )
+    manifest["plan-digest"] = plan["plan-digest"]
+    manifest["batches"] = sorted(
+        [first, second],
+        key=lambda batch: cast("str", batch["batch-id"]),
+    )
+    manifest["budget"] = _budget(2)
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+    assert any(issue.path == "$.batches" for issue in error.value.issues)
+
+
+def test_execution_batch_manifest_rejects_malformed_release_group() -> None:
+    """Malformed selected release-shaped groups report validation issues."""
+    plan = _plan()
+    group = next(
+        item
+        for item in cast("list[dict[str, object]]", plan["work-groups"])
+        if item["kind"] != "evidence-aggregation"
+    )
+    group["kind"] = "release-shaped-artifact"
+    del group["coverage-target"]
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+    manifest = _manifest(_plan())
+    manifest["plan-digest"] = plan["plan-digest"]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+    assert any(
+        issue.path.endswith(".coverage-target") for issue in error.value.issues
+    )
+
+
+def test_manifest_rejects_release_group_without_obligation() -> None:
+    """Release-shaped groups must have artifact and receipt obligations."""
+    plan = _plan()
+    group = next(
+        item
+        for item in cast("list[dict[str, object]]", plan["work-groups"])
+        if item["kind"] != "evidence-aggregation"
+    )
+    group["kind"] = "release-shaped-artifact"
+    group["coverage-target"] = {
+        "type": "artifact-obligation",
+        "id": "artifact-missing",
+    }
+    cast("dict[str, object]", group["expected-evidence"])["category"] = (
+        "release-shaped-artifact"
+    )
+    evidence = cast("list[dict[str, object]]", plan["evidence-expectations"])[0]
+    evidence["category"] = "release-shaped-artifact"
+    evidence["planned-capabilities"] = None
+    evidence["coverage-target"] = group["coverage-target"]
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+    manifest = _manifest(_plan())
+    manifest["plan-digest"] = plan["plan-digest"]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
+
+    assert any(
+        "release-shaped groups require one artifact obligation" in issue.message
+        for issue in error.value.issues
+    )
 
 
 def test_execution_batch_manifest_rejects_execution_data_in_slot() -> None:
@@ -2283,12 +3691,12 @@ def test_batch_evidence_bundle_freezes_and_validates() -> None:
     ] == ci_validation_batch_evidence_bundle_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
-        batch_id="batch-python-gate",
+        batch_id=_BATCH_ID,
     )
     assert bundle["bundle-id"] == ci_validation_batch_evidence_bundle_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
-        batch_id="batch-python-gate",
+        batch_id=_BATCH_ID,
         execution_batch_manifest_digest=manifest_digest,
         artifact_ref=cast("str", bundle["artifact-ref"]),
     )
@@ -2368,7 +3776,7 @@ def test_batch_bundle_rejects_non_object_batch_without_manifest() -> None:
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
-    bundle["batch"] = "batch-python-gate"
+    bundle["batch"] = _BATCH_ID
 
     with pytest.raises(ContractValidationError) as exc_info:
         validate_ci_validation_batch_evidence_bundle(bundle, plan=plan)
@@ -2430,7 +3838,11 @@ def test_execution_manifest_schema_rejects_obsolete_final_details(
     )
 
     with pytest.raises(ContractValidationError):
-        validate_ci_validation_execution_batch_manifest(manifest, plan=plan)
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            authorizing=False,
+        )
 
 
 @pytest.mark.parametrize("detail", _OBSOLETE_FINAL_EVIDENCE_DETAILS)
@@ -2558,16 +3970,9 @@ def test_batch_evidence_bundle_rejects_malformed_diagnostics(
         freeze_ci_validation_batch_evidence_bundle(
             plan=plan,
             execution_batch_manifest=manifest,
-            batch_id="batch-python-gate",
+            batch_id=_BATCH_ID,
             selector_results=[_selector_result(plan, manifest)],
-            writer={
-                "identity-source": "github-actions-job-context",
-                "expected-boundary": "execution-batch",
-                "expected-job-identity": "github-actions-job:" + "3" * 64,
-                "observed-workflow": "CI Validation",
-                "observed-job": "ci-validation-batch",
-                "observed-matrix": {"batch-id": "batch-python-gate"},
-            },
+            writer=_writer_for_batch(manifest, _BATCH_ID),
             execution_tree={
                 "observed-commit-sha": TREE_SHA,
                 "source": "execution-batch-boundary",
@@ -2594,16 +3999,9 @@ def test_batch_evidence_bundle_rejects_missing_required_diagnostic_fields(
         freeze_ci_validation_batch_evidence_bundle(
             plan=plan,
             execution_batch_manifest=manifest,
-            batch_id="batch-python-gate",
+            batch_id=_BATCH_ID,
             selector_results=[_selector_result(plan, manifest)],
-            writer={
-                "identity-source": "github-actions-job-context",
-                "expected-boundary": "execution-batch",
-                "expected-job-identity": "github-actions-job:" + "3" * 64,
-                "observed-workflow": "CI Validation",
-                "observed-job": "ci-validation-batch",
-                "observed-matrix": {"batch-id": "batch-python-gate"},
-            },
+            writer=_writer_for_batch(manifest, _BATCH_ID),
             execution_tree={
                 "observed-commit-sha": TREE_SHA,
                 "source": "execution-batch-boundary",
@@ -2630,16 +4028,9 @@ def test_batch_evidence_bundle_accepts_canonical_diagnostics() -> None:
     bundle = freeze_ci_validation_batch_evidence_bundle(
         plan=plan,
         execution_batch_manifest=manifest,
-        batch_id="batch-python-gate",
+        batch_id=_BATCH_ID,
         selector_results=[result],
-        writer={
-            "identity-source": "github-actions-job-context",
-            "expected-boundary": "execution-batch",
-            "expected-job-identity": "github-actions-job:" + "3" * 64,
-            "observed-workflow": "CI Validation",
-            "observed-job": "ci-validation-batch",
-            "observed-matrix": {"batch-id": "batch-python-gate"},
-        },
+        writer=_writer_for_batch(manifest, _BATCH_ID),
         execution_tree={
             "observed-commit-sha": TREE_SHA,
             "source": "execution-batch-boundary",
@@ -2892,9 +4283,10 @@ def test_summary_rejects_failed_dependency_when_upstream_succeeded() -> None:
     )
     dependency["outcome"] = "failed"
     dependency["admitted-for-gating"] = False
+    _, dependent_batch_id = _dependent_batch_ids(manifest)
     aggregate_slot = _rows_by_batch_id(
         cast("list[dict[str, object]]", aggregate_manifest["batch-bundles"])
-    )["batch-dependent-gate"]
+    )[dependent_batch_id]
     aggregate_candidate = cast(
         "dict[str, object]",
         cast(
@@ -4176,7 +5568,8 @@ def test_aggregate_available_empty_hash_requires_changed_files() -> None:
     plan = _plan()
     cast("dict[str, object]", plan["affected-range"])["changed-files-hash"] = ""
     plan["plan-digest"] = ci_validation_plan_digest(plan)
-    manifest = _manifest(plan)
+    manifest = _manifest(_plan())
+    manifest["plan-digest"] = plan["plan-digest"]
     input_artifacts = _aggregate_input_artifacts(plan, manifest)
 
     with pytest.raises(ContractValidationError) as exc_info:
@@ -4724,6 +6117,42 @@ def test_planless_fact_binding_requires_execution_manifest_input_proof(
         and issue.message == "does not match providers"
         for issue in exc_info.value.issues
     )
+
+
+def test_planless_non_empty_exec_manifest_cannot_authorize_fact_binding() -> (
+    None
+):
+    """Diagnostic validation cannot prove plan identity without a plan."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    fact_snapshot = _fact_snapshot_document()
+    fact_snapshot["plan-id"] = plan["plan-id"]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=fact_snapshot,
+        )
+
+    issue_pairs = [
+        (issue.path, issue.message) for issue in exc_info.value.issues
+    ]
+    assert (
+        "authorizing",
+        "requires plan context for non-empty execution batches",
+    ) in issue_pairs
+    assert (
+        "fact_snapshot.plan-id",
+        "requires proven plan identity",
+    ) in issue_pairs
+    assert (
+        "fact_snapshot.fact-snapshot-id",
+        "does not match providers",
+    ) not in issue_pairs
 
 
 @pytest.mark.parametrize("admissibility", ["missing", "inadmissible"])
@@ -6125,7 +7554,8 @@ def test_aggregate_manifest_rejects_invalid_plan_not_required_snapshot_state(
             "unavailable"
         )
     plan["plan-digest"] = ci_validation_plan_digest(plan)
-    manifest = _manifest(plan)
+    manifest = _manifest(_plan())
+    manifest["plan-digest"] = plan["plan-digest"]
     original_plan = plan if input_name == "changed-files-snapshot" else _plan()
     original_manifest = (
         manifest
@@ -6182,7 +7612,7 @@ def test_aggregate_manifest_rejects_invalid_plan_not_required_snapshot_state(
     aggregate_manifest["projection-authority"] = None
 
     with pytest.raises(ContractValidationError) as exc_info:
-        validate_ci_validation_aggregate_evidence_manifest(
+        _validate_ci_validation_aggregate_evidence_manifest(
             aggregate_manifest,
             plan=plan,
             execution_batch_manifest=manifest,
@@ -6245,7 +7675,8 @@ def test_aggregate_manifest_rejects_plan_not_required_snapshot_payload(
             "unavailable"
         )
     plan["plan-digest"] = ci_validation_plan_digest(plan)
-    manifest = _manifest(plan)
+    manifest = _manifest(_plan())
+    manifest["plan-digest"] = plan["plan-digest"]
     original_plan = _plan()
     original_manifest = _manifest(original_plan)
     bundle = _bundle(original_plan, original_manifest)
@@ -7982,10 +9413,10 @@ def test_execution_batch_manifest_rejects_max_batches_above_dynamic_bound() -> (
         )
 
 
-def test_execution_batch_manifest_accepts_artifact_headroom_batch_bound() -> (
+def test_execution_batch_manifest_rejects_forged_artifact_headroom_budget() -> (
     None
 ):
-    """Input artifacts reduce max execution batches via artifact headroom."""
+    """Plan-bound validation recomputes budget artifact headroom."""
     plan = _plan()
     budget = _budget(1)
     budget["expected-input-non-bundle-validation-artifacts"] = 17
@@ -7994,12 +9425,13 @@ def test_execution_batch_manifest_accepts_artifact_headroom_batch_bound() -> (
     budget["actual-validation-artifacts"] = 20
     budget["max-execution-batches"] = 1
 
-    freeze_ci_validation_execution_batch_manifest(
-        plan=plan,
-        batches=[_batch(plan)],
-        budget=budget,
-        created_at=CREATED_AT,
-    )
+    with pytest.raises(ContractValidationError):
+        freeze_ci_validation_execution_batch_manifest(
+            plan=plan,
+            batches=[_batch(plan)],
+            budget=budget,
+            created_at=CREATED_AT,
+        )
 
 
 def test_execution_batch_manifest_rejects_artifact_headroom_batch_bound() -> (
@@ -8937,7 +10369,7 @@ def test_aggregate_summary_rejects_stale_invalid_plan_fields(
         "scheduled-full": {"enabled": True},
         "batch-bundles": [
             {
-                "batch-id": "batch-python-gate",
+                "batch-id": _BATCH_ID,
                 "artifact-ref": bundle["artifact-ref"],
                 "bundle-id": bundle["bundle-id"],
                 "admitted-candidate-id": cast(
@@ -8962,7 +10394,7 @@ def test_aggregate_summary_rejects_stale_invalid_plan_fields(
     [
         ("diagnostic", {"diagnostic-id": "forged-invalid-plan"}),
         ("message", "Forged invalid plan message."),
-        ("batch-id", "batch-python-gate"),
+        ("batch-id", _BATCH_ID),
         ("work-group-id", "wg-python-gate"),
         ("evidence-expectation-id", "evidence-python-gate"),
         ("bundle-id", "bundle-forged"),
@@ -9123,7 +10555,7 @@ def test_aggregate_summary_freezer_replaces_invalid_plan_failures() -> None:
         diagnostics=[],
         batch_bundles=[
             {
-                "batch-id": "batch-python-gate",
+                "batch-id": _BATCH_ID,
                 "artifact-ref": bundle["artifact-ref"],
                 "bundle-id": bundle["bundle-id"],
                 "admitted-candidate-id": "candidate-" + "1" * 64,
@@ -10266,7 +11698,7 @@ def test_aggregate_summary_allows_missing_result_without_admitted_bundle() -> (
 @pytest.mark.parametrize(
     ("field", "forged_value"),
     [
-        ("batch-id", "batch-python-gate"),
+        ("batch-id", _BATCH_ID),
         ("bundle-id", "bundle-forged"),
         ("selector-index", 0),
     ],
@@ -10301,7 +11733,7 @@ def test_aggregate_summary_rejects_missing_evidence_provenance(
 
 @pytest.mark.parametrize(
     ("field", "forged_value"),
-    [("batch-id", "batch-python-gate"), ("bundle-id", "bundle-forged")],
+    [("batch-id", _BATCH_ID), ("bundle-id", "bundle-forged")],
 )
 def test_aggregate_summary_rejects_missing_failure_provenance(
     field: str, forged_value: str
@@ -10585,7 +12017,17 @@ def test_plan_projection_rejects_request_context_conflict() -> None:
     original_plan = _plan()
     original_manifest = _manifest(original_plan)
     bundle = _bundle(original_plan, original_manifest)
-    manifest = _manifest(plan)
+    manifest = freeze_ci_validation_execution_batch_manifest(
+        plan=plan,
+        request=request,
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
+        batches=[_batch(plan)],
+        budget=_budget(1),
+        created_at=CREATED_AT,
+    )
     aggregate_manifest = _aggregate_evidence_manifest(
         original_plan, original_manifest, bundle
     )
@@ -11332,7 +12774,9 @@ def test_aggregate_summary_rejects_aggregate_manifest_plan_mismatch() -> None:
     other_plan = dict(plan)
     other_plan["plan-id"] = "other-plan"
     other_plan["plan-digest"] = ci_validation_plan_digest(other_plan)
-    other_manifest = _manifest(other_plan)
+    other_manifest = deepcopy(manifest)
+    other_manifest["plan-id"] = other_plan["plan-id"]
+    other_manifest["plan-digest"] = other_plan["plan-digest"]
     other_bundle = _bundle(other_plan, other_manifest)
     other_aggregate_manifest = _aggregate_evidence_manifest(
         other_plan,
@@ -11535,13 +12979,16 @@ def test_execution_batch_manifest_rejects_cross_group_evidence() -> None:
         ("expected-job-identity", "github-actions-job:" + "9" * 64),
         ("identity-source", "forged-source"),
         ("expected-boundary", "forged-boundary"),
+        ("observed-workflow", "Forged Workflow"),
+        ("observed-job", "forged-job"),
+        ("observed-matrix", {"batch-id": "batch-forged"}),
     ],
 )
 def test_batch_evidence_bundle_rejects_writer_mismatch(
     field: str,
     value: object,
 ) -> None:
-    """Bundle writer identity must match the selected manifest batch writer."""
+    """Bundle writer observations must match the selected manifest context."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
@@ -11892,7 +13339,7 @@ def test_aggregate_summary_rejects_missing_manifest_satisfied_row() -> None:
     evidence_result = cast(
         "list[dict[str, object]]", summary["evidence-results"]
     )[0]
-    evidence_result["batch-id"] = "batch-python-gate"
+    evidence_result["batch-id"] = _BATCH_ID
     evidence_result["bundle-id"] = bundle["bundle-id"]
     evidence_result["selector-index"] = 0
     evidence_result["outcome"] = "satisfied"
@@ -11962,7 +13409,7 @@ def test_aggregate_summary_rejects_missing_manifest_stale_bundle_ref() -> None:
     ] = ci_validation_batch_evidence_bundle_artifact_ref(
         run_id="999999",
         run_attempt=RUN_ATTEMPT,
-        batch_id="batch-python-gate",
+        batch_id=_BATCH_ID,
     )
 
     with pytest.raises(ContractValidationError) as exc_info:

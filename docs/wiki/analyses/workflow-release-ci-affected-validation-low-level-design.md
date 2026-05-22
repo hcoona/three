@@ -1379,11 +1379,11 @@ Rules:
 - Only subjects with `activity-status: active` and `selection-status: selected`
   can produce executable validation work.
 - A selected executable subject must have an explicit fact provider and execution
-  mapping in this LLD. For the first implementation, `ruby` and `other` subjects
+  mapping in this LLD. `ruby` is provider-bound and selectable; `other` subjects
   may be discovered only as `inactive` or `not-selected`; if an affected,
-  ecosystem, global, or scheduled-full scope would otherwise select them,
-  planning fails closed with `fact-provider-insufficient`.
-- A `ruby` or `other` subject-universe record is an unsupported audit entry, not
+  ecosystem, global, or scheduled-full scope would otherwise select an `other`
+  subject, planning fails closed with `fact-provider-insufficient`.
+- An `other` subject-universe record is an unsupported audit entry, not
   a provider-bound validation subject. It must have `activity-status: inactive`,
   `selection-status: not-selected`, `descriptor.path: null`,
   `descriptor.identity: null`, all capability flags `false`, and
@@ -1419,6 +1419,7 @@ workflow-release tooling provider.
 | .NET                  | solution/MSBuild project graph under active roots                        | .NET subject ownership, project roots, project references when available, packable descriptor-backed projects, validation-only test/build projects, Windows runner expectation                                |
 | Python                | `uv` workspace and project metadata under active roots                   | Python subject ownership, workspace members, package roots, validation-only projects, dependency facts when safely available, Ubuntu runner expectation                                                       |
 | JavaScript/TypeScript | PNPM workspace metadata under active roots                               | JavaScript/TypeScript subject ownership, workspace packages, package roots, validation-only packages, dependency facts when safely available, Ubuntu runner expectation                                       |
+| Ruby                  | RubyGems release descriptors and gemspec metadata under active roots     | Ruby subject ownership, gem roots, validation-only build capability from gemspecs, dependency facts when safely available, Ubuntu runner expectation                                                          |
 | workflow-release      | release descriptors, target catalog, workflow-release docs/tooling paths | workflow-release tooling surfaces, descriptor metadata for descriptor-backed subjects owned by ecosystem providers, target-catalog facts, descriptor schema documentation surfaces, smoke validation surfaces |
 
 The JavaScript/TypeScript row is one provider seam and emits the single fact
@@ -1436,11 +1437,12 @@ surfaces, not `validation-subject-snapshot` records. For any plan with
 provider-bound frozen subject-universe record, including inactive and not-selected
 subjects, must bind to exactly one `status: available` provider entry that lists
 the subject ID and supports that subject's ecosystem: `dotnet` for `.NET`,
-`python` for Python, and `javascript-typescript` for JavaScript or TypeScript.
+`python` for Python, `javascript-typescript` for JavaScript or TypeScript, and
+`ruby` for Ruby.
 Conversely, every subject ID listed by those ecosystem provider entries must have
-exactly one matching frozen subject-universe record. Unsupported `ruby` and
-`other` audit entries are excluded from this provider-subject equality check only
-when they satisfy the section 7 unsupported-subject constraints. Descriptor
+exactly one matching frozen subject-universe record. Unsupported `other` audit
+entries are excluded from this provider-subject equality check only when they
+satisfy the section 7 unsupported-subject constraints. Descriptor
 metadata emitted by the `workflow-release` provider for ecosystem-owned
 descriptor-backed subjects is digest-bound provider data in `descriptors` and
 must not list those subjects in `provider.subjects`. Missing provider coverage,
@@ -1640,7 +1642,7 @@ kind: lightweight-preflight | ecosystem-gate | descriptor-validation | release-s
 coverage-target:
     type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
-ecosystem: dotnet | python | javascript | typescript | null
+ecosystem: dotnet | python | javascript | typescript | ruby | null
 runner-family: windows | ubuntu
 selector-variant: string | null
 depends-on: [work-group-id]
@@ -1754,6 +1756,7 @@ Selector rules:
     common-envelope: inherited
     api-version: three.ci.validation.execution-batch-manifest/v1alpha1
     kind: ci-validation-execution-batch-manifest
+    execution-job: string
     plan-id: string
     plan-digest: string
     budget:
@@ -1778,7 +1781,7 @@ Selector rules:
         - batch-id: string
           runner-family: windows | ubuntu
           compatibility-profile:
-              ecosystem: dotnet | python | javascript | typescript | null
+              ecosystem: dotnet | python | javascript | typescript | ruby | null
               setup-profile: string
               setup-profile-digest: string
               execution-profile: string
@@ -1870,6 +1873,13 @@ Selector rules:
     writer identity sources. This writer identity is embedded in the manifest or
     batch bundle metadata and verified by aggregation; there is no separate
     writer-integrity or writer-observation artifact in the current design.
+    `execution-job` is the concrete GitHub Actions job identity component used
+    for every execution-batch matrix leg emitted from the manifest. Matrix rows
+    must carry an `identity-matrix` object containing exactly the writer-ID hash
+    payload (`batch-id`, `runner-family`, and
+    `expected-batch-evidence-bundle-ref`); `expected-job-identity` is computed
+    from workflow, `execution-job`, and that `identity-matrix`, not from the full
+    matrix row.
 
     `budget.actual-execution-batches` must equal `batches.length`. The
     materializer must map each batch to exactly one budget-counted concrete GitHub
@@ -2079,6 +2089,24 @@ Windows-specific .NET/build behavior. All other workflow-release-tooling work
 groups use Ubuntu. All runners provision tools through `mise` where practical.
 The concrete command lines and helper scripts are implementation-owned, but they
 must run the repository's existing ecosystem gates for selected scopes.
+
+The execution-batch matrix row emitted for each manifest batch has this contract:
+
+```yaml
+batch-id: string
+runner-family: windows | ubuntu
+expected-batch-evidence-bundle-ref: string
+identity-matrix:
+    batch-id: string
+    runner-family: windows | ubuntu
+    expected-batch-evidence-bundle-ref: string
+expected-job-identity: string
+```
+
+`identity-matrix` must exactly equal the three-field writer-ID hash payload. The
+row may carry additional execution-only matrix dimensions in a future workflow,
+but they are not part of the writer identity unless the contract explicitly adds
+them to `identity-matrix`.
 
 An execution-batch job is a validation control-plane boundary, not a raw command
 line and not one job per work group. Before running category-specific validation,
@@ -2579,7 +2607,7 @@ batch:
     batch-id: string
     runner-family: windows | ubuntu
     compatibility-profile:
-        ecosystem: dotnet | python | javascript | typescript | null
+        ecosystem: dotnet | python | javascript | typescript | ruby | null
         setup-profile: string
         setup-profile-digest: string
         execution-profile: string
@@ -2653,7 +2681,7 @@ scheduled-full:
 coverage-target:
     type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
-ecosystem: dotnet | python | javascript | typescript | null
+ecosystem: dotnet | python | javascript | typescript | ruby | null
 runner-family: windows | ubuntu
 selector-variant: string | null
 depends-on: [work-group-id]
@@ -2767,7 +2795,7 @@ workflow-release-tooling:
     coverage-target:
         type: tooling-surface | subject | ecosystem | descriptor
         id: string
-    ecosystem: dotnet | python | javascript | typescript | null
+    ecosystem: dotnet | python | javascript | typescript | ruby | null
     selector-variant: string | null
     runner-family: windows | ubuntu
     outcome: success | blocking-failure | skipped

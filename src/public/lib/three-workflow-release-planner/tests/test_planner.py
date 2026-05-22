@@ -2820,6 +2820,61 @@ def test_ci_validation_plans_descriptor_backed_subject_scope() -> None:
     }
 
 
+def test_ci_validation_plans_rubygems_descriptor_subject_scope() -> None:
+    """RubyGems smoke project changes plan Ruby validation obligations."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    subject_id = "ruby.src-public-lib-hcoona-release-smoke-rubygems"
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs(
+            [
+                "src/public/lib/hcoona-release-smoke-rubygems/"
+                "hcoona-release-smoke-rubygems.gemspec"
+            ],
+        ),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    subjects = cast("Sequence[Mapping[str, object]]", snapshot.plan["subjects"])
+    selected = [
+        item for item in subjects if item["selection-status"] == "selected"
+    ]
+    assert [item["subject-id"] for item in selected] == [subject_id]
+    assert selected[0]["ecosystem"] == "ruby"
+    validation_obligations = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["validation-obligations"],
+    )
+    assert any(
+        item["kind"] == "ecosystem-gate"
+        and cast("Mapping[str, object]", item["coverage-target"])["id"]
+        == subject_id
+        for item in validation_obligations
+    )
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["work-groups"],
+    )
+    ruby_groups = [
+        item for item in work_groups if item.get("ecosystem") == "ruby"
+    ]
+    assert {item["kind"] for item in ruby_groups} >= {
+        "ecosystem-gate",
+        "release-shaped-artifact",
+    }
+    assert {item["runner-family"] for item in ruby_groups} == {"ubuntu"}
+
+
 def test_ci_validation_plans_mixed_changes_keep_canonical_paths() -> None:
     """Mixed valid changes keep flattened matched paths in canonical order."""
     from three_workflow_release_contracts import (  # noqa: PLC0415

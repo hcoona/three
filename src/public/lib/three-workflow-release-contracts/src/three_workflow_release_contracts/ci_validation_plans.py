@@ -677,6 +677,65 @@ def validate_ci_validation_plan(  # noqa: PLR0913
         raise ContractValidationError(issues)
 
 
+def validate_ci_validation_plan_structure(  # noqa: PLR0913
+    plan: object,
+    *,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None = None,
+    expected_run_id: str | None = None,
+    expected_run_attempt: str | None = None,
+) -> None:
+    """Validate plan structure without requiring companion artifacts."""
+    issues: list[ValidationIssue] = []
+    if not isinstance(plan, Mapping):
+        raise ContractValidationError(
+            [ValidationIssue("$", "must be an object")],
+        )
+    try:
+        envelope = validate_common_envelope(
+            plan,
+            api_version=API_VERSIONS_BY_KIND[CiValidationKind.PLAN.value],
+            kind=CiValidationKind.PLAN,
+        )
+    except ContractValidationError as error:
+        issues.extend(error.issues)
+        envelope = None
+    if envelope is not None:
+        if expected_run_id is not None and envelope.run_id != expected_run_id:
+            issues.append(
+                ValidationIssue("$.run.run-id", "must match expected run"),
+            )
+        if (
+            expected_run_attempt is not None
+            and envelope.run_attempt != expected_run_attempt
+        ):
+            issues.append(
+                ValidationIssue(
+                    "$.run.run-attempt",
+                    "must match expected run attempt",
+                ),
+            )
+    _validate_required_plan_members(plan, issues)
+    if not issues:
+        _validate_plan_digest(plan, issues)
+        _validate_plan_envelope_runtime(
+            plan,
+            issues,
+            pull_request_merge_commit_verification=(
+                pull_request_merge_commit_verification
+            ),
+        )
+        _validate_plan_sections(
+            plan,
+            issues,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
+    if issues:
+        raise ContractValidationError(issues)
+
+
 def _validate_normalized_request(request: object) -> None:
     if not isinstance(request, NormalizedCiValidationRequest):
         raise ContractValidationError(
@@ -1088,7 +1147,7 @@ def _validate_executable_runner(
         issues.append(ValidationIssue("ecosystem", "is required"))
     if ecosystem == "dotnet" and runner_family != "windows":
         issues.append(ValidationIssue("runner-family", "must be windows"))
-    if ecosystem in {"python", "javascript", "typescript"} and (
+    if ecosystem in {"python", "javascript", "typescript", "ruby"} and (
         runner_family != "ubuntu"
     ):
         issues.append(ValidationIssue("runner-family", "must be ubuntu"))
@@ -4535,7 +4594,7 @@ def _validate_plan_digest(
         issues.append(ValidationIssue("$.plan-digest", "does not match plan"))
 
 
-def _validate_plan_sections(  # noqa: PLR0915
+def _validate_plan_sections(  # noqa: C901,PLR0915
     plan: Mapping[str, object],
     issues: list[ValidationIssue],
     *,
@@ -4600,6 +4659,9 @@ def _validate_plan_sections(  # noqa: PLR0915
             "$.artifact-obligations",
             issues,
         )
+        if fact_snapshot is None:
+            for obligation in artifact_obligations:
+                _validate_artifact_obligation_schema(obligation, issues)
         _validate_evidence_expectations(evidence_expectations)
         if isinstance(verdict_intent, str):
             _validate_executable_bindings(

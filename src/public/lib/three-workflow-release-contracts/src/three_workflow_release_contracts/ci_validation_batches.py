@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Mapping, MutableMapping, Sequence
+from dataclasses import dataclass
+from typing import cast
 
 from three_workflow_release_contracts.ci_validation import (
     API_VERSIONS_BY_KIND,
@@ -24,6 +26,9 @@ from three_workflow_release_contracts.ci_validation import (
     validate_ci_validation_diagnostic_record,
     validate_common_envelope,
 )
+from three_workflow_release_contracts.ci_validation_assignments import (
+    ci_validation_writer_id,
+)
 from three_workflow_release_contracts.ci_validation_plans import (
     _freeze_fact_snapshot_providers,
     _validate_plan_id_value,
@@ -34,6 +39,7 @@ from three_workflow_release_contracts.ci_validation_plans import (
     ci_validation_fact_snapshot_id,
     ci_validation_plan_digest,
     validate_ci_validation_plan,
+    validate_ci_validation_plan_structure,
 )
 from three_workflow_release_contracts.ci_validation_requests import (
     ci_validation_aggregate_evidence_manifest_artifact_ref,
@@ -53,7 +59,9 @@ _LOCAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _RUNNER_FAMILIES = frozenset({"windows", "ubuntu"})
-_ECOSYSTEMS = frozenset({"dotnet", "python", "javascript", "typescript"})
+_ECOSYSTEMS = frozenset(
+    {"dotnet", "python", "javascript", "typescript", "ruby"}
+)
 _MODES = frozenset({"pull_request", "push", "scheduled_full"})
 _SUMMARY_MODES = _MODES | frozenset({"unknown"})
 _AFFECTED_STATUSES = frozenset(
@@ -205,6 +213,7 @@ _EXECUTION_BATCH_MANIFEST_KEYS = frozenset(
         "repository",
         "run",
         "schema-diagnostics",
+        "execution-job",
         "plan-id",
         "plan-digest",
         "budget",
@@ -562,6 +571,14 @@ _INVALID_PLAN_FAILURE = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class CiValidationExecutionBatchMaterialization:
+    """Materialized execution-batch manifest plus matrix handoff payload."""
+
+    manifest: Mapping[str, object]
+    matrix: Mapping[str, object]
+
+
 def ci_validation_execution_batch_manifest_content_digest(
     raw_manifest_bytes: bytes,
 ) -> str:
@@ -658,20 +675,41 @@ def ci_validation_batch_evidence_candidate_id(  # noqa: PLR0913
     return f"candidate-{canonical_json_digest(preimage)}"
 
 
-def freeze_ci_validation_execution_batch_manifest(
+def freeze_ci_validation_execution_batch_manifest(  # noqa: PLR0913
     *,
     plan: Mapping[str, object],
+    request: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None = None,
+    expected_run_id: str | None = None,
+    expected_run_attempt: str | None = None,
     batches: Sequence[Mapping[str, object]],
     budget: Mapping[str, object],
     created_at: str,
+    execution_job: str = "execution-batch",
+    authorizing: bool = True,
 ) -> dict[str, object]:
     """Freeze a post-plan execution-batch manifest."""
     envelope = _envelope(plan, CiValidationKind.PLAN)
     _verified_plan_digest(plan)
+    if not isinstance(execution_job, str) or execution_job == "":
+        raise ContractValidationError(
+            [ValidationIssue("execution-job", "must be a string")]
+        )
     frozen_batches = sorted(
         (dict(batch) for batch in batches),
         key=lambda item: str(item.get("batch-id")),
     )
+    if not authorizing and frozen_batches:
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "authorizing",
+                    "is required to freeze non-empty execution batches",
+                )
+            ]
+        )
     manifest = {
         "api-version": API_VERSIONS_BY_KIND[
             CiValidationKind.EXECUTION_BATCH_MANIFEST.value
@@ -688,24 +726,386 @@ def freeze_ci_validation_execution_batch_manifest(
             "run-attempt": envelope.run_attempt,
         },
         "schema-diagnostics": [],
+        "execution-job": execution_job,
         "plan-id": plan["plan-id"],
         "plan-digest": _verified_plan_digest(plan),
         "budget": dict(budget),
         "batches": frozen_batches,
     }
-    validate_ci_validation_execution_batch_manifest(manifest, plan=plan)
+    validate_ci_validation_execution_batch_manifest(
+        manifest,
+        plan=plan,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+        authorizing=authorizing,
+    )
     return manifest
 
 
-def validate_ci_validation_execution_batch_manifest(
+def materialize_ci_validation_execution_batches(  # noqa: PLR0913
+    *,
+    plan: Mapping[str, object],
+    request: Mapping[str, object],
+    created_at: str,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None = None,
+    execution_workflow: str | None = None,
+    execution_job: str = "execution-batch",
+    expected_run_id: str | None = None,
+    expected_run_attempt: str | None = None,
+    non_batch_control_plane_job_count: int = 0,
+    aggregate_target_duration_seconds: int = 60,
+    aggregate_max_duration_seconds: int = _AGGREGATE_MAX_DURATION_SECONDS,
+) -> CiValidationExecutionBatchMaterialization:
+    """Materialize a CI plan into execution batches and matrix rows."""
+    validate_ci_validation_plan(
+        plan,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+    )
+    _validate_materializer_current_run_inputs(
+        request=request,
+        execution_workflow=execution_workflow,
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+    )
+    if not isinstance(created_at, str) or created_at == "":
+        raise ContractValidationError(
+            [ValidationIssue("created-at", "must be a string")]
+        )
+    for path, value in (
+        (
+            "non-batch-control-plane-job-count",
+            non_batch_control_plane_job_count,
+        ),
+        (
+            "aggregate-target-duration-seconds",
+            aggregate_target_duration_seconds,
+        ),
+        ("aggregate-max-duration-seconds", aggregate_max_duration_seconds),
+    ):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ContractValidationError(
+                [ValidationIssue(path, "must be a non-negative integer")]
+            )
+    envelope = _envelope(plan, CiValidationKind.PLAN)
+    current_run_id = cast("str", expected_run_id)
+    current_run_attempt = cast("str", expected_run_attempt)
+    _validate_materializer_request_context(
+        request,
+        plan,
+        envelope,
+        expected_run_id=current_run_id,
+        expected_run_attempt=current_run_attempt,
+    )
+    workflow = execution_workflow
+    if not isinstance(workflow, str) or workflow == "":
+        raise ContractValidationError(
+            [ValidationIssue("execution-workflow", "must be a string")]
+        )
+    if workflow != envelope.workflow:
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "execution-workflow",
+                    "must match validation plan workflow",
+                )
+            ]
+        )
+    if not isinstance(execution_job, str) or execution_job == "":
+        raise ContractValidationError(
+            [ValidationIssue("execution-job", "must be a string")]
+        )
+
+    groups = _materializer_executable_work_groups(plan)
+    expectations = _materializer_evidence_by_work_group(plan, groups)
+    ordered_group_ids = _materializer_topological_work_group_ids(groups)
+    batch_specs = _materializer_batch_specs(plan, groups, ordered_group_ids)
+    max_batches = _materializer_max_execution_batches(
+        expected_input_non_bundle_validation_artifacts=(
+            _expected_input_non_bundle_validation_artifacts(plan)
+        ),
+        non_batch_control_plane_job_count=non_batch_control_plane_job_count,
+        batch_specs=batch_specs,
+        groups=groups,
+        plan=plan,
+    )
+    if len(batch_specs) > max_batches:
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "batches",
+                    "executable work groups cannot fit execution-batch budget",
+                )
+            ]
+        )
+
+    batches = _materializer_batches(
+        envelope=envelope,
+        workflow=workflow,
+        execution_job=execution_job,
+        batch_specs=batch_specs,
+        groups=groups,
+        expectations=expectations,
+    )
+    budget = _materializer_budget(
+        plan=plan,
+        batches=batches,
+        expected_input_non_bundle_validation_artifacts=(
+            _expected_input_non_bundle_validation_artifacts(plan)
+        ),
+        max_execution_batches=max_batches,
+        non_batch_control_plane_job_count=non_batch_control_plane_job_count,
+        aggregate_target_duration_seconds=aggregate_target_duration_seconds,
+        aggregate_max_duration_seconds=aggregate_max_duration_seconds,
+    )
+    manifest = freeze_ci_validation_execution_batch_manifest(
+        plan=plan,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+        batches=batches,
+        budget=budget,
+        created_at=created_at,
+        execution_job=execution_job,
+    )
+    validate_ci_validation_execution_batch_manifest(
+        manifest,
+        plan=plan,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+    )
+    return CiValidationExecutionBatchMaterialization(
+        manifest=manifest,
+        matrix=ci_validation_execution_batch_matrix(
+            manifest,
+            plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            pull_request_merge_commit_verification=(
+                pull_request_merge_commit_verification
+            ),
+            expected_run_id=expected_run_id,
+            expected_run_attempt=expected_run_attempt,
+        ),
+    )
+
+
+def ci_validation_execution_batch_matrix(  # noqa: PLR0913
+    manifest: Mapping[str, object],
+    *,
+    plan: Mapping[str, object] | None = None,
+    request: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None = None,
+    expected_run_id: str | None = None,
+    expected_run_attempt: str | None = None,
+    authorizing: bool = True,
+) -> dict[str, object]:
+    """Return the deterministic matrix include payload for a batch manifest."""
+    if authorizing and plan is None:
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "plan",
+                    "is required to emit authorizing execution matrix rows",
+                )
+            ]
+        )
+    validate_ci_validation_execution_batch_manifest(
+        manifest,
+        plan=plan,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+        authorizing=authorizing,
+    )
+    batches = cast("Sequence[Mapping[str, object]]", manifest["batches"])
+    if not authorizing and batches:
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "authorizing",
+                    "is required to emit non-empty execution matrix rows",
+                )
+            ]
+        )
+    workflow = cast("Mapping[str, object]", manifest["run"])["workflow"]
+    execution_job = manifest["execution-job"]
+    return {
+        "include": [
+            _execution_batch_matrix_row(
+                batch,
+                workflow=cast("str", workflow),
+                execution_job=cast("str", execution_job),
+            )
+            for batch in batches
+        ]
+    }
+
+
+def _execution_batch_matrix_row(
+    batch: Mapping[str, object],
+    *,
+    workflow: str,
+    execution_job: str,
+) -> dict[str, object]:
+    identity = _execution_batch_matrix_identity(batch)
+    return {
+        **identity,
+        "identity-matrix": dict(identity),
+        "expected-job-identity": ci_validation_writer_id(
+            workflow=workflow,
+            job=execution_job,
+            matrix=identity,
+        ),
+    }
+
+
+def _execution_batch_matrix_identity(
+    batch: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "batch-id": batch["batch-id"],
+        "runner-family": batch["runner-family"],
+        "expected-batch-evidence-bundle-ref": batch[
+            "expected-batch-evidence-bundle-ref"
+        ],
+    }
+
+
+def _validate_materializer_current_run_inputs(
+    *,
+    request: object,
+    execution_workflow: object,
+    expected_run_id: object,
+    expected_run_attempt: object,
+) -> None:
+    issues: list[ValidationIssue] = []
+    _validate_non_empty_mapping(request, "request", issues)
+    _validate_non_empty_string(execution_workflow, "execution-workflow", issues)
+    _validate_non_empty_string(expected_run_id, "expected-run-id", issues)
+    _validate_non_empty_string(
+        expected_run_attempt, "expected-run-attempt", issues
+    )
+    if issues:
+        raise ContractValidationError(issues)
+
+
+def _validate_materializer_request_context(
+    request: Mapping[str, object],
+    plan: Mapping[str, object],
+    envelope: CommonEnvelope,
+    *,
+    expected_run_id: str,
+    expected_run_attempt: str,
+) -> None:
+    expected_ref = ci_validation_request_artifact_ref(
+        run_id=expected_run_id,
+        run_attempt=expected_run_attempt,
+    )
+    normalized = validate_ci_validation_request(
+        request,
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+        expected_artifact_ref=expected_ref,
+    )
+    request_envelope = _envelope(normalized.document, CiValidationKind.REQUEST)
+    issues: list[ValidationIssue] = []
+    _validate_context_envelope_matches_current(
+        request_envelope,
+        envelope,
+        "request",
+        issues,
+    )
+    plan_request = _mapping(plan["request"])
+    if plan_request.get("artifact-ref") != normalized.artifact_ref:
+        issues.append(
+            ValidationIssue("request.artifact-ref", "must match plan request")
+        )
+    if plan_request.get("request-digest") != normalized.request_digest:
+        issues.append(
+            ValidationIssue("request.request-digest", "must match plan request")
+        )
+    if issues:
+        raise ContractValidationError(issues)
+
+
+def validate_ci_validation_execution_batch_manifest(  # noqa: PLR0913
     manifest: object,
     *,
     plan: Mapping[str, object] | None = None,
+    request: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None = None,
     expected_envelope: CommonEnvelope | None = None,
     expected_run_id: str | None = None,
     expected_run_attempt: str | None = None,
+    authorizing: bool = True,
 ) -> None:
     """Validate an execution-batch manifest."""
+    _validate_ci_validation_execution_batch_manifest(
+        manifest,
+        plan=plan,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        pull_request_merge_commit_verification=(
+            pull_request_merge_commit_verification
+        ),
+        expected_envelope=expected_envelope,
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+        authorizing=authorizing,
+    )
+
+
+def _validate_ci_validation_execution_batch_manifest(  # noqa: PLR0913
+    manifest: object,
+    *,
+    plan: Mapping[str, object] | None = None,
+    request: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None = None,
+    expected_envelope: CommonEnvelope | None = None,
+    expected_run_id: str | None = None,
+    expected_run_attempt: str | None = None,
+    authorizing: bool = True,
+    _allow_planless_non_authorizing_batches: bool = False,
+) -> None:
+    """Validate an execution-batch manifest for trusted internal callers."""
     if not isinstance(manifest, Mapping):
         raise ContractValidationError(
             [ValidationIssue("$", "must be an object")],
@@ -723,6 +1123,9 @@ def validate_ci_validation_execution_batch_manifest(
     _validate_expected_run(
         envelope, expected_run_id, expected_run_attempt, issues
     )
+    _validate_non_empty_string(
+        manifest.get("execution-job"), "$.execution-job", issues
+    )
     if envelope is not None and expected_envelope is not None:
         _validate_context_envelope_matches_current(
             envelope,
@@ -733,7 +1136,19 @@ def validate_ci_validation_execution_batch_manifest(
     plan_work_groups: dict[str, Mapping[str, object]] = {}
     plan_evidence_expectations: dict[str, Mapping[str, object]] = {}
     executable_work_group_ids: set[str] | None = None
+    plan_context_valid = True
     if plan is not None:
+        plan_context_valid = _validate_plan_context(
+            plan,
+            request,
+            changed_files_snapshot,
+            fact_snapshot,
+            pull_request_merge_commit_verification,
+            expected_run_id,
+            expected_run_attempt,
+            issues,
+            require_authorizing_context=authorizing,
+        )
         plan_envelope = _validated_plan_envelope(plan, issues)
         if envelope is not None and plan_envelope is not None:
             _validate_envelope_matches(envelope, plan_envelope, issues)
@@ -741,13 +1156,14 @@ def validate_ci_validation_execution_batch_manifest(
             issues.append(ValidationIssue("$.plan-id", "must match plan"))
         if manifest.get("plan-digest") != _verified_plan_digest_or_none(plan):
             issues.append(ValidationIssue("$.plan-digest", "must match plan"))
-        plan_work_groups = _work_groups_by_id(plan)
-        plan_evidence_expectations = _evidence_expectations_by_id(plan)
-        executable_work_group_ids = {
-            item_id
-            for item_id, group in plan_work_groups.items()
-            if group.get("kind") != "evidence-aggregation"
-        }
+        if plan_context_valid:
+            plan_work_groups = _work_groups_by_id(plan)
+            plan_evidence_expectations = _evidence_expectations_by_id(plan)
+            executable_work_group_ids = {
+                item_id
+                for item_id, group in plan_work_groups.items()
+                if group.get("kind") != "evidence-aggregation"
+            }
     else:
         _validate_non_empty_string(manifest.get("plan-id"), "$.plan-id", issues)
         _validate_digest(manifest.get("plan-digest"), "$.plan-digest", issues)
@@ -759,6 +1175,29 @@ def validate_ci_validation_execution_batch_manifest(
         executable_work_group_ids,
         issues,
     )
+    _validate_planless_non_empty_batches(
+        plan=plan,
+        allow_planless_non_authorizing_batches=(
+            _allow_planless_non_authorizing_batches
+        ),
+        batches=batches,
+        issues=issues,
+    )
+    if plan is not None and plan_context_valid:
+        _validate_plan_bound_batch_materialization(
+            batches,
+            plan,
+            manifest.get("budget"),
+            envelope,
+            manifest.get("execution-job"),
+            issues,
+        )
+    _validate_batch_writer_identities(
+        batches,
+        envelope,
+        manifest.get("execution-job"),
+        issues,
+    )
     _validate_budget(
         manifest.get("budget"),
         len(batches),
@@ -768,6 +1207,106 @@ def validate_ci_validation_execution_batch_manifest(
     )
     if issues:
         raise ContractValidationError(issues)
+
+
+def _validate_planless_non_empty_batches(
+    *,
+    plan: Mapping[str, object] | None,
+    allow_planless_non_authorizing_batches: bool,
+    batches: Sequence[Mapping[str, object]],
+    issues: list[ValidationIssue],
+) -> None:
+    if plan is None and batches and not allow_planless_non_authorizing_batches:
+        issues.append(
+            ValidationIssue(
+                "authorizing",
+                "requires plan context for non-empty execution batches",
+            )
+        )
+
+
+def _validate_plan_context(  # noqa: PLR0913
+    plan: Mapping[str, object],
+    request: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    pull_request_merge_commit_verification: Mapping[str, object] | None,
+    expected_run_id: str | None,
+    expected_run_attempt: str | None,
+    issues: list[ValidationIssue],
+    *,
+    require_authorizing_context: bool = False,
+) -> bool:
+    authorizing_context_requested = require_authorizing_context or any(
+        item is not None
+        for item in (
+            request,
+            changed_files_snapshot,
+            fact_snapshot,
+            pull_request_merge_commit_verification,
+        )
+    )
+    if authorizing_context_requested:
+        if request is None:
+            issues.append(
+                ValidationIssue(
+                    "request",
+                    "is required for authorizing plan-bound manifest",
+                )
+            )
+        if not isinstance(expected_run_id, str) or expected_run_id == "":
+            issues.append(
+                ValidationIssue(
+                    "expected-run-id",
+                    "is required for authorizing plan-bound manifest",
+                )
+            )
+        if (
+            not isinstance(expected_run_attempt, str)
+            or expected_run_attempt == ""
+        ):
+            issues.append(
+                ValidationIssue(
+                    "expected-run-attempt",
+                    "is required for authorizing plan-bound manifest",
+                )
+            )
+        try:
+            validate_ci_validation_plan(
+                plan,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+                pull_request_merge_commit_verification=(
+                    pull_request_merge_commit_verification
+                ),
+                expected_run_id=expected_run_id,
+                expected_run_attempt=expected_run_attempt,
+            )
+        except ContractValidationError as error:
+            issues.extend(error.issues)
+        plan_envelope = _validated_plan_envelope(plan, issues)
+        if (
+            request is not None
+            and expected_run_id is not None
+            and expected_run_attempt is not None
+            and plan_envelope is not None
+        ):
+            try:
+                _validate_materializer_request_context(
+                    request,
+                    plan,
+                    plan_envelope,
+                    expected_run_id=expected_run_id,
+                    expected_run_attempt=expected_run_attempt,
+                )
+            except ContractValidationError as error:
+                issues.extend(error.issues)
+    else:
+        try:
+            validate_ci_validation_plan_structure(plan)
+        except ContractValidationError as error:
+            issues.extend(error.issues)
+    return _validate_plan_context_canonical_arrays(plan, issues)
 
 
 def freeze_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
@@ -787,6 +1326,7 @@ def freeze_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
     validate_ci_validation_execution_batch_manifest(
         execution_batch_manifest,
         plan=plan,
+        authorizing=False,
     )
     envelope = _envelope(plan, CiValidationKind.PLAN)
     batch = _batch_by_id(execution_batch_manifest, batch_id)
@@ -913,7 +1453,12 @@ def validate_ci_validation_batch_evidence_bundle(
         issues,
     )
     _validate_writer(bundle.get("writer"), "$.writer", issues)
-    _validate_bundle_writer_matches_batch(bundle.get("writer"), batch, issues)
+    _validate_bundle_writer_matches_batch(
+        bundle.get("writer"),
+        batch,
+        execution_batch_manifest,
+        issues,
+    )
     _validate_object(
         bundle.get("execution-tree"),
         _EXECUTION_TREE_KEYS,
@@ -973,9 +1518,52 @@ def freeze_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
     request: Mapping[str, object] | None = None,
     changed_files_snapshot: Mapping[str, object] | None = None,
     fact_snapshot: Mapping[str, object] | None = None,
-    _require_authoritative_snapshot_inputs: bool = True,
 ) -> dict[str, object]:
     """Freeze the pre-final aggregate evidence manifest."""
+    return _freeze_ci_validation_aggregate_evidence_manifest(
+        created_at=created_at,
+        repository_owner=repository_owner,
+        repository_name=repository_name,
+        workflow=workflow,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        input_artifacts=input_artifacts,
+        batch_bundles=batch_bundles,
+        unexpected_contract_artifacts=unexpected_contract_artifacts,
+        namespace_overflow=namespace_overflow,
+        pre_final_validation_artifacts=pre_final_validation_artifacts,
+        namespace_closed_at=namespace_closed_at,
+        plan=plan,
+        execution_batch_manifest=execution_batch_manifest,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        _require_authoritative_snapshot_inputs=True,
+    )
+
+
+def _freeze_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
+    *,
+    created_at: str,
+    repository_owner: str,
+    repository_name: str,
+    workflow: str,
+    run_id: str,
+    run_attempt: str,
+    input_artifacts: Mapping[str, object],
+    batch_bundles: Sequence[Mapping[str, object]],
+    unexpected_contract_artifacts: Sequence[Mapping[str, object]],
+    namespace_overflow: Mapping[str, object],
+    pre_final_validation_artifacts: int,
+    namespace_closed_at: str,
+    plan: Mapping[str, object] | None = None,
+    execution_batch_manifest: Mapping[str, object] | None = None,
+    request: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    _require_authoritative_snapshot_inputs: bool = True,
+) -> dict[str, object]:
+    """Freeze an aggregate evidence manifest for trusted internal callers."""
     plan_id = (
         plan.get("plan-id")
         if plan is not None
@@ -1034,7 +1622,7 @@ def freeze_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
         "namespace-closed-at": namespace_closed_at,
         "proof-admissibility": _PROOF_ADMISSIBILITY,
     }
-    validate_ci_validation_aggregate_evidence_manifest(
+    _validate_ci_validation_aggregate_evidence_manifest(
         manifest,
         plan=plan,
         execution_batch_manifest=execution_batch_manifest,
@@ -1062,10 +1650,36 @@ def validate_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
     frozen_input_digests: Mapping[str, str] | None = None,
     expected_run_id: str | None = None,
     expected_run_attempt: str | None = None,
+) -> None:
+    """Validate an aggregate evidence manifest."""
+    _validate_ci_validation_aggregate_evidence_manifest(
+        manifest,
+        plan=plan,
+        execution_batch_manifest=execution_batch_manifest,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        frozen_input_digests=frozen_input_digests,
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+    )
+
+
+def _validate_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
+    manifest: object,
+    *,
+    plan: Mapping[str, object] | None = None,
+    execution_batch_manifest: Mapping[str, object] | None = None,
+    request: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    frozen_input_digests: Mapping[str, str] | None = None,
+    expected_run_id: str | None = None,
+    expected_run_attempt: str | None = None,
     _require_authoritative_snapshot_inputs: bool = True,
     _require_context_proof_for_valid_inputs: bool = True,
 ) -> None:
-    """Validate an aggregate evidence manifest."""
+    """Validate an aggregate evidence manifest for trusted internal callers."""
     if not isinstance(manifest, Mapping):
         raise ContractValidationError(
             [ValidationIssue("$", "must be an object")],
@@ -1125,43 +1739,18 @@ def validate_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
     )
     if (
         plan is None
-        and execution_batch_manifest is None
         and _aggregate_manifest_has_no_authoritative_plan(manifest)
     ):
         _validate_null_plan_identity(manifest, "$", issues)
     execution_batch_manifest_proven = False
     if execution_batch_manifest is not None:
-        execution_manifest_issue_count = len(issues)
-        try:
-            validate_ci_validation_execution_batch_manifest(
-                execution_batch_manifest,
-                plan=plan,
-                expected_envelope=envelope,
-                expected_run_id=envelope.run_id
-                if envelope is not None
-                else None,
-                expected_run_attempt=(
-                    envelope.run_attempt if envelope is not None else None
-                ),
-            )
-        except ContractValidationError as error:
-            issues.extend(error.issues)
-        _validate_plan_identity_matches(
-            manifest,
-            execution_batch_manifest,
-            "$",
-            "execution-batch manifest",
-            issues,
-        )
         execution_batch_manifest_proven = (
-            len(issues) == execution_manifest_issue_count
-            and _input_artifact_authorizes_supplied_document(
+            _validate_supplied_aggregate_execution_batch_manifest(
                 manifest,
-                "execution-batch-manifest",
+                execution_batch_manifest,
+                plan,
                 envelope,
-                ci_validation_execution_batch_manifest_payload_digest(
-                    execution_batch_manifest
-                ),
+                issues,
             )
         )
     expected_fact_snapshot_plan_id = _expected_context_plan_id(
@@ -1284,6 +1873,60 @@ def validate_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
         raise ContractValidationError(issues)
 
 
+def _validate_supplied_aggregate_execution_batch_manifest(
+    manifest: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object],
+    plan: Mapping[str, object] | None,
+    envelope: CommonEnvelope | None,
+    issues: list[ValidationIssue],
+) -> bool:
+    execution_manifest_issue_count = len(issues)
+    try:
+        _validate_ci_validation_execution_batch_manifest(
+            execution_batch_manifest,
+            plan=plan,
+            expected_envelope=envelope,
+            expected_run_id=envelope.run_id if envelope is not None else None,
+            expected_run_attempt=(
+                envelope.run_attempt if envelope is not None else None
+            ),
+            authorizing=False,
+            _allow_planless_non_authorizing_batches=(
+                _allow_planless_execution_manifest_diagnostic(
+                    plan,
+                    execution_batch_manifest,
+                )
+            ),
+        )
+    except ContractValidationError as error:
+        issues.extend(error.issues)
+    _validate_plan_identity_matches(
+        manifest,
+        execution_batch_manifest,
+        "$",
+        "execution-batch manifest",
+        issues,
+    )
+    if plan is None:
+        _valid_context_plan_id_or_none(
+            execution_batch_manifest.get("plan-id"),
+            "execution_batch_manifest.plan-id",
+            issues,
+        )
+    return (
+        plan is not None
+        and len(issues) == execution_manifest_issue_count
+        and _input_artifact_authorizes_supplied_document(
+            manifest,
+            "execution-batch-manifest",
+            envelope,
+            ci_validation_execution_batch_manifest_payload_digest(
+                execution_batch_manifest,
+            ),
+        )
+    )
+
+
 def freeze_ci_validation_aggregate_summary(  # noqa: PLR0913
     *,
     created_at: str,
@@ -1320,8 +1963,6 @@ def freeze_ci_validation_aggregate_summary(  # noqa: PLR0913
         "plan-id",
         plan,
         aggregate_evidence_manifest_document,
-        execution_batch_manifest,
-        admitted_batch_evidence_bundles,
     )
     plan_digest = (
         _verified_plan_digest(plan)
@@ -1330,8 +1971,6 @@ def freeze_ci_validation_aggregate_summary(  # noqa: PLR0913
             "plan-digest",
             plan,
             aggregate_evidence_manifest_document,
-            execution_batch_manifest,
-            admitted_batch_evidence_bundles,
         )
     )
     projection = _summary_projection_from_authority(
@@ -1434,7 +2073,7 @@ def freeze_ci_validation_aggregate_summary(  # noqa: PLR0913
     return summary
 
 
-def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0913, PLR0915
+def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, PLR0915
     summary: object,
     *,
     plan: Mapping[str, object] | None = None,
@@ -1496,18 +2135,36 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0913, PLR0915
         fact_snapshot=fact_snapshot,
         issues=issues,
     )
-    _validate_supplied_summary_execution_manifest(
-        execution_batch_manifest,
-        plan,
-        envelope,
-        issues,
+    execution_batch_manifest_authoritative = (
+        _validate_supplied_summary_execution_manifest(
+            execution_batch_manifest,
+            plan,
+            envelope,
+            issues,
+        )
     )
+    authoritative_execution_batch_manifest = None
+    if execution_batch_manifest_authoritative:
+        authoritative_execution_batch_manifest = execution_batch_manifest
+    if (
+        plan is None
+        and aggregate_evidence_manifest is None
+    ):
+        _validate_null_plan_identity(summary, "$", issues)
+    if (
+        plan is None
+        and aggregate_evidence_manifest is not None
+        and _aggregate_manifest_has_no_authoritative_plan(
+            aggregate_evidence_manifest
+        )
+    ):
+        _validate_null_plan_identity(summary, "$", issues)
     if _is_invalid_plan_summary(summary):
         _validate_null_plan_identity(summary, "$", issues)
-    elif execution_batch_manifest is not None:
+    elif authoritative_execution_batch_manifest is not None:
         _validate_plan_identity_matches(
             summary,
-            execution_batch_manifest,
+            authoritative_execution_batch_manifest,
             "$",
             "execution-batch manifest",
             issues,
@@ -1567,14 +2224,16 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0913, PLR0915
     _validate_summary_budgets(summary.get("budgets"), issues)
     _validate_summary_budget_matches_execution_manifest(
         summary,
-        execution_batch_manifest,
+        authoritative_execution_batch_manifest,
         plan,
         issues,
     )
     _validate_diagnostics(summary.get("diagnostics"), "$.diagnostics", issues)
     _validate_summary_bundles(summary.get("batch-bundles"), envelope, issues)
     _validate_summary_bundle_ids_match_execution_manifest(
-        summary.get("batch-bundles"), execution_batch_manifest, issues
+        summary.get("batch-bundles"),
+        authoritative_execution_batch_manifest,
+        issues,
     )
     _validate_no_summary_admitted_candidates_without_manifest(
         summary,
@@ -1681,11 +2340,12 @@ def _validate_supplied_summary_execution_manifest(
     plan: Mapping[str, object] | None,
     envelope: CommonEnvelope | None,
     issues: list[ValidationIssue],
-) -> None:
+) -> bool:
     if execution_batch_manifest is None:
-        return
+        return False
+    execution_manifest_issue_count = len(issues)
     try:
-        validate_ci_validation_execution_batch_manifest(
+        _validate_ci_validation_execution_batch_manifest(
             execution_batch_manifest,
             plan=plan,
             expected_envelope=envelope,
@@ -1693,16 +2353,23 @@ def _validate_supplied_summary_execution_manifest(
             expected_run_attempt=(
                 envelope.run_attempt if envelope is not None else None
             ),
+            authorizing=False,
+            _allow_planless_non_authorizing_batches=(
+                _allow_planless_execution_manifest_diagnostic(
+                    plan,
+                    execution_batch_manifest,
+                )
+            ),
         )
     except ContractValidationError as error:
         issues.extend(error.issues)
+    return plan is not None and len(issues) == execution_manifest_issue_count
 
 
 def _raw_digest(value: bytes, path: str) -> str:
     if not isinstance(value, bytes):
         raise ContractValidationError([ValidationIssue(path, "must be bytes")])
     return hashlib.sha256(value).hexdigest()
-
 
 def _payload_digest(value: Mapping[str, object], path: str) -> str:
     try:
@@ -2152,6 +2819,541 @@ def _validate_g1_schema_diagnostics(
             )
 
 
+def _materializer_executable_work_groups(
+    plan: Mapping[str, object],
+) -> dict[str, Mapping[str, object]]:
+    groups = _sequence(plan["work-groups"])
+    result: dict[str, Mapping[str, object]] = {}
+    for group in groups:
+        if (
+            isinstance(group, Mapping)
+            and group.get("kind") != "evidence-aggregation"
+            and isinstance(group.get("work-group-id"), str)
+        ):
+            result[str(group["work-group-id"])] = group
+    return result
+
+
+def _materializer_evidence_by_work_group(
+    plan: Mapping[str, object],
+    groups: Mapping[str, Mapping[str, object]],
+) -> dict[str, Mapping[str, object]]:
+    expectations = _sequence(plan["evidence-expectations"])
+    result: dict[str, Mapping[str, object]] = {}
+    issues: list[ValidationIssue] = []
+    for expectation in expectations:
+        if not isinstance(expectation, Mapping):
+            continue
+        work_group_id = expectation.get("work-group-id")
+        if not isinstance(work_group_id, str) or work_group_id not in groups:
+            continue
+        if work_group_id in result:
+            issues.append(
+                ValidationIssue(
+                    "evidence-expectations",
+                    "must contain exactly one expectation per work group",
+                )
+            )
+        result[work_group_id] = expectation
+    missing = sorted(set(groups) - set(result))
+    for work_group_id in missing:
+        issues.append(
+            ValidationIssue(
+                f"evidence-expectations.{work_group_id}",
+                "is required for executable work group",
+            )
+        )
+    if issues:
+        raise ContractValidationError(issues)
+    return result
+
+
+def _materializer_topological_work_group_ids(
+    groups: Mapping[str, Mapping[str, object]],
+) -> list[str]:
+    dependencies: dict[str, set[str]] = {}
+    dependents: dict[str, set[str]] = {
+        work_group_id: set() for work_group_id in groups
+    }
+    for work_group_id, group in groups.items():
+        local_deps = {
+            str(item)
+            for item in _sequence(group.get("depends-on", []))
+            if isinstance(item, str) and item in groups
+        }
+        dependencies[work_group_id] = local_deps
+        for dependency in local_deps:
+            dependents[dependency].add(work_group_id)
+    ready = sorted(
+        work_group_id
+        for work_group_id, local_deps in dependencies.items()
+        if not local_deps
+    )
+    ordered: list[str] = []
+    while ready:
+        work_group_id = ready.pop(0)
+        ordered.append(work_group_id)
+        for dependent in sorted(dependents[work_group_id]):
+            dependencies[dependent].remove(work_group_id)
+            if not dependencies[dependent]:
+                ready.append(dependent)
+        ready.sort()
+    if len(ordered) != len(groups):
+        raise ContractValidationError(
+            [ValidationIssue("work-groups.depends-on", "must be acyclic")]
+        )
+    return ordered
+
+
+def _materializer_batch_specs(
+    plan: Mapping[str, object],
+    groups: Mapping[str, Mapping[str, object]],
+    ordered_group_ids: Sequence[str],
+) -> list[dict[str, object]]:
+    artifact_obligations = (
+        _materializer_release_artifact_obligations_by_work_group(
+            plan,
+            groups,
+        )
+    )
+    specs_by_key: dict[str, dict[str, object]] = {}
+    for work_group_id in ordered_group_ids:
+        group = groups[work_group_id]
+        key_payload = _materializer_compatibility_key(
+            group,
+            artifact_obligations=artifact_obligations,
+        )
+        key = canonical_json_digest(key_payload)
+        spec = specs_by_key.setdefault(
+            key,
+            {
+                "key": key,
+                "key-payload": key_payload,
+                "work-group-ids": [],
+            },
+        )
+        cast("list[str]", spec["work-group-ids"]).append(work_group_id)
+    specs = list(specs_by_key.values())
+    for spec in specs:
+        profile = _materializer_compatibility_profile(
+            groups=groups,
+            work_group_ids=cast("Sequence[str]", spec["work-group-ids"]),
+            key_payload=cast("Mapping[str, object]", spec["key-payload"]),
+        )
+        spec["compatibility-profile"] = profile
+        spec["batch-id"] = _materializer_batch_id(
+            profile=profile,
+            work_group_ids=cast("Sequence[str]", spec["work-group-ids"]),
+        )
+    return sorted(specs, key=lambda item: str(item["batch-id"]))
+
+
+def _materializer_compatibility_key(
+    group: Mapping[str, object],
+    *,
+    artifact_obligations: Mapping[str, Mapping[str, object]],
+) -> dict[str, object]:
+    key: dict[str, object] = {
+        "api-version": "three.ci.validation.batch-compatibility/v1alpha1",
+        "runner-family": group.get("runner-family"),
+        "ecosystem": group.get("ecosystem"),
+        "kind": group.get("kind"),
+        "release-shaped": group.get("kind") == "release-shaped-artifact",
+    }
+    if group.get("kind") == "release-shaped-artifact":
+        key["release-shaped-obligation"] = (
+            _materializer_release_obligation_shape(
+                group,
+                artifact_obligations=artifact_obligations,
+            )
+        )
+    return key
+
+
+def _materializer_artifact_obligations_by_work_group(
+    plan: Mapping[str, object],
+) -> dict[str, Mapping[str, object]]:
+    obligations: dict[str, Mapping[str, object]] = {}
+    for obligation in _sequence(plan.get("artifact-obligations", [])):
+        if not isinstance(obligation, Mapping):
+            continue
+        work_group_id = obligation.get("work-group-id")
+        if isinstance(work_group_id, str):
+            obligations[work_group_id] = obligation
+    return obligations
+
+
+def _materializer_release_artifact_obligations_by_work_group(
+    plan: Mapping[str, object],
+    groups: Mapping[str, Mapping[str, object]],
+) -> dict[str, Mapping[str, object]]:
+    obligations_by_work_group: dict[str, list[Mapping[str, object]]] = {}
+    issues: list[ValidationIssue] = []
+    for index, obligation in enumerate(
+        _sequence(plan.get("artifact-obligations", []))
+    ):
+        if not isinstance(obligation, Mapping):
+            continue
+        work_group_id = obligation.get("work-group-id")
+        if not isinstance(work_group_id, str):
+            continue
+        obligations_by_work_group.setdefault(work_group_id, []).append(
+            obligation
+        )
+        if len(obligations_by_work_group[work_group_id]) > 1:
+            issues.append(
+                ValidationIssue(
+                    f"$.artifact-obligations[{index}].work-group-id",
+                    "must bind a unique artifact obligation",
+                )
+            )
+    for work_group_id, group in sorted(groups.items()):
+        if group.get("kind") != "release-shaped-artifact":
+            continue
+        obligations = obligations_by_work_group.get(work_group_id, [])
+        path = f"$.work-groups.{work_group_id}"
+        if len(obligations) != 1:
+            issues.append(
+                ValidationIssue(
+                    path,
+                    "release-shaped groups require one artifact obligation",
+                )
+            )
+            continue
+        obligation = obligations[0]
+        _validate_non_empty_mapping(
+            obligation.get("artifact"),
+            f"{path}.artifact",
+            issues,
+        )
+        _validate_non_empty_mapping(
+            obligation.get("release-receipt"),
+            f"{path}.release-receipt",
+            issues,
+        )
+    if issues:
+        raise ContractValidationError(issues)
+    return {
+        work_group_id: obligations[0]
+        for work_group_id, obligations in obligations_by_work_group.items()
+    }
+
+
+def _validate_non_empty_mapping(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping) or not value:
+        issues.append(ValidationIssue(path, "must be a non-empty object"))
+
+
+def _materializer_release_obligation_shape(
+    group: Mapping[str, object],
+    *,
+    artifact_obligations: Mapping[str, Mapping[str, object]],
+) -> dict[str, object]:
+    obligation = artifact_obligations.get(str(group.get("work-group-id")))
+    if obligation is None:
+        return {
+            "artifact": None,
+            "release-receipt": None,
+        }
+    return {
+        "artifact": dict(_mapping(obligation.get("artifact", {}))),
+        "release-receipt": dict(
+            _mapping(obligation.get("release-receipt", {}))
+        ),
+    }
+
+
+def _materializer_compatibility_profile(
+    *,
+    groups: Mapping[str, Mapping[str, object]],
+    work_group_ids: Sequence[str],
+    key_payload: Mapping[str, object],
+) -> dict[str, object]:
+    runner_family = str(key_payload["runner-family"])
+    ecosystem = key_payload.get("ecosystem")
+    kind = str(key_payload["kind"])
+    ecosystem_part = str(ecosystem) if ecosystem is not None else "generic"
+    setup_profile = _profile_id("setup", runner_family, ecosystem_part)
+    execution_profile = _profile_id("exec", kind, ecosystem_part)
+    setup_preimage = {
+        "api-version": "three.ci.validation.setup-profile/v1alpha1",
+        "runner-family": runner_family,
+        "ecosystem": ecosystem,
+        "tool-provisioning": "mise",
+    }
+    execution_preimage = {
+        "api-version": "three.ci.validation.execution-profile/v1alpha1",
+        "kind": kind,
+        "runner-family": runner_family,
+        "ecosystem": ecosystem,
+    }
+    release_profile: str | None = None
+    release_digest: str | None = None
+    if kind == "release-shaped-artifact":
+        release_profile = _profile_id("release", runner_family, ecosystem_part)
+        release_preimage = {
+            "api-version": (
+                "three.ci.validation.release-shaped-profile/v1alpha1"
+            ),
+            "runner-family": runner_family,
+            "ecosystem": ecosystem,
+            "obligation-shape": key_payload.get("release-shaped-obligation"),
+            "work-groups": [
+                {
+                    "work-group-id": work_group_id,
+                    "coverage-target": dict(
+                        _mapping(groups[work_group_id]["coverage-target"])
+                    ),
+                }
+                for work_group_id in work_group_ids
+            ],
+            "no-publish": True,
+        }
+        release_digest = canonical_json_digest(release_preimage)
+    return {
+        "ecosystem": ecosystem,
+        "setup-profile": setup_profile,
+        "setup-profile-digest": canonical_json_digest(setup_preimage),
+        "execution-profile": execution_profile,
+        "execution-profile-digest": canonical_json_digest(execution_preimage),
+        "release-shaped-profile": release_profile,
+        "release-shaped-profile-digest": release_digest,
+    }
+
+
+def _profile_id(prefix: str, *parts: str) -> str:
+    raw = "-".join((prefix, *parts))
+    safe = re.sub(r"[^a-z0-9._-]+", "-", raw.lower()).strip(".-_")
+    if not safe or _LOCAL_ID_RE.fullmatch(safe) is None:
+        safe = f"{prefix}-{canonical_json_digest({'parts': parts})[:16]}"
+    return safe[:128]
+
+
+def _materializer_batch_id(
+    *,
+    profile: Mapping[str, object],
+    work_group_ids: Sequence[str],
+) -> str:
+    digest = canonical_json_digest(
+        {
+            "api-version": "three.ci.validation.batch-id/v1alpha1",
+            "compatibility-profile": dict(profile),
+            "work-group-ids": list(work_group_ids),
+        }
+    )
+    ecosystem = profile.get("ecosystem")
+    ecosystem_part = str(ecosystem) if ecosystem is not None else "generic"
+    prefix = _profile_id(
+        "batch",
+        str(profile["execution-profile"]),
+        ecosystem_part,
+    )
+    return f"{prefix[:56]}-{digest}"
+
+
+def _materializer_batches(  # noqa: PLR0913
+    *,
+    envelope: CommonEnvelope,
+    workflow: str,
+    execution_job: str,
+    batch_specs: Sequence[Mapping[str, object]],
+    groups: Mapping[str, Mapping[str, object]],
+    expectations: Mapping[str, Mapping[str, object]],
+) -> list[dict[str, object]]:
+    batch_id_by_work_group = {
+        work_group_id: str(spec["batch-id"])
+        for spec in batch_specs
+        for work_group_id in cast("Sequence[str]", spec["work-group-ids"])
+    }
+    return [
+        _materializer_batch(
+            envelope=envelope,
+            workflow=workflow,
+            execution_job=execution_job,
+            spec=spec,
+            groups=groups,
+            expectations=expectations,
+            batch_id_by_work_group=batch_id_by_work_group,
+        )
+        for spec in batch_specs
+    ]
+
+
+def _materializer_batch(  # noqa: PLR0913
+    *,
+    envelope: CommonEnvelope,
+    workflow: str,
+    execution_job: str,
+    spec: Mapping[str, object],
+    groups: Mapping[str, Mapping[str, object]],
+    expectations: Mapping[str, Mapping[str, object]],
+    batch_id_by_work_group: Mapping[str, str],
+) -> dict[str, object]:
+    batch_id = str(spec["batch-id"])
+    work_group_ids = cast("Sequence[str]", spec["work-group-ids"])
+    bundle_ref = ci_validation_batch_evidence_bundle_artifact_ref(
+        run_id=envelope.run_id,
+        run_attempt=envelope.run_attempt,
+        batch_id=batch_id,
+    )
+    matrix_identity = {
+        "batch-id": batch_id,
+        "runner-family": groups[work_group_ids[0]]["runner-family"],
+        "expected-batch-evidence-bundle-ref": bundle_ref,
+    }
+    dependencies = sorted(
+        {
+            batch_id_by_work_group[dependency]
+            for work_group_id in work_group_ids
+            for dependency in _sequence(
+                groups[work_group_id].get("depends-on", [])
+            )
+            if isinstance(dependency, str)
+            and dependency in batch_id_by_work_group
+            and batch_id_by_work_group[dependency] != batch_id
+        }
+    )
+    return {
+        "batch-id": batch_id,
+        "runner-family": matrix_identity["runner-family"],
+        "compatibility-profile": dict(
+            cast("Mapping[str, object]", spec["compatibility-profile"])
+        ),
+        "depends-on-batches": dependencies,
+        "ordered-selectors": [
+            _materializer_selector(
+                selector_index=index,
+                group=groups[work_group_id],
+                expectation=expectations[work_group_id],
+            )
+            for index, work_group_id in enumerate(work_group_ids)
+        ],
+        "expected-batch-evidence-bundle-ref": bundle_ref,
+        "batch-writer": {
+            "identity-source": "github-actions-job-context",
+            "expected-boundary": "execution-batch",
+            "expected-job-identity": ci_validation_writer_id(
+                workflow=workflow,
+                job=execution_job,
+                matrix=matrix_identity,
+            ),
+            "provenance-fields": ["workflow", "job", "matrix"],
+        },
+    }
+
+
+def _materializer_selector(
+    *,
+    selector_index: int,
+    group: Mapping[str, object],
+    expectation: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "work-group-id": group["work-group-id"],
+        "selector-index": selector_index,
+        "depends-on": list(_sequence(group["depends-on"])),
+        "expected-evidence-id": expectation["evidence-expectation-id"],
+        "expected-evidence-slot": {
+            "coverage-target": dict(_mapping(group["coverage-target"])),
+            "ecosystem": group.get("ecosystem"),
+            "runner-family": group["runner-family"],
+            "selector-variant": group.get("selector-variant"),
+            "evidence": {
+                "category": expectation["category"],
+                "planned-capabilities": expectation.get("planned-capabilities"),
+                "detail-profile": expectation.get("detail-profile"),
+            },
+        },
+    }
+
+
+def _materializer_budget(  # noqa: PLR0913
+    *,
+    plan: Mapping[str, object],
+    batches: Sequence[Mapping[str, object]],
+    expected_input_non_bundle_validation_artifacts: int,
+    max_execution_batches: int,
+    non_batch_control_plane_job_count: int,
+    aggregate_target_duration_seconds: int,
+    aggregate_max_duration_seconds: int,
+) -> dict[str, object]:
+    batch_count = len(batches)
+    final_count = _EXPECTED_FINAL_VALIDATION_ARTIFACTS
+    pre_final = expected_input_non_bundle_validation_artifacts + batch_count
+    actual_total_jobs = non_batch_control_plane_job_count + batch_count
+    actual_windows_jobs = _derived_windows_jobs(
+        batches,
+        _work_groups_by_id(plan),
+    )
+    return {
+        "min-total-jobs": actual_total_jobs if batch_count else 0,
+        "max-total-jobs": _MAX_TOTAL_JOBS,
+        "min-windows-jobs": actual_windows_jobs if batch_count else 0,
+        "max-windows-jobs": _MAX_WINDOWS_JOBS,
+        "non-batch-control-plane-job-count": non_batch_control_plane_job_count,
+        "actual-total-jobs": actual_total_jobs,
+        "actual-windows-jobs": actual_windows_jobs,
+        "max-validation-artifacts": _MAX_VALIDATION_ARTIFACTS,
+        "actual-validation-artifacts": pre_final + final_count,
+        "expected-input-non-bundle-validation-artifacts": (
+            expected_input_non_bundle_validation_artifacts
+        ),
+        "expected-final-validation-artifacts": final_count,
+        "expected-non-bundle-validation-artifacts": (
+            expected_input_non_bundle_validation_artifacts + final_count
+        ),
+        "pre-final-validation-artifacts": pre_final,
+        "max-execution-batches": max_execution_batches,
+        "actual-execution-batches": batch_count,
+        "aggregate-target-duration-seconds": aggregate_target_duration_seconds,
+        "aggregate-max-duration-seconds": aggregate_max_duration_seconds,
+    }
+
+
+def _materializer_max_execution_batches(
+    *,
+    expected_input_non_bundle_validation_artifacts: int,
+    non_batch_control_plane_job_count: int,
+    batch_specs: Sequence[Mapping[str, object]],
+    groups: Mapping[str, Mapping[str, object]],
+    plan: Mapping[str, object],
+) -> int:
+    planned_windows_batches = _materializer_planned_windows_batches(
+        batch_specs,
+        groups,
+    )
+    planned_non_windows_batches = len(batch_specs) - planned_windows_batches
+    bound = _max_execution_batch_bound(
+        input_count=expected_input_non_bundle_validation_artifacts,
+        max_total=_MAX_TOTAL_JOBS,
+        control_plane=non_batch_control_plane_job_count,
+        non_windows_batches=planned_non_windows_batches,
+        windows_batches=planned_windows_batches,
+        max_windows=_MAX_WINDOWS_JOBS,
+        control_plane_windows=_control_plane_windows_jobs(plan),
+    )
+    if bound is None:
+        return _MAX_EXECUTION_BATCHES
+    return max(0, bound)
+
+
+def _expected_input_non_bundle_validation_artifacts(
+    plan: Mapping[str, object],
+) -> int:
+    count = 3
+    affected_range = _mapping(plan["affected-range"])
+    if affected_range.get("changed-files-hash") is not None:
+        count += 1
+    fact_snapshot = _mapping(plan["fact-snapshot"])
+    if fact_snapshot.get("status") == "available":
+        count += 1
+    return count
+
+
 def _validate_budget(  # noqa: C901,PLR0912,PLR0915
     value: object,
     batch_count: int,
@@ -2233,6 +3435,16 @@ def _validate_budget(  # noqa: C901,PLR0912,PLR0915
         input_count=input_count,
         max_total=max_total,
         control_plane=control_plane,
+        non_windows_batches=sum(
+            1 for batch in batches if batch.get("runner-family") != "windows"
+        ),
+        windows_batches=sum(
+            1 for batch in batches if batch.get("runner-family") == "windows"
+        ),
+        max_windows=max_windows,
+        control_plane_windows=_control_plane_windows_from_groups(
+            plan_work_groups
+        ),
     )
     if (
         isinstance(max_batches, int)
@@ -2395,7 +3607,11 @@ def _validate_batches(  # noqa: C901,PLR0912,PLR0913
     if not isinstance(value, Sequence) or isinstance(value, str | bytes):
         issues.append(ValidationIssue("$.batches", "must be an array"))
         return []
-    if not value:
+    if (
+        not value
+        and executable_work_group_ids is not None
+        and executable_work_group_ids != set()
+    ):
         issues.append(
             ValidationIssue(
                 "$.batches",
@@ -2471,18 +3687,66 @@ def _validate_batches(  # noqa: C901,PLR0912,PLR0913
     return batches
 
 
-def _max_execution_batch_bound(
+def _max_execution_batch_bound(  # noqa: PLR0913
     *,
     input_count: object,
     max_total: object,
     control_plane: object,
+    non_windows_batches: object | None = None,
+    windows_batches: object | None = None,
+    max_windows: object | None = None,
+    control_plane_windows: object | None = None,
 ) -> int | None:
     bounds = [_MAX_EXECUTION_BATCHES]
     if isinstance(input_count, int):
         bounds.append(_MAX_PREFINAL_VALIDATION_ARTIFACTS - input_count)
     if isinstance(max_total, int) and isinstance(control_plane, int):
         bounds.append(max_total - control_plane)
+    if (
+        isinstance(non_windows_batches, int)
+        and isinstance(windows_batches, int)
+        and windows_batches > 0
+        and isinstance(max_windows, int)
+        and isinstance(control_plane_windows, int)
+    ):
+        bounds.append(non_windows_batches + max_windows - control_plane_windows)
     return min(bounds)
+
+
+def _materializer_planned_windows_batches(
+    batch_specs: Sequence[Mapping[str, object]],
+    groups: Mapping[str, Mapping[str, object]],
+) -> int:
+    count = 0
+    for spec in batch_specs:
+        work_group_ids = cast("Sequence[str]", spec["work-group-ids"])
+        if (
+            work_group_ids
+            and groups[work_group_ids[0]].get("runner-family") == "windows"
+        ):
+            count += 1
+    return count
+
+
+def _control_plane_windows_jobs(plan: Mapping[str, object]) -> int:
+    return sum(
+        1
+        for group in _sequence(plan.get("work-groups", []))
+        if isinstance(group, Mapping)
+        and group.get("kind") == "evidence-aggregation"
+        and group.get("runner-family") == "windows"
+    )
+
+
+def _control_plane_windows_from_groups(
+    plan_work_groups: Mapping[str, Mapping[str, object]],
+) -> int:
+    return sum(
+        1
+        for group in plan_work_groups.values()
+        if group.get("kind") == "evidence-aggregation"
+        and group.get("runner-family") == "windows"
+    )
 
 
 def _derived_windows_jobs(
@@ -2492,12 +3756,7 @@ def _derived_windows_jobs(
     batch_windows = sum(
         1 for batch in batches if batch.get("runner-family") == "windows"
     )
-    control_plane_windows = sum(
-        1
-        for group in plan_work_groups.values()
-        if group.get("kind") == "evidence-aggregation"
-        and group.get("runner-family") == "windows"
-    )
+    control_plane_windows = _control_plane_windows_from_groups(plan_work_groups)
     return batch_windows + control_plane_windows
 
 
@@ -2567,6 +3826,224 @@ def _validate_batch(  # noqa: PLR0913
                     "must be [workflow, job, matrix]",
                 ),
             )
+
+
+def _validate_batch_writer_identities(
+    batches: Sequence[Mapping[str, object]],
+    envelope: CommonEnvelope | None,
+    execution_job: object,
+    issues: list[ValidationIssue],
+) -> None:
+    if envelope is None or not isinstance(execution_job, str):
+        return
+    for index, batch in enumerate(batches):
+        writer = batch.get("batch-writer")
+        if not isinstance(writer, Mapping):
+            continue
+        if not _batch_has_matrix_identity(batch):
+            continue
+        expected = ci_validation_writer_id(
+            workflow=envelope.workflow,
+            job=execution_job,
+            matrix=_execution_batch_matrix_identity(batch),
+        )
+        if writer.get("expected-job-identity") != expected:
+            issues.append(
+                ValidationIssue(
+                    f"$.batches[{index}].batch-writer.expected-job-identity",
+                    "must match execution job context",
+                )
+            )
+
+
+def _batch_has_matrix_identity(batch: Mapping[str, object]) -> bool:
+    return (
+        isinstance(batch.get("batch-id"), str)
+        and batch.get("runner-family") in _RUNNER_FAMILIES
+        and isinstance(batch.get("expected-batch-evidence-bundle-ref"), str)
+    )
+
+
+def _validate_plan_bound_batch_materialization(  # noqa: PLR0913
+    batches: Sequence[Mapping[str, object]],
+    plan: Mapping[str, object],
+    manifest_budget: object,
+    envelope: CommonEnvelope | None,
+    execution_job: object,
+    issues: list[ValidationIssue],
+) -> None:
+    expected = _expected_plan_bound_materialization(
+        plan,
+        manifest_budget=manifest_budget,
+        envelope=envelope,
+        execution_job=execution_job,
+        issues=issues,
+    )
+    if expected is None:
+        return
+    expected_batches, expected_budget = expected
+    if len(batches) != len(expected_batches):
+        issues.append(
+            ValidationIssue("$.batches", "must match materializer batch count")
+        )
+    for index, (batch, expected_batch) in enumerate(
+        zip(batches, expected_batches, strict=False)
+    ):
+        for key in (
+            "batch-id",
+            "runner-family",
+            "compatibility-profile",
+            "depends-on-batches",
+            "ordered-selectors",
+            "expected-batch-evidence-bundle-ref",
+            "batch-writer",
+        ):
+            if batch.get(key) != expected_batch.get(key):
+                issues.append(
+                    ValidationIssue(
+                        f"$.batches[{index}].{key}",
+                        "must match materialized plan batch",
+                    )
+                )
+    if (
+        isinstance(manifest_budget, Mapping)
+        and manifest_budget != expected_budget
+    ):
+        issues.append(
+            ValidationIssue("$.budget", "must match materialized plan")
+        )
+
+
+def _expected_plan_bound_materialization(  # noqa: C901,PLR0911
+    plan: Mapping[str, object],
+    *,
+    manifest_budget: object,
+    envelope: CommonEnvelope | None,
+    execution_job: object,
+    issues: list[ValidationIssue],
+) -> tuple[list[dict[str, object]], dict[str, object]] | None:
+    if envelope is None or not isinstance(execution_job, str):
+        return None
+    try:
+        groups = _materializer_executable_work_groups(plan)
+        expectations = _materializer_evidence_by_work_group(plan, groups)
+    except ContractValidationError as error:
+        issues.extend(error.issues)
+        return None
+    except (KeyError, TypeError, ValueError) as error:
+        issues.append(ValidationIssue("plan.work-groups", str(error)))
+        return None
+    if not _validate_materializer_selected_plan_fields(
+        plan,
+        groups,
+        expectations,
+        issues,
+    ):
+        return None
+    try:
+        ordered_group_ids = _materializer_topological_work_group_ids(groups)
+        batch_specs = _materializer_batch_specs(plan, groups, ordered_group_ids)
+        expected_input_count = _expected_input_non_bundle_validation_artifacts(
+            plan
+        )
+    except ContractValidationError as error:
+        issues.extend(error.issues)
+        return None
+    except (KeyError, TypeError, ValueError) as error:
+        issues.append(ValidationIssue("plan.work-groups", str(error)))
+        return None
+    if isinstance(manifest_budget, Mapping):
+        control_plane = manifest_budget.get("non-batch-control-plane-job-count")
+        target_duration = manifest_budget.get(
+            "aggregate-target-duration-seconds"
+        )
+        max_duration = manifest_budget.get("aggregate-max-duration-seconds")
+    else:
+        control_plane = None
+        target_duration = None
+        max_duration = None
+    if (
+        not isinstance(control_plane, int)
+        or isinstance(control_plane, bool)
+        or not isinstance(target_duration, int)
+        or isinstance(target_duration, bool)
+        or not isinstance(max_duration, int)
+        or isinstance(max_duration, bool)
+    ):
+        return None
+    try:
+        max_batches = _materializer_max_execution_batches(
+            expected_input_non_bundle_validation_artifacts=expected_input_count,
+            non_batch_control_plane_job_count=control_plane,
+            batch_specs=batch_specs,
+            groups=groups,
+            plan=plan,
+        )
+        expected_batches = _materializer_batches(
+            envelope=envelope,
+            workflow=envelope.workflow,
+            execution_job=execution_job,
+            batch_specs=batch_specs,
+            groups=groups,
+            expectations=expectations,
+        )
+        expected_budget = _materializer_budget(
+            plan=plan,
+            batches=expected_batches,
+            expected_input_non_bundle_validation_artifacts=expected_input_count,
+            max_execution_batches=max_batches,
+            non_batch_control_plane_job_count=control_plane,
+            aggregate_target_duration_seconds=target_duration,
+            aggregate_max_duration_seconds=max_duration,
+        )
+    except ContractValidationError as error:
+        issues.extend(error.issues)
+        return None
+    except (KeyError, TypeError, ValueError) as error:
+        issues.append(ValidationIssue("plan.work-groups", str(error)))
+        return None
+    return expected_batches, expected_budget
+
+
+def _validate_materializer_selected_plan_fields(
+    plan: Mapping[str, object],
+    groups: Mapping[str, Mapping[str, object]],
+    expectations: Mapping[str, Mapping[str, object]],
+    issues: list[ValidationIssue],
+) -> bool:
+    before = len(issues)
+    for work_group_id, group in groups.items():
+        group_path = f"plan.work-groups.{work_group_id}"
+        if not isinstance(group.get("coverage-target"), Mapping):
+            issues.append(
+                ValidationIssue(f"{group_path}.coverage-target", "is required")
+            )
+        if group.get("runner-family") not in _RUNNER_FAMILIES:
+            issues.append(
+                ValidationIssue(
+                    f"{group_path}.runner-family",
+                    "is not registered",
+                )
+            )
+        depends_on = group.get("depends-on")
+        if not isinstance(depends_on, Sequence) or isinstance(
+            depends_on, str | bytes
+        ):
+            issues.append(
+                ValidationIssue(f"{group_path}.depends-on", "must be an array")
+            )
+    for work_group_id, expectation in expectations.items():
+        expectation_path = f"plan.evidence-expectations.{work_group_id}"
+        for key in ("evidence-expectation-id", "category"):
+            if not isinstance(expectation.get(key), str):
+                issues.append(
+                    ValidationIssue(f"{expectation_path}.{key}", "is required")
+                )
+    if not isinstance(plan.get("affected-range"), Mapping):
+        issues.append(ValidationIssue("plan.affected-range", "is required"))
+    if not isinstance(plan.get("fact-snapshot"), Mapping):
+        issues.append(ValidationIssue("plan.fact-snapshot", "is required"))
+    return len(issues) == before
 
 
 def _validate_compatibility_profile(
@@ -2908,6 +4385,58 @@ def _validate_id_array(
             seen.add(item)
 
 
+def _validate_plan_context_canonical_arrays(
+    plan: Mapping[str, object],
+    issues: list[ValidationIssue],
+) -> bool:
+    initial_issue_count = len(issues)
+    for section, id_key in (
+        ("work-groups", "work-group-id"),
+        ("evidence-expectations", "evidence-expectation-id"),
+        ("validation-obligations", "validation-obligation-id"),
+        ("descriptor-obligations", "descriptor-obligation-id"),
+        ("artifact-obligations", "artifact-obligation-id"),
+        ("diagnostics", "diagnostic-id"),
+    ):
+        _validate_plan_identifier_record_order(
+            plan.get(section),
+            id_key,
+            f"$.{section}",
+            issues,
+        )
+    return len(issues) == initial_issue_count
+
+
+def _validate_plan_identifier_record_order(
+    records: object,
+    id_key: str,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(records, Sequence) or isinstance(records, str | bytes):
+        issues.append(ValidationIssue(path, "must be an array"))
+        return
+    frozen: list[Mapping[str, object]] = []
+    identifiers: list[str] = []
+    for index, record in enumerate(records):
+        if not isinstance(record, Mapping):
+            issues.append(ValidationIssue(f"{path}[{index}]", "must be object"))
+            continue
+        frozen.append(record)
+        identifier = record.get(id_key)
+        if not isinstance(identifier, str) or identifier == "":
+            issues.append(
+                ValidationIssue(f"{path}[{index}].{id_key}", "is required")
+            )
+            continue
+        identifiers.append(identifier)
+    expected = sorted(frozen, key=lambda item: str(item.get(id_key)))
+    if frozen != expected or len(identifiers) != len(set(identifiers)):
+        issues.append(
+            ValidationIssue(path, f"must be ordered uniquely by {id_key}")
+        )
+
+
 def _work_groups_by_id(
     plan: Mapping[str, object],
 ) -> dict[str, Mapping[str, object]]:
@@ -3052,13 +4581,17 @@ def _validate_bundle_manifest_fields(
     issues: list[ValidationIssue],
 ) -> Mapping[str, object] | None:
     try:
-        validate_ci_validation_execution_batch_manifest(
+        _validate_ci_validation_execution_batch_manifest(
             manifest,
             plan=plan,
             expected_envelope=envelope,
             expected_run_id=envelope.run_id if envelope is not None else None,
             expected_run_attempt=(
                 envelope.run_attempt if envelope is not None else None
+            ),
+            authorizing=False,
+            _allow_planless_non_authorizing_batches=(
+                _allow_planless_execution_manifest_diagnostic(plan, manifest)
             ),
         )
     except ContractValidationError as error:
@@ -3289,6 +4822,7 @@ def _validate_writer(
 def _validate_bundle_writer_matches_batch(
     writer: object,
     batch: Mapping[str, object] | None,
+    manifest: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> None:
     if not isinstance(writer, Mapping) or batch is None:
@@ -3312,6 +4846,40 @@ def _validate_bundle_writer_matches_batch(
                     "must match manifest batch writer",
                 )
             )
+    if manifest is None or not _batch_has_matrix_identity(batch):
+        return
+    run = manifest.get("run")
+    if isinstance(run, Mapping):
+        expected_workflow = run.get("workflow")
+        if (
+            isinstance(expected_workflow, str)
+            and writer.get("observed-workflow") != expected_workflow
+        ):
+            issues.append(
+                ValidationIssue(
+                    "$.writer.observed-workflow",
+                    "must match execution-batch manifest workflow",
+                )
+            )
+    expected_job = manifest.get("execution-job")
+    if (
+        isinstance(expected_job, str)
+        and writer.get("observed-job") != expected_job
+    ):
+        issues.append(
+            ValidationIssue(
+                "$.writer.observed-job",
+                "must match execution-batch manifest execution job",
+            )
+        )
+    expected_matrix = _execution_batch_matrix_identity(batch)
+    if writer.get("observed-matrix") != expected_matrix:
+        issues.append(
+            ValidationIssue(
+                "$.writer.observed-matrix",
+                "must match execution-batch matrix identity",
+            )
+        )
 
 
 def _validate_execution_tree(
@@ -4389,17 +5957,6 @@ def _validated_fact_snapshot_id_or_none(  # noqa: C901,PLR0911,PLR0912
     _validate_digest(snapshot_id, f"{path}.fact-snapshot-id", issues)
     if len(issues) != digest_issue_count:
         return None
-    if expected_plan_id is None:
-        issues.append(
-            ValidationIssue(
-                f"{path}.plan-id",
-                "requires proven plan identity",
-            )
-        )
-        return None
-    if fact_snapshot.get("plan-id") != expected_plan_id:
-        issues.append(ValidationIssue(f"{path}.plan-id", "must match plan"))
-        return None
     providers_value = fact_snapshot.get("providers")
     if not isinstance(providers_value, Sequence) or isinstance(
         providers_value,
@@ -4443,6 +6000,17 @@ def _validated_fact_snapshot_id_or_none(  # noqa: C901,PLR0911,PLR0912
             )
         )
         return None
+    if expected_plan_id is None:
+        issues.append(
+            ValidationIssue(
+                f"{path}.plan-id",
+                "requires proven plan identity",
+            )
+        )
+        return None
+    if fact_snapshot.get("plan-id") != expected_plan_id:
+        issues.append(ValidationIssue(f"{path}.plan-id", "must match plan"))
+        return None
     if snapshot_id != expected_id:
         issues.append(
             ValidationIssue(
@@ -4475,17 +6043,15 @@ def _summary_plan_identity_value(
     key: str,
     plan: Mapping[str, object] | None,
     aggregate_evidence_manifest: Mapping[str, object] | None,
-    execution_batch_manifest: Mapping[str, object] | None,
-    admitted_batch_evidence_bundles: Sequence[Mapping[str, object]] | None,
 ) -> object:
     if plan is not None:
         return plan.get(key)
     if aggregate_evidence_manifest is not None:
+        if _aggregate_manifest_has_no_authoritative_plan(
+            aggregate_evidence_manifest
+        ):
+            return None
         return aggregate_evidence_manifest.get(key)
-    if execution_batch_manifest is not None:
-        return execution_batch_manifest.get(key)
-    if admitted_batch_evidence_bundles:
-        return admitted_batch_evidence_bundles[0].get(key)
     return None
 
 
@@ -5311,6 +6877,29 @@ def _aggregate_manifest_has_no_authoritative_plan(
     if not isinstance(validation_plan, Mapping):
         return False
     return validation_plan.get("admissibility") != "valid"
+
+
+def _execution_batch_manifest_has_non_empty_batches(
+    execution_batch_manifest: Mapping[str, object],
+) -> bool:
+    batches = execution_batch_manifest.get("batches")
+    return (
+        isinstance(batches, Sequence)
+        and not isinstance(batches, str | bytes)
+        and len(batches) > 0
+    )
+
+
+def _allow_planless_execution_manifest_diagnostic(
+    plan: Mapping[str, object] | None,
+    execution_batch_manifest: Mapping[str, object],
+) -> bool:
+    return (
+        plan is not None
+        or not _execution_batch_manifest_has_non_empty_batches(
+            execution_batch_manifest
+        )
+    )
 
 
 def _aggregate_manifest_has_valid_plan_input(
@@ -7610,7 +9199,7 @@ def _validate_summary_matches_aggregate_manifest(  # noqa: C901,PLR0912,PLR0913
         summary, aggregate_manifest, issues
     )
     try:
-        validate_ci_validation_aggregate_evidence_manifest(
+        _validate_ci_validation_aggregate_evidence_manifest(
             aggregate_manifest,
             plan=plan,
             execution_batch_manifest=execution_batch_manifest,

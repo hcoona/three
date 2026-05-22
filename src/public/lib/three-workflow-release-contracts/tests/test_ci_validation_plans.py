@@ -6265,6 +6265,28 @@ def test_freeze_rejects_wrong_runner_for_descriptor_ecosystem_work() -> None:
         )
 
 
+def test_freeze_rejects_windows_runner_for_ruby_work_group() -> None:
+    """Ruby executable work is constrained to Ubuntu runners."""
+    work_group = _ecosystem_gate_work_group()
+    work_group["ecosystem"] = "ruby"
+    work_group["runner-family"] = "windows"
+
+    with pytest.raises(ContractValidationError, match="runner-family"):
+        freeze_ci_validation_plan(
+            request=_normalized_request(),
+            plan_id=PLAN_ID,
+            created_at=CREATED_AT,
+            observed_commit_sha=TREE_SHA,
+            verdict_intent="executable",
+            classification=_classification(),
+            subjects=[_subject()],
+            validation_obligations=[_validation_obligation()],
+            work_groups=[work_group],
+            evidence_expectations=[_evidence_expectation()],
+            fact_snapshot_providers=[_fact_provider()],
+        )
+
+
 @pytest.mark.parametrize(
     "kind",
     ["lightweight-preflight", "workflow-release-tooling"],
