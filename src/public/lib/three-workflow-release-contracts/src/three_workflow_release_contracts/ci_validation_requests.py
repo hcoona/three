@@ -156,6 +156,54 @@ def ci_validation_aggregate_artifact_ref(
     )
 
 
+def ci_validation_execution_batch_manifest_artifact_ref(
+    *,
+    run_id: str,
+    run_attempt: str,
+) -> str:
+    """Return the execution-batch manifest ref."""
+    return (
+        f"ci-validation/execution-batches/{run_id}/{run_attempt}/"
+        "execution-batch-manifest.json"
+    )
+
+
+def ci_validation_batch_evidence_bundle_artifact_ref(
+    *,
+    run_id: str,
+    run_attempt: str,
+    batch_id: str,
+) -> str:
+    """Return the batch evidence bundle ref."""
+    return (
+        f"ci-validation/bundles/{run_id}/{run_attempt}/{batch_id}/"
+        "batch-evidence-bundle.json"
+    )
+
+
+def ci_validation_aggregate_evidence_manifest_artifact_ref(
+    *,
+    run_id: str,
+    run_attempt: str,
+) -> str:
+    """Return the aggregate evidence manifest ref."""
+    return (
+        f"ci-validation/aggregate/{run_id}/{run_attempt}/"
+        "aggregate-evidence-manifest.json"
+    )
+
+
+def ci_validation_aggregate_summary_artifact_ref(
+    *,
+    run_id: str,
+    run_attempt: str,
+) -> str:
+    """Return the aggregate summary ref."""
+    return (
+        f"ci-validation/aggregate/{run_id}/{run_attempt}/aggregate-summary.json"
+    )
+
+
 def ci_validation_receipt_manifest_artifact_ref(
     *,
     run_id: str,

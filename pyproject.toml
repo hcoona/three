@@ -164,4 +164,7 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["src/public/lib/nbgv-python/tests"]
+testpaths = [
+  "src/public/lib/nbgv-python/tests",
+  "src/public/lib/three-workflow-release-contracts/tests",
+]

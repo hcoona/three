@@ -2278,10 +2278,11 @@ def test_validate_plan_requires_companion_fact_snapshot_when_available() -> (
 
 
 def test_validate_plan_rejects_unknown_fact_snapshot_root_member() -> None:
-    """Fact snapshot root schema is closed to unknown members."""
+    """Unknown fact snapshot root members gate provider/id binding."""
     snapshot = _plan_snapshot()
     fact_snapshot = cast("dict[str, object]", deepcopy(snapshot.fact_snapshot))
     fact_snapshot["unknown-root-member"] = True
+    fact_snapshot["fact-snapshot-id"] = "0" * 64
 
     with pytest.raises(ContractValidationError) as error:
         validate_ci_validation_plan(
@@ -2293,6 +2294,12 @@ def test_validate_plan_rejects_unknown_fact_snapshot_root_member() -> None:
     assert any(
         issue.path == "$.fact-snapshot.unknown-root-member"
         and issue.message == "is not allowed"
+        for issue in error.value.issues
+    )
+    assert not any(
+        issue.path == "$.fact-snapshot.fact-snapshot-id"
+        and issue.message
+        in {"does not match providers", "must match companion fact snapshot"}
         for issue in error.value.issues
     )
 
@@ -2322,6 +2329,18 @@ def test_validate_plan_rejects_invalid_plan_id_even_when_sidecar_matches() -> (
 @pytest.mark.parametrize(
     "mutation",
     [
+        lambda sidecar: cast(
+            "dict[str, object]",
+            sidecar["repository"],
+        ).__setitem__("owner", "other-owner"),
+        lambda sidecar: cast(
+            "dict[str, object]",
+            sidecar["repository"],
+        ).__setitem__("name", "other-repo"),
+        lambda sidecar: cast("dict[str, object]", sidecar["run"]).__setitem__(
+            "workflow",
+            "Other Workflow",
+        ),
         lambda sidecar: cast("dict[str, object]", sidecar["run"]).__setitem__(
             "run-id",
             "999",
@@ -2337,7 +2356,6 @@ def test_validate_plan_rejects_invalid_plan_id_even_when_sidecar_matches() -> (
                 run_attempt=RUN_ATTEMPT,
             ),
         ),
-        lambda sidecar: sidecar.__setitem__("plan-id", "different-plan"),
     ],
 )
 def test_validate_plan_rejects_fact_snapshot_sidecar_binding_mismatch(
@@ -2354,6 +2372,211 @@ def test_validate_plan_rejects_fact_snapshot_sidecar_binding_mismatch(
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=sidecar,
         )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_issue"),
+    [
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["repository"],
+            ).__setitem__("owner", "other-owner"),
+            ("$.fact-snapshot.repository.owner", "must match plan"),
+        ),
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["repository"],
+            ).__setitem__("name", "other-repo"),
+            ("$.fact-snapshot.repository.name", "must match plan"),
+        ),
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["run"],
+            ).__setitem__("workflow", "Other Workflow"),
+            ("$.fact-snapshot.run.workflow", "must match plan"),
+        ),
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["run"],
+            ).__setitem__("run-id", "999"),
+            ("$.fact-snapshot.run.run-id", "must match plan"),
+        ),
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["run"],
+            ).__setitem__("run-attempt", "2"),
+            ("$.fact-snapshot.run.run-attempt", "must match plan"),
+        ),
+    ],
+)
+def test_validate_plan_fact_snapshot_envelope_mismatch_gates_id_binding(
+    mutation: Callable[[dict[str, object]], None],
+    expected_issue: tuple[str, str],
+) -> None:
+    """Envelope provenance failures gate companion fact snapshot ID binding."""
+    snapshot = _plan_snapshot()
+    sidecar = cast("dict[str, object]", deepcopy(snapshot.fact_snapshot))
+    mutation(sidecar)
+    sidecar["fact-snapshot-id"] = "0" * 64
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_plan(
+            snapshot.plan,
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=sidecar,
+        )
+
+    assert [(issue.path, issue.message) for issue in exc_info.value.issues] == [
+        expected_issue,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_issue"),
+    [
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["repository"],
+            ).__setitem__("owner", "other-owner"),
+            ("$.changed-files-snapshot.repository.owner", "must match plan"),
+        ),
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["repository"],
+            ).__setitem__("name", "other-repo"),
+            ("$.changed-files-snapshot.repository.name", "must match plan"),
+        ),
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["run"],
+            ).__setitem__("workflow", "Other Workflow"),
+            ("$.changed-files-snapshot.run.workflow", "must match plan"),
+        ),
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["run"],
+            ).__setitem__("run-id", "999"),
+            ("$.changed-files-snapshot.run.run-id", "must match plan"),
+        ),
+        (
+            lambda sidecar: cast(
+                "dict[str, object]",
+                sidecar["run"],
+            ).__setitem__("run-attempt", "2"),
+            ("$.changed-files-snapshot.run.run-attempt", "must match plan"),
+        ),
+    ],
+)
+def test_validate_plan_changed_files_envelope_mismatch_gates_hash_binding(
+    mutation: Callable[[dict[str, object]], None],
+    expected_issue: tuple[str, str],
+) -> None:
+    """Changed-files envelope provenance gates companion hash binding."""
+    snapshot = _plan_snapshot()
+    sidecar = cast(
+        "dict[str, object]",
+        deepcopy(snapshot.changed_files_snapshot),
+    )
+    mutation(sidecar)
+    sidecar["changed-files-hash"] = "0" * 64
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_plan(
+            snapshot.plan,
+            changed_files_snapshot=sidecar,
+            fact_snapshot=snapshot.fact_snapshot,
+        )
+
+    assert [(issue.path, issue.message) for issue in exc_info.value.issues] == [
+        expected_issue,
+    ]
+
+
+def test_validate_plan_changed_files_provenance_gates_fact_id_binding() -> None:
+    """Changed-files provenance failures block fact snapshot ID binding."""
+    snapshot = _plan_snapshot()
+    changed_files_snapshot = cast(
+        "dict[str, object]",
+        deepcopy(snapshot.changed_files_snapshot),
+    )
+    cast("dict[str, object]", changed_files_snapshot["run"]).__setitem__(
+        "run-id",
+        "999",
+    )
+    fact_snapshot = cast("dict[str, object]", deepcopy(snapshot.fact_snapshot))
+    fact_snapshot["fact-snapshot-id"] = "0" * 64
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_plan(
+            snapshot.plan,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
+
+    issue_pairs = [
+        (issue.path, issue.message) for issue in exc_info.value.issues
+    ]
+    assert (
+        "$.changed-files-snapshot.run.run-id",
+        "must match plan",
+    ) in issue_pairs
+    assert (
+        "$.fact-snapshot.fact-snapshot-id",
+        "does not match providers",
+    ) not in issue_pairs
+
+
+def test_validate_plan_rejects_fact_snapshot_plan_id_binding_mismatch() -> None:
+    """Plan-id provenance gates companion fact snapshot digest binding."""
+    snapshot = _plan_snapshot()
+    sidecar = cast("dict[str, object]", deepcopy(snapshot.fact_snapshot))
+    sidecar["plan-id"] = "different-plan"
+    sidecar["fact-snapshot-id"] = "0" * 64
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_plan(
+            snapshot.plan,
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=sidecar,
+        )
+
+    assert [(issue.path, issue.message) for issue in exc_info.value.issues] == [
+        ("$.fact-snapshot.plan-id", "must match plan"),
+    ]
+
+
+def test_validate_plan_malformed_fact_snapshot_id_gates_provider_binding() -> (
+    None
+):
+    """Malformed companion fact snapshot IDs stop provider digest comparison."""
+    snapshot = _plan_snapshot()
+    sidecar = cast("dict[str, object]", deepcopy(snapshot.fact_snapshot))
+    sidecar["fact-snapshot-id"] = "not-a-digest"
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_plan(
+            snapshot.plan,
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=sidecar,
+        )
+
+    assert (
+        "$.fact-snapshot.fact-snapshot-id",
+        "must be a sha256 digest",
+    ) in [(issue.path, issue.message) for issue in exc_info.value.issues]
+    assert (
+        "$.fact-snapshot.fact-snapshot-id",
+        "does not match providers",
+    ) not in [(issue.path, issue.message) for issue in exc_info.value.issues]
 
 
 def test_validate_plan_rejects_invalid_fact_snapshot_plan_id() -> None:
@@ -2486,7 +2709,7 @@ def test_fail_closed_plan_freezes_terminal_aggregation_only() -> None:
             },
             "runner-family": "ubuntu",
             "depends-on": [],
-            "aggregate-output": CiValidationKind.AGGREGATE.value,
+            "aggregate-output": CiValidationKind.AGGREGATE_SUMMARY.value,
         },
     ]
 
@@ -4759,6 +4982,40 @@ def test_validate_plan_rejects_matched_paths_extra_changed_file() -> None:
         )
 
 
+def test_validate_plan_suppresses_changed_files_proofs_after_bad_path() -> None:
+    """Invalid changed-files sidecar paths fail closed before proof checks."""
+    snapshot = _plan_snapshot()
+    changed_files_snapshot = cast(
+        "dict[str, object]",
+        deepcopy(snapshot.changed_files_snapshot),
+    )
+    payload = cast("dict[str, object]", changed_files_snapshot["hash-payload"])
+    payload["changed-files"] = ["/absolute.py"]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_plan(
+            snapshot.plan,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=snapshot.fact_snapshot,
+        )
+
+    issue_pairs = [
+        (issue.path, issue.message) for issue in exc_info.value.issues
+    ]
+    assert (
+        "$.changed-files-snapshot.hash-payload.changed-files[0]",
+        "must be canonical repo-relative Git path",
+    ) in issue_pairs
+    assert not any(
+        issue.message
+        in {
+            "does not match changed files",
+            "must exactly match companion changed files",
+        }
+        for issue in exc_info.value.issues
+    )
+
+
 def test_validate_plan_rejects_unknown_impact_in_executable_plan() -> None:
     """Executable plans require resolved, non-unknown impact categories."""
     snapshot = _plan_snapshot()
@@ -6745,7 +7002,11 @@ def test_validate_executable_plan_rejects_unavailable_provider() -> None:
     _redigest_plan(plan)
 
     with pytest.raises(ContractValidationError, match="unavailable providers"):
-        validate_ci_validation_plan(plan, fact_snapshot=fact_snapshot)
+        validate_ci_validation_plan(
+            plan,
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
 
 
 def test_fail_closed_plan_allows_unavailable_provider() -> None:

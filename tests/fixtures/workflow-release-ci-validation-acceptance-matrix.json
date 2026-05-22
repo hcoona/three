@@ -44,7 +44,7 @@
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_python_downstream_dependency_closure"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_planless_projection_authority"
           }
         ],
         "no-publication-boundary": [

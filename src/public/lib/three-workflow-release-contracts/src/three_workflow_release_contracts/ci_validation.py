@@ -45,6 +45,10 @@ class CiValidationKind(StrEnum):
     CHANGED_FILES_SNAPSHOT = "ci-validation-changed-files-snapshot"
     FACT_SNAPSHOT = "ci-validation-fact-snapshot"
     SELECTOR_ASSIGNMENTS = "ci-validation-selector-assignments"
+    EXECUTION_BATCH_MANIFEST = "ci-validation-execution-batch-manifest"
+    BATCH_EVIDENCE_BUNDLE = "ci-validation-batch-evidence-bundle"
+    AGGREGATE_EVIDENCE_MANIFEST = "ci-validation-aggregate-evidence-manifest"
+    AGGREGATE_SUMMARY = "ci-validation-aggregate-summary"
     VALIDATION_RECEIPT = "ci-validation-receipt"
     WRITER_OBSERVATION = "ci-validation-writer-observation"
     RECEIPT_MANIFEST = "ci-validation-receipt-manifest"
@@ -70,6 +74,10 @@ class DiagnosticFamily(StrEnum):
     REQUIRED_EVIDENCE_MISSING = "required-evidence-missing"
     REQUIRED_EVIDENCE_SKIPPED = "required-evidence-skipped"
     INADMISSIBLE_RECEIPT = "inadmissible-receipt"
+    BLOCKING_VALIDATION_FAILURE = "blocking-validation-failure"
+    INADMISSIBLE_BATCH_EVIDENCE = "inadmissible-batch-evidence"
+    NAMESPACE_CLOSURE_FAILURE = "namespace-closure-failure"
+    AGGREGATE_DURATION_EXCEEDED = "aggregate-duration-exceeded"
     FINAL_EVIDENCE_FAILURE = "final-evidence-failure"
     INVALID_PLAN = "invalid-plan"
 
@@ -166,6 +174,54 @@ class DiagnosticDetail(StrEnum):
     TYPE_CHECK = "type-check"
     TOOLING = "tooling"
     DEPENDENCY_BLOCKED = "dependency-blocked"
+    MALFORMED_BUNDLE = "malformed-bundle"
+    MISSING_BUNDLE = "missing-bundle"
+    UNEXPECTED_CONTRACT_ARTIFACT = "unexpected-contract-artifact"
+    EXECUTION_BATCH_MANIFEST_MISSING = "execution-batch-manifest-missing"
+    EXECUTION_BATCH_MANIFEST_DUPLICATE = "execution-batch-manifest-duplicate"
+    EXECUTION_BATCH_MANIFEST_UNREADABLE = "execution-batch-manifest-unreadable"
+    EXECUTION_BATCH_MANIFEST_MALFORMED = "execution-batch-manifest-malformed"
+    EXECUTION_BATCH_MANIFEST_NON_CANONICAL = (
+        "execution-batch-manifest-non-canonical"
+    )
+    EXECUTION_BATCH_MANIFEST_DIGEST_MISMATCH = (
+        "execution-batch-manifest-digest-mismatch"
+    )
+    EXECUTION_BATCH_MANIFEST_PLAN_MISMATCH = (
+        "execution-batch-manifest-plan-mismatch"
+    )
+    EXECUTION_BATCH_MANIFEST_BUNDLE_REF_MISMATCH = (
+        "execution-batch-manifest-bundle-ref-mismatch"
+    )
+    REQUIRED_EVIDENCE_MISSING = "required-evidence-missing"
+    REQUIRED_EVIDENCE_SKIPPED = "required-evidence-skipped"
+    BLOCKING_VALIDATION_FAILURE = "blocking-validation-failure"
+    INADMISSIBLE_BATCH_EVIDENCE = "inadmissible-batch-evidence"
+    NAMESPACE_CLOSURE_FAILURE = "namespace-closure-failure"
+    AGGREGATE_DURATION_EXCEEDED = "aggregate-duration-exceeded"
+    REQUIRED_INPUT_ARTIFACT_FAILURE = "required-input-artifact-failure"
+    AGGREGATE_EVIDENCE_MANIFEST_MISSING = "aggregate-evidence-manifest-missing"
+    AGGREGATE_EVIDENCE_MANIFEST_DUPLICATE = (
+        "aggregate-evidence-manifest-duplicate"
+    )
+    AGGREGATE_EVIDENCE_MANIFEST_UNREADABLE = (
+        "aggregate-evidence-manifest-unreadable"
+    )
+    AGGREGATE_EVIDENCE_MANIFEST_MALFORMED = (
+        "aggregate-evidence-manifest-malformed"
+    )
+    AGGREGATE_EVIDENCE_MANIFEST_NON_CANONICAL = (
+        "aggregate-evidence-manifest-non-canonical"
+    )
+    AGGREGATE_EVIDENCE_MANIFEST_DIGEST_MISMATCH = (
+        "aggregate-evidence-manifest-digest-mismatch"
+    )
+    AGGREGATE_SUMMARY_MISSING = "aggregate-summary-missing"
+    AGGREGATE_SUMMARY_DUPLICATE = "aggregate-summary-duplicate"
+    AGGREGATE_SUMMARY_UNREADABLE = "aggregate-summary-unreadable"
+    AGGREGATE_SUMMARY_MALFORMED = "aggregate-summary-malformed"
+    AGGREGATE_SUMMARY_NON_CANONICAL = "aggregate-summary-non-canonical"
+    AGGREGATE_SUMMARY_DIGEST_MISMATCH = "aggregate-summary-digest-mismatch"
     FINAL_MANIFEST_MISSING = "final-manifest-missing"
     FINAL_MANIFEST_DUPLICATE = "final-manifest-duplicate"
     FINAL_MANIFEST_UNREADABLE = "final-manifest-unreadable"
@@ -180,6 +236,8 @@ class DiagnosticDetail(StrEnum):
     FINAL_AGGREGATE_DIGEST_MISMATCH = "final-aggregate-digest-mismatch"
     FINAL_PRODUCER_UNVERIFIED = "final-producer-unverified"
     FINAL_NAMESPACE_CLOSURE_MISMATCH = "final-namespace-closure-mismatch"
+    AGGREGATE_SUMMARY_WITHOUT_MANIFEST = "aggregate-summary-without-manifest"
+    NAMESPACE_OVERFLOW = "namespace-overflow"
     AGGREGATE_WITHOUT_MANIFEST = "aggregate-without-manifest"
 
 
@@ -212,6 +270,15 @@ REGISTERED_CI_VALIDATION_DIAGNOSTIC_CODES = (
 REGISTERED_CI_VALIDATION_DIAGNOSTIC_DETAILS = frozenset(
     item.value for item in DiagnosticDetail.__members__.values()
 )
+_COMMON_DIAGNOSTIC_DETAILS = frozenset(
+    {
+        DiagnosticDetail.MISSING.value,
+        DiagnosticDetail.INCOMPLETE.value,
+        DiagnosticDetail.INCONSISTENT.value,
+        DiagnosticDetail.UNCONFIRMED_PROVENANCE.value,
+    },
+)
+
 DETAILS_BY_DIAGNOSTIC_CODE = {
     DiagnosticFamily.REQUEST_INVALID.value: frozenset(
         {
@@ -226,14 +293,24 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
             DiagnosticDetail.REQUEST_PRODUCER_UNVERIFIED.value,
         },
     ),
-    DiagnosticFamily.RANGE_UNCONFIRMED.value: frozenset(
-        {
-            DiagnosticDetail.MISSING.value,
-            DiagnosticDetail.INCOMPLETE.value,
-            DiagnosticDetail.INCONSISTENT.value,
-            DiagnosticDetail.UNCONFIRMED_PROVENANCE.value,
-        },
+    DiagnosticFamily.RANGE_UNCONFIRMED.value: _COMMON_DIAGNOSTIC_DETAILS,
+    DiagnosticFamily.UNKNOWN_CHANGE.value: _COMMON_DIAGNOSTIC_DETAILS,
+    DiagnosticFamily.SUBJECT_UNRESOLVED.value: _COMMON_DIAGNOSTIC_DETAILS,
+    DiagnosticFamily.DEPENDENCY_IMPACT_INSUFFICIENT.value: (
+        _COMMON_DIAGNOSTIC_DETAILS
     ),
+    DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value: (
+        _COMMON_DIAGNOSTIC_DETAILS
+    ),
+    DiagnosticFamily.NO_VALIDATION_CAPABILITY.value: _COMMON_DIAGNOSTIC_DETAILS,
+    DiagnosticFamily.INFRASTRUCTURE_SURFACE_UNCLASSIFIED.value: (
+        _COMMON_DIAGNOSTIC_DETAILS
+    ),
+    DiagnosticFamily.DESCRIPTOR_INVALID.value: _COMMON_DIAGNOSTIC_DETAILS,
+    DiagnosticFamily.ARTIFACT_SHAPE_UNCONFIRMED.value: (
+        _COMMON_DIAGNOSTIC_DETAILS
+    ),
+    DiagnosticFamily.KNOWN_NON_IMPACTING.value: _COMMON_DIAGNOSTIC_DETAILS,
     DiagnosticFamily.INADMISSIBLE_RECEIPT.value: frozenset(
         {
             DiagnosticDetail.MALFORMED_ARTIFACT_REF.value,
@@ -308,8 +385,63 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
     DiagnosticFamily.VALIDATION_WORK_SKIPPED.value: frozenset(
         {DiagnosticDetail.DEPENDENCY_BLOCKED.value},
     ),
+    DiagnosticFamily.REQUIRED_EVIDENCE_MISSING.value: (
+        _COMMON_DIAGNOSTIC_DETAILS
+        | frozenset(
+            {
+                DiagnosticDetail.REQUIRED_EVIDENCE_MISSING.value,
+                DiagnosticDetail.MISSING_BUNDLE.value,
+            }
+        )
+    ),
+    DiagnosticFamily.REQUIRED_EVIDENCE_SKIPPED.value: (
+        _COMMON_DIAGNOSTIC_DETAILS
+        | frozenset(
+            {
+                DiagnosticDetail.REQUIRED_EVIDENCE_SKIPPED.value,
+                DiagnosticDetail.DEPENDENCY_BLOCKED.value,
+            }
+        )
+    ),
+    DiagnosticFamily.BLOCKING_VALIDATION_FAILURE.value: frozenset(
+        {DiagnosticDetail.BLOCKING_VALIDATION_FAILURE.value},
+    ),
+    DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value: frozenset(
+        {
+            DiagnosticDetail.INADMISSIBLE_BATCH_EVIDENCE.value,
+            DiagnosticDetail.MALFORMED_BUNDLE.value,
+            DiagnosticDetail.MISSING_BUNDLE.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MISSING.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MALFORMED.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DIGEST_MISMATCH.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_PLAN_MISMATCH.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_BUNDLE_REF_MISMATCH.value,
+        },
+    ),
+    DiagnosticFamily.NAMESPACE_CLOSURE_FAILURE.value: frozenset(
+        {
+            DiagnosticDetail.NAMESPACE_CLOSURE_FAILURE.value,
+            DiagnosticDetail.UNEXPECTED_CONTRACT_ARTIFACT.value,
+            DiagnosticDetail.NAMESPACE_OVERFLOW.value,
+        },
+    ),
+    DiagnosticFamily.AGGREGATE_DURATION_EXCEEDED.value: frozenset(
+        {DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value},
+    ),
     DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value: frozenset(
         {
+            DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value,
+            DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_DUPLICATE.value,
+            DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_UNREADABLE.value,
+            DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value,
+            DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_NON_CANONICAL.value,
+            DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_DIGEST_MISMATCH.value,
+            DiagnosticDetail.AGGREGATE_SUMMARY_MISSING.value,
+            DiagnosticDetail.AGGREGATE_SUMMARY_DUPLICATE.value,
+            DiagnosticDetail.AGGREGATE_SUMMARY_UNREADABLE.value,
+            DiagnosticDetail.AGGREGATE_SUMMARY_MALFORMED.value,
+            DiagnosticDetail.AGGREGATE_SUMMARY_NON_CANONICAL.value,
+            DiagnosticDetail.AGGREGATE_SUMMARY_DIGEST_MISMATCH.value,
             DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
             DiagnosticDetail.FINAL_MANIFEST_DUPLICATE.value,
             DiagnosticDetail.FINAL_MANIFEST_UNREADABLE.value,
@@ -324,6 +456,17 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
             DiagnosticDetail.FINAL_AGGREGATE_DIGEST_MISMATCH.value,
             DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value,
             DiagnosticDetail.FINAL_NAMESPACE_CLOSURE_MISMATCH.value,
+            DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value,
+            DiagnosticDetail.AGGREGATE_SUMMARY_WITHOUT_MANIFEST.value,
+            DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MISSING.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DUPLICATE.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_UNREADABLE.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MALFORMED.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_NON_CANONICAL.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DIGEST_MISMATCH.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_PLAN_MISMATCH.value,
+            DiagnosticDetail.NAMESPACE_OVERFLOW.value,
             DiagnosticDetail.AGGREGATE_WITHOUT_MANIFEST.value,
         },
     ),
@@ -340,6 +483,18 @@ API_VERSIONS_BY_KIND = {
     ),
     CiValidationKind.SELECTOR_ASSIGNMENTS.value: (
         "three.ci.validation.selector-assignments/v1alpha1"
+    ),
+    CiValidationKind.EXECUTION_BATCH_MANIFEST.value: (
+        "three.ci.validation.execution-batch-manifest/v1alpha1"
+    ),
+    CiValidationKind.BATCH_EVIDENCE_BUNDLE.value: (
+        "three.ci.validation.batch-evidence-bundle/v1alpha1"
+    ),
+    CiValidationKind.AGGREGATE_EVIDENCE_MANIFEST.value: (
+        "three.ci.validation.aggregate-evidence-manifest/v1alpha1"
+    ),
+    CiValidationKind.AGGREGATE_SUMMARY.value: (
+        "three.ci.validation.aggregate-summary/v1alpha1"
     ),
     CiValidationKind.VALIDATION_RECEIPT.value: (
         "three.ci.validation.receipt/v1alpha1"
@@ -405,6 +560,78 @@ def artifact_physical_ref(logical_ref: str) -> ArtifactPhysicalName:
         logical_ref=logical_ref,
         physical_name=artifact_physical_name(logical_ref),
     )
+
+
+def validate_ci_validation_diagnostic_record(
+    value: object,
+    path: str = "diagnostic",
+) -> None:
+    """Validate a complete CI validation diagnostic record."""
+    issues: list[ValidationIssue] = []
+    _validate_diagnostic_record(value, path, issues)
+    if issues:
+        raise ContractValidationError(issues)
+
+
+def _validate_diagnostic_record(  # noqa: C901
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    allowed = frozenset(
+        {
+            "diagnostic-id",
+            "code",
+            "detail",
+            "message",
+            "source",
+            "severity",
+            "verdict-effect",
+        }
+    )
+    for key in sorted(set(value) - allowed):
+        issues.append(ValidationIssue(f"{path}.{key}", "is not allowed"))
+    for key in sorted(allowed - set(value)):
+        issues.append(ValidationIssue(f"{path}.{key}", "is required"))
+    diagnostic_id = value.get("diagnostic-id")
+    if not isinstance(diagnostic_id, str) or diagnostic_id == "":
+        issues.append(
+            ValidationIssue(f"{path}.diagnostic-id", "must be a string")
+        )
+    code = value.get("code")
+    if not isinstance(code, str) or code == "":
+        issues.append(ValidationIssue(f"{path}.code", "must be a string"))
+    elif code not in REGISTERED_CI_VALIDATION_DIAGNOSTIC_CODES:
+        issues.append(ValidationIssue(f"{path}.code", "is not registered"))
+    _nullable_registered_detail(
+        value.get("detail"),
+        f"{path}.detail",
+        code if isinstance(code, str) else "",
+        issues,
+    )
+    _nullable_string(value.get("message"), f"{path}.message", issues)
+    _validate_diagnostic_source(value.get("source"), f"{path}.source", issues)
+    severity = value.get("severity")
+    if not isinstance(severity, str) or severity == "":
+        issues.append(ValidationIssue(f"{path}.severity", "must be a string"))
+    elif severity not in {
+        item.value for item in DiagnosticSeverity.__members__.values()
+    }:
+        issues.append(ValidationIssue(f"{path}.severity", "is not registered"))
+    verdict_effect = value.get("verdict-effect")
+    if not isinstance(verdict_effect, str) or verdict_effect == "":
+        issues.append(
+            ValidationIssue(f"{path}.verdict-effect", "must be a string")
+        )
+    elif verdict_effect not in {
+        item.value for item in DiagnosticVerdictEffect.__members__.values()
+    }:
+        issues.append(
+            ValidationIssue(f"{path}.verdict-effect", "is not registered")
+        )
 
 
 def validate_artifact_logical_ref(logical_ref: object) -> None:
@@ -757,6 +984,9 @@ def _validate_diagnostic_source(
     if not isinstance(value, Mapping):
         issues.append(ValidationIssue(path, "must be an object"))
         return
+    allowed = frozenset({"type", "id"})
+    for key in sorted(set(value) - allowed):
+        issues.append(ValidationIssue(f"{path}.{key}", "is not allowed"))
     source_type = _require_string(value, "type", path, issues)
     if source_type not in {
         "request",

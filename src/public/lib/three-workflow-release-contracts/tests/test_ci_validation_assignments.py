@@ -85,7 +85,7 @@ def _terminal_group(
         },
         "runner-family": "ubuntu",
         "depends-on": depends_on or [WORK_GROUP_ID],
-        "aggregate-output": CiValidationKind.AGGREGATE.value,
+        "aggregate-output": CiValidationKind.AGGREGATE_SUMMARY.value,
     }
 
 

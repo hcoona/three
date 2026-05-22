@@ -1685,7 +1685,7 @@ coverage-target:
     id: string
 runner-family: ubuntu
 depends-on: [work-group-id]
-aggregate-output: ci-validation-aggregate
+aggregate-output: ci-validation-aggregate-summary
 ```
 
 Selector rules:
@@ -2153,7 +2153,8 @@ Aggregation is mapped as the terminal control-plane job after all planned
 execution batches are complete, skipped by workflow construction, or otherwise
 known missing. It reads the frozen plan, required companion planning snapshots,
 the execution-batch manifest, and validation batch evidence bundles, emits the
-aggregate evidence manifest plus `ci-validation-aggregate` aggregate summary, and
+aggregate evidence manifest plus `ci-validation-aggregate-summary` aggregate
+summary, and
 does not emit normal executable validation evidence.
 
 Aggregation uses always-run failure-reporting semantics after the planning and
@@ -2335,7 +2336,7 @@ its final artifacts:
 | Artifact class              | Logical ref                                                                       | Producer boundary    | Count                                                                  |
 | --------------------------- | --------------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------- |
 | Aggregate evidence manifest | `ci-validation/aggregate/<run-id>/<run-attempt>/aggregate-evidence-manifest.json` | `aggregate-evidence` | exactly one aggregation-authored pre-final namespace closure manifest  |
-| Aggregate summary           | `ci-validation/aggregate/<run-id>/<run-attempt>/ci-validation-aggregate.json`     | `aggregate-evidence` | exactly one aggregation-authored verdict summary bound to the manifest |
+| Aggregate summary           | `ci-validation/aggregate/<run-id>/<run-attempt>/aggregate-summary.json`           | `aggregate-evidence` | exactly one aggregation-authored verdict summary bound to the manifest |
 
 The validation artifact cap is still at most 20 contract artifacts for the run
 attempt. Before bundle admission, aggregation verifies the pre-final budget
@@ -2922,9 +2923,9 @@ The aggregate summary uses:
 
 ```yaml
 common-envelope: inherited
-api-version: three.ci.validation.aggregate/v1alpha1
-kind: ci-validation-aggregate
-artifact-ref: string
+api-version: three.ci.validation.aggregate-summary/v1alpha1
+kind: ci-validation-aggregate-summary
+artifact-ref: ci-validation/aggregate/<run-id>/<run-attempt>/aggregate-summary.json
 plan-id: string | null
 plan-digest: string | null
 mode: pull_request | push | scheduled_full | unknown

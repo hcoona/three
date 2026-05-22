@@ -4170,7 +4170,11 @@ def _validate_blocking_validation_failure_diagnostic(
         return
     detail = diagnostic.get("detail")
     registered_details = DETAILS_BY_DIAGNOSTIC_CODE.get(cast("str", code))
-    if registered_details is not None and detail not in registered_details:
+    if (
+        detail is not None
+        and registered_details is not None
+        and detail not in registered_details
+    ):
         issues.append(
             ValidationIssue(f"{path}.detail", "must match diagnostic family")
         )
@@ -4193,7 +4197,11 @@ def _validate_failure_diagnostic_family(
         return
     detail = diagnostic.get("detail")
     registered_details = DETAILS_BY_DIAGNOSTIC_CODE.get(expected_code)
-    if registered_details is not None and detail not in registered_details:
+    if (
+        detail is not None
+        and registered_details is not None
+        and detail not in registered_details
+    ):
         issues.append(
             ValidationIssue(f"{path}.detail", "must match diagnostic family")
         )

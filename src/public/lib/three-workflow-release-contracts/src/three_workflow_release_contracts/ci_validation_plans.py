@@ -14,6 +14,7 @@ from three_workflow_release_contracts.ci_validation import (
     REGISTERED_CI_VALIDATION_DIAGNOSTIC_CODES,
     REGISTERED_CI_VALIDATION_DIAGNOSTIC_DETAILS,
     CiValidationKind,
+    CommonEnvelope,
     DiagnosticFamily,
     DiagnosticSeverity,
     DiagnosticVerdictEffect,
@@ -343,7 +344,7 @@ def ci_validation_terminal_aggregation_work_group(
         "coverage-target": dict(_TERMINAL_AGGREGATION_COVERAGE_TARGET),
         "runner-family": "ubuntu",
         "depends-on": depends,
-        "aggregate-output": CiValidationKind.AGGREGATE.value,
+        "aggregate-output": CiValidationKind.AGGREGATE_SUMMARY.value,
     }
 
 
@@ -651,16 +652,25 @@ def validate_ci_validation_plan(  # noqa: PLR0913
                 pull_request_merge_commit_verification
             ),
         )
+        changed_files_issue_count = len(issues)
         _validate_companion_changed_files_snapshot(
             plan,
             changed_files_snapshot,
             issues,
         )
-        _validate_companion_fact_snapshot(plan, fact_snapshot, issues)
+        changed_files_companion_valid = len(issues) == changed_files_issue_count
+        _validate_companion_fact_snapshot(
+            plan,
+            fact_snapshot,
+            issues,
+            bind_provider_identity=changed_files_companion_valid,
+        )
         _validate_plan_sections(
             plan,
             issues,
-            changed_files_snapshot=changed_files_snapshot,
+            changed_files_snapshot=changed_files_snapshot
+            if changed_files_companion_valid
+            else None,
             fact_snapshot=fact_snapshot,
         )
     if issues:
@@ -1013,11 +1023,14 @@ def _validate_terminal_group(
 ) -> None:
     if group.get("runner-family") != "ubuntu":
         issues.append(ValidationIssue("runner-family", "must be ubuntu"))
-    if group.get("aggregate-output") != CiValidationKind.AGGREGATE.value:
+    if (
+        group.get("aggregate-output")
+        != CiValidationKind.AGGREGATE_SUMMARY.value
+    ):
         issues.append(
             ValidationIssue(
                 "aggregate-output",
-                "must be ci-validation-aggregate",
+                "must be ci-validation-aggregate-summary",
             ),
         )
     if group.get("coverage-target") != _TERMINAL_AGGREGATION_COVERAGE_TARGET:
@@ -4063,6 +4076,8 @@ def _validate_companion_fact_snapshot(  # noqa: C901, PLR0911, PLR0912, PLR0915
     plan: Mapping[str, object],
     fact_snapshot: Mapping[str, object] | None,
     issues: list[ValidationIssue],
+    *,
+    bind_provider_identity: bool = True,
 ) -> None:
     fact_envelope = plan.get("fact-snapshot")
     if not isinstance(fact_envelope, Mapping):
@@ -4085,6 +4100,7 @@ def _validate_companion_fact_snapshot(  # noqa: C901, PLR0911, PLR0912, PLR0915
             ValidationIssue("$.fact-snapshot", "companion is required"),
         )
         return
+    provenance_issue_count = len(issues)
     _validate_allowed_root_members(
         fact_snapshot,
         _FACT_SNAPSHOT_ROOT_KEYS,
@@ -4103,39 +4119,25 @@ def _validate_companion_fact_snapshot(  # noqa: C901, PLR0911, PLR0912, PLR0915
         issues.extend(error.issues)
         envelope = None
     if envelope is not None:
-        plan_run = plan.get("run")
-        if isinstance(plan_run, Mapping):
-            plan_run_id = plan_run.get("run-id")
-            plan_run_attempt = plan_run.get("run-attempt")
-            if envelope.run_id != plan_run_id:
+        plan_run_identity = _validate_companion_envelope_matches_plan(
+            envelope,
+            plan,
+            "$.fact-snapshot",
+            issues,
+        )
+        if plan_run_identity is not None:
+            plan_run_id, plan_run_attempt = plan_run_identity
+            expected_ref = ci_validation_fact_snapshot_artifact_ref(
+                run_id=plan_run_id,
+                run_attempt=plan_run_attempt,
+            )
+            if fact_snapshot.get("artifact-ref") != expected_ref:
                 issues.append(
                     ValidationIssue(
-                        "$.fact-snapshot.run.run-id",
-                        "must match plan",
+                        "$.fact-snapshot.artifact-ref",
+                        "must match plan run identity",
                     ),
                 )
-            if envelope.run_attempt != plan_run_attempt:
-                issues.append(
-                    ValidationIssue(
-                        "$.fact-snapshot.run.run-attempt",
-                        "must match plan",
-                    ),
-                )
-            if isinstance(plan_run_id, str) and isinstance(
-                plan_run_attempt,
-                str,
-            ):
-                expected_ref = ci_validation_fact_snapshot_artifact_ref(
-                    run_id=plan_run_id,
-                    run_attempt=plan_run_attempt,
-                )
-                if fact_snapshot.get("artifact-ref") != expected_ref:
-                    issues.append(
-                        ValidationIssue(
-                            "$.fact-snapshot.artifact-ref",
-                            "must match plan run identity",
-                        ),
-                    )
     _validate_plan_id_value(
         fact_snapshot.get("plan-id"),
         "$.fact-snapshot.plan-id",
@@ -4145,6 +4147,22 @@ def _validate_companion_fact_snapshot(  # noqa: C901, PLR0911, PLR0912, PLR0915
         issues.append(
             ValidationIssue("$.fact-snapshot.plan-id", "must match plan"),
         )
+    if not bind_provider_identity:
+        return
+    if len(issues) != provenance_issue_count:
+        return
+    fact_snapshot_id = fact_snapshot.get("fact-snapshot-id")
+    if (
+        not isinstance(fact_snapshot_id, str)
+        or _DIGEST_RE.fullmatch(fact_snapshot_id) is None
+    ):
+        issues.append(
+            ValidationIssue(
+                "$.fact-snapshot.fact-snapshot-id",
+                "must be a sha256 digest",
+            )
+        )
+        return
     providers_value = fact_snapshot.get("providers")
     if not isinstance(providers_value, Sequence) or isinstance(
         providers_value,
@@ -4217,14 +4235,14 @@ def _validate_companion_fact_snapshot(  # noqa: C901, PLR0911, PLR0912, PLR0915
             ),
         )
         return
-    if fact_snapshot.get("fact-snapshot-id") != expected_id:
+    if fact_snapshot_id != expected_id:
         issues.append(
             ValidationIssue(
                 "$.fact-snapshot.fact-snapshot-id",
                 "does not match providers",
             ),
         )
-    if snapshot_id != fact_snapshot.get("fact-snapshot-id"):
+    if snapshot_id != fact_snapshot_id:
         issues.append(
             ValidationIssue(
                 "$.fact-snapshot.id",
@@ -4233,7 +4251,60 @@ def _validate_companion_fact_snapshot(  # noqa: C901, PLR0911, PLR0912, PLR0915
         )
 
 
-def _validate_companion_changed_files_snapshot(  # noqa: C901, PLR0912
+def _validate_companion_envelope_matches_plan(
+    envelope: CommonEnvelope,
+    plan: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> tuple[str, str] | None:
+    plan_repository = plan.get("repository")
+    if isinstance(plan_repository, Mapping):
+        if envelope.repository_owner != plan_repository.get("owner"):
+            issues.append(
+                ValidationIssue(
+                    f"{path}.repository.owner",
+                    "must match plan",
+                ),
+            )
+        if envelope.repository_name != plan_repository.get("name"):
+            issues.append(
+                ValidationIssue(
+                    f"{path}.repository.name",
+                    "must match plan",
+                ),
+            )
+    plan_run = plan.get("run")
+    if not isinstance(plan_run, Mapping):
+        return None
+    if envelope.workflow != plan_run.get("workflow"):
+        issues.append(
+            ValidationIssue(
+                f"{path}.run.workflow",
+                "must match plan",
+            ),
+        )
+    plan_run_id = plan_run.get("run-id")
+    plan_run_attempt = plan_run.get("run-attempt")
+    if envelope.run_id != plan_run_id:
+        issues.append(
+            ValidationIssue(
+                f"{path}.run.run-id",
+                "must match plan",
+            ),
+        )
+    if envelope.run_attempt != plan_run_attempt:
+        issues.append(
+            ValidationIssue(
+                f"{path}.run.run-attempt",
+                "must match plan",
+            ),
+        )
+    if isinstance(plan_run_id, str) and isinstance(plan_run_attempt, str):
+        return plan_run_id, plan_run_attempt
+    return None
+
+
+def _validate_companion_changed_files_snapshot(  # noqa: C901, PLR0911, PLR0912
     plan: Mapping[str, object],
     changed_files_snapshot: Mapping[str, object] | None,
     issues: list[ValidationIssue],
@@ -4259,6 +4330,7 @@ def _validate_companion_changed_files_snapshot(  # noqa: C901, PLR0912
             ),
         )
         return
+    provenance_issue_count = len(issues)
     _validate_allowed_root_members(
         changed_files_snapshot,
         _CHANGED_FILES_SNAPSHOT_ROOT_KEYS,
@@ -4277,41 +4349,27 @@ def _validate_companion_changed_files_snapshot(  # noqa: C901, PLR0912
         issues.extend(error.issues)
         envelope = None
     if envelope is not None:
-        plan_run = plan.get("run")
-        if isinstance(plan_run, Mapping):
-            plan_run_id = plan_run.get("run-id")
-            plan_run_attempt = plan_run.get("run-attempt")
-            if envelope.run_id != plan_run_id:
+        plan_run_identity = _validate_companion_envelope_matches_plan(
+            envelope,
+            plan,
+            "$.changed-files-snapshot",
+            issues,
+        )
+        if plan_run_identity is not None:
+            plan_run_id, plan_run_attempt = plan_run_identity
+            expected_ref = ci_validation_changed_files_snapshot_artifact_ref(
+                run_id=plan_run_id,
+                run_attempt=plan_run_attempt,
+            )
+            if changed_files_snapshot.get("artifact-ref") != expected_ref:
                 issues.append(
                     ValidationIssue(
-                        "$.changed-files-snapshot.run.run-id",
-                        "must match plan",
+                        "$.changed-files-snapshot.artifact-ref",
+                        "must match plan run identity",
                     ),
                 )
-            if envelope.run_attempt != plan_run_attempt:
-                issues.append(
-                    ValidationIssue(
-                        "$.changed-files-snapshot.run.run-attempt",
-                        "must match plan",
-                    ),
-                )
-            if isinstance(plan_run_id, str) and isinstance(
-                plan_run_attempt,
-                str,
-            ):
-                expected_ref = (
-                    ci_validation_changed_files_snapshot_artifact_ref(
-                        run_id=plan_run_id,
-                        run_attempt=plan_run_attempt,
-                    )
-                )
-                if changed_files_snapshot.get("artifact-ref") != expected_ref:
-                    issues.append(
-                        ValidationIssue(
-                            "$.changed-files-snapshot.artifact-ref",
-                            "must match plan run identity",
-                        ),
-                    )
+    if len(issues) != provenance_issue_count:
+        return
     snapshot_hash = changed_files_snapshot.get("changed-files-hash")
     if snapshot_hash != plan_hash:
         issues.append(
@@ -4347,6 +4405,8 @@ def _validate_companion_changed_files_snapshot(  # noqa: C901, PLR0912
             f"$.changed-files-snapshot.hash-payload.changed-files[{index}]",
             issues,
         )
+    if len(issues) != provenance_issue_count:
+        return
     try:
         expected_payload = _changed_files_hash_payload(
             [str(path) for path in changed_files],
