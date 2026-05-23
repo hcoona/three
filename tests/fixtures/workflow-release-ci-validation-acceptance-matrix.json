@@ -306,6 +306,260 @@
       }
     },
     {
+      "id": "executable-plan-with-multiple-logical-selectors-coalesced-into-fewer-concrete-execution-batches",
+      "scenario": "Executable plan with multiple logical selectors coalesced into fewer concrete execution batches",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_accepts_exact_plan_batch_dag"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_admits_cross_batch_dependency_from_valid_bundle"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "broad-global-or-scheduled-full-executable-materialization-with-non-empty-batches",
+      "scenario": "Broad, global, or scheduled-full executable materialization with non-empty batches",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "validation-artifact-budget-at-normal-finalization",
+      "scenario": "Validation artifact budget at normal finalization",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "full-broad-or-global-validation-performance-evidence",
+      "scenario": "Full, broad, or global validation performance evidence",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "aggregate-duration-budget-evidence",
+      "scenario": "Aggregate duration budget evidence",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_rejects_aggregate_duration_over_limit"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_allows_observed_duration_exceeded_failure"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_forged_passed_duration_overflow"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
       "id": "known-non-impacting-change-with-no-executable-checks",
       "scenario": "Known non-impacting change with no executable checks",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
@@ -606,6 +860,56 @@
       }
     },
     {
+      "id": "no-authoritative-plan-path-reaches-aggregation",
+      "scenario": "No authoritative plan path reaches aggregation",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
       "id": "digest-mismatched-or-wrong-run-request-that-is-still-replayable-enough-to-freeze-request-ref-and",
       "scenario": "Digest-mismatched or wrong-run request that is still replayable enough to freeze request ref and recomputed digest",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
@@ -656,8 +960,8 @@
       }
     },
     {
-      "id": "selector-materialization-receives-invalid-producer-unverified-identity-unverified-or-companion-m",
-      "scenario": "Selector materialization receives invalid, producer-unverified, identity-unverified, or companion-mismatched plan",
+      "id": "execution-batch-materialization-receives-invalid-producer-unverified-identity-unverified-or-comp",
+      "scenario": "Execution-batch materialization receives invalid, producer-unverified, identity-unverified, or companion-mismatched plan",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -670,23 +974,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -1252,8 +1556,8 @@
       }
     },
     {
-      "id": "descriptor-validation-receipt-omits-or-mismatches-its-bound-descriptor-obligation",
-      "scenario": "Descriptor-validation receipt omits or mismatches its bound descriptor obligation",
+      "id": "descriptor-validation-batch-evidence-row-omits-or-mismatches-its-bound-descriptor-obligation",
+      "scenario": "Descriptor-validation batch evidence row omits or mismatches its bound descriptor obligation",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -1266,21 +1570,21 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_descriptor_mapping_uses_scoped_planned_obligations"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_descriptor_validation_chain_accepts_valid_plan"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_descriptor_receipt_binds_descriptor_fields_to_facts"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_descriptor_validation_rejects_missing_obligation"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_descriptor_validation_rejects_mismatched_obligation"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_descriptor_receipt_rejects_fact_field_mismatch"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_descriptor_receipt_preserves_descriptor_diagnostic"
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_descriptor_mapping_uses_scoped_planned_obligations"
           }
         ],
         "aggregate-or-verdict": [
@@ -1664,8 +1968,8 @@
       }
     },
     {
-      "id": "missing-duplicate-producer-unverified-plan-mismatched-or-structurally-invalid-selector-assignmen",
-      "scenario": "Missing, duplicate, producer-unverified, plan-mismatched, or structurally invalid selector-assignment manifest",
+      "id": "missing-duplicate-producer-unverified-plan-mismatched-budget-overflowing-unmaterializable-or-str",
+      "scenario": "Missing, duplicate, producer-unverified, plan-mismatched, budget-overflowing, unmaterializable, or structurally invalid execution-batch manifest",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -1678,27 +1982,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_invalid_plan_mode_does_not_create_inadmissible_receipt_failures"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan"
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -1814,8 +2114,8 @@
       }
     },
     {
-      "id": "prefixed-physical-artifact-does-not-match-any-expected-non-receipt-contract-ref-during-receipt-n",
-      "scenario": "Prefixed physical artifact does not match any expected non-receipt contract ref during receipt namespace closure",
+      "id": "prefixed-physical-artifact-does-not-match-any-expected-non-bundle-contract-ref-during-evidence-n",
+      "scenario": "Prefixed physical artifact does not match any expected non-bundle contract ref during evidence namespace closure",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -1828,23 +2128,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -1864,8 +2164,8 @@
       }
     },
     {
-      "id": "writer-observation-artifact-is-expected-by-the-verified-selector-assignment-manifest",
-      "scenario": "Writer-observation artifact is expected by the verified selector-assignment manifest",
+      "id": "batch-evidence-bundle-has-missing-or-mismatched-validation-grade-writer-provenance",
+      "scenario": "Batch evidence bundle has missing or mismatched validation-grade writer provenance",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -1878,27 +2178,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_rejects_forged_writer_id"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_writer_observation_binds_assignment_and_artifact_instance"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_rejects_writer_mismatch"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_writer_observation_validate_rejects_forged_assignment_mapping"
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_fails_on_writer_mismatch"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_manifest_writer_identity_mismatch_is_inadmissible"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_prefixes_admitted_bundle_writer_diagnostics"
           }
         ],
         "no-publication-boundary": [
@@ -2026,8 +2322,8 @@
       }
     },
     {
-      "id": "missing-receipt",
-      "scenario": "Missing receipt",
+      "id": "missing-batch-evidence-bundle-or-per-selector-evidence-row",
+      "scenario": "Missing batch evidence bundle or per-selector evidence row",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2040,23 +2336,27 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_reports_required_evidence_failures"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_evidence_results_drive_failures_counts_and_verdict"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_evidence_manifest_rejects_missing_or_duplicate_batches"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_reports_required_evidence_failures"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_missing_admitted_bundle_payload"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_missing_required_evidence_failure"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_evidence_results_drive_failures_counts_and_verdict"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_missing_admitted_bundle_payload"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_missing_required_evidence_failure"
           }
         ],
         "no-publication-boundary": [
@@ -2176,8 +2476,8 @@
       }
     },
     {
-      "id": "upstream-selector-emits-a-valid-blocking-failure-receipt",
-      "scenario": "Upstream selector emits a valid `blocking-failure` receipt",
+      "id": "upstream-selector-emits-a-valid-blocking-failure-batch-evidence-row",
+      "scenario": "Upstream selector emits a valid `blocking-failure` batch evidence row",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2190,23 +2490,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_materializer_uses_workflow_matrix_writer_ids"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_freeze_selector_assignments_binds_executable_work_groups"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2226,8 +2526,8 @@
       }
     },
     {
-      "id": "receipt-emitted-after-validation-on-the-wrong-or-unverifiable-execution-tree",
-      "scenario": "Receipt emitted after validation on the wrong or unverifiable execution tree",
+      "id": "batch-evidence-row-emitted-after-validation-on-the-wrong-or-unverifiable-execution-tree",
+      "scenario": "Batch evidence row emitted after validation on the wrong or unverifiable execution tree",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2240,19 +2540,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_rejects_mismatched_execution_tree"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_rejects_mismatched_execution_tree"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_rejects_mismatched_execution_tree"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2272,8 +2576,8 @@
       }
     },
     {
-      "id": "unreadable-or-unclassified-prefixed-receipt-artifact-appears-in-the-receipt-intake-namespace",
-      "scenario": "Unreadable or unclassified prefixed receipt artifact appears in the receipt intake namespace",
+      "id": "standalone-receipt-like-artifact-appears-in-the-contract-artifact-namespace",
+      "scenario": "Standalone receipt-like artifact appears in the contract artifact namespace",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2286,23 +2590,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2322,8 +2626,8 @@
       }
     },
     {
-      "id": "aggregate-mirrors-an-unreadable-or-unclassified-prefixed-receipt-artifact",
-      "scenario": "Aggregate mirrors an unreadable or unclassified prefixed receipt artifact",
+      "id": "selector-assignment-or-writer-observation-artifact-appears-during-migration",
+      "scenario": "Selector-assignment or writer-observation artifact appears during migration",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2336,23 +2640,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2372,8 +2676,8 @@
       }
     },
     {
-      "id": "release-shaped-artifact-receipt-with-empty-partial-extra-or-unavailable-expected-artifact-covera",
-      "scenario": "Release-shaped artifact receipt with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked expected release receipt, or mismatched planned shape",
+      "id": "release-shaped-artifact-batch-evidence-row-with-empty-partial-extra-or-unavailable-expected-arti",
+      "scenario": "Release-shaped artifact batch evidence row with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked logical release-shaped receipt check, or mismatched planned shape",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2386,27 +2690,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_artifact_obligations_keep_shape_granularity"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_binds_artifact_obligation_fields"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_rejects_planned_artifact_mismatch"
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_requires_authoritative_reuse_context_for_release"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_placeholder_receipt_is_valid"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_requires_authoritative_reuse_context_for_release"
           }
         ],
         "no-publication-boundary": [
@@ -2426,8 +2726,8 @@
       }
     },
     {
-      "id": "dependency-blocked-release-shaped-artifact-receipt",
-      "scenario": "Dependency-blocked release-shaped artifact receipt",
+      "id": "dependency-blocked-release-shaped-artifact-batch-evidence-row",
+      "scenario": "Dependency-blocked release-shaped artifact batch evidence row",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2440,21 +2740,25 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_artifact_obligations_keep_shape_granularity"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_binds_artifact_obligation_fields"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_rejects_planned_artifact_mismatch"
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_dependency_blocking_uses_declared_prerequisites"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_placeholder_receipt_is_valid"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_rejects_cross_batch_dependency_without_bundle"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_public_validator_rejects_admitted_cross_batch_dependency_no_evidence"
           }
         ],
         "aggregate-or-verdict": [
@@ -2464,7 +2768,15 @@
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_accepts_dependency_blocked_skip"
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_derives_same_batch_dependency_blocked_result"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_public_validator_rejects_admitted_cross_batch_dependency_no_evidence"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_requires_transitive_dependency_bundles"
           }
         ],
         "no-publication-boundary": [
@@ -2484,8 +2796,8 @@
       }
     },
     {
-      "id": "receipt-top-level-artifact-refs-are-populated-for-non-artifact-evidence-or-differ-from-release-s",
-      "scenario": "Receipt top-level artifact refs are populated for non-artifact evidence or differ from release-shaped observed refs",
+      "id": "lightweight-preflight-or-workflow-release-tooling-batch-evidence-row-omits-or-mismatches-its-req",
+      "scenario": "Lightweight-preflight or workflow-release-tooling batch evidence row omits or mismatches its required detail profile or subcheck results",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2498,31 +2810,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_artifact_obligations_keep_shape_granularity"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_binds_artifact_obligation_fields"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_release_receipt_rejects_planned_artifact_mismatch"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_failed_artifact_receipt_preserves_artifact_shape_diagnostic"
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_rejects_non_release_artifact_refs"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2542,8 +2846,8 @@
       }
     },
     {
-      "id": "lightweight-preflight-or-workflow-release-tooling-receipt-omits-or-mismatches-its-required-detai",
-      "scenario": "Lightweight-preflight or workflow-release-tooling receipt omits or mismatches its required detail profile or subcheck results",
+      "id": "invalid-or-mismatched-batch-evidence-row-or-bundle",
+      "scenario": "Invalid or mismatched batch evidence row or bundle",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2556,27 +2860,75 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_known_non_impacting_scope"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_lightweight_policy_uses_frozen_scope"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_admitted_bundle_manifest_mismatch"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_detail_profile_category_diagnostic_keeps_detail_success"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_evidence_result_mismatch"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_detail_profile_rejects_blocking_subcheck_failure_mismatch"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_prefixes_invalid_admitted_bundle_diagnostics"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_public_validator_rejects_admitted_cross_batch_dependency_no_evidence"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_validator_rejects_spoofed_cross_batch_dependency"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_prefixes_invalid_dependency_bundle_paths"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_requires_transitive_dependency_evidence"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_rejects_cross_batch_dependency_without_bundle"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_rejects_invalid_dependency_bundle"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_ignores_spoofed_dependency_result_json"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_requires_transitive_dependency_bundles"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_detail_profile_rejects_blocking_subcheck_failure_mismatch"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_evidence_result_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_admitted_bundle_manifest_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_public_validator_rejects_admitted_cross_batch_dependency_no_evidence"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_validator_rejects_spoofed_cross_batch_dependency"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_prefixes_invalid_dependency_bundle_paths"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_requires_transitive_dependency_evidence"
           }
         ],
         "no-publication-boundary": [
@@ -2596,8 +2948,8 @@
       }
     },
     {
-      "id": "invalid-or-mismatched-receipt",
-      "scenario": "Invalid or mismatched receipt",
+      "id": "forged-or-producer-unverified-batch-writer-metadata",
+      "scenario": "Forged or producer-unverified batch writer metadata",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2610,23 +2962,31 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_inadmissible_observed_receipts_require_failures"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_supplied_manifest_rejects_rebound_writer_binding"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_rejects_forged_writer_id"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_inadmissible_observed_receipts_require_failures"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_rejects_writer_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_fails_on_writer_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_rejects_identity_only_matrix_mismatch"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_rejects_projection_only_matrix_mismatch"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_supplied_manifest_rejects_rebound_writer_binding"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_prefixes_admitted_bundle_writer_diagnostics"
           }
         ],
         "no-publication-boundary": [
@@ -2646,8 +3006,8 @@
       }
     },
     {
-      "id": "forged-or-producer-unverified-writer-observation",
-      "scenario": "Forged or producer-unverified writer observation",
+      "id": "valid-required-batch-evidence-plus-extra-inadmissible-batch-evidence",
+      "scenario": "Valid required batch evidence plus extra inadmissible batch evidence",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2660,23 +3020,35 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_writer_observation_binds_assignment_and_artifact_instance"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_assignments.py::test_writer_observation_validate_rejects_forged_assignment_mapping"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_manifest_writer_identity_mismatch_is_inadmissible"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_ignores_spoofed_dependency_result_json"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_validator_rejects_spoofed_cross_batch_dependency"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_manifest_writer_identity_mismatch_is_inadmissible"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_validator_rejects_spoofed_cross_batch_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2696,8 +3068,8 @@
       }
     },
     {
-      "id": "valid-required-receipt-plus-extra-inadmissible-receipt",
-      "scenario": "Valid required receipt plus extra inadmissible receipt",
+      "id": "batch-evidence-bundle-appears-after-evidence-namespace-closure",
+      "scenario": "Batch evidence bundle appears after evidence namespace closure",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2710,23 +3082,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_inadmissible_observed_receipts_require_failures"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_supplied_manifest_rejects_rebound_writer_binding"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_inadmissible_observed_receipts_require_failures"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_supplied_manifest_rejects_rebound_writer_binding"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2746,8 +3118,8 @@
       }
     },
     {
-      "id": "receipt-like-artifact-appears-after-receipt-namespace-closure",
-      "scenario": "Receipt-like artifact appears after receipt namespace closure",
+      "id": "same-attempt-finalization-retry-with-occupied-aggregate-evidence-manifest-or-aggregate-summary",
+      "scenario": "Same-attempt finalization retry with occupied aggregate evidence manifest or aggregate summary",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2760,27 +3132,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_placeholder_receipts_feed_aggregation"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_duplicate_unreadable_and_unclassified_entries_fail_closed"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_artifact_physical_name_format_length_and_determinism"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_manifest_sorts_entries_and_closes_namespace"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2800,8 +3168,8 @@
       }
     },
     {
-      "id": "same-attempt-finalization-retry-with-occupied-final-manifest-or-aggregate",
-      "scenario": "Same-attempt finalization retry with occupied final manifest or aggregate",
+      "id": "aggregate-summary-exists-at-the-final-ref-but-the-aggregate-evidence-manifest-is-missing",
+      "scenario": "Aggregate summary exists at the final ref but the aggregate evidence manifest is missing",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2814,23 +3182,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2850,8 +3218,8 @@
       }
     },
     {
-      "id": "aggregate-exists-at-the-final-ref-but-the-final-manifest-is-missing",
-      "scenario": "Aggregate exists at the final ref but the final manifest is missing",
+      "id": "aggregate-evidence-manifest-or-aggregate-summary-finalization-reconciliation-fails-despite-a-pas",
+      "scenario": "Aggregate evidence manifest or aggregate summary finalization/reconciliation fails despite a passing computed validation verdict",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2864,23 +3232,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2900,8 +3268,8 @@
       }
     },
     {
-      "id": "final-manifest-or-aggregate-finalization-reconciliation-fails-despite-a-passing-computed-validat",
-      "scenario": "Final manifest or aggregate finalization/reconciliation fails despite a passing computed validation verdict",
+      "id": "missing-duplicate-malformed-wrong-run-wrong-producer-or-mutually-mismatched-aggregate-evidence-m",
+      "scenario": "Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched aggregate evidence manifest or aggregate summary",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2914,23 +3282,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [
@@ -2950,8 +3318,8 @@
       }
     },
     {
-      "id": "missing-duplicate-malformed-wrong-run-wrong-producer-or-mutually-mismatched-final-manifest-or-ag",
-      "scenario": "Missing, duplicate, malformed, wrong-run, wrong-producer, or mutually mismatched final manifest or aggregate",
+      "id": "aggregate-evidence-manifest-or-aggregate-summary-json-is-not-rfc-8785-canonical-utf-8-json",
+      "scenario": "Aggregate evidence manifest or aggregate summary JSON is not RFC 8785 canonical UTF-8 JSON",
       "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
       "validation-mode": "ci-acceptance",
       "evidence": {
@@ -2964,77 +3332,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_manifest_rejects_noncanonical_batch_bundle_order"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
-          }
-        ],
-        "no-publication-boundary": [
-          {
-            "type": "workflow",
-            "value": ".github/workflows/ci-validate.yml"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_noncanonical_failure_order"
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
-          }
-        ]
-      }
-    },
-    {
-      "id": "final-manifest-or-aggregate-json-is-not-rfc-8785-canonical-utf-8-json",
-      "scenario": "Final manifest or aggregate JSON is not RFC 8785 canonical UTF-8 JSON",
-      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
-      "validation-mode": "ci-acceptance",
-      "evidence": {
-        "design-contract": [
-          {
-            "type": "path",
-            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
-          }
-        ],
-        "planning-evidence": [
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_aggregate_rejects_manifest_digest_mismatch"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_freeze_aggregate_rejects_non_final_evidence_diagnostics"
-          }
-        ],
-        "execution-evidence": [
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_aggregation.py::test_final_evidence_failure_diagnostic_requires_detail"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_digest_helpers_are_canonical_and_raw"
-          }
-        ],
-        "aggregate-or-verdict": [
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_receipts.py::test_receipt_digest_helpers_are_canonical_and_raw"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_noncanonical_batch_bundle_order"
           }
         ],
         "no-publication-boundary": [
@@ -3289,6 +3603,56 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ],
+        "no-publication-boundary": [
+          {
+            "type": "workflow",
+            "value": ".github/workflows/ci-validate.yml"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_executes_mapped_commands_before_receipts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ci-validation-evidence-is-presented-to-release-proof-lookup-or-publication-admissibility",
+      "scenario": "CI validation evidence is presented to release proof lookup or publication admissibility",
+      "fixture-anchor": "workflow-release-ci-affected-validation-low-level-design#17",
+      "validation-mode": "ci-acceptance",
+      "evidence": {
+        "design-contract": [
+          {
+            "type": "path",
+            "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          }
+        ],
+        "planning-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_plan_contains_required_fields_and_valid_common_envelope"
+          }
+        ],
+        "execution-evidence": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_freezes_and_validates"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_writes_single_bundle"
+          }
+        ],
+        "aggregate-or-verdict": [
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_satisfied_admitted_dependency"
           }
         ],
         "no-publication-boundary": [

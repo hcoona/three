@@ -54,8 +54,10 @@ from three_workflow_release_contracts import (  # noqa: E402
     artifact_physical_name,
     canonical_json_digest,
     ci_validation_aggregate_artifact_ref,
+    ci_validation_batch_evidence_bundle_payload_digest,
     ci_validation_changed_files_snapshot_artifact_ref,
     ci_validation_diagnostic,
+    ci_validation_execution_batch_manifest_payload_digest,
     ci_validation_fact_snapshot_artifact_ref,
     ci_validation_observed_entry_id,
     ci_validation_plan_artifact_ref,
@@ -68,12 +70,15 @@ from three_workflow_release_contracts import (  # noqa: E402
     ci_validation_writer_id,
     collect_artifacts_by_name,
     freeze_ci_validation_aggregate,
+    freeze_ci_validation_batch_evidence_bundle,
     freeze_ci_validation_invalid_plan_aggregate,
     freeze_ci_validation_receipt,
     freeze_ci_validation_receipt_manifest,
     freeze_ci_validation_selector_assignments,
     freeze_ci_validation_writer_observation,
     load_ci_validation_receipt_payload,
+    validate_ci_validation_batch_evidence_bundle,
+    validate_ci_validation_execution_batch_manifest,
     validate_ci_validation_plan,
     validate_ci_validation_receipt,
     validate_ci_validation_request,
@@ -157,6 +162,7 @@ def main() -> int:
     _add_validate_ci_validation_lightweight_policy(subparsers)
     _add_validate_ci_validation_descriptors(subparsers)
     _add_run_ci_validation_commands(subparsers)
+    _add_write_ci_validation_batch_evidence_bundle(subparsers)
     _add_write_ci_validation_receipt(subparsers)
     _add_write_ci_validation_writer_observation(subparsers)
     _add_download_ci_validation_observed_artifacts(subparsers)
@@ -397,6 +403,34 @@ def _add_run_ci_validation_commands(
     parser.add_argument("--result-out", required=True)
     parser.add_argument("--github-output")
     parser.set_defaults(func=_cmd_run_ci_validation_commands)
+
+
+def _add_write_ci_validation_batch_evidence_bundle(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("write-ci-validation-batch-evidence-bundle")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--request", required=True)
+    parser.add_argument("--execution-batch-manifest", required=True)
+    parser.add_argument("--changed-files-snapshot", default="")
+    parser.add_argument("--fact-snapshot", default="")
+    parser.add_argument("--matrix-row-json", required=True)
+    parser.add_argument("--expected-run-id", required=True)
+    parser.add_argument("--expected-run-attempt", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--job", required=True)
+    parser.add_argument("--assignments", default="")
+    parser.add_argument("--observed-artifacts-dir", default="")
+    parser.add_argument("--observed-commit-sha", required=True)
+    parser.add_argument("--validation-result", action="append", default=[])
+    parser.add_argument("--dependency-results-json", default="")
+    parser.add_argument("--dependency-bundle", action="append", default=[])
+    parser.add_argument("--started-at")
+    parser.add_argument("--completed-at")
+    parser.add_argument("--created-at")
+    parser.add_argument("--bundle-out", required=True)
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_write_ci_validation_batch_evidence_bundle)
 
 
 def _add_validate_ci_validation_lightweight_policy(
@@ -1409,6 +1443,698 @@ def _cmd_validate_ci_validation_descriptors(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     return 0
+
+
+def _cmd_write_ci_validation_batch_evidence_bundle(
+    args: argparse.Namespace,
+) -> int:
+    plan = _read_json(Path(args.plan))
+    request = _read_json(Path(args.request))
+    execution_batch_manifest = _read_json(Path(args.execution_batch_manifest))
+    changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
+    fact_snapshot = _read_optional_json(args.fact_snapshot)
+    assignments = _read_optional_json(getattr(args, "assignments", ""))
+    observed_artifacts_dir = getattr(args, "observed_artifacts_dir", "")
+    matrix_row = _read_json_value(args.matrix_row_json)
+    if not isinstance(matrix_row, Mapping):
+        msg = "execution-batch matrix row must be a JSON object"
+        raise TypeError(msg)
+    validate_ci_validation_execution_batch_manifest(
+        execution_batch_manifest,
+        plan=plan,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        expected_run_id=args.expected_run_id,
+        expected_run_attempt=args.expected_run_attempt,
+        authorizing=True,
+    )
+    batch = _ci_execution_batch_from_matrix_row(
+        execution_batch_manifest,
+        matrix_row,
+    )
+    validation_results = _ci_validation_results_by_work_group(
+        getattr(args, "validation_result", []),
+    )
+    dependency_results = _ci_batch_dependency_results_by_work_group(
+        getattr(args, "dependency_results_json", ""),
+    )
+    authoritative_dependency_bundles = _ci_authoritative_dependency_bundles(
+        getattr(args, "dependency_bundle", []),
+        plan=plan,
+        request=request,
+        execution_batch_manifest=execution_batch_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        expected_run_id=args.expected_run_id,
+        expected_run_attempt=args.expected_run_attempt,
+    )
+    authoritative_dependency_results = _ci_authoritative_dependency_results(
+        authoritative_dependency_bundles,
+    )
+    selectors = _ci_batch_ordered_selectors(batch)
+    selected_work_group_ids = {
+        str(selector["work-group-id"]) for selector in selectors
+    }
+    _reject_off_batch_result_keys(
+        validation_results,
+        selected_work_group_ids,
+        "validation",
+    )
+    _reject_off_batch_result_keys(
+        dependency_results,
+        selected_work_group_ids,
+        "dependency",
+    )
+    now = args.created_at or _utc_now()
+    selector_results: list[Json] = []
+    prior_selector_outcomes: dict[str, str] = {}
+    for selector in selectors:
+        selector_result = _ci_batch_selector_result(
+            plan=plan,
+            execution_batch_manifest=execution_batch_manifest,
+            batch=batch,
+            selector=selector,
+            validation_result=validation_results.get(
+                str(selector["work-group-id"])
+            ),
+            dependency_results=dependency_results.get(
+                str(selector["work-group-id"]),
+                [],
+            ),
+            authoritative_dependency_results=authoritative_dependency_results,
+            prior_selector_outcomes=prior_selector_outcomes,
+            observed_commit_sha=args.observed_commit_sha,
+            assignments=assignments
+            if isinstance(assignments, Mapping)
+            else None,
+            observed_artifacts_dir=observed_artifacts_dir,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
+        selector_results.append(selector_result)
+        prior_selector_outcomes[str(selector["work-group-id"])] = str(
+            selector_result["outcome"]
+        )
+    writer = _ci_batch_bundle_writer(
+        execution_batch_manifest=execution_batch_manifest,
+        batch=batch,
+        matrix_row=matrix_row,
+        workflow=args.workflow,
+        job=args.job,
+    )
+    bundle = freeze_ci_validation_batch_evidence_bundle(
+        plan=plan,
+        execution_batch_manifest=execution_batch_manifest,
+        batch_id=str(batch["batch-id"]),
+        selector_results=selector_results,
+        writer=writer,
+        execution_tree={
+            "observed-commit-sha": args.observed_commit_sha,
+            "source": "execution-batch-boundary",
+            "verified": _ci_batch_execution_tree_verified(
+                plan,
+                args.observed_commit_sha,
+            ),
+        },
+        started_at=args.started_at or now,
+        completed_at=args.completed_at or now,
+        created_at=now,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        expected_run_id=args.expected_run_id,
+        expected_run_attempt=args.expected_run_attempt,
+        dependency_evidence_bundles=authoritative_dependency_bundles,
+    )
+    validate_ci_validation_batch_evidence_bundle(
+        bundle,
+        plan=plan,
+        request=request,
+        execution_batch_manifest=execution_batch_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        expected_run_id=args.expected_run_id,
+        expected_run_attempt=args.expected_run_attempt,
+        dependency_evidence_bundles=authoritative_dependency_bundles,
+    )
+    _write_json(Path(args.bundle_out), bundle)
+    artifact_ref = str(bundle["artifact-ref"])
+    _write_outputs(
+        args.github_output,
+        {
+            "batch_id": str(batch["batch-id"]),
+            "batch_evidence_bundle_ref": artifact_ref,
+            "batch_evidence_bundle_artifact_name": artifact_physical_name(
+                artifact_ref
+            ),
+            "batch_evidence_bundle_payload_digest": (
+                ci_validation_batch_evidence_bundle_payload_digest(bundle)
+            ),
+            "execution_batch_manifest_payload_digest": (
+                ci_validation_execution_batch_manifest_payload_digest(
+                    execution_batch_manifest
+                )
+            ),
+            "observed_writer_id": str(writer["expected-job-identity"]),
+        },
+    )
+    return 0
+
+
+def _ci_execution_batch_from_matrix_row(
+    execution_batch_manifest: Mapping[str, object],
+    matrix_row: Mapping[str, object],
+) -> Mapping[str, object]:
+    identity = matrix_row.get("identity-matrix")
+    if not isinstance(identity, Mapping):
+        msg = "execution-batch matrix row is missing identity-matrix"
+        raise TypeError(msg)
+    batch_id = identity.get("batch-id")
+    if not isinstance(batch_id, str) or not batch_id:
+        msg = "execution-batch matrix row is missing batch id"
+        raise ValueError(msg)
+    for batch in _ci_execution_batches(execution_batch_manifest):
+        if batch.get("batch-id") != batch_id:
+            continue
+        expected_identity = _ci_execution_batch_matrix_identity(batch)
+        if dict(identity) != expected_identity:
+            msg = "execution-batch matrix row identity does not match manifest"
+            raise RuntimeError(msg)
+        for key, value in expected_identity.items():
+            if matrix_row.get(key) != value:
+                msg = "execution-batch matrix row projection does not match identity"
+                raise RuntimeError(msg)
+        expected_writer = _ci_batch_expected_writer_id(
+            execution_batch_manifest,
+            batch,
+        )
+        if matrix_row.get("expected-job-identity") != expected_writer:
+            msg = "execution-batch matrix row writer identity does not match manifest"
+            raise RuntimeError(msg)
+        return batch
+    msg = "execution-batch matrix row batch id does not exist in manifest"
+    raise RuntimeError(msg)
+
+
+def _ci_execution_batches(
+    execution_batch_manifest: Mapping[str, object],
+) -> list[Mapping[str, object]]:
+    batches = execution_batch_manifest.get("batches")
+    if not isinstance(batches, Sequence) or isinstance(batches, str | bytes):
+        msg = "execution-batch manifest batches must be an array"
+        raise TypeError(msg)
+    return [batch for batch in batches if isinstance(batch, Mapping)]
+
+
+def _ci_execution_batch_matrix_identity(
+    batch: Mapping[str, object],
+) -> Json:
+    return {
+        "batch-id": str(batch["batch-id"]),
+        "runner-family": str(batch["runner-family"]),
+        "expected-batch-evidence-bundle-ref": str(
+            batch["expected-batch-evidence-bundle-ref"]
+        ),
+    }
+
+
+def _ci_batch_expected_writer_id(
+    execution_batch_manifest: Mapping[str, object],
+    batch: Mapping[str, object],
+) -> str:
+    writer = batch.get("batch-writer")
+    if not isinstance(writer, Mapping):
+        msg = "execution batch is missing batch-writer"
+        raise TypeError(msg)
+    expected = writer.get("expected-job-identity")
+    if not isinstance(expected, str) or not expected:
+        msg = "execution batch is missing expected writer identity"
+        raise ValueError(msg)
+    return expected
+
+
+def _ci_validation_results_by_work_group(
+    paths: Sequence[str],
+) -> dict[str, Json]:
+    results: dict[str, Json] = {}
+    for value in paths:
+        result = _read_json(Path(value))
+        work_group_id = result.get("work-group-id")
+        if not isinstance(work_group_id, str) or not work_group_id:
+            msg = f"validation result {value!r} is missing work-group-id"
+            raise ValueError(msg)
+        if work_group_id in results:
+            msg = (
+                f"duplicate validation result for work group {work_group_id!r}"
+            )
+            raise ValueError(msg)
+        results[work_group_id] = result
+    return results
+
+
+def _ci_batch_dependency_results_by_work_group(
+    value: str,
+) -> dict[str, list[Json]]:
+    if not value:
+        return {}
+    parsed = _read_json_value(value)
+    if isinstance(parsed, Mapping):
+        result: dict[str, list[Json]] = {}
+        for work_group_id, rows in parsed.items():
+            if not isinstance(work_group_id, str):
+                msg = "dependency result keys must be work group ids"
+                raise TypeError(msg)
+            result[work_group_id] = _ci_batch_dependency_result_rows(rows)
+        return result
+    rows = _ci_batch_dependency_result_rows(parsed)
+    grouped: dict[str, list[Json]] = {}
+    for row in rows:
+        dependent = row.get("dependent-work-group-id")
+        if not isinstance(dependent, str) or not dependent:
+            msg = (
+                "flat dependency results require dependent-work-group-id on "
+                "each row"
+            )
+            raise ValueError(msg)
+        grouped.setdefault(dependent, []).append(row)
+    return grouped
+
+
+def _ci_batch_dependency_result_rows(value: object) -> list[Json]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        msg = "dependency results must be an array"
+        raise TypeError(msg)
+    rows: list[Json] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            msg = "dependency result rows must be objects"
+            raise TypeError(msg)
+        rows.append(dict(item))
+    return rows
+
+
+def _reject_off_batch_result_keys(
+    results: Mapping[str, object],
+    selected_work_group_ids: set[str],
+    result_kind: str,
+) -> None:
+    extra = set(results) - selected_work_group_ids
+    if extra:
+        msg = (
+            f"{result_kind} results include unselected work groups "
+            f"{sorted(extra)!r}"
+        )
+        raise RuntimeError(msg)
+
+
+def _ci_batch_ordered_selectors(
+    batch: Mapping[str, object],
+) -> list[Mapping[str, object]]:
+    selectors = batch.get("ordered-selectors")
+    if not isinstance(selectors, Sequence) or isinstance(
+        selectors, str | bytes
+    ):
+        msg = "execution batch ordered-selectors must be an array"
+        raise TypeError(msg)
+    return [selector for selector in selectors if isinstance(selector, Mapping)]
+
+
+def _ci_batch_selector_result(
+    *,
+    plan: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object],
+    batch: Mapping[str, object],
+    selector: Mapping[str, object],
+    validation_result: Mapping[str, object] | None,
+    dependency_results: Sequence[Mapping[str, object]],
+    authoritative_dependency_results: Mapping[str, Mapping[str, object]],
+    prior_selector_outcomes: Mapping[str, str],
+    observed_commit_sha: str,
+    assignments: Mapping[str, object] | None = None,
+    observed_artifacts_dir: str = "",
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+) -> Json:
+    slot = selector.get("expected-evidence-slot")
+    if not isinstance(slot, Mapping):
+        msg = "execution batch selector is missing expected evidence slot"
+        raise TypeError(msg)
+    work_group_id = str(selector["work-group-id"])
+    normalized_dependencies = _ci_batch_normalized_dependency_results(
+        selector=selector,
+        execution_batch_manifest=execution_batch_manifest,
+        current_batch_id=str(batch["batch-id"]),
+        dependency_results=dependency_results,
+        authoritative_dependency_results=authoritative_dependency_results,
+        prior_selector_outcomes=prior_selector_outcomes,
+    )
+    dependency_blocked = any(
+        item["admitted-for-gating"] is not True
+        for item in normalized_dependencies
+    )
+    outcome = _ci_validation_outcome(
+        plan,
+        work_group_id,
+        dependency_blocked=dependency_blocked,
+        validation_result=validation_result,
+        assignments=assignments,
+        observed_artifacts_dir=observed_artifacts_dir,
+        observed_commit_sha=observed_commit_sha,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    diagnostics = _ci_validation_diagnostics(
+        plan,
+        work_group_id,
+        outcome=outcome,
+    )
+    return {
+        "work-group-id": work_group_id,
+        "selector-index": selector["selector-index"],
+        "expected-evidence-id": selector["expected-evidence-id"],
+        "expected-evidence-slot-digest": canonical_json_digest(slot),
+        "mode": plan["mode"],
+        "validation-tree": dict(
+            cast("Mapping[str, object]", plan["validation-tree"])
+        ),
+        "affected-range": _ci_batch_summary_affected_range(plan),
+        "scheduled-full": dict(
+            cast("Mapping[str, object]", plan["scheduled-full"])
+        ),
+        "coverage-target": slot["coverage-target"],
+        "ecosystem": slot["ecosystem"],
+        "runner-family": slot["runner-family"],
+        "selector-variant": slot["selector-variant"],
+        "depends-on": list(cast("Sequence[object]", selector["depends-on"])),
+        "dependency-results": normalized_dependencies,
+        "outcome": outcome,
+        "skip-reason": "dependency-blocked" if dependency_blocked else None,
+        "evidence": _ci_validation_evidence(
+            plan,
+            work_group_id,
+            outcome=outcome,
+            diagnostics=diagnostics,
+            validation_result=validation_result,
+            fact_snapshot=fact_snapshot,
+            batch_bundle=True,
+        ),
+        "diagnostics": diagnostics,
+        "proof-admissibility": "validation-only",
+    }
+
+
+def _ci_batch_normalized_dependency_results(
+    *,
+    selector: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object],
+    current_batch_id: str,
+    dependency_results: Sequence[Mapping[str, object]],
+    authoritative_dependency_results: Mapping[str, Mapping[str, object]],
+    prior_selector_outcomes: Mapping[str, str],
+) -> list[Json]:
+    depends_on = [
+        str(item)
+        for item in cast("Sequence[object]", selector.get("depends-on", []))
+    ]
+    rows_by_work_group = _ci_batch_dependency_results_by_upstream(
+        dependency_results
+    )
+    normalized: list[Json] = []
+    positions = _ci_execution_batch_positions(execution_batch_manifest)
+    upstream_dependency_ids: set[str] = set()
+    for work_group_id in depends_on:
+        source_batch_id = positions.get(work_group_id)
+        if source_batch_id == current_batch_id:
+            prior_outcome = prior_selector_outcomes.get(work_group_id)
+            if prior_outcome is None:
+                msg = (
+                    f"same-batch dependency result for work group "
+                    f"{work_group_id!r} is unavailable from prior selectors"
+                )
+                raise RuntimeError(msg)
+            outcome = _ci_same_batch_dependency_outcome(prior_outcome)
+            admitted = _ci_selector_outcome_admitted_for_gating(prior_outcome)
+            normalized.append(
+                {
+                    "work-group-id": work_group_id,
+                    "source-batch-id": source_batch_id,
+                    "outcome": outcome,
+                    "admitted-for-gating": admitted,
+                }
+            )
+            continue
+        upstream_dependency_ids.add(work_group_id)
+        if not isinstance(source_batch_id, str) or not source_batch_id:
+            msg = f"dependency source batch for {work_group_id!r} is required"
+            raise RuntimeError(msg)
+        row = authoritative_dependency_results.get(work_group_id)
+        if row is None:
+            normalized.append(
+                {
+                    "work-group-id": work_group_id,
+                    "source-batch-id": source_batch_id,
+                    "outcome": "missing",
+                    "admitted-for-gating": False,
+                }
+            )
+            continue
+        row_source_batch_id = row.get("source-batch-id")
+        if row_source_batch_id != source_batch_id:
+            msg = (
+                f"authoritative dependency source for {work_group_id!r} "
+                "does not match execution batch manifest"
+            )
+            raise RuntimeError(msg)
+        outcome = row.get("outcome")
+        if outcome not in {"satisfied", "missing", "skipped", "failed"}:
+            msg = f"dependency outcome for {work_group_id!r} is not registered"
+            raise RuntimeError(msg)
+        admitted = row.get("admitted-for-gating")
+        if not isinstance(admitted, bool):
+            msg = f"dependency admission for {work_group_id!r} must be boolean"
+            raise TypeError(msg)
+        normalized.append(
+            {
+                "work-group-id": work_group_id,
+                "source-batch-id": source_batch_id,
+                "outcome": outcome,
+                "admitted-for-gating": admitted,
+            }
+        )
+    extra = set(rows_by_work_group) - upstream_dependency_ids
+    if extra:
+        msg = f"unexpected dependency results for {sorted(extra)!r}"
+        raise RuntimeError(msg)
+    return normalized
+
+
+def _ci_authoritative_dependency_bundles(
+    paths: Sequence[str],
+    *,
+    plan: Mapping[str, object],
+    request: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    expected_run_id: str,
+    expected_run_attempt: str,
+) -> list[Mapping[str, object]]:
+    pending: list[tuple[str, Mapping[str, object]]] = []
+    for value in paths:
+        try:
+            bundle = _read_json(Path(value))
+        except (OSError, ValueError, TypeError, RuntimeError) as exc:
+            msg = f"invalid dependency bundle {value!r}: {exc}"
+            raise RuntimeError(msg) from exc
+        pending.append((value, bundle))
+    bundles: list[Mapping[str, object]] = []
+    last_errors: dict[str, ContractValidationError] = {}
+    while pending:
+        next_pending: list[tuple[str, Mapping[str, object]]] = []
+        progressed = False
+        for value, bundle in pending:
+            try:
+                validate_ci_validation_batch_evidence_bundle(
+                    bundle,
+                    plan=plan,
+                    request=request,
+                    execution_batch_manifest=execution_batch_manifest,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                    expected_run_id=expected_run_id,
+                    expected_run_attempt=expected_run_attempt,
+                    dependency_evidence_bundles=bundles,
+                )
+            except ContractValidationError as exc:
+                last_errors[value] = exc
+                next_pending.append((value, bundle))
+                continue
+            bundles.append(bundle)
+            progressed = True
+        if not next_pending:
+            break
+        if not progressed:
+            value, _bundle = next_pending[0]
+            issue = last_errors[value].issues[0]
+            msg = (
+                f"invalid dependency bundle {value!r}: "
+                f"{issue.path} {issue.message}"
+            )
+            raise RuntimeError(msg) from last_errors[value]
+        pending = next_pending
+    return bundles
+
+
+def _ci_authoritative_dependency_results(
+    bundles: Sequence[Mapping[str, object]],
+) -> dict[str, Mapping[str, object]]:
+    results: dict[str, Mapping[str, object]] = {}
+    for bundle in bundles:
+        batch = bundle.get("batch")
+        if not isinstance(batch, Mapping):
+            msg = "dependency bundle is missing batch"
+            raise TypeError(msg)
+        batch_id = batch.get("batch-id")
+        if not isinstance(batch_id, str) or not batch_id:
+            msg = "dependency bundle is missing batch id"
+            raise ValueError(msg)
+        selector_results = bundle.get("selector-results")
+        if not isinstance(selector_results, Sequence) or isinstance(
+            selector_results, str | bytes
+        ):
+            msg = "dependency bundle selector results must be an array"
+            raise TypeError(msg)
+        for selector_result in selector_results:
+            if not isinstance(selector_result, Mapping):
+                msg = "dependency bundle selector result must be an object"
+                raise TypeError(msg)
+            work_group_id = selector_result.get("work-group-id")
+            if not isinstance(work_group_id, str) or not work_group_id:
+                msg = (
+                    "dependency bundle selector result is missing work-group-id"
+                )
+                raise ValueError(msg)
+            if work_group_id in results:
+                msg = (
+                    f"duplicate authoritative dependency for {work_group_id!r}"
+                )
+                raise RuntimeError(msg)
+            outcome = str(selector_result.get("outcome"))
+            results[work_group_id] = {
+                "work-group-id": work_group_id,
+                "source-batch-id": batch_id,
+                "outcome": _ci_same_batch_dependency_outcome(outcome),
+                "admitted-for-gating": _ci_selector_outcome_admitted_for_gating(
+                    outcome
+                ),
+            }
+    return results
+
+
+def _ci_batch_dependency_results_by_upstream(
+    dependency_results: Sequence[Mapping[str, object]],
+) -> dict[str, Mapping[str, object]]:
+    rows_by_work_group: dict[str, Mapping[str, object]] = {}
+    for item in dependency_results:
+        work_group_id = item.get("work-group-id")
+        if not isinstance(work_group_id, str) or not work_group_id:
+            msg = "dependency result rows must include work-group-id"
+            raise ValueError(msg)
+        if work_group_id in rows_by_work_group:
+            msg = (
+                f"duplicate dependency result for work group {work_group_id!r}"
+            )
+            raise RuntimeError(msg)
+        rows_by_work_group[work_group_id] = item
+    return rows_by_work_group
+
+
+def _ci_same_batch_dependency_outcome(selector_outcome: str) -> str:
+    if selector_outcome == "success":
+        return "satisfied"
+    if selector_outcome == "skipped":
+        return "skipped"
+    return "failed"
+
+
+def _ci_selector_outcome_admitted_for_gating(selector_outcome: str) -> bool:
+    return selector_outcome in {"success", "blocking-failure"}
+
+
+def _ci_execution_batch_positions(
+    execution_batch_manifest: Mapping[str, object],
+) -> dict[str, str]:
+    positions: dict[str, str] = {}
+    for batch in _ci_execution_batches(execution_batch_manifest):
+        batch_id = batch.get("batch-id")
+        if not isinstance(batch_id, str):
+            continue
+        for selector in _ci_batch_ordered_selectors(batch):
+            work_group_id = selector.get("work-group-id")
+            if isinstance(work_group_id, str):
+                positions[work_group_id] = batch_id
+    return positions
+
+
+def _ci_batch_bundle_writer(
+    *,
+    execution_batch_manifest: Mapping[str, object],
+    batch: Mapping[str, object],
+    matrix_row: Mapping[str, object],
+    workflow: str,
+    job: str,
+) -> Json:
+    identity = _ci_execution_batch_matrix_identity(batch)
+    observed_writer_id = ci_validation_writer_id(
+        workflow=workflow,
+        job=job,
+        matrix=identity,
+    )
+    expected_writer_id = _ci_batch_expected_writer_id(
+        execution_batch_manifest,
+        batch,
+    )
+    if matrix_row.get("expected-job-identity") != expected_writer_id:
+        msg = "matrix row expected writer identity does not match manifest"
+        raise RuntimeError(msg)
+    if observed_writer_id != expected_writer_id:
+        msg = (
+            "observed workflow/job/matrix writer identity does not match batch"
+        )
+        raise RuntimeError(msg)
+    return {
+        "identity-source": "github-actions-job-context",
+        "expected-boundary": "execution-batch",
+        "expected-job-identity": expected_writer_id,
+        "observed-workflow": workflow,
+        "observed-job": job,
+        "observed-matrix": identity,
+    }
+
+
+def _ci_batch_execution_tree_verified(
+    plan: Mapping[str, object],
+    observed_commit_sha: str,
+) -> bool:
+    validation_tree = plan.get("validation-tree")
+    return (
+        isinstance(validation_tree, Mapping)
+        and validation_tree.get("commit-sha") == observed_commit_sha
+    )
+
+
+def _ci_batch_summary_affected_range(
+    plan: Mapping[str, object],
+) -> Json:
+    affected = cast("Mapping[str, object]", plan["affected-range"])
+    return {
+        "status": affected["status"],
+        "base-sha": affected["base-sha"],
+        "base-tip-sha": affected["base-tip-sha"],
+        "head-sha": affected["head-sha"],
+        "changed-files-hash": affected["changed-files-hash"] or None,
+    }
 
 
 def _ci_run_validation_command(
@@ -6455,6 +7181,7 @@ def _ci_validation_result_has_success_evidence(
             plan,
             work_group_id,
             validation_result,
+            observed_commit_sha=observed_commit_sha,
         )
     ):
         return False
@@ -6524,6 +7251,8 @@ def _ci_validation_result_identity_matches(
     plan: Mapping[str, object],
     work_group_id: str,
     validation_result: Mapping[str, object],
+    *,
+    observed_commit_sha: str = "",
 ) -> bool:
     planned_work_group = _ci_work_group(plan, work_group_id)
     if not (
@@ -6533,13 +7262,13 @@ def _ci_validation_result_identity_matches(
         == planned_work_group.get("runner-family")
     ):
         return False
-    if planned_work_group.get("kind") != "release-shaped-artifact":
-        return True
     validation_tree = plan.get("validation-tree")
-    return (
-        isinstance(validation_tree, Mapping)
-        and validation_result.get("observed-commit-sha")
-        == validation_tree.get("commit-sha")
+    if not isinstance(validation_tree, Mapping):
+        return False
+    result_commit = validation_result.get("observed-commit-sha")
+    return bool(
+        result_commit == validation_tree.get("commit-sha")
+        and (not observed_commit_sha or result_commit == observed_commit_sha)
         and validation_result.get("coverage-target")
         == planned_work_group.get("coverage-target")
     )
@@ -6837,6 +7566,7 @@ def _ci_validation_evidence(
     diagnostics: Sequence[Mapping[str, object]],
     validation_result: Mapping[str, object] | None = None,
     fact_snapshot: Mapping[str, object] | None = None,
+    batch_bundle: bool = False,
 ) -> Json:
     expectation = _ci_evidence_expectation(plan, work_group_id)
     category = str(expectation["category"])
@@ -6864,15 +7594,18 @@ def _ci_validation_evidence(
     category_result: Json = {
         "outcome": outcome,
         "diagnostics": [dict(item) for item in diagnostics],
-        "detail": _ci_validation_detail(
+    }
+    if batch_bundle:
+        category_result["category"] = category
+    else:
+        category_result["detail"] = _ci_validation_detail(
             plan,
             work_group_id,
             category,
             diagnostics,
             outcome=outcome,
             fact_snapshot=fact_snapshot,
-        ),
-    }
+        )
     artifact_refs: list[str] = []
     if (
         category == "release-shaped-artifact"
@@ -6897,8 +7630,11 @@ def _ci_validation_evidence(
             )
             if source_proof is not None:
                 detail.update(source_proof)
-            category_result["detail"] = detail
             artifact_refs = _ci_release_shaped_observed_refs(release_results)
+            if batch_bundle:
+                category_result["artifact-refs"] = artifact_refs
+            else:
+                category_result["detail"] = detail
     return {
         "category": category,
         "planned-capabilities": None,
@@ -6962,6 +7698,12 @@ def _ci_capability_results(
             }
             for capability in capabilities
         ]
+    if (
+        outcome != "success"
+        and validation_result is not None
+        and validation_result.get("outcome") == "success"
+    ):
+        validation_result = None
     if validation_result is None:
         return [
             {

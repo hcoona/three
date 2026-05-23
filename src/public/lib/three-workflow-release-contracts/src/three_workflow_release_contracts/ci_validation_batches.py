@@ -1091,7 +1091,7 @@ def validate_ci_validation_execution_batch_manifest(  # noqa: PLR0913
     )
 
 
-def _validate_ci_validation_execution_batch_manifest(  # noqa: PLR0913
+def _validate_ci_validation_execution_batch_manifest(  # noqa: C901, PLR0913
     manifest: object,
     *,
     plan: Mapping[str, object] | None = None,
@@ -1118,7 +1118,13 @@ def _validate_ci_validation_execution_batch_manifest(  # noqa: PLR0913
         CiValidationKind.EXECUTION_BATCH_MANIFEST,
         issues=issues,
     )
-    _validate_root_keys(manifest, _EXECUTION_BATCH_MANIFEST_KEYS, "$", issues)
+    _validate_root_keys_with_optional(
+        manifest,
+        _EXECUTION_BATCH_MANIFEST_KEYS,
+        frozenset({"plan-id", "plan-digest"}),
+        "$",
+        issues,
+    )
     _validate_g1_schema_diagnostics(manifest.get("schema-diagnostics"), issues)
     _validate_expected_run(
         envelope, expected_run_id, expected_run_attempt, issues
@@ -1164,9 +1170,6 @@ def _validate_ci_validation_execution_batch_manifest(  # noqa: PLR0913
                 for item_id, group in plan_work_groups.items()
                 if group.get("kind") != "evidence-aggregation"
             }
-    else:
-        _validate_non_empty_string(manifest.get("plan-id"), "$.plan-id", issues)
-        _validate_digest(manifest.get("plan-digest"), "$.plan-digest", issues)
     batches = _validate_batches(
         manifest.get("batches"),
         envelope,
@@ -1177,12 +1180,19 @@ def _validate_ci_validation_execution_batch_manifest(  # noqa: PLR0913
     )
     _validate_planless_non_empty_batches(
         plan=plan,
+        authorizing=authorizing,
         allow_planless_non_authorizing_batches=(
             _allow_planless_non_authorizing_batches
         ),
         batches=batches,
         issues=issues,
     )
+    if plan is None:
+        _validate_planless_manifest_identity(
+            manifest,
+            batches,
+            issues,
+        )
     if plan is not None and plan_context_valid:
         _validate_plan_bound_batch_materialization(
             batches,
@@ -1212,15 +1222,49 @@ def _validate_ci_validation_execution_batch_manifest(  # noqa: PLR0913
 def _validate_planless_non_empty_batches(
     *,
     plan: Mapping[str, object] | None,
+    authorizing: bool,
     allow_planless_non_authorizing_batches: bool,
     batches: Sequence[Mapping[str, object]],
     issues: list[ValidationIssue],
 ) -> None:
+    if plan is None and not batches and authorizing:
+        issues.append(
+            ValidationIssue(
+                "authorizing",
+                "requires explicit non-authorizing mode for planless "
+                "zero-batch manifests",
+            )
+        )
     if plan is None and batches and not allow_planless_non_authorizing_batches:
         issues.append(
             ValidationIssue(
                 "authorizing",
                 "requires plan context for non-empty execution batches",
+            )
+        )
+
+
+def _validate_planless_manifest_identity(
+    manifest: Mapping[str, object],
+    batches: Sequence[Mapping[str, object]],
+    issues: list[ValidationIssue],
+) -> None:
+    if batches:
+        _validate_non_empty_string(manifest.get("plan-id"), "$.plan-id", issues)
+        _validate_digest(manifest.get("plan-digest"), "$.plan-digest", issues)
+        return
+    if manifest.get("plan-id") is not None:
+        issues.append(
+            ValidationIssue(
+                "$.plan-id",
+                "must be null for planless zero-batch manifests",
+            )
+        )
+    if manifest.get("plan-digest") is not None:
+        issues.append(
+            ValidationIssue(
+                "$.plan-digest",
+                "must be null for planless zero-batch manifests",
             )
         )
 
@@ -1309,6 +1353,22 @@ def _validate_plan_context(  # noqa: PLR0913
     return _validate_plan_context_canonical_arrays(plan, issues)
 
 
+def _authorizing_context_supplied(
+    *,
+    request: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+) -> bool:
+    return any(
+        item is not None
+        for item in (
+            request,
+            changed_files_snapshot,
+            fact_snapshot,
+        )
+    )
+
+
 def freeze_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
     *,
     plan: Mapping[str, object],
@@ -1321,12 +1381,28 @@ def freeze_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
     completed_at: str,
     created_at: str,
     batch_diagnostics: Sequence[Mapping[str, object]] = (),
+    request: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    expected_run_id: str | None = None,
+    expected_run_attempt: str | None = None,
+    dependency_evidence_bundles: Sequence[Mapping[str, object]] = (),
 ) -> dict[str, object]:
     """Freeze a validation-only evidence bundle for one execution batch."""
+    authorizing_context_supplied = _authorizing_context_supplied(
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
     validate_ci_validation_execution_batch_manifest(
         execution_batch_manifest,
         plan=plan,
-        authorizing=False,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+        authorizing=authorizing_context_supplied,
     )
     envelope = _envelope(plan, CiValidationKind.PLAN)
     batch = _batch_by_id(execution_batch_manifest, batch_id)
@@ -1390,18 +1466,28 @@ def freeze_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
     validate_ci_validation_batch_evidence_bundle(
         bundle,
         plan=plan,
+        request=request,
         execution_batch_manifest=execution_batch_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+        dependency_evidence_bundles=dependency_evidence_bundles,
     )
     return bundle
 
 
-def validate_ci_validation_batch_evidence_bundle(
+def validate_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
     bundle: object,
     *,
     plan: Mapping[str, object] | None = None,
+    request: Mapping[str, object] | None = None,
     execution_batch_manifest: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
     expected_run_id: str | None = None,
     expected_run_attempt: str | None = None,
+    dependency_evidence_bundles: Sequence[Mapping[str, object]] = (),
 ) -> None:
     """Validate a batch evidence bundle."""
     if not isinstance(bundle, Mapping):
@@ -1413,6 +1499,37 @@ def validate_ci_validation_batch_evidence_bundle(
     execution_batch_manifest = _validate_optional_mapping_context(
         execution_batch_manifest, "execution_batch_manifest", issues
     )
+    request = _validate_optional_mapping_context(request, "request", issues)
+    changed_files_snapshot = _validate_optional_mapping_context(
+        changed_files_snapshot, "changed_files_snapshot", issues
+    )
+    fact_snapshot = _validate_optional_mapping_context(
+        fact_snapshot, "fact_snapshot", issues
+    )
+    dependency_evidence_bundles = (
+        _validate_optional_mapping_sequence_context(
+            dependency_evidence_bundles,
+            "dependency_evidence_bundles",
+            issues,
+        )
+        or []
+    )
+    authorizing_context_supplied = _authorizing_context_supplied(
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+    )
+    if execution_batch_manifest is not None and plan is not None:
+        validate_ci_validation_execution_batch_manifest(
+            execution_batch_manifest,
+            plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=expected_run_id,
+            expected_run_attempt=expected_run_attempt,
+            authorizing=authorizing_context_supplied,
+        )
     _validate_canonical(bundle, "$", issues)
     envelope = _envelope_or_collect(
         bundle,
@@ -1443,6 +1560,16 @@ def validate_ci_validation_batch_evidence_bundle(
             execution_batch_manifest,
             envelope,
             plan,
+            request,
+            changed_files_snapshot,
+            fact_snapshot,
+            expected_run_id,
+            expected_run_attempt,
+            _authorizing_context_supplied(
+                request=request,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+            ),
             issues,
         )
     _validate_bundle_artifact_ref(bundle, envelope, batch, issues)
@@ -1488,6 +1615,20 @@ def validate_ci_validation_batch_evidence_bundle(
         bundle,
         issues,
     )
+    if authorizing_context_supplied:
+        _validate_authorizing_batch_dependency_evidence(
+            bundle,
+            batch,
+            execution_batch_manifest,
+            dependency_evidence_bundles,
+            plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=expected_run_id,
+            expected_run_attempt=expected_run_attempt,
+            issues=issues,
+        )
     if bundle.get("proof-admissibility") != _PROOF_ADMISSIBILITY:
         issues.append(
             ValidationIssue(
@@ -1737,10 +1878,7 @@ def _validate_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
             changed_files_snapshot_context_hash,
         )
     )
-    if (
-        plan is None
-        and _aggregate_manifest_has_no_authoritative_plan(manifest)
-    ):
+    if plan is None and _aggregate_manifest_has_no_authoritative_plan(manifest):
         _validate_null_plan_identity(manifest, "$", issues)
     execution_batch_manifest_proven = False
     if execution_batch_manifest is not None:
@@ -2146,10 +2284,7 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
     authoritative_execution_batch_manifest = None
     if execution_batch_manifest_authoritative:
         authoritative_execution_batch_manifest = execution_batch_manifest
-    if (
-        plan is None
-        and aggregate_evidence_manifest is None
-    ):
+    if plan is None and aggregate_evidence_manifest is None:
         _validate_null_plan_identity(summary, "$", issues)
     if (
         plan is None
@@ -2321,6 +2456,9 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
             admitted_batch_evidence_bundles,
             plan,
             execution_batch_manifest,
+            request,
+            changed_files_snapshot,
+            fact_snapshot,
             envelope,
             issues,
         )
@@ -2370,6 +2508,7 @@ def _raw_digest(value: bytes, path: str) -> str:
     if not isinstance(value, bytes):
         raise ContractValidationError([ValidationIssue(path, "must be bytes")])
     return hashlib.sha256(value).hexdigest()
+
 
 def _payload_digest(value: Mapping[str, object], path: str) -> str:
     try:
@@ -2532,6 +2671,25 @@ def _validate_root_keys(
     for key in sorted(keys - allowed):
         issues.append(ValidationIssue(f"{path}.{key}", "is not allowed"))
     for key in sorted(allowed - keys):
+        issues.append(ValidationIssue(f"{path}.{key}", "is required"))
+
+
+def _validate_root_keys_with_optional(
+    document: Mapping[str, object],
+    allowed: frozenset[str],
+    optional: frozenset[str],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    keys: set[str] = set()
+    for key in document:
+        if not isinstance(key, str):
+            issues.append(ValidationIssue(path, "keys must be strings"))
+            continue
+        keys.add(key)
+    for key in sorted(keys - allowed):
+        issues.append(ValidationIssue(f"{path}.{key}", "is not allowed"))
+    for key in sorted((allowed - optional) - keys):
         issues.append(ValidationIssue(f"{path}.{key}", "is required"))
 
 
@@ -4573,25 +4731,45 @@ def _validate_bundle_plan_fields(
         issues.append(ValidationIssue("$.scheduled-full", "must match plan"))
 
 
-def _validate_bundle_manifest_fields(
+def _validate_bundle_manifest_fields(  # noqa: PLR0913
     bundle: Mapping[str, object],
     manifest: Mapping[str, object],
     envelope: CommonEnvelope | None,
     plan: Mapping[str, object] | None,
+    request: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    expected_run_id: str | None,
+    expected_run_attempt: str | None,
+    authorizing: bool,  # noqa: FBT001
     issues: list[ValidationIssue],
 ) -> Mapping[str, object] | None:
     try:
         _validate_ci_validation_execution_batch_manifest(
             manifest,
             plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
             expected_envelope=envelope,
-            expected_run_id=envelope.run_id if envelope is not None else None,
-            expected_run_attempt=(
-                envelope.run_attempt if envelope is not None else None
+            expected_run_id=(
+                expected_run_id
+                if authorizing
+                else envelope.run_id
+                if envelope is not None
+                else None
             ),
-            authorizing=False,
+            expected_run_attempt=(
+                expected_run_attempt
+                if authorizing
+                else envelope.run_attempt
+                if envelope is not None
+                else None
+            ),
+            authorizing=authorizing,
             _allow_planless_non_authorizing_batches=(
                 _allow_planless_execution_manifest_diagnostic(plan, manifest)
+                and not authorizing
             ),
         )
     except ContractValidationError as error:
@@ -5108,6 +5286,220 @@ def _validate_selector_result_matches_slot(  # noqa: C901, PLR0913
     )
 
 
+def _validate_authorizing_batch_dependency_evidence(  # noqa: C901, PLR0912, PLR0913
+    bundle: Mapping[str, object],
+    batch: Mapping[str, object] | None,
+    execution_batch_manifest: Mapping[str, object] | None,
+    dependency_evidence_bundles: Sequence[Mapping[str, object]],
+    *,
+    plan: Mapping[str, object] | None,
+    request: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    expected_run_id: str | None,
+    expected_run_attempt: str | None,
+    issues: list[ValidationIssue],
+) -> None:
+    selector_results = bundle.get("selector-results")
+    if not isinstance(selector_results, Sequence) or isinstance(
+        selector_results, str | bytes
+    ):
+        return
+    if batch is None or execution_batch_manifest is None:
+        _reject_dependency_results_without_manifest(selector_results, issues)
+        return
+    current_batch_id = batch.get("batch-id")
+    if not isinstance(current_batch_id, str):
+        return
+    authoritative = _authoritative_dependency_evidence_lookup(
+        dependency_evidence_bundles,
+        plan=plan,
+        request=request,
+        execution_batch_manifest=execution_batch_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        expected_run_id=expected_run_id,
+        expected_run_attempt=expected_run_attempt,
+        issues=issues,
+    )
+    same_batch_authoritative: dict[str, Mapping[str, object]] = {}
+    for selector_index, selector in enumerate(selector_results):
+        if not isinstance(selector, Mapping):
+            continue
+        dependencies = selector.get("dependency-results")
+        if not isinstance(dependencies, Sequence) or isinstance(
+            dependencies, str | bytes
+        ):
+            continue
+        for dependency_index, dependency in enumerate(dependencies):
+            if not isinstance(dependency, Mapping):
+                continue
+            source_batch_id = dependency.get("source-batch-id")
+            item_path = (
+                f"$.selector-results[{selector_index}]"
+                f".dependency-results[{dependency_index}]"
+            )
+            work_group_id = dependency.get("work-group-id")
+            actual = None
+            if isinstance(work_group_id, str):
+                actual = (
+                    same_batch_authoritative.get(work_group_id)
+                    if source_batch_id == current_batch_id
+                    else authoritative.get(work_group_id)
+                )
+            if actual is None:
+                issues.append(
+                    ValidationIssue(
+                        item_path,
+                        "requires authoritative upstream bundle evidence",
+                    )
+                )
+                continue
+            for key in ("outcome", "admitted-for-gating", "source-batch-id"):
+                if dependency.get(key) != actual.get(key):
+                    issues.append(
+                        ValidationIssue(
+                            f"{item_path}.{key}",
+                            "must match authoritative upstream bundle evidence",
+                        )
+                    )
+        work_group_id = selector.get("work-group-id")
+        if isinstance(work_group_id, str):
+            outcome = _selector_outcome_to_summary_outcome(
+                selector.get("outcome")
+            )
+            same_batch_authoritative[work_group_id] = {
+                "work-group-id": work_group_id,
+                "source-batch-id": current_batch_id,
+                "outcome": outcome,
+                "admitted-for-gating": _selector_outcome_admitted_for_gating(
+                    selector.get("outcome")
+                ),
+            }
+
+
+def _reject_dependency_results_without_manifest(
+    selector_results: Sequence[object],
+    issues: list[ValidationIssue],
+) -> None:
+    for selector_index, selector in enumerate(selector_results):
+        if not isinstance(selector, Mapping):
+            continue
+        dependencies = selector.get("dependency-results")
+        if not isinstance(dependencies, Sequence) or isinstance(
+            dependencies, str | bytes
+        ):
+            continue
+        for dependency_index, dependency in enumerate(dependencies):
+            if isinstance(dependency, Mapping):
+                issues.append(
+                    ValidationIssue(
+                        "$.selector-results"
+                        f"[{selector_index}].dependency-results"
+                        f"[{dependency_index}]",
+                        "requires authoritative execution-batch manifest",
+                    )
+                )
+
+
+def _authoritative_dependency_evidence_lookup(  # noqa: C901, PLR0912, PLR0913
+    dependency_evidence_bundles: Sequence[Mapping[str, object]],
+    *,
+    plan: Mapping[str, object] | None,
+    request: Mapping[str, object] | None,
+    execution_batch_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    expected_run_id: str | None,
+    expected_run_attempt: str | None,
+    issues: list[ValidationIssue],
+) -> dict[str, Mapping[str, object]]:
+    authoritative: dict[str, Mapping[str, object]] = {}
+    validated_dependency_bundles: list[Mapping[str, object]] = []
+    pending = list(enumerate(dependency_evidence_bundles))
+    last_errors: dict[int, ContractValidationError] = {}
+    while pending:
+        next_pending: list[tuple[int, Mapping[str, object]]] = []
+        progressed = False
+        for index, dependency_bundle in pending:
+            try:
+                validate_ci_validation_batch_evidence_bundle(
+                    dependency_bundle,
+                    plan=plan,
+                    request=request,
+                    execution_batch_manifest=execution_batch_manifest,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                    expected_run_id=expected_run_id,
+                    expected_run_attempt=expected_run_attempt,
+                    dependency_evidence_bundles=validated_dependency_bundles,
+                )
+            except ContractValidationError as error:
+                last_errors[index] = error
+                next_pending.append((index, dependency_bundle))
+                continue
+            validated_dependency_bundles.append(dependency_bundle)
+            progressed = True
+        if not next_pending:
+            break
+        if not progressed:
+            for index, _dependency_bundle in next_pending:
+                error = last_errors[index]
+                path_prefix = f"dependency_evidence_bundles[{index}]"
+                issues.extend(
+                    ValidationIssue(
+                        _prefixed_validation_issue_path(
+                            path_prefix,
+                            issue.path,
+                        ),
+                        issue.message,
+                    )
+                    for issue in error.issues
+                )
+            break
+        pending = next_pending
+    for dependency_bundle in validated_dependency_bundles:
+        batch_value = dependency_bundle.get("batch")
+        batch_id = (
+            batch_value.get("batch-id")
+            if isinstance(batch_value, Mapping)
+            else None
+        )
+        if not isinstance(batch_id, str):
+            continue
+        selector_results = dependency_bundle.get("selector-results")
+        if not isinstance(selector_results, Sequence) or isinstance(
+            selector_results, str | bytes
+        ):
+            continue
+        for selector in selector_results:
+            if not isinstance(selector, Mapping):
+                continue
+            work_group_id = selector.get("work-group-id")
+            if not isinstance(work_group_id, str):
+                continue
+            outcome = _selector_outcome_to_summary_outcome(
+                selector.get("outcome")
+            )
+            if work_group_id in authoritative:
+                issues.append(
+                    ValidationIssue(
+                        "dependency_evidence_bundles",
+                        "duplicate authoritative upstream bundle evidence",
+                    )
+                )
+                continue
+            authoritative[work_group_id] = {
+                "work-group-id": work_group_id,
+                "source-batch-id": batch_id,
+                "outcome": outcome,
+                "admitted-for-gating": _selector_outcome_admitted_for_gating(
+                    selector.get("outcome")
+                ),
+            }
+    return authoritative
+
+
 def _validate_dependency_results(  # noqa: C901,PLR0912
     result: Mapping[str, object],
     expected: Mapping[str, object],
@@ -5168,14 +5560,16 @@ def _validate_dependency_results(  # noqa: C901,PLR0912
                     f"{item_path}.admitted-for-gating", "must be a boolean"
                 )
             )
-        elif isinstance(outcome, str) and admitted != (outcome == "satisfied"):
+        elif outcome in _RESULT_OUTCOMES and admitted != (
+            outcome in {"satisfied", "failed"}
+        ):
             issues.append(
                 ValidationIssue(
                     f"{item_path}.admitted-for-gating",
                     "must match dependency outcome",
                 )
             )
-        if outcome != "satisfied":
+        if admitted is not True:
             blocked = True
     observed_ids = set(rows_by_work_group)
     expected_ids = set(depends_on)
@@ -9457,12 +9851,15 @@ def _validate_summary_count_relationships(
         )
 
 
-def _validate_summary_matches_admitted_bundles(  # noqa: C901,PLR0912,PLR0913
+def _validate_summary_matches_admitted_bundles(  # noqa: C901, PLR0912, PLR0913
     summary: Mapping[str, object],
     aggregate_manifest: Mapping[str, object] | None,
     bundles: Sequence[Mapping[str, object]],
     plan: Mapping[str, object] | None,
     execution_batch_manifest: Mapping[str, object] | None,
+    request: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
     envelope: CommonEnvelope | None,
     issues: list[ValidationIssue],
 ) -> None:
@@ -9481,20 +9878,6 @@ def _validate_summary_matches_admitted_bundles(  # noqa: C901,PLR0912,PLR0913
             f"admitted_batch_evidence_bundles[{index}]",
             issues,
         )
-        try:
-            validate_ci_validation_batch_evidence_bundle(
-                bundle,
-                plan=plan,
-                execution_batch_manifest=execution_batch_manifest,
-                expected_run_id=envelope.run_id
-                if envelope is not None
-                else None,
-                expected_run_attempt=(
-                    envelope.run_attempt if envelope is not None else None
-                ),
-            )
-        except ContractValidationError as error:
-            issues.extend(error.issues)
         batch = bundle.get("batch")
         if isinstance(batch, Mapping) and isinstance(
             batch.get("batch-id"), str
@@ -9508,6 +9891,16 @@ def _validate_summary_matches_admitted_bundles(  # noqa: C901,PLR0912,PLR0913
                     )
                 )
             bundle_by_batch[batch_id] = bundle
+    _validate_admitted_bundles_topologically(
+        bundles,
+        plan=plan,
+        request=request,
+        execution_batch_manifest=execution_batch_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        envelope=envelope,
+        issues=issues,
+    )
     derived_results: dict[str, dict[str, object]] = {}
     if aggregate_manifest is not None:
         manifest_rows = _rows_by_local_id(
@@ -9615,6 +10008,75 @@ def _validate_summary_matches_admitted_bundles(  # noqa: C901,PLR0912,PLR0913
                 "must equal admitted bundle selector results exactly",
             )
         )
+
+
+def _validate_admitted_bundles_topologically(  # noqa: PLR0913
+    bundles: Sequence[Mapping[str, object]],
+    *,
+    plan: Mapping[str, object] | None,
+    request: Mapping[str, object] | None,
+    execution_batch_manifest: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    envelope: CommonEnvelope | None,
+    issues: list[ValidationIssue],
+) -> None:
+    validated_dependency_bundles: list[Mapping[str, object]] = []
+    pending = list(enumerate(bundles))
+    last_errors: dict[int, ContractValidationError] = {}
+    while pending:
+        next_pending: list[tuple[int, Mapping[str, object]]] = []
+        progressed = False
+        for index, bundle in pending:
+            try:
+                validate_ci_validation_batch_evidence_bundle(
+                    bundle,
+                    plan=plan,
+                    request=request,
+                    execution_batch_manifest=execution_batch_manifest,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                    expected_run_id=(
+                        envelope.run_id if envelope is not None else None
+                    ),
+                    expected_run_attempt=(
+                        envelope.run_attempt if envelope is not None else None
+                    ),
+                    dependency_evidence_bundles=validated_dependency_bundles,
+                )
+            except ContractValidationError as error:
+                last_errors[index] = error
+                next_pending.append((index, bundle))
+                continue
+            validated_dependency_bundles.append(bundle)
+            progressed = True
+        if not next_pending:
+            break
+        if not progressed:
+            for index, _bundle in next_pending:
+                path_prefix = f"admitted_batch_evidence_bundles[{index}]"
+                issues.extend(
+                    ValidationIssue(
+                        _prefixed_validation_issue_path(
+                            path_prefix,
+                            issue.path,
+                        ),
+                        issue.message,
+                    )
+                    for issue in last_errors[index].issues
+                )
+            break
+        pending = next_pending
+
+
+def _prefixed_validation_issue_path(prefix: str, path: str) -> str:
+    if path == "$":
+        return prefix
+    if path.startswith(("$.", "$[")):
+        return f"{prefix}{path[1:]}"
+    if path.startswith((".", "[")):
+        return f"{prefix}{path}"
+    return f"{prefix}.{path}"
 
 
 def _validate_admitted_bundle_candidate(
@@ -9762,7 +10224,7 @@ def _validate_admitted_bundle_dependency_results(
     bundle_by_batch: Mapping[str, Mapping[str, object]],
     issues: list[ValidationIssue],
 ) -> None:
-    selector_lookup: dict[str, tuple[str, str | None]] = {}
+    selector_lookup: dict[str, tuple[str, bool, str | None]] = {}
     for batch_id, bundle in bundle_by_batch.items():
         selector_results = bundle.get("selector-results")
         if not isinstance(selector_results, Sequence) or isinstance(
@@ -9776,6 +10238,9 @@ def _validate_admitted_bundle_dependency_results(
             if isinstance(work_group_id, str):
                 selector_lookup[work_group_id] = (
                     _selector_outcome_to_summary_outcome(
+                        selector.get("outcome")
+                    ),
+                    _selector_outcome_admitted_for_gating(
                         selector.get("outcome")
                     ),
                     batch_id,
@@ -9802,7 +10267,7 @@ def _validate_selector_dependencies_against_admitted_evidence(  # noqa: C901
     batch_id: str,
     selector_index: int,
     selector: Mapping[str, object],
-    selector_lookup: Mapping[str, tuple[str, str | None]],
+    selector_lookup: Mapping[str, tuple[str, bool, str | None]],
     issues: list[ValidationIssue],
 ) -> None:
     dependency_results = selector.get("dependency-results")
@@ -9819,10 +10284,10 @@ def _validate_selector_dependencies_against_admitted_evidence(  # noqa: C901
         if not isinstance(dependency, Mapping):
             continue
         work_group_id = dependency.get("work-group-id")
-        actual_outcome, actual_batch_id = (
-            selector_lookup.get(work_group_id, ("missing", None))
+        actual_outcome, actual_admitted, actual_batch_id = (
+            selector_lookup.get(work_group_id, ("missing", False, None))
             if isinstance(work_group_id, str)
-            else ("missing", None)
+            else ("missing", False, None)
         )
         item_path = f"{dep_path}[{dependency_index}]"
         if dependency.get("outcome") != actual_outcome:
@@ -9832,9 +10297,7 @@ def _validate_selector_dependencies_against_admitted_evidence(  # noqa: C901
                     "must match admitted upstream selector result",
                 )
             )
-        if dependency.get("admitted-for-gating") != (
-            actual_outcome == "satisfied"
-        ):
+        if dependency.get("admitted-for-gating") != actual_admitted:
             issues.append(
                 ValidationIssue(
                     f"{item_path}.admitted-for-gating",
@@ -9849,7 +10312,7 @@ def _validate_selector_dependencies_against_admitted_evidence(  # noqa: C901
                     "must match admitted upstream selector batch",
                 )
             )
-        if actual_outcome != "satisfied":
+        if not actual_admitted:
             blocked_by_actual_evidence = True
     selector_path = (
         f"admitted_batch_evidence_bundles[{batch_id}]"
@@ -9886,6 +10349,10 @@ def _selector_outcome_to_summary_outcome(outcome: object) -> str:
     if outcome == "skipped":
         return "skipped"
     return "failed"
+
+
+def _selector_outcome_admitted_for_gating(outcome: object) -> bool:
+    return outcome in {"success", "blocking-failure"}
 
 
 def _is_invalid_plan_summary(summary: Mapping[str, object]) -> bool:

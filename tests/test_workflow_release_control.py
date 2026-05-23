@@ -25,13 +25,18 @@ from three_workflow_release_build import execute_build
 from three_workflow_release_contracts import (
     ArtifactNameInputs,
     CiValidationObservedReceiptInput,
+    ContractValidationError,
     GitHubActionsArtifactMetadata,
     artifact_name,
     artifact_physical_name,
+    ci_validation_batch_evidence_bundle_payload_digest,
+    ci_validation_execution_batch_manifest_payload_digest,
+    ci_validation_execution_batch_matrix,
     ci_validation_plan_digest,
     ci_validation_writer_id,
     freeze_ci_validation_receipt,
     validate_ci_validation_aggregate,
+    validate_ci_validation_batch_evidence_bundle,
     validate_ci_validation_receipt,
     validate_contract,
 )
@@ -45,6 +50,8 @@ from three_workflow_release_proof import (
     ProofError,
     classify_immutable_observations,
 )
+
+from tests import ci_validation_batch_fixtures as batch_contracts
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -6835,6 +6842,7 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
 def test_ci_validation_evidence_preserves_per_capability_outcomes() -> None:
     """Receipt evidence keeps command outcomes per capability."""
     plan: Mapping[str, object] = {
+        "validation-tree": {"commit-sha": "b" * 40},
         "work-groups": [
             {
                 "work-group-id": "wg-python",
@@ -6891,6 +6899,7 @@ def test_ci_validation_evidence_preserves_per_capability_outcomes() -> None:
 def test_ci_validation_success_requires_result_identity_match() -> None:
     """Validation-result success is bound to the planned work group identity."""
     plan: Mapping[str, object] = {
+        "validation-tree": {"commit-sha": "b" * 40},
         "work-groups": [
             {
                 "work-group-id": "wg-python",
@@ -6911,6 +6920,8 @@ def test_ci_validation_success_requires_result_identity_match() -> None:
         "work-group-id": "wg-python",
         "kind": "ecosystem-gate",
         "runner-family": "ubuntu",
+        "coverage-target": {"type": "subject", "id": "python"},
+        "observed-commit-sha": "b" * 40,
         "outcome": "success",
         "commands": [{"capability": "build", "outcome": "success"}],
     }
@@ -6921,6 +6932,7 @@ def test_ci_validation_success_requires_result_identity_match() -> None:
             "wg-python",
             dependency_blocked=False,
             validation_result=validation_result,
+            observed_commit_sha="b" * 40,
         )
         == "success"
     )
@@ -6928,6 +6940,8 @@ def test_ci_validation_success_requires_result_identity_match() -> None:
         ("work-group-id", "wg-other"),
         ("kind", "descriptor-validation"),
         ("runner-family", "windows"),
+        ("coverage-target", {"type": "subject", "id": "python.other"}),
+        ("observed-commit-sha", "c" * 40),
     ):
         stale_result = {**validation_result, field: value}
         assert (
@@ -6936,6 +6950,7 @@ def test_ci_validation_success_requires_result_identity_match() -> None:
                 "wg-python",
                 dependency_blocked=False,
                 validation_result=stale_result,
+                observed_commit_sha="b" * 40,
             )
             == "blocking-failure"
         )
@@ -8793,19 +8808,20 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
                 non_release_group["expected-evidence"],
             )["planned-capabilities"],
         )
+        valid_non_release_result = {
+            "work-group-id": non_release_id,
+            "kind": non_release_group["kind"],
+            "runner-family": non_release_group["runner-family"],
+            "coverage-target": non_release_group["coverage-target"],
+            "observed-commit-sha": "b" * 40,
+            "outcome": "success",
+            "commands": [
+                {"capability": capability, "outcome": "success"}
+                for capability in non_release_capabilities
+            ],
+        }
         non_release_validation_result.write_text(
-            json.dumps(
-                {
-                    "work-group-id": non_release_id,
-                    "kind": non_release_group["kind"],
-                    "runner-family": non_release_group["runner-family"],
-                    "outcome": "success",
-                    "commands": [
-                        {"capability": capability, "outcome": "success"}
-                        for capability in non_release_capabilities
-                    ],
-                }
-            ),
+            json.dumps(valid_non_release_result),
             encoding="utf-8",
         )
         assert (
@@ -8843,53 +8859,52 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
         assert non_release_receipt["outcome"] == "success"
         assert non_release_receipt["diagnostics"] == []
 
-        stale_validation_result = scratch / "stale-validation.json"
-        stale_validation_result.write_text(
-            json.dumps(
-                {
-                    "work-group-id": "wg-stale",
-                    "kind": "descriptor-validation",
-                    "runner-family": "windows",
-                    "outcome": "success",
-                    "commands": [
-                        {"capability": capability, "outcome": "success"}
-                        for capability in non_release_capabilities
-                    ],
-                }
-            ),
-            encoding="utf-8",
-        )
-        stale_outputs = scratch / "stale-validation-outputs.txt"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=non_release_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[non_release_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[non_release_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    validation_result=str(stale_validation_result),
-                    validation_outcome="success",
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(stale_outputs),
-                )
+        for stale_field, stale_value in (
+            ("observed-commit-sha", "c" * 40),
+            ("coverage-target", {"type": "subject", "id": "python.stale"}),
+        ):
+            stale_validation_result = (
+                scratch / f"stale-{stale_field}-validation.json"
             )
-            == 0
-        )
-        stale_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assert stale_receipt["outcome"] == "blocking-failure"
-        assert stale_receipt["diagnostics"][0]["code"] == (
-            "validation-work-failed"
-        )
+            stale_result = {
+                **valid_non_release_result,
+                stale_field: stale_value,
+            }
+            stale_validation_result.write_text(
+                json.dumps(stale_result),
+                encoding="utf-8",
+            )
+            stale_outputs = scratch / f"stale-{stale_field}-outputs.txt"
+            assert (
+                control._cmd_write_ci_validation_receipt(
+                    argparse.Namespace(
+                        plan=str(plan_path),
+                        changed_files_snapshot=str(changed_files_path),
+                        fact_snapshot=str(fact_snapshot_path),
+                        assignments=str(assignments_path),
+                        work_group_id=non_release_id,
+                        matrix_work_group_json=json.dumps(
+                            matrix[non_release_id],
+                            separators=(",", ":"),
+                        ),
+                        workflow="CI Validation",
+                        job=matrix[non_release_id]["writer-job"],
+                        observed_artifacts_dir=str(observed_root),
+                        observed_commit_sha="b" * 40,
+                        validation_result=str(stale_validation_result),
+                        validation_outcome="success",
+                        created_at="2026-05-14T21:09:24Z",
+                        receipt_out=str(receipt_path),
+                        github_output=str(stale_outputs),
+                    )
+                )
+                == 0
+            )
+            stale_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            assert stale_receipt["outcome"] == "blocking-failure"
+            assert stale_receipt["diagnostics"][0]["code"] == (
+                "validation-work-failed"
+            )
 
         scalar_success_outputs = scratch / "scalar-success-outputs.txt"
         assert (
@@ -10427,6 +10442,2409 @@ def test_entry_workflows_stage_and_upload_deterministic_proofs() -> None:
         assert "steps.staged.outputs.present == 'true'" in workflow
         assert "name: ${{ matrix.proof.staging-artifact-name }}" in workflow
         assert "name: ${{ matrix.proof.name }}" in workflow
+
+
+def _ci_batch_bundle_scratch(test_name: str) -> Path:
+    scratch = SCRATCH / test_name
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    return scratch
+
+
+def _ci_batch_contract_plan_and_manifest() -> tuple[
+    dict[str, object], dict[str, object]
+]:
+    plan = cast("dict[str, object]", batch_contracts.plan())
+    manifest = cast(
+        "dict[str, object]",
+        batch_contracts.manifest(plan),
+    )
+    return plan, manifest
+
+
+def _ci_batch_matrix_rows(
+    plan: dict[str, object],
+    manifest: dict[str, object],
+) -> list[dict[str, object]]:
+    matrix = ci_validation_execution_batch_matrix(
+        manifest,
+        plan=plan,
+        **batch_contracts.authorizing_context_kwargs(),
+    )
+    return cast("list[dict[str, object]]", matrix["include"])
+
+
+def _ci_success_validation_result(
+    plan: dict[str, object],
+    work_group_id: str,
+) -> dict[str, object]:
+    group = control._ci_work_group(plan, work_group_id)
+    expectation = control._ci_evidence_expectation(plan, work_group_id)
+    capabilities = cast(
+        "Sequence[object]",
+        expectation.get("planned-capabilities", []),
+    )
+    return {
+        "work-group-id": work_group_id,
+        "kind": group["kind"],
+        "runner-family": group["runner-family"],
+        "coverage-target": group["coverage-target"],
+        "observed-commit-sha": batch_contracts.TREE_SHA,
+        "outcome": "success",
+        "commands": [
+            {
+                "index": index,
+                "label": f"validate {capability}",
+                "argv": [],
+                "capability": capability,
+                "exit-code": 0,
+                "outcome": "success",
+            }
+            for index, capability in enumerate(capabilities)
+        ],
+    }
+
+
+def _ci_same_batch_manifest_fixture() -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
+    plan = cast("dict[str, object]", batch_contracts.plan())
+    batch_contracts.add_dependent_work_group(plan)
+    dependent_group = next(
+        group
+        for group in cast("list[dict[str, object]]", plan["work-groups"])
+        if group["work-group-id"] == "wg-dependent-gate"
+    )
+    dependent_group["ecosystem"] = "python"
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+    materialization = (
+        batch_contracts.materialize_ci_validation_execution_batches(
+            plan=plan,
+            **batch_contracts.authorizing_context_kwargs(),
+            created_at=batch_contracts.CREATED_AT,
+            execution_workflow="CI Validation",
+        )
+    )
+    manifest = cast("dict[str, object]", materialization.manifest)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    selectors = cast("list[dict[str, object]]", batch["ordered-selectors"])
+    return plan, manifest, batch, selectors[1]
+
+
+def _write_ci_batch_bundle_inputs(  # noqa: PLR0913
+    scratch: Path,
+    plan: dict[str, object],
+    manifest: dict[str, object],
+    matrix_row: dict[str, object],
+    validation_results: Sequence[dict[str, object]],
+    authorizing_context: Mapping[str, object] | None = None,
+) -> tuple[Path, Path, Path, Path, Path, Path, list[Path], Path]:
+    plan_path = scratch / "plan.json"
+    request_path = scratch / "request.json"
+    manifest_path = scratch / "execution-batch-manifest.json"
+    changed_files_path = scratch / "changed-files.json"
+    fact_snapshot_path = scratch / "fact-snapshot.json"
+    bundle_path = scratch / "batch-evidence-bundle.json"
+    if authorizing_context is None:
+        authorizing_context = batch_contracts.authorizing_context_kwargs()
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    request_path.write_text(
+        json.dumps(authorizing_context["request"]),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    changed_files_path.write_text(
+        json.dumps(authorizing_context["changed_files_snapshot"]),
+        encoding="utf-8",
+    )
+    fact_snapshot_path.write_text(
+        json.dumps(authorizing_context["fact_snapshot"]),
+        encoding="utf-8",
+    )
+    result_paths = []
+    for index, result in enumerate(validation_results):
+        path = scratch / f"validation-result-{index}.json"
+        path.write_text(json.dumps(result), encoding="utf-8")
+        result_paths.append(path)
+    matrix_path = scratch / "matrix-row.json"
+    matrix_path.write_text(json.dumps(matrix_row), encoding="utf-8")
+    return (
+        plan_path,
+        request_path,
+        manifest_path,
+        changed_files_path,
+        fact_snapshot_path,
+        matrix_path,
+        result_paths,
+        bundle_path,
+    )
+
+
+def _write_ci_batch_bundle(  # noqa: PLR0913
+    scratch: Path,
+    plan: dict[str, object],
+    manifest: dict[str, object],
+    matrix_row: dict[str, object],
+    validation_results: Sequence[dict[str, object]],
+    *,
+    job: str = "execution-batch",
+    dependency_results_json: str = "",
+    dependency_bundles: Sequence[Path] = (),
+    assignments: Path | None = None,
+    observed_artifacts_dir: Path | None = None,
+    expected_run_id: str | None = None,
+    expected_run_attempt: str | None = None,
+    authorizing_context: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    (
+        plan_path,
+        request_path,
+        manifest_path,
+        changed_files_path,
+        fact_snapshot_path,
+        matrix_path,
+        result_paths,
+        bundle_path,
+    ) = _write_ci_batch_bundle_inputs(
+        scratch,
+        plan,
+        manifest,
+        matrix_row,
+        validation_results,
+        authorizing_context,
+    )
+    output_path = scratch / "github-output.txt"
+    control._cmd_write_ci_validation_batch_evidence_bundle(
+        argparse.Namespace(
+            plan=str(plan_path),
+            request=str(request_path),
+            execution_batch_manifest=str(manifest_path),
+            changed_files_snapshot=str(changed_files_path),
+            fact_snapshot=str(fact_snapshot_path),
+            matrix_row_json=matrix_path.read_text(encoding="utf-8"),
+            expected_run_id=(expected_run_id or batch_contracts.RUN_ID),
+            expected_run_attempt=(
+                expected_run_attempt or batch_contracts.RUN_ATTEMPT
+            ),
+            workflow="CI Validation",
+            job=job,
+            assignments=str(assignments) if assignments is not None else "",
+            observed_artifacts_dir=(
+                str(observed_artifacts_dir)
+                if observed_artifacts_dir is not None
+                else ""
+            ),
+            observed_commit_sha=batch_contracts.TREE_SHA,
+            validation_result=[str(path) for path in result_paths],
+            dependency_results_json=dependency_results_json,
+            dependency_bundle=[str(path) for path in dependency_bundles],
+            started_at=batch_contracts.CREATED_AT,
+            completed_at=batch_contracts.CREATED_AT,
+            created_at=batch_contracts.CREATED_AT,
+            bundle_out=str(bundle_path),
+            github_output=str(output_path),
+        )
+    )
+    return json.loads(bundle_path.read_text(encoding="utf-8"))
+
+
+def test_ci_batch_writer_writes_single_bundle() -> None:
+    """Execution-batch matrix row writes one valid batch evidence bundle."""
+    scratch = _ci_batch_bundle_scratch("single-batch-bundle")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        work_group_id = cast(
+            "str",
+            cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+        )
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+
+        bundle = _write_ci_batch_bundle(scratch, plan, manifest, row, [result])
+
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            request=cast(
+                "dict[str, object]",
+                batch_contracts.authorizing_context_kwargs()["request"],
+            ),
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=cast(
+                "dict[str, object]",
+                batch_contracts.authorizing_context_kwargs()[
+                    "changed_files_snapshot"
+                ],
+            ),
+            fact_snapshot=cast(
+                "dict[str, object]",
+                batch_contracts.authorizing_context_kwargs()["fact_snapshot"],
+            ),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        assert bundle["batch"] == {
+            "batch-id": batch["batch-id"],
+            "runner-family": batch["runner-family"],
+            "compatibility-profile": batch["compatibility-profile"],
+            "depends-on-batches": batch["depends-on-batches"],
+        }
+        writer = cast("dict[str, object]", bundle["writer"])
+        assert writer["observed-workflow"] == "CI Validation"
+        assert writer["observed-job"] == "execution-batch"
+        assert writer["observed-matrix"] == row["identity-matrix"]
+        selector_results = cast(
+            "list[dict[str, object]]",
+            bundle["selector-results"],
+        )
+        assert len(selector_results) == 1
+        assert selector_results[0]["outcome"] == "success"
+        evidence = cast("dict[str, object]", selector_results[0]["evidence"])
+        assert evidence["capability-results"]
+        assert ci_validation_batch_evidence_bundle_payload_digest(bundle) in (
+            scratch / "github-output.txt"
+        ).read_text(encoding="utf-8")
+        assert work_group_id.startswith("batch-")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_writes_category_result_bundle() -> None:
+    """Planned-capabilities-null category evidence matches bundle contracts."""
+    scratch = _ci_batch_bundle_scratch("category-result-batch-bundle")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        profile_id = "profile-lightweight"
+        coverage_target = {
+            "type": "lightweight-policy",
+            "id": "known-non-impacting",
+        }
+        lightweight_group = {
+            "work-group-id": "wg-lightweight",
+            "kind": "lightweight-preflight",
+            "coverage-target": coverage_target,
+            "ecosystem": None,
+            "runner-family": "ubuntu",
+            "selector-variant": None,
+            "depends-on": [],
+            "expected-evidence": {
+                "category": "lightweight-preflight",
+                "planned-capabilities": None,
+                "detail-profile": profile_id,
+                "required": True,
+            },
+        }
+        work_groups = cast("list[dict[str, object]]", plan["work-groups"])
+        terminal_group = next(
+            group
+            for group in work_groups
+            if group["kind"] == "evidence-aggregation"
+        )
+        work_groups.insert(-1, lightweight_group)
+        terminal_group["depends-on"] = sorted(
+            [*cast("list[str]", terminal_group["depends-on"]), "wg-lightweight"]
+        )
+        cast("list[dict[str, object]]", plan["evidence-expectations"]).append(
+            {
+                "evidence-expectation-id": "evidence-lightweight",
+                "work-group-id": "wg-lightweight",
+                "coverage-target": coverage_target,
+                "category": "lightweight-preflight",
+                "planned-capabilities": None,
+                "detail-profile": profile_id,
+                "required": True,
+                "blocking-if-missing": True,
+            }
+        )
+        cast("list[dict[str, object]]", plan["validation-obligations"]).append(
+            {
+                "validation-obligation-id": "validation-lightweight",
+                "source-impact-ids": ["impact-example"],
+                "kind": "lightweight-preflight",
+                "coverage-target": coverage_target,
+                "required": True,
+                "blocking": True,
+                "work-group-id": "wg-lightweight",
+                "expected-evidence-id": "evidence-lightweight",
+            }
+        )
+        plan["detail-profiles"] = [
+            batch_contracts.tooling_detail_profile(
+                profile_id=profile_id,
+                category="lightweight-preflight",
+                coverage_target=coverage_target,
+            )
+        ]
+        work_groups.sort(key=lambda item: str(item["work-group-id"]))
+        cast("list[dict[str, object]]", plan["evidence-expectations"]).sort(
+            key=lambda item: str(item["evidence-expectation-id"])
+        )
+        cast("list[dict[str, object]]", plan["validation-obligations"]).sort(
+            key=lambda item: str(item["validation-obligation-id"])
+        )
+        plan["plan-digest"] = ci_validation_plan_digest(plan)
+        authorizing_context = batch_contracts.authorizing_context_kwargs()
+        materialization = (
+            batch_contracts.materialize_ci_validation_execution_batches(
+                plan=plan,
+                **authorizing_context,
+                created_at=batch_contracts.CREATED_AT,
+                execution_workflow="CI Validation",
+            )
+        )
+        manifest = cast("dict[str, object]", materialization.manifest)
+        matrix = ci_validation_execution_batch_matrix(
+            manifest,
+            plan=plan,
+            request=cast("dict[str, object]", authorizing_context["request"]),
+            changed_files_snapshot=cast(
+                "dict[str, object]",
+                authorizing_context["changed_files_snapshot"],
+            ),
+            fact_snapshot=cast(
+                "dict[str, object]", authorizing_context["fact_snapshot"]
+            ),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        rows = cast("list[dict[str, object]]", matrix["include"])
+        row = next(
+            item
+            for item in rows
+            if any(
+                cast(
+                    "dict[str, object]",
+                    cast(
+                        "dict[str, object]", selector["expected-evidence-slot"]
+                    )["evidence"],
+                )["planned-capabilities"]
+                is None
+                for selector in cast(
+                    "list[dict[str, object]]",
+                    next(
+                        batch
+                        for batch in cast(
+                            "list[dict[str, object]]", manifest["batches"]
+                        )
+                        if batch["batch-id"]
+                        == cast("dict[str, object]", item["identity-matrix"])[
+                            "batch-id"
+                        ]
+                    )["ordered-selectors"],
+                )
+            )
+        )
+
+        bundle = _write_ci_batch_bundle(
+            scratch,
+            plan,
+            manifest,
+            row,
+            [],
+            authorizing_context=authorizing_context,
+        )
+
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            request=cast(
+                "dict[str, object]",
+                authorizing_context["request"],
+            ),
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=cast(
+                "dict[str, object]",
+                authorizing_context["changed_files_snapshot"],
+            ),
+            fact_snapshot=cast(
+                "dict[str, object]",
+                authorizing_context["fact_snapshot"],
+            ),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        category_evidence = next(
+            cast("dict[str, object]", selector["evidence"])
+            for selector in cast(
+                "list[dict[str, object]]", bundle["selector-results"]
+            )
+            if cast("dict[str, object]", selector["evidence"])[
+                "planned-capabilities"
+            ]
+            is None
+        )
+        category_result = cast(
+            "dict[str, object]", category_evidence["category-result"]
+        )
+        assert category_result["category"] == category_evidence["category"]
+        assert "detail" not in category_result
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_cli_writes_bundle_and_outputs() -> None:
+    """Public batch evidence bundle CLI writes the bundle and output digests."""
+    scratch = _ci_batch_bundle_scratch("batch-bundle-cli")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+        (
+            plan_path,
+            request_path,
+            manifest_path,
+            changed_files_path,
+            fact_snapshot_path,
+            matrix_path,
+            result_paths,
+            bundle_path,
+        ) = _write_ci_batch_bundle_inputs(
+            scratch, plan, manifest, row, [result]
+        )
+        output_path = scratch / "github-output.txt"
+
+        completed = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "eng/scripts/workflow_release_control.py",
+                "write-ci-validation-batch-evidence-bundle",
+                "--plan",
+                str(plan_path),
+                "--request",
+                str(request_path),
+                "--execution-batch-manifest",
+                str(manifest_path),
+                "--changed-files-snapshot",
+                str(changed_files_path),
+                "--fact-snapshot",
+                str(fact_snapshot_path),
+                "--matrix-row-json",
+                matrix_path.read_text(encoding="utf-8"),
+                "--expected-run-id",
+                batch_contracts.RUN_ID,
+                "--expected-run-attempt",
+                batch_contracts.RUN_ATTEMPT,
+                "--workflow",
+                "CI Validation",
+                "--job",
+                "execution-batch",
+                "--observed-commit-sha",
+                batch_contracts.TREE_SHA,
+                "--validation-result",
+                str(result_paths[0]),
+                "--bundle-out",
+                str(bundle_path),
+                "--github-output",
+                str(output_path),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        outputs = _github_outputs(output_path)
+        assert outputs["batch_id"] == batch["batch-id"]
+        assert outputs["batch_evidence_bundle_ref"] == bundle["artifact-ref"]
+        assert outputs["batch_evidence_bundle_payload_digest"] == (
+            ci_validation_batch_evidence_bundle_payload_digest(bundle)
+        )
+        assert outputs["execution_batch_manifest_payload_digest"] == (
+            ci_validation_execution_batch_manifest_payload_digest(manifest)
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_cli_rejects_stale_run_attempt() -> None:
+    """CLI batch evidence writing is bound to the current run attempt."""
+    scratch = _ci_batch_bundle_scratch("batch-bundle-cli-stale-attempt")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+        (
+            plan_path,
+            request_path,
+            manifest_path,
+            changed_files_path,
+            fact_snapshot_path,
+            matrix_path,
+            result_paths,
+            bundle_path,
+        ) = _write_ci_batch_bundle_inputs(
+            scratch, plan, manifest, row, [result]
+        )
+
+        completed = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "eng/scripts/workflow_release_control.py",
+                "write-ci-validation-batch-evidence-bundle",
+                "--plan",
+                str(plan_path),
+                "--request",
+                str(request_path),
+                "--execution-batch-manifest",
+                str(manifest_path),
+                "--changed-files-snapshot",
+                str(changed_files_path),
+                "--fact-snapshot",
+                str(fact_snapshot_path),
+                "--matrix-row-json",
+                matrix_path.read_text(encoding="utf-8"),
+                "--expected-run-id",
+                batch_contracts.RUN_ID,
+                "--expected-run-attempt",
+                "stale-attempt",
+                "--workflow",
+                "CI Validation",
+                "--job",
+                "execution-batch",
+                "--observed-commit-sha",
+                batch_contracts.TREE_SHA,
+                "--validation-result",
+                str(result_paths[0]),
+                "--bundle-out",
+                str(bundle_path),
+                "--github-output",
+                str(scratch / "github-output.txt"),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert completed.returncode != 0
+        assert "expected run" in completed.stderr
+        assert not bundle_path.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_stale_current_run() -> None:
+    """Current run id and attempt are authoritative for batch writing."""
+    scratch = _ci_batch_bundle_scratch("batch-stale-current-run")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+
+        with pytest.raises(ContractValidationError, match="expected run"):
+            _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [result],
+                expected_run_id="stale-run",
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_stale_current_run_attempt() -> None:
+    """Current run attempt is independently authoritative for batch writing."""
+    scratch = _ci_batch_bundle_scratch("batch-stale-current-run-attempt")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+
+        with pytest.raises(ContractValidationError, match="expected run"):
+            _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [result],
+                expected_run_attempt="stale-attempt",
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_stale_request() -> None:
+    """The request artifact must authorize the execution-batch manifest."""
+    scratch = _ci_batch_bundle_scratch("batch-stale-request")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+        (
+            plan_path,
+            request_path,
+            manifest_path,
+            changed_files_path,
+            fact_snapshot_path,
+            matrix_path,
+            result_paths,
+            bundle_path,
+        ) = _write_ci_batch_bundle_inputs(
+            scratch, plan, manifest, row, [result]
+        )
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        cast("dict[str, object]", request["run"])["run-id"] = "stale-run"
+        request_path.write_text(json.dumps(request), encoding="utf-8")
+
+        with pytest.raises(ContractValidationError):
+            control._cmd_write_ci_validation_batch_evidence_bundle(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    request=str(request_path),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    matrix_row_json=matrix_path.read_text(encoding="utf-8"),
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    workflow="CI Validation",
+                    job="execution-batch",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    validation_result=[str(path) for path in result_paths],
+                    dependency_results_json="",
+                    dependency_bundle=[],
+                    started_at=batch_contracts.CREATED_AT,
+                    completed_at=batch_contracts.CREATED_AT,
+                    created_at=batch_contracts.CREATED_AT,
+                    bundle_out=str(bundle_path),
+                    github_output="",
+                )
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_stale_request_run_attempt() -> None:
+    """The request run attempt must authorize the execution-batch manifest."""
+    scratch = _ci_batch_bundle_scratch("batch-stale-request-run-attempt")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+        (
+            plan_path,
+            request_path,
+            manifest_path,
+            changed_files_path,
+            fact_snapshot_path,
+            matrix_path,
+            result_paths,
+            bundle_path,
+        ) = _write_ci_batch_bundle_inputs(
+            scratch, plan, manifest, row, [result]
+        )
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        cast("dict[str, object]", request["run"])["run-attempt"] = (
+            "stale-attempt"
+        )
+        request_path.write_text(json.dumps(request), encoding="utf-8")
+
+        with pytest.raises(ContractValidationError):
+            control._cmd_write_ci_validation_batch_evidence_bundle(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    request=str(request_path),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    matrix_row_json=matrix_path.read_text(encoding="utf-8"),
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    workflow="CI Validation",
+                    job="execution-batch",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    validation_result=[str(path) for path in result_paths],
+                    dependency_results_json="",
+                    dependency_bundle=[],
+                    started_at=batch_contracts.CREATED_AT,
+                    completed_at=batch_contracts.CREATED_AT,
+                    created_at=batch_contracts.CREATED_AT,
+                    bundle_out=str(bundle_path),
+                    github_output="",
+                )
+            )
+        assert not bundle_path.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_batch_evidence_writer_isolates_matrix_legs() -> None:
+    """Each matrix leg can write only the selected execution batch bundle."""
+    scratch = _ci_batch_bundle_scratch("multi-batch-bundle")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        rows = sorted(
+            rows,
+            key=lambda item: len(
+                cast(
+                    "list[object]",
+                    next(
+                        batch
+                        for batch in batches
+                        if batch["batch-id"]
+                        == cast(
+                            "dict[str, object]",
+                            item["identity-matrix"],
+                        )["batch-id"]
+                    )["depends-on-batches"],
+                )
+            ),
+        )
+        bundles = []
+        for index, row in enumerate(rows):
+            leg_scratch = scratch / f"leg-{index}"
+            leg_scratch.mkdir()
+            batch = next(
+                item
+                for item in cast("list[dict[str, object]]", manifest["batches"])
+                if item["batch-id"]
+                == cast("dict[str, object]", row["identity-matrix"])["batch-id"]
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batch["ordered-selectors"],
+            )[0]
+            depends_on = cast("list[object]", selector["depends-on"])
+            dependency_results_json = ""
+            if depends_on:
+                dependency_results_json = json.dumps(
+                    {
+                        selector["work-group-id"]: [
+                            {
+                                "work-group-id": depends_on[0],
+                                "source-batch-id": batches[0]["batch-id"],
+                                "outcome": "satisfied",
+                                "admitted-for-gating": True,
+                            }
+                        ]
+                    }
+                )
+            dependency_bundles = (
+                [scratch / "leg-0" / "batch-evidence-bundle.json"]
+                if depends_on
+                else []
+            )
+            bundles.append(
+                _write_ci_batch_bundle(
+                    leg_scratch,
+                    plan,
+                    manifest,
+                    row,
+                    [
+                        _ci_success_validation_result(
+                            plan,
+                            cast("str", selector["work-group-id"]),
+                        )
+                    ],
+                    dependency_results_json=dependency_results_json,
+                    dependency_bundles=dependency_bundles,
+                )
+            )
+
+        bundle_batch_ids = {
+            cast("dict[str, object]", bundle["batch"])["batch-id"]
+            for bundle in bundles
+        }
+        manifest_batch_ids = {
+            batch["batch-id"]
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        assert bundle_batch_ids == manifest_batch_ids
+        assert bundles[0]["artifact-ref"] != bundles[1]["artifact-ref"]
+        assert all(
+            len(cast("list[object]", bundle["selector-results"])) == 1
+            for bundle in bundles
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_requires_transitive_dependency_bundles() -> None:
+    """Writer validates B against A before C can cite B as authority."""
+    scratch = _ci_batch_bundle_scratch("batch-transitive-dependency-bundles")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_transitive_work_group(plan)
+        manifest = batch_contracts.manifest(plan)
+        rows_by_batch = {
+            cast("dict[str, object]", row["identity-matrix"])["batch-id"]: row
+            for row in _ci_batch_matrix_rows(plan, manifest)
+        }
+        batch_by_group = {
+            cast("str", selector["work-group-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+            for selector in cast(
+                "list[dict[str, object]]", batch["ordered-selectors"]
+            )
+        }
+        base_batch = batch_by_group["wg-python-gate"]
+        dependent_batch = batch_by_group["wg-dependent-gate"]
+        transitive_batch = batch_by_group["wg-transitive-gate"]
+
+        base_dir = scratch / "base"
+        base_dir.mkdir()
+        base_selector = cast(
+            "list[dict[str, object]]", base_batch["ordered-selectors"]
+        )[0]
+        base_bundle = _write_ci_batch_bundle(
+            base_dir,
+            plan,
+            manifest,
+            rows_by_batch[base_batch["batch-id"]],
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", base_selector["work-group-id"]),
+                )
+            ],
+        )
+        base_path = base_dir / "batch-evidence-bundle.json"
+
+        dependent_dir = scratch / "dependent"
+        dependent_dir.mkdir()
+        dependent_selector = cast(
+            "list[dict[str, object]]", dependent_batch["ordered-selectors"]
+        )[0]
+        dependent_dependency_rows = json.dumps(
+            {
+                dependent_selector["work-group-id"]: [
+                    {
+                        "work-group-id": "wg-python-gate",
+                        "source-batch-id": base_batch["batch-id"],
+                        "outcome": "satisfied",
+                        "admitted-for-gating": True,
+                    }
+                ]
+            }
+        )
+        dependent_bundle = _write_ci_batch_bundle(
+            dependent_dir,
+            plan,
+            manifest,
+            rows_by_batch[dependent_batch["batch-id"]],
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", dependent_selector["work-group-id"]),
+                )
+            ],
+            dependency_results_json=dependent_dependency_rows,
+            dependency_bundles=[base_path],
+        )
+        dependent_path = dependent_dir / "batch-evidence-bundle.json"
+
+        transitive_selector = cast(
+            "list[dict[str, object]]", transitive_batch["ordered-selectors"]
+        )[0]
+        transitive_dependency_rows = json.dumps(
+            {
+                transitive_selector["work-group-id"]: [
+                    {
+                        "work-group-id": "wg-dependent-gate",
+                        "source-batch-id": dependent_batch["batch-id"],
+                        "outcome": "satisfied",
+                        "admitted-for-gating": True,
+                    }
+                ]
+            }
+        )
+        missing_base_dir = scratch / "transitive-missing-base"
+        missing_base_dir.mkdir()
+        with pytest.raises(RuntimeError, match="invalid dependency bundle"):
+            _write_ci_batch_bundle(
+                missing_base_dir,
+                plan,
+                manifest,
+                rows_by_batch[transitive_batch["batch-id"]],
+                [
+                    _ci_success_validation_result(
+                        plan,
+                        cast("str", transitive_selector["work-group-id"]),
+                    )
+                ],
+                dependency_results_json=transitive_dependency_rows,
+                dependency_bundles=[dependent_path],
+            )
+
+        full_dir = scratch / "transitive-full"
+        full_dir.mkdir()
+        transitive_bundle = _write_ci_batch_bundle(
+            full_dir,
+            plan,
+            manifest,
+            rows_by_batch[transitive_batch["batch-id"]],
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", transitive_selector["work-group-id"]),
+                )
+            ],
+            dependency_results_json=transitive_dependency_rows,
+            dependency_bundles=[base_path, dependent_path],
+        )
+
+        assert base_bundle["batch"]["batch-id"] == base_batch["batch-id"]
+        assert (
+            dependent_bundle["batch"]["batch-id"] == dependent_batch["batch-id"]
+        )
+        assert (
+            transitive_bundle["batch"]["batch-id"]
+            == transitive_batch["batch-id"]
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_unselected_validation_result() -> None:
+    """Validation results from outside the selected batch fail closed."""
+    scratch = _ci_batch_bundle_scratch("batch-extra-validation-result")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        row = next(
+            item
+            for item in _ci_batch_matrix_rows(plan, manifest)
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        off_batch_selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        off_batch_result = _ci_success_validation_result(
+            plan,
+            cast("str", off_batch_selector["work-group-id"]),
+        )
+
+        with pytest.raises(RuntimeError, match="unselected work groups"):
+            _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [off_batch_result],
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_unselected_dependency_result() -> None:
+    """Dependency results keyed to an unselected batch selector fail closed."""
+    scratch = _ci_batch_bundle_scratch("batch-extra-dependency-result")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        row = next(
+            item
+            for item in _ci_batch_matrix_rows(plan, manifest)
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        selected_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        off_batch_selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        selected_result = _ci_success_validation_result(
+            plan,
+            cast("str", selected_selector["work-group-id"]),
+        )
+        dependency_results_json = json.dumps(
+            {off_batch_selector["work-group-id"]: []}
+        )
+
+        with pytest.raises(RuntimeError, match="unselected work groups"):
+            _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [selected_result],
+                dependency_results_json=dependency_results_json,
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_duplicate_dependency_result_rows() -> None:
+    """Duplicate upstream dependency rows fail before normalization."""
+    scratch = _ci_batch_bundle_scratch("batch-duplicate-dependency-result")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        row = next(
+            item
+            for item in _ci_batch_matrix_rows(plan, manifest)
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[1]["batch-id"]
+        )
+        dependent_selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        selected_result = _ci_success_validation_result(
+            plan,
+            cast("str", dependent_selector["work-group-id"]),
+        )
+        upstream_work_group_id = cast(
+            "list[object]", dependent_selector["depends-on"]
+        )[0]
+        dependency_results_json = json.dumps(
+            {
+                dependent_selector["work-group-id"]: [
+                    {
+                        "work-group-id": upstream_work_group_id,
+                        "source-batch-id": batches[0]["batch-id"],
+                        "outcome": "satisfied",
+                        "admitted-for-gating": True,
+                    },
+                    {
+                        "work-group-id": upstream_work_group_id,
+                        "source-batch-id": "stale-batch",
+                        "outcome": "failed",
+                        "admitted-for-gating": False,
+                    },
+                ]
+            }
+        )
+
+        with pytest.raises(RuntimeError, match="duplicate dependency result"):
+            _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [selected_result],
+                dependency_results_json=dependency_results_json,
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_derives_same_batch_dependency_blocked_result() -> None:
+    """Same-batch dependency rows admit blocking-failure selector outcomes."""
+    scratch = _ci_batch_bundle_scratch("batch-same-batch-dependency-blocked")
+    try:
+        plan, manifest, same_batch, dependent_selector = (
+            _ci_same_batch_manifest_fixture()
+        )
+
+        result = control._ci_batch_selector_result(
+            plan=plan,
+            execution_batch_manifest=manifest,
+            batch=same_batch,
+            selector=dependent_selector,
+            validation_result=None,
+            dependency_results=[],
+            authoritative_dependency_results={},
+            prior_selector_outcomes={"wg-python-gate": "blocking-failure"},
+            observed_commit_sha=batch_contracts.TREE_SHA,
+            fact_snapshot=batch_contracts.authorizing_context_kwargs()[
+                "fact_snapshot"
+            ],
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert result["skip-reason"] is None
+        dependency = cast(
+            "list[dict[str, object]]",
+            result["dependency-results"],
+        )[0]
+        assert dependency["work-group-id"] == "wg-python-gate"
+        assert dependency["outcome"] == "failed"
+        assert dependency["admitted-for-gating"] is True
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_supplied_same_batch_dependency_result() -> (
+    None
+):
+    """Same-batch dependencies must be derived from prior selector outcomes."""
+    scratch = _ci_batch_bundle_scratch("batch-same-batch-unexpected-result")
+    try:
+        plan, manifest, same_batch, dependent_selector = (
+            _ci_same_batch_manifest_fixture()
+        )
+        upstream_work_group_id = cast(
+            "list[object]", dependent_selector["depends-on"]
+        )[0]
+
+        with pytest.raises(RuntimeError, match="unexpected dependency results"):
+            control._ci_batch_selector_result(
+                plan=plan,
+                execution_batch_manifest=manifest,
+                batch=same_batch,
+                selector=dependent_selector,
+                validation_result=None,
+                dependency_results=[
+                    {
+                        "work-group-id": upstream_work_group_id,
+                        "source-batch-id": same_batch["batch-id"],
+                        "outcome": "satisfied",
+                        "admitted-for-gating": True,
+                    }
+                ],
+                authoritative_dependency_results={},
+                prior_selector_outcomes={"wg-python-gate": "success"},
+                observed_commit_sha=batch_contracts.TREE_SHA,
+                fact_snapshot=batch_contracts.authorizing_context_kwargs()[
+                    "fact_snapshot"
+                ],
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_public_rejects_supplied_same_batch_dependency_result() -> (  # noqa: E501
+    None
+):
+    """Public writer rejects supplied same-batch dependency rows."""
+    scratch = _ci_batch_bundle_scratch("batch-public-same-batch-row")
+    try:
+        plan, manifest, same_batch, dependent_selector = (
+            _ci_same_batch_manifest_fixture()
+        )
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        selectors = cast(
+            "list[dict[str, object]]",
+            same_batch["ordered-selectors"],
+        )
+        upstream_work_group_id = cast(
+            "list[object]", dependent_selector["depends-on"]
+        )[0]
+        dependency_results_json = json.dumps(
+            {
+                dependent_selector["work-group-id"]: [
+                    {
+                        "work-group-id": upstream_work_group_id,
+                        "source-batch-id": same_batch["batch-id"],
+                        "outcome": "satisfied",
+                        "admitted-for-gating": True,
+                    }
+                ]
+            }
+        )
+
+        with pytest.raises(RuntimeError, match="unexpected dependency results"):
+            _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan,
+                        cast("str", selectors[0]["work-group-id"]),
+                    ),
+                    _ci_success_validation_result(
+                        plan,
+                        cast("str", selectors[1]["work-group-id"]),
+                    ),
+                ],
+                dependency_results_json=dependency_results_json,
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_later_same_batch_dependency() -> None:
+    """Same-batch providers must have run before dependent selectors."""
+    scratch = _ci_batch_bundle_scratch("batch-same-batch-later-provider")
+    try:
+        plan, manifest, same_batch, dependent_selector = (
+            _ci_same_batch_manifest_fixture()
+        )
+        provider_selector = deepcopy(
+            cast("list[dict[str, object]]", same_batch["ordered-selectors"])[0]
+        )
+        dependent_selector = deepcopy(dependent_selector)
+        dependent_selector["selector-index"] = 0
+        provider_selector["selector-index"] = 1
+        same_batch["ordered-selectors"] = [
+            dependent_selector,
+            provider_selector,
+        ]
+
+        with pytest.raises(
+            RuntimeError,
+            match="unavailable from prior selectors",
+        ):
+            control._ci_batch_selector_result(
+                plan=plan,
+                execution_batch_manifest=manifest,
+                batch=same_batch,
+                selector=dependent_selector,
+                validation_result=None,
+                dependency_results=[],
+                authoritative_dependency_results={},
+                prior_selector_outcomes={},
+                observed_commit_sha=batch_contracts.TREE_SHA,
+                fact_snapshot=batch_contracts.authorizing_context_kwargs()[
+                    "fact_snapshot"
+                ],
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_public_rejects_later_same_batch_dependency() -> None:
+    """Public writer rejects same-batch providers ordered after dependents."""
+    scratch = _ci_batch_bundle_scratch("batch-public-later-provider")
+    try:
+        plan, manifest, same_batch, dependent_selector = (
+            _ci_same_batch_manifest_fixture()
+        )
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        provider_selector = deepcopy(
+            cast("list[dict[str, object]]", same_batch["ordered-selectors"])[0]
+        )
+        dependent_selector = deepcopy(dependent_selector)
+        dependent_selector["selector-index"] = 0
+        provider_selector["selector-index"] = 1
+        same_batch["ordered-selectors"] = [
+            dependent_selector,
+            provider_selector,
+        ]
+
+        with pytest.raises(ContractValidationError):
+            _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan,
+                        cast("str", dependent_selector["work-group-id"]),
+                    ),
+                    _ci_success_validation_result(
+                        plan,
+                        cast("str", provider_selector["work-group-id"]),
+                    ),
+                ],
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_runs_after_same_batch_blocking_failure_dependency() -> (  # noqa: E501
+    None
+):
+    """Same-batch blocking-failure dependencies do not block later selectors."""
+    scratch = _ci_batch_bundle_scratch("batch-same-batch-blocking-admitted")
+    try:
+        plan, manifest, same_batch, _dependent_selector = (
+            _ci_same_batch_manifest_fixture()
+        )
+        identity = control._ci_execution_batch_matrix_identity(same_batch)
+        row = {
+            **identity,
+            "identity-matrix": identity,
+            "expected-job-identity": control._ci_batch_expected_writer_id(
+                manifest,
+                same_batch,
+            ),
+        }
+        selectors = cast(
+            "list[dict[str, object]]",
+            same_batch["ordered-selectors"],
+        )
+        first_result = _ci_success_validation_result(
+            plan,
+            cast("str", selectors[0]["work-group-id"]),
+        )
+        first_result["outcome"] = "blocking-failure"
+        cast("list[dict[str, object]]", first_result["commands"])[0][
+            "outcome"
+        ] = "blocking-failure"
+        second_result = _ci_success_validation_result(
+            plan,
+            cast("str", selectors[1]["work-group-id"]),
+        )
+
+        bundle = _write_ci_batch_bundle(
+            scratch,
+            plan,
+            manifest,
+            row,
+            [first_result, second_result],
+        )
+
+        selector_results = cast(
+            "list[dict[str, object]]",
+            bundle["selector-results"],
+        )
+        assert [item["work-group-id"] for item in selector_results] == [
+            selectors[0]["work-group-id"],
+            selectors[1]["work-group-id"],
+        ]
+        assert selector_results[0]["outcome"] == "blocking-failure"
+        assert selector_results[1]["outcome"] == "success"
+        assert selector_results[1]["skip-reason"] is None
+        dependency = cast(
+            "list[dict[str, object]]",
+            selector_results[1]["dependency-results"],
+        )[0]
+        assert dependency == {
+            "work-group-id": selectors[0]["work-group-id"],
+            "source-batch-id": same_batch["batch-id"],
+            "outcome": "failed",
+            "admitted-for-gating": True,
+        }
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_validator_rejects_tampered_same_batch_dependency() -> None:
+    """Same-batch dependency rows must match prior selector outcomes."""
+    scratch = _ci_batch_bundle_scratch("batch-tampered-same-batch-dependency")
+    try:
+        plan, manifest, same_batch, _dependent_selector = (
+            _ci_same_batch_manifest_fixture()
+        )
+        identity = control._ci_execution_batch_matrix_identity(same_batch)
+        row = {
+            **identity,
+            "identity-matrix": identity,
+            "expected-job-identity": control._ci_batch_expected_writer_id(
+                manifest,
+                same_batch,
+            ),
+        }
+        selectors = cast(
+            "list[dict[str, object]]",
+            same_batch["ordered-selectors"],
+        )
+        first_result = _ci_success_validation_result(
+            plan,
+            cast("str", selectors[0]["work-group-id"]),
+        )
+        first_result["outcome"] = "blocking-failure"
+        cast("list[dict[str, object]]", first_result["commands"])[0][
+            "outcome"
+        ] = "blocking-failure"
+        second_result = _ci_success_validation_result(
+            plan,
+            cast("str", selectors[1]["work-group-id"]),
+        )
+        bundle = _write_ci_batch_bundle(
+            scratch,
+            plan,
+            manifest,
+            row,
+            [first_result, second_result],
+        )
+        selector_results = cast(
+            "list[dict[str, object]]",
+            bundle["selector-results"],
+        )
+        dependency = cast(
+            "list[dict[str, object]]",
+            selector_results[1]["dependency-results"],
+        )[0]
+        dependency["outcome"] = "satisfied"
+        dependency["admitted-for-gating"] = True
+
+        with pytest.raises(ContractValidationError) as error:
+            validate_ci_validation_batch_evidence_bundle(
+                bundle,
+                plan=plan,
+                request=batch_contracts.authorizing_context_kwargs()["request"],
+                execution_batch_manifest=manifest,
+                changed_files_snapshot=(
+                    batch_contracts.authorizing_context_kwargs()[
+                        "changed_files_snapshot"
+                    ]
+                ),
+                fact_snapshot=batch_contracts.authorizing_context_kwargs()[
+                    "fact_snapshot"
+                ],
+                expected_run_id=batch_contracts.RUN_ID,
+                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+
+        assert any(
+            issue.path.endswith(".dependency-results[0].outcome")
+            for issue in error.value.issues
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_cross_batch_dependency_without_bundle() -> (
+    None
+):
+    """Cross-batch dependencies need authoritative upstream bundle evidence."""
+    scratch = _ci_batch_bundle_scratch("batch-cross-batch-without-bundle")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        row = next(
+            item
+            for item in _ci_batch_matrix_rows(plan, manifest)
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[1]["batch-id"]
+        )
+        selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        upstream_work_group_id = cast("list[object]", selector["depends-on"])[0]
+        dependency_results_json = json.dumps(
+            {
+                selector["work-group-id"]: [
+                    {
+                        "work-group-id": upstream_work_group_id,
+                        "source-batch-id": batches[0]["batch-id"],
+                        "outcome": "satisfied",
+                        "admitted-for-gating": True,
+                    }
+                ]
+            }
+        )
+
+        with pytest.raises(
+            ContractValidationError,
+            match="authoritative upstream bundle evidence",
+        ):
+            _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan,
+                        cast("str", selector["work-group-id"]),
+                    )
+                ],
+                dependency_results_json=dependency_results_json,
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_admits_cross_batch_dependency_from_valid_bundle() -> (
+    None
+):
+    """Cross-batch admission is derived from validated upstream evidence."""
+    scratch = _ci_batch_bundle_scratch("batch-cross-batch-with-bundle")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        upstream_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        dependent_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[1]["batch-id"]
+        )
+        upstream_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        dependent_selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        upstream_dir = scratch / "upstream"
+        upstream_dir.mkdir()
+        _write_ci_batch_bundle(
+            upstream_dir,
+            plan,
+            manifest,
+            upstream_row,
+            [
+                _ci_success_validation_result(
+                    plan, cast("str", upstream_selector["work-group-id"])
+                )
+            ],
+        )
+
+        dependent_dir = scratch / "dependent"
+        dependent_dir.mkdir()
+        bundle = _write_ci_batch_bundle(
+            dependent_dir,
+            plan,
+            manifest,
+            dependent_row,
+            [
+                _ci_success_validation_result(
+                    plan, cast("str", dependent_selector["work-group-id"])
+                )
+            ],
+            dependency_bundles=[upstream_dir / "batch-evidence-bundle.json"],
+        )
+
+        selector_result = cast(
+            "list[dict[str, object]]", bundle["selector-results"]
+        )[0]
+        assert selector_result["outcome"] == "success"
+        assert selector_result["skip-reason"] is None
+        dependency = cast(
+            "list[dict[str, object]]",
+            selector_result["dependency-results"],
+        )[0]
+        assert dependency["admitted-for-gating"] is True
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    "bundle_case",
+    ["malformed", "wrong-run-id", "stale-run-attempt"],
+)
+def test_ci_batch_writer_rejects_invalid_dependency_bundle(
+    bundle_case: str,
+) -> None:
+    """Invalid upstream dependency bundles fail closed."""
+    scratch = _ci_batch_bundle_scratch(
+        f"batch-invalid-dependency-{bundle_case}"
+    )
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        upstream_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        dependent_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[1]["batch-id"]
+        )
+        upstream_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        dependent_selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        upstream_dir = scratch / "upstream"
+        upstream_dir.mkdir()
+        upstream_bundle = _write_ci_batch_bundle(
+            upstream_dir,
+            plan,
+            manifest,
+            upstream_row,
+            [
+                _ci_success_validation_result(
+                    plan, cast("str", upstream_selector["work-group-id"])
+                )
+            ],
+        )
+        upstream_path = upstream_dir / "batch-evidence-bundle.json"
+        if bundle_case == "malformed":
+            upstream_path.write_text("{", encoding="utf-8")
+        else:
+            run = cast("dict[str, object]", upstream_bundle["run"])
+            if bundle_case == "wrong-run-id":
+                run["run-id"] = "stale-run"
+            else:
+                run["run-attempt"] = "stale-attempt"
+            upstream_path.write_text(
+                json.dumps(upstream_bundle),
+                encoding="utf-8",
+            )
+
+        dependent_dir = scratch / "dependent"
+        dependent_dir.mkdir()
+        with pytest.raises(RuntimeError, match="invalid dependency bundle"):
+            _write_ci_batch_bundle(
+                dependent_dir,
+                plan,
+                manifest,
+                dependent_row,
+                [
+                    _ci_success_validation_result(
+                        plan,
+                        cast("str", dependent_selector["work-group-id"]),
+                    )
+                ],
+                dependency_bundles=[upstream_path],
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_ignores_spoofed_dependency_result_json() -> None:
+    """Validated upstream bundles override contradictory caller JSON rows."""
+    scratch = _ci_batch_bundle_scratch("batch-spoofed-dependency-json")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        upstream_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        dependent_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[1]["batch-id"]
+        )
+        upstream_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        dependent_selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        upstream_dir = scratch / "upstream"
+        upstream_dir.mkdir()
+        _write_ci_batch_bundle(
+            upstream_dir,
+            plan,
+            manifest,
+            upstream_row,
+            [
+                _ci_success_validation_result(
+                    plan, cast("str", upstream_selector["work-group-id"])
+                )
+            ],
+        )
+        dependency_results_json = json.dumps(
+            {
+                dependent_selector["work-group-id"]: [
+                    {
+                        "work-group-id": upstream_selector["work-group-id"],
+                        "source-batch-id": batches[0]["batch-id"],
+                        "outcome": "failed",
+                        "admitted-for-gating": False,
+                    }
+                ]
+            }
+        )
+
+        dependent_dir = scratch / "dependent"
+        dependent_dir.mkdir()
+        bundle = _write_ci_batch_bundle(
+            dependent_dir,
+            plan,
+            manifest,
+            dependent_row,
+            [
+                _ci_success_validation_result(
+                    plan, cast("str", dependent_selector["work-group-id"])
+                )
+            ],
+            dependency_results_json=dependency_results_json,
+            dependency_bundles=[upstream_dir / "batch-evidence-bundle.json"],
+        )
+
+        selector_result = cast(
+            "list[dict[str, object]]", bundle["selector-results"]
+        )[0]
+        dependency = cast(
+            "list[dict[str, object]]",
+            selector_result["dependency-results"],
+        )[0]
+        assert dependency["outcome"] == "satisfied"
+        assert dependency["admitted-for-gating"] is True
+        assert selector_result["outcome"] == "success"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_stale_non_release_result_commit() -> None:
+    """Non-release validation-result success is bound to the observed commit."""
+    scratch = _ci_batch_bundle_scratch("batch-stale-non-release-commit")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+        result["observed-commit-sha"] = "c" * 40
+
+        bundle = _write_ci_batch_bundle(scratch, plan, manifest, row, [result])
+
+        selector_result = cast(
+            "list[dict[str, object]]",
+            bundle["selector-results"],
+        )[0]
+        assert selector_result["outcome"] == "blocking-failure"
+        assert selector_result["skip-reason"] is None
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_stale_non_release_result_coverage_target() -> (
+    None
+):
+    """Non-release validation-result success is bound to coverage target."""
+    scratch = _ci_batch_bundle_scratch("batch-stale-non-release-coverage")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+        result["coverage-target"] = {"type": "subject", "id": "stale"}
+
+        bundle = _write_ci_batch_bundle(scratch, plan, manifest, row, [result])
+
+        selector_result = cast(
+            "list[dict[str, object]]",
+            bundle["selector-results"],
+        )[0]
+        assert selector_result["outcome"] == "blocking-failure"
+        assert selector_result["skip-reason"] is None
+        assert selector_result["evidence"]["capability-results"]
+        assert selector_result["diagnostics"][0]["code"] == (
+            "validation-work-failed"
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_requires_authoritative_reuse_context_for_release(  # noqa: PLR0915
+) -> None:
+    """Reused release receipts need observed evidence in batch writing."""
+    scratch = _ci_batch_bundle_scratch("batch-release-reuse-context")
+    try:
+        request = _ci_validation_push_request(
+            ["src/public/lib/nbgv-python/pyproject.toml"],
+        )
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=request,
+                repo_root=REPO_ROOT,
+                expected_run_id=batch_contracts.RUN_ID,
+                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        plan = cast("dict[str, object]", deepcopy(plan_snapshot.plan))
+        release_group = next(
+            group
+            for group in cast("list[dict[str, object]]", plan["work-groups"])
+            if group["kind"] == "release-shaped-artifact"
+        )
+        release_work_group_id = cast("str", release_group["work-group-id"])
+        release_group["depends-on"] = []
+        plan["plan-digest"] = ci_validation_plan_digest(plan)
+        changed_files_snapshot = cast(
+            "Mapping[str, object]",
+            plan_snapshot.changed_files_snapshot,
+        )
+        fact_snapshot = cast(
+            "Mapping[str, object]",
+            plan_snapshot.fact_snapshot,
+        )
+        plan_path = scratch / "validation-plan.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        assignments_path = scratch / "selector-assignments.json"
+        materialize_outputs_path = scratch / "materialize-outputs.txt"
+        observed_root = scratch / "observed-artifacts"
+        validation_result_path = scratch / "release-validation-result.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(changed_files_snapshot),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(fact_snapshot),
+            encoding="utf-8",
+        )
+        assert (
+            control._cmd_materialize_ci_work_groups(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    workflow="CI Validation",
+                    writer_job="validation-work-groups",
+                    created_at=batch_contracts.CREATED_AT,
+                    assignments_out=str(assignments_path),
+                    github_output=str(materialize_outputs_path),
+                )
+            )
+            == 0
+        )
+        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
+        matrix = {
+            item["work-group-id"]: item
+            for item in json.loads(
+                _github_outputs(materialize_outputs_path)["work_group_matrix"]
+            )
+        }
+        _stage_ci_release_shaped_observed_receipt(
+            scratch=scratch,
+            observed_root=observed_root,
+            plan=plan,
+            assignments=assignments,
+            matrix=matrix,
+            work_group_id=release_work_group_id,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(
+                        matrix[release_work_group_id],
+                        separators=(",", ":"),
+                    ),
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments=str(assignments_path),
+                    observed_artifacts_dir=str(observed_root),
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    repo_root=str(REPO_ROOT),
+                    result_out=str(validation_result_path),
+                    github_output=None,
+                )
+            )
+            == 0
+        )
+        validation_result = json.loads(
+            validation_result_path.read_text(encoding="utf-8")
+        )
+        assert validation_result["outcome"] == "success"
+        assert validation_result["commands"][0]["evidence-source"] == (
+            "reused-validation-receipt"
+        )
+        assert (
+            control._ci_validation_outcome(
+                plan,
+                release_work_group_id,
+                dependency_blocked=False,
+                validation_result=validation_result,
+                observed_commit_sha=batch_contracts.TREE_SHA,
+                fact_snapshot=fact_snapshot,
+            )
+            == "blocking-failure"
+        )
+        assert (
+            control._ci_validation_outcome(
+                plan,
+                release_work_group_id,
+                dependency_blocked=False,
+                validation_result=validation_result,
+                assignments=assignments,
+                observed_artifacts_dir=str(observed_root),
+                observed_commit_sha=batch_contracts.TREE_SHA,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+            )
+            == "success"
+        )
+        authorizing_context = {
+            "request": request,
+            "changed_files_snapshot": changed_files_snapshot,
+            "fact_snapshot": fact_snapshot,
+            "expected_run_id": batch_contracts.RUN_ID,
+            "expected_run_attempt": batch_contracts.RUN_ATTEMPT,
+        }
+        materialize_batches = (
+            batch_contracts.materialize_ci_validation_execution_batches
+        )
+        materialization = materialize_batches(
+            plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            created_at=batch_contracts.CREATED_AT,
+            execution_workflow="CI Validation",
+        )
+        manifest = cast("dict[str, object]", materialization.manifest)
+        rows = cast(
+            "list[dict[str, object]]",
+            materialization.matrix["include"],
+        )
+        row = next(
+            item
+            for item in rows
+            if any(
+                selector["work-group-id"] == release_work_group_id
+                for selector in cast(
+                    "list[dict[str, object]]",
+                    next(
+                        batch
+                        for batch in cast(
+                            "list[dict[str, object]]",
+                            manifest["batches"],
+                        )
+                        if batch["batch-id"]
+                        == cast(
+                            "dict[str, object]",
+                            item["identity-matrix"],
+                        )["batch-id"]
+                    )["ordered-selectors"],
+                )
+            )
+        )
+        without_context_dir = scratch / "without-reuse-context"
+        without_context_dir.mkdir()
+        without_context_bundle = _write_ci_batch_bundle(
+            without_context_dir,
+            plan,
+            manifest,
+            row,
+            [validation_result],
+            authorizing_context=authorizing_context,
+        )
+        without_context_selector = next(
+            selector
+            for selector in cast(
+                "list[dict[str, object]]",
+                without_context_bundle["selector-results"],
+            )
+            if selector["work-group-id"] == release_work_group_id
+        )
+        assert without_context_selector["outcome"] == "blocking-failure"
+
+        with_context_dir = scratch / "with-reuse-context"
+        with_context_dir.mkdir()
+        with_context_bundle = _write_ci_batch_bundle(
+            with_context_dir,
+            plan,
+            manifest,
+            row,
+            [validation_result],
+            assignments=assignments_path,
+            observed_artifacts_dir=observed_root,
+            authorizing_context=authorizing_context,
+        )
+        with_context_selector = next(
+            selector
+            for selector in cast(
+                "list[dict[str, object]]",
+                with_context_bundle["selector-results"],
+            )
+            if selector["work-group-id"] == release_work_group_id
+        )
+        assert with_context_selector["outcome"] == "success"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_batch_evidence_writer_fails_on_writer_mismatch() -> None:
+    """Observed workflow/job/matrix writer identity is fail-closed."""
+    scratch = _ci_batch_bundle_scratch("batch-writer-mismatch")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+
+        with pytest.raises(RuntimeError, match="writer identity"):
+            _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [result],
+                job="wrong-execution-batch",
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_wrong_matrix_batch() -> None:
+    """Matrix row batch identity must match the execution-batch manifest."""
+    scratch = _ci_batch_bundle_scratch("batch-matrix-mismatch")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = deepcopy(_ci_batch_matrix_rows(plan, manifest)[0])
+        identity = cast("dict[str, object]", row["identity-matrix"])
+        identity["batch-id"] = "batch-does-not-exist"
+        row["batch-id"] = "batch-does-not-exist"
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+
+        with pytest.raises(RuntimeError, match="batch id"):
+            _write_ci_batch_bundle(scratch, plan, manifest, row, [result])
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_identity_only_matrix_mismatch() -> None:
+    """Identity matrix values must independently match the manifest."""
+    scratch = _ci_batch_bundle_scratch("batch-identity-only-mismatch")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = deepcopy(_ci_batch_matrix_rows(plan, manifest)[0])
+        identity = cast("dict[str, object]", row["identity-matrix"])
+        identity["runner-family"] = (
+            "windows" if identity["runner-family"] != "windows" else "ubuntu"
+        )
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+
+        with pytest.raises(RuntimeError, match="identity"):
+            _write_ci_batch_bundle(scratch, plan, manifest, row, [result])
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_projection_only_matrix_mismatch() -> None:
+    """Top-level matrix projection must match the identity matrix."""
+    scratch = _ci_batch_bundle_scratch("batch-projection-only-mismatch")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = deepcopy(_ci_batch_matrix_rows(plan, manifest)[0])
+        row["runner-family"] = (
+            "windows" if row["runner-family"] != "windows" else "ubuntu"
+        )
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+
+        with pytest.raises(RuntimeError, match="projection"):
+            _write_ci_batch_bundle(scratch, plan, manifest, row, [result])
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_same_batch_runner_family_mismatch() -> None:
+    """Same-batch selectors cannot skew away from the batch runner family."""
+    scratch = _ci_batch_bundle_scratch("batch-same-batch-runner-mismatch")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        same_batch = deepcopy(batches[0])
+        dependent_selector = deepcopy(
+            cast("list[dict[str, object]]", batches[1]["ordered-selectors"])[0]
+        )
+        dependent_selector["selector-index"] = 1
+        slot = cast(
+            "dict[str, object]",
+            dependent_selector["expected-evidence-slot"],
+        )
+        slot["runner-family"] = (
+            "windows" if same_batch["runner-family"] != "windows" else "ubuntu"
+        )
+        cast("list[dict[str, object]]", same_batch["ordered-selectors"]).append(
+            dependent_selector
+        )
+        same_batch["depends-on-batches"] = []
+
+        with pytest.raises(ContractValidationError):
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=[same_batch],
+                budget=batch_contracts.budget(1),
+                created_at=batch_contracts.CREATED_AT,
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_rejects_same_batch_expected_bundle_ref_mismatch() -> (
+    None
+):
+    """Matrix identity cannot project a stale expected bundle artifact ref."""
+    scratch = _ci_batch_bundle_scratch("batch-same-batch-ref-mismatch")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = deepcopy(_ci_batch_matrix_rows(plan, manifest)[0])
+        identity = cast("dict[str, object]", row["identity-matrix"])
+        identity["expected-batch-evidence-bundle-ref"] = (
+            "ci-validation/batches/25887422010/1/stale/batch-evidence-bundle.json"
+        )
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+
+        with pytest.raises(RuntimeError, match="identity"):
+            _write_ci_batch_bundle(scratch, plan, manifest, row, [result])
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_empty_manifest_has_no_bundle() -> None:
+    """Zero-work handoff has no matrix leg to write a batch bundle."""
+    scratch = _ci_batch_bundle_scratch("empty-batch-manifest")
+    plan, manifest = _ci_batch_contract_plan_and_manifest()
+    empty_manifest = batch_contracts.zero_batch_execution_manifest(manifest)
+    authorizing_context = batch_contracts.authorizing_context_kwargs()
+    plan_path = scratch / "plan.json"
+    request_path = scratch / "request.json"
+    manifest_path = scratch / "execution-batch-manifest.json"
+    changed_files_path = scratch / "changed-files.json"
+    fact_snapshot_path = scratch / "fact-snapshot.json"
+    bundle_path = scratch / "batch-evidence-bundle.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    request_path.write_text(
+        json.dumps(authorizing_context["request"]),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(json.dumps(empty_manifest), encoding="utf-8")
+    changed_files_path.write_text(
+        json.dumps(authorizing_context["changed_files_snapshot"]),
+        encoding="utf-8",
+    )
+    fact_snapshot_path.write_text(
+        json.dumps(authorizing_context["fact_snapshot"]),
+        encoding="utf-8",
+    )
+
+    try:
+        with pytest.raises(ContractValidationError):
+            control._cmd_write_ci_validation_batch_evidence_bundle(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    request=str(request_path),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    matrix_row_json=json.dumps(
+                        {
+                            "batch-id": "batch-missing",
+                            "runner-family": "ubuntu",
+                            "expected-batch-evidence-bundle-ref": (
+                                "ci-validation/batches/123/1/"
+                                "batch-missing/batch-evidence-bundle.json"
+                            ),
+                            "identity-matrix": {
+                                "batch-id": "batch-missing",
+                                "runner-family": "ubuntu",
+                                "expected-batch-evidence-bundle-ref": (
+                                    "ci-validation/batches/123/1/"
+                                    "batch-missing/batch-evidence-bundle.json"
+                                ),
+                            },
+                            "expected-job-identity": (
+                                "github-actions-job:" + "0" * 64
+                            ),
+                        }
+                    ),
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    workflow="CI Validation",
+                    job="execution-batch",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    validation_result=[],
+                    dependency_results_json="",
+                    dependency_bundle=[],
+                    started_at=batch_contracts.CREATED_AT,
+                    completed_at=batch_contracts.CREATED_AT,
+                    created_at=batch_contracts.CREATED_AT,
+                    bundle_out=str(bundle_path),
+                    github_output="",
+                )
+            )
+        assert empty_manifest["batches"] == []
+        assert not bundle_path.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_hk_runs_focused_workflow_release_validation() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
@@ -51,18 +52,20 @@ from three_workflow_release_contracts import (
     validate_ci_validation_execution_batch_manifest,
 )
 from three_workflow_release_contracts.ci_validation_batches import (
+    _envelope,
     _execution_batch_matrix_identity,
     _freeze_ci_validation_aggregate_evidence_manifest,
     _materializer_artifact_obligations_by_work_group,
     _materializer_batch_id,
     _materializer_compatibility_key,
     _materializer_compatibility_profile,
+    _validate_admitted_bundles_topologically,
     _validate_ci_validation_aggregate_evidence_manifest,
     _validate_ci_validation_execution_batch_manifest,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping, Sequence
 
 _PLANS_TEST_PATH = Path(__file__).with_name("test_ci_validation_plans.py")
 _PLANS_SPEC = importlib.util.spec_from_file_location(
@@ -411,6 +414,59 @@ def _add_dependent_work_group(plan: dict[str, object]) -> None:
     plan["plan-digest"] = ci_validation_plan_digest(plan)
 
 
+def _add_transitive_work_group(plan: dict[str, object]) -> None:
+    _add_dependent_work_group(plan)
+    work_groups = cast("list[dict[str, object]]", plan["work-groups"])
+    evidence_expectations = cast(
+        "list[dict[str, object]]", plan["evidence-expectations"]
+    )
+    validation_obligations = cast(
+        "list[dict[str, object]]", plan["validation-obligations"]
+    )
+    dependent_group = next(
+        group
+        for group in work_groups
+        if group["work-group-id"] == "wg-dependent-gate"
+    )
+    terminal_group = next(
+        group
+        for group in work_groups
+        if group["kind"] == "evidence-aggregation"
+    )
+    transitive_group = cast("dict[str, object]", deepcopy(dependent_group))
+    transitive_group["work-group-id"] = "wg-transitive-gate"
+    transitive_group["depends-on"] = ["wg-dependent-gate"]
+    transitive_group["ecosystem"] = "ruby"
+    transitive_group["selector-variant"] = "transitive"
+    work_groups.insert(-1, transitive_group)
+    terminal_group["depends-on"] = sorted(
+        ["wg-python-gate", "wg-dependent-gate", "wg-transitive-gate"]
+    )
+    transitive_evidence = cast(
+        "dict[str, object]", deepcopy(evidence_expectations[0])
+    )
+    transitive_evidence["evidence-expectation-id"] = "evidence-transitive-gate"
+    transitive_evidence["work-group-id"] = "wg-transitive-gate"
+    evidence_expectations.append(transitive_evidence)
+    evidence_expectations.sort(
+        key=lambda item: str(item["evidence-expectation-id"])
+    )
+    transitive_validation = cast(
+        "dict[str, object]", deepcopy(validation_obligations[0])
+    )
+    transitive_validation["validation-obligation-id"] = (
+        "validation-transitive-gate"
+    )
+    transitive_validation["expected-evidence-id"] = "evidence-transitive-gate"
+    transitive_validation["work-group-id"] = "wg-transitive-gate"
+    validation_obligations.append(transitive_validation)
+    validation_obligations.sort(
+        key=lambda item: str(item["validation-obligation-id"])
+    )
+    work_groups.sort(key=lambda item: str(item["work-group-id"]))
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+
+
 def _add_extra_work_group(
     plan: dict[str, object],
     *,
@@ -670,6 +726,90 @@ def _bundle(
         started_at=CREATED_AT,
         completed_at=CREATED_AT,
         created_at=CREATED_AT,
+        **_authorizing_context_kwargs(),
+    )
+
+
+def test_batch_bundle_freezer_accepts_g2_plan_manifest_context() -> None:
+    """Plan and manifest context stays non-authorizing by default."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+
+    bundle = freeze_ci_validation_batch_evidence_bundle(
+        plan=plan,
+        execution_batch_manifest=manifest,
+        batch_id=cast("str", batch["batch-id"]),
+        selector_results=[_selector_result(plan, manifest)],
+        writer=_writer_for_batch(manifest, cast("str", batch["batch-id"])),
+        execution_tree={
+            "observed-commit-sha": TREE_SHA,
+            "source": "execution-batch-boundary",
+            "verified": True,
+        },
+        started_at=CREATED_AT,
+        completed_at=CREATED_AT,
+        created_at=CREATED_AT,
+    )
+
+    validate_ci_validation_batch_evidence_bundle(
+        bundle,
+        plan=plan,
+        execution_batch_manifest=manifest,
+    )
+
+
+def test_batch_bundle_expected_run_does_not_authorize_context() -> None:
+    """Expected-run binding is separate from request/snapshot authority."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    bundle = freeze_ci_validation_batch_evidence_bundle(
+        plan=plan,
+        execution_batch_manifest=manifest,
+        batch_id=cast("str", batch["batch-id"]),
+        selector_results=[_selector_result(plan, manifest)],
+        writer=_writer_for_batch(manifest, cast("str", batch["batch-id"])),
+        execution_tree={
+            "observed-commit-sha": TREE_SHA,
+            "source": "execution-batch-boundary",
+            "verified": True,
+        },
+        started_at=CREATED_AT,
+        completed_at=CREATED_AT,
+        created_at=CREATED_AT,
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
+    )
+
+    validate_ci_validation_batch_evidence_bundle(
+        bundle,
+        plan=plan,
+        execution_batch_manifest=manifest,
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
+    )
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            expected_run_id="99999999999",
+            expected_run_attempt=RUN_ATTEMPT,
+        )
+
+    assert any(issue.path == "$.run.run-id" for issue in error.value.issues)
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            expected_run_id=RUN_ID,
+            expected_run_attempt="99",
+        )
+
+    assert any(
+        issue.path == "$.run.run-attempt" for issue in error.value.issues
     )
 
 
@@ -1139,6 +1279,61 @@ def test_batch_bundle_rejects_planless_non_empty_execution_manifest() -> None:
     assert any(issue.path == "authorizing" for issue in exc_info.value.issues)
 
 
+@pytest.mark.parametrize(
+    "missing_key",
+    [
+        "request",
+        "changed_files_snapshot",
+        "fact_snapshot",
+        "expected_run_id",
+        "expected_run_attempt",
+    ],
+)
+def test_public_batch_bundle_validator_requires_authorizing_context(
+    missing_key: str,
+) -> None:
+    """Plan-bound bundle validation requires current-run authority inputs."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    kwargs = dict(_authorizing_context_kwargs())
+    kwargs[missing_key] = None
+
+    with pytest.raises(ContractValidationError):
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **kwargs,
+        )
+
+
+def test_public_batch_bundle_freezer_rejects_partial_authorizing_context() -> (
+    None
+):
+    """Explicit authorizing bundle context must be complete."""
+    plan = _plan()
+    manifest = _manifest(plan)
+
+    with pytest.raises(ContractValidationError):
+        freeze_ci_validation_batch_evidence_bundle(
+            plan=plan,
+            execution_batch_manifest=manifest,
+            batch_id=_BATCH_ID,
+            selector_results=[_selector_result(plan, manifest)],
+            writer=_writer_for_batch(manifest, _BATCH_ID),
+            execution_tree={
+                "observed-commit-sha": TREE_SHA,
+                "source": "execution-batch-boundary",
+                "verified": True,
+            },
+            started_at=CREATED_AT,
+            completed_at=CREATED_AT,
+            created_at=CREATED_AT,
+            request=_request_document(),
+        )
+
+
 def test_summary_rejects_planless_non_empty_execution_manifest() -> None:
     """Planless summary validation cannot bind non-empty batch manifests."""
     plan = _plan()
@@ -1216,7 +1411,11 @@ def test_no_authority_aggregate_rejects_stale_plan_identity() -> None:
     with pytest.raises(ContractValidationError) as exc_info:
         validate_ci_validation_aggregate_evidence_manifest(
             aggregate_manifest,
-            execution_batch_manifest=_zero_batch_execution_manifest(manifest),
+            execution_batch_manifest={
+                **_zero_batch_execution_manifest(manifest),
+                "plan-id": None,
+                "plan-digest": None,
+            },
         )
 
     assert any(issue.path == "$.plan-id" for issue in exc_info.value.issues)
@@ -1236,7 +1435,11 @@ def test_no_authority_summary_rejects_stale_plan_identity() -> None:
         validate_ci_validation_aggregate_summary(
             summary,
             aggregate_evidence_manifest=aggregate_manifest,
-            execution_batch_manifest=_zero_batch_execution_manifest(manifest),
+            execution_batch_manifest={
+                **_zero_batch_execution_manifest(manifest),
+                "plan-id": None,
+                "plan-digest": None,
+            },
         )
 
     assert any(issue.path == "$.plan-id" for issue in exc_info.value.issues)
@@ -1255,7 +1458,11 @@ def test_summary_without_authority_rejects_stale_plan_identity() -> None:
     with pytest.raises(ContractValidationError) as exc_info:
         validate_ci_validation_aggregate_summary(
             summary,
-            execution_batch_manifest=_zero_batch_execution_manifest(manifest),
+            execution_batch_manifest={
+                **_zero_batch_execution_manifest(manifest),
+                "plan-id": None,
+                "plan-digest": None,
+            },
             request=_request_document(),
             changed_files_snapshot=_changed_files_snapshot_document(),
             fact_snapshot=_fact_snapshot_document(),
@@ -1307,7 +1514,11 @@ def test_summary_freezer_without_authority_nulls_plan_identity() -> None:
         ),
         failures=cast("list[dict[str, object]]", template["failures"]),
         work_groups=cast("dict[str, object]", template["work-groups"]),
-        execution_batch_manifest=_zero_batch_execution_manifest(manifest),
+        execution_batch_manifest={
+            **_zero_batch_execution_manifest(manifest),
+            "plan-id": None,
+            "plan-digest": None,
+        },
         request_document=_request_document(),
         changed_files_snapshot=_changed_files_snapshot_document(),
         fact_snapshot=_fact_snapshot_document(),
@@ -1744,6 +1955,7 @@ def _dependent_bundle_fixture() -> tuple[
     dict[str, object],
     dict[str, object],
     dict[str, object],
+    dict[str, object],
 ]:
     plan = _plan()
     _add_dependent_work_group(plan)
@@ -1755,6 +1967,7 @@ def _dependent_bundle_fixture() -> tuple[
         created_at=CREATED_AT,
     )
     base_batch_id, dependent_batch_id = _dependent_batch_ids(manifest)
+    base_bundle = _bundle_for_batch(plan, manifest, base_batch_id)
     result = _selector_result(plan, manifest, dependent_batch_id)
     result["dependency-results"] = [
         {
@@ -1778,8 +1991,10 @@ def _dependent_bundle_fixture() -> tuple[
         started_at=CREATED_AT,
         completed_at=CREATED_AT,
         created_at=CREATED_AT,
+        dependency_evidence_bundles=[base_bundle],
+        **_authorizing_context_kwargs(),
     )
-    return plan, manifest, bundle
+    return plan, manifest, base_bundle, bundle
 
 
 def _dependent_batch_ids(manifest: dict[str, object]) -> tuple[str, str]:
@@ -1800,6 +2015,7 @@ def _bundle_for_batch(
     manifest: dict[str, object],
     batch_id: str,
     selector_result: dict[str, object] | None = None,
+    dependency_evidence_bundles: Sequence[Mapping[str, object]] = (),
 ) -> dict[str, object]:
     return freeze_ci_validation_batch_evidence_bundle(
         plan=plan,
@@ -1819,6 +2035,8 @@ def _bundle_for_batch(
         started_at=CREATED_AT,
         completed_at=CREATED_AT,
         created_at=CREATED_AT,
+        dependency_evidence_bundles=dependency_evidence_bundles,
+        **_authorizing_context_kwargs(),
     )
 
 
@@ -1855,6 +2073,7 @@ def _dependent_admitted_fixture() -> tuple[
         manifest,
         dependent_batch_id,
         result,
+        dependency_evidence_bundles=[base_bundle],
     )
     aggregate_manifest = _aggregate_evidence_manifest_for_bundles(
         plan,
@@ -2237,6 +2456,7 @@ def test_g1_batch_diagnostics_accept_nullable_detail() -> None:
         bundle,
         plan=plan,
         execution_batch_manifest=manifest,
+        **_authorizing_context_kwargs(),
     )
 
 
@@ -2383,6 +2603,7 @@ def test_g1_contract_validators_reject_legacy_self_details(
             bundle,
             plan=plan,
             execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
         )
 
 
@@ -3212,12 +3433,73 @@ def test_execution_batch_manifest_accepts_empty_batches_without_plan() -> None:
     manifest = _manifest(plan)
     manifest["batches"] = []
     manifest["budget"] = _budget(0)
+    absent_identity_manifest = deepcopy(manifest)
+    absent_identity_manifest.pop("plan-id")
+    absent_identity_manifest.pop("plan-digest")
 
-    validate_ci_validation_execution_batch_manifest(manifest, authorizing=False)
+    validate_ci_validation_execution_batch_manifest(
+        absent_identity_manifest,
+        authorizing=False,
+    )
+    manifest["plan-id"] = None
+    manifest["plan-digest"] = None
+    validate_ci_validation_execution_batch_manifest(
+        manifest,
+        authorizing=False,
+    )
     assert ci_validation_execution_batch_matrix(
         manifest,
         authorizing=False,
     ) == {"include": []}
+
+
+@pytest.mark.parametrize("authorizing_kwargs", [{}, {"authorizing": True}])
+@pytest.mark.parametrize("plan_identity", ["omitted", "none"])
+def test_planless_zero_batch_manifest_requires_non_authorizing_mode(
+    authorizing_kwargs: dict[str, bool],
+    plan_identity: str,
+) -> None:
+    """Planless no-work handoffs cannot authorize without plan context."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    manifest["batches"] = []
+    manifest["budget"] = _budget(0)
+    if plan_identity == "omitted":
+        manifest.pop("plan-id")
+        manifest.pop("plan-digest")
+    else:
+        manifest["plan-id"] = None
+        manifest["plan-digest"] = None
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            **authorizing_kwargs,
+        )
+
+    assert any(
+        issue.path == "authorizing"
+        and "explicit non-authorizing mode" in issue.message
+        for issue in error.value.issues
+    )
+
+
+def test_planless_zero_batch_manifest_rejects_stale_plan_identity() -> None:
+    """Planless no-work manifests cannot carry authoritative plan identity."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    manifest["batches"] = []
+    manifest["budget"] = _budget(0)
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            authorizing=False,
+        )
+
+    assert {"$.plan-id", "$.plan-digest"}.issubset(
+        {issue.path for issue in error.value.issues}
+    )
 
 
 def test_planless_non_authorizing_batches_require_plan() -> None:
@@ -3684,6 +3966,7 @@ def test_batch_evidence_bundle_freezes_and_validates() -> None:
         bundle,
         plan=plan,
         execution_batch_manifest=manifest,
+        **_authorizing_context_kwargs(),
     )
 
     assert bundle[
@@ -3716,6 +3999,7 @@ def test_batch_bundle_rejects_malformed_plan_without_keyerror() -> None:
             bundle,
             plan=malformed_plan,
             execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
         )
 
     assert any(
@@ -3804,7 +4088,10 @@ def test_batch_evidence_bundle_rejects_obsolete_final_evidence_details(
 
     with pytest.raises(ContractValidationError):
         validate_ci_validation_batch_evidence_bundle(
-            bundle, plan=plan, execution_batch_manifest=manifest
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
         )
 
 
@@ -3822,7 +4109,10 @@ def test_batch_bundle_schema_diagnostics_reject_obsolete_final_details(
 
     with pytest.raises(ContractValidationError):
         validate_ci_validation_batch_evidence_bundle(
-            bundle, plan=plan, execution_batch_manifest=manifest
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
         )
 
 
@@ -3908,6 +4198,7 @@ def test_batch_evidence_bundle_rejects_rewritten_slot_digest() -> None:
             bundle,
             plan=plan,
             execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
         )
 
 
@@ -3923,6 +4214,7 @@ def test_batch_evidence_bundle_rejects_unverified_execution_tree() -> None:
             bundle,
             plan=plan,
             execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
         )
 
 
@@ -3940,6 +4232,7 @@ def test_batch_evidence_bundle_rejects_execution_tree_commit_mismatch() -> None:
             bundle,
             plan=plan,
             execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
         )
 
 
@@ -3982,6 +4275,7 @@ def test_batch_evidence_bundle_rejects_malformed_diagnostics(
             completed_at=CREATED_AT,
             created_at=CREATED_AT,
             batch_diagnostics=[diagnostic],
+            **_authorizing_context_kwargs(),
         )
 
 
@@ -4011,6 +4305,7 @@ def test_batch_evidence_bundle_rejects_missing_required_diagnostic_fields(
             completed_at=CREATED_AT,
             created_at=CREATED_AT,
             batch_diagnostics=[diagnostic],
+            **_authorizing_context_kwargs(),
         )
 
 
@@ -4046,12 +4341,14 @@ def test_batch_evidence_bundle_accepts_canonical_diagnostics() -> None:
                 detail="malformed-bundle",
             )
         ],
+        **_authorizing_context_kwargs(),
     )
 
     validate_ci_validation_batch_evidence_bundle(
         bundle,
         plan=plan,
         execution_batch_manifest=manifest,
+        **_authorizing_context_kwargs(),
     )
 
 
@@ -4104,7 +4401,7 @@ def test_batch_evidence_bundle_rejects_dependency_result_mismatches(
     expected_path: str,
 ) -> None:
     """Selector dependency results must exactly bind batch topology."""
-    plan, manifest, bundle = _dependent_bundle_fixture()
+    plan, manifest, base_bundle, bundle = _dependent_bundle_fixture()
     result = cast("list[dict[str, object]]", bundle["selector-results"])[0]
     mutator(result)
 
@@ -4113,13 +4410,15 @@ def test_batch_evidence_bundle_rejects_dependency_result_mismatches(
             bundle,
             plan=plan,
             execution_batch_manifest=manifest,
+            dependency_evidence_bundles=[base_bundle],
+            **_authorizing_context_kwargs(),
         )
     assert any(expected_path in issue.path for issue in error.value.issues)
 
 
 def test_bundle_rejects_dependency_block_without_diagnostic() -> None:
     """Dependency-blocked selector skips must carry a skipped diagnostic."""
-    plan, manifest, bundle = _dependent_bundle_fixture()
+    plan, manifest, _base_bundle, bundle = _dependent_bundle_fixture()
     result = cast("list[dict[str, object]]", bundle["selector-results"])[0]
     dependency = cast(
         "dict[str, object]",
@@ -4140,15 +4439,57 @@ def test_bundle_rejects_dependency_block_without_diagnostic() -> None:
             bundle,
             plan=plan,
             execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
         )
     assert any(
         issue.path.endswith(".diagnostics") for issue in error.value.issues
     )
 
 
-def test_batch_evidence_bundle_accepts_dependency_blocked_diagnostic() -> None:
-    """Dependency-blocked selector skips are explicit and gate-excluded."""
-    plan, manifest, bundle = _dependent_bundle_fixture()
+def test_batch_evidence_bundle_rejects_missing_dependency_without_evidence() -> (  # noqa: E501
+    None
+):
+    """Missing cross-batch rows still require upstream evidence."""
+    plan, manifest, _base_bundle, bundle = _dependent_bundle_fixture()
+    result = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    dependency = cast(
+        "dict[str, object]",
+        cast("list[dict[str, object]]", result["dependency-results"])[0],
+    )
+    dependency["outcome"] = "missing"
+    dependency["admitted-for-gating"] = False
+    result["outcome"] = "skipped"
+    result["skip-reason"] = "dependency-blocked"
+    result["diagnostics"] = [
+        _diagnostic(
+            "dependency-blocked",
+            code="validation-work-skipped",
+            detail="dependency-blocked",
+        )
+    ]
+    for capability_result in cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", result["evidence"])["capability-results"],
+    ):
+        capability_result["outcome"] = "skipped"
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        "requires authoritative upstream bundle evidence" in issue.message
+        for issue in error.value.issues
+    )
+
+
+def test_batch_evidence_bundle_rejects_failed_non_admitted_dependency() -> None:
+    """Cross-batch failed rows cannot spoof a fail-closed dependency block."""
+    plan, manifest, _base_bundle, bundle = _dependent_bundle_fixture()
     result = cast("list[dict[str, object]]", bundle["selector-results"])[0]
     dependency = cast(
         "dict[str, object]",
@@ -4171,10 +4512,40 @@ def test_batch_evidence_bundle_accepts_dependency_blocked_diagnostic() -> None:
     ):
         capability_result["outcome"] = "skipped"
 
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        issue.path.endswith(".dependency-results[0].admitted-for-gating")
+        for issue in error.value.issues
+    )
+
+
+def test_batch_evidence_bundle_accepts_admitted_failed_dependency() -> None:
+    """Admitted failed dependencies do not force dependency-blocked skips."""
+    plan, manifest, base_bundle, bundle, _aggregate_manifest, _summary = (
+        _dependent_admitted_fixture()
+    )
+    failed_base_bundle = _failed_bundle(base_bundle)
+    result = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    dependency = cast(
+        "dict[str, object]",
+        cast("list[dict[str, object]]", result["dependency-results"])[0],
+    )
+    dependency["outcome"] = "failed"
+    dependency["admitted-for-gating"] = True
+
     validate_ci_validation_batch_evidence_bundle(
         bundle,
         plan=plan,
         execution_batch_manifest=manifest,
+        dependency_evidence_bundles=[failed_base_bundle],
+        **_authorizing_context_kwargs(),
     )
 
 
@@ -4198,6 +4569,393 @@ def test_aggregate_summary_accepts_satisfied_admitted_dependency() -> None:
         request=_request_document(),
         changed_files_snapshot=_changed_files_snapshot_document(),
         fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+def test_aggregate_summary_accepts_non_topological_admitted_bundles() -> None:
+    """Admitted bundles validate by dependency topology, not input order."""
+    (
+        plan,
+        manifest,
+        base_bundle,
+        dependent_bundle,
+        aggregate_manifest,
+        summary,
+    ) = _dependent_admitted_fixture()
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        admitted_batch_evidence_bundles=[dependent_bundle, base_bundle],
+        execution_batch_manifest=manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+def test_admitted_bundle_topology_errors_include_argument_path() -> None:
+    """No-progress admitted bundle diagnostics identify the API argument."""
+    (
+        plan,
+        manifest,
+        _base_bundle,
+        dependent_bundle,
+        _aggregate_manifest,
+        _summary,
+    ) = _dependent_admitted_fixture()
+    issues: list[Any] = []
+
+    _validate_admitted_bundles_topologically(
+        [dependent_bundle],
+        plan=plan,
+        request=_request_document(),
+        execution_batch_manifest=manifest,
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+        envelope=_envelope(
+            dependent_bundle,
+            CiValidationKind.BATCH_EVIDENCE_BUNDLE,
+        ),
+        issues=issues,
+    )
+
+    expected_path = (
+        "admitted_batch_evidence_bundles[0]"
+        ".selector-results[0].dependency-results[0]"
+    )
+    assert any(issue.path == expected_path for issue in issues)
+
+
+def test_batch_bundle_freezer_rejects_spoofed_cross_batch_dependency() -> None:
+    """Cross-batch admitted dependencies require upstream bundle evidence."""
+    plan = _plan()
+    _add_dependent_work_group(plan)
+    manifest = freeze_ci_validation_execution_batch_manifest(
+        plan=plan,
+        **_authorizing_context_kwargs(),
+        batches=_dependent_batches(plan),
+        budget=_budget(2),
+        created_at=CREATED_AT,
+    )
+    base_batch_id, dependent_batch_id = _dependent_batch_ids(manifest)
+    result = _selector_result(plan, manifest, dependent_batch_id)
+    result["dependency-results"] = [
+        {
+            "work-group-id": "wg-python-gate",
+            "source-batch-id": base_batch_id,
+            "outcome": "satisfied",
+            "admitted-for-gating": True,
+        }
+    ]
+
+    with pytest.raises(ContractValidationError) as error:
+        freeze_ci_validation_batch_evidence_bundle(
+            plan=plan,
+            execution_batch_manifest=manifest,
+            batch_id=dependent_batch_id,
+            selector_results=[result],
+            writer=_writer_for_batch(manifest, dependent_batch_id),
+            execution_tree={
+                "observed-commit-sha": TREE_SHA,
+                "source": "execution-batch-boundary",
+                "verified": True,
+            },
+            started_at=CREATED_AT,
+            completed_at=CREATED_AT,
+            created_at=CREATED_AT,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        "requires authoritative upstream bundle evidence" in issue.message
+        for issue in error.value.issues
+    )
+
+
+def test_batch_bundle_validator_rejects_spoofed_cross_batch_dependency() -> (
+    None
+):
+    """Validated upstream evidence, not payload claims, authorizes admission."""
+    (
+        plan,
+        manifest,
+        base_bundle,
+        dependent_bundle,
+        _aggregate_manifest,
+        _summary,
+    ) = _dependent_admitted_fixture()
+    failed_base_bundle = _failed_bundle(base_bundle)
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            dependent_bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            dependency_evidence_bundles=[failed_base_bundle],
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        issue.path.endswith(".dependency-results[0].outcome")
+        for issue in error.value.issues
+    )
+
+
+def test_batch_bundle_prefixes_invalid_dependency_bundle_paths() -> None:
+    """Nested dependency bundle diagnostics use valid prefixed JSON paths."""
+    (
+        plan,
+        manifest,
+        base_bundle,
+        dependent_bundle,
+        _aggregate_manifest,
+        _summary,
+    ) = _dependent_admitted_fixture()
+    invalid_base_bundle = deepcopy(base_bundle)
+    selector = cast(
+        "list[dict[str, object]]",
+        invalid_base_bundle["selector-results"],
+    )[0]
+    selector["dependency-results"] = [
+        {
+            "work-group-id": "wg-forged",
+            "source-batch-id": "batch-forged",
+            "outcome": "satisfied",
+            "admitted-for-gating": True,
+        }
+    ]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            dependent_bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            dependency_evidence_bundles=[invalid_base_bundle],
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        issue.path
+        == (
+            "dependency_evidence_bundles[0]"
+            ".selector-results[0].dependency-results[0]"
+        )
+        for issue in error.value.issues
+    )
+    assert all(
+        "$." not in issue.path
+        for issue in error.value.issues
+        if issue.path.startswith("dependency_evidence_bundles[")
+    )
+
+
+def test_public_validator_rejects_admitted_cross_batch_dependency_no_evidence() -> (  # noqa: E501
+    None
+):
+    """Public validation requires evidence for admitted dependencies."""
+    (
+        plan,
+        manifest,
+        _base_bundle,
+        dependent_bundle,
+        _aggregate_manifest,
+        _summary,
+    ) = _dependent_admitted_fixture()
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            dependent_bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            dependency_evidence_bundles=[],
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        "requires authoritative upstream bundle evidence" in issue.message
+        for issue in error.value.issues
+    )
+
+
+def test_non_authorizing_bundle_allows_cross_batch_dependency_without_evidence() -> (  # noqa: E501
+    None
+):
+    """G2 validation keeps topology checks without gating evidence."""
+    (
+        plan,
+        manifest,
+        _base_bundle,
+        dependent_bundle,
+        _aggregate_manifest,
+        _summary,
+    ) = _dependent_admitted_fixture()
+
+    validate_ci_validation_batch_evidence_bundle(
+        dependent_bundle,
+        plan=plan,
+        execution_batch_manifest=manifest,
+    )
+
+
+def test_public_batch_validator_rejects_dependency_evidence_escape_hatch() -> (
+    None
+):
+    """Public bundle validation always enforces dependency evidence."""
+    (
+        plan,
+        manifest,
+        _base_bundle,
+        dependent_bundle,
+        _aggregate_manifest,
+        _summary,
+    ) = _dependent_admitted_fixture()
+    validator = cast("Any", validate_ci_validation_batch_evidence_bundle)
+
+    with pytest.raises(TypeError, match="_require_dependency_evidence"):
+        validator(
+            dependent_bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            dependency_evidence_bundles=[],
+            _require_dependency_evidence=False,
+            **_authorizing_context_kwargs(),
+        )
+
+
+def test_batch_evidence_rejects_duplicate_authoritative_upstream() -> None:
+    """Duplicate upstream authority fails closed instead of overwriting."""
+    (
+        plan,
+        manifest,
+        base_bundle,
+        dependent_bundle,
+        _aggregate_manifest,
+        _summary,
+    ) = _dependent_admitted_fixture()
+    failed_base_bundle = _failed_bundle(base_bundle)
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            dependent_bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            dependency_evidence_bundles=[failed_base_bundle, base_bundle],
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        "duplicate authoritative upstream bundle evidence" in issue.message
+        for issue in error.value.issues
+    )
+
+
+def test_batch_evidence_requires_transitive_dependency_evidence() -> None:
+    """C cannot launder B evidence unless B is validated against A."""
+    plan = _plan()
+    _add_transitive_work_group(plan)
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        **_authorizing_context_kwargs(),
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+    )
+    manifest = cast("dict[str, object]", materialization.manifest)
+    batch_by_group: dict[str, str] = {}
+    for batch in cast("list[dict[str, object]]", manifest["batches"]):
+        selector = cast("list[dict[str, object]]", batch["ordered-selectors"])[
+            0
+        ]
+        batch_by_group[cast("str", selector["work-group-id"])] = cast(
+            "str", batch["batch-id"]
+        )
+    base_bundle = _bundle_for_batch(
+        plan, manifest, batch_by_group["wg-python-gate"]
+    )
+    dependent_result = _selector_result(
+        plan, manifest, batch_by_group["wg-dependent-gate"]
+    )
+    dependent_result["dependency-results"] = [
+        {
+            "work-group-id": "wg-python-gate",
+            "source-batch-id": batch_by_group["wg-python-gate"],
+            "outcome": "satisfied",
+            "admitted-for-gating": True,
+        }
+    ]
+    dependent_bundle = _bundle_for_batch(
+        plan,
+        manifest,
+        batch_by_group["wg-dependent-gate"],
+        dependent_result,
+        dependency_evidence_bundles=[base_bundle],
+    )
+    transitive_result = _selector_result(
+        plan, manifest, batch_by_group["wg-transitive-gate"]
+    )
+    transitive_result["dependency-results"] = [
+        {
+            "work-group-id": "wg-dependent-gate",
+            "source-batch-id": batch_by_group["wg-dependent-gate"],
+            "outcome": "satisfied",
+            "admitted-for-gating": True,
+        }
+    ]
+    transitive_bundle = _bundle_for_batch(
+        plan,
+        manifest,
+        batch_by_group["wg-transitive-gate"],
+        transitive_result,
+        dependency_evidence_bundles=[base_bundle, dependent_bundle],
+    )
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            transitive_bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            dependency_evidence_bundles=[dependent_bundle],
+            **_authorizing_context_kwargs(),
+        )
+    assert any(
+        "requires authoritative upstream bundle evidence" in issue.message
+        for issue in error.value.issues
+    )
+
+    validate_ci_validation_batch_evidence_bundle(
+        transitive_bundle,
+        plan=plan,
+        execution_batch_manifest=manifest,
+        dependency_evidence_bundles=[base_bundle, dependent_bundle],
+        **_authorizing_context_kwargs(),
+    )
+
+
+def test_public_validator_rejects_dependency_rows_without_manifest_context() -> (  # noqa: E501
+    None
+):
+    """Dependency rows fail closed without authoritative batch context."""
+    (
+        plan,
+        _manifest,
+        base_bundle,
+        dependent_bundle,
+        _aggregate_manifest,
+        _summary,
+    ) = _dependent_admitted_fixture()
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            dependent_bundle,
+            plan=plan,
+            dependency_evidence_bundles=[base_bundle],
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        "requires authoritative execution-batch manifest" in issue.message
+        for issue in error.value.issues
     )
 
 
@@ -4257,6 +5015,74 @@ def test_summary_rejects_satisfied_dependency_when_upstream_missing() -> None:
         )
     assert any(
         issue.path.endswith(".dependency-results[0].outcome")
+        for issue in error.value.issues
+    )
+
+
+def test_summary_does_not_block_admitted_failed_dependency() -> None:
+    """Blocking-failure upstream evidence remains admitted for dependencies."""
+    (
+        plan,
+        manifest,
+        base_bundle,
+        dependent_bundle,
+        _aggregate_manifest,
+        summary,
+    ) = _dependent_admitted_fixture()
+    failed_base_bundle = _failed_bundle(base_bundle)
+    result = cast(
+        "dict[str, object]",
+        cast("list[dict[str, object]]", dependent_bundle["selector-results"])[
+            0
+        ],
+    )
+    dependency = cast(
+        "dict[str, object]",
+        cast("list[dict[str, object]]", result["dependency-results"])[0],
+    )
+    dependency["outcome"] = "failed"
+    dependency["admitted-for-gating"] = True
+    aggregate_manifest = _aggregate_evidence_manifest_for_bundles(
+        plan,
+        manifest,
+        [failed_base_bundle, dependent_bundle],
+    )
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[
+                failed_base_bundle,
+                dependent_bundle,
+            ],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+    _, dependent_batch_id = _dependent_batch_ids(manifest)
+    dependent_selector_path = (
+        f"admitted_batch_evidence_bundles[{dependent_batch_id}]"
+        ".selector-results[0]"
+    )
+    assert not any(
+        ".dependency-results[0]" in issue.path for issue in error.value.issues
+    )
+    assert not any(
+        issue.path == f"{dependent_selector_path}.outcome"
+        for issue in error.value.issues
+    )
+    assert not any(
+        issue.path == f"{dependent_selector_path}.skip-reason"
+        and "dependency-blocked" in issue.message
+        for issue in error.value.issues
+    )
+    assert not any(
+        issue.path == f"{dependent_selector_path}.diagnostics"
+        and "dependency-blocked" in issue.message
         for issue in error.value.issues
     )
 
@@ -10949,6 +11775,7 @@ def test_aggregate_summary_rejects_forged_passed_bundle_results() -> None:
         bad_bundle,
         plan=plan,
         execution_batch_manifest=manifest,
+        **_authorizing_context_kwargs(),
     )
     aggregate_manifest = _aggregate_evidence_manifest(
         plan, manifest, bad_bundle
@@ -12215,6 +13042,74 @@ def test_aggregate_summary_rejects_malformed_admitted_bundle_context() -> None:
     )
 
 
+def test_aggregate_summary_prefixes_invalid_admitted_bundle_diagnostics() -> (
+    None
+):
+    """Nested admitted bundle validation issues identify the argument slot."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    invalid_bundle = cast("dict[str, object]", deepcopy(bundle))
+    execution_tree = cast(
+        "dict[str, object]",
+        invalid_bundle["execution-tree"],
+    )
+    execution_tree["verified"] = False
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[invalid_bundle],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    issue_paths = {issue.path for issue in exc_info.value.issues}
+    assert (
+        "admitted_batch_evidence_bundles[0].execution-tree.verified"
+        in issue_paths
+    )
+    assert "$.execution-tree.verified" not in issue_paths
+
+
+def test_aggregate_summary_prefixes_admitted_bundle_writer_diagnostics() -> (
+    None
+):
+    """Aggregate validation reports forged admitted writer fields by slot."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    invalid_bundle = cast("dict[str, object]", deepcopy(bundle))
+    writer = cast("dict[str, object]", invalid_bundle["writer"])
+    writer["observed-job"] = "forged-writer-job"
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[invalid_bundle],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    issue_paths = {issue.path for issue in exc_info.value.issues}
+    assert (
+        "admitted_batch_evidence_bundles[0].writer.observed-job" in issue_paths
+    )
+    assert "$.writer.observed-job" not in issue_paths
+
+
 def test_aggregate_summary_rejects_forged_standalone_validation_tree() -> None:
     """Manifest projection authority rejects forged standalone projection."""
     plan = _plan()
@@ -12777,7 +13672,9 @@ def test_aggregate_summary_rejects_aggregate_manifest_plan_mismatch() -> None:
     other_manifest = deepcopy(manifest)
     other_manifest["plan-id"] = other_plan["plan-id"]
     other_manifest["plan-digest"] = other_plan["plan-digest"]
-    other_bundle = _bundle(other_plan, other_manifest)
+    other_bundle = cast("dict[str, object]", deepcopy(bundle))
+    other_bundle["plan-id"] = other_plan["plan-id"]
+    other_bundle["plan-digest"] = other_plan["plan-digest"]
     other_aggregate_manifest = _aggregate_evidence_manifest(
         other_plan,
         other_manifest,
