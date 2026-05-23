@@ -1758,6 +1758,10 @@ def _freeze_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
         "namespace-overflow": dict(namespace_overflow),
         "projection-authority": _projection_authority_from_plan(plan)
         if plan is not None
+        and _input_artifacts_have_projection_authority(
+            input_artifacts,
+            plan=plan,
+        )
         else None,
         "pre-final-validation-artifacts": pre_final_validation_artifacts,
         "namespace-closed-at": namespace_closed_at,
@@ -7563,7 +7567,10 @@ def _validate_input_artifacts(  # noqa: C901,PLR0912,PLR0913,PLR0915
                     "must match frozen input digest",
                 )
             )
-    if request_context_digest is not None:
+    if request_context_digest is not None and (
+        require_context_proof_for_valid_inputs
+        or _input_artifact_is_valid(value, "request")
+    ):
         _validate_supplied_context_input_artifact_binding(
             value,
             envelope,
@@ -7579,7 +7586,10 @@ def _validate_input_artifacts(  # noqa: C901,PLR0912,PLR0913,PLR0915
             "request",
             issues,
         )
-    if changed_files_snapshot_context_hash is not None:
+    if changed_files_snapshot_context_hash is not None and (
+        require_context_proof_for_valid_inputs
+        or _input_artifact_is_valid(value, "changed-files-snapshot")
+    ):
         _validate_supplied_context_input_artifact_binding(
             value,
             envelope,
@@ -7595,7 +7605,10 @@ def _validate_input_artifacts(  # noqa: C901,PLR0912,PLR0913,PLR0915
             "changed_files_snapshot",
             issues,
         )
-    if fact_snapshot_context_id is not None:
+    if fact_snapshot_context_id is not None and (
+        require_context_proof_for_valid_inputs
+        or _input_artifact_is_valid(value, "fact-snapshot")
+    ):
         _validate_supplied_context_input_artifact_binding(
             value,
             envelope,
@@ -7649,7 +7662,7 @@ def _validate_supplied_context_input_artifact_binding(  # noqa: PLR0913
             ValidationIssue(
                 f"{path}.admissibility",
                 f"must be valid when {context_name} is supplied",
-            )
+            ),
         )
     expected_ref = _expected_input_artifact_ref(input_name, envelope)
     if item.get("artifact-ref") != expected_ref:
@@ -7664,8 +7677,38 @@ def _validate_supplied_context_input_artifact_binding(  # noqa: PLR0913
             ValidationIssue(
                 f"{path}.content-digest",
                 f"must match {context_name}",
-            )
+            ),
         )
+
+
+def _input_artifact_is_valid(
+    input_artifacts: Mapping[str, object],
+    input_name: str,
+) -> bool:
+    item = input_artifacts.get(input_name)
+    return isinstance(item, Mapping) and item.get("admissibility") == "valid"
+
+
+def _input_artifacts_have_projection_authority(
+    input_artifacts: Mapping[str, object],
+    *,
+    plan: Mapping[str, object],
+) -> bool:
+    for input_name in ("request", "validation-plan"):
+        item = input_artifacts.get(input_name)
+        if (
+            not isinstance(item, Mapping)
+            or item.get("admissibility") != "valid"
+        ):
+            return False
+    for input_name in _plan_required_snapshot_inputs(plan):
+        item = input_artifacts.get(input_name)
+        if (
+            not isinstance(item, Mapping)
+            or item.get("admissibility") != "valid"
+        ):
+            return False
+    return True
 
 
 def _validate_valid_input_artifact_requires_context(

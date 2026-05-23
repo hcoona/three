@@ -54,9 +54,15 @@ from three_workflow_release_contracts import (  # noqa: E402
     artifact_physical_name,
     canonical_json_digest,
     ci_validation_aggregate_artifact_ref,
+    ci_validation_aggregate_evidence_manifest_artifact_ref,
+    ci_validation_aggregate_evidence_manifest_payload_digest,
+    ci_validation_aggregate_summary_artifact_ref,
+    ci_validation_aggregate_summary_payload_digest,
     ci_validation_batch_evidence_bundle_payload_digest,
+    ci_validation_batch_evidence_candidate_id,
     ci_validation_changed_files_snapshot_artifact_ref,
     ci_validation_diagnostic,
+    ci_validation_execution_batch_manifest_artifact_ref,
     ci_validation_execution_batch_manifest_payload_digest,
     ci_validation_fact_snapshot_artifact_ref,
     ci_validation_observed_entry_id,
@@ -70,6 +76,7 @@ from three_workflow_release_contracts import (  # noqa: E402
     ci_validation_writer_id,
     collect_artifacts_by_name,
     freeze_ci_validation_aggregate,
+    freeze_ci_validation_aggregate_summary,
     freeze_ci_validation_batch_evidence_bundle,
     freeze_ci_validation_invalid_plan_aggregate,
     freeze_ci_validation_receipt,
@@ -77,6 +84,9 @@ from three_workflow_release_contracts import (  # noqa: E402
     freeze_ci_validation_selector_assignments,
     freeze_ci_validation_writer_observation,
     load_ci_validation_receipt_payload,
+    materialize_ci_validation_execution_batches,
+    validate_ci_validation_aggregate_evidence_manifest,
+    validate_ci_validation_aggregate_summary,
     validate_ci_validation_batch_evidence_bundle,
     validate_ci_validation_execution_batch_manifest,
     validate_ci_validation_plan,
@@ -91,6 +101,9 @@ from three_workflow_release_contracts.artifact_names import (  # noqa: E402
     artifact_name,
     github_release_asset_binding_json,
     immutable_binding_json,
+)
+from three_workflow_release_contracts.ci_validation_batches import (  # noqa: E402
+    _freeze_ci_validation_aggregate_evidence_manifest,
 )
 
 if TYPE_CHECKING:
@@ -142,6 +155,10 @@ _CI_CONTROL_ARTIFACT_PRODUCERS = {
         "materialize-work-groups",
         "materialize-work-groups",
     ),
+    "ci-validation/execution-batches": (
+        "materialize-work-groups",
+        "materialize-work-groups",
+    ),
     "ci-validation/manifests": ("aggregate-evidence", "aggregate-evidence"),
     "ci-validation/aggregate": ("aggregate-evidence", "aggregate-evidence"),
 }
@@ -158,6 +175,7 @@ def main() -> int:
     _add_ci_validation_artifact_refs(subparsers)
     _add_verify_ci_validation_artifact_boundaries(subparsers)
     _add_materialize_ci_work_groups(subparsers)
+    _add_materialize_ci_validation_execution_batches(subparsers)
     _add_check_ci_validation_dependencies(subparsers)
     _add_validate_ci_validation_lightweight_policy(subparsers)
     _add_validate_ci_validation_descriptors(subparsers)
@@ -313,6 +331,26 @@ def _add_materialize_ci_work_groups(
     parser.set_defaults(func=_cmd_materialize_ci_work_groups)
 
 
+def _add_materialize_ci_validation_execution_batches(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser(
+        "materialize-ci-validation-execution-batches"
+    )
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--request", required=True)
+    parser.add_argument("--changed-files-snapshot", default="")
+    parser.add_argument("--fact-snapshot", default="")
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--execution-job", default="execution-batch")
+    parser.add_argument("--expected-run-id", required=True)
+    parser.add_argument("--expected-run-attempt", required=True)
+    parser.add_argument("--created-at")
+    parser.add_argument("--execution-batch-manifest-out", required=True)
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_materialize_ci_validation_execution_batches)
+
+
 def _add_aggregate_ci_evidence(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -322,10 +360,13 @@ def _add_aggregate_ci_evidence(
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--run-attempt", required=True)
     parser.add_argument("--plan", default="")
+    parser.add_argument("--request", default="")
+    parser.add_argument("--execution-batch-manifest", default="")
     parser.add_argument("--changed-files-snapshot", default="")
     parser.add_argument("--fact-snapshot", default="")
     parser.add_argument("--assignments", default="")
     parser.add_argument("--observed-artifacts-dir", default="")
+    parser.add_argument("--observation-manifest", default="")
     parser.add_argument("--expected-request-artifact-id", default=None)
     parser.add_argument("--expected-plan-artifact-id", default=None)
     parser.add_argument(
@@ -337,9 +378,16 @@ def _add_aggregate_ci_evidence(
         "--expected-selector-assignments-artifact-id",
         default=None,
     )
+    parser.add_argument(
+        "--expected-execution-batch-manifest-artifact-id",
+        default=None,
+    )
     parser.add_argument("--created-at")
+    parser.add_argument("--started-at")
     parser.add_argument("--receipt-manifest-out", required=True)
     parser.add_argument("--aggregate-out", required=True)
+    parser.add_argument("--aggregate-evidence-manifest-out", default="")
+    parser.add_argument("--aggregate-summary-out", default="")
     parser.add_argument("--github-output")
     parser.set_defaults(func=_cmd_aggregate_ci_evidence)
 
@@ -350,7 +398,9 @@ def _add_download_ci_validation_observed_artifacts(
     parser = subparsers.add_parser("download-ci-validation-observed-artifacts")
     parser.add_argument("--repository", required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--assignments", required=True)
+    parser.add_argument("--assignments", default="")
+    parser.add_argument("--execution-batch-manifest", default="")
+    parser.add_argument("--observation-manifest-out", default="")
     parser.add_argument("--observed-artifacts-dir", required=True)
     parser.add_argument("--github-output")
     parser.set_defaults(func=_cmd_download_ci_validation_observed_artifacts)
@@ -1004,7 +1054,9 @@ def _ci_verify_expected_artifact_producer_boundaries(
     run_id: str,
     run_attempt: str,
 ) -> list[Mapping[str, object]]:
-    groups = collect_artifacts_by_name(artifacts)
+    groups = collect_artifacts_by_name(
+        _ci_artifacts_excluding_expired(artifacts)
+    )
     diagnostics: list[Mapping[str, object]] = []
     for index, expected in _ci_expected_artifacts_requiring_boundary_check(
         expected_artifacts
@@ -1121,6 +1173,22 @@ def _ci_verify_expected_artifact_producer_boundaries(
     return diagnostics
 
 
+def _ci_artifacts_excluding_expired(
+    artifacts: Sequence[GitHubActionsArtifactMetadata | Mapping[str, object]],
+) -> list[GitHubActionsArtifactMetadata | Mapping[str, object]]:
+    return [
+        artifact
+        for artifact in artifacts
+        if not (
+            not isinstance(artifact, Mapping)
+            and getattr(artifact, "expired", None) is True
+        )
+        and not (
+            isinstance(artifact, Mapping) and artifact.get("expired") is True
+        )
+    ]
+
+
 def _ci_expected_artifacts_requiring_boundary_check(
     expected_artifacts: Sequence[Mapping[str, object]],
 ) -> list[tuple[int, Mapping[str, object]]]:
@@ -1166,9 +1234,9 @@ def _ci_boundary_diagnostic(
     code = DiagnosticFamily.INVALID_PLAN.value
     if detail.startswith("request-"):
         code = DiagnosticFamily.REQUEST_INVALID.value
-    elif detail.startswith("final-") or detail == (
-        DiagnosticDetail.AGGREGATE_WITHOUT_MANIFEST.value
-    ):
+    elif detail.startswith(
+        ("final-", "execution-batch-manifest")
+    ) or detail == (DiagnosticDetail.AGGREGATE_WITHOUT_MANIFEST.value):
         code = DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value
     return ci_validation_diagnostic(
         diagnostic_id=f"producer-boundary/{index:03d}",
@@ -1201,6 +1269,9 @@ def _ci_count_failure_detail(
             ),
             "final-manifest": DiagnosticDetail.FINAL_MANIFEST_DUPLICATE.value,
             "final-aggregate": DiagnosticDetail.FINAL_AGGREGATE_DUPLICATE.value,
+            "execution-batch-manifest": (
+                DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DUPLICATE.value
+            ),
         }.get(kind, DiagnosticDetail.STRUCTURALLY_INVALID.value)
     if "missing candidate" in message:
         return {
@@ -1215,6 +1286,9 @@ def _ci_count_failure_detail(
             ),
             "final-manifest": DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
             "final-aggregate": DiagnosticDetail.FINAL_AGGREGATE_MISSING.value,
+            "execution-batch-manifest": (
+                DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MISSING.value
+            ),
         }.get(kind, DiagnosticDetail.STRUCTURALLY_INVALID.value)
     return _ci_producer_unverified_detail(artifact_ref)
 
@@ -1233,6 +1307,9 @@ def _ci_producer_unverified_detail(artifact_ref: str) -> str:
         ),
         "final-manifest": DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value,
         "final-aggregate": DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value,
+        "execution-batch-manifest": (
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MALFORMED.value
+        ),
     }.get(kind, DiagnosticDetail.STRUCTURALLY_INVALID.value)
 
 
@@ -1243,6 +1320,7 @@ def _ci_control_artifact_kind(artifact_ref: str) -> str:
         "/changed-files-snapshot.json": "changed-files-snapshot",
         "/fact-snapshot.json": "fact-snapshot",
         "/selector-assignments.json": "selector-assignment",
+        "/execution-batch-manifest.json": "execution-batch-manifest",
         "/receipt-manifest.json": "final-manifest",
         "/ci-validation-aggregate.json": "final-aggregate",
     }
@@ -1314,6 +1392,62 @@ def _cmd_materialize_ci_work_groups(args: argparse.Namespace) -> int:
             "work_group_layers": json.dumps(layers, separators=(",", ":")),
             "work_group_ids": json.dumps(work_group_ids, separators=(",", ":")),
             **layer_outputs,
+        },
+    )
+    return 0
+
+
+def _cmd_materialize_ci_validation_execution_batches(
+    args: argparse.Namespace,
+) -> int:
+    plan = _read_json(Path(args.plan))
+    request = _read_json(Path(args.request))
+    changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
+    fact_snapshot = _read_optional_json(args.fact_snapshot)
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        request=request,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        created_at=args.created_at or _utc_now(),
+        execution_workflow=args.workflow,
+        execution_job=args.execution_job,
+        expected_run_id=str(args.expected_run_id),
+        expected_run_attempt=str(args.expected_run_attempt),
+    )
+    manifest = cast("Mapping[str, object]", materialization.manifest)
+    _write_json(Path(args.execution_batch_manifest_out), manifest)
+    run_id = str(args.expected_run_id)
+    run_attempt = str(args.expected_run_attempt)
+    artifact_ref = ci_validation_execution_batch_manifest_artifact_ref(
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+    _write_outputs(
+        args.github_output,
+        {
+            "execution_batch_manifest_ref": artifact_ref,
+            "execution_batch_manifest_name": artifact_physical_name(
+                artifact_ref
+            ),
+            "execution_batch_manifest_payload_digest": (
+                ci_validation_execution_batch_manifest_payload_digest(manifest)
+            ),
+            "execution_batch_matrix": json.dumps(
+                materialization.matrix,
+                separators=(",", ":"),
+            ),
+            "has_execution_batches": _bool_str(
+                bool(
+                    cast(
+                        "Sequence[object]",
+                        cast(
+                            "Mapping[str, object]",
+                            materialization.matrix,
+                        ).get("include", []),
+                    )
+                )
+            ),
         },
     )
     return 0
@@ -3366,11 +3500,12 @@ def _cmd_write_ci_validation_writer_observation(
     return 0
 
 
-def _cmd_download_ci_validation_observed_artifacts(
+def _cmd_download_ci_validation_observed_artifacts(  # noqa: C901
     args: argparse.Namespace,
 ) -> int:
     root = Path(args.observed_artifacts_dir)
     root.mkdir(parents=True, exist_ok=True)
+    execution_batch_manifest: Mapping[str, object] | None = None
     try:
         assignments = _read_optional_json(args.assignments)
     except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
@@ -3380,24 +3515,107 @@ def _cmd_download_ci_validation_observed_artifacts(
             f"artifact downloads: {exc}",
             file=sys.stderr,
         )
+    try:
+        execution_batch_manifest = _read_optional_json(
+            getattr(args, "execution_batch_manifest", "")
+        )
+        if execution_batch_manifest is not None and not isinstance(
+            execution_batch_manifest,
+            Mapping,
+        ):
+            print(
+                "warning: execution batch manifest must be a JSON object",
+                file=sys.stderr,
+            )
+            execution_batch_manifest = None
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        execution_batch_manifest = None
+        print(
+            f"warning: failed to read execution-batch manifest for observed "
+            f"artifact downloads: {exc}",
+            file=sys.stderr,
+        )
     names = (
         _ci_observed_artifact_download_names(assignments)
         if assignments is not None
         else []
     )
+    batch_downloads = (
+        _ci_batch_observed_artifact_downloads(execution_batch_manifest)
+        if execution_batch_manifest is not None
+        else {}
+    )
+    for artifact_name_value in batch_downloads:
+        if artifact_name_value not in names:
+            names.append(artifact_name_value)
     downloaded: list[str] = []
     failed: list[str] = []
+    artifact_api_by_name: dict[str, list[Mapping[str, object]]] = {}
+    artifact_api_singletons_by_name: dict[str, Mapping[str, object]] = {}
+    artifact_api_failed = False
+    try:
+        artifact_api_by_name = _ci_observed_artifact_api_multimap(
+            repository=args.repository,
+            run_id=str(args.run_id),
+        )
+        artifact_api_singletons_by_name = _ci_observed_artifact_api_singletons(
+            artifact_api_by_name,
+        )
+    except (
+        ContractValidationError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        artifact_api_failed = True
+        print(
+            f"warning: failed to enumerate GitHub Actions artifacts for "
+            f"metadata materialization: {exc}",
+            file=sys.stderr,
+        )
     for artifact_name_value in names:
         try:
+            expected_artifact_ref = batch_downloads.get(artifact_name_value)
+            if expected_artifact_ref is not None:
+                _admit_expected_ci_batch_artifact_api_instance(
+                    artifact_name_value,
+                    artifact_api_by_name=artifact_api_by_name,
+                )
+            destination = root / artifact_name_value
             _download_artifact(
                 args.repository,
                 int(args.run_id),
                 artifact_name_value,
-                root / artifact_name_value,
+                destination,
+            )
+            _materialize_ci_observed_artifact_metadata(
+                destination,
+                artifact_name_value=artifact_name_value,
+                artifact_api=artifact_api_singletons_by_name.get(
+                    artifact_name_value
+                ),
+                run_id=str(args.run_id),
+                expected_artifact_ref=expected_artifact_ref,
+                expected_run_attempt=_ci_execution_manifest_run_attempt(
+                    execution_batch_manifest
+                ),
             )
             downloaded.append(artifact_name_value)
-        except RuntimeError as exc:
+        except (RuntimeError, TypeError, ValueError, OSError) as exc:
             failed.append(artifact_name_value)
+            print(f"warning: {exc}", file=sys.stderr)
+    observation_manifest_out = getattr(args, "observation_manifest_out", "")
+    if observation_manifest_out and execution_batch_manifest is not None:
+        try:
+            _write_ci_batch_observation_manifest_from_downloads(
+                Path(observation_manifest_out),
+                execution_batch_manifest=execution_batch_manifest,
+                artifact_api_by_name=artifact_api_singletons_by_name,
+                downloaded_names=set(downloaded),
+                run_id=str(args.run_id),
+            )
+        except (RuntimeError, TypeError, ValueError, OSError) as exc:
+            failed.append(str(observation_manifest_out))
             print(f"warning: {exc}", file=sys.stderr)
     _write_outputs(
         args.github_output,
@@ -3410,18 +3628,250 @@ def _cmd_download_ci_validation_observed_artifacts(
                 sort_keys=True,
                 separators=(",", ":"),
             ),
+            "artifact_api_metadata_available": _bool_str(
+                not artifact_api_failed
+            ),
         },
     )
     return 0
 
 
-def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
+def _ci_execution_manifest_run_attempt(
+    manifest: Mapping[str, object] | None,
+) -> str | None:
+    if manifest is None:
+        return None
+    run = manifest.get("run")
+    if not isinstance(run, Mapping):
+        return None
+    run_attempt = run.get("run-attempt")
+    return run_attempt if isinstance(run_attempt, str) else None
+
+
+def _ci_observed_artifact_api_multimap(
+    *,
+    repository: str,
+    run_id: str,
+) -> dict[str, list[Mapping[str, object]]]:
+    artifact_api_by_name: dict[str, list[Mapping[str, object]]] = {}
+    for artifact in _github_actions_run_artifacts(
+        repository=repository,
+        run_id=run_id,
+    ):
+        if artifact.get("expired") is True:
+            continue
+        artifact_name = artifact.get("name")
+        if isinstance(artifact_name, str):
+            artifact_api_by_name.setdefault(artifact_name, []).append(artifact)
+    return artifact_api_by_name
+
+
+def _ci_observed_artifact_api_singletons(
+    artifact_api_by_name: Mapping[str, Sequence[Mapping[str, object]]],
+) -> dict[str, Mapping[str, object]]:
+    return {
+        artifact_name: artifacts[0]
+        for artifact_name, artifacts in artifact_api_by_name.items()
+        if len(artifacts) == 1
+    }
+
+
+def _admit_expected_ci_batch_artifact_api_instance(
+    artifact_name_value: str,
+    *,
+    artifact_api_by_name: Mapping[str, Sequence[Mapping[str, object]]],
+) -> None:
+    live_artifacts = artifact_api_by_name.get(artifact_name_value, [])
+    if len(live_artifacts) != 1:
+        msg = (
+            f"expected batch artifact {artifact_name_value} to have exactly "
+            f"one live GitHub Actions artifact instance, found "
+            f"{len(live_artifacts)}"
+        )
+        raise RuntimeError(msg)
+
+
+def _ci_batch_observed_artifact_downloads(
+    execution_batch_manifest: Mapping[str, object],
+) -> dict[str, str]:
+    downloads: dict[str, str] = {}
+    for batch in cast(
+        "Sequence[Mapping[str, object]]",
+        execution_batch_manifest.get("batches", []),
+    ):
+        artifact_ref = batch.get("expected-batch-evidence-bundle-ref")
+        if not isinstance(artifact_ref, str) or not artifact_ref:
+            continue
+        downloads[artifact_physical_name(artifact_ref)] = artifact_ref
+    return downloads
+
+
+def _write_ci_batch_observation_manifest_from_downloads(
+    path: Path,
+    *,
+    execution_batch_manifest: Mapping[str, object],
+    artifact_api_by_name: Mapping[str, Mapping[str, object]],
+    downloaded_names: set[str],
+    run_id: str,
+) -> None:
+    run = execution_batch_manifest.get("run")
+    if not isinstance(run, Mapping):
+        msg = "execution batch manifest run must be a JSON object"
+        raise TypeError(msg)
+    workflow = run.get("workflow")
+    manifest_run_id = run.get("run-id")
+    run_attempt = run.get("run-attempt")
+    if (
+        not isinstance(workflow, str)
+        or not isinstance(manifest_run_id, str)
+        or not isinstance(run_attempt, str)
+        or manifest_run_id != run_id
+    ):
+        msg = "execution batch manifest run does not match download arguments"
+        raise ValueError(msg)
+    observations: list[dict[str, object]] = []
+    for batch in cast(
+        "Sequence[Mapping[str, object]]",
+        execution_batch_manifest.get("batches", []),
+    ):
+        artifact_ref = batch.get("expected-batch-evidence-bundle-ref")
+        batch_id = batch.get("batch-id")
+        writer = batch.get("batch-writer")
+        if (
+            not isinstance(artifact_ref, str)
+            or not isinstance(batch_id, str)
+            or not isinstance(writer, Mapping)
+            or not isinstance(writer.get("expected-job-identity"), str)
+        ):
+            msg = "execution batch manifest contains malformed batch authority"
+            raise TypeError(msg)
+        artifact_name_value = artifact_physical_name(artifact_ref)
+        if artifact_name_value not in downloaded_names:
+            msg = f"batch artifact {artifact_name_value} was not downloaded"
+            raise RuntimeError(msg)
+        artifact_api = artifact_api_by_name.get(artifact_name_value)
+        artifact_id = (
+            artifact_api.get("id")
+            if isinstance(artifact_api, Mapping)
+            else None
+        )
+        api_name = (
+            artifact_api.get("name")
+            if isinstance(artifact_api, Mapping)
+            else None
+        )
+        if artifact_id is None or api_name != artifact_name_value:
+            msg = (
+                f"batch artifact {artifact_name_value} did not have trusted "
+                "GitHub Actions artifact identity metadata"
+            )
+            raise RuntimeError(msg)
+        observations.append(
+            {
+                "batch-id": batch_id,
+                "artifact-ref": artifact_ref,
+                "physical-artifact-name": artifact_name_value,
+                "artifact-instance-id": str(artifact_id),
+                "run-id": run_id,
+                "run-attempt": run_attempt,
+                "producer-boundary": "execution-batch",
+                "producer-job-identity": writer["expected-job-identity"],
+            }
+        )
+    _write_json(
+        path,
+        {
+            "kind": "ci-validation-batch-artifact-observation-manifest",
+            "run": {
+                "workflow": workflow,
+                "run-id": run_id,
+                "run-attempt": run_attempt,
+            },
+            "execution-batch-manifest": {
+                "artifact-ref": (
+                    ci_validation_execution_batch_manifest_artifact_ref(
+                        run_id=run_id,
+                        run_attempt=run_attempt,
+                    )
+                ),
+                "content-digest": (
+                    ci_validation_execution_batch_manifest_payload_digest(
+                        execution_batch_manifest
+                    )
+                ),
+            },
+            "observations": observations,
+        },
+    )
+
+
+def _materialize_ci_observed_artifact_metadata(
+    artifact_dir: Path,
+    *,
+    artifact_name_value: str,
+    artifact_api: Mapping[str, object] | None,
+    run_id: str,
+    expected_artifact_ref: str | None = None,
+    expected_run_attempt: str | None = None,
+) -> None:
+    bundle_path = artifact_dir / "batch-evidence-bundle.json"
+    if not bundle_path.is_file():
+        return
+    if artifact_api is None:
+        msg = (
+            f"downloaded artifact {artifact_name_value} was not present in the "
+            "GitHub Actions artifacts API response"
+        )
+        raise RuntimeError(msg)
+    artifact_id = artifact_api.get("id")
+    api_name = artifact_api.get("name")
+    if artifact_id is None or api_name != artifact_name_value:
+        msg = (
+            f"downloaded artifact {artifact_name_value} did not have trusted "
+            "GitHub Actions artifact identity metadata"
+        )
+        raise RuntimeError(msg)
+    if expected_artifact_ref is None or expected_run_attempt is None:
+        bundle = _read_json(bundle_path)
+        if not isinstance(bundle, Mapping):
+            msg = (
+                f"{bundle_path} did not contain a batch evidence bundle object"
+            )
+            raise TypeError(msg)
+        artifact_ref = bundle.get("artifact-ref")
+        if not isinstance(artifact_ref, str):
+            msg = f"{bundle_path} did not contain batch artifact ref metadata"
+            raise TypeError(msg)
+        run_attempt = cast("Mapping[str, object]", bundle.get("run", {})).get(
+            "run-attempt"
+        )
+        if not isinstance(run_attempt, str) or not run_attempt:
+            msg = f"{bundle_path} did not identify its run attempt"
+            raise TypeError(msg)
+    else:
+        artifact_ref = expected_artifact_ref
+        run_attempt = expected_run_attempt
+    _write_json(
+        artifact_dir / "artifact-metadata.json",
+        {
+            "artifact-instance-id": str(artifact_id),
+            "artifact-ref": artifact_ref,
+            "physical-artifact-name": artifact_name_value,
+            "run-id": run_id,
+            "run-attempt": run_attempt,
+            "producer-boundary": "execution-batch",
+        },
+    )
+
+
+def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:  # noqa: C901
     owner, name = _split_repository(args.repository)
     created_at = args.created_at or _utc_now()
     boundary_diagnostics = _ci_aggregate_control_artifact_boundary_diagnostics(
         args,
     )
-    if boundary_diagnostics:
+    is_batch_aggregation = bool(getattr(args, "execution_batch_manifest", ""))
+    if boundary_diagnostics and not is_batch_aggregation:
         return _write_invalid_ci_aggregate(
             args,
             owner=owner,
@@ -3458,6 +3908,17 @@ def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
                 name=name,
                 created_at=created_at,
             )
+    if is_batch_aggregation:
+        return _cmd_aggregate_ci_batch_evidence(
+            args,
+            owner=owner,
+            name=name,
+            created_at=created_at,
+            plan=plan,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            boundary_diagnostics=boundary_diagnostics,
+        )
     manifest = freeze_ci_validation_receipt_manifest(
         plan=plan,
         entries=[],
@@ -3558,6 +4019,1984 @@ def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
         },
     )
     return 0 if aggregate["verdict"] == "passed" else 1
+
+
+def _cmd_aggregate_ci_batch_evidence(
+    args: argparse.Namespace,
+    *,
+    owner: str,
+    name: str,
+    created_at: str,
+    plan: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    boundary_diagnostics: Sequence[Mapping[str, object]] = (),
+) -> int:
+    """Aggregate execution-batch evidence bundles into final G4 artifacts."""
+    if plan is None:
+        print(
+            "error: --plan is required for batch aggregation", file=sys.stderr
+        )
+        return 2
+    try:
+        request = _read_optional_json(getattr(args, "request", ""))
+        execution_batch_manifest = _read_json(
+            Path(str(args.execution_batch_manifest))
+        )
+    except (
+        ContractValidationError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if request is None:
+        print(
+            "error: --request is required for batch aggregation",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        validate_ci_validation_execution_batch_manifest(
+            execution_batch_manifest,
+            plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=str(args.run_id),
+            expected_run_attempt=str(args.run_attempt),
+        )
+        aggregation = _ci_batch_aggregation_payloads(
+            args,
+            owner=owner,
+            name=name,
+            created_at=created_at,
+            plan=plan,
+            request=request,
+            execution_batch_manifest=execution_batch_manifest,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            boundary_diagnostics=boundary_diagnostics,
+        )
+    except (
+        ContractValidationError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    aggregate_manifest = aggregation["aggregate_manifest"]
+    aggregate_summary = aggregation["aggregate_summary"]
+    _write_json(
+        Path(_ci_aggregate_manifest_out(args)),
+        aggregate_manifest,
+    )
+    _write_json(Path(_ci_aggregate_summary_out(args)), aggregate_summary)
+    _write_outputs(
+        args.github_output,
+        {
+            "verdict": str(aggregate_summary["verdict"]),
+            "passed": _bool_str(aggregate_summary["verdict"] == "passed"),
+            "aggregate_evidence_manifest_ref": str(
+                aggregate_manifest["artifact-ref"]
+            ),
+            "aggregate_evidence_manifest_payload_digest": (
+                ci_validation_aggregate_evidence_manifest_payload_digest(
+                    aggregate_manifest
+                )
+            ),
+            "aggregate_summary_ref": str(aggregate_summary["artifact-ref"]),
+            "aggregate_summary_payload_digest": (
+                ci_validation_aggregate_summary_payload_digest(
+                    aggregate_summary
+                )
+            ),
+        },
+    )
+    return 0 if aggregate_summary["verdict"] == "passed" else 1
+
+
+def _ci_aggregate_manifest_out(args: argparse.Namespace) -> str:
+    return str(
+        getattr(args, "aggregate_evidence_manifest_out", "")
+        or getattr(args, "receipt_manifest_out", "")
+    )
+
+
+def _ci_aggregate_summary_out(args: argparse.Namespace) -> str:
+    return str(
+        getattr(args, "aggregate_summary_out", "")
+        or getattr(args, "aggregate_out", "")
+    )
+
+
+def _ci_batch_aggregation_payloads(
+    args: argparse.Namespace,
+    *,
+    owner: str,
+    name: str,
+    created_at: str,
+    plan: Mapping[str, object],
+    request: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    boundary_diagnostics: Sequence[Mapping[str, object]] = (),
+) -> dict[str, Mapping[str, object]]:
+    observed_dir = str(getattr(args, "observed_artifacts_dir", ""))
+    input_artifacts = _ci_aggregate_input_artifacts(
+        args,
+        plan=plan,
+        request=request,
+        execution_batch_manifest=execution_batch_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        boundary_diagnostics=boundary_diagnostics,
+    )
+    _ci_close_snapshot_input_authority(input_artifacts)
+    required_input_failure = _ci_aggregate_required_input_failure(
+        input_artifacts,
+    )
+    authoritative_snapshots = _ci_aggregate_input_is_valid(
+        input_artifacts,
+        "changed-files-snapshot",
+    ) and _ci_aggregate_input_is_valid(input_artifacts, "fact-snapshot")
+    authoritative_request = (
+        request
+        if authoritative_snapshots
+        and _ci_aggregate_input_is_valid(input_artifacts, "request")
+        else None
+    )
+    authoritative_changed_files_snapshot = (
+        changed_files_snapshot if authoritative_snapshots else None
+    )
+    authoritative_fact_snapshot = (
+        fact_snapshot if authoritative_snapshots else None
+    )
+    observation_entries, observation_diagnostics = (
+        _ci_batch_observation_manifest_entries(
+            getattr(args, "observation_manifest", ""),
+            execution_batch_manifest=execution_batch_manifest,
+            run_id=str(args.run_id),
+            run_attempt=str(args.run_attempt),
+        )
+    )
+    bundle_slots, admitted_bundles, unexpected = _ci_aggregate_batch_slots(
+        plan=plan,
+        request=authoritative_request,
+        execution_batch_manifest=execution_batch_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        input_artifacts=input_artifacts,
+        observed_artifacts_dir=observed_dir,
+        run_id=str(args.run_id),
+        run_attempt=str(args.run_attempt),
+        admit_valid_bundles=not required_input_failure,
+        observation_entries=observation_entries,
+        observation_diagnostics=observation_diagnostics,
+    )
+    pre_final_count = _ci_aggregate_pre_final_input_count(
+        input_artifacts
+    ) + len(bundle_slots)
+    namespace_overflow = _ci_aggregate_namespace_overflow(
+        pre_final_count + len(unexpected)
+    )
+    aggregate_duration_seconds = _ci_aggregate_duration_seconds(
+        str(getattr(args, "started_at", "") or created_at),
+        created_at,
+    )
+    budgets = _ci_aggregate_summary_budgets(
+        execution_batch_manifest,
+        pre_final_validation_artifacts=pre_final_count,
+        aggregate_duration_seconds=aggregate_duration_seconds,
+    )
+    aggregate_duration_exceeded = _ci_aggregate_duration_exceeded(budgets)
+    aggregate_manifest = _freeze_ci_validation_aggregate_evidence_manifest(
+        created_at=created_at,
+        repository_owner=owner,
+        repository_name=name,
+        workflow=str(args.workflow),
+        run_id=str(args.run_id),
+        run_attempt=str(args.run_attempt),
+        input_artifacts=input_artifacts,
+        batch_bundles=bundle_slots,
+        unexpected_contract_artifacts=unexpected,
+        namespace_overflow=namespace_overflow,
+        pre_final_validation_artifacts=pre_final_count,
+        namespace_closed_at=created_at,
+        plan=plan,
+        execution_batch_manifest=execution_batch_manifest,
+        request=request,
+        changed_files_snapshot=authoritative_changed_files_snapshot,
+        fact_snapshot=authoritative_fact_snapshot,
+        _require_authoritative_snapshot_inputs=not required_input_failure,
+    )
+    evidence_results = _ci_aggregate_evidence_results(
+        plan=plan,
+        admitted_bundles=admitted_bundles,
+    )
+    summary_bundle_rows = _ci_aggregate_summary_bundle_rows(
+        bundle_slots,
+        admitted_bundles=admitted_bundles,
+    )
+    failures = _ci_aggregate_summary_failures(
+        summary_bundle_rows=summary_bundle_rows,
+        evidence_results=evidence_results,
+        namespace_overflow=namespace_overflow,
+        unexpected_artifacts=unexpected,
+        required_input_failure=required_input_failure,
+        aggregate_duration_exceeded=aggregate_duration_exceeded,
+    )
+    diagnostics = sorted(
+        [
+            failure["diagnostic"]
+            for failure in failures
+            if isinstance(failure.get("diagnostic"), Mapping)
+        ],
+        key=lambda item: str(item.get("diagnostic-id")),
+    )
+    reason = _ci_aggregate_summary_reason(
+        summary_bundle_rows=summary_bundle_rows,
+        evidence_results=evidence_results,
+        namespace_overflow=namespace_overflow,
+        unexpected_artifacts=unexpected,
+        required_input_failure=required_input_failure,
+        aggregate_duration_exceeded=aggregate_duration_exceeded,
+    )
+    aggregate_summary = freeze_ci_validation_aggregate_summary(
+        created_at=created_at,
+        repository_owner=owner,
+        repository_name=name,
+        workflow=str(args.workflow),
+        run_id=str(args.run_id),
+        run_attempt=str(args.run_attempt),
+        aggregate_evidence_manifest={
+            "artifact-ref": aggregate_manifest["artifact-ref"],
+            "artifact-instance-id": artifact_physical_name(
+                str(aggregate_manifest["artifact-ref"])
+            ),
+            "content-digest": (
+                ci_validation_aggregate_evidence_manifest_payload_digest(
+                    aggregate_manifest
+                )
+            ),
+        },
+        final_artifacts={
+            "aggregate-evidence-manifest": {
+                "artifact-ref": aggregate_manifest["artifact-ref"],
+                "artifact-instance-id": artifact_physical_name(
+                    str(aggregate_manifest["artifact-ref"])
+                ),
+                "content-digest": (
+                    ci_validation_aggregate_evidence_manifest_payload_digest(
+                        aggregate_manifest
+                    )
+                ),
+                "producer-verified": True,
+            },
+            "aggregate-summary": {
+                "artifact-ref": ci_validation_aggregate_summary_artifact_ref(
+                    run_id=str(args.run_id),
+                    run_attempt=str(args.run_attempt),
+                ),
+            },
+        },
+        validation_tree=cast("Mapping[str, object]", plan["validation-tree"]),
+        affected_range=_ci_summary_affected_range(plan),
+        request=cast("Mapping[str, object]", plan["request"]),
+        scheduled_full=cast("Mapping[str, object]", plan["scheduled-full"]),
+        verdict="failed" if any(reason.values()) else "passed",
+        reason=reason,
+        budgets=budgets,
+        diagnostics=diagnostics,
+        batch_bundles=summary_bundle_rows,
+        evidence_results=evidence_results,
+        failures=failures,
+        work_groups=_ci_aggregate_work_group_counts(evidence_results),
+        plan=plan,
+        aggregate_evidence_manifest_document=aggregate_manifest,
+        admitted_batch_evidence_bundles=admitted_bundles,
+        execution_batch_manifest=execution_batch_manifest,
+        request_document=authoritative_request,
+        changed_files_snapshot=authoritative_changed_files_snapshot,
+        fact_snapshot=authoritative_fact_snapshot,
+    )
+    if not required_input_failure:
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=plan,
+            execution_batch_manifest=execution_batch_manifest,
+            request=authoritative_request,
+            changed_files_snapshot=authoritative_changed_files_snapshot,
+            fact_snapshot=authoritative_fact_snapshot,
+            expected_run_id=str(args.run_id),
+            expected_run_attempt=str(args.run_attempt),
+        )
+        validate_ci_validation_aggregate_summary(
+            aggregate_summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=admitted_bundles,
+            execution_batch_manifest=execution_batch_manifest,
+            request=authoritative_request,
+            changed_files_snapshot=authoritative_changed_files_snapshot,
+            fact_snapshot=authoritative_fact_snapshot,
+            expected_run_id=str(args.run_id),
+            expected_run_attempt=str(args.run_attempt),
+        )
+    return {
+        "aggregate_manifest": aggregate_manifest,
+        "aggregate_summary": aggregate_summary,
+    }
+
+
+def _ci_aggregate_input_is_valid(
+    input_artifacts: Mapping[str, object],
+    key: str,
+) -> bool:
+    artifact = input_artifacts.get(key)
+    return isinstance(artifact, Mapping) and artifact.get("admissibility") in {
+        "valid",
+        "not-required",
+    }
+
+
+def _ci_close_snapshot_input_authority(
+    input_artifacts: Mapping[str, object],
+) -> None:
+    snapshots = [
+        input_artifacts.get("changed-files-snapshot"),
+        input_artifacts.get("fact-snapshot"),
+    ]
+    if not all(isinstance(artifact, dict) for artifact in snapshots):
+        return
+    snapshot_maps = cast("list[dict[str, object]]", snapshots)
+    required = [item for item in snapshot_maps if item.get("required") is True]
+    if not required or all(
+        item.get("admissibility") == "valid" for item in required
+    ):
+        return
+    for item in input_artifacts.values():
+        if not isinstance(item, dict) or item.get("required") is not True:
+            continue
+        if item.get("admissibility") != "valid":
+            continue
+        item["admissibility"] = "inadmissible"
+        item["diagnostics"] = [
+            *cast(
+                "Sequence[Mapping[str, object]]", item.get("diagnostics", [])
+            ),
+            _ci_aggregate_diagnostic(
+                "final-evidence-failure/snapshot-companion-unproven",
+                code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
+                detail=DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value,
+                message=(
+                    "Required snapshot input artifact evidence was not "
+                    "authoritative as a closed companion set."
+                ),
+                source_id=item.get("artifact-ref")
+                if isinstance(item.get("artifact-ref"), str)
+                else None,
+                severity=DiagnosticSeverity.FAIL_CLOSED.value,
+                verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+            ),
+        ]
+
+
+def _ci_batch_observation_manifest_entries(
+    observation_manifest_path: str,
+    *,
+    execution_batch_manifest: Mapping[str, object],
+    run_id: str,
+    run_attempt: str,
+) -> tuple[dict[str, Mapping[str, object]] | None, list[Mapping[str, object]]]:
+    if not observation_manifest_path:
+        return None, [
+            _ci_aggregate_diagnostic(
+                "inadmissible-batch-evidence/observation-manifest-missing",
+                code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+                message=(
+                    "Trusted batch artifact observation manifest is required "
+                    "for producer identity."
+                ),
+                source_id=None,
+                severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+            )
+        ]
+    try:
+        manifest = _read_json(Path(observation_manifest_path))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        return None, [
+            _ci_aggregate_diagnostic(
+                "inadmissible-batch-evidence/observation-manifest-unreadable",
+                code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+                message=f"Trusted batch artifact observation manifest is unreadable: {exc}",
+                source_id=None,
+                severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+            )
+        ]
+    if not isinstance(manifest, Mapping):
+        return None, [
+            _ci_aggregate_diagnostic(
+                "inadmissible-batch-evidence/observation-manifest-malformed",
+                code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+                message="Trusted batch artifact observation manifest must be an object.",
+                source_id=None,
+                severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+            )
+        ]
+    diagnostics = _ci_validate_batch_observation_manifest(
+        manifest,
+        execution_batch_manifest=execution_batch_manifest,
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+    if diagnostics:
+        return None, diagnostics
+    observations = cast(
+        "Sequence[Mapping[str, object]]", manifest["observations"]
+    )
+    return {str(item["artifact-ref"]): item for item in observations}, []
+
+
+def _ci_validate_batch_observation_manifest(  # noqa: C901
+    manifest: Mapping[str, object],
+    *,
+    execution_batch_manifest: Mapping[str, object],
+    run_id: str,
+    run_attempt: str,
+) -> list[Mapping[str, object]]:
+    diagnostics: list[Mapping[str, object]] = []
+    run = manifest.get("run")
+    if (
+        not isinstance(run, Mapping)
+        or run.get("run-id") != run_id
+        or run.get("run-attempt") != run_attempt
+    ):
+        diagnostics.append(
+            _ci_observation_manifest_diagnostic(
+                "run-mismatch",
+                "Trusted batch artifact observation manifest run does not match the aggregate run.",
+            )
+        )
+    expected_manifest_ref = ci_validation_execution_batch_manifest_artifact_ref(
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+    expected_manifest_digest = (
+        ci_validation_execution_batch_manifest_payload_digest(
+            execution_batch_manifest
+        )
+    )
+    manifest_binding = manifest.get("execution-batch-manifest")
+    if (
+        not isinstance(manifest_binding, Mapping)
+        or manifest_binding.get("artifact-ref") != expected_manifest_ref
+        or manifest_binding.get("content-digest") != expected_manifest_digest
+    ):
+        diagnostics.append(
+            _ci_observation_manifest_diagnostic(
+                "execution-manifest-mismatch",
+                "Trusted batch artifact observation manifest is not bound to the current execution-batch manifest.",
+            )
+        )
+    observations = manifest.get("observations")
+    if not isinstance(observations, Sequence) or isinstance(
+        observations, str | bytes
+    ):
+        return [
+            *diagnostics,
+            _ci_observation_manifest_diagnostic(
+                "observations-malformed",
+                "Trusted batch artifact observation manifest observations must be a list.",
+            ),
+        ]
+    expected_by_ref: dict[str, Mapping[str, object]] = {}
+    for batch in cast(
+        "Sequence[Mapping[str, object]]",
+        execution_batch_manifest.get("batches", []),
+    ):
+        ref = str(batch["expected-batch-evidence-bundle-ref"])
+        expected_by_ref[ref] = batch
+    seen: set[str] = set()
+    for observation in observations:
+        if not isinstance(observation, Mapping):
+            diagnostics.append(
+                _ci_observation_manifest_diagnostic(
+                    "observation-malformed",
+                    "Trusted batch artifact observation entry must be an object.",
+                )
+            )
+            continue
+        artifact_ref = observation.get("artifact-ref")
+        if (
+            not isinstance(artifact_ref, str)
+            or artifact_ref not in expected_by_ref
+        ):
+            diagnostics.append(
+                _ci_observation_manifest_diagnostic(
+                    "observation-unexpected",
+                    "Trusted batch artifact observation entry is not expected by the execution-batch manifest.",
+                )
+            )
+            continue
+        if artifact_ref in seen:
+            diagnostics.append(
+                _ci_observation_manifest_diagnostic(
+                    "observation-duplicate",
+                    "Trusted batch artifact observation entries must be unique per artifact ref.",
+                )
+            )
+            continue
+        seen.add(artifact_ref)
+        batch = expected_by_ref[artifact_ref]
+        writer = cast("Mapping[str, object]", batch.get("batch-writer", {}))
+        expected = {
+            "batch-id": batch.get("batch-id"),
+            "artifact-ref": artifact_ref,
+            "physical-artifact-name": artifact_physical_name(artifact_ref),
+            "run-id": run_id,
+            "run-attempt": run_attempt,
+            "producer-boundary": "execution-batch",
+            "producer-job-identity": writer.get("expected-job-identity"),
+        }
+        for key, expected_value in expected.items():
+            if (
+                not isinstance(expected_value, str)
+                or observation.get(key) != expected_value
+            ):
+                diagnostics.append(
+                    _ci_observation_manifest_diagnostic(
+                        f"observation-{key}-mismatch",
+                        "Trusted batch artifact observation entry does not match execution-batch authority.",
+                    )
+                )
+        artifact_instance_id = observation.get("artifact-instance-id")
+        if (
+            not isinstance(artifact_instance_id, str)
+            or artifact_instance_id == ""
+        ):
+            diagnostics.append(
+                _ci_observation_manifest_diagnostic(
+                    "observation-artifact-instance-id-missing",
+                    "Trusted batch artifact observation entry is missing an artifact instance id.",
+                )
+            )
+    missing_refs = sorted(set(expected_by_ref) - seen)
+    for artifact_ref in missing_refs:
+        diagnostics.append(
+            _ci_observation_manifest_diagnostic(
+                f"observation-missing/{canonical_json_digest(artifact_ref)}",
+                "Trusted batch artifact observation manifest is incomplete.",
+            )
+        )
+    return diagnostics
+
+
+def _ci_observation_manifest_diagnostic(
+    suffix: str,
+    message: str,
+) -> Mapping[str, object]:
+    return _ci_aggregate_diagnostic(
+        f"inadmissible-batch-evidence/observation-manifest/{suffix}",
+        code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+        detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+        message=message,
+        source_id=None,
+        severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+        verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+    )
+
+
+def _ci_aggregate_batch_slots(
+    *,
+    plan: Mapping[str, object],
+    request: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    input_artifacts: Mapping[str, object],
+    observed_artifacts_dir: str,
+    run_id: str,
+    run_attempt: str,
+    admit_valid_bundles: bool = True,
+    observation_entries: Mapping[str, Mapping[str, object]] | None = None,
+    observation_diagnostics: Sequence[Mapping[str, object]] = (),
+) -> tuple[list[Json], list[Mapping[str, object]], list[Json]]:
+    root = Path(observed_artifacts_dir) if observed_artifacts_dir else None
+    expected_refs = _ci_expected_batch_bundle_refs(execution_batch_manifest)
+    bundle_slots: list[Json] = []
+    admitted_bundles: list[Mapping[str, object]] = []
+    for batch in _ci_execution_batches_in_dependency_order(
+        execution_batch_manifest,
+    ):
+        batch_id = str(batch["batch-id"])
+        artifact_ref = str(batch["expected-batch-evidence-bundle-ref"])
+        dependency_bundles = list(admitted_bundles)
+        candidates = _ci_aggregate_bundle_candidates(
+            root,
+            batch_id=batch_id,
+            artifact_ref=artifact_ref,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            plan=plan,
+            request=request,
+            execution_batch_manifest=execution_batch_manifest,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            dependency_evidence_bundles=dependency_bundles,
+            observation=(
+                observation_entries.get(artifact_ref)
+                if observation_entries is not None
+                else None
+            ),
+            observation_diagnostics=observation_diagnostics,
+        )
+        if not admit_valid_bundles:
+            for candidate in candidates:
+                candidate_record = candidate.get("candidate")
+                if (
+                    isinstance(candidate_record, dict)
+                    and candidate_record.get("admissibility") == "valid"
+                ):
+                    candidate_record["admissibility"] = "inadmissible"
+                    candidate_record["diagnostics"] = [
+                        *cast(
+                            "Sequence[Mapping[str, object]]",
+                            candidate_record.get("diagnostics", []),
+                        ),
+                        _ci_aggregate_diagnostic(
+                            f"inadmissible-batch-evidence/{batch_id}/input-authority",
+                            code=(
+                                DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value
+                            ),
+                            detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+                            message=(
+                                "Batch evidence bundle cannot be admitted "
+                                "without authoritative required inputs."
+                            ),
+                            source_id=batch_id,
+                            severity=(
+                                DiagnosticSeverity.BLOCKING_FAILURE.value
+                            ),
+                            verdict_effect=(
+                                DiagnosticVerdictEffect.FAILED.value
+                            ),
+                        ),
+                    ]
+        valid_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate["candidate"]["admissibility"] == "valid"
+        ]
+        slot_diagnostics: list[Mapping[str, object]] = []
+        admitted_candidate_id: str | None = None
+        if not candidates:
+            slot_admissibility = "missing"
+            slot_diagnostics.append(
+                _ci_aggregate_diagnostic(
+                    f"inadmissible-batch-evidence/{batch_id}/missing",
+                    code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                    detail=DiagnosticDetail.MISSING_BUNDLE.value,
+                    message="Required batch evidence bundle is missing.",
+                    source_id=batch_id,
+                    severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                    verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                )
+            )
+        elif len(candidates) > 1:
+            slot_admissibility = "duplicate"
+            slot_diagnostics.append(
+                _ci_aggregate_diagnostic(
+                    f"inadmissible-batch-evidence/{batch_id}/duplicate",
+                    code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                    detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+                    message="Multiple batch evidence bundle candidates were observed.",
+                    source_id=batch_id,
+                    severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                    verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                )
+            )
+        elif len(valid_candidates) == 1 and admit_valid_bundles:
+            slot_admissibility = "valid"
+            admitted_candidate_id = str(
+                valid_candidates[0]["candidate"]["candidate-id"]
+            )
+            admitted_bundles.append(
+                cast("Mapping[str, object]", valid_candidates[0]["bundle"])
+            )
+        elif len(valid_candidates) == 1:
+            slot_admissibility = "inadmissible"
+            slot_diagnostics.append(
+                _ci_aggregate_diagnostic(
+                    f"inadmissible-batch-evidence/{batch_id}/input-authority",
+                    code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                    detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+                    message=(
+                        "Batch evidence bundle cannot be admitted without "
+                        "authoritative required inputs."
+                    ),
+                    source_id=batch_id,
+                    severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                    verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                )
+            )
+        else:
+            slot_admissibility = "inadmissible"
+            slot_diagnostics.append(
+                _ci_aggregate_diagnostic(
+                    f"inadmissible-batch-evidence/{batch_id}/malformed",
+                    code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                    detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+                    message="Batch evidence bundle is not authoritative.",
+                    source_id=batch_id,
+                    severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                    verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                )
+            )
+        observed_candidates = [
+            cast("Json", item["candidate"]) for item in candidates
+        ]
+        observed_candidates.sort(key=lambda item: str(item["candidate-id"]))
+        bundle_slots.append(
+            {
+                "batch-id": batch_id,
+                "artifact-ref": artifact_ref,
+                "expected-cardinality": 1,
+                "slot-admissibility": slot_admissibility,
+                "admitted-candidate-id": admitted_candidate_id,
+                "observed-candidates": observed_candidates,
+                "diagnostics": sorted(
+                    [dict(item) for item in slot_diagnostics],
+                    key=lambda item: str(item.get("diagnostic-id")),
+                ),
+            }
+        )
+    allowed_refs = _ci_aggregate_allowed_observed_refs(
+        input_artifacts=input_artifacts,
+        expected_batch_refs=expected_refs,
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+    unexpected = _ci_aggregate_unexpected_artifacts(
+        root,
+        expected_refs=allowed_refs,
+    )
+    bundle_slots.sort(key=lambda item: str(item["batch-id"]))
+    return bundle_slots, admitted_bundles, unexpected
+
+
+def _ci_execution_batches_in_dependency_order(
+    execution_batch_manifest: Mapping[str, object],
+) -> list[Mapping[str, object]]:
+    batches = [
+        cast("Mapping[str, object]", batch)
+        for batch in cast(
+            "Sequence[Mapping[str, object]]",
+            execution_batch_manifest.get("batches", []),
+        )
+    ]
+    pending = {str(batch["batch-id"]): batch for batch in batches}
+    ordered: list[Mapping[str, object]] = []
+    while pending:
+        ready = [
+            batch_id
+            for batch_id, batch in pending.items()
+            if all(
+                str(dependency_id) not in pending
+                for dependency_id in cast(
+                    "Sequence[object]",
+                    batch.get("depends-on-batches", []),
+                )
+            )
+        ]
+        if not ready:
+            ordered.extend(pending[batch_id] for batch_id in sorted(pending))
+            break
+        for batch_id in sorted(ready):
+            ordered.append(pending.pop(batch_id))
+    return ordered
+
+
+def _ci_expected_batch_bundle_refs(
+    execution_batch_manifest: Mapping[str, object],
+) -> set[str]:
+    return {
+        str(batch["expected-batch-evidence-bundle-ref"])
+        for batch in cast(
+            "Sequence[Mapping[str, object]]",
+            execution_batch_manifest.get("batches", []),
+        )
+    }
+
+
+def _ci_aggregate_bundle_candidates(
+    root: Path | None,
+    *,
+    batch_id: str,
+    artifact_ref: str,
+    run_id: str,
+    run_attempt: str,
+    plan: Mapping[str, object],
+    request: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    dependency_evidence_bundles: Sequence[Mapping[str, object]],
+    observation: Mapping[str, object] | None,
+    observation_diagnostics: Sequence[Mapping[str, object]],
+) -> list[Json]:
+    if root is None or not root.is_dir():
+        return []
+    physical_name = artifact_physical_name(artifact_ref)
+    candidate_dirs = [
+        item
+        for item in sorted(root.iterdir(), key=lambda path: path.name)
+        if item.is_dir()
+        and (
+            item.name == physical_name
+            or item.name.startswith(physical_name + "#")
+        )
+    ]
+    candidates: list[Json] = []
+    for artifact_dir in candidate_dirs:
+        bundle, diagnostics = _ci_read_aggregate_bundle_candidate(
+            artifact_dir / "batch-evidence-bundle.json",
+            plan=plan,
+            request=request,
+            execution_batch_manifest=execution_batch_manifest,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=run_id,
+            expected_run_attempt=run_attempt,
+            dependency_evidence_bundles=dependency_evidence_bundles,
+        )
+        artifact_instance_id, producer_verification, authority_diagnostics = (
+            _ci_aggregate_bundle_producer_authority(
+                artifact_dir,
+                physical_name=physical_name,
+                artifact_ref=artifact_ref,
+                run_id=run_id,
+                run_attempt=run_attempt,
+                batch=_ci_execution_batch_by_id(
+                    execution_batch_manifest,
+                    batch_id=batch_id,
+                ),
+                observation=observation
+                if artifact_dir.name == physical_name
+                else None,
+                observation_diagnostics=observation_diagnostics,
+            )
+        )
+        diagnostics = [*diagnostics, *authority_diagnostics]
+        if bundle is not None and bundle.get("artifact-ref") != artifact_ref:
+            diagnostics.append(
+                _ci_aggregate_diagnostic(
+                    f"inadmissible-batch-evidence/{batch_id}/ref-mismatch",
+                    code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                    detail=(
+                        DiagnosticDetail.EXECUTION_BATCH_MANIFEST_BUNDLE_REF_MISMATCH.value
+                    ),
+                    message=(
+                        "Batch evidence bundle ref does not match its "
+                        "manifest slot."
+                    ),
+                    source_id=batch_id,
+                    severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                    verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                )
+            )
+        payload_readable = bundle is not None and not diagnostics
+        content_digest = (
+            ci_validation_batch_evidence_bundle_payload_digest(bundle)
+            if bundle is not None and payload_readable
+            else None
+        )
+        admissibility = (
+            "valid"
+            if payload_readable
+            and bundle is not None
+            and bundle.get("artifact-ref") == artifact_ref
+            and producer_verification == "verified"
+            else "inadmissible"
+        )
+        if admissibility != "valid" and not diagnostics:
+            diagnostics = [
+                _ci_aggregate_diagnostic(
+                    f"inadmissible-batch-evidence/{batch_id}/ref-mismatch",
+                    code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                    detail=(
+                        DiagnosticDetail.EXECUTION_BATCH_MANIFEST_BUNDLE_REF_MISMATCH.value
+                    ),
+                    message="Batch evidence bundle ref does not match its manifest slot.",
+                    source_id=batch_id,
+                    severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                    verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                )
+            ]
+        candidates.append(
+            {
+                "candidate": {
+                    "candidate-id": ci_validation_batch_evidence_candidate_id(
+                        run_id=run_id,
+                        run_attempt=run_attempt,
+                        batch_id=batch_id,
+                        artifact_ref=artifact_ref,
+                        artifact_instance_id=artifact_instance_id,
+                        physical_artifact_name=physical_name,
+                    ),
+                    "artifact-instance-id": artifact_instance_id,
+                    "content-digest": content_digest,
+                    "producer-verification": producer_verification,
+                    "payload-readable": payload_readable,
+                    "admissibility": admissibility,
+                    "diagnostics": sorted(
+                        [dict(item) for item in diagnostics],
+                        key=lambda item: str(item.get("diagnostic-id")),
+                    ),
+                },
+                "bundle": bundle,
+            }
+        )
+    return candidates
+
+
+def _ci_execution_batch_by_id(
+    execution_batch_manifest: Mapping[str, object],
+    *,
+    batch_id: str,
+) -> Mapping[str, object] | None:
+    for batch in cast(
+        "Sequence[Mapping[str, object]]",
+        execution_batch_manifest.get("batches", []),
+    ):
+        if batch.get("batch-id") == batch_id:
+            return batch
+    return None
+
+
+def _ci_read_aggregate_bundle_candidate(
+    path: Path,
+    *,
+    plan: Mapping[str, object],
+    request: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    expected_run_id: str,
+    expected_run_attempt: str,
+    dependency_evidence_bundles: Sequence[Mapping[str, object]],
+) -> tuple[Mapping[str, object] | None, list[Mapping[str, object]]]:
+    try:
+        bundle = _read_json(path)
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            request=request,
+            execution_batch_manifest=execution_batch_manifest,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=expected_run_id,
+            expected_run_attempt=expected_run_attempt,
+            dependency_evidence_bundles=dependency_evidence_bundles,
+        )
+    except (
+        ContractValidationError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        return None, [
+            _ci_aggregate_diagnostic(
+                f"inadmissible-batch-evidence/{canonical_json_digest(str(exc))}",
+                code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+                message="Batch evidence bundle could not be validated.",
+                source_id=None,
+                severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+            )
+        ]
+    else:
+        return bundle, []
+
+
+def _ci_aggregate_bundle_producer_authority(  # noqa: C901, PLR0912
+    artifact_dir: Path,
+    *,
+    physical_name: str,
+    artifact_ref: str,
+    run_id: str,
+    run_attempt: str,
+    batch: Mapping[str, object] | None,
+    observation: Mapping[str, object] | None,
+    observation_diagnostics: Sequence[Mapping[str, object]] = (),
+) -> tuple[str | None, str, list[Mapping[str, object]]]:
+    diagnostics: list[Mapping[str, object]] = [
+        dict(item) for item in observation_diagnostics
+    ]
+    if observation is None:
+        artifact_instance_id = None
+        try:
+            metadata = _read_json(artifact_dir / "artifact-metadata.json")
+            metadata_id = metadata.get("artifact-instance-id")
+            if isinstance(metadata_id, str) and metadata_id:
+                artifact_instance_id = metadata_id
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+        return (
+            artifact_instance_id,
+            "producer-unverified",
+            [
+                *diagnostics,
+                _ci_aggregate_diagnostic(
+                    f"inadmissible-batch-evidence/{artifact_dir.name}/observation-missing",
+                    code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+                    detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+                    message=(
+                        "Trusted batch artifact observation manifest entry is "
+                        "missing or unreadable."
+                    ),
+                    source_id=artifact_dir.name,
+                    severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                    verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                ),
+            ],
+        )
+    artifact_instance_id = observation.get("artifact-instance-id")
+    if not isinstance(artifact_instance_id, str) or artifact_instance_id == "":
+        diagnostics.append(
+            _ci_aggregate_bundle_metadata_diagnostic(
+                artifact_dir,
+                "artifact-instance-id",
+                "Batch evidence bundle metadata does not identify an artifact instance.",
+            )
+        )
+    expected_job_identity = None
+    if batch is not None and isinstance(batch.get("batch-writer"), Mapping):
+        expected_job_identity = cast(
+            "Mapping[str, object]", batch["batch-writer"]
+        ).get("expected-job-identity")
+    expected = {
+        "artifact-ref": artifact_ref,
+        "physical-artifact-name": physical_name,
+        "run-id": run_id,
+        "run-attempt": run_attempt,
+        "producer-boundary": "execution-batch",
+        "producer-job-identity": expected_job_identity,
+    }
+    for key, expected_value in expected.items():
+        if (
+            not isinstance(expected_value, str)
+            or observation.get(key) != expected_value
+        ):
+            diagnostics.append(
+                _ci_aggregate_bundle_metadata_diagnostic(
+                    artifact_dir,
+                    key,
+                    "Trusted batch artifact observation does not match producer authority.",
+                )
+            )
+    try:
+        metadata = _read_json(artifact_dir / "artifact-metadata.json")
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        metadata = None
+        diagnostics.append(
+            _ci_aggregate_bundle_metadata_diagnostic(
+                artifact_dir,
+                "artifact-metadata",
+                "Downloaded batch artifact metadata is missing or unreadable.",
+            )
+        )
+    if not isinstance(metadata, Mapping):
+        diagnostics.append(
+            _ci_aggregate_bundle_metadata_diagnostic(
+                artifact_dir,
+                "artifact-metadata",
+                "Downloaded batch artifact metadata must be a JSON object.",
+            )
+        )
+    else:
+        for key in (
+            "artifact-ref",
+            "physical-artifact-name",
+            "artifact-instance-id",
+            "run-id",
+            "run-attempt",
+            "producer-boundary",
+        ):
+            if metadata.get(key) != observation.get(key):
+                diagnostics.append(
+                    _ci_aggregate_bundle_metadata_diagnostic(
+                        artifact_dir,
+                        key,
+                        "Downloaded batch artifact metadata does not match trusted observation.",
+                    )
+                )
+    if diagnostics:
+        return (
+            artifact_instance_id
+            if isinstance(artifact_instance_id, str)
+            else None,
+            "producer-unverified",
+            diagnostics,
+        )
+    return artifact_instance_id, "verified", []
+
+
+def _ci_aggregate_bundle_metadata_diagnostic(
+    artifact_dir: Path,
+    field: str,
+    message: str,
+) -> Mapping[str, object]:
+    return _ci_aggregate_diagnostic(
+        f"inadmissible-batch-evidence/{artifact_dir.name}/metadata-{field}",
+        code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+        detail=DiagnosticDetail.MALFORMED_BUNDLE.value,
+        message=message,
+        source_id=artifact_dir.name,
+        severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+        verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+    )
+
+
+def _ci_aggregate_artifact_instance_id(
+    artifact_dir: Path,
+    physical_name: str,
+) -> str:
+    try:
+        metadata = _read_json(artifact_dir / "artifact-metadata.json")
+        value = metadata.get("artifact-instance-id")
+        metadata_name = metadata.get("physical-artifact-name")
+        if isinstance(value, str) and value and metadata_name == physical_name:
+            return value
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return artifact_dir.name
+
+
+def _ci_aggregate_unexpected_artifacts(
+    root: Path | None,
+    *,
+    expected_refs: set[str],
+) -> list[Json]:
+    if root is None or not root.is_dir():
+        return []
+    expected_names = {artifact_physical_name(ref) for ref in expected_refs}
+    unexpected: list[Json] = []
+    for artifact_dir in sorted(root.iterdir(), key=lambda path: path.name):
+        if not artifact_dir.is_dir() or any(
+            artifact_dir.name == expected_name
+            or artifact_dir.name.startswith(expected_name + "#")
+            for expected_name in expected_names
+        ):
+            continue
+        if not artifact_dir.name.startswith("three-ci-validation-"):
+            continue
+        unexpected.append(
+            {
+                "physical-artifact-name": artifact_dir.name,
+                "artifact-instance-id": artifact_dir.name,
+                "classification": "unexpected",
+                "diagnostics": [
+                    _ci_aggregate_diagnostic(
+                        f"namespace-closure-failure/{artifact_dir.name}",
+                        code=DiagnosticFamily.NAMESPACE_CLOSURE_FAILURE.value,
+                        detail=DiagnosticDetail.UNEXPECTED_CONTRACT_ARTIFACT.value,
+                        message="Unexpected CI validation contract artifact.",
+                        source_id=artifact_dir.name,
+                        severity=DiagnosticSeverity.FAIL_CLOSED.value,
+                        verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+                    )
+                ],
+            }
+        )
+    return unexpected
+
+
+def _ci_aggregate_allowed_observed_refs(
+    *,
+    input_artifacts: Mapping[str, object],
+    expected_batch_refs: set[str],
+    run_id: str,
+    run_attempt: str,
+) -> set[str]:
+    refs = set(expected_batch_refs)
+    for artifact in input_artifacts.values():
+        if not isinstance(artifact, Mapping):
+            continue
+        artifact_ref = artifact.get("artifact-ref")
+        if (
+            isinstance(artifact_ref, str)
+            and artifact_ref
+            and artifact.get("admissibility") != "not-required"
+        ):
+            refs.add(artifact_ref)
+    refs.add(
+        ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    refs.add(
+        ci_validation_aggregate_summary_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    return refs
+
+
+def _ci_aggregate_input_artifacts(
+    args: argparse.Namespace,
+    *,
+    plan: Mapping[str, object],
+    request: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object],
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    boundary_diagnostics: Sequence[Mapping[str, object]] = (),
+) -> dict[str, object]:
+    run_id = str(args.run_id)
+    run_attempt = str(args.run_attempt)
+    affected_range = cast("Mapping[str, object]", plan["affected-range"])
+    changed_files_hash = affected_range.get("changed-files-hash")
+    fact_snapshot_projection = cast(
+        "Mapping[str, object]", plan["fact-snapshot"]
+    )
+    fact_snapshot_id = fact_snapshot_projection.get("id")
+    request_digest = cast("Mapping[str, object]", plan["request"])[
+        "request-digest"
+    ]
+    _ = request
+    artifacts = {
+        "request": _ci_aggregate_input_artifact(
+            ci_validation_request_artifact_ref(
+                run_id=run_id, run_attempt=run_attempt
+            ),
+            content_digest=str(request_digest),
+            required=True,
+            artifact_instance_id=getattr(
+                args, "expected_request_artifact_id", None
+            ),
+            require_artifact_instance_id=True,
+        ),
+        "validation-plan": _ci_aggregate_input_artifact(
+            ci_validation_plan_artifact_ref(
+                run_id=run_id, run_attempt=run_attempt
+            ),
+            content_digest=str(plan["plan-digest"]),
+            required=True,
+            artifact_instance_id=getattr(
+                args, "expected_plan_artifact_id", None
+            ),
+            require_artifact_instance_id=True,
+        ),
+        "changed-files-snapshot": _ci_aggregate_input_artifact(
+            ci_validation_changed_files_snapshot_artifact_ref(
+                run_id=run_id, run_attempt=run_attempt
+            )
+            if isinstance(changed_files_hash, str)
+            else None,
+            content_digest=changed_files_hash
+            if isinstance(changed_files_hash, str)
+            else None,
+            required=isinstance(changed_files_hash, str),
+            artifact_instance_id=getattr(
+                args, "expected_changed_files_snapshot_artifact_id", None
+            ),
+            require_artifact_instance_id=isinstance(changed_files_hash, str),
+        ),
+        "fact-snapshot": _ci_aggregate_input_artifact(
+            ci_validation_fact_snapshot_artifact_ref(
+                run_id=run_id, run_attempt=run_attempt
+            )
+            if isinstance(fact_snapshot_id, str)
+            else None,
+            content_digest=fact_snapshot_id
+            if isinstance(fact_snapshot_id, str)
+            else None,
+            required=isinstance(fact_snapshot_id, str),
+            artifact_instance_id=getattr(
+                args, "expected_fact_snapshot_artifact_id", None
+            ),
+            require_artifact_instance_id=isinstance(fact_snapshot_id, str),
+        ),
+        "execution-batch-manifest": _ci_aggregate_input_artifact(
+            ci_validation_execution_batch_manifest_artifact_ref(
+                run_id=run_id, run_attempt=run_attempt
+            ),
+            content_digest=ci_validation_execution_batch_manifest_payload_digest(
+                execution_batch_manifest
+            ),
+            required=True,
+            artifact_instance_id=getattr(
+                args,
+                "expected_execution_batch_manifest_artifact_id",
+                None,
+            ),
+            require_artifact_instance_id=True,
+        ),
+    }
+    _ci_apply_boundary_diagnostics_to_input_artifacts(
+        artifacts,
+        boundary_diagnostics,
+    )
+    return artifacts
+
+
+def _ci_aggregate_input_artifact(
+    artifact_ref: str | None,
+    *,
+    content_digest: object,
+    required: bool,
+    artifact_instance_id: object,
+    require_artifact_instance_id: bool = False,
+) -> Json:
+    if not required:
+        return {
+            "artifact-ref": None,
+            "artifact-instance-id": None,
+            "content-digest": None,
+            "required": False,
+            "expected-cardinality": 0,
+            "admissibility": "not-required",
+            "diagnostics": [],
+        }
+    if require_artifact_instance_id and not (
+        isinstance(artifact_instance_id, str) and artifact_instance_id
+    ):
+        detail = _ci_required_input_missing_detail(artifact_ref)
+        return {
+            "artifact-ref": None,
+            "artifact-instance-id": None,
+            "content-digest": None,
+            "required": True,
+            "expected-cardinality": 1,
+            "admissibility": "missing",
+            "diagnostics": [
+                _ci_aggregate_diagnostic(
+                    f"final-evidence-failure/{detail}",
+                    code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
+                    detail=detail,
+                    message=("Expected required input artifact id is missing."),
+                    source_id=None,
+                    severity=DiagnosticSeverity.FAIL_CLOSED.value,
+                    verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+                )
+            ],
+        }
+    instance_id = (
+        str(artifact_instance_id)
+        if isinstance(artifact_instance_id, str) and artifact_instance_id
+        else artifact_physical_name(str(artifact_ref))
+    )
+    return {
+        "artifact-ref": artifact_ref,
+        "artifact-instance-id": instance_id,
+        "content-digest": content_digest,
+        "required": True,
+        "expected-cardinality": 1,
+        "admissibility": "valid",
+        "diagnostics": [],
+    }
+
+
+def _ci_required_input_missing_detail(artifact_ref: str | None) -> str:
+    if not isinstance(artifact_ref, str):
+        return DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value
+    return {
+        "execution-batch-manifest": (
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MISSING.value
+        ),
+    }.get(
+        _ci_control_artifact_kind(artifact_ref),
+        DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value,
+    )
+
+
+def _ci_apply_boundary_diagnostics_to_input_artifacts(
+    artifacts: dict[str, object],
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> None:
+    artifacts_by_ref = {
+        artifact.get("artifact-ref"): artifact
+        for artifact in artifacts.values()
+        if isinstance(artifact, dict)
+    }
+    for diagnostic in boundary_diagnostics:
+        source = diagnostic.get("source")
+        source_id = (
+            source.get("id")
+            if isinstance(source, Mapping)
+            else diagnostic.get("source-id")
+        )
+        artifact = artifacts_by_ref.get(source_id)
+        if not isinstance(artifact, dict):
+            if source_id is None:
+                for generic_artifact in artifacts.values():
+                    if (
+                        isinstance(generic_artifact, dict)
+                        and generic_artifact.get("required") is True
+                    ):
+                        generic_artifact["admissibility"] = "inadmissible"
+                        generic_artifact["diagnostics"] = [
+                            *cast(
+                                "Sequence[Mapping[str, object]]",
+                                generic_artifact.get("diagnostics", []),
+                            ),
+                            dict(diagnostic),
+                        ]
+            continue
+        detail = str(diagnostic.get("detail"))
+        artifact["admissibility"] = (
+            "missing" if detail.endswith("-missing") else "inadmissible"
+        )
+        artifact["diagnostics"] = [dict(diagnostic)]
+
+
+def _ci_aggregate_namespace_overflow(pre_final_count: int) -> Json:
+    detected = pre_final_count > 18
+    diagnostics: list[Mapping[str, object]] = []
+    if detected:
+        diagnostics.append(
+            _ci_aggregate_diagnostic(
+                "namespace-closure-failure/namespace-overflow",
+                code=DiagnosticFamily.NAMESPACE_CLOSURE_FAILURE.value,
+                detail=DiagnosticDetail.NAMESPACE_OVERFLOW.value,
+                message="CI validation pre-final artifact namespace overflowed.",
+                source_id=None,
+                severity=DiagnosticSeverity.FAIL_CLOSED.value,
+                verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+            )
+        )
+    return {
+        "detected": detected,
+        "observed-prefixed-artifact-count-lower-bound": pre_final_count,
+        "max-prefixed-validation-artifacts": 18,
+        "diagnostics": sorted(
+            [dict(item) for item in diagnostics],
+            key=lambda item: str(item.get("diagnostic-id")),
+        ),
+    }
+
+
+def _ci_aggregate_pre_final_input_count(
+    input_artifacts: Mapping[str, object],
+) -> int:
+    return sum(
+        1
+        for artifact in input_artifacts.values()
+        if isinstance(artifact, Mapping)
+        and (
+            artifact.get("required") is True
+            or artifact.get("expected-cardinality") == 1
+            or artifact.get("artifact-ref") is not None
+        )
+    )
+
+
+def _ci_aggregate_required_input_failure(
+    input_artifacts: Mapping[str, object],
+) -> bool:
+    return any(
+        isinstance(artifact, Mapping)
+        and artifact.get("required") is True
+        and artifact.get("admissibility") != "valid"
+        for artifact in input_artifacts.values()
+    )
+
+
+def _ci_aggregate_evidence_results(
+    *,
+    plan: Mapping[str, object],
+    admitted_bundles: Sequence[Mapping[str, object]],
+) -> list[Json]:
+    rows_by_evidence_id: dict[str, Json] = {}
+    for bundle in admitted_bundles:
+        batch = cast("Mapping[str, object]", bundle["batch"])
+        for selector in cast(
+            "Sequence[Mapping[str, object]]",
+            bundle.get("selector-results", []),
+        ):
+            outcome = _ci_selector_outcome_to_summary(
+                str(selector.get("outcome"))
+            )
+            rows_by_evidence_id[str(selector["expected-evidence-id"])] = {
+                "evidence-expectation-id": selector["expected-evidence-id"],
+                "work-group-id": selector["work-group-id"],
+                "batch-id": batch["batch-id"],
+                "bundle-id": bundle["bundle-id"],
+                "selector-index": selector["selector-index"],
+                "outcome": outcome,
+                "diagnostics": list(
+                    cast(
+                        "Sequence[Mapping[str, object]]",
+                        selector["diagnostics"],
+                    )
+                ),
+            }
+    results: list[Json] = []
+    for expectation in cast(
+        "Sequence[Mapping[str, object]]",
+        plan.get("evidence-expectations", []),
+    ):
+        evidence_id = str(expectation["evidence-expectation-id"])
+        if evidence_id in rows_by_evidence_id:
+            results.append(rows_by_evidence_id[evidence_id])
+        else:
+            results.append(
+                {
+                    "evidence-expectation-id": evidence_id,
+                    "work-group-id": expectation["work-group-id"],
+                    "batch-id": None,
+                    "bundle-id": None,
+                    "selector-index": None,
+                    "outcome": "missing",
+                    "diagnostics": [
+                        _ci_aggregate_diagnostic(
+                            f"required-evidence-missing/{evidence_id}",
+                            code=DiagnosticFamily.REQUIRED_EVIDENCE_MISSING.value,
+                            detail=DiagnosticDetail.MISSING_BUNDLE.value,
+                            message="Required evidence was not admitted.",
+                            source_id=evidence_id,
+                            severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                            verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                        )
+                    ],
+                }
+            )
+    return sorted(
+        results, key=lambda item: str(item["evidence-expectation-id"])
+    )
+
+
+def _ci_selector_outcome_to_summary(outcome: str) -> str:
+    if outcome == "success":
+        return "satisfied"
+    if outcome == "skipped":
+        return "skipped"
+    return "failed"
+
+
+def _ci_aggregate_summary_bundle_rows(
+    bundle_slots: Sequence[Mapping[str, object]],
+    *,
+    admitted_bundles: Sequence[Mapping[str, object]],
+) -> list[Json]:
+    bundle_by_batch_id = {
+        cast(
+            "str", cast("Mapping[str, object]", bundle["batch"])["batch-id"]
+        ): bundle
+        for bundle in admitted_bundles
+    }
+    rows: list[Json] = []
+    for slot in bundle_slots:
+        batch_id = str(slot["batch-id"])
+        candidates = cast(
+            "Sequence[Mapping[str, object]]",
+            slot.get("observed-candidates", []),
+        )
+        admitted_bundle = bundle_by_batch_id.get(batch_id)
+        rows.append(
+            {
+                "batch-id": batch_id,
+                "artifact-ref": slot["artifact-ref"],
+                "bundle-id": admitted_bundle.get("bundle-id")
+                if admitted_bundle is not None
+                else None,
+                "admitted-candidate-id": slot.get("admitted-candidate-id"),
+                "candidate-count": len(candidates),
+                "admissibility": slot["slot-admissibility"],
+                "diagnostics": list(
+                    cast("Sequence[Mapping[str, object]]", slot["diagnostics"])
+                ),
+            }
+        )
+    return sorted(rows, key=lambda item: str(item["batch-id"]))
+
+
+def _ci_aggregate_summary_failures(  # noqa: C901
+    *,
+    summary_bundle_rows: Sequence[Mapping[str, object]],
+    evidence_results: Sequence[Mapping[str, object]],
+    namespace_overflow: Mapping[str, object],
+    unexpected_artifacts: Sequence[Mapping[str, object]],
+    required_input_failure: bool,
+    aggregate_duration_exceeded: bool,
+) -> list[Json]:
+    failures: list[Json] = []
+    for row in evidence_results:
+        outcome = row.get("outcome")
+        if outcome == "missing":
+            failures.append(
+                _ci_aggregate_failure(
+                    kind="required-evidence-missing",
+                    diagnostic=_ci_aggregate_diagnostic(
+                        f"required-evidence-missing/{row['evidence-expectation-id']}",
+                        code=DiagnosticFamily.REQUIRED_EVIDENCE_MISSING.value,
+                        detail=DiagnosticDetail.MISSING_BUNDLE.value,
+                        message="Required evidence was missing.",
+                        source_id=cast("str", row.get("work-group-id")),
+                        source_type="work-group",
+                        severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                        verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                    ),
+                    message="Required evidence was missing.",
+                    evidence_expectation_id=row.get("evidence-expectation-id"),
+                    work_group_id=row.get("work-group-id"),
+                    batch_id=row.get("batch-id"),
+                    bundle_id=row.get("bundle-id"),
+                )
+            )
+        elif outcome == "skipped":
+            failures.append(
+                _ci_aggregate_failure(
+                    kind="required-evidence-skipped",
+                    diagnostic=_ci_aggregate_diagnostic(
+                        f"required-evidence-skipped/{row['evidence-expectation-id']}",
+                        code=DiagnosticFamily.REQUIRED_EVIDENCE_SKIPPED.value,
+                        detail=DiagnosticDetail.DEPENDENCY_BLOCKED.value,
+                        message="Required evidence was skipped.",
+                        source_id=cast("str", row.get("work-group-id")),
+                        source_type="work-group",
+                        severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                        verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                    ),
+                    message="Required evidence was skipped.",
+                    evidence_expectation_id=row.get("evidence-expectation-id"),
+                    work_group_id=row.get("work-group-id"),
+                    batch_id=row.get("batch-id"),
+                    bundle_id=row.get("bundle-id"),
+                )
+            )
+        elif outcome == "failed":
+            failures.append(
+                _ci_aggregate_failure(
+                    kind="blocking-validation-failure",
+                    diagnostic=_ci_aggregate_diagnostic(
+                        f"blocking-validation-failure/{row['evidence-expectation-id']}",
+                        code=DiagnosticFamily.BLOCKING_VALIDATION_FAILURE.value,
+                        detail=DiagnosticDetail.BLOCKING_VALIDATION_FAILURE.value,
+                        message="Required validation evidence failed.",
+                        source_id=cast("str", row.get("work-group-id")),
+                        source_type="work-group",
+                        severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+                        verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+                    ),
+                    message="Required validation evidence failed.",
+                    evidence_expectation_id=row.get("evidence-expectation-id"),
+                    work_group_id=row.get("work-group-id"),
+                    batch_id=row.get("batch-id"),
+                    bundle_id=row.get("bundle-id"),
+                )
+            )
+    for row in summary_bundle_rows:
+        if row.get("admissibility") == "valid":
+            continue
+        diagnostic = _ci_aggregate_diagnostic(
+            f"inadmissible-batch-evidence/{row['batch-id']}",
+            code=DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+            detail=(
+                DiagnosticDetail.MISSING_BUNDLE.value
+                if row.get("admissibility") == "missing"
+                else DiagnosticDetail.MALFORMED_BUNDLE.value
+            ),
+            message="Required batch evidence was not admissible.",
+            source_id=None,
+            severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
+            verdict_effect=DiagnosticVerdictEffect.FAILED.value,
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="inadmissible-batch-evidence",
+                diagnostic=diagnostic,
+                message="Required batch evidence was not admissible.",
+                batch_id=row.get("batch-id"),
+            )
+        )
+    if aggregate_duration_exceeded:
+        duration_diagnostic = _ci_aggregate_diagnostic(
+            "aggregate-duration-exceeded",
+            code=DiagnosticFamily.AGGREGATE_DURATION_EXCEEDED.value,
+            detail=DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value,
+            message="Aggregate evidence duration exceeded the maximum budget.",
+            source_id=None,
+            severity=DiagnosticSeverity.FAIL_CLOSED.value,
+            verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="aggregate-duration-exceeded",
+                diagnostic=duration_diagnostic,
+                message=(
+                    "Aggregate evidence duration exceeded the maximum budget."
+                ),
+            )
+        )
+        final_diagnostic = _ci_aggregate_diagnostic(
+            "final-evidence-failure/aggregate-duration-exceeded",
+            code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
+            detail=DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value,
+            message=(
+                "Final evidence failed because aggregate duration exceeded "
+                "the maximum budget."
+            ),
+            source_id=None,
+            severity=DiagnosticSeverity.FAIL_CLOSED.value,
+            verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="final-evidence-failure",
+                diagnostic=final_diagnostic,
+                message=(
+                    "Final evidence failed because aggregate duration exceeded "
+                    "the maximum budget."
+                ),
+            )
+        )
+    if required_input_failure:
+        diagnostic = _ci_aggregate_diagnostic(
+            "final-evidence-failure/required-input-artifact-failure",
+            code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
+            detail=DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value,
+            message="Required input artifact evidence was not admissible.",
+            source_id=None,
+            severity=DiagnosticSeverity.FAIL_CLOSED.value,
+            verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="final-evidence-failure",
+                diagnostic=diagnostic,
+                message="Required input artifact evidence was not admissible.",
+            )
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="fail-closed",
+                diagnostic=diagnostic,
+                message="Required input artifact evidence was not admissible.",
+            )
+        )
+    if unexpected_artifacts:
+        diagnostic = _ci_aggregate_diagnostic(
+            "namespace-closure-failure/unexpected-contract-artifact",
+            code=DiagnosticFamily.NAMESPACE_CLOSURE_FAILURE.value,
+            detail=DiagnosticDetail.UNEXPECTED_CONTRACT_ARTIFACT.value,
+            message="Validation artifact namespace was not closed.",
+            source_id=None,
+            severity=DiagnosticSeverity.FAIL_CLOSED.value,
+            verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="namespace-closure-failure",
+                diagnostic=diagnostic,
+                message="Validation artifact namespace was not closed.",
+            )
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="fail-closed",
+                diagnostic=diagnostic,
+                message="Validation artifact namespace was not closed.",
+            )
+        )
+    if namespace_overflow.get("detected") is True:
+        diagnostic = _ci_aggregate_diagnostic(
+            "namespace-closure-failure/namespace-overflow",
+            code=DiagnosticFamily.NAMESPACE_CLOSURE_FAILURE.value,
+            detail=DiagnosticDetail.NAMESPACE_OVERFLOW.value,
+            message="Validation artifact namespace overflowed.",
+            source_id=None,
+            severity=DiagnosticSeverity.FAIL_CLOSED.value,
+            verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="namespace-closure-failure",
+                diagnostic=diagnostic,
+                message="Validation artifact namespace overflowed.",
+            )
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="fail-closed",
+                diagnostic=diagnostic,
+                message="Validation artifact namespace overflowed.",
+            )
+        )
+    return sorted(failures, key=_ci_aggregate_failure_sort_key)
+
+
+def _ci_aggregate_summary_reason(
+    *,
+    summary_bundle_rows: Sequence[Mapping[str, object]],
+    evidence_results: Sequence[Mapping[str, object]],
+    namespace_overflow: Mapping[str, object],
+    unexpected_artifacts: Sequence[Mapping[str, object]],
+    required_input_failure: bool,
+    aggregate_duration_exceeded: bool,
+) -> dict[str, bool]:
+    outcomes = [row.get("outcome") for row in evidence_results]
+    namespace_failure = bool(unexpected_artifacts) or (
+        namespace_overflow.get("detected") is True
+    )
+    final_evidence_failure = (
+        required_input_failure or aggregate_duration_exceeded
+    )
+    return {
+        "invalid-plan": False,
+        "fail-closed": namespace_failure or required_input_failure,
+        "required-evidence-missing": "missing" in outcomes,
+        "required-evidence-skipped": "skipped" in outcomes,
+        "blocking-validation-failure": "failed" in outcomes,
+        "inadmissible-batch-evidence": any(
+            row.get("admissibility") != "valid" for row in summary_bundle_rows
+        ),
+        "namespace-closure-failure": namespace_failure,
+        "aggregate-duration-exceeded": aggregate_duration_exceeded,
+        "final-evidence-failure": final_evidence_failure,
+    }
+
+
+def _ci_aggregate_work_group_counts(
+    evidence_results: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    outcomes = [row.get("outcome") for row in evidence_results]
+    return {
+        "executable-required": len(evidence_results),
+        "required-succeeded": outcomes.count("satisfied"),
+        "required-failed": outcomes.count("failed"),
+        "required-skipped": outcomes.count("skipped"),
+        "required-missing": outcomes.count("missing"),
+        "terminal-aggregation": "present",
+    }
+
+
+def _ci_aggregate_summary_budgets(
+    execution_batch_manifest: Mapping[str, object],
+    *,
+    pre_final_validation_artifacts: int,
+    aggregate_duration_seconds: int,
+) -> dict[str, object]:
+    budget = cast("Mapping[str, object]", execution_batch_manifest["budget"])
+    return {
+        "pre-final-validation-artifacts": pre_final_validation_artifacts,
+        "expected-final-validation-artifacts": 2,
+        "expected-actual-validation-artifacts": pre_final_validation_artifacts
+        + 2,
+        "max-validation-artifacts": budget["max-validation-artifacts"],
+        "actual-execution-batches": budget["actual-execution-batches"],
+        "actual-total-jobs": budget["actual-total-jobs"],
+        "actual-windows-jobs": budget["actual-windows-jobs"],
+        "aggregate-duration-seconds": aggregate_duration_seconds,
+        "aggregate-target-duration-seconds": budget[
+            "aggregate-target-duration-seconds"
+        ],
+        "aggregate-max-duration-seconds": budget[
+            "aggregate-max-duration-seconds"
+        ],
+    }
+
+
+def _ci_aggregate_duration_seconds(started_at: str, completed_at: str) -> int:
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    return max(0, int((completed - started).total_seconds()))
+
+
+def _ci_aggregate_duration_exceeded(budgets: Mapping[str, object]) -> bool:
+    duration = budgets.get("aggregate-duration-seconds")
+    maximum = budgets.get("aggregate-max-duration-seconds")
+    return (
+        isinstance(duration, int)
+        and isinstance(maximum, int)
+        and (duration > maximum)
+    )
+
+
+def _ci_summary_affected_range(plan: Mapping[str, object]) -> dict[str, object]:
+    affected = cast("Mapping[str, object]", plan["affected-range"])
+    return {
+        "status": affected["status"],
+        "base-sha": affected["base-sha"],
+        "base-tip-sha": affected["base-tip-sha"],
+        "head-sha": affected["head-sha"],
+        "changed-files-hash": affected["changed-files-hash"] or None,
+    }
+
+
+def _ci_aggregate_failure(
+    *,
+    kind: str,
+    diagnostic: Mapping[str, object],
+    message: str,
+    evidence_expectation_id: object = None,
+    work_group_id: object = None,
+    batch_id: object = None,
+    bundle_id: object = None,
+) -> Json:
+    return {
+        "kind": kind,
+        "batch-id": batch_id,
+        "work-group-id": work_group_id,
+        "evidence-expectation-id": evidence_expectation_id,
+        "bundle-id": bundle_id,
+        "diagnostic": dict(diagnostic),
+        "message": message,
+    }
+
+
+def _ci_aggregate_failure_sort_key(
+    item: Mapping[str, object],
+) -> tuple[str, str, str, str, str, str]:
+    return (
+        str(item.get("kind") or ""),
+        str(item.get("evidence-expectation-id") or ""),
+        str(item.get("work-group-id") or ""),
+        str(item.get("batch-id") or ""),
+        str(item.get("bundle-id") or ""),
+        canonical_json_digest(item),
+    )
+
+
+def _ci_aggregate_diagnostic(
+    diagnostic_id: str,
+    *,
+    code: str,
+    detail: str,
+    message: str,
+    source_id: str | None,
+    severity: str,
+    verdict_effect: str,
+    source_type: str = "aggregation",
+) -> dict[str, object]:
+    return ci_validation_diagnostic(
+        diagnostic_id=diagnostic_id,
+        code=code,
+        detail=detail,
+        message=message,
+        source_type=source_type,
+        source_id=source_id,
+        severity=severity,
+        verdict_effect=verdict_effect,
+    )
 
 
 def _write_invalid_ci_aggregate(
@@ -3715,6 +6154,15 @@ def _ci_expected_aggregate_input_artifacts(
         (
             "expected_selector_assignments_artifact_id",
             ci_validation_selector_assignments_artifact_ref(
+                run_id=run_id,
+                run_attempt=run_attempt,
+            ),
+            "materialize-work-groups",
+            "materialize-work-groups",
+        ),
+        (
+            "expected_execution_batch_manifest_artifact_id",
+            ci_validation_execution_batch_manifest_artifact_ref(
                 run_id=run_id,
                 run_attempt=run_attempt,
             ),
