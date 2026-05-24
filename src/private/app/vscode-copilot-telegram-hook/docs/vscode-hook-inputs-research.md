@@ -213,8 +213,9 @@ missing or invalid when the agent tries to stop.
 
 The summary still needs correlation data. The documented `Stop` blocking path is
 a platform capability, but the current default design supersedes H-008's
-blocking direction and instead sends a non-blocking degraded fallback
-notification when the summary is missing or malformed.
+blocking direction: pending handoffs may defer notification while unresolved,
+and the `Stop` hook sends a non-blocking degraded fallback only when no pending
+handoff can satisfy the `Stop`.
 
 ### Practical implication
 
