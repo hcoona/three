@@ -321,6 +321,90 @@ public sealed class CacheStoreTests
         Assert.Null(catalog);
     }
 
+    [Fact]
+    public async Task GetCatalogAsyncKeepsAnonymousAndValidatedCatalogScopesIndependent()
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = temporaryDirectory.FullPath;
+        string bookId = "1045928363";
+        CatalogCacheScope validatedScope = CatalogCacheScope.ForValidatedUser("tester");
+        CatalogSnapshot anonymousCatalog = new(
+            bookId,
+            new BookMetadata(bookId, "Anonymous Title", "Author", 123456),
+            [
+                new VolumeDescriptor(
+                    "VIP Volume",
+                    IsVip: true,
+                    [
+                        new ChapterDescriptor(
+                            "1",
+                            "Chapter One",
+                            "https://www.qidian.com/chapter/1045928363/1/",
+                            true,
+                            1000,
+                            CatalogChapterAccessState.PurchaseRequired),
+                    ]),
+            ],
+            DateTimeOffset.UtcNow,
+            CatalogCacheScope.Anonymous);
+        CatalogSnapshot validatedCatalog = anonymousCatalog with
+        {
+            Metadata = anonymousCatalog.Metadata with { Title = "Validated Title" },
+            Volumes =
+            [
+                new VolumeDescriptor(
+                    "VIP Volume",
+                    IsVip: true,
+                    [
+                        new ChapterDescriptor(
+                            "1",
+                            "Chapter One",
+                            "https://www.qidian.com/chapter/1045928363/1/",
+                            true,
+                            1000,
+                            CatalogChapterAccessState.Accessible),
+                    ]),
+            ],
+            CacheScope = validatedScope,
+        };
+
+        await CacheStore.SaveCatalogAsync(root, anonymousCatalog, CancellationToken.None);
+        await CacheStore.SaveCatalogAsync(root, validatedCatalog, CancellationToken.None);
+
+        string anonymousPath = AppPaths.GetCatalogCachePath(
+            root,
+            bookId,
+            CatalogCacheScope.Anonymous);
+        string validatedPath = AppPaths.GetCatalogCachePath(root, bookId, validatedScope);
+        Assert.NotEqual(anonymousPath, validatedPath);
+        Assert.True(File.Exists(anonymousPath));
+        Assert.True(File.Exists(validatedPath));
+
+        CatalogSnapshot? anonymousRoundTrip = await CacheStore.GetCatalogAsync(
+            root,
+            bookId,
+            CatalogCacheScope.Anonymous,
+            CancellationToken.None);
+        CatalogSnapshot? validatedRoundTrip = await CacheStore.GetCatalogAsync(
+            root,
+            bookId,
+            validatedScope,
+            CancellationToken.None);
+
+        Assert.NotNull(anonymousRoundTrip);
+        Assert.NotNull(validatedRoundTrip);
+        Assert.Equal("Anonymous Title", anonymousRoundTrip.Metadata.Title);
+        Assert.Equal("Validated Title", validatedRoundTrip.Metadata.Title);
+        Assert.Equal(
+            CatalogChapterAccessState.PurchaseRequired,
+            anonymousRoundTrip.Volumes[0].Chapters[0].CatalogAccessState);
+        Assert.Equal(
+            CatalogChapterAccessState.Accessible,
+            validatedRoundTrip.Volumes[0].Chapters[0].CatalogAccessState);
+        Assert.Equal(CatalogCacheScope.Anonymous, anonymousRoundTrip.CacheScope);
+        Assert.Equal(validatedScope, validatedRoundTrip.CacheScope);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public string FullPath { get; } = Path.Combine(
