@@ -116,7 +116,8 @@ internal sealed class AppCommandService(
                     }
                 }
 
-                async Task<LoginState> EnsureValidatedLoginStateAsync(
+                async Task<(LoginState LoginState, bool ManualLoginCompleted)>
+                    EnsureValidatedLoginStateAsync(
                     LoginState? currentState = null)
                 {
                     currentState = currentState switch
@@ -129,7 +130,7 @@ internal sealed class AppCommandService(
                     };
                     if (currentState.IsValidated)
                     {
-                        return currentState;
+                        return (currentState, ManualLoginCompleted: false);
                     }
 
                     Console.WriteLine(
@@ -143,7 +144,7 @@ internal sealed class AppCommandService(
                     browser = null;
                     LoginState validatedState = await GetCurrentLoginStateAsync(forceRefresh: true);
                     Console.WriteLine("Login confirmed. Continuing with the validated session.");
-                    return validatedState;
+                    return (validatedState, ManualLoginCompleted: true);
                 }
 
                 async Task<(
@@ -156,6 +157,51 @@ internal sealed class AppCommandService(
                     LoginState? currentLoginState = null;
                     bool hasProbedCurrentLoginState = false;
                     bool vipFullContentClassificationProbeCompleted = false;
+
+                    async Task<(CatalogSnapshot Catalog, List<ChapterPlan> Plans)>
+                        GetValidatedCatalogAndPlansAsync(
+                            LoginState validatedLoginState,
+                            bool forceRefresh)
+                    {
+                        (
+                            CatalogSnapshot validatedCatalog,
+                            bool reusedCachedValidatedCatalog) = await GetCatalogAsync(
+                            target.BookId,
+                            settings,
+                            paths,
+                            GetBrowserAsync,
+                            CatalogCacheScope.ForValidatedUser(
+                                validatedLoginState.UserName!),
+                            forceRefresh,
+                            cancellationToken);
+                        List<ChapterPlan> validatedPlans = await BuildChapterPlansAsync(
+                            validatedCatalog,
+                            paths.CacheRoot,
+                            validatedLoginState,
+                            cancellationToken);
+                        if (reusedCachedValidatedCatalog
+                            && RequiresValidatedCatalogRefreshForEntitlementMismatch(
+                                validatedPlans,
+                                validatedLoginState))
+                        {
+                            (validatedCatalog, _) = await GetCatalogAsync(
+                                target.BookId,
+                                settings,
+                                paths,
+                                GetBrowserAsync,
+                                CatalogCacheScope.ForValidatedUser(
+                                    validatedLoginState.UserName!),
+                                forceRefresh: true,
+                                cancellationToken);
+                            validatedPlans = await BuildChapterPlansAsync(
+                                validatedCatalog,
+                                paths.CacheRoot,
+                                validatedLoginState,
+                                cancellationToken);
+                        }
+
+                        return (validatedCatalog, validatedPlans);
+                    }
 
                     async Task<LoginState?> ProbeCurrentLoginStateAsync(
                         LoginStateProbeMode probeMode)
@@ -182,20 +228,12 @@ internal sealed class AppCommandService(
                             initialLoginState);
                         if (initialValidatedLoginState is not null)
                         {
-                            CatalogSnapshot validatedCatalog = await GetCatalogAsync(
-                                target.BookId,
-                                settings,
-                                paths,
-                                GetBrowserAsync,
-                                CatalogCacheScope.ForValidatedUser(
-                                    initialValidatedLoginState.UserName!),
-                                forceRefresh: false,
-                                cancellationToken);
-                            List<ChapterPlan> validatedPlans = await BuildChapterPlansAsync(
-                                validatedCatalog,
-                                paths.CacheRoot,
-                                initialValidatedLoginState,
-                                cancellationToken);
+                            (
+                                CatalogSnapshot validatedCatalog,
+                                List<ChapterPlan> validatedPlans) =
+                                await GetValidatedCatalogAndPlansAsync(
+                                    initialValidatedLoginState,
+                                    forceRefresh: false);
                             return (
                                 validatedCatalog,
                                 validatedPlans,
@@ -230,28 +268,30 @@ internal sealed class AppCommandService(
                             && currentLoginState is not null
                             && !currentLoginState.IsValidated)
                         {
-                            currentLoginState = await EnsureValidatedLoginStateAsync(
-                                currentLoginState);
+                            (
+                                currentLoginState,
+                                bool manualLoginCompleted) =
+                                await EnsureValidatedLoginStateAsync(currentLoginState);
+                            if (manualLoginCompleted)
+                            {
+                                (catalog, plans) = await GetValidatedCatalogAndPlansAsync(
+                                    currentLoginState,
+                                    forceRefresh: true);
+                                return (
+                                    catalog,
+                                    plans,
+                                    currentLoginState,
+                                    vipFullContentClassificationProbeCompleted);
+                            }
                         }
 
                         LoginState? validatedLoginState = GetValidatedLoginState(
                             currentLoginState);
                         if (validatedLoginState is not null)
                         {
-                            catalog = await GetCatalogAsync(
-                                target.BookId,
-                                settings,
-                                paths,
-                                GetBrowserAsync,
-                                CatalogCacheScope.ForValidatedUser(
-                                    validatedLoginState.UserName!),
-                                forceRefresh: false,
-                                cancellationToken);
-                            plans = await BuildChapterPlansAsync(
-                                catalog,
-                                paths.CacheRoot,
+                            (catalog, plans) = await GetValidatedCatalogAndPlansAsync(
                                 validatedLoginState,
-                                cancellationToken);
+                                forceRefresh: false);
                         }
                     }
 
@@ -587,7 +627,7 @@ internal sealed class AppCommandService(
                     headless: true,
                     cancellationToken);
 
-            CatalogSnapshot catalog = await GetCatalogAsync(
+            (CatalogSnapshot catalog, _) = await GetCatalogAsync(
                 target.BookId,
                 settings,
                 paths,
@@ -644,7 +684,7 @@ internal sealed class AppCommandService(
         }
     }
 
-    private async Task<CatalogSnapshot> GetCatalogAsync(
+    private async Task<(CatalogSnapshot Catalog, bool ReusedCache)> GetCatalogAsync(
         string bookId,
         ResolvedAppSettings settings,
         AppStoragePaths paths,
@@ -665,16 +705,17 @@ internal sealed class AppCommandService(
                     settings.CatalogCacheTtlHours,
                     timeProvider))
             {
-                return cachedCatalog;
+                return (cachedCatalog, ReusedCache: true);
             }
         }
 
-        return await FetchCatalogAsync(
+        CatalogSnapshot fetchedCatalog = await FetchCatalogAsync(
             bookId,
             paths,
             getBrowserAsync,
             scope,
             cancellationToken);
+        return (fetchedCatalog, ReusedCache: false);
     }
 
     private static async Task<CatalogSnapshot> FetchCatalogAsync(
@@ -746,9 +787,15 @@ internal sealed class AppCommandService(
             {
                 status = ChapterPlanStatus.FetchRequired;
             }
-            else if (
-                cachedProbe.CatalogWordCount != chapter.CatalogWordCount
-                || cachedProbe.CatalogAccessState != chapter.CatalogAccessState)
+            else if (cachedProbe.CatalogWordCount != chapter.CatalogWordCount)
+            {
+                status = ChapterPlanStatus.Changed;
+            }
+            else if (cachedProbe.CatalogAccessState != chapter.CatalogAccessState
+                && !CanIgnoreCatalogAccessStateMismatchForSameUserPrivateVipFullCache(
+                    chapter,
+                    cachedProbe,
+                    validatedLoginState))
             {
                 status = ChapterPlanStatus.Changed;
             }
@@ -860,6 +907,22 @@ internal sealed class AppCommandService(
                         && cachedProbe.CatalogAccessState
                             != plan.Chapter.CatalogAccessState)));
 
+    private static bool RequiresValidatedCatalogRefreshForEntitlementMismatch(
+        IReadOnlyList<ChapterPlan> plans,
+        LoginState validatedLoginState)
+        => validatedLoginState is { IsValidated: true, UserName: { Length: > 0 } userName }
+            && plans.Any(
+                plan => plan.Chapter.IsVip
+                    && plan.CachedProbe is { IsPreview: false } cachedProbe
+                    && cachedProbe.CatalogAccessState
+                        != plan.Chapter.CatalogAccessState
+                    && cachedProbe.VipFullContentProvenance
+                        != VipFullContentCacheProvenance.Public
+                    && string.Equals(
+                        LoginState.NormalizeUserName(cachedProbe.VisibleToUserName),
+                        userName,
+                        StringComparison.Ordinal));
+
     private static bool CanReuseCachedChapter(
         ChapterDescriptor chapter,
         bool isPreview,
@@ -888,6 +951,11 @@ internal sealed class AppCommandService(
             return true;
         }
 
+        if (chapter.CatalogAccessState != CatalogChapterAccessState.Accessible)
+        {
+            return false;
+        }
+
         if (vipFullContentProvenance == VipFullContentCacheProvenance.ValidatedUser)
         {
             return string.Equals(
@@ -901,6 +969,27 @@ internal sealed class AppCommandService(
             userName,
             StringComparison.Ordinal);
     }
+
+    private static bool CanIgnoreCatalogAccessStateMismatchForSameUserPrivateVipFullCache(
+        ChapterDescriptor chapter,
+        ChapterCacheProbe cachedProbe,
+        LoginState? validatedLoginState)
+        => chapter is
+            {
+                IsVip: true,
+                CatalogAccessState: CatalogChapterAccessState.Accessible,
+            }
+            && cachedProbe is
+            {
+                IsPreview: false,
+                VipFullContentProvenance: not VipFullContentCacheProvenance.Public,
+            }
+            && CanReuseCachedChapter(
+                chapter,
+                cachedProbe.IsPreview,
+                cachedProbe.VisibleToUserName,
+                cachedProbe.VipFullContentProvenance,
+                validatedLoginState);
 
     private static string? GetVisibleToUserName(
         ChapterDescriptor chapter,

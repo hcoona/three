@@ -132,7 +132,7 @@ public sealed class AppCommandServiceTests
                 ["full content"],
                 IsPreview: false,
                 100,
-                CatalogChapterAccessState.PurchaseRequired,
+                CatalogChapterAccessState.Accessible,
                 VisibleToUserName: "tester"),
             CancellationToken.None);
         await CacheStore.SaveCatalogAsync(
@@ -150,9 +150,19 @@ public sealed class AppCommandServiceTests
             ],
             catalogs:
             [
-                CreateCatalog(
+                CreateCatalogWithAccessStates(
                     "100",
-                    ("VIP Volume", true, [("c1", "VIP One", true, 100)])),
+                    (
+                        "VIP Volume",
+                        true,
+                        [
+                            (
+                                "c1",
+                                "VIP One",
+                                true,
+                                100,
+                                CatalogChapterAccessState.Accessible),
+                        ])),
             ]);
         FakeBrowserSession headedSession = new(
             loginStates:
@@ -166,9 +176,14 @@ public sealed class AppCommandServiceTests
             ],
             catalogs:
             [
-                CreateCatalog(
+                CreateCatalogWithAccessStates(
                     "100",
-                    ("VIP Volume", true, [("c1", "VIP One", true, 100)])),
+                    (
+                        "VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                        ])),
             ]);
         FakeBrowserManager browserManager = new(
             initialHeadlessSession,
@@ -230,7 +245,7 @@ public sealed class AppCommandServiceTests
                 ["full content"],
                 IsPreview: false,
                 100,
-                CatalogChapterAccessState.PurchaseRequired,
+                CatalogChapterAccessState.Accessible,
                 VisibleToUserName: "tester"),
             CancellationToken.None);
         await CacheStore.SaveCatalogAsync(
@@ -248,9 +263,14 @@ public sealed class AppCommandServiceTests
             ],
             catalogs:
             [
-                CreateCatalog(
+                CreateCatalogWithAccessStates(
                     "100",
-                    ("VIP Volume", true, [("c1", "VIP One", true, 100)])),
+                    (
+                        "VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                        ])),
             ]);
         FakeBrowserSession headedSession = new(
             loginStates:
@@ -264,9 +284,14 @@ public sealed class AppCommandServiceTests
             ],
             catalogs:
             [
-                CreateCatalog(
+                CreateCatalogWithAccessStates(
                     "100",
-                    ("VIP Volume", true, [("c1", "VIP One", true, 100)])),
+                    (
+                        "VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                        ])),
             ]);
         FakeBrowserManager browserManager = new(
             initialHeadlessSession,
@@ -373,7 +398,12 @@ public sealed class AppCommandServiceTests
                         "Fetched VIP Volume",
                         true,
                         [
-                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                            (
+                                "c1",
+                                "VIP One",
+                                true,
+                                100,
+                                CatalogChapterAccessState.PurchaseRequired),
                         ])),
             ]);
         FakeBrowserManager browserManager = new(
@@ -402,13 +432,23 @@ public sealed class AppCommandServiceTests
         Assert.Equal(
             [LoginStateProbeMode.WaitForValidatedIdentity],
             resumedHeadlessSession.LoginStateProbeModes);
-        Assert.Contains("open:headless", browserManager.Events);
-        Assert.Contains("open:headed", browserManager.Events);
-        Assert.Contains("wait-for-login:headed", browserManager.Events);
-        Assert.Contains("persist-session:headed", browserManager.Events);
+        AssertContainsOrderedSubsequence(
+            browserManager.Events,
+            [
+                "open:headless",
+                "login-state:headless",
+                "login-state:headless",
+                "open:headed",
+                "wait-for-login:headed",
+                "persist-session:headed",
+                "open:headless",
+                "login-state:headless",
+                "fetch-catalog:headless:100",
+            ]);
         Assert.Contains("Authentication is required.", result.StdOut);
         Assert.Contains("Login confirmed. Continuing with the validated session.", result.StdOut);
-        Assert.Contains("- VIP One: cached", result.StdOut);
+        Assert.Contains("- VIP One: changed", result.StdOut);
+        Assert.DoesNotContain("- VIP One: cached", result.StdOut);
         Assert.Contains("Summary: books completed=1", result.StdOut);
     }
 
@@ -424,12 +464,19 @@ public sealed class AppCommandServiceTests
                 ["full content"],
                 IsPreview: false,
                 100,
-                CatalogChapterAccessState.PurchaseRequired,
+                CatalogChapterAccessState.Accessible,
                 VisibleToUserName: "tester"),
             CancellationToken.None);
         await CacheStore.SaveCatalogAsync(
             workspace.Paths.CacheRoot,
-            CreateCatalog("100", ("VIP Volume", true, [("c1", "VIP One", true, 100)]))
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                    ]))
             with
             {
                 CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
@@ -443,9 +490,14 @@ public sealed class AppCommandServiceTests
             ],
             catalogs:
             [
-                CreateCatalog(
+                CreateCatalogWithAccessStates(
                     "100",
-                    ("VIP Volume", true, [("c1", "VIP One", true, 100)])),
+                    (
+                        "VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                        ])),
             ]);
         FakeBrowserManager browserManager = new(headlessSession);
         AppCommandService service = CreateService(workspace, browserManager);
@@ -803,6 +855,525 @@ public sealed class AppCommandServiceTests
         Assert.Contains("open:headless", browserManager.Events);
         Assert.Contains("login-state:headless", browserManager.Events);
         Assert.Contains("- VIP One: cached", result.StdOut);
+    }
+
+    [Fact]
+    public async Task
+        DownloadAsyncRefreshesValidatedCatalogWhenSameUserVipFullCacheHasEntitlementMismatch()
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "Stale VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP One", true, 100, CatalogChapterAccessState.PurchaseRequired),
+                    ]))
+            with
+            {
+                CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
+            },
+            CancellationToken.None);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            new ChapterCacheEntry(
+                "c1",
+                ["full content"],
+                IsPreview: false,
+                100,
+                CatalogChapterAccessState.Accessible,
+                VisibleToUserName: "tester"),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ],
+            catalogs:
+            [
+                CreateCatalogWithAccessStates(
+                    "100",
+                    (
+                        "Fresh VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                        ])),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100"],
+                    DryRun = true,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal(
+            1,
+            browserManager.Events.Count(
+                static eventName => eventName == "fetch-catalog:headless:100"));
+        AssertContainsOrderedSubsequence(
+            browserManager.Events,
+            [
+                "login-state:headless",
+                "fetch-catalog:headless:100",
+            ]);
+        Assert.Contains("- VIP One: cached", result.StdOut);
+    }
+
+    [Fact]
+    public async Task
+        DownloadAsyncHonorsRefreshedValidatedCatalogWhenSameUserVipFullAccessIsLost()
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "Stale VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP One", true, 100, CatalogChapterAccessState.PurchaseRequired),
+                    ]))
+            with
+            {
+                CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
+            },
+            CancellationToken.None);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            new ChapterCacheEntry(
+                "c1",
+                ["full content"],
+                IsPreview: false,
+                100,
+                CatalogChapterAccessState.Accessible,
+                VisibleToUserName: "tester"),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ],
+            catalogs:
+            [
+                CreateCatalogWithAccessStates(
+                    "100",
+                    (
+                        "Fresh VIP Volume",
+                        true,
+                        [
+                            (
+                                "c1",
+                                "VIP One",
+                                true,
+                                100,
+                                CatalogChapterAccessState.PurchaseRequired),
+                        ])),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100"],
+                    DryRun = true,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal(
+            1,
+            browserManager.Events.Count(
+                static eventName => eventName == "fetch-catalog:headless:100"));
+        AssertContainsOrderedSubsequence(
+            browserManager.Events,
+            [
+                "login-state:headless",
+                "fetch-catalog:headless:100",
+            ]);
+        Assert.Contains("- VIP One: changed", result.StdOut);
+    }
+
+    [Theory]
+    [InlineData(CatalogChapterAccessState.PurchaseRequired, "- VIP One: fetch")]
+    [InlineData(CatalogChapterAccessState.Unknown, "- VIP One: changed")]
+    public async Task
+        DownloadAsyncRefreshesValidatedCatalogWhenCachedAccessDeniesButReusedCatalogGrants(
+            object cachedCatalogAccessState,
+            string expectedChapterStatus)
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "Stale VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                    ]))
+            with
+            {
+                CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
+            },
+            CancellationToken.None);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            new ChapterCacheEntry(
+                "c1",
+                ["full content"],
+                IsPreview: false,
+                100,
+                (CatalogChapterAccessState)cachedCatalogAccessState,
+                VisibleToUserName: "tester"),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ],
+            catalogs:
+            [
+                CreateCatalogWithAccessStates(
+                    "100",
+                    (
+                        "Fresh VIP Volume",
+                        true,
+                        [
+                            (
+                                "c1",
+                                "VIP One",
+                                true,
+                                100,
+                                CatalogChapterAccessState.PurchaseRequired),
+                        ])),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100"],
+                    DryRun = true,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal(
+            1,
+            browserManager.Events.Count(
+                static eventName => eventName == "fetch-catalog:headless:100"));
+        Assert.Contains(expectedChapterStatus, result.StdOut);
+        Assert.DoesNotContain("- VIP One: cached", result.StdOut);
+    }
+
+    [Theory]
+    [InlineData(CatalogChapterAccessState.PurchaseRequired)]
+    [InlineData(CatalogChapterAccessState.Unknown)]
+    public async Task
+        DownloadAsyncReusesSameUserVipFullCacheAfterRefreshConfirmsCachedAccessWasStale(
+            object cachedCatalogAccessState)
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "Stale VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                    ]))
+            with
+            {
+                CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
+            },
+            CancellationToken.None);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            new ChapterCacheEntry(
+                "c1",
+                ["full content"],
+                IsPreview: false,
+                100,
+                (CatalogChapterAccessState)cachedCatalogAccessState,
+                VisibleToUserName: "tester"),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ],
+            catalogs:
+            [
+                CreateCatalogWithAccessStates(
+                    "100",
+                    (
+                        "Fresh VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, CatalogChapterAccessState.Accessible),
+                        ])),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100"],
+                    DryRun = true,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal(
+            1,
+            browserManager.Events.Count(
+                static eventName => eventName == "fetch-catalog:headless:100"));
+        Assert.Contains("- VIP One: cached", result.StdOut);
+    }
+
+    [Fact]
+    public async Task
+        DownloadAsyncDoesNotRefreshAgainWhenMissingValidatedCatalogFetchDeniesSameUserVipFullAccess()
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            new ChapterCacheEntry(
+                "c1",
+                ["full content"],
+                IsPreview: false,
+                100,
+                CatalogChapterAccessState.Accessible,
+                VisibleToUserName: "tester"),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ],
+            catalogs:
+            [
+                CreateCatalogWithAccessStates(
+                    "100",
+                    (
+                        "Fresh VIP Volume",
+                        true,
+                        [
+                            (
+                                "c1",
+                                "VIP One",
+                                true,
+                                100,
+                                CatalogChapterAccessState.PurchaseRequired),
+                        ])),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100"],
+                    DryRun = true,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal(
+            1,
+            browserManager.Events.Count(
+                static eventName => eventName == "fetch-catalog:headless:100"));
+        Assert.Contains("- VIP One: changed", result.StdOut);
+        Assert.DoesNotContain("- VIP One: cached", result.StdOut);
+    }
+
+    [Fact]
+    public async Task
+        DownloadAsyncDoesNotRefreshAgainWhenStaleValidatedCatalogFetchDeniesSameUserVipFullAccess()
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "Stale VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP One", true, 100, CatalogChapterAccessState.PurchaseRequired),
+                    ]))
+            with
+            {
+                CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
+                FetchedAtUtc = DateTimeOffset.UtcNow.AddDays(-2),
+            },
+            CancellationToken.None);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            new ChapterCacheEntry(
+                "c1",
+                ["full content"],
+                IsPreview: false,
+                100,
+                CatalogChapterAccessState.Accessible,
+                VisibleToUserName: "tester"),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ],
+            catalogs:
+            [
+                CreateCatalogWithAccessStates(
+                    "100",
+                    (
+                        "Fresh VIP Volume",
+                        true,
+                        [
+                            (
+                                "c1",
+                                "VIP One",
+                                true,
+                                100,
+                                CatalogChapterAccessState.PurchaseRequired),
+                        ])),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100"],
+                    DryRun = true,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal(
+            1,
+            browserManager.Events.Count(
+                static eventName => eventName == "fetch-catalog:headless:100"));
+        Assert.Contains("- VIP One: changed", result.StdOut);
+        Assert.DoesNotContain("- VIP One: cached", result.StdOut);
+    }
+
+    [Theory]
+    [InlineData(false, CatalogChapterAccessState.PurchaseRequired, "- VIP One: changed")]
+    [InlineData(false, CatalogChapterAccessState.Accessible, "- VIP One: cached")]
+    [InlineData(true, CatalogChapterAccessState.PurchaseRequired, "- VIP One: changed")]
+    [InlineData(true, CatalogChapterAccessState.Accessible, "- VIP One: cached")]
+    public async Task
+        DownloadAsyncDoesNotRefreshAgainWhenInitialValidatedCatalogFetchFindsUnknownCachedAccessMismatch(
+            bool hasStaleValidatedCatalog,
+            object refreshedCatalogAccessState,
+            string expectedChapterStatus)
+    {
+        using TestWorkspace workspace = new();
+        CatalogChapterAccessState refreshedAccessState =
+            (CatalogChapterAccessState)refreshedCatalogAccessState;
+        if (hasStaleValidatedCatalog)
+        {
+            await CacheStore.SaveCatalogAsync(
+                workspace.Paths.CacheRoot,
+                CreateCatalogWithAccessStates(
+                    "100",
+                    (
+                        "Stale VIP Volume",
+                        true,
+                        [
+                            (
+                                "c1",
+                                "VIP One",
+                                true,
+                                100,
+                                CatalogChapterAccessState.Accessible),
+                        ]))
+                with
+                {
+                    CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
+                    FetchedAtUtc = DateTimeOffset.UtcNow.AddDays(-2),
+                },
+                CancellationToken.None);
+        }
+
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            new ChapterCacheEntry(
+                "c1",
+                ["full content"],
+                IsPreview: false,
+                100,
+                CatalogChapterAccessState.Unknown,
+                VisibleToUserName: "tester"),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ],
+            catalogs:
+            [
+                CreateCatalogWithAccessStates(
+                    "100",
+                    (
+                        "Fresh VIP Volume",
+                        true,
+                        [
+                            ("c1", "VIP One", true, 100, refreshedAccessState),
+                        ])),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100"],
+                    DryRun = true,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal(
+            1,
+            browserManager.Events.Count(
+                static eventName => eventName == "fetch-catalog:headless:100"));
+        Assert.Contains(expectedChapterStatus, result.StdOut);
+        Assert.Equal(
+            refreshedAccessState == CatalogChapterAccessState.Accessible,
+            result.StdOut.Contains("- VIP One: cached", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -2049,6 +2620,77 @@ public sealed class AppCommandServiceTests
             ["cached"],
             IsPreview: false,
             100,
+            CatalogChapterAccessState.Accessible,
+            VisibleToUserName: "tester");
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP Chapter", true, 100, CatalogChapterAccessState.Accessible),
+                    ])),
+            workspace.Paths.CacheRoot,
+            new LoginState(true, "tester"),
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.Cached, plans[0].Status);
+    }
+
+    [Fact]
+    public async Task
+        BuildChapterPlansAsyncReusesSameUserVipFullCacheWhenValidatedCatalogGrantsAccess()
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached"],
+            IsPreview: false,
+            100,
+            CatalogChapterAccessState.PurchaseRequired,
+            VisibleToUserName: "tester");
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "VIP Volume",
+                    true,
+                    [
+                        ("c1", "VIP Chapter", true, 100, CatalogChapterAccessState.Accessible),
+                    ])),
+            workspace.Paths.CacheRoot,
+            new LoginState(true, "tester"),
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.Cached, plans[0].Status);
+        Assert.NotNull(plans[0].CachedEntry);
+    }
+
+    [Fact]
+    public async Task
+        BuildChapterPlansAsyncDoesNotReuseVipFullCacheWhenValidatedCatalogShowsNoAccess()
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached"],
+            IsPreview: false,
+            100,
             CatalogChapterAccessState.PurchaseRequired,
             VisibleToUserName: "tester");
         await CacheStore.SaveChapterAsync(
@@ -2064,7 +2706,7 @@ public sealed class AppCommandServiceTests
             CancellationToken.None);
 
         Assert.Single(plans);
-        Assert.Equal(ChapterPlanStatus.Cached, plans[0].Status);
+        Assert.Equal(ChapterPlanStatus.FetchRequired, plans[0].Status);
     }
 
     [Fact]
