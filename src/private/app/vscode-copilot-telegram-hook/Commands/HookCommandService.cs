@@ -370,13 +370,10 @@ internal sealed class HookCommandService(
             {
                 if (
                     freshClaimedStopAttributionTurns.Count > 0
-                    || await HasBlockingFreshClaimedTurnAsync(
-                        workspacePath,
-                        hookInput.SessionId,
+                    || HasBlockingFreshClaimedTurn(
                         openTurns,
                         freshClaimedOpenTurns,
-                        hookInput.Timestamp,
-                        cancellationToken
+                        hookInput.Timestamp
                     )
                 )
                 {
@@ -2252,7 +2249,6 @@ internal sealed class HookCommandService(
                     exactStopSummaryTurns[0],
                     currentTurn,
                     currentValidation,
-                    freshClaimedOpenTurns,
                     stopTimestamp
                 )
             )
@@ -2791,7 +2787,13 @@ internal sealed class HookCommandService(
 
         foreach (NotificationTurn freshClaimedTurn in freshClaimedOpenTurns)
         {
-            if (!IsExactSummaryForDifferentTurn(freshClaimedTurn, currentTurn, stopTimestamp))
+            if (
+                !IsDifferentTurnWithParsableStopTimestamp(
+                    freshClaimedTurn,
+                    currentTurn,
+                    stopTimestamp
+                )
+            )
             {
                 continue;
             }
@@ -2830,18 +2832,15 @@ internal sealed class HookCommandService(
         return false;
     }
 
-    private static Task<bool> HasBlockingFreshClaimedTurnAsync(
-        string workspacePath,
-        string sessionId,
+    private static bool HasBlockingFreshClaimedTurn(
         IReadOnlyList<NotificationTurn> openTurns,
         IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
-        string stopTimestamp,
-        CancellationToken cancellationToken
+        string stopTimestamp
     )
     {
         if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
         {
-            return Task.FromResult(false);
+            return false;
         }
 
         NotificationTurn[] eligibleFreshClaimedTurns = freshClaimedOpenTurns
@@ -2852,7 +2851,7 @@ internal sealed class HookCommandService(
             .ToArray();
         if (eligibleFreshClaimedTurns.Length == 0)
         {
-            return Task.FromResult(false);
+            return false;
         }
 
         NotificationTurn[] eligibleTurns = openTurns
@@ -2877,11 +2876,10 @@ internal sealed class HookCommandService(
         });
         if (!hasLatestFreshClaimedTurn)
         {
-            return Task.FromResult(false);
+            return false;
         }
 
-        _ = (workspacePath, sessionId, cancellationToken);
-        return Task.FromResult(true);
+        return true;
     }
 
     private static async Task<bool> HasBlockingFreshClaimedCompletedOrInvalidTurnAsync(
@@ -2995,34 +2993,18 @@ internal sealed class HookCommandService(
     }
 
     private static bool ShouldPreferExactOlderSummary(
-        NotificationTurn exactSummaryTurn,
+        NotificationTurn candidateTurn,
         NotificationTurn currentTurn,
         SummaryValidationResult currentValidation,
-        IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
         string stopTimestamp
     )
     {
-        if (!IsExactSummaryForDifferentTurn(exactSummaryTurn, currentTurn, stopTimestamp))
-        {
-            return false;
-        }
-
-        if (HasCurrentStopAttribution(currentValidation, currentTurn, stopTimestamp))
-        {
-            return false;
-        }
-
-        if (currentValidation.IsPendingHandoff)
-        {
-            return true;
-        }
-
-        if (currentValidation.IsValid)
-        {
-            return true;
-        }
-
-        return true;
+        return IsDifferentTurnWithParsableStopTimestamp(
+                candidateTurn,
+                currentTurn,
+                stopTimestamp
+            )
+            && !HasCurrentStopAttribution(currentValidation, currentTurn, stopTimestamp);
     }
 
     private static async Task<
@@ -3122,24 +3104,7 @@ internal sealed class HookCommandService(
         SummaryValidationResult currentValidation,
         NotificationTurn turn,
         string stopTimestamp
-    )
-    {
-        NotificationSummary? summary = currentValidation.Record;
-        return summary is not null
-            && string.Equals(summary.SessionId, turn.SessionId, StringComparison.Ordinal)
-            && string.Equals(
-                summary.NotificationTurnId,
-                turn.NotificationTurnId,
-                StringComparison.Ordinal
-            )
-            && string.Equals(
-                summary.NotificationNonce,
-                turn.NotificationNonce,
-                StringComparison.Ordinal
-            )
-            && string.Equals(summary.UpdatedAt, stopTimestamp, StringComparison.Ordinal)
-            && !IsHookCreatedPlaceholderSummary(summary, turn);
-    }
+    ) => HasStopAttributionForTurn(currentValidation, turn, stopTimestamp);
 
     private static bool IsHookCreatedPlaceholderSummary(
         NotificationSummary summary,
@@ -3158,10 +3123,13 @@ internal sealed class HookCommandService(
     ) =>
         !string.IsNullOrWhiteSpace(turn.SummaryPlaceholderCreatedAt)
         && string.Equals(
-            summary.UpdatedAt,
+            GetPlaceholderCreatedAt(summary),
             turn.SummaryPlaceholderCreatedAt,
             StringComparison.Ordinal
         );
+
+    private static string? GetPlaceholderCreatedAt(NotificationSummary summary) =>
+        summary.PlaceholderCreatedAt ?? summary.UpdatedAt;
 
     private static bool IsLegacyHookCreatedPlaceholderSummary(
         NotificationSummary summary,
@@ -3169,8 +3137,16 @@ internal sealed class HookCommandService(
     ) =>
         string.IsNullOrWhiteSpace(turn.SummaryPlaceholderCreatedAt)
         && (
-            string.Equals(summary.UpdatedAt, turn.CreatedAt, StringComparison.Ordinal)
-            || string.Equals(summary.UpdatedAt, turn.UpdatedAt, StringComparison.Ordinal)
+            string.Equals(
+                GetPlaceholderCreatedAt(summary),
+                turn.CreatedAt,
+                StringComparison.Ordinal
+            )
+            || string.Equals(
+                GetPlaceholderCreatedAt(summary),
+                turn.UpdatedAt,
+                StringComparison.Ordinal
+            )
         );
 
     private static bool IsHookCreatedPlaceholderForStop(
@@ -3190,13 +3166,13 @@ internal sealed class HookCommandService(
             || IsHookCreatedPlaceholderForStop(validation, turn)
         );
 
-    private static bool IsExactSummaryForDifferentTurn(
-        NotificationTurn exactSummaryTurn,
+    private static bool IsDifferentTurnWithParsableStopTimestamp(
+        NotificationTurn candidateTurn,
         NotificationTurn currentTurn,
         string stopTimestamp
     ) =>
         !string.Equals(
-            exactSummaryTurn.NotificationTurnId,
+            candidateTurn.NotificationTurnId,
             currentTurn.NotificationTurnId,
             StringComparison.Ordinal
         ) && TryParseUtcTimestamp(stopTimestamp, out _);
@@ -3523,7 +3499,7 @@ internal sealed class HookCommandService(
                 current.NotificationTurnId,
                 StringComparison.Ordinal
             )
-            && IsExactSummaryForTurnCanPreemptCurrent(
+            && CanDifferentTurnWithParsableStopTimestampPreemptCurrent(
                 preferredOpenTurns[0],
                 freshCurrentTurn,
                 stopTimestamp
@@ -3545,11 +3521,11 @@ internal sealed class HookCommandService(
         return true;
     }
 
-    private static bool IsExactSummaryForTurnCanPreemptCurrent(
-        NotificationTurn exactSummaryTurn,
+    private static bool CanDifferentTurnWithParsableStopTimestampPreemptCurrent(
+        NotificationTurn candidateTurn,
         NotificationTurn currentTurn,
         string stopTimestamp
-    ) => IsExactSummaryForDifferentTurn(exactSummaryTurn, currentTurn, stopTimestamp);
+    ) => IsDifferentTurnWithParsableStopTimestamp(candidateTurn, currentTurn, stopTimestamp);
 
     private static async Task<bool> HasPendingStopObservationOnAbandonedTurnAsync(
         string workspacePath,

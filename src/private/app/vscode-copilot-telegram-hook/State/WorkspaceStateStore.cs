@@ -139,6 +139,7 @@ internal sealed class WorkspaceStateStore(
             NotificationTurnId = turn.NotificationTurnId,
             NotificationNonce = turn.NotificationNonce,
             UpdatedAt = now,
+            PlaceholderCreatedAt = now,
             Status = "pending",
             Details = [],
             ChangedFiles = [],
@@ -1254,7 +1255,7 @@ internal sealed class WorkspaceStateStore(
         );
         if (summary is not null && IsHookCreatedPendingPlaceholder(summary, turn))
         {
-            turn.SummaryPlaceholderCreatedAt = summary.UpdatedAt;
+            turn.SummaryPlaceholderCreatedAt = GetPlaceholderCreatedAt(summary);
         }
     }
 
@@ -1382,15 +1383,19 @@ internal sealed class WorkspaceStateStore(
         if (!string.IsNullOrWhiteSpace(turn.SummaryPlaceholderCreatedAt))
         {
             return string.Equals(
-                summary.UpdatedAt,
+                GetPlaceholderCreatedAt(summary),
                 turn.SummaryPlaceholderCreatedAt,
                 StringComparison.Ordinal
             );
         }
 
-        return string.Equals(summary.UpdatedAt, turn.CreatedAt, StringComparison.Ordinal)
-            || string.Equals(summary.UpdatedAt, turn.UpdatedAt, StringComparison.Ordinal);
+        string? placeholderCreatedAt = GetPlaceholderCreatedAt(summary);
+        return string.Equals(placeholderCreatedAt, turn.CreatedAt, StringComparison.Ordinal)
+            || string.Equals(placeholderCreatedAt, turn.UpdatedAt, StringComparison.Ordinal);
     }
+
+    private static string? GetPlaceholderCreatedAt(NotificationSummary summary) =>
+        summary.PlaceholderCreatedAt ?? summary.UpdatedAt;
 
     private static bool HasStopObservation(string workspacePath, NotificationTurn turn)
     {

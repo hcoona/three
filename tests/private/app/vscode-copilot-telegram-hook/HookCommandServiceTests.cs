@@ -1569,7 +1569,7 @@ public sealed class HookCommandServiceTests
                     UpdatedAt = stopTimestamp,
                     Status = "completed",
                     Summary =
-                        "The older abandoned exact summary should beat the later abandoned" +
+                        "The older abandoned exact summary should beat the later abandoned " +
                             "placeholder.",
                 }
             );
@@ -5444,7 +5444,7 @@ public sealed class HookCommandServiceTests
                     UpdatedAt = stopTimestamp,
                     Status = "completed",
                     Summary =
-                        "The older completed exact summary should beat the current hook" +
+                        "The older completed exact summary should beat the current hook " +
                             "placeholder.",
                 }
             );
@@ -5830,7 +5830,7 @@ public sealed class HookCommandServiceTests
                     NotificationNonce = latestDurableTurn.NotificationNonce,
                     UpdatedAt = "2026-03-14T15:51:49.783Z",
                     Summary =
-                        "The latest durable non-exact summary should win over the stale current" +
+                        "The latest durable non-exact summary should win over the stale current " +
                             "cache.",
                 }
             );
@@ -7541,7 +7541,7 @@ public sealed class HookCommandServiceTests
                     NotificationNonce = currentTurn.NotificationNonce,
                     UpdatedAt = "2026-03-14T15:53:49.783Z",
                     Summary =
-                        "The current non-exact delivery is not blocked by stale pending" +
+                        "The current non-exact delivery is not blocked by stale pending " +
                             "observation.",
                 }
             );
@@ -8000,7 +8000,7 @@ public sealed class HookCommandServiceTests
                     NotificationNonce = currentTurn.NotificationNonce,
                     UpdatedAt = "2026-03-14T15:53:49.783Z",
                     Summary =
-                        "The current non-exact delivery is not blocked by stale pending" +
+                        "The current non-exact delivery is not blocked by stale pending " +
                             "observation.",
                 }
             );
@@ -9951,7 +9951,7 @@ public sealed class HookCommandServiceTests
                     UpdatedAt = stopTimestamp,
                     Status = "completed",
                     Summary =
-                        "The older completed exact summary must beat the cacheless hook" +
+                        "The older completed exact summary must beat the cacheless hook " +
                             "placeholder.",
                 }
             );
@@ -10846,7 +10846,7 @@ public sealed class HookCommandServiceTests
                     NotificationNonce = latestTurn.NotificationNonce,
                     UpdatedAt = "2026-03-14T15:51:49.783Z",
                     Summary =
-                        "The claimed latest non-exact summary should deliver after the claim" +
+                        "The claimed latest non-exact summary should deliver after the claim " +
                             "clears.",
                 }
             );
@@ -12087,7 +12087,7 @@ public sealed class HookCommandServiceTests
                     NotificationNonce = oldTurn.NotificationNonce,
                     UpdatedAt = oldStopTimestamp,
                     Summary =
-                        "The delayed old exact Stop should deliver even after current has been" +
+                        "The delayed old exact Stop should deliver even after current has been " +
                             "open.",
                 }
             );
@@ -12438,7 +12438,7 @@ public sealed class HookCommandServiceTests
                     NotificationNonce = oldTurn.NotificationNonce,
                     UpdatedAt = currentStopTimestamp,
                     Summary =
-                        "The old exact timestamp summary should deliver while current is" +
+                        "The old exact timestamp summary should deliver while current is " +
                             "non-exact.",
                 }
             );
@@ -13767,7 +13767,7 @@ public sealed class HookCommandServiceTests
                     NotificationNonce = newerTurn.NotificationNonce,
                     UpdatedAt = stopTimestamp,
                     Summary =
-                        "The newer exact summary must not wait behind a cacheless older fresh" +
+                        "The newer exact summary must not wait behind a cacheless older fresh " +
                             "claim.",
                 }
             );
@@ -15047,7 +15047,7 @@ public sealed class HookCommandServiceTests
                 oldTurn.NotificationTurnId,
                 CancellationToken.None
             );
-            Assert.Equal("open", storedOldTurn?.Status);
+            Assert.Equal("abandoned", storedOldTurn?.Status);
         }
         finally
         {
@@ -15135,7 +15135,7 @@ public sealed class HookCommandServiceTests
                 oldTurn.NotificationTurnId,
                 CancellationToken.None
             );
-            Assert.Equal("open", storedOldTurn?.Status);
+            Assert.Equal("abandoned", storedOldTurn?.Status);
 
             await WriteSummaryAsync(
                 tempDirectory.FullName,
@@ -19743,7 +19743,7 @@ public sealed class HookCommandServiceTests
                     NotificationNonce = currentTurn.NotificationNonce,
                     UpdatedAt = "2026-03-14T15:53:49.783Z",
                     Summary =
-                        "The current non-exact summary is not blocked by resolved open exact" +
+                        "The current non-exact summary is not blocked by resolved open exact " +
                             "pending.",
                 }
             );
