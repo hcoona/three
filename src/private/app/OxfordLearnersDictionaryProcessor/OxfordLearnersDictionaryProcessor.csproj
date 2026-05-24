@@ -8,6 +8,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
+    <!-- This app uses reflection-based System.Text.Json directly and via AI SDK dependencies. -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
 
   </PropertyGroup>
