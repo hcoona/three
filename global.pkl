@@ -1,10 +1,41 @@
 local miseLock = read("mise.lock").text
-local dotnetLockBlock = miseLock.split("[[tools.dotnet]]")[1].split("[[")[0]
+local dotnetLockBlockParts = miseLock.split("[[tools.dotnet]]")
+local dotnetLockBlock =
+  if (dotnetLockBlockParts.length == 2)
+    dotnetLockBlockParts[1].split("[[")[0]
+  else
+    throw(
+      "mise.lock must contain exactly one [[tools.dotnet]] block; found \(dotnetLockBlockParts.length - 1)."
+    )
 local dotnetLockLines = dotnetLockBlock.split("\n")
+local dotnetLockVersionLines =
+  dotnetLockLines.filter((line) -> line.trim().startsWith("version = "))
+local dotnetLockBackendLines =
+  dotnetLockLines.filter((line) -> line.trim().startsWith("backend = "))
+local dotnetLockVersionParts =
+  if (dotnetLockVersionLines.length == 1)
+    dotnetLockVersionLines.single.split("\"")
+  else
+    throw(
+      "mise.lock [[tools.dotnet]] must contain exactly one version entry; found \(dotnetLockVersionLines.length)."
+    )
+local dotnetLockBackendParts =
+  if (dotnetLockBackendLines.length == 1)
+    dotnetLockBackendLines.single.split("\"")
+  else
+    throw(
+      "mise.lock [[tools.dotnet]] must contain exactly one backend entry; found \(dotnetLockBackendLines.length)."
+    )
 local dotnetLockVersion =
-  dotnetLockLines.filter((line) -> line.trim().startsWith("version = ")).single.split("\"")[1]
+  if (dotnetLockVersionParts.length >= 2)
+    dotnetLockVersionParts[1]
+  else
+    throw("mise.lock [[tools.dotnet]] version entry must be a quoted string.")
 local dotnetLockBackend =
-  dotnetLockLines.filter((line) -> line.trim().startsWith("backend = ")).single.split("\"")[1]
+  if (dotnetLockBackendParts.length >= 2)
+    dotnetLockBackendParts[1]
+  else
+    throw("mise.lock [[tools.dotnet]] backend entry must be a quoted string.")
 
 local dotnetSdkVersion =
   if (dotnetLockBackend == "core:dotnet")
