@@ -16,6 +16,16 @@ internal sealed class WorkspaceStateStore(
     private const UnixFileMode OwnerOnlyFileMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
+    public Func<NotificationTurn, CancellationToken, Task>? OnBeforeAbandonOpenTurnForTestingAsync { get; set; }
+
+    public Func<NotificationTurn, NotificationTurn, CancellationToken, Task>?
+        OnBeforeAbandonSupersededTurnForTestingAsync { get; set; }
+
+    public Func<NotificationTurn, NotificationTurn, CancellationToken, Task>?
+        OnAfterAbandonSupersededTurnFinalGuardForTestingAsync { get; set; }
+
+    public Func<NotificationTurn, CancellationToken, Task>? OnSupersedingOpenTurnResolvedForTestingAsync { get; set; }
+
     public async Task<NotificationSession> InitializeSessionAsync(
         SessionStartHookInput input,
         CancellationToken cancellationToken)
@@ -97,6 +107,7 @@ internal sealed class WorkspaceStateStore(
             CreatedAt = createdAt,
             UpdatedAt = now,
             Status = "open",
+            SummaryPlaceholderCreatedAt = now,
             TranscriptPath = input.TranscriptPath,
         };
 
@@ -124,6 +135,19 @@ internal sealed class WorkspaceStateStore(
             SummaryPath = summaryPath,
             UpdatedAt = now,
         };
+        NotificationTurn? existingCurrentTurn = null;
+        CurrentNotificationState? existingCurrent = await TryReadCurrentAsync(
+            workspacePath,
+            input.SessionId,
+            cancellationToken);
+        if (existingCurrent is not null)
+        {
+            existingCurrentTurn = await TryReadTurnAsync(
+                workspacePath,
+                input.SessionId,
+                existingCurrent.NotificationTurnId,
+                cancellationToken);
+        }
 
         await WriteJsonAsync(
             AppPaths.GetTurnStatePath(workspacePath, input.SessionId, turn.NotificationTurnId),
@@ -135,11 +159,22 @@ internal sealed class WorkspaceStateStore(
             placeholderSummary,
             AppJsonSerializerContext.Default.NotificationSummary,
             cancellationToken);
-        await WriteJsonAsync(
-            AppPaths.GetCurrentStatePath(workspacePath, input.SessionId),
-            current,
-            AppJsonSerializerContext.Default.CurrentNotificationState,
-            cancellationToken);
+        if (existingCurrentTurn is null
+            || !string.Equals(existingCurrentTurn.Status, "open", StringComparison.Ordinal)
+            || string.CompareOrdinal(existingCurrentTurn.CreatedAt, turn.CreatedAt) < 0)
+        {
+            await WriteJsonAsync(
+                AppPaths.GetCurrentStatePath(workspacePath, input.SessionId),
+                current,
+                AppJsonSerializerContext.Default.CurrentNotificationState,
+                cancellationToken);
+            await AbandonSupersededOpenTurnsAsync(
+                workspacePath,
+                input.SessionId,
+                now,
+                cancellationToken);
+        }
+
         AppLog.CreatedTurnState(logger, turn.NotificationTurnId, turn.SessionId);
         return turn;
     }
@@ -219,6 +254,11 @@ internal sealed class WorkspaceStateStore(
             if (turn is not null
                 && string.Equals(turn.SessionId, sessionId, StringComparison.Ordinal)
                 && string.Equals(turn.Status, "open", StringComparison.Ordinal)
+                && !await HasFreshDeliveryClaimAsync(
+                    Path.GetFullPath(workspacePath),
+                    sessionId,
+                    turn.NotificationTurnId,
+                    cancellationToken)
                 && !await HasDurableDeliveryRecordAsync(
                     Path.GetFullPath(workspacePath),
                     sessionId,
@@ -233,6 +273,42 @@ internal sealed class WorkspaceStateStore(
             .OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
             .ToArray();
     }
+
+    public async Task<IReadOnlyList<NotificationTurn>> ListAbandonedTurnsAsync(
+        string workspacePath,
+        string sessionId,
+        CancellationToken cancellationToken)
+        => await ListTurnsWithStatusAsync(
+            workspacePath,
+            sessionId,
+            "abandoned",
+            requireNoDurableDelivery: true,
+            requireFreshDeliveryClaim: false,
+            cancellationToken);
+
+    public async Task<IReadOnlyList<NotificationTurn>> ListNotifiedTurnsAsync(
+        string workspacePath,
+        string sessionId,
+        CancellationToken cancellationToken)
+        => await ListTurnsWithStatusAsync(
+            workspacePath,
+            sessionId,
+            "notified",
+            requireNoDurableDelivery: false,
+            requireFreshDeliveryClaim: false,
+            cancellationToken);
+
+    public async Task<IReadOnlyList<NotificationTurn>> ListFreshDeliveryClaimedOpenTurnsAsync(
+        string workspacePath,
+        string sessionId,
+        CancellationToken cancellationToken)
+        => await ListTurnsWithStatusAsync(
+            workspacePath,
+            sessionId,
+            "open",
+            requireNoDurableDelivery: true,
+            requireFreshDeliveryClaim: true,
+            cancellationToken);
 
     public async Task<IReadOnlyList<PromptObservation>> ListPromptObservationsAsync(
         string workspacePath,
@@ -456,6 +532,18 @@ internal sealed class WorkspaceStateStore(
         string now,
         CancellationToken cancellationToken)
     {
+        NotificationTurn? existingTurn = await ReadJsonFileAsync(
+            AppPaths.GetTurnStatePath(
+                Path.GetFullPath(workspacePath),
+                turn.SessionId,
+                turn.NotificationTurnId),
+            AppJsonSerializerContext.Default.NotificationTurn,
+            cancellationToken);
+        if (string.Equals(existingTurn?.Status, "abandoned", StringComparison.Ordinal))
+        {
+            return;
+        }
+
         turn.Status = "notified";
         turn.UpdatedAt = now;
         await WriteJsonAsync(
@@ -465,6 +553,102 @@ internal sealed class WorkspaceStateStore(
                 turn.NotificationTurnId),
             turn,
             AppJsonSerializerContext.Default.NotificationTurn,
+            cancellationToken);
+    }
+
+    public async Task AbandonSupersededOpenTurnsAsync(
+        string workspacePath,
+        string sessionId,
+        string now,
+        CancellationToken cancellationToken)
+    {
+        workspacePath = Path.GetFullPath(workspacePath);
+        NotificationTurn? supersedingTurn = await ResolveSupersedingOpenTurnAsync(
+            workspacePath,
+            sessionId,
+            excludedTurnId: null,
+            cancellationToken);
+        if (supersedingTurn is null)
+        {
+            return;
+        }
+
+        if (OnSupersedingOpenTurnResolvedForTestingAsync is not null)
+        {
+            await OnSupersedingOpenTurnResolvedForTestingAsync(supersedingTurn, cancellationToken);
+        }
+
+        if (await HasDurableDeliveryRecordAsync(
+                workspacePath,
+                sessionId,
+                supersedingTurn.NotificationTurnId,
+                cancellationToken))
+        {
+            return;
+        }
+
+        IReadOnlyList<NotificationTurn> openTurns = await ListOpenTurnsAsync(
+            workspacePath,
+            sessionId,
+            cancellationToken);
+        HashSet<string> pendingHandoffAmbiguousTiedTurnIds =
+            await GetPendingHandoffAmbiguousTiedTurnIdsAsync(
+                workspacePath,
+                openTurns,
+                cancellationToken);
+        foreach (NotificationTurn turn in openTurns)
+        {
+            if (string.Equals(
+                    turn.NotificationTurnId,
+                    supersedingTurn.NotificationTurnId,
+                    StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            await TryAbandonSupersededTurnAsync(
+                workspacePath,
+                turn,
+                supersedingTurn,
+                now,
+                pendingHandoffAmbiguousTiedTurnIds,
+                cancellationToken);
+        }
+    }
+
+    public async Task MarkTurnAbandonedIfSupersededAsync(
+        string workspacePath,
+        NotificationTurn turn,
+        string now,
+        CancellationToken cancellationToken)
+    {
+        workspacePath = Path.GetFullPath(workspacePath);
+        NotificationTurn? supersedingTurn = await ResolveSupersedingOpenTurnAsync(
+            workspacePath,
+            turn.SessionId,
+            turn.NotificationTurnId,
+            cancellationToken);
+        if (supersedingTurn is null)
+        {
+            return;
+        }
+
+        if (OnSupersedingOpenTurnResolvedForTestingAsync is not null)
+        {
+            await OnSupersedingOpenTurnResolvedForTestingAsync(supersedingTurn, cancellationToken);
+        }
+
+        HashSet<string> pendingHandoffAmbiguousTiedTurnIds =
+            await GetPendingHandoffAmbiguousTiedTurnIdsAsync(
+                workspacePath,
+                await ListOpenTurnsAsync(workspacePath, turn.SessionId, cancellationToken),
+                cancellationToken);
+        await TryAbandonSupersededTurnAsync(
+            workspacePath,
+            turn,
+            supersedingTurn,
+            now,
+            pendingHandoffAmbiguousTiedTurnIds,
             cancellationToken);
     }
 
@@ -510,6 +694,525 @@ internal sealed class WorkspaceStateStore(
         AppLog.WroteSessionState(logger, sessionId, sessionStatePath);
         return session;
     }
+
+    private async Task<IReadOnlyList<NotificationTurn>> ListTurnsWithStatusAsync(
+        string workspacePath,
+        string sessionId,
+        string status,
+        bool requireNoDurableDelivery,
+        bool requireFreshDeliveryClaim,
+        CancellationToken cancellationToken)
+    {
+        workspacePath = Path.GetFullPath(workspacePath);
+        string turnsDirectory = AppPaths.GetTurnsDirectoryPath(workspacePath, sessionId);
+        if (!Directory.Exists(turnsDirectory))
+        {
+            return [];
+        }
+
+        List<NotificationTurn> turns = [];
+        foreach (string turnFile in Directory.EnumerateFiles(
+                     turnsDirectory,
+                     AppConstants.TurnFileName,
+                     SearchOption.AllDirectories))
+        {
+            NotificationTurn? turn = await ReadJsonAsync(
+                turnFile,
+                "notification turn",
+                AppJsonSerializerContext.Default.NotificationTurn,
+                cancellationToken);
+            if (turn is null
+                || !string.Equals(turn.SessionId, sessionId, StringComparison.Ordinal)
+                || !string.Equals(turn.Status, status, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (requireNoDurableDelivery
+                && await HasDurableDeliveryRecordAsync(
+                    workspacePath,
+                    sessionId,
+                    turn.NotificationTurnId,
+                    cancellationToken))
+            {
+                continue;
+            }
+
+            if (requireFreshDeliveryClaim
+                && !await HasFreshDeliveryClaimAsync(
+                    workspacePath,
+                    sessionId,
+                    turn.NotificationTurnId,
+                    cancellationToken))
+            {
+                continue;
+            }
+
+            turns.Add(turn);
+        }
+
+        return turns
+            .OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private async Task<NotificationTurn?> ResolveSupersedingOpenTurnAsync(
+        string workspacePath,
+        string sessionId,
+        string? excludedTurnId,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<NotificationTurn> openTurns = await ListOpenTurnsAsync(
+            workspacePath,
+            sessionId,
+            cancellationToken);
+        NotificationTurn[] candidateOpenTurns = openTurns
+            .Where(turn => !string.Equals(
+                turn.NotificationTurnId,
+                excludedTurnId,
+                StringComparison.Ordinal))
+            .ToArray();
+        NotificationTurn? latestOpenTurn = candidateOpenTurns
+            .OrderByDescending(static turn => turn.CreatedAt, StringComparer.Ordinal)
+            .FirstOrDefault();
+        CurrentNotificationState? current = await TryReadCurrentAsync(
+            workspacePath,
+            sessionId,
+            cancellationToken);
+        if (current is not null
+            && !string.Equals(current.NotificationTurnId, excludedTurnId, StringComparison.Ordinal))
+        {
+            NotificationTurn? currentTurn = await TryReadTurnAsync(
+                workspacePath,
+                sessionId,
+                current.NotificationTurnId,
+                cancellationToken);
+            if (currentTurn is not null
+                && string.Equals(currentTurn.Status, "open", StringComparison.Ordinal)
+                && !await HasDurableDeliveryRecordAsync(
+                    workspacePath,
+                    sessionId,
+                    currentTurn.NotificationTurnId,
+                    cancellationToken))
+            {
+                NotificationTurn selectedTurn = latestOpenTurn is not null
+                    && string.CompareOrdinal(latestOpenTurn.CreatedAt, currentTurn.CreatedAt) > 0
+                    ? latestOpenTurn
+                    : currentTurn;
+                return await HasPendingHandoffAmbiguityAtEqualCreatedAtAsync(
+                    workspacePath,
+                    candidateOpenTurns,
+                    selectedTurn.CreatedAt,
+                    cancellationToken)
+                    ? null
+                    : selectedTurn;
+            }
+        }
+
+        return latestOpenTurn is not null
+            && await HasPendingHandoffAmbiguityAtEqualCreatedAtAsync(
+                workspacePath,
+                candidateOpenTurns,
+                latestOpenTurn.CreatedAt,
+                cancellationToken)
+            ? null
+            : latestOpenTurn;
+    }
+
+    private async Task TryAbandonSupersededTurnAsync(
+        string workspacePath,
+        NotificationTurn turn,
+        NotificationTurn supersedingTurn,
+        string now,
+        HashSet<string> pendingHandoffAmbiguousTiedTurnIds,
+        CancellationToken cancellationToken)
+    {
+        if (await HasDurableDeliveryRecordAsync(
+                workspacePath,
+                turn.SessionId,
+                turn.NotificationTurnId,
+                cancellationToken)
+            || await HasDurableDeliveryRecordAsync(
+                workspacePath,
+                supersedingTurn.SessionId,
+                supersedingTurn.NotificationTurnId,
+                cancellationToken)
+            || await HasFreshDeliveryClaimAsync(
+                workspacePath,
+                turn.SessionId,
+                turn.NotificationTurnId,
+                cancellationToken)
+            || pendingHandoffAmbiguousTiedTurnIds.Contains(turn.NotificationTurnId)
+            || await HasTiedPendingHandoffAmbiguityForTurnAsync(
+                workspacePath,
+                turn,
+                cancellationToken)
+            || await HasAssignedSummaryWorthPreservingAsync(
+                workspacePath,
+                turn,
+                cancellationToken))
+        {
+            return;
+        }
+
+        if (OnBeforeAbandonOpenTurnForTestingAsync is not null)
+        {
+            await OnBeforeAbandonOpenTurnForTestingAsync(turn, cancellationToken);
+        }
+
+        if (OnBeforeAbandonSupersededTurnForTestingAsync is not null)
+        {
+            await OnBeforeAbandonSupersededTurnForTestingAsync(turn, supersedingTurn, cancellationToken);
+        }
+
+        if (await HasDurableDeliveryRecordAsync(
+                workspacePath,
+                turn.SessionId,
+                turn.NotificationTurnId,
+                cancellationToken)
+            || await HasDurableDeliveryRecordAsync(
+                workspacePath,
+                supersedingTurn.SessionId,
+                supersedingTurn.NotificationTurnId,
+                cancellationToken)
+            || await HasFreshDeliveryClaimAsync(
+                workspacePath,
+                turn.SessionId,
+                turn.NotificationTurnId,
+                cancellationToken)
+            || pendingHandoffAmbiguousTiedTurnIds.Contains(turn.NotificationTurnId)
+            || await HasTiedPendingHandoffAmbiguityForTurnAsync(
+                workspacePath,
+                turn,
+                cancellationToken)
+            || await HasAssignedSummaryWorthPreservingAsync(
+                workspacePath,
+                turn,
+                cancellationToken))
+        {
+            return;
+        }
+
+        if (OnAfterAbandonSupersededTurnFinalGuardForTestingAsync is not null)
+        {
+            await OnAfterAbandonSupersededTurnFinalGuardForTestingAsync(
+                turn,
+                supersedingTurn,
+                cancellationToken);
+        }
+
+        string turnDeliveryClaimPath = AppPaths.GetTurnDeliveryClaimPath(
+            workspacePath,
+            turn.SessionId,
+            turn.NotificationTurnId);
+        string abandonmentClaimedAt = GetCurrentUtcTimestamp();
+        FileStream? abandonmentClaim = await TryAcquireAbandonmentDeliveryClaimAsync(
+            turnDeliveryClaimPath,
+            abandonmentClaimedAt,
+            cancellationToken);
+        if (abandonmentClaim is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (await HasDurableDeliveryRecordAsync(
+                    workspacePath,
+                    turn.SessionId,
+                    turn.NotificationTurnId,
+                    cancellationToken)
+                || await HasDurableDeliveryRecordAsync(
+                    workspacePath,
+                    supersedingTurn.SessionId,
+                    supersedingTurn.NotificationTurnId,
+                    cancellationToken)
+                || pendingHandoffAmbiguousTiedTurnIds.Contains(turn.NotificationTurnId)
+                || await HasTiedPendingHandoffAmbiguityForTurnAsync(
+                    workspacePath,
+                    turn,
+                    cancellationToken)
+                || await HasAssignedSummaryWorthPreservingAsync(
+                    workspacePath,
+                    turn,
+                    cancellationToken))
+            {
+                return;
+            }
+
+            await StampLegacyHookCreatedPendingPlaceholderAsync(workspacePath, turn, cancellationToken);
+            turn.Status = "abandoned";
+            turn.UpdatedAt = now;
+            await WriteTurnAsync(workspacePath, turn, cancellationToken);
+        }
+        finally
+        {
+            await abandonmentClaim.DisposeAsync();
+            await ReleaseOwnedStopNotificationClaimAsync(
+                turnDeliveryClaimPath,
+                abandonmentClaimedAt,
+                CancellationToken.None);
+        }
+    }
+
+    private static async Task<HashSet<string>> GetPendingHandoffAmbiguousTiedTurnIdsAsync(
+        string workspacePath,
+        IReadOnlyList<NotificationTurn> openTurns,
+        CancellationToken cancellationToken)
+    {
+        HashSet<string> tiedTurnIds = openTurns
+            .GroupBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
+            .Where(static group => group.Count() > 1)
+            .SelectMany(static group => group)
+            .Select(static turn => turn.NotificationTurnId)
+            .ToHashSet(StringComparer.Ordinal);
+        if (tiedTurnIds.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<string> pendingHandoffAmbiguousTurnIds = new(StringComparer.Ordinal);
+        foreach (NotificationTurn turn in openTurns)
+        {
+            if (tiedTurnIds.Contains(turn.NotificationTurnId)
+                && await HasPendingHandoffAmbiguityForAbandonmentAsync(
+                    workspacePath,
+                    turn,
+                    cancellationToken))
+            {
+                pendingHandoffAmbiguousTurnIds.Add(turn.NotificationTurnId);
+            }
+        }
+
+        return pendingHandoffAmbiguousTurnIds;
+    }
+
+    private static async Task<bool> HasPendingHandoffAmbiguityAtEqualCreatedAtAsync(
+        string workspacePath,
+        IReadOnlyList<NotificationTurn> openTurns,
+        string createdAt,
+        CancellationToken cancellationToken)
+    {
+        NotificationTurn[] tiedTurns = openTurns
+            .Where(turn => string.Equals(turn.CreatedAt, createdAt, StringComparison.Ordinal))
+            .ToArray();
+        if (tiedTurns.Length <= 1)
+        {
+            return false;
+        }
+
+        foreach (NotificationTurn tiedTurn in tiedTurns)
+        {
+            if (await HasPendingHandoffAmbiguityForAbandonmentAsync(
+                    workspacePath,
+                    tiedTurn,
+                    cancellationToken))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<bool> HasTiedPendingHandoffAmbiguityForTurnAsync(
+        string workspacePath,
+        NotificationTurn turn,
+        CancellationToken cancellationToken)
+    {
+        if (!await HasPendingHandoffAmbiguityForAbandonmentAsync(
+                workspacePath,
+                turn,
+                cancellationToken))
+        {
+            return false;
+        }
+
+        IReadOnlyList<NotificationTurn> openTurns = await ListOpenTurnsAsync(
+            workspacePath,
+            turn.SessionId,
+            cancellationToken);
+        return openTurns.Any(candidate =>
+            !string.Equals(
+                candidate.NotificationTurnId,
+                turn.NotificationTurnId,
+                StringComparison.Ordinal)
+            && string.Equals(candidate.CreatedAt, turn.CreatedAt, StringComparison.Ordinal));
+    }
+
+    private static async Task<bool> HasPendingHandoffAmbiguityForAbandonmentAsync(
+        string workspacePath,
+        NotificationTurn turn,
+        CancellationToken cancellationToken)
+    {
+        string summaryPath = AppPaths.GetSummaryStatePath(
+            workspacePath,
+            turn.SessionId,
+            turn.NotificationTurnId);
+        if (!File.Exists(summaryPath))
+        {
+            return true;
+        }
+
+        NotificationSummary? summary = await ReadJsonFileAsync(
+            summaryPath,
+            AppJsonSerializerContext.Default.NotificationSummary,
+            cancellationToken);
+        if (summary is null)
+        {
+            return true;
+        }
+
+        return string.Equals(summary.Status, "pending", StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(summary.Summary)
+            && !IsHookCreatedPendingPlaceholder(summary, turn);
+    }
+
+    private static async Task StampLegacyHookCreatedPendingPlaceholderAsync(
+        string workspacePath,
+        NotificationTurn turn,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(turn.SummaryPlaceholderCreatedAt))
+        {
+            return;
+        }
+
+        NotificationSummary? summary = await ReadJsonFileAsync(
+            AppPaths.GetSummaryStatePath(workspacePath, turn.SessionId, turn.NotificationTurnId),
+            AppJsonSerializerContext.Default.NotificationSummary,
+            cancellationToken);
+        if (summary is not null
+            && IsHookCreatedPendingPlaceholder(summary, turn))
+        {
+            turn.SummaryPlaceholderCreatedAt = summary.UpdatedAt;
+        }
+    }
+
+    private async Task<bool> HasFreshDeliveryClaimAsync(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId,
+        CancellationToken cancellationToken)
+    {
+        string claimPath = AppPaths.GetTurnDeliveryClaimPath(workspacePath, sessionId, notificationTurnId);
+        return File.Exists(claimPath)
+            && !await IsClaimStaleAsync(
+                claimPath,
+                GetCurrentUtcTimestamp(),
+                TimeSpan.FromMinutes(AppConstants.TurnDeliveryClaimStaleAfterMinutes),
+                cancellationToken);
+    }
+
+    private static async Task<bool> HasAssignedSummaryWorthPreservingAsync(
+        string workspacePath,
+        NotificationTurn turn,
+        CancellationToken cancellationToken)
+    {
+        NotificationSummary? summary = await ReadJsonFileAsync(
+            AppPaths.GetSummaryStatePath(workspacePath, turn.SessionId, turn.NotificationTurnId),
+            AppJsonSerializerContext.Default.NotificationSummary,
+            cancellationToken);
+        bool hasStopObservation = HasStopObservation(workspacePath, turn);
+        if (summary is null
+            || !string.Equals(summary.SessionId, turn.SessionId, StringComparison.Ordinal)
+            || !string.Equals(summary.NotificationTurnId, turn.NotificationTurnId, StringComparison.Ordinal)
+            || !string.Equals(summary.NotificationNonce, turn.NotificationNonce, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(summary.UpdatedAt)
+            || !IsValidUtcTimestamp(summary.UpdatedAt))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(summary.Summary))
+        {
+            return !hasStopObservation;
+        }
+
+        return string.Equals(summary.Status, "pending", StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(summary.Summary)
+            && !IsHookCreatedPendingPlaceholder(summary, turn)
+            && (!hasStopObservation
+                || (await HasPendingStopObservationForTimestampAsync(
+                        workspacePath,
+                        turn,
+                        summary.UpdatedAt,
+                        cancellationToken)));
+    }
+
+    private static async Task<bool> HasPendingStopObservationForTimestampAsync(
+        string workspacePath,
+        NotificationTurn turn,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        string stopsDirectory = Path.Combine(
+            AppPaths.GetTurnDirectoryPath(workspacePath, turn.SessionId, turn.NotificationTurnId),
+            AppConstants.StopsDirectoryName);
+        if (!Directory.Exists(stopsDirectory))
+        {
+            return false;
+        }
+
+        foreach (string observationPath in Directory.EnumerateFiles(stopsDirectory, "*.json"))
+        {
+            StopObservation? observation = await ReadJsonFileAsync(
+                observationPath,
+                AppJsonSerializerContext.Default.StopObservation,
+                cancellationToken);
+            if (observation is not null
+                && string.Equals(observation.SessionId, turn.SessionId, StringComparison.Ordinal)
+                && string.Equals(
+                    observation.NotificationTurnId,
+                    turn.NotificationTurnId,
+                    StringComparison.Ordinal)
+                && observation.SummaryPendingHandoff
+                && string.Equals(observation.StopTimestamp, stopTimestamp, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsHookCreatedPendingPlaceholder(
+        NotificationSummary summary,
+        NotificationTurn turn)
+    {
+        if (!string.IsNullOrWhiteSpace(turn.SummaryPlaceholderCreatedAt))
+        {
+            return string.Equals(
+                summary.UpdatedAt,
+                turn.SummaryPlaceholderCreatedAt,
+                StringComparison.Ordinal);
+        }
+
+        return string.Equals(summary.UpdatedAt, turn.CreatedAt, StringComparison.Ordinal)
+            || string.Equals(summary.UpdatedAt, turn.UpdatedAt, StringComparison.Ordinal);
+    }
+
+    private static bool HasStopObservation(string workspacePath, NotificationTurn turn)
+    {
+        string stopsDirectory = Path.Combine(
+            AppPaths.GetTurnDirectoryPath(workspacePath, turn.SessionId, turn.NotificationTurnId),
+            AppConstants.StopsDirectoryName);
+        return Directory.Exists(stopsDirectory)
+            && Directory.EnumerateFiles(stopsDirectory, "*.json", SearchOption.TopDirectoryOnly).Any();
+    }
+
+    private static async Task WriteTurnAsync(
+        string workspacePath,
+        NotificationTurn turn,
+        CancellationToken cancellationToken)
+        => await WriteJsonAsync(
+            AppPaths.GetTurnStatePath(
+                Path.GetFullPath(workspacePath),
+                turn.SessionId,
+                turn.NotificationTurnId),
+            turn,
+            AppJsonSerializerContext.Default.NotificationTurn,
+            cancellationToken);
 
     private async Task<T?> ReadJsonAsync<T>(
         string path,
@@ -682,6 +1385,66 @@ internal sealed class WorkspaceStateStore(
         }
     }
 
+    private static async Task<FileStream?> TryAcquireAbandonmentDeliveryClaimAsync(
+        string path,
+        string claimedAt,
+        CancellationToken cancellationToken)
+    {
+        EnsureOwnerOnlyParentDirectory(path);
+
+        try
+        {
+            FileStream createdClaim = OpenClaimFile(path);
+            try
+            {
+                await createdClaim.WriteAsync(
+                    System.Text.Encoding.UTF8.GetBytes(claimedAt),
+                    cancellationToken);
+                await createdClaim.FlushAsync(cancellationToken);
+                return createdClaim;
+            }
+            catch
+            {
+                await createdClaim.DisposeAsync();
+                await ReleaseOwnedStopNotificationClaimAsync(path, claimedAt, cancellationToken);
+                throw;
+            }
+        }
+        catch (IOException) when (File.Exists(path))
+        {
+            return await TryAcquireStaleReclaimLockAsync(
+                path,
+                claimedAt,
+                TimeSpan.FromMinutes(AppConstants.TurnDeliveryClaimStaleAfterMinutes),
+                cancellationToken);
+        }
+    }
+
+    private static async Task ReleaseOwnedStopNotificationClaimAsync(
+        string path,
+        string claimedAt,
+        CancellationToken cancellationToken)
+    {
+        string existingClaimedAt;
+        try
+        {
+            existingClaimedAt = await File.ReadAllTextAsync(path, cancellationToken);
+        }
+        catch (Exception ex) when (
+            ex is FileNotFoundException
+                or DirectoryNotFoundException
+                or IOException
+                or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        if (string.Equals(existingClaimedAt, claimedAt, StringComparison.Ordinal))
+        {
+            ReleaseStopNotificationClaim(path);
+        }
+    }
+
     private static async Task<bool> IsClaimStaleAsync(
         string path,
         string currentClaimedAt,
@@ -734,6 +1497,18 @@ internal sealed class WorkspaceStateStore(
             CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
             out timestamp);
+
+    private static bool IsValidUtcTimestamp(string value)
+        => DateTimeOffset.TryParseExact(
+            value,
+            "yyyy-MM-ddTHH:mm:ss.fff'Z'",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out DateTimeOffset parsed)
+            && string.Equals(
+                parsed.ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
+                value,
+                StringComparison.Ordinal);
 
     private static async Task<T?> ReadJsonFileAsync<T>(
         string path,

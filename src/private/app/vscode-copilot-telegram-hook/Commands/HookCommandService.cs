@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -184,11 +185,41 @@ internal sealed class HookCommandService(
 
             AppLog.HandlingStopHook(logger, hookInput.SessionId, workspacePath);
 
+            string notificationKey = CreateStopNotificationKey(hookInput.Timestamp);
+            await workspaceStateStore.AbandonSupersededOpenTurnsAsync(
+                workspacePath,
+                hookInput.SessionId,
+                workspaceStateStore.GetCurrentUtcTimestamp(),
+                cancellationToken);
             IReadOnlyList<NotificationTurn> openTurns =
                 await workspaceStateStore.ListOpenTurnsAsync(
                     workspacePath,
                     hookInput.SessionId,
                     cancellationToken);
+            IReadOnlyList<NotificationTurn> abandonedTurns =
+                await workspaceStateStore.ListAbandonedTurnsAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    cancellationToken);
+            IReadOnlyList<NotificationTurn> freshClaimedOpenTurns =
+                await workspaceStateStore.ListFreshDeliveryClaimedOpenTurnsAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    cancellationToken);
+            IReadOnlyList<NotificationTurn> exactNotifiedRetryTurns =
+                await ListExactNotifiedStopRetryTurnsAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    notificationKey,
+                    hookInput.Timestamp,
+                    cancellationToken);
+            if (exactNotifiedRetryTurns.Count > 0)
+            {
+                openTurns = openTurns
+                    .Concat(exactNotifiedRetryTurns)
+                    .OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
+                    .ToArray();
+            }
             IReadOnlyList<PromptObservation> promptObservations =
                 await workspaceStateStore.ListPromptObservationsAsync(
                     workspacePath,
@@ -199,14 +230,167 @@ internal sealed class HookCommandService(
                     workspacePath,
                     hookInput.SessionId,
                     cancellationToken);
+            IReadOnlyList<NotificationRecord> perTurnNotificationRecords =
+                await ListPerTurnNotificationRecordsAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    cancellationToken);
+            NotificationRecord[] durableNotificationRecords =
+                sessionNotificationRecords
+                    .Concat(perTurnNotificationRecords)
+                    .ToArray();
+            CurrentNotificationState? current = await workspaceStateStore.TryReadCurrentAsync(
+                workspacePath,
+                hookInput.SessionId,
+                cancellationToken);
+            if (TryParseUtcTimestamp(hookInput.Timestamp, out DateTimeOffset parsedStopTimestamp))
+            {
+                RecoverableAbandonedTurnsResult recoverableAbandonedTurns =
+                    !HasEligibleTurn(openTurns, parsedStopTimestamp)
+                        ? await ListRecoverableAbandonedTurnsForStopAsync(
+                            workspacePath,
+                            hookInput.SessionId,
+                            abandonedTurns,
+                            durableNotificationRecords,
+                            notificationKey,
+                            hookInput.Timestamp,
+                            cancellationToken)
+                        : await ListRecoverableExactCompletedAbandonedTurnsForStopAsync(
+                            workspacePath,
+                            hookInput.SessionId,
+                            abandonedTurns,
+                            durableNotificationRecords,
+                            notificationKey,
+                            hookInput.Timestamp,
+                            cancellationToken);
+                if (recoverableAbandonedTurns.SuppressStop)
+                {
+                    return 0;
+                }
+
+                if (recoverableAbandonedTurns.Turns.Count > 0)
+                {
+                    openTurns = openTurns
+                        .Concat(recoverableAbandonedTurns.Turns)
+                        .OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
+                        .ToArray();
+                }
+            }
+
+            IReadOnlyList<NotificationTurn> freshClaimedStopAttributionTurns =
+                await FilterFreshClaimedTurnsWithStopAttributionAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    openTurns,
+                    freshClaimedOpenTurns,
+                    hookInput.Timestamp,
+                    cancellationToken);
+            IReadOnlyList<NotificationTurn> prePreferenceOpenTurns = openTurns;
+            openTurns = await PreferSingleValidSummaryTurnAsync(
+                workspacePath,
+                hookInput.SessionId,
+                current,
+                freshClaimedOpenTurns,
+                openTurns,
+                durableNotificationRecords,
+                hookInput.Timestamp,
+                cancellationToken);
+            if (await AreAllPreferredTurnsNonUniqueExactStopAttributionsAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    openTurns,
+                    hookInput.Timestamp,
+                    cancellationToken))
+            {
+                return 0;
+            }
+
+            if (await IsCurrentTurnFreshClaimedAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    current,
+                    freshClaimedOpenTurns,
+                    openTurns,
+                    hookInput.Timestamp,
+                    cancellationToken))
+            {
+                return 0;
+            }
+
             StopResolution resolution = ResolveStopTurn(
                 openTurns,
+                abandonedTurns,
+                freshClaimedStopAttributionTurns,
                 promptObservations,
-                sessionNotificationRecords,
+                durableNotificationRecords,
                 hookInput.Timestamp);
 
             if (resolution.Turn is null)
             {
+                if (freshClaimedStopAttributionTurns.Count > 0
+                    || await HasBlockingFreshClaimedTurnAsync(
+                        workspacePath,
+                        hookInput.SessionId,
+                        openTurns,
+                        freshClaimedOpenTurns,
+                        hookInput.Timestamp,
+                        cancellationToken))
+                {
+                    return 0;
+                }
+
+                if (await HasPendingStopObservationOnAbandonedTurnAsync(
+                        workspacePath,
+                        hookInput.SessionId,
+                        abandonedTurns,
+                        durableNotificationRecords,
+                        notificationKey,
+                        hookInput.Timestamp,
+                        cancellationToken))
+                {
+                    return 0;
+                }
+
+                if (resolution.SuppressFallback)
+                {
+                    return 0;
+                }
+
+                if (HasPriorNonExactDurableDelivery(
+                        durableNotificationRecords,
+                        hookInput.Timestamp))
+                {
+                    return 0;
+                }
+
+                if (prePreferenceOpenTurns.Count == 0
+                    && !await HasAnyPendingHandoffAbandonedTurnForStopAsync(
+                        workspacePath,
+                        hookInput.SessionId,
+                        abandonedTurns,
+                        hookInput.Timestamp,
+                        cancellationToken)
+                    && await HasPriorClosedPerTurnDurableDeliveryAsync(
+                        workspacePath,
+                        hookInput.SessionId,
+                        perTurnNotificationRecords,
+                        hookInput.Timestamp,
+                        cancellationToken))
+                {
+                    return 0;
+                }
+
+                if (await HasDurableDeliveryForCurrentTurnSummaryAsync(
+                        workspacePath,
+                        hookInput.SessionId,
+                        prePreferenceOpenTurns,
+                        durableNotificationRecords,
+                        hookInput.Timestamp,
+                        cancellationToken))
+                {
+                    return 0;
+                }
+
                 await SendSessionLevelFallbackAsync(
                     hookInput,
                     workspacePath,
@@ -216,7 +400,6 @@ internal sealed class HookCommandService(
             }
 
             NotificationTurn turn = resolution.Turn;
-            string notificationKey = CreateStopNotificationKey(hookInput.Timestamp);
             string notificationPath = AppPaths.GetNotificationRecordPath(
                 workspacePath,
                 hookInput.SessionId,
@@ -242,6 +425,34 @@ internal sealed class HookCommandService(
                 workspacePath,
                 hookInput.SessionId,
                 turn.NotificationTurnId);
+            SummaryValidationResult resolvedSummaryValidation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                hookInput.SessionId,
+                turn,
+                cancellationToken);
+            if (await HasPendingStopObservationOnAbandonedTurnAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    abandonedTurns,
+                    durableNotificationRecords,
+                    notificationKey,
+                    hookInput.Timestamp,
+                    cancellationToken)
+                && !ResolvedTurnHasPositiveStopAttribution(
+                    hookInput.Timestamp,
+                    resolvedSummaryValidation)
+                && !HasCurrentStopAttribution(resolvedSummaryValidation, turn, hookInput.Timestamp)
+                && (resolvedSummaryValidation.IsPendingHandoff
+                    || !resolvedSummaryValidation.IsValid
+                    || !string.Equals(
+                        resolvedSummaryValidation.Record?.UpdatedAt,
+                        hookInput.Timestamp,
+                        StringComparison.Ordinal)
+                    || string.Equals(turn.CreatedAt, hookInput.Timestamp, StringComparison.Ordinal)))
+            {
+                return 0;
+            }
+
             if (await AnyPerTurnNotificationRecordExistsAsync(
                     workspacePath,
                     hookInput.SessionId,
@@ -289,6 +500,7 @@ internal sealed class HookCommandService(
                 turnClaimPath,
                 claimedAt,
                 cancellationToken);
+            bool ownsTurnDeliveryClaim = claimedTurnDelivery;
             if (!claimedTurnDelivery
                 && !await WorkspaceStateStore.HasDurableDeliveryRecordAsync(
                     workspacePath,
@@ -308,6 +520,27 @@ internal sealed class HookCommandService(
                             turn.NotificationTurnId,
                             cancellationToken),
                         cancellationToken);
+                ownsTurnDeliveryClaim = claimedTurnDelivery;
+            }
+
+            NotificationTurn? currentTurn = null;
+            if (!claimedTurnDelivery)
+            {
+                currentTurn = await workspaceStateStore.TryReadTurnAsync(
+                    workspacePath,
+                    hookInput.SessionId,
+                    turn.NotificationTurnId,
+                    cancellationToken);
+                bool retryableNotifiedExactTurn = currentTurn is not null
+                    && string.Equals(currentTurn.Status, "notified", StringComparison.Ordinal)
+                    && HasStopAttributionForTurn(
+                        resolvedSummaryValidation,
+                        currentTurn,
+                        hookInput.Timestamp)
+                    && !await WorkspaceStateStore.WasNotificationAlreadySentAsync(
+                        notificationPath,
+                        cancellationToken);
+                claimedTurnDelivery = retryableNotifiedExactTurn;
             }
 
             if (!claimedTurnDelivery)
@@ -317,21 +550,49 @@ internal sealed class HookCommandService(
                 return 0;
             }
 
-            NotificationTurn? currentTurn = await workspaceStateStore.TryReadTurnAsync(
+            currentTurn ??= await workspaceStateStore.TryReadTurnAsync(
+                workspacePath,
+                hookInput.SessionId,
+                turn.NotificationTurnId,
+                cancellationToken);
+            bool currentTurnHasExactStopAttribution = currentTurn is not null
+                && HasStopAttributionForTurn(
+                    resolvedSummaryValidation,
+                    currentTurn,
+                    hookInput.Timestamp);
+            bool isRetryableNotifiedExactTurn = currentTurn is not null
+                && string.Equals(currentTurn.Status, "notified", StringComparison.Ordinal)
+                && currentTurnHasExactStopAttribution
+                && !await WorkspaceStateStore.WasNotificationAlreadySentAsync(
+                    notificationPath,
+                    cancellationToken);
+            bool isRecoverableAbandonedTurn = currentTurn is not null
+                && string.Equals(currentTurn.Status, "abandoned", StringComparison.Ordinal)
+                && (HasPendingStopAttributionForTurn(
+                        resolvedSummaryValidation,
+                        currentTurn,
+                        hookInput.Timestamp)
+                    || HasStopAttributionForTurn(
+                        resolvedSummaryValidation,
+                        currentTurn,
+                        hookInput.Timestamp));
+            bool hasDurableDeliveryRecord = await WorkspaceStateStore.HasDurableDeliveryRecordAsync(
                 workspacePath,
                 hookInput.SessionId,
                 turn.NotificationTurnId,
                 cancellationToken);
             if (currentTurn is null
-                || !string.Equals(currentTurn.Status, "open", StringComparison.Ordinal)
-                || await WorkspaceStateStore.HasDurableDeliveryRecordAsync(
-                    workspacePath,
-                    hookInput.SessionId,
-                    turn.NotificationTurnId,
-                    cancellationToken))
+                || (!string.Equals(currentTurn.Status, "open", StringComparison.Ordinal)
+                    && !isRetryableNotifiedExactTurn
+                    && !isRecoverableAbandonedTurn)
+                || hasDurableDeliveryRecord)
             {
                 WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
-                WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                if (ownsTurnDeliveryClaim)
+                {
+                    WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                }
+
                 AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);
                 return 0;
             }
@@ -345,6 +606,19 @@ internal sealed class HookCommandService(
                     hookInput.SessionId,
                     turn,
                     cancellationToken);
+                if (currentTurnHasExactStopAttribution
+                    && !HasStopAttributionForTurn(summaryValidation, turn, hookInput.Timestamp))
+                {
+                    WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                    if (ownsTurnDeliveryClaim)
+                    {
+                        WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                    }
+
+                    AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);
+                    return 0;
+                }
+
                 NotificationSummary? summary = summaryValidation.IsValid
                     ? summaryValidation.Record
                     : null;
@@ -362,9 +636,32 @@ internal sealed class HookCommandService(
                         StopTimestamp = hookInput.Timestamp,
                         MatchReason = resolution.Reason,
                         SummaryValid = summaryValidation.IsValid,
+                        SummaryPendingHandoff = summaryValidation.IsPendingHandoff,
                         SummaryFailureReason = summaryValidation.FailureReason,
                     },
                     cancellationToken);
+
+                if (summaryValidation.IsPendingHandoff
+                    && (summaryValidation.Record is null
+                        || HasPendingStopAttributionForTurn(
+                            summaryValidation,
+                            turn,
+                            hookInput.Timestamp)
+                        || IsHookCreatedPlaceholderSummary(summaryValidation.Record, turn)))
+                {
+                    await workspaceStateStore.MarkTurnAbandonedIfSupersededAsync(
+                        workspacePath,
+                        turn,
+                        sentAt,
+                        cancellationToken);
+                    WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                    if (ownsTurnDeliveryClaim)
+                    {
+                        WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                    }
+
+                    return 0;
+                }
 
                 try
                 {
@@ -421,7 +718,10 @@ internal sealed class HookCommandService(
                 if (!notificationSent)
                 {
                     WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
-                    WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                    if (ownsTurnDeliveryClaim)
+                    {
+                        WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                    }
                 }
 
                 throw;
@@ -733,8 +1033,10 @@ internal sealed class HookCommandService(
 
     private static StopResolution ResolveStopTurn(
         IReadOnlyList<NotificationTurn> openTurns,
+        IReadOnlyList<NotificationTurn> abandonedTurns,
+        IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
         IReadOnlyList<PromptObservation> promptObservations,
-        IReadOnlyList<NotificationRecord> sessionNotificationRecords,
+        IReadOnlyList<NotificationRecord> durableNotificationRecords,
         string stopTimestamp)
     {
         if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
@@ -746,6 +1048,14 @@ internal sealed class HookCommandService(
 
         if (openTurns.Count == 0)
         {
+            if (HasEligibleTurn(freshClaimedOpenTurns, parsedStopTimestamp))
+            {
+                return new StopResolution(
+                    null,
+                    $"Stop {stopTimestamp} matches an active delivery claim",
+                    SuppressFallback: true);
+            }
+
             return new StopResolution(
                 null,
                 $"no open notification turn for Stop {stopTimestamp}");
@@ -755,13 +1065,12 @@ internal sealed class HookCommandService(
             .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
                 && createdAt <= parsedStopTimestamp)
             .ToArray();
-
         if (eligibleTurns.Length == 1)
         {
             if (HasUnresolvedInterveningSubagentObservation(
                     eligibleTurns[0],
                     promptObservations,
-                    sessionNotificationRecords,
+                    durableNotificationRecords,
                     parsedStopTimestamp))
             {
                 return new StopResolution(
@@ -777,6 +1086,14 @@ internal sealed class HookCommandService(
 
         if (eligibleTurns.Length == 0)
         {
+            if (HasEligibleTurn(freshClaimedOpenTurns, parsedStopTimestamp))
+            {
+                return new StopResolution(
+                    null,
+                    $"Stop {stopTimestamp} matches an active delivery claim",
+                    SuppressFallback: true);
+            }
+
             return new StopResolution(
                 null,
                 $"no eligible open notification turn at or before Stop {stopTimestamp}");
@@ -788,10 +1105,1888 @@ internal sealed class HookCommandService(
                 + $"{eligibleTurns.Length} eligible open notification turns");
     }
 
+    private static bool HasEligibleTurn(
+        IReadOnlyList<NotificationTurn> turns,
+        DateTimeOffset stopTimestamp)
+        => turns.Any(turn =>
+            TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+            && createdAt <= stopTimestamp);
+
+    private static async Task<RecoverableAbandonedTurnsResult> ListRecoverableAbandonedTurnsForStopAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> abandonedTurns,
+        IReadOnlyList<NotificationRecord> sessionNotificationRecords,
+        string notificationKey,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return RecoverableAbandonedTurnsResult.Empty;
+        }
+
+        List<(
+            NotificationTurn Turn,
+            DateTimeOffset CreatedAt,
+            SummaryValidationResult Validation)> eligibleAbandonedTurns = [];
+        List<NotificationTurn> exactSummaryTurns = [];
+        List<NotificationTurn> exactPendingSummaryTurns = [];
+        DateTimeOffset latestCreatedAt = DateTimeOffset.MinValue;
+        foreach (NotificationTurn abandonedTurn in abandonedTurns)
+        {
+            if (!TryParseUtcTimestamp(abandonedTurn.CreatedAt, out DateTimeOffset createdAt)
+                || createdAt > parsedStopTimestamp
+                || await WorkspaceStateStore.WasNotificationAlreadySentAsync(
+                    AppPaths.GetNotificationRecordPath(
+                        workspacePath,
+                        sessionId,
+                        abandonedTurn.NotificationTurnId,
+                        notificationKey),
+                    cancellationToken))
+            {
+                continue;
+            }
+
+            SummaryValidationResult abandonedValidation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                abandonedTurn,
+                cancellationToken);
+            eligibleAbandonedTurns.Add((abandonedTurn, createdAt, abandonedValidation));
+            if (abandonedValidation.IsValid
+                && HasStopAttributionForTurn(abandonedValidation, abandonedTurn, stopTimestamp)
+                && !HasInterveningSessionDelivery(
+                    abandonedTurn,
+                    sessionNotificationRecords,
+                    parsedStopTimestamp))
+            {
+                exactSummaryTurns.Add(abandonedTurn);
+            }
+            else if (abandonedValidation.IsPendingHandoff
+                && HasPendingStopAttributionForTurn(abandonedValidation, abandonedTurn, stopTimestamp))
+            {
+                exactPendingSummaryTurns.Add(abandonedTurn);
+            }
+
+            if (createdAt > latestCreatedAt)
+            {
+                latestCreatedAt = createdAt;
+            }
+        }
+
+        if (exactPendingSummaryTurns.Any(turn =>
+                !HasInterveningSessionDelivery(turn, sessionNotificationRecords, parsedStopTimestamp)))
+        {
+            return new RecoverableAbandonedTurnsResult([], SuppressStop: true);
+        }
+
+        if (exactSummaryTurns.Count > 0)
+        {
+            return exactSummaryTurns.Count == 1
+                ? new RecoverableAbandonedTurnsResult([exactSummaryTurns[0]], SuppressStop: false)
+                : new RecoverableAbandonedTurnsResult([], SuppressStop: true);
+        }
+
+        List<(NotificationTurn Turn, SummaryValidationResult Validation)> latestEligibleAbandonedTurns = [];
+        foreach ((NotificationTurn turn, DateTimeOffset createdAt, SummaryValidationResult turnValidation)
+            in eligibleAbandonedTurns)
+        {
+            if (createdAt == latestCreatedAt)
+            {
+                latestEligibleAbandonedTurns.Add((turn, turnValidation));
+            }
+        }
+
+        if (latestEligibleAbandonedTurns.Count != 1)
+        {
+            if (latestEligibleAbandonedTurns.Count > 0
+                && latestEligibleAbandonedTurns.Any(candidate =>
+                    IsUndeliverablePendingAbandonedHandoff(
+                        candidate.Turn,
+                        candidate.Validation,
+                        stopTimestamp)
+                    && !HasInterveningSessionDelivery(
+                        candidate.Turn,
+                        sessionNotificationRecords,
+                        parsedStopTimestamp)))
+            {
+                return new RecoverableAbandonedTurnsResult([], SuppressStop: true);
+            }
+
+            return RecoverableAbandonedTurnsResult.Empty;
+        }
+
+        (NotificationTurn candidate, SummaryValidationResult validation) = latestEligibleAbandonedTurns[0];
+        if (validation.IsPendingHandoff
+            && HasStopAttributionForTurn(validation, candidate, stopTimestamp))
+        {
+            return HasInterveningSessionDelivery(candidate, sessionNotificationRecords, parsedStopTimestamp)
+                ? RecoverableAbandonedTurnsResult.Empty
+                : new RecoverableAbandonedTurnsResult([candidate], SuppressStop: false);
+        }
+
+        if (validation.IsPendingHandoff
+            && IsHookCreatedPlaceholderForStop(validation, candidate))
+        {
+            return HasInterveningSessionDelivery(candidate, sessionNotificationRecords, parsedStopTimestamp)
+                ? RecoverableAbandonedTurnsResult.Empty
+                : new RecoverableAbandonedTurnsResult([], SuppressStop: true);
+        }
+
+        if (validation.IsPendingHandoff
+            && validation.Record is null)
+        {
+            return HasInterveningSessionDelivery(candidate, sessionNotificationRecords, parsedStopTimestamp)
+                ? RecoverableAbandonedTurnsResult.Empty
+                : new RecoverableAbandonedTurnsResult([], SuppressStop: true);
+        }
+
+        if (!HasStopAttributionForTurn(validation, candidate, stopTimestamp))
+        {
+            return RecoverableAbandonedTurnsResult.Empty;
+        }
+
+        return HasInterveningSessionDelivery(candidate, sessionNotificationRecords, parsedStopTimestamp)
+            ? RecoverableAbandonedTurnsResult.Empty
+            : new RecoverableAbandonedTurnsResult([candidate], SuppressStop: false);
+    }
+
+    private static async Task<RecoverableAbandonedTurnsResult> ListRecoverableExactCompletedAbandonedTurnsForStopAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> abandonedTurns,
+        IReadOnlyList<NotificationRecord> sessionNotificationRecords,
+        string notificationKey,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return RecoverableAbandonedTurnsResult.Empty;
+        }
+
+        List<NotificationTurn> exactCompletedTurns = [];
+        List<NotificationTurn> exactPendingTurns = [];
+        foreach (NotificationTurn abandonedTurn in abandonedTurns)
+        {
+            if (!TryParseUtcTimestamp(abandonedTurn.CreatedAt, out DateTimeOffset createdAt)
+                || createdAt > parsedStopTimestamp
+                || await WorkspaceStateStore.WasNotificationAlreadySentAsync(
+                    AppPaths.GetNotificationRecordPath(
+                        workspacePath,
+                        sessionId,
+                        abandonedTurn.NotificationTurnId,
+                        notificationKey),
+                    cancellationToken))
+            {
+                continue;
+            }
+
+            SummaryValidationResult validation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                abandonedTurn,
+                cancellationToken);
+            if (validation.IsValid
+                && HasStopAttributionForTurn(validation, abandonedTurn, stopTimestamp)
+                && !HasInterveningSessionDelivery(
+                    abandonedTurn,
+                    sessionNotificationRecords,
+                    parsedStopTimestamp))
+            {
+                exactCompletedTurns.Add(abandonedTurn);
+            }
+            else if (validation.IsPendingHandoff
+                && HasPendingStopAttributionForTurn(validation, abandonedTurn, stopTimestamp))
+            {
+                exactPendingTurns.Add(abandonedTurn);
+            }
+        }
+
+        if (exactPendingTurns.Any(turn =>
+                !HasInterveningSessionDelivery(turn, sessionNotificationRecords, parsedStopTimestamp)))
+        {
+            return new RecoverableAbandonedTurnsResult([], SuppressStop: true);
+        }
+
+        return exactCompletedTurns.Count > 1
+            ? new RecoverableAbandonedTurnsResult([], SuppressStop: true)
+            : new RecoverableAbandonedTurnsResult(
+                exactCompletedTurns
+                    .OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
+                    .ToArray(),
+                SuppressStop: false);
+    }
+
+    private static bool HasInterveningSessionDelivery(
+        NotificationTurn candidate,
+        IReadOnlyList<NotificationRecord> sessionNotificationRecords,
+        DateTimeOffset parsedStopTimestamp)
+    {
+        if (!TryParseUtcTimestamp(candidate.CreatedAt, out DateTimeOffset candidateCreatedAt))
+        {
+            return false;
+        }
+
+        return sessionNotificationRecords.Any(record =>
+            TryParseUtcTimestamp(record.StopTimestamp, out DateTimeOffset recordStopTimestamp)
+            && recordStopTimestamp > candidateCreatedAt
+            && recordStopTimestamp <= parsedStopTimestamp);
+    }
+
+    private async Task<IReadOnlyList<NotificationTurn>> ListExactNotifiedStopRetryTurnsAsync(
+        string workspacePath,
+        string sessionId,
+        string notificationKey,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return [];
+        }
+
+        IReadOnlyList<NotificationTurn> notifiedTurns =
+            await workspaceStateStore.ListNotifiedTurnsAsync(
+                workspacePath,
+                sessionId,
+                cancellationToken);
+        List<NotificationTurn> retryTurns = [];
+        foreach (NotificationTurn turn in notifiedTurns)
+        {
+            if (!TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                || createdAt > parsedStopTimestamp)
+            {
+                continue;
+            }
+
+            string notificationPath = AppPaths.GetNotificationRecordPath(
+                workspacePath,
+                sessionId,
+                turn.NotificationTurnId,
+                notificationKey);
+            if (await WorkspaceStateStore.WasNotificationAlreadySentAsync(
+                    notificationPath,
+                    cancellationToken))
+            {
+                continue;
+            }
+
+            SummaryValidationResult validation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                turn,
+                cancellationToken);
+            if (HasStopAttributionForTurn(validation, turn, stopTimestamp))
+            {
+                retryTurns.Add(turn);
+            }
+        }
+
+        return retryTurns
+            .OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static async Task<bool> AreAllPreferredTurnsNonUniqueExactStopAttributionsAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> preferredOpenTurns,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (preferredOpenTurns.Count <= 1)
+        {
+            return false;
+        }
+
+        foreach (NotificationTurn turn in preferredOpenTurns)
+        {
+            SummaryValidationResult validation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                turn,
+                cancellationToken);
+            if (!HasStopAttributionForTurn(validation, turn, stopTimestamp))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static async Task<IReadOnlyList<NotificationTurn>> PreferSingleValidSummaryTurnAsync(
+        string workspacePath,
+        string sessionId,
+        CurrentNotificationState? current,
+        IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
+        IReadOnlyList<NotificationTurn> openTurns,
+        IReadOnlyList<NotificationRecord> durableNotificationRecords,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return openTurns;
+        }
+
+        NotificationTurn[] eligibleTurns = openTurns
+            .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt <= parsedStopTimestamp)
+            .ToArray();
+        NotificationTurn[] eligibleFreshClaimedTurns = freshClaimedOpenTurns
+            .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt <= parsedStopTimestamp)
+            .ToArray();
+        NotificationTurn? currentTurn = current is null
+            ? null
+            : eligibleTurns.FirstOrDefault(turn => string.Equals(
+                turn.NotificationTurnId,
+                current.NotificationTurnId,
+                StringComparison.Ordinal));
+        NotificationTurn? freshCurrentTurn = current is null
+            ? null
+            : freshClaimedOpenTurns.FirstOrDefault(turn => string.Equals(
+                turn.NotificationTurnId,
+                current.NotificationTurnId,
+                StringComparison.Ordinal));
+        if (freshCurrentTurn is not null
+            && TryParseUtcTimestamp(freshCurrentTurn.CreatedAt, out DateTimeOffset freshCurrentCreatedAt)
+            && TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedFreshStopTimestamp)
+            && freshCurrentCreatedAt <= parsedFreshStopTimestamp
+            && IsTurnAtLatestEligibleCreatedAt(
+                freshCurrentTurn,
+                eligibleTurns.Concat(eligibleFreshClaimedTurns).ToArray()))
+        {
+            SummaryValidationResult freshCurrentValidation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                freshCurrentTurn,
+                cancellationToken);
+            if (HasStopAttributionForTurn(freshCurrentValidation, freshCurrentTurn, stopTimestamp))
+            {
+                return [];
+            }
+        }
+
+        List<NotificationTurn> exactFreshClaimedSummaryTurns = [];
+        foreach (NotificationTurn turn in freshClaimedOpenTurns)
+        {
+            if (!TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                || createdAt > parsedStopTimestamp)
+            {
+                continue;
+            }
+
+            SummaryValidationResult validation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                turn,
+                cancellationToken);
+            if (HasStopAttributionForTurn(validation, turn, stopTimestamp))
+            {
+                exactFreshClaimedSummaryTurns.Add(turn);
+            }
+        }
+
+        if (exactFreshClaimedSummaryTurns.Count > 0
+            && TrySelectLatestExactAtLatestEligibleTurn(
+                exactFreshClaimedSummaryTurns,
+                eligibleTurns.Concat(freshClaimedOpenTurns)
+                    .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                        && createdAt <= parsedStopTimestamp)
+                    .ToArray(),
+                out _))
+        {
+            return [];
+        }
+
+        if (currentTurn is not null)
+        {
+            SummaryValidationResult currentValidation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                currentTurn,
+                cancellationToken);
+            if (await HasFreshClaimedExactSummaryForDifferentTurnAsync(
+                    workspacePath,
+                    sessionId,
+                    currentTurn,
+                    currentValidation,
+                    freshClaimedOpenTurns,
+                    eligibleTurns.Concat(eligibleFreshClaimedTurns).ToArray(),
+                    stopTimestamp,
+                    cancellationToken))
+            {
+                return [];
+            }
+        }
+
+        bool currentTurnIsLatestEligible = currentTurn is not null
+            && TrySelectLatestEligibleTurn(
+                [currentTurn],
+                eligibleTurns.Concat(eligibleFreshClaimedTurns).ToArray(),
+                out _);
+        bool currentTurnTiesFreshClaimedLatestEligible = currentTurn is not null
+            && IsTurnTiedWithFreshClaimedLatestEligible(
+                currentTurn,
+                eligibleFreshClaimedTurns,
+                eligibleTurns.Concat(eligibleFreshClaimedTurns).ToArray());
+        if ((!currentTurnIsLatestEligible || currentTurnTiesFreshClaimedLatestEligible)
+            && await HasBlockingFreshClaimedCompletedOrInvalidTurnAsync(
+                workspacePath,
+                sessionId,
+                freshClaimedOpenTurns,
+                eligibleTurns.Concat(eligibleFreshClaimedTurns).ToArray(),
+                stopTimestamp,
+                blockPendingHandoff: true,
+                cancellationToken))
+        {
+            return [];
+        }
+
+        if (eligibleTurns.Length <= 1)
+        {
+            bool onlyEligibleHasUnresolvedStopAttribution = false;
+            NotificationTurn? onlyEligibleTurnWithInterveningDelivery = null;
+            if (eligibleTurns.Length == 1)
+            {
+                SummaryValidationResult onlyEligibleValidation = await ValidateSummaryOnceAsync(
+                    workspacePath,
+                    sessionId,
+                    eligibleTurns[0],
+                    cancellationToken);
+                bool onlyEligibleHasStopAttribution =
+                    HasStopAttributionForTurn(onlyEligibleValidation, eligibleTurns[0], stopTimestamp);
+                bool onlyEligibleHasInterveningDelivery = onlyEligibleHasStopAttribution
+                    && string.Equals(eligibleTurns[0].Status, "open", StringComparison.Ordinal)
+                    && HasInterveningSessionDelivery(
+                        eligibleTurns[0],
+                        durableNotificationRecords,
+                        parsedStopTimestamp);
+                onlyEligibleHasUnresolvedStopAttribution = onlyEligibleHasStopAttribution
+                    && !onlyEligibleHasInterveningDelivery;
+                if (onlyEligibleHasInterveningDelivery)
+                {
+                    onlyEligibleTurnWithInterveningDelivery = eligibleTurns[0];
+                }
+            }
+
+            if (eligibleTurns.Length == 1 && freshCurrentTurn is not null)
+            {
+                if (onlyEligibleHasUnresolvedStopAttribution
+                    && TrySelectLatestEligibleTurn(
+                        [freshCurrentTurn],
+                        eligibleTurns.Concat(eligibleFreshClaimedTurns).ToArray(),
+                        out _))
+                {
+                    return openTurns;
+                }
+            }
+
+            if (currentTurn is null
+                && !(eligibleTurns.Length == 1
+                    && onlyEligibleHasUnresolvedStopAttribution)
+                && await HasBlockingFreshClaimedCompletedOrInvalidTurnAsync(
+                    workspacePath,
+                    sessionId,
+                    freshClaimedOpenTurns,
+                    eligibleTurns.Concat(eligibleFreshClaimedTurns).ToArray(),
+                    stopTimestamp,
+                    blockPendingHandoff: true,
+                    cancellationToken))
+            {
+                return [];
+            }
+
+            if (eligibleTurns.Length == 1)
+            {
+                if (onlyEligibleHasUnresolvedStopAttribution)
+                {
+                    return openTurns;
+                }
+            }
+
+            if (onlyEligibleTurnWithInterveningDelivery is not null)
+            {
+                return openTurns
+                    .Where(turn => !string.Equals(
+                        turn.NotificationTurnId,
+                        onlyEligibleTurnWithInterveningDelivery.NotificationTurnId,
+                        StringComparison.Ordinal))
+                    .ToArray();
+            }
+
+            return openTurns;
+        }
+
+        List<NotificationTurn> validSummaryTurns = [];
+        List<NotificationTurn> exactStopSummaryTurns = [];
+        List<NotificationTurn> exactPendingSummaryTurns = [];
+        List<NotificationTurn> pendingSummaryTurns = [];
+        List<NotificationTurn> hookPlaceholderPendingSummaryTurns = [];
+        List<NotificationTurn> invalidSummaryTurns = [];
+        HashSet<string> staleStopAttributedTurnIds = new(StringComparer.Ordinal);
+        foreach (NotificationTurn turn in eligibleTurns)
+        {
+            SummaryValidationResult validation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                turn,
+                cancellationToken);
+            bool hasStopAttribution = HasStopAttributionForTurn(validation, turn, stopTimestamp);
+            if (hasStopAttribution
+                && HasInterveningSessionDelivery(turn, durableNotificationRecords, parsedStopTimestamp))
+            {
+                staleStopAttributedTurnIds.Add(turn.NotificationTurnId);
+                continue;
+            }
+
+            if (validation.IsValid)
+            {
+                validSummaryTurns.Add(turn);
+                if (string.Equals(
+                        validation.Record?.UpdatedAt,
+                        stopTimestamp,
+                        StringComparison.Ordinal))
+                {
+                    exactStopSummaryTurns.Add(turn);
+                }
+            }
+            else if (validation.IsPendingHandoff
+                && hasStopAttribution)
+            {
+                pendingSummaryTurns.Add(turn);
+                exactPendingSummaryTurns.Add(turn);
+            }
+            else if (validation.IsPendingHandoff)
+            {
+                pendingSummaryTurns.Add(turn);
+                if (validation.Record is not null
+                    && IsHookCreatedPlaceholderSummary(validation.Record, turn))
+                {
+                    hookPlaceholderPendingSummaryTurns.Add(turn);
+                }
+            }
+            else
+            {
+                invalidSummaryTurns.Add(turn);
+            }
+        }
+        NotificationTurn[] selectionEligibleTurns = staleStopAttributedTurnIds.Count == 0
+            ? eligibleTurns
+            : eligibleTurns
+                .Where(turn => !staleStopAttributedTurnIds.Contains(turn.NotificationTurnId))
+                .ToArray();
+        NotificationTurn[] filteredOpenTurns = staleStopAttributedTurnIds.Count == 0
+            ? openTurns.ToArray()
+            : openTurns
+                .Where(turn => !staleStopAttributedTurnIds.Contains(turn.NotificationTurnId))
+                .ToArray();
+        List<NotificationTurn> exactStopAttributionTurns =
+        [
+            ..exactStopSummaryTurns,
+            ..exactPendingSummaryTurns,
+        ];
+
+        if (currentTurn is not null)
+        {
+            SummaryValidationResult currentValidation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                currentTurn,
+                cancellationToken);
+            if (exactPendingSummaryTurns.Count > 0)
+            {
+                return exactPendingSummaryTurns;
+            }
+
+            NotificationTurn? observedPendingCompletedExactTurn =
+                await SelectSingleObservedPendingCompletedExactTurnAsync(
+                    workspacePath,
+                    sessionId,
+                    exactStopSummaryTurns,
+                    durableNotificationRecords,
+                    parsedStopTimestamp,
+                    stopTimestamp,
+                    cancellationToken);
+            if (observedPendingCompletedExactTurn is not null)
+            {
+                return [observedPendingCompletedExactTurn];
+            }
+
+            if (TrySelectLatestExactAtLatestEligibleTurn(
+                    exactPendingSummaryTurns,
+                    selectionEligibleTurns,
+                    out NotificationTurn? latestExactPendingTurn))
+            {
+                return [latestExactPendingTurn];
+            }
+
+            if (exactStopSummaryTurns.Count == 1
+                && exactStopAttributionTurns.Count == 1
+                && currentTurnIsLatestEligible
+                && ShouldPreferExactOlderSummary(
+                    exactStopSummaryTurns[0],
+                    currentTurn,
+                    currentValidation,
+                    freshClaimedOpenTurns,
+                    stopTimestamp))
+            {
+                return exactStopSummaryTurns;
+            }
+
+            if (exactPendingSummaryTurns.Count > 0
+                && exactStopSummaryTurns.Count > 0
+                && TrySelectLatestExactAtLatestEligibleTurn(
+                    exactStopSummaryTurns,
+                    selectionEligibleTurns,
+                    out _))
+            {
+                return exactPendingSummaryTurns;
+            }
+
+            if (TrySelectLatestExactAtLatestEligibleTurn(
+                    exactStopSummaryTurns,
+                    selectionEligibleTurns,
+                    out NotificationTurn? latestExactStopTurn))
+            {
+                return [latestExactStopTurn];
+            }
+
+            if (TrySelectTiedLatestExactAtLatestEligibleTurns(
+                    exactStopAttributionTurns,
+                    selectionEligibleTurns,
+                    out NotificationTurn[]? tiedLatestExactTurns))
+            {
+                return tiedLatestExactTurns;
+            }
+
+            if (TrySelectLatestEligibleTurn(
+                    pendingSummaryTurns,
+                    selectionEligibleTurns,
+                    out NotificationTurn? latestPendingTurn))
+            {
+                return [latestPendingTurn];
+            }
+
+            if (TrySelectLatestEligibleTurn(
+                    invalidSummaryTurns,
+                    selectionEligibleTurns,
+                    out NotificationTurn? latestInvalidTurn))
+            {
+                return [latestInvalidTurn];
+            }
+
+            if (TrySelectLatestEligibleTurn(
+                    validSummaryTurns,
+                    selectionEligibleTurns,
+                    out NotificationTurn? latestValidTurn))
+            {
+                return [latestValidTurn];
+            }
+
+            if (staleStopAttributedTurnIds.Contains(currentTurn.NotificationTurnId))
+            {
+                return filteredOpenTurns;
+            }
+
+            return [currentTurn];
+        }
+
+        if (exactPendingSummaryTurns.Count > 0)
+        {
+            return exactPendingSummaryTurns;
+        }
+
+        NotificationTurn? cachelessObservedPendingCompletedExactTurn =
+            await SelectSingleObservedPendingCompletedExactTurnAsync(
+                workspacePath,
+                sessionId,
+                exactStopSummaryTurns,
+                durableNotificationRecords,
+                parsedStopTimestamp,
+                stopTimestamp,
+                cancellationToken);
+        if (cachelessObservedPendingCompletedExactTurn is not null)
+        {
+            return [cachelessObservedPendingCompletedExactTurn];
+        }
+
+        if (TrySelectLatestExactAtLatestEligibleTurn(
+                exactStopAttributionTurns,
+                selectionEligibleTurns,
+                out NotificationTurn? latestCachelessExactTurn))
+        {
+            return [latestCachelessExactTurn];
+        }
+
+        NotificationTurn? latestCachelessPendingAtLatestExactTurn =
+            SelectUniqueLatestTurnForPendingObservation(exactPendingSummaryTurns);
+        if (exactStopSummaryTurns.Count > 0
+            && latestCachelessPendingAtLatestExactTurn is not null
+            && IsTurnAtLatestEligibleCreatedAt(
+                latestCachelessPendingAtLatestExactTurn,
+                exactStopAttributionTurns.ToArray()))
+        {
+            return [latestCachelessPendingAtLatestExactTurn];
+        }
+
+        NotificationTurn[] tiedLatestCachelessPendingAtLatestExactTurns =
+            SelectTiedLatestTurnsForPendingObservation(exactPendingSummaryTurns);
+        if (exactStopSummaryTurns.Count > 0
+            && tiedLatestCachelessPendingAtLatestExactTurns.Length > 1
+            && IsTurnAtLatestEligibleCreatedAt(
+                tiedLatestCachelessPendingAtLatestExactTurns[0],
+                exactStopAttributionTurns.ToArray()))
+        {
+            return tiedLatestCachelessPendingAtLatestExactTurns;
+        }
+
+        if (TrySelectLatestExactAtLatestEligibleTurn(
+                exactStopSummaryTurns,
+                selectionEligibleTurns,
+                out NotificationTurn? latestCachelessExactStopTurn))
+        {
+            return [latestCachelessExactStopTurn];
+        }
+
+        if (TrySelectTiedLatestExactAtLatestEligibleTurns(
+                exactStopAttributionTurns,
+                selectionEligibleTurns,
+                out NotificationTurn[]? tiedLatestCachelessExactTurns))
+        {
+            return tiedLatestCachelessExactTurns;
+        }
+
+        if (exactStopSummaryTurns.Count == 1
+            && exactStopAttributionTurns.Count == 1
+            && await HasPendingStopObservationForTurnAsync(
+                workspacePath,
+                sessionId,
+                exactStopSummaryTurns[0],
+                stopTimestamp,
+                cancellationToken))
+        {
+            return exactStopSummaryTurns;
+        }
+
+        if (exactStopSummaryTurns.Count == 1
+            && exactStopAttributionTurns.Count == 1
+            && TrySelectLatestEligibleTurn(
+                hookPlaceholderPendingSummaryTurns,
+                selectionEligibleTurns,
+                out _))
+        {
+            return exactStopSummaryTurns;
+        }
+
+        if (TrySelectLatestEligibleTurn(
+                pendingSummaryTurns,
+                selectionEligibleTurns,
+                out NotificationTurn? latestCachelessNonExactPendingTurn))
+        {
+            return [latestCachelessNonExactPendingTurn];
+        }
+
+        if (TrySelectLatestEligibleTurn(
+                validSummaryTurns,
+                selectionEligibleTurns,
+                out NotificationTurn? latestCachelessValidTurn))
+        {
+            return [latestCachelessValidTurn];
+        }
+
+        if (TrySelectLatestEligibleTurn(
+                invalidSummaryTurns,
+                selectionEligibleTurns,
+                out NotificationTurn? latestCachelessInvalidTurn))
+        {
+            return [latestCachelessInvalidTurn];
+        }
+
+        return validSummaryTurns.Count == 1 ? validSummaryTurns : filteredOpenTurns;
+    }
+
+    private static bool IsTurnAtLatestEligibleCreatedAt(
+        NotificationTurn turn,
+        NotificationTurn[] eligibleTurns)
+    {
+        if (!TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset turnCreatedAt))
+        {
+            return false;
+        }
+
+        DateTimeOffset latestEligibleCreatedAt = eligibleTurns
+            .Where(static candidate => TryParseUtcTimestamp(candidate.CreatedAt, out _))
+            .Select(static candidate =>
+            {
+                _ = TryParseUtcTimestamp(candidate.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
+        return turnCreatedAt == latestEligibleCreatedAt;
+    }
+
+    private static bool IsTurnTiedWithFreshClaimedLatestEligible(
+        NotificationTurn turn,
+        NotificationTurn[] eligibleFreshClaimedTurns,
+        NotificationTurn[] eligibleTurns)
+    {
+        if (!TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset turnCreatedAt))
+        {
+            return false;
+        }
+
+        DateTimeOffset latestEligibleCreatedAt = eligibleTurns
+            .Where(static candidate => TryParseUtcTimestamp(candidate.CreatedAt, out _))
+            .Select(static candidate =>
+            {
+                _ = TryParseUtcTimestamp(candidate.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
+        return turnCreatedAt == latestEligibleCreatedAt
+            && eligibleFreshClaimedTurns.Any(freshClaimedTurn =>
+                TryParseUtcTimestamp(freshClaimedTurn.CreatedAt, out DateTimeOffset freshClaimedCreatedAt)
+                && freshClaimedCreatedAt == latestEligibleCreatedAt
+                && !string.Equals(
+                    freshClaimedTurn.NotificationTurnId,
+                    turn.NotificationTurnId,
+                    StringComparison.Ordinal));
+    }
+
+    private static bool TrySelectLatestEligibleTurn(
+        List<NotificationTurn> candidateTurns,
+        NotificationTurn[] eligibleTurns,
+        [NotNullWhen(true)] out NotificationTurn? selectedTurn)
+    {
+        selectedTurn = null;
+        if (candidateTurns.Count == 0)
+        {
+            return false;
+        }
+
+        NotificationTurn[] orderedCandidateTurns = candidateTurns
+            .Where(static turn => TryParseUtcTimestamp(turn.CreatedAt, out _))
+            .OrderByDescending(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .ToArray();
+        if (orderedCandidateTurns.Length == 0)
+        {
+            return false;
+        }
+
+        _ = TryParseUtcTimestamp(orderedCandidateTurns[0].CreatedAt, out DateTimeOffset latestCandidateCreatedAt);
+        if (orderedCandidateTurns.Length > 1
+            && TryParseUtcTimestamp(orderedCandidateTurns[1].CreatedAt, out DateTimeOffset secondCandidateCreatedAt)
+            && secondCandidateCreatedAt == latestCandidateCreatedAt)
+        {
+            return false;
+        }
+
+        DateTimeOffset latestEligibleCreatedAt = eligibleTurns
+            .Where(static turn => TryParseUtcTimestamp(turn.CreatedAt, out _))
+            .Select(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
+        if (latestCandidateCreatedAt != latestEligibleCreatedAt)
+        {
+            return false;
+        }
+
+        selectedTurn = orderedCandidateTurns[0];
+        return true;
+    }
+
+    private static NotificationTurn? SelectUniqueLatestTurnForPendingObservation(
+        List<NotificationTurn> candidateTurns)
+    {
+        NotificationTurn[] orderedCandidateTurns = candidateTurns
+            .Where(static turn => TryParseUtcTimestamp(turn.CreatedAt, out _))
+            .OrderByDescending(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .ToArray();
+        if (orderedCandidateTurns.Length == 0)
+        {
+            return null;
+        }
+
+        _ = TryParseUtcTimestamp(orderedCandidateTurns[0].CreatedAt, out DateTimeOffset latestCreatedAt);
+        return orderedCandidateTurns.Length > 1
+            && TryParseUtcTimestamp(orderedCandidateTurns[1].CreatedAt, out DateTimeOffset secondCreatedAt)
+            && secondCreatedAt == latestCreatedAt
+            ? null
+            : orderedCandidateTurns[0];
+    }
+
+    private static NotificationTurn[] SelectTiedLatestTurnsForPendingObservation(
+        List<NotificationTurn> candidateTurns)
+    {
+        NotificationTurn[] orderedCandidateTurns = candidateTurns
+            .Where(static turn => TryParseUtcTimestamp(turn.CreatedAt, out _))
+            .OrderByDescending(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .ToArray();
+        if (orderedCandidateTurns.Length == 0)
+        {
+            return [];
+        }
+
+        _ = TryParseUtcTimestamp(orderedCandidateTurns[0].CreatedAt, out DateTimeOffset latestCreatedAt);
+        return orderedCandidateTurns
+            .Where(turn =>
+                TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt == latestCreatedAt)
+            .ToArray();
+    }
+
+    private static bool TrySelectLatestExactAtLatestEligibleTurn(
+        List<NotificationTurn> exactTurns,
+        NotificationTurn[] eligibleTurns,
+        [NotNullWhen(true)] out NotificationTurn? selectedTurn)
+    {
+        selectedTurn = null;
+        if (exactTurns.Count == 0)
+        {
+            return false;
+        }
+
+        NotificationTurn[] orderedExactTurns = exactTurns
+            .Where(static turn => TryParseUtcTimestamp(turn.CreatedAt, out _))
+            .OrderByDescending(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .ToArray();
+        if (orderedExactTurns.Length == 0)
+        {
+            return false;
+        }
+
+        _ = TryParseUtcTimestamp(orderedExactTurns[0].CreatedAt, out DateTimeOffset latestExactCreatedAt);
+        if (orderedExactTurns.Length > 1
+            && TryParseUtcTimestamp(orderedExactTurns[1].CreatedAt, out DateTimeOffset secondExactCreatedAt)
+            && secondExactCreatedAt == latestExactCreatedAt)
+        {
+            return false;
+        }
+
+        DateTimeOffset latestEligibleCreatedAt = eligibleTurns
+            .Where(static turn => TryParseUtcTimestamp(turn.CreatedAt, out _))
+            .Select(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
+        if (latestExactCreatedAt != latestEligibleCreatedAt)
+        {
+            return false;
+        }
+
+        selectedTurn = orderedExactTurns[0];
+        return true;
+    }
+
+    private static bool TrySelectTiedLatestExactAtLatestEligibleTurns(
+        List<NotificationTurn> exactTurns,
+        NotificationTurn[] eligibleTurns,
+        [NotNullWhen(true)] out NotificationTurn[]? selectedTurns)
+    {
+        selectedTurns = null;
+        NotificationTurn[] tiedLatestExactTurns = SelectTiedLatestTurnsForPendingObservation(exactTurns);
+        if (tiedLatestExactTurns.Length <= 1
+            || !IsTurnAtLatestEligibleCreatedAt(tiedLatestExactTurns[0], eligibleTurns))
+        {
+            return false;
+        }
+
+        selectedTurns = tiedLatestExactTurns;
+        return true;
+    }
+
+    private static async Task<bool> HasFreshClaimedExactSummaryForDifferentTurnAsync(
+        string workspacePath,
+        string sessionId,
+        NotificationTurn currentTurn,
+        SummaryValidationResult currentValidation,
+        IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
+        NotificationTurn[] eligibleTurns,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (HasCurrentStopAttribution(currentValidation, currentTurn, stopTimestamp))
+        {
+            return false;
+        }
+
+        foreach (NotificationTurn freshClaimedTurn in freshClaimedOpenTurns)
+        {
+            if (!IsExactSummaryForDifferentTurn(freshClaimedTurn, currentTurn, stopTimestamp))
+            {
+                continue;
+            }
+
+            if (!TryParseUtcTimestamp(freshClaimedTurn.CreatedAt, out DateTimeOffset createdAt)
+                || !TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp)
+                || createdAt > parsedStopTimestamp)
+            {
+                continue;
+            }
+
+            if (!IsTurnAtLatestEligibleCreatedAt(
+                    freshClaimedTurn,
+                    eligibleTurns))
+            {
+                continue;
+            }
+
+            if (!currentValidation.IsValid && !currentValidation.IsPendingHandoff)
+            {
+                return true;
+            }
+
+            SummaryValidationResult validation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                freshClaimedTurn,
+                cancellationToken);
+            if (HasStopAttributionForTurn(validation, freshClaimedTurn, stopTimestamp))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Task<bool> HasBlockingFreshClaimedTurnAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> openTurns,
+        IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return Task.FromResult(false);
+        }
+
+        NotificationTurn[] eligibleFreshClaimedTurns = freshClaimedOpenTurns
+            .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt <= parsedStopTimestamp)
+            .ToArray();
+        if (eligibleFreshClaimedTurns.Length == 0)
+        {
+            return Task.FromResult(false);
+        }
+
+        NotificationTurn[] eligibleTurns = openTurns
+            .Concat(eligibleFreshClaimedTurns)
+            .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt <= parsedStopTimestamp)
+            .ToArray();
+        DateTimeOffset latestEligibleCreatedAt = eligibleTurns
+            .Select(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
+        bool hasLatestFreshClaimedTurn = eligibleFreshClaimedTurns.Any(turn =>
+        {
+            _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+            return createdAt == latestEligibleCreatedAt;
+        });
+        if (!hasLatestFreshClaimedTurn)
+        {
+            return Task.FromResult(false);
+        }
+
+        _ = (workspacePath, sessionId, cancellationToken);
+        return Task.FromResult(true);
+    }
+
+    private static async Task<bool> HasBlockingFreshClaimedCompletedOrInvalidTurnAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
+        NotificationTurn[] eligibleTurns,
+        string stopTimestamp,
+        bool blockPendingHandoff,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return false;
+        }
+
+        NotificationTurn[] eligibleFreshClaimedTurns = freshClaimedOpenTurns
+            .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt <= parsedStopTimestamp)
+            .ToArray();
+        if (eligibleFreshClaimedTurns.Length == 0)
+        {
+            return false;
+        }
+
+        DateTimeOffset latestFreshClaimedCreatedAt = eligibleFreshClaimedTurns
+            .Select(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .Max();
+        DateTimeOffset latestEligibleCreatedAt = eligibleTurns
+            .Where(static turn => TryParseUtcTimestamp(turn.CreatedAt, out _))
+            .Select(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
+        if (latestFreshClaimedCreatedAt != latestEligibleCreatedAt)
+        {
+            return false;
+        }
+
+        if (blockPendingHandoff)
+        {
+            _ = (workspacePath, sessionId, cancellationToken);
+            return true;
+        }
+
+        if (!TrySelectLatestEligibleTurn(
+                eligibleFreshClaimedTurns.ToList(),
+                eligibleTurns,
+                out NotificationTurn? latestFreshClaimedTurn))
+        {
+            foreach (NotificationTurn tiedFreshClaimedTurn in eligibleFreshClaimedTurns
+                .Where(turn =>
+                {
+                    _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                    return createdAt == latestFreshClaimedCreatedAt;
+                }))
+            {
+                if (await IsFreshClaimedCompletedOrInvalidTurnAsync(
+                        workspacePath,
+                        sessionId,
+                        tiedFreshClaimedTurn,
+                        cancellationToken))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return await IsFreshClaimedCompletedOrInvalidTurnAsync(
+            workspacePath,
+            sessionId,
+            latestFreshClaimedTurn,
+            cancellationToken);
+    }
+
+    private static async Task<bool> IsFreshClaimedCompletedOrInvalidTurnAsync(
+        string workspacePath,
+        string sessionId,
+        NotificationTurn latestFreshClaimedTurn,
+        CancellationToken cancellationToken)
+    {
+        SummaryValidationResult latestFreshClaimedValidation = await ValidateSummaryOnceAsync(
+            workspacePath,
+            sessionId,
+            latestFreshClaimedTurn,
+            cancellationToken);
+        return latestFreshClaimedValidation.IsValid || !latestFreshClaimedValidation.IsPendingHandoff;
+    }
+
+    private static bool ShouldPreferExactOlderSummary(
+        NotificationTurn exactSummaryTurn,
+        NotificationTurn currentTurn,
+        SummaryValidationResult currentValidation,
+        IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
+        string stopTimestamp)
+    {
+        if (!IsExactSummaryForDifferentTurn(exactSummaryTurn, currentTurn, stopTimestamp))
+        {
+            return false;
+        }
+
+        if (HasCurrentStopAttribution(currentValidation, currentTurn, stopTimestamp))
+        {
+            return false;
+        }
+
+        if (currentValidation.IsPendingHandoff)
+        {
+            return true;
+        }
+
+        if (currentValidation.IsValid)
+        {
+            return true;
+        }
+
+        return true;
+    }
+
+    private static async Task<IReadOnlyList<NotificationTurn>> FilterFreshClaimedTurnsWithStopAttributionAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> openTurns,
+        IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return [];
+        }
+
+        NotificationTurn[] eligibleFreshClaimedTurns = freshClaimedOpenTurns
+            .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt <= parsedStopTimestamp)
+            .ToArray();
+        if (eligibleFreshClaimedTurns.Length == 0)
+        {
+            return [];
+        }
+
+        DateTimeOffset latestEligibleCreatedAt = openTurns
+            .Concat(eligibleFreshClaimedTurns)
+            .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt <= parsedStopTimestamp)
+            .Select(static turn =>
+            {
+                _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+                return createdAt;
+            })
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
+        List<NotificationTurn> matchingTurns = [];
+        foreach (NotificationTurn turn in eligibleFreshClaimedTurns)
+        {
+            _ = TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt);
+            if (createdAt != latestEligibleCreatedAt)
+            {
+                continue;
+            }
+
+            SummaryValidationResult validation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                turn,
+                cancellationToken);
+            if (HasCurrentStopAttribution(validation, turn, stopTimestamp))
+            {
+                matchingTurns.Add(turn);
+            }
+        }
+
+        return matchingTurns;
+    }
+
+    private static bool HasCurrentStopAttribution(
+        SummaryValidationResult currentValidation,
+        NotificationTurn currentTurn,
+        string stopTimestamp)
+        => HasStopAttributionForTurn(currentValidation, currentTurn, stopTimestamp);
+
+    private static bool HasStopAttributionForTurn(
+        SummaryValidationResult currentValidation,
+        NotificationTurn turn,
+        string stopTimestamp)
+    {
+        NotificationSummary? summary = currentValidation.Record;
+        return summary is not null
+            && string.Equals(summary.SessionId, turn.SessionId, StringComparison.Ordinal)
+            && string.Equals(
+                summary.NotificationTurnId,
+                turn.NotificationTurnId,
+                StringComparison.Ordinal)
+            && string.Equals(
+                summary.NotificationNonce,
+                turn.NotificationNonce,
+                StringComparison.Ordinal)
+            && string.Equals(summary.UpdatedAt, stopTimestamp, StringComparison.Ordinal)
+            && !IsHookCreatedPlaceholderSummary(summary, turn);
+    }
+
+    private static bool HasPendingStopAttributionForTurn(
+        SummaryValidationResult currentValidation,
+        NotificationTurn turn,
+        string stopTimestamp)
+    {
+        NotificationSummary? summary = currentValidation.Record;
+        return summary is not null
+            && string.Equals(summary.SessionId, turn.SessionId, StringComparison.Ordinal)
+            && string.Equals(
+                summary.NotificationTurnId,
+                turn.NotificationTurnId,
+                StringComparison.Ordinal)
+            && string.Equals(
+                summary.NotificationNonce,
+                turn.NotificationNonce,
+                StringComparison.Ordinal)
+            && string.Equals(summary.UpdatedAt, stopTimestamp, StringComparison.Ordinal)
+            && !IsHookCreatedPlaceholderSummary(summary, turn);
+    }
+
+    private static bool IsHookCreatedPlaceholderSummary(
+        NotificationSummary summary,
+        NotificationTurn turn)
+        => string.Equals(summary.Status, "pending", StringComparison.Ordinal)
+            && summary.Summary is null
+            && (IsProvenHookCreatedPlaceholderSummary(summary, turn)
+                || IsLegacyHookCreatedPlaceholderSummary(summary, turn));
+
+    private static bool IsProvenHookCreatedPlaceholderSummary(
+        NotificationSummary summary,
+        NotificationTurn turn)
+        => !string.IsNullOrWhiteSpace(turn.SummaryPlaceholderCreatedAt)
+            && string.Equals(
+                summary.UpdatedAt,
+                turn.SummaryPlaceholderCreatedAt,
+                StringComparison.Ordinal);
+
+    private static bool IsLegacyHookCreatedPlaceholderSummary(
+        NotificationSummary summary,
+        NotificationTurn turn)
+        => string.IsNullOrWhiteSpace(turn.SummaryPlaceholderCreatedAt)
+            && (string.Equals(summary.UpdatedAt, turn.CreatedAt, StringComparison.Ordinal)
+                || string.Equals(summary.UpdatedAt, turn.UpdatedAt, StringComparison.Ordinal));
+
+    private static bool IsHookCreatedPlaceholderForStop(
+        SummaryValidationResult validation,
+        NotificationTurn turn)
+        => validation.Record is not null
+            && IsHookCreatedPlaceholderSummary(validation.Record, turn);
+
+    private static bool IsUndeliverablePendingAbandonedHandoff(
+        NotificationTurn turn,
+        SummaryValidationResult validation,
+        string stopTimestamp)
+        => validation.IsPendingHandoff
+            && (validation.Record is null
+                || HasPendingStopAttributionForTurn(validation, turn, stopTimestamp)
+                || IsHookCreatedPlaceholderForStop(validation, turn));
+
+    private static bool IsExactSummaryForDifferentTurn(
+        NotificationTurn exactSummaryTurn,
+        NotificationTurn currentTurn,
+        string stopTimestamp)
+        => !string.Equals(
+                exactSummaryTurn.NotificationTurnId,
+                currentTurn.NotificationTurnId,
+                StringComparison.Ordinal)
+            && TryParseUtcTimestamp(stopTimestamp, out _);
+
+    private static bool ResolvedTurnHasPositiveStopAttribution(
+        string stopTimestamp,
+        SummaryValidationResult summaryValidation)
+        => summaryValidation.IsValid
+            && string.Equals(summaryValidation.Record?.UpdatedAt, stopTimestamp, StringComparison.Ordinal);
+
+    private static bool HasPriorNonExactDurableDelivery(
+        IReadOnlyList<NotificationRecord> sessionNotificationRecords,
+        string stopTimestamp)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return false;
+        }
+
+        return sessionNotificationRecords.Any(record =>
+            !string.Equals(record.SummaryUpdatedAt, stopTimestamp, StringComparison.Ordinal)
+            && TryParseUtcTimestamp(record.StopTimestamp, out DateTimeOffset recordStopTimestamp)
+            && recordStopTimestamp <= parsedStopTimestamp
+            && parsedStopTimestamp - recordStopTimestamp <= TimeSpan.FromSeconds(5));
+    }
+
+    private static async Task<bool> HasPriorClosedPerTurnDurableDeliveryAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationRecord> perTurnNotificationRecords,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return false;
+        }
+
+        foreach (NotificationRecord record in perTurnNotificationRecords)
+        {
+            if (string.IsNullOrWhiteSpace(record.NotificationTurnId)
+                || !IsDurableDeliveryStatus(record.DeliveryStatus)
+                || !TryParseUtcTimestamp(record.StopTimestamp, out DateTimeOffset recordStopTimestamp)
+                || recordStopTimestamp > parsedStopTimestamp)
+            {
+                continue;
+            }
+
+            NotificationTurn? turn = await TryReadNotificationTurnAsync(
+                workspacePath,
+                sessionId,
+                record.NotificationTurnId,
+                cancellationToken);
+            if (!string.Equals(turn?.Status, "open", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> HasDurableDeliveryForCurrentTurnSummaryAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> candidateTurns,
+        IReadOnlyList<NotificationRecord> durableNotificationRecords,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return false;
+        }
+
+        NotificationTurn[] eligibleTurns = candidateTurns
+            .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt <= parsedStopTimestamp)
+            .ToArray();
+        if (eligibleTurns.Length > 1)
+        {
+            return false;
+        }
+
+        if (eligibleTurns.Length == 1)
+        {
+            NotificationTurn turn = eligibleTurns[0];
+            if (string.Equals(turn.Status, "open", StringComparison.Ordinal))
+            {
+                SummaryValidationResult validation = await ValidateSummaryOnceAsync(
+                    workspacePath,
+                    sessionId,
+                    turn,
+                    cancellationToken);
+                string? summaryUpdatedAt = validation.Record?.UpdatedAt;
+                if (!string.IsNullOrWhiteSpace(summaryUpdatedAt)
+                    && durableNotificationRecords.Any(record =>
+                        string.Equals(record.NotificationTurnId, turn.NotificationTurnId, StringComparison.Ordinal)
+                        && IsDurableDeliveryStatus(record.DeliveryStatus)
+                        && (string.Equals(record.SummaryUpdatedAt, summaryUpdatedAt, StringComparison.Ordinal)
+                            || string.Equals(record.StopTimestamp, summaryUpdatedAt, StringComparison.Ordinal))))
+                {
+                    return true;
+                }
+            }
+        }
+
+        foreach (NotificationRecord record in durableNotificationRecords)
+        {
+            if (string.IsNullOrWhiteSpace(record.NotificationTurnId)
+                || !IsDurableDeliveryStatus(record.DeliveryStatus))
+            {
+                continue;
+            }
+
+            string summaryPath = AppPaths.GetSummaryStatePath(
+                workspacePath,
+                sessionId,
+                record.NotificationTurnId);
+            if (!File.Exists(summaryPath))
+            {
+                continue;
+            }
+
+            NotificationTurn? turn = await TryReadNotificationTurnAsync(
+                workspacePath,
+                sessionId,
+                record.NotificationTurnId,
+                cancellationToken);
+            if (!string.Equals(turn?.Status, "open", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                await using FileStream stream = File.OpenRead(summaryPath);
+                NotificationSummary? summary = await JsonSerializer.DeserializeAsync(
+                    stream,
+                    AppJsonSerializerContext.Default.NotificationSummary,
+                    cancellationToken);
+                if (summary is not null
+                    && string.Equals(summary.SessionId, sessionId, StringComparison.Ordinal)
+                    && string.Equals(
+                        summary.NotificationTurnId,
+                        record.NotificationTurnId,
+                        StringComparison.Ordinal)
+                    && (string.Equals(record.SummaryUpdatedAt, summary.UpdatedAt, StringComparison.Ordinal)
+                        || string.Equals(record.StopTimestamp, summary.UpdatedAt, StringComparison.Ordinal)))
+                {
+                    return true;
+                }
+            }
+            catch (Exception ex) when (
+                ex is IOException or JsonException or UnauthorizedAccessException
+                    or NotSupportedException)
+            {
+                continue;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsDurableDeliveryStatus(string? deliveryStatus)
+        => string.Equals(deliveryStatus, "sent", StringComparison.Ordinal)
+            || string.Equals(deliveryStatus, "partial", StringComparison.Ordinal);
+
+    private static async Task<NotificationTurn?> TryReadNotificationTurnAsync(
+        string workspacePath,
+        string sessionId,
+        string notificationTurnId,
+        CancellationToken cancellationToken)
+    {
+        string turnPath = AppPaths.GetTurnStatePath(workspacePath, sessionId, notificationTurnId);
+        if (!File.Exists(turnPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            await using FileStream stream = File.OpenRead(turnPath);
+            return await JsonSerializer.DeserializeAsync(
+                stream,
+                AppJsonSerializerContext.Default.NotificationTurn,
+                cancellationToken);
+        }
+        catch (Exception ex) when (
+            ex is IOException or JsonException or UnauthorizedAccessException
+                or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<bool> IsCurrentTurnFreshClaimedAsync(
+        string workspacePath,
+        string sessionId,
+        CurrentNotificationState? current,
+        IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
+        IReadOnlyList<NotificationTurn> preferredOpenTurns,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (current is null
+            || !TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return false;
+        }
+
+        NotificationTurn? freshCurrentTurn = freshClaimedOpenTurns.FirstOrDefault(turn =>
+            string.Equals(
+                turn.NotificationTurnId,
+                current.NotificationTurnId,
+                StringComparison.Ordinal)
+            && TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+            && createdAt <= parsedStopTimestamp);
+        if (freshCurrentTurn is null)
+        {
+            return false;
+        }
+
+        if (!TrySelectLatestEligibleTurn(
+                [freshCurrentTurn],
+                preferredOpenTurns.Concat(freshClaimedOpenTurns)
+                    .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                        && createdAt <= parsedStopTimestamp)
+                    .ToArray(),
+                out _))
+        {
+            return false;
+        }
+
+        SummaryValidationResult currentValidation = await ValidateSummaryOnceAsync(
+            workspacePath,
+            sessionId,
+            freshCurrentTurn,
+            cancellationToken);
+        if (HasCurrentStopAttribution(currentValidation, freshCurrentTurn, stopTimestamp))
+        {
+            return false;
+        }
+
+        if (preferredOpenTurns.Count == 1
+            && !string.Equals(
+                preferredOpenTurns[0].NotificationTurnId,
+                current.NotificationTurnId,
+                StringComparison.Ordinal)
+            && IsExactSummaryForTurnCanPreemptCurrent(
+                preferredOpenTurns[0],
+                freshCurrentTurn,
+                stopTimestamp)
+            && ResolvedTurnHasPositiveStopAttribution(
+                stopTimestamp,
+                await ValidateSummaryOnceAsync(
+                    workspacePath,
+                    sessionId,
+                    preferredOpenTurns[0],
+                    cancellationToken)))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsExactSummaryForTurnCanPreemptCurrent(
+        NotificationTurn exactSummaryTurn,
+        NotificationTurn currentTurn,
+        string stopTimestamp)
+        => IsExactSummaryForDifferentTurn(exactSummaryTurn, currentTurn, stopTimestamp);
+
+    private static async Task<bool> HasPendingStopObservationOnAbandonedTurnAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> abandonedTurns,
+        IReadOnlyList<NotificationRecord> sessionNotificationRecords,
+        string notificationKey,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return false;
+        }
+
+        foreach (NotificationTurn turn in abandonedTurns)
+        {
+            if (File.Exists(AppPaths.GetNotificationRecordPath(
+                    workspacePath,
+                    sessionId,
+                    turn.NotificationTurnId,
+                    notificationKey)))
+            {
+                continue;
+            }
+
+            string observationPath = AppPaths.GetStopObservationPath(
+                workspacePath,
+                sessionId,
+                turn.NotificationTurnId,
+                notificationKey);
+            if (!File.Exists(observationPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                await using FileStream stream = File.OpenRead(observationPath);
+                StopObservation? observation = await JsonSerializer.DeserializeAsync(
+                    stream,
+                    AppJsonSerializerContext.Default.StopObservation,
+                    cancellationToken);
+                if (observation is not null
+                    && string.Equals(observation.SessionId, sessionId, StringComparison.Ordinal)
+                    && string.Equals(
+                        observation.NotificationTurnId,
+                        turn.NotificationTurnId,
+                        StringComparison.Ordinal)
+                    && string.Equals(
+                        observation.StopId,
+                        notificationKey,
+                        StringComparison.Ordinal)
+                    && observation.SummaryPendingHandoff
+                    && !HasInterveningSessionDelivery(
+                        turn,
+                        sessionNotificationRecords,
+                        parsedStopTimestamp))
+                {
+                    SummaryValidationResult currentSummaryValidation = await ValidateSummaryOnceAsync(
+                        workspacePath,
+                        sessionId,
+                        turn,
+                        cancellationToken);
+                    if (currentSummaryValidation.IsPendingHandoff
+                        && (currentSummaryValidation.Record is null
+                            || HasPendingStopAttributionForTurn(
+                                currentSummaryValidation,
+                                turn,
+                                stopTimestamp)
+                            || IsHookCreatedPlaceholderForStop(currentSummaryValidation, turn)))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex) when (
+                ex is IOException or JsonException or UnauthorizedAccessException
+                    or NotSupportedException)
+            {
+                continue;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> HasAnyPendingHandoffAbandonedTurnForStopAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> abandonedTurns,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return false;
+        }
+
+        foreach (NotificationTurn turn in abandonedTurns)
+        {
+            if (!TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                || createdAt > parsedStopTimestamp
+                || !await HasPendingStopObservationForTurnAsync(
+                    workspacePath,
+                    sessionId,
+                    turn,
+                    stopTimestamp,
+                    cancellationToken))
+            {
+                continue;
+            }
+
+            SummaryValidationResult validation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                turn,
+                cancellationToken);
+            if (validation.IsPendingHandoff
+                && (validation.Record is null
+                    || HasPendingStopAttributionForTurn(validation, turn, stopTimestamp)
+                    || IsHookCreatedPlaceholderForStop(validation, turn)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> HasPendingStopObservationForTurnAsync(
+        string workspacePath,
+        string sessionId,
+        NotificationTurn turn,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        string notificationKey = CreateStopNotificationKey(stopTimestamp);
+        string observationPath = AppPaths.GetStopObservationPath(
+            workspacePath,
+            sessionId,
+            turn.NotificationTurnId,
+            notificationKey);
+        if (!File.Exists(observationPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            await using FileStream stream = File.OpenRead(observationPath);
+            StopObservation? observation = await JsonSerializer.DeserializeAsync(
+                stream,
+                AppJsonSerializerContext.Default.StopObservation,
+                cancellationToken);
+            return observation is not null
+                && string.Equals(observation.SessionId, sessionId, StringComparison.Ordinal)
+                && string.Equals(
+                    observation.NotificationTurnId,
+                    turn.NotificationTurnId,
+                    StringComparison.Ordinal)
+                && string.Equals(observation.StopId, notificationKey, StringComparison.Ordinal)
+                && observation.SummaryPendingHandoff;
+        }
+        catch (Exception ex) when (
+            ex is IOException or JsonException or UnauthorizedAccessException
+                or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<NotificationTurn?> SelectSingleObservedPendingCompletedExactTurnAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> exactStopSummaryTurns,
+        IReadOnlyList<NotificationRecord> durableNotificationRecords,
+        DateTimeOffset parsedStopTimestamp,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        NotificationTurn? observedTurn = null;
+        foreach (NotificationTurn turn in exactStopSummaryTurns)
+        {
+            if (HasInterveningSessionDelivery(
+                    turn,
+                    durableNotificationRecords,
+                    parsedStopTimestamp)
+                || !await HasPendingStopObservationForTurnAsync(
+                    workspacePath,
+                    sessionId,
+                    turn,
+                    stopTimestamp,
+                    cancellationToken))
+            {
+                continue;
+            }
+
+            if (observedTurn is not null)
+            {
+                return null;
+            }
+
+            observedTurn = turn;
+        }
+
+        return observedTurn;
+    }
+
     private static bool HasUnresolvedInterveningSubagentObservation(
         NotificationTurn turn,
         IReadOnlyList<PromptObservation> promptObservations,
-        IReadOnlyList<NotificationRecord> sessionNotificationRecords,
+        IReadOnlyList<NotificationRecord> durableNotificationRecords,
         DateTimeOffset stopTimestamp)
     {
         if (!TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset turnCreatedAt))
@@ -807,7 +3002,7 @@ internal sealed class HookCommandService(
             && !WasObservationAlreadyHandledByEarlierSessionStop(
                 observedAt,
                 stopTimestamp,
-                sessionNotificationRecords));
+                durableNotificationRecords));
     }
 
     private static bool IsExplicitObservationOnlySubagentObservation(PromptObservation observation)
@@ -818,8 +3013,8 @@ internal sealed class HookCommandService(
     private static bool WasObservationAlreadyHandledByEarlierSessionStop(
         DateTimeOffset observedAt,
         DateTimeOffset currentStopTimestamp,
-        IReadOnlyList<NotificationRecord> sessionNotificationRecords)
-        => sessionNotificationRecords.Any(record =>
+        IReadOnlyList<NotificationRecord> durableNotificationRecords)
+        => durableNotificationRecords.Any(record =>
             TryParseUtcTimestamp(record.StopTimestamp, out DateTimeOffset previousStopTimestamp)
             && previousStopTimestamp >= observedAt
             && previousStopTimestamp < currentStopTimestamp);
@@ -940,6 +3135,56 @@ internal sealed class HookCommandService(
         return false;
     }
 
+    private static async Task<IReadOnlyList<NotificationRecord>> ListPerTurnNotificationRecordsAsync(
+        string workspacePath,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        string turnsDirectory = AppPaths.GetTurnsDirectoryPath(workspacePath, sessionId);
+        if (!Directory.Exists(turnsDirectory))
+        {
+            return [];
+        }
+
+        List<NotificationRecord> records = [];
+        foreach (string notificationsDirectory in Directory.EnumerateDirectories(turnsDirectory)
+                     .Select(static turnDirectory => Path.Combine(
+                         turnDirectory,
+                         AppConstants.NotificationsRecordsDirectoryName))
+                     .Where(Directory.Exists))
+        {
+            foreach (string notificationFile in Directory.EnumerateFiles(
+                         notificationsDirectory,
+                         "*.json",
+                         SearchOption.TopDirectoryOnly))
+            {
+                try
+                {
+                    await using FileStream stream = File.OpenRead(notificationFile);
+                    NotificationRecord? record = await JsonSerializer.DeserializeAsync(
+                        stream,
+                        AppJsonSerializerContext.Default.NotificationRecord,
+                        cancellationToken);
+                    if (record is not null
+                        && string.Equals(record.SessionId, sessionId, StringComparison.Ordinal))
+                    {
+                        records.Add(record);
+                    }
+                }
+                catch (Exception ex) when (
+                    ex is IOException or JsonException or UnauthorizedAccessException
+                        or NotSupportedException)
+                {
+                    continue;
+                }
+            }
+        }
+
+        return records
+            .OrderBy(static record => record.StopTimestamp, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private static string? ShortCommit(string? commitId)
     {
         if (string.IsNullOrWhiteSpace(commitId))
@@ -1055,7 +3300,7 @@ internal sealed class HookCommandService(
             turn.NotificationTurnId);
         if (!File.Exists(summaryPath))
         {
-            return SummaryValidationResult.Invalid(
+            return SummaryValidationResult.Pending(
                 $"Summary file is missing at '{summaryDisplayPath}'.");
         }
 
@@ -1076,13 +3321,13 @@ internal sealed class HookCommandService(
             ex is IOException or JsonException or UnauthorizedAccessException
                 or NotSupportedException)
         {
-            return SummaryValidationResult.Invalid(
+            return SummaryValidationResult.Pending(
                 $"Summary file '{summaryDisplayPath}' could not be parsed as JSON: {ex.Message}");
         }
 
         if (summary is null)
         {
-            return SummaryValidationResult.Invalid(
+            return SummaryValidationResult.Pending(
                 $"Summary file '{summaryDisplayPath}' is empty or does not contain a JSON object.");
         }
 
@@ -1117,6 +3362,26 @@ internal sealed class HookCommandService(
         if (string.IsNullOrWhiteSpace(summary.Summary))
         {
             failures.Add("summary must be a non-empty human-readable sentence");
+        }
+
+        bool assignedToTurn =
+            string.Equals(summary.SessionId, turn.SessionId, StringComparison.Ordinal)
+            && string.Equals(
+                summary.NotificationTurnId,
+                turn.NotificationTurnId,
+                StringComparison.Ordinal)
+            && string.Equals(
+                summary.NotificationNonce,
+                turn.NotificationNonce,
+                StringComparison.Ordinal);
+        if (assignedToTurn
+            && IsValidUtcTimestamp(summary.UpdatedAt)
+            && string.IsNullOrWhiteSpace(summary.Summary)
+            && string.Equals(summary.Status, "pending", StringComparison.Ordinal))
+        {
+            return SummaryValidationResult.Pending(
+                $"Summary file '{summaryDisplayPath}' is pending: {string.Join("; ", failures)}.",
+                summary);
         }
 
         if (failures.Count > 0)
@@ -1303,17 +3568,34 @@ internal sealed class HookCommandService(
 
     private sealed record SummaryValidationResult(
         bool IsValid,
+        bool IsPendingHandoff,
         NotificationSummary? Record,
         string? FailureReason)
     {
         public static SummaryValidationResult Valid(NotificationSummary record)
-            => new(true, record, null);
+            => new(true, false, record, null);
 
         public static SummaryValidationResult Invalid(string failureReason)
-            => new(false, null, failureReason);
+            => new(false, false, null, failureReason);
+
+        public static SummaryValidationResult Pending(string failureReason)
+            => new(false, true, null, failureReason);
+
+        public static SummaryValidationResult Pending(string failureReason, NotificationSummary record)
+            => new(false, true, record, failureReason);
     }
 
-    private sealed record StopResolution(NotificationTurn? Turn, string Reason);
+    private sealed record StopResolution(
+        NotificationTurn? Turn,
+        string Reason,
+        bool SuppressFallback = false);
+
+    private sealed record RecoverableAbandonedTurnsResult(
+        IReadOnlyList<NotificationTurn> Turns,
+        bool SuppressStop)
+    {
+        public static RecoverableAbandonedTurnsResult Empty { get; } = new([], SuppressStop: false);
+    }
 
     private static string? TryDescribePayloadShape(ReadOnlyMemory<byte> payload)
     {
