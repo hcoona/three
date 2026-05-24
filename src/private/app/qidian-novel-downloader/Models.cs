@@ -462,7 +462,7 @@ internal static class LogMessages
             LogLevel.Warning,
             new EventId(1009, nameof(IgnoreAuthenticatedCacheReuseProbeFailure)),
             "Failed to probe current login state for authenticated VIP cache reuse. "
-            + "Falling back to anonymous plan.");
+            + "Cached authenticated-sensitive VIP content will be fetched instead of reused.");
 
     public static readonly Action<ILogger, Exception?>
         IgnoreVipFullContentClassificationProbeFailure =
