@@ -368,8 +368,12 @@ public sealed class HookCommandServiceTests
         }
     }
 
-    [Fact]
-    public async Task ReviewerSubagentStopDoesNotCloseMainTurnAndLaterMainStopCanNotify()
+    [Theory]
+    [InlineData("You are the Coder subagent for Group 1 formal implementation.")]
+    [InlineData("You are an independent Reviewer subagent. Review Group 1 changes.")]
+    [InlineData("Coder subagent observation: Group 2 is still running.")]
+    public async Task SubagentObservationStopDoesNotCloseMainTurnAndLaterMainStopCanNotify(
+        string subagentObservationPrompt)
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
         using EnvironmentScope environment = SetTelegramEnvironment();
@@ -407,8 +411,7 @@ public sealed class HookCommandServiceTests
                         SessionId = "session-123",
                         Timestamp = "2026-03-14T15:51:45.783Z",
                         TranscriptPath = "/workspace/transcript.json",
-                        Prompt = "You are an independent Reviewer subagent. "
-                            + "Review Group 1 changes.",
+                        Prompt = subagentObservationPrompt,
                     },
                     AppJsonSerializerContext.Default.UserPromptSubmitHookInput),
                 new MemoryStream(),
@@ -601,6 +604,55 @@ public sealed class HookCommandServiceTests
                 turn.NotificationTurnId), assignment, StringComparison.Ordinal);
             Assert.Contains(turn.NotificationNonce, assignment, StringComparison.Ordinal);
             Assert.DoesNotContain("notify-summary.json", assignment, StringComparison.Ordinal);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandleUserPromptSubmitAsyncCreatesTurnForMainPromptMentioningCoderSubagent()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            HookCommandService service = CreateHookCommandService(
+                new RecordingHttpMessageHandler(),
+                stateStore: stateStore);
+            UserPromptSubmitHookInput promptInput = new()
+            {
+                Cwd = tempDirectory.FullName,
+                SessionId = "session-123",
+                Timestamp = "2026-03-14T15:51:50.783Z",
+                TranscriptPath = "/workspace/transcript.json",
+                Prompt = "You are documenting why Coder subagent appears in the handoff logs.",
+            };
+            await using MemoryStream output = new();
+
+            int exitCode = await service.HandleUserPromptSubmitAsync(
+                CreateJsonStream(
+                    promptInput,
+                    AppJsonSerializerContext.Default.UserPromptSubmitHookInput),
+                output,
+                CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+            NotificationTurn turn = Assert.Single(await stateStore.ListOpenTurnsAsync(
+                tempDirectory.FullName,
+                "session-123",
+                CancellationToken.None));
+            HookResponse response = await DeserializeHookResponseAsync(output);
+            string assignment = Assert.IsType<string>(
+                response.HookSpecificOutput?.AdditionalContext);
+            Assert.Contains(AppPaths.GetSummaryStatePath(
+                tempDirectory.FullName,
+                "session-123",
+                turn.NotificationTurnId), assignment, StringComparison.Ordinal);
         }
         finally
         {
@@ -1501,6 +1553,125 @@ public sealed class HookCommandServiceTests
                     turn.NotificationTurnId,
                     notificationKey)));
             }
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("missing-summary")]
+    [InlineData("hook-created-placeholder")]
+    public async Task HandleStopAsyncDefersAbandonedExactWhenEqualCreatedAtPendingHandoffIsUnresolved(
+        string pendingHandoffState)
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler, stateStore);
+            const string stopTimestamp = "2026-03-14T15:51:50.783Z";
+            const string sharedCreatedAt = "2026-03-14T15:51:30.783Z";
+            NotificationTurn exactTurn = await CreateTurnAsync(
+                stateStore,
+                tempDirectory.FullName,
+                "session-123",
+                sharedCreatedAt);
+            NotificationTurn pendingTurn = await CreateTurnAsync(
+                stateStore,
+                tempDirectory.FullName,
+                "session-123",
+                sharedCreatedAt);
+            await WriteSummaryAsync(
+                tempDirectory.FullName,
+                "session-123",
+                exactTurn,
+                new NotificationSummary
+                {
+                    SessionId = "session-123",
+                    NotificationTurnId = exactTurn.NotificationTurnId,
+                    NotificationNonce = exactTurn.NotificationNonce,
+                    UpdatedAt = stopTimestamp,
+                    Status = "completed",
+                    Summary = "The abandoned exact summary waits for tied pending handoff.",
+                });
+            await WritePendingHandoffSummaryStateAsync(
+                tempDirectory.FullName,
+                "session-123",
+                pendingTurn,
+                pendingHandoffState);
+            exactTurn.Status = "abandoned";
+            pendingTurn.Status = "abandoned";
+            await WriteTurnStateAsync(tempDirectory.FullName, exactTurn);
+            await WriteTurnStateAsync(tempDirectory.FullName, pendingTurn);
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            Assert.Empty(handler.Requests);
+            string notificationKey = CreateStopNotificationKeyForTest(stopTimestamp);
+            Assert.False(File.Exists(AppPaths.GetSessionNotificationRecordPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey)));
+            foreach (NotificationTurn turn in new[] { exactTurn, pendingTurn })
+            {
+                Assert.False(File.Exists(AppPaths.GetNotificationRecordPath(
+                    tempDirectory.FullName,
+                    "session-123",
+                    turn.NotificationTurnId,
+                    notificationKey)));
+            }
+
+            await WriteSummaryAsync(
+                tempDirectory.FullName,
+                "session-123",
+                pendingTurn,
+                new NotificationSummary
+                {
+                    SessionId = "session-123",
+                    NotificationTurnId = pendingTurn.NotificationTurnId,
+                    NotificationNonce = pendingTurn.NotificationNonce,
+                    UpdatedAt = stopTimestamp,
+                    Status = "completed",
+                    Summary = " ",
+                });
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            TelegramSendMessageRequest payload = DeserializeTelegramPayload(
+                Assert.Single(handler.Requests));
+            Assert.Contains(
+                "摘要：The abandoned exact summary waits for tied pending handoff.",
+                payload.Text,
+                StringComparison.Ordinal);
+            Assert.Contains(exactTurn.NotificationTurnId, payload.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain(pendingTurn.NotificationTurnId, payload.Text, StringComparison.Ordinal);
+            Assert.True(File.Exists(AppPaths.GetNotificationRecordPath(
+                tempDirectory.FullName,
+                "session-123",
+                exactTurn.NotificationTurnId,
+                notificationKey)));
+            Assert.False(File.Exists(AppPaths.GetNotificationRecordPath(
+                tempDirectory.FullName,
+                "session-123",
+                pendingTurn.NotificationTurnId,
+                notificationKey)));
         }
         finally
         {
@@ -17023,9 +17194,131 @@ public sealed class HookCommandServiceTests
 
     [Theory]
     [InlineData("missing-summary")]
+    [InlineData("hook-created-placeholder")]
+    public async Task HandleStopAsyncEqualCreatedAtExactCompletedDefersTiedPendingHandoff(
+        string pendingHandoffState)
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            WorkspaceStateStore stateStore = new(
+                TimeProvider.System,
+                NullLogger<WorkspaceStateStore>.Instance);
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler, stateStore);
+            const string stopTimestamp = "2026-03-14T15:51:50.783Z";
+            const string sharedCreatedAt = "2026-03-14T15:51:40.783Z";
+            NotificationTurn exactTurn = await CreateTurnAsync(
+                stateStore,
+                tempDirectory.FullName,
+                "session-123",
+                sharedCreatedAt);
+            await WriteSummaryAsync(
+                tempDirectory.FullName,
+                "session-123",
+                exactTurn,
+                new NotificationSummary
+                {
+                    SessionId = "session-123",
+                    NotificationTurnId = exactTurn.NotificationTurnId,
+                    NotificationNonce = exactTurn.NotificationNonce,
+                    UpdatedAt = stopTimestamp,
+                    Status = "completed",
+                    Summary = "The tied exact completed summary must wait for pending ownership.",
+                });
+            NotificationTurn pendingTurn = await CreateTurnAsync(
+                stateStore,
+                tempDirectory.FullName,
+                "session-123",
+                sharedCreatedAt);
+            await WritePendingHandoffSummaryStateAsync(
+                tempDirectory.FullName,
+                "session-123",
+                pendingTurn,
+                pendingHandoffState);
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            string notificationKey = CreateStopNotificationKeyForTest(stopTimestamp);
+            Assert.Empty(handler.Requests);
+            Assert.False(File.Exists(AppPaths.GetSessionNotificationRecordPath(
+                tempDirectory.FullName,
+                "session-123",
+                notificationKey)));
+            foreach (NotificationTurn turn in new[] { exactTurn, pendingTurn })
+            {
+                Assert.False(File.Exists(AppPaths.GetNotificationRecordPath(
+                    tempDirectory.FullName,
+                    "session-123",
+                    turn.NotificationTurnId,
+                    notificationKey)));
+                Assert.False(File.Exists(AppPaths.GetStopObservationPath(
+                    tempDirectory.FullName,
+                    "session-123",
+                    turn.NotificationTurnId,
+                    notificationKey)));
+            }
+
+            await WriteSummaryAsync(
+                tempDirectory.FullName,
+                "session-123",
+                pendingTurn,
+                new NotificationSummary
+                {
+                    SessionId = "session-123",
+                    NotificationTurnId = pendingTurn.NotificationTurnId,
+                    NotificationNonce = pendingTurn.NotificationNonce,
+                    UpdatedAt = stopTimestamp,
+                    Status = "completed",
+                    Summary = " ",
+                });
+
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    CreateStopInput(tempDirectory.FullName, stopTimestamp),
+                    AppJsonSerializerContext.Default.StopHookInput),
+                new MemoryStream(),
+                CancellationToken.None);
+
+            TelegramSendMessageRequest payload = DeserializeTelegramPayload(
+                Assert.Single(handler.Requests));
+            Assert.Contains(
+                "摘要：The tied exact completed summary must wait for pending ownership.",
+                payload.Text,
+                StringComparison.Ordinal);
+            Assert.Contains(exactTurn.NotificationTurnId, payload.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain(pendingTurn.NotificationTurnId, payload.Text, StringComparison.Ordinal);
+            Assert.True(File.Exists(AppPaths.GetNotificationRecordPath(
+                tempDirectory.FullName,
+                "session-123",
+                exactTurn.NotificationTurnId,
+                notificationKey)));
+            Assert.False(File.Exists(AppPaths.GetNotificationRecordPath(
+                tempDirectory.FullName,
+                "session-123",
+                pendingTurn.NotificationTurnId,
+                notificationKey)));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("missing-summary")]
     [InlineData("corrupt-summary")]
     [InlineData("null-summary")]
     [InlineData("unreadable-summary")]
+    [InlineData("exact-pending-summary")]
+    [InlineData("hook-created-placeholder")]
     public async Task HandleUserPromptSubmitAsyncEqualCreatedAtCurrentCacheDoesNotAbandonAmbiguousPendingHandoff(
         string pendingHandoffState)
     {
@@ -18129,6 +18422,42 @@ public sealed class HookCommandServiceTests
         {
             File.Delete(summaryPath);
             Directory.CreateDirectory(summaryPath);
+            return;
+        }
+
+        if (string.Equals(pendingHandoffState, "exact-pending-summary", StringComparison.Ordinal))
+        {
+            await WriteSummaryAsync(
+                workspacePath,
+                sessionId,
+                turn,
+                new NotificationSummary
+                {
+                    SessionId = sessionId,
+                    NotificationTurnId = turn.NotificationTurnId,
+                    NotificationNonce = turn.NotificationNonce,
+                    UpdatedAt = "2026-03-14T15:51:50.783Z",
+                    Status = "pending",
+                    Summary = " ",
+                });
+            return;
+        }
+
+        if (string.Equals(pendingHandoffState, "hook-created-placeholder", StringComparison.Ordinal))
+        {
+            await WriteSummaryAsync(
+                workspacePath,
+                sessionId,
+                turn,
+                new NotificationSummary
+                {
+                    SessionId = sessionId,
+                    NotificationTurnId = turn.NotificationTurnId,
+                    NotificationNonce = turn.NotificationNonce,
+                    UpdatedAt = turn.SummaryPlaceholderCreatedAt,
+                    Status = "pending",
+                    Summary = null,
+                });
             return;
         }
 

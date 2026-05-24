@@ -978,6 +978,7 @@ internal sealed class WorkspaceStateStore(
                 && await HasPendingHandoffAmbiguityForAbandonmentAsync(
                     workspacePath,
                     turn,
+                    includeHookCreatedPlaceholder: true,
                     cancellationToken))
             {
                 pendingHandoffAmbiguousTurnIds.Add(turn.NotificationTurnId);
@@ -1006,6 +1007,7 @@ internal sealed class WorkspaceStateStore(
             if (await HasPendingHandoffAmbiguityForAbandonmentAsync(
                     workspacePath,
                     tiedTurn,
+                    includeHookCreatedPlaceholder: true,
                     cancellationToken))
             {
                 return true;
@@ -1023,6 +1025,7 @@ internal sealed class WorkspaceStateStore(
         if (!await HasPendingHandoffAmbiguityForAbandonmentAsync(
                 workspacePath,
                 turn,
+                includeHookCreatedPlaceholder: false,
                 cancellationToken))
         {
             return false;
@@ -1043,6 +1046,7 @@ internal sealed class WorkspaceStateStore(
     private static async Task<bool> HasPendingHandoffAmbiguityForAbandonmentAsync(
         string workspacePath,
         NotificationTurn turn,
+        bool includeHookCreatedPlaceholder,
         CancellationToken cancellationToken)
     {
         string summaryPath = AppPaths.GetSummaryStatePath(
@@ -1065,7 +1069,7 @@ internal sealed class WorkspaceStateStore(
 
         return string.Equals(summary.Status, "pending", StringComparison.Ordinal)
             && string.IsNullOrWhiteSpace(summary.Summary)
-            && !IsHookCreatedPendingPlaceholder(summary, turn);
+            && (includeHookCreatedPlaceholder || !IsHookCreatedPendingPlaceholder(summary, turn));
     }
 
     private static async Task StampLegacyHookCreatedPendingPlaceholderAsync(

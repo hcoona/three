@@ -351,6 +351,16 @@ internal sealed class HookCommandService(
                     return 0;
                 }
 
+                if (await HasEqualCreatedAtExactSummaryPendingHandoffAmbiguityAsync(
+                        workspacePath,
+                        hookInput.SessionId,
+                        openTurns,
+                        hookInput.Timestamp,
+                        cancellationToken))
+                {
+                    return 0;
+                }
+
                 if (resolution.SuppressFallback)
                 {
                     return 0;
@@ -993,8 +1003,7 @@ internal sealed class HookCommandService(
         if (trimmed.StartsWith("<system_reminder>", StringComparison.OrdinalIgnoreCase)
             || trimmed.StartsWith("<system_notification>", StringComparison.OrdinalIgnoreCase)
             || trimmed.StartsWith("Contents of AGENTS.md", StringComparison.OrdinalIgnoreCase)
-            || IsExplicitSubagentHandoff(trimmed)
-            || trimmed.Contains("Coder subagent", StringComparison.OrdinalIgnoreCase)
+            || HasExplicitSubagentMarker(trimmed)
             || trimmed.Contains(
                 "OA is not allowed to code directly",
                 StringComparison.OrdinalIgnoreCase))
@@ -1028,8 +1037,28 @@ internal sealed class HookCommandService(
         string firstLine = firstLineEnd < 0
             ? trimmedPrompt
             : trimmedPrompt[..firstLineEnd];
-        return firstLine.Contains("subagent", StringComparison.OrdinalIgnoreCase);
+        return firstLine.StartsWith(
+                "You are the Coder subagent for ",
+                StringComparison.OrdinalIgnoreCase)
+            || firstLine.StartsWith(
+                "You are an independent Reviewer subagent.",
+                StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsExplicitSubagentObservation(string trimmedPrompt)
+    {
+        int firstLineEnd = trimmedPrompt.IndexOfAny(['\r', '\n']);
+        string firstLine = firstLineEnd < 0
+            ? trimmedPrompt
+            : trimmedPrompt[..firstLineEnd];
+        return firstLine.StartsWith(
+            "Coder subagent observation:",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasExplicitSubagentMarker(string trimmedPrompt)
+        => IsExplicitSubagentHandoff(trimmedPrompt)
+            || IsExplicitSubagentObservation(trimmedPrompt);
 
     private static StopResolution ResolveStopTurn(
         IReadOnlyList<NotificationTurn> openTurns,
@@ -1181,6 +1210,16 @@ internal sealed class HookCommandService(
             return new RecoverableAbandonedTurnsResult([], SuppressStop: true);
         }
 
+        if (HasEqualCreatedAtUndeliverablePendingAbandonedHandoff(
+                eligibleAbandonedTurns,
+                exactSummaryTurns,
+                sessionNotificationRecords,
+                parsedStopTimestamp,
+                stopTimestamp))
+        {
+            return new RecoverableAbandonedTurnsResult([], SuppressStop: true);
+        }
+
         if (exactSummaryTurns.Count > 0)
         {
             return exactSummaryTurns.Count == 1
@@ -1268,6 +1307,10 @@ internal sealed class HookCommandService(
 
         List<NotificationTurn> exactCompletedTurns = [];
         List<NotificationTurn> exactPendingTurns = [];
+        List<(
+            NotificationTurn Turn,
+            DateTimeOffset CreatedAt,
+            SummaryValidationResult Validation)> eligibleAbandonedTurns = [];
         foreach (NotificationTurn abandonedTurn in abandonedTurns)
         {
             if (!TryParseUtcTimestamp(abandonedTurn.CreatedAt, out DateTimeOffset createdAt)
@@ -1288,6 +1331,7 @@ internal sealed class HookCommandService(
                 sessionId,
                 abandonedTurn,
                 cancellationToken);
+            eligibleAbandonedTurns.Add((abandonedTurn, createdAt, validation));
             if (validation.IsValid
                 && HasStopAttributionForTurn(validation, abandonedTurn, stopTimestamp)
                 && !HasInterveningSessionDelivery(
@@ -1310,6 +1354,16 @@ internal sealed class HookCommandService(
             return new RecoverableAbandonedTurnsResult([], SuppressStop: true);
         }
 
+        if (HasEqualCreatedAtUndeliverablePendingAbandonedHandoff(
+                eligibleAbandonedTurns,
+                exactCompletedTurns,
+                sessionNotificationRecords,
+                parsedStopTimestamp,
+                stopTimestamp))
+        {
+            return new RecoverableAbandonedTurnsResult([], SuppressStop: true);
+        }
+
         return exactCompletedTurns.Count > 1
             ? new RecoverableAbandonedTurnsResult([], SuppressStop: true)
             : new RecoverableAbandonedTurnsResult(
@@ -1317,6 +1371,45 @@ internal sealed class HookCommandService(
                     .OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
                     .ToArray(),
                 SuppressStop: false);
+    }
+
+    private static bool HasEqualCreatedAtUndeliverablePendingAbandonedHandoff(
+        IReadOnlyList<(
+            NotificationTurn Turn,
+            DateTimeOffset CreatedAt,
+            SummaryValidationResult Validation)> eligibleAbandonedTurns,
+        IReadOnlyList<NotificationTurn> exactSummaryTurns,
+        IReadOnlyList<NotificationRecord> sessionNotificationRecords,
+        DateTimeOffset parsedStopTimestamp,
+        string stopTimestamp)
+    {
+        foreach (NotificationTurn exactTurn in exactSummaryTurns)
+        {
+            if (!TryParseUtcTimestamp(exactTurn.CreatedAt, out DateTimeOffset exactCreatedAt))
+            {
+                continue;
+            }
+
+            if (eligibleAbandonedTurns.Any(candidate =>
+                    !string.Equals(
+                        candidate.Turn.NotificationTurnId,
+                        exactTurn.NotificationTurnId,
+                        StringComparison.Ordinal)
+                    && candidate.CreatedAt == exactCreatedAt
+                    && IsUndeliverablePendingAbandonedHandoff(
+                        candidate.Turn,
+                        candidate.Validation,
+                        stopTimestamp)
+                    && !HasInterveningSessionDelivery(
+                        candidate.Turn,
+                        sessionNotificationRecords,
+                        parsedStopTimestamp)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool HasInterveningSessionDelivery(
@@ -1415,6 +1508,75 @@ internal sealed class HookCommandService(
         }
 
         return true;
+    }
+
+    private static async Task<bool> HasEqualCreatedAtExactSummaryPendingHandoffAmbiguityAsync(
+        string workspacePath,
+        string sessionId,
+        IReadOnlyList<NotificationTurn> openTurns,
+        string stopTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseUtcTimestamp(stopTimestamp, out DateTimeOffset parsedStopTimestamp))
+        {
+            return false;
+        }
+
+        NotificationTurn[] eligibleTurns = openTurns
+            .Where(turn => TryParseUtcTimestamp(turn.CreatedAt, out DateTimeOffset createdAt)
+                && createdAt <= parsedStopTimestamp)
+            .ToArray();
+        if (eligibleTurns.Length <= 1)
+        {
+            return false;
+        }
+
+        foreach (NotificationTurn exactTurn in eligibleTurns)
+        {
+            if (!TryParseUtcTimestamp(exactTurn.CreatedAt, out DateTimeOffset exactCreatedAt))
+            {
+                continue;
+            }
+
+            SummaryValidationResult exactValidation = await ValidateSummaryOnceAsync(
+                workspacePath,
+                sessionId,
+                exactTurn,
+                cancellationToken);
+            if (!exactValidation.IsValid
+                || !HasStopAttributionForTurn(exactValidation, exactTurn, stopTimestamp))
+            {
+                continue;
+            }
+
+            foreach (NotificationTurn pendingTurn in eligibleTurns)
+            {
+                if (string.Equals(
+                        pendingTurn.NotificationTurnId,
+                        exactTurn.NotificationTurnId,
+                        StringComparison.Ordinal)
+                    || !TryParseUtcTimestamp(
+                        pendingTurn.CreatedAt,
+                        out DateTimeOffset pendingCreatedAt)
+                    || pendingCreatedAt != exactCreatedAt)
+                {
+                    continue;
+                }
+
+                SummaryValidationResult pendingValidation = await ValidateSummaryOnceAsync(
+                    workspacePath,
+                    sessionId,
+                    pendingTurn,
+                    cancellationToken);
+                if (pendingValidation.IsPendingHandoff
+                    && !HasStopAttributionForTurn(pendingValidation, pendingTurn, stopTimestamp))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static async Task<IReadOnlyList<NotificationTurn>> PreferSingleValidSummaryTurnAsync(
@@ -1690,6 +1852,18 @@ internal sealed class HookCommandService(
             ..exactStopSummaryTurns,
             ..exactPendingSummaryTurns,
         ];
+        List<NotificationTurn> nonExactPendingSummaryTurns = pendingSummaryTurns
+            .Where(turn => !exactPendingSummaryTurns.Any(exactPendingTurn => string.Equals(
+                exactPendingTurn.NotificationTurnId,
+                turn.NotificationTurnId,
+                StringComparison.Ordinal)))
+            .ToList();
+        if (HasEqualCreatedAtExactSummaryPendingHandoffAmbiguity(
+                exactStopSummaryTurns,
+                nonExactPendingSummaryTurns))
+        {
+            return filteredOpenTurns;
+        }
 
         if (currentTurn is not null)
         {
@@ -1908,6 +2082,32 @@ internal sealed class HookCommandService(
         }
 
         return validSummaryTurns.Count == 1 ? validSummaryTurns : filteredOpenTurns;
+    }
+
+    private static bool HasEqualCreatedAtExactSummaryPendingHandoffAmbiguity(
+        List<NotificationTurn> exactStopSummaryTurns,
+        List<NotificationTurn> pendingSummaryTurns)
+    {
+        foreach (NotificationTurn exactTurn in exactStopSummaryTurns)
+        {
+            if (!TryParseUtcTimestamp(exactTurn.CreatedAt, out DateTimeOffset exactCreatedAt))
+            {
+                continue;
+            }
+
+            if (pendingSummaryTurns.Any(pendingTurn =>
+                    !string.Equals(
+                        pendingTurn.NotificationTurnId,
+                        exactTurn.NotificationTurnId,
+                        StringComparison.Ordinal)
+                    && TryParseUtcTimestamp(pendingTurn.CreatedAt, out DateTimeOffset pendingCreatedAt)
+                    && pendingCreatedAt == exactCreatedAt))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsTurnAtLatestEligibleCreatedAt(
@@ -3008,7 +3208,7 @@ internal sealed class HookCommandService(
     private static bool IsExplicitObservationOnlySubagentObservation(PromptObservation observation)
         => string.Equals(observation.Classification, "observation-only", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(observation.Prompt)
-            && IsExplicitSubagentHandoff(observation.Prompt.TrimStart());
+            && HasExplicitSubagentMarker(observation.Prompt.TrimStart());
 
     private static bool WasObservationAlreadyHandledByEarlierSessionStop(
         DateTimeOffset observedAt,
