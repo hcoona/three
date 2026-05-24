@@ -93,6 +93,12 @@ run = "dotnet tool restore"
 description = "Generate .NET solution file for local development"
 run = 'dotnet slngen --nologo --ignoreMainProject --launch false --loadprojects false --folders true --collapsefolders true -o main.sln'
 
+[tasks.update-global-json]
+description = "Update global.json from global.pkl and mise.lock"
+run = 'pkl eval -f json global.pkl -o global.json'
+sources = ["global.pkl", "mise.lock"]
+outputs = ["global.json"]
+
 [tasks.update-pre-commit-config]
 description = "Update .pre-commit-config.yaml from .pre-commit-config.pkl"
 run = 'pkl eval .pre-commit-config.pkl -o .pre-commit-config.yaml'
