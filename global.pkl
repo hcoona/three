@@ -1,0 +1,27 @@
+local miseLock = read("mise.lock").text
+local dotnetLockBlock = miseLock.split("[[tools.dotnet]]")[1].split("[[")[0]
+local dotnetLockLines = dotnetLockBlock.split("\n")
+local dotnetLockVersion =
+  dotnetLockLines.filter((line) -> line.trim().startsWith("version = ")).single.split("\"")[1]
+local dotnetLockBackend =
+  dotnetLockLines.filter((line) -> line.trim().startsWith("backend = ")).single.split("\"")[1]
+
+local dotnetSdkVersion =
+  if (dotnetLockBackend == "core:dotnet")
+    dotnetLockVersion
+  else
+    throw("mise.lock [[tools.dotnet]] must use backend \"core:dotnet\".")
+
+sdk = new Dynamic {
+  ["version"] = dotnetSdkVersion
+  ["rollForward"] = "disable"
+}
+
+`msbuild-sdks` = new Dynamic {
+  ["DotNet.ReproducibleBuilds.Isolated"] = "2.0.2"
+  ["Microsoft.Build.Artifacts"] = "6.1.63"
+  ["Microsoft.Build.CopyOnWrite"] = "1.0.334"
+  ["Microsoft.Build.NoTargets"] = "3.7.134"
+  ["Microsoft.Build.Traversal"] = "4.1.82"
+  ["MSTest.Sdk"] = "3.11.1"
+}
