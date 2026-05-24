@@ -359,7 +359,6 @@ internal sealed class HookCommandService(
 
             StopResolution resolution = ResolveStopTurn(
                 openTurns,
-                abandonedTurns,
                 freshClaimedStopAttributionTurns,
                 promptObservations,
                 durableNotificationRecords,
@@ -1211,7 +1210,6 @@ internal sealed class HookCommandService(
 
     private static StopResolution ResolveStopTurn(
         IReadOnlyList<NotificationTurn> openTurns,
-        IReadOnlyList<NotificationTurn> abandonedTurns,
         IReadOnlyList<NotificationTurn> freshClaimedOpenTurns,
         IReadOnlyList<PromptObservation> promptObservations,
         IReadOnlyList<NotificationRecord> durableNotificationRecords,
