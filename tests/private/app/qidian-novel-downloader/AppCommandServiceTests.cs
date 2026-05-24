@@ -83,6 +83,73 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
+    public async Task DownloadAsyncDryRunUsesKnownValidatedIdentityForLaterFreshAnonymousCatalog()
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalog("200", ("VIP Volume", true, [("c2", "VIP Two", true, 200)])),
+            CancellationToken.None);
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalog("100", ("VIP Volume", true, [("c1", "VIP One", true, 100)]))
+            with
+            {
+                CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
+            },
+            CancellationToken.None);
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalog("200", ("VIP Volume", true, [("c2", "VIP Two", true, 200)]))
+            with
+            {
+                CacheScope = CatalogCacheScope.ForValidatedUser("tester"),
+            },
+            CancellationToken.None);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "200",
+            new ChapterCacheEntry(
+                "c2",
+                ["preview"],
+                IsPreview: true,
+                200,
+                CatalogChapterAccessState.PurchaseRequired),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100", "200"],
+                    DryRun = true,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal([true], browserManager.OpenCalls);
+        Assert.Equal(1, headlessSession.LoginStateRequests);
+        Assert.Equal([LoginStateProbeMode.CurrentStateOnly], headlessSession.LoginStateProbeModes);
+        Assert.Equal(
+            [
+                "open:headless",
+                "login-state:headless",
+            ],
+            browserManager.Events);
+        Assert.Contains("- VIP One: fetch", result.StdOut);
+        Assert.Contains("- VIP Two: fetch", result.StdOut);
+        Assert.DoesNotContain("- VIP Two: cached", result.StdOut);
+        Assert.Contains("Summary: books completed=2", result.StdOut);
+    }
+
+    [Fact]
     public async Task DownloadAsyncUsesFreshAnonymousVipCatalogBeforePreviewFetchWithoutSessionProbe()
     {
         using TestWorkspace workspace = new();
@@ -1514,6 +1581,88 @@ public sealed class AppCommandServiceTests
             CatalogChapterAccessState.PurchaseRequired,
             anonymousCatalog.Volumes[0].Chapters[0].CatalogAccessState);
         Assert.Contains("Summary: books completed=1", result.StdOut);
+    }
+
+    [Fact]
+    public async Task
+        DownloadAsyncDoesNotReuseRemainingAnonymousVipPreviewPlanAfterIdentityValidation()
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalog(
+                "100",
+                (
+                    "VIP Volume",
+                    true,
+                    [("c1", "VIP One", true, 100), ("c2", "VIP Two", true, 200)])),
+            CancellationToken.None);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            new ChapterCacheEntry(
+                "c2",
+                ["cached preview", AppConstants.TruncatedChapterMarker],
+                IsPreview: true,
+                200,
+                CatalogChapterAccessState.PurchaseRequired),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ],
+            chapterFetchResults:
+            [
+                new ChapterFetchResult(["first full content"], IsPreview: false),
+                new ChapterFetchResult(["second full content"], IsPreview: false),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100"],
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal([true], browserManager.OpenCalls);
+        Assert.Equal(
+            [LoginStateProbeMode.WaitForValidatedIdentity],
+            headlessSession.LoginStateProbeModes);
+        Assert.Equal(
+            [
+                "open:headless",
+                "fetch-chapter:headless:100:c1",
+                "login-state:headless",
+                "fetch-chapter:headless:100:c2",
+            ],
+            browserManager.Events);
+        Assert.Contains("Fetching VIP Two", result.StdOut);
+        Assert.Contains(
+            "Summary: books completed=1, skipped=0, failed=0; "
+            + "chapters downloaded=2, reused=0, failed=0.",
+            result.StdOut);
+        string outputPath = AppPaths.BuildDefaultOutputPath(
+            workspace.Paths.OutputRoot,
+            "100",
+            "Book 100",
+            "Author");
+        string markdown = await File.ReadAllTextAsync(outputPath);
+        Assert.Contains("first full content", markdown);
+        Assert.Contains("second full content", markdown);
+        Assert.DoesNotContain("cached preview", markdown);
+        ChapterCacheEntry? cacheEntry = await CacheStore.GetChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            "c2",
+            CancellationToken.None);
+        Assert.NotNull(cacheEntry);
+        Assert.False(cacheEntry.IsPreview);
+        Assert.Equal("tester", cacheEntry.VisibleToUserName);
     }
 
     [Fact]
@@ -3086,6 +3235,28 @@ public sealed class AppCommandServiceTests
         Assert.Single(plans);
         Assert.Equal(ChapterPlanStatus.Changed, plans[0].Status);
         Assert.Null(plans[0].CachedEntry);
+    }
+
+    [Fact]
+    public void SelectCachedLoginStateForProbePreservesValidatedIdentityForUnvalidatedProbe()
+    {
+        LoginState validatedLoginState = new(true, "tester");
+
+        Assert.Same(
+            validatedLoginState,
+            AppCommandService.SelectCachedLoginStateForProbe(
+                validatedLoginState,
+                new LoginState(false, null)));
+        Assert.Same(
+            validatedLoginState,
+            AppCommandService.SelectCachedLoginStateForProbe(
+                validatedLoginState,
+                new LoginState(true, null)));
+        Assert.Equal(
+            new LoginState(true, "other"),
+            AppCommandService.SelectCachedLoginStateForProbe(
+                validatedLoginState,
+                new LoginState(true, "other")));
     }
 
     private static AppCommandService CreateService(
