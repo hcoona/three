@@ -8,27 +8,44 @@ namespace Hcoona.VsCodeCopilotTelegramHook.State;
 
 internal sealed class WorkspaceStateStore(
     TimeProvider timeProvider,
-    ILogger<WorkspaceStateStore> logger)
+    ILogger<WorkspaceStateStore> logger
+)
 {
     private const UnixFileMode OwnerOnlyDirectoryMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
 
-    private const UnixFileMode OwnerOnlyFileMode =
-        UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    private const UnixFileMode OwnerOnlyFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
-    public Func<NotificationTurn, CancellationToken, Task>? OnBeforeAbandonOpenTurnForTestingAsync { get; set; }
+    public Func<
+        NotificationTurn,
+        CancellationToken,
+        Task
+    >? OnBeforeAbandonOpenTurnForTestingAsync { get; set; }
 
-    public Func<NotificationTurn, NotificationTurn, CancellationToken, Task>?
-        OnBeforeAbandonSupersededTurnForTestingAsync { get; set; }
+    public Func<
+        NotificationTurn,
+        NotificationTurn,
+        CancellationToken,
+        Task
+    >? OnBeforeAbandonSupersededTurnForTestingAsync { get; set; }
 
-    public Func<NotificationTurn, NotificationTurn, CancellationToken, Task>?
-        OnAfterAbandonSupersededTurnFinalGuardForTestingAsync { get; set; }
+    public Func<
+        NotificationTurn,
+        NotificationTurn,
+        CancellationToken,
+        Task
+    >? OnAfterAbandonSupersededTurnFinalGuardForTestingAsync { get; set; }
 
-    public Func<NotificationTurn, CancellationToken, Task>? OnSupersedingOpenTurnResolvedForTestingAsync { get; set; }
+    public Func<
+        NotificationTurn,
+        CancellationToken,
+        Task
+    >? OnSupersedingOpenTurnResolvedForTestingAsync { get; set; }
 
     public async Task<NotificationSession> InitializeSessionAsync(
         SessionStartHookInput input,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string workspacePath = Path.GetFullPath(input.Cwd);
         string now = GetCurrentUtcTimestamp();
@@ -38,13 +55,15 @@ internal sealed class WorkspaceStateStore(
             input.SessionId,
             input.TranscriptPath,
             now,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public async Task<PromptObservation> RecordPromptObservationAsync(
         UserPromptSubmitHookInput input,
         PromptClassification classification,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string workspacePath = Path.GetFullPath(input.Cwd);
         string now = GetCurrentUtcTimestamp();
@@ -53,7 +72,8 @@ internal sealed class WorkspaceStateStore(
             input.SessionId,
             input.TranscriptPath,
             now,
-            cancellationToken);
+            cancellationToken
+        );
 
         PromptObservation observation = new()
         {
@@ -72,29 +92,31 @@ internal sealed class WorkspaceStateStore(
             AppPaths.GetPromptObservationPath(
                 workspacePath,
                 input.SessionId,
-                observation.PromptObservationId),
+                observation.PromptObservationId
+            ),
             observation,
             AppJsonSerializerContext.Default.PromptObservation,
-            cancellationToken);
+            cancellationToken
+        );
         AppLog.RecordedPromptObservation(
             logger,
             observation.PromptObservationId,
             input.SessionId,
             classification.Kind,
-            classification.Reason);
+            classification.Reason
+        );
         return observation;
     }
 
     public async Task<NotificationTurn> CreateNotificationTurnAsync(
         UserPromptSubmitHookInput input,
         PromptObservation observation,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string workspacePath = Path.GetFullPath(input.Cwd);
         string now = GetCurrentUtcTimestamp();
-        string createdAt = string.IsNullOrWhiteSpace(input.Timestamp)
-            ? now
-            : input.Timestamp;
+        string createdAt = string.IsNullOrWhiteSpace(input.Timestamp) ? now : input.Timestamp;
         AppLog.StartingTurnState(logger, input.SessionId, workspacePath);
 
         NotificationTurn turn = new()
@@ -126,7 +148,8 @@ internal sealed class WorkspaceStateStore(
         string summaryPath = AppPaths.GetSummaryStatePath(
             workspacePath,
             input.SessionId,
-            turn.NotificationTurnId);
+            turn.NotificationTurnId
+        );
         CurrentNotificationState current = new()
         {
             SessionId = turn.SessionId,
@@ -139,40 +162,48 @@ internal sealed class WorkspaceStateStore(
         CurrentNotificationState? existingCurrent = await TryReadCurrentAsync(
             workspacePath,
             input.SessionId,
-            cancellationToken);
+            cancellationToken
+        );
         if (existingCurrent is not null)
         {
             existingCurrentTurn = await TryReadTurnAsync(
                 workspacePath,
                 input.SessionId,
                 existingCurrent.NotificationTurnId,
-                cancellationToken);
+                cancellationToken
+            );
         }
 
         await WriteJsonAsync(
             AppPaths.GetTurnStatePath(workspacePath, input.SessionId, turn.NotificationTurnId),
             turn,
             AppJsonSerializerContext.Default.NotificationTurn,
-            cancellationToken);
+            cancellationToken
+        );
         await WriteJsonAsync(
             summaryPath,
             placeholderSummary,
             AppJsonSerializerContext.Default.NotificationSummary,
-            cancellationToken);
-        if (existingCurrentTurn is null
+            cancellationToken
+        );
+        if (
+            existingCurrentTurn is null
             || !string.Equals(existingCurrentTurn.Status, "open", StringComparison.Ordinal)
-            || string.CompareOrdinal(existingCurrentTurn.CreatedAt, turn.CreatedAt) < 0)
+            || string.CompareOrdinal(existingCurrentTurn.CreatedAt, turn.CreatedAt) < 0
+        )
         {
             await WriteJsonAsync(
                 AppPaths.GetCurrentStatePath(workspacePath, input.SessionId),
                 current,
                 AppJsonSerializerContext.Default.CurrentNotificationState,
-                cancellationToken);
+                cancellationToken
+            );
             await AbandonSupersededOpenTurnsAsync(
                 workspacePath,
                 input.SessionId,
                 now,
-                cancellationToken);
+                cancellationToken
+            );
         }
 
         AppLog.CreatedTurnState(logger, turn.NotificationTurnId, turn.SessionId);
@@ -182,160 +213,192 @@ internal sealed class WorkspaceStateStore(
     public Task<NotificationSession?> TryReadSessionAsync(
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken)
-        => ReadJsonAsync(
+        CancellationToken cancellationToken
+    ) =>
+        ReadJsonAsync(
             AppPaths.GetSessionStatePath(Path.GetFullPath(workspacePath), sessionId),
             "notification session",
             AppJsonSerializerContext.Default.NotificationSession,
-            cancellationToken);
+            cancellationToken
+        );
 
     public Task<CurrentNotificationState?> TryReadCurrentAsync(
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken)
-        => ReadJsonAsync(
+        CancellationToken cancellationToken
+    ) =>
+        ReadJsonAsync(
             AppPaths.GetCurrentStatePath(Path.GetFullPath(workspacePath), sessionId),
             "current notification cache",
             AppJsonSerializerContext.Default.CurrentNotificationState,
-            cancellationToken);
+            cancellationToken
+        );
 
     public Task<NotificationTurn?> TryReadTurnAsync(
         string workspacePath,
         string sessionId,
         string notificationTurnId,
-        CancellationToken cancellationToken)
-        => ReadJsonAsync(
+        CancellationToken cancellationToken
+    ) =>
+        ReadJsonAsync(
             AppPaths.GetTurnStatePath(
                 Path.GetFullPath(workspacePath),
                 sessionId,
-                notificationTurnId),
+                notificationTurnId
+            ),
             "notification turn",
             AppJsonSerializerContext.Default.NotificationTurn,
-            cancellationToken);
+            cancellationToken
+        );
 
     public Task<NotificationSummary?> TryReadSummaryAsync(
         string workspacePath,
         string sessionId,
         string notificationTurnId,
-        CancellationToken cancellationToken)
-        => ReadJsonAsync(
+        CancellationToken cancellationToken
+    ) =>
+        ReadJsonAsync(
             AppPaths.GetSummaryStatePath(
                 Path.GetFullPath(workspacePath),
                 sessionId,
-                notificationTurnId),
+                notificationTurnId
+            ),
             "notification summary",
             AppJsonSerializerContext.Default.NotificationSummary,
-            cancellationToken);
+            cancellationToken
+        );
 
     public async Task<IReadOnlyList<NotificationTurn>> ListOpenTurnsAsync(
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string turnsDirectory = AppPaths.GetTurnsDirectoryPath(
             Path.GetFullPath(workspacePath),
-            sessionId);
+            sessionId
+        );
         if (!Directory.Exists(turnsDirectory))
         {
             return [];
         }
 
         List<NotificationTurn> turns = [];
-        foreach (string turnFile in Directory.EnumerateFiles(
-                     turnsDirectory,
-                     AppConstants.TurnFileName,
-                     SearchOption.AllDirectories))
+        foreach (
+            string turnFile in Directory.EnumerateFiles(
+                turnsDirectory,
+                AppConstants.TurnFileName,
+                SearchOption.AllDirectories
+            )
+        )
         {
             NotificationTurn? turn = await ReadJsonAsync(
                 turnFile,
                 "notification turn",
                 AppJsonSerializerContext.Default.NotificationTurn,
-                cancellationToken);
-            if (turn is not null
+                cancellationToken
+            );
+            if (
+                turn is not null
                 && string.Equals(turn.SessionId, sessionId, StringComparison.Ordinal)
                 && string.Equals(turn.Status, "open", StringComparison.Ordinal)
                 && !await HasFreshDeliveryClaimAsync(
                     Path.GetFullPath(workspacePath),
                     sessionId,
                     turn.NotificationTurnId,
-                    cancellationToken)
+                    cancellationToken
+                )
                 && !await HasDurableDeliveryRecordAsync(
                     Path.GetFullPath(workspacePath),
                     sessionId,
                     turn.NotificationTurnId,
-                    cancellationToken))
+                    cancellationToken
+                )
+            )
             {
                 turns.Add(turn);
             }
         }
 
-        return turns
-            .OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
-            .ToArray();
+        return turns.OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal).ToArray();
     }
 
     public async Task<IReadOnlyList<NotificationTurn>> ListAbandonedTurnsAsync(
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken)
-        => await ListTurnsWithStatusAsync(
+        CancellationToken cancellationToken
+    ) =>
+        await ListTurnsWithStatusAsync(
             workspacePath,
             sessionId,
             "abandoned",
             requireNoDurableDelivery: true,
             requireFreshDeliveryClaim: false,
-            cancellationToken);
+            cancellationToken
+        );
 
     public async Task<IReadOnlyList<NotificationTurn>> ListNotifiedTurnsAsync(
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken)
-        => await ListTurnsWithStatusAsync(
+        CancellationToken cancellationToken
+    ) =>
+        await ListTurnsWithStatusAsync(
             workspacePath,
             sessionId,
             "notified",
             requireNoDurableDelivery: false,
             requireFreshDeliveryClaim: false,
-            cancellationToken);
+            cancellationToken
+        );
 
     public async Task<IReadOnlyList<NotificationTurn>> ListFreshDeliveryClaimedOpenTurnsAsync(
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken)
-        => await ListTurnsWithStatusAsync(
+        CancellationToken cancellationToken
+    ) =>
+        await ListTurnsWithStatusAsync(
             workspacePath,
             sessionId,
             "open",
             requireNoDurableDelivery: true,
             requireFreshDeliveryClaim: true,
-            cancellationToken);
+            cancellationToken
+        );
 
     public async Task<IReadOnlyList<PromptObservation>> ListPromptObservationsAsync(
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string promptsDirectory = Path.Combine(
             AppPaths.GetSessionDirectoryPath(Path.GetFullPath(workspacePath), sessionId),
-            AppConstants.PromptsDirectoryName);
+            AppConstants.PromptsDirectoryName
+        );
         if (!Directory.Exists(promptsDirectory))
         {
             return [];
         }
 
         List<PromptObservation> observations = [];
-        foreach (string promptFile in Directory.EnumerateFiles(
-                     promptsDirectory,
-                     "*.json",
-                     SearchOption.TopDirectoryOnly))
+        foreach (
+            string promptFile in Directory.EnumerateFiles(
+                promptsDirectory,
+                "*.json",
+                SearchOption.TopDirectoryOnly
+            )
+        )
         {
             PromptObservation? observation = await ReadJsonAsync(
                 promptFile,
                 "prompt observation",
                 AppJsonSerializerContext.Default.PromptObservation,
-                cancellationToken);
-            if (observation is not null
-                && string.Equals(observation.SessionId, sessionId, StringComparison.Ordinal))
+                cancellationToken
+            );
+            if (
+                observation is not null
+                && string.Equals(observation.SessionId, sessionId, StringComparison.Ordinal)
+            )
             {
                 observations.Add(observation);
             }
@@ -349,29 +412,37 @@ internal sealed class WorkspaceStateStore(
     public async Task<IReadOnlyList<NotificationRecord>> ListSessionNotificationRecordsAsync(
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string notificationsDirectory = Path.Combine(
             AppPaths.GetSessionDirectoryPath(Path.GetFullPath(workspacePath), sessionId),
-            AppConstants.NotificationsRecordsDirectoryName);
+            AppConstants.NotificationsRecordsDirectoryName
+        );
         if (!Directory.Exists(notificationsDirectory))
         {
             return [];
         }
 
         List<NotificationRecord> records = [];
-        foreach (string notificationFile in Directory.EnumerateFiles(
-                     notificationsDirectory,
-                     "*.json",
-                     SearchOption.TopDirectoryOnly))
+        foreach (
+            string notificationFile in Directory.EnumerateFiles(
+                notificationsDirectory,
+                "*.json",
+                SearchOption.TopDirectoryOnly
+            )
+        )
         {
             NotificationRecord? record = await ReadJsonAsync(
                 notificationFile,
                 "session notification record",
                 AppJsonSerializerContext.Default.NotificationRecord,
-                cancellationToken);
-            if (record is not null
-                && string.Equals(record.SessionId, sessionId, StringComparison.Ordinal))
+                cancellationToken
+            );
+            if (
+                record is not null
+                && string.Equals(record.SessionId, sessionId, StringComparison.Ordinal)
+            )
             {
                 records.Add(record);
             }
@@ -384,13 +455,14 @@ internal sealed class WorkspaceStateStore(
 
     public static Task<bool> WasNotificationAlreadySentAsync(
         string path,
-        CancellationToken cancellationToken)
-        => Task.FromResult(File.Exists(path));
+        CancellationToken cancellationToken
+    ) => Task.FromResult(File.Exists(path));
 
     public static async Task<bool> TryClaimStopNotificationAsync(
         string path,
         string claimedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
         EnsureOwnerOnlyParentDirectory(path);
@@ -411,7 +483,8 @@ internal sealed class WorkspaceStateStore(
             {
                 await stream.WriteAsync(
                     System.Text.Encoding.UTF8.GetBytes(claimedAt),
-                    cancellationToken);
+                    cancellationToken
+                );
                 await stream.FlushAsync(cancellationToken);
             }
 
@@ -430,10 +503,9 @@ internal sealed class WorkspaceStateStore(
         {
             File.Delete(path);
         }
-        catch (Exception ex) when (
-            ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
-        {
-        }
+        catch (Exception ex)
+            when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
+        { }
     }
 
     public static async Task<bool> TryReclaimStaleClaimAsync(
@@ -442,7 +514,8 @@ internal sealed class WorkspaceStateStore(
         string claimedAt,
         TimeSpan staleAfter,
         Func<Task<bool>> hasDurableDeliveryRecordAsync,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!await IsClaimStaleAsync(path, claimedAt, staleAfter, cancellationToken))
@@ -459,14 +532,16 @@ internal sealed class WorkspaceStateStore(
         bool claimedReclaim = await TryClaimStopNotificationAsync(
             reclaimPath,
             claimedAt,
-            cancellationToken);
+            cancellationToken
+        );
         if (!claimedReclaim)
         {
             staleReclaimLock = await TryAcquireStaleReclaimLockAsync(
                 reclaimPath,
                 claimedAt,
                 staleAfter,
-                cancellationToken);
+                cancellationToken
+            );
             claimedReclaim = staleReclaimLock is not null;
         }
 
@@ -501,44 +576,52 @@ internal sealed class WorkspaceStateStore(
         string workspacePath,
         NotificationTurn turn,
         StopObservation observation,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         await WriteJsonAsync(
             AppPaths.GetStopObservationPath(
                 Path.GetFullPath(workspacePath),
                 turn.SessionId,
                 turn.NotificationTurnId,
-                observation.StopId),
+                observation.StopId
+            ),
             observation,
             AppJsonSerializerContext.Default.StopObservation,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public static async Task RecordNotificationAsync(
         string path,
         NotificationRecord record,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         await WriteJsonAsync(
             path,
             record,
             AppJsonSerializerContext.Default.NotificationRecord,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public static async Task MarkTurnNotifiedAsync(
         string workspacePath,
         NotificationTurn turn,
         string now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         NotificationTurn? existingTurn = await ReadJsonFileAsync(
             AppPaths.GetTurnStatePath(
                 Path.GetFullPath(workspacePath),
                 turn.SessionId,
-                turn.NotificationTurnId),
+                turn.NotificationTurnId
+            ),
             AppJsonSerializerContext.Default.NotificationTurn,
-            cancellationToken);
+            cancellationToken
+        );
         if (string.Equals(existingTurn?.Status, "abandoned", StringComparison.Ordinal))
         {
             return;
@@ -550,24 +633,28 @@ internal sealed class WorkspaceStateStore(
             AppPaths.GetTurnStatePath(
                 Path.GetFullPath(workspacePath),
                 turn.SessionId,
-                turn.NotificationTurnId),
+                turn.NotificationTurnId
+            ),
             turn,
             AppJsonSerializerContext.Default.NotificationTurn,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public async Task AbandonSupersededOpenTurnsAsync(
         string workspacePath,
         string sessionId,
         string now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         workspacePath = Path.GetFullPath(workspacePath);
         NotificationTurn? supersedingTurn = await ResolveSupersedingOpenTurnAsync(
             workspacePath,
             sessionId,
             excludedTurnId: null,
-            cancellationToken);
+            cancellationToken
+        );
         if (supersedingTurn is null)
         {
             return;
@@ -578,11 +665,14 @@ internal sealed class WorkspaceStateStore(
             await OnSupersedingOpenTurnResolvedForTestingAsync(supersedingTurn, cancellationToken);
         }
 
-        if (await HasDurableDeliveryRecordAsync(
+        if (
+            await HasDurableDeliveryRecordAsync(
                 workspacePath,
                 sessionId,
                 supersedingTurn.NotificationTurnId,
-                cancellationToken))
+                cancellationToken
+            )
+        )
         {
             return;
         }
@@ -590,18 +680,23 @@ internal sealed class WorkspaceStateStore(
         IReadOnlyList<NotificationTurn> openTurns = await ListOpenTurnsAsync(
             workspacePath,
             sessionId,
-            cancellationToken);
+            cancellationToken
+        );
         HashSet<string> pendingHandoffAmbiguousTiedTurnIds =
             await GetPendingHandoffAmbiguousTiedTurnIdsAsync(
                 workspacePath,
                 openTurns,
-                cancellationToken);
+                cancellationToken
+            );
         foreach (NotificationTurn turn in openTurns)
         {
-            if (string.Equals(
+            if (
+                string.Equals(
                     turn.NotificationTurnId,
                     supersedingTurn.NotificationTurnId,
-                    StringComparison.Ordinal))
+                    StringComparison.Ordinal
+                )
+            )
             {
                 continue;
             }
@@ -612,7 +707,8 @@ internal sealed class WorkspaceStateStore(
                 supersedingTurn,
                 now,
                 pendingHandoffAmbiguousTiedTurnIds,
-                cancellationToken);
+                cancellationToken
+            );
         }
     }
 
@@ -620,14 +716,16 @@ internal sealed class WorkspaceStateStore(
         string workspacePath,
         NotificationTurn turn,
         string now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         workspacePath = Path.GetFullPath(workspacePath);
         NotificationTurn? supersedingTurn = await ResolveSupersedingOpenTurnAsync(
             workspacePath,
             turn.SessionId,
             turn.NotificationTurnId,
-            cancellationToken);
+            cancellationToken
+        );
         if (supersedingTurn is null)
         {
             return;
@@ -642,22 +740,23 @@ internal sealed class WorkspaceStateStore(
             await GetPendingHandoffAmbiguousTiedTurnIdsAsync(
                 workspacePath,
                 await ListOpenTurnsAsync(workspacePath, turn.SessionId, cancellationToken),
-                cancellationToken);
+                cancellationToken
+            );
         await TryAbandonSupersededTurnAsync(
             workspacePath,
             turn,
             supersedingTurn,
             now,
             pendingHandoffAmbiguousTiedTurnIds,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public string GetCurrentUtcTimestamp()
     {
         return timeProvider
             .GetUtcNow()
-            .UtcDateTime
-            .ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+            .UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
     }
 
     private async Task<NotificationSession> EnsureSessionAsync(
@@ -665,12 +764,11 @@ internal sealed class WorkspaceStateStore(
         string sessionId,
         string? transcriptPath,
         string now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
-        NotificationSession session = await TryReadSessionAsync(
-                workspacePath,
-                sessionId,
-                cancellationToken)
+        NotificationSession session =
+            await TryReadSessionAsync(workspacePath, sessionId, cancellationToken)
             ?? new NotificationSession
             {
                 SessionId = sessionId,
@@ -690,7 +788,8 @@ internal sealed class WorkspaceStateStore(
             sessionStatePath,
             session,
             AppJsonSerializerContext.Default.NotificationSession,
-            cancellationToken);
+            cancellationToken
+        );
         AppLog.WroteSessionState(logger, sessionId, sessionStatePath);
         return session;
     }
@@ -701,7 +800,8 @@ internal sealed class WorkspaceStateStore(
         string status,
         bool requireNoDurableDelivery,
         bool requireFreshDeliveryClaim,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         workspacePath = Path.GetFullPath(workspacePath);
         string turnsDirectory = AppPaths.GetTurnsDirectoryPath(workspacePath, sessionId);
@@ -711,39 +811,51 @@ internal sealed class WorkspaceStateStore(
         }
 
         List<NotificationTurn> turns = [];
-        foreach (string turnFile in Directory.EnumerateFiles(
-                     turnsDirectory,
-                     AppConstants.TurnFileName,
-                     SearchOption.AllDirectories))
+        foreach (
+            string turnFile in Directory.EnumerateFiles(
+                turnsDirectory,
+                AppConstants.TurnFileName,
+                SearchOption.AllDirectories
+            )
+        )
         {
             NotificationTurn? turn = await ReadJsonAsync(
                 turnFile,
                 "notification turn",
                 AppJsonSerializerContext.Default.NotificationTurn,
-                cancellationToken);
-            if (turn is null
+                cancellationToken
+            );
+            if (
+                turn is null
                 || !string.Equals(turn.SessionId, sessionId, StringComparison.Ordinal)
-                || !string.Equals(turn.Status, status, StringComparison.Ordinal))
+                || !string.Equals(turn.Status, status, StringComparison.Ordinal)
+            )
             {
                 continue;
             }
 
-            if (requireNoDurableDelivery
+            if (
+                requireNoDurableDelivery
                 && await HasDurableDeliveryRecordAsync(
                     workspacePath,
                     sessionId,
                     turn.NotificationTurnId,
-                    cancellationToken))
+                    cancellationToken
+                )
+            )
             {
                 continue;
             }
 
-            if (requireFreshDeliveryClaim
+            if (
+                requireFreshDeliveryClaim
                 && !await HasFreshDeliveryClaimAsync(
                     workspacePath,
                     sessionId,
                     turn.NotificationTurnId,
-                    cancellationToken))
+                    cancellationToken
+                )
+            )
             {
                 continue;
             }
@@ -751,26 +863,25 @@ internal sealed class WorkspaceStateStore(
             turns.Add(turn);
         }
 
-        return turns
-            .OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
-            .ToArray();
+        return turns.OrderBy(static turn => turn.CreatedAt, StringComparer.Ordinal).ToArray();
     }
 
     private async Task<NotificationTurn?> ResolveSupersedingOpenTurnAsync(
         string workspacePath,
         string sessionId,
         string? excludedTurnId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         IReadOnlyList<NotificationTurn> openTurns = await ListOpenTurnsAsync(
             workspacePath,
             sessionId,
-            cancellationToken);
+            cancellationToken
+        );
         NotificationTurn[] candidateOpenTurns = openTurns
-            .Where(turn => !string.Equals(
-                turn.NotificationTurnId,
-                excludedTurnId,
-                StringComparison.Ordinal))
+            .Where(turn =>
+                !string.Equals(turn.NotificationTurnId, excludedTurnId, StringComparison.Ordinal)
+            )
             .ToArray();
         NotificationTurn? latestOpenTurn = candidateOpenTurns
             .OrderByDescending(static turn => turn.CreatedAt, StringComparer.Ordinal)
@@ -778,43 +889,54 @@ internal sealed class WorkspaceStateStore(
         CurrentNotificationState? current = await TryReadCurrentAsync(
             workspacePath,
             sessionId,
-            cancellationToken);
-        if (current is not null
-            && !string.Equals(current.NotificationTurnId, excludedTurnId, StringComparison.Ordinal))
+            cancellationToken
+        );
+        if (
+            current is not null
+            && !string.Equals(current.NotificationTurnId, excludedTurnId, StringComparison.Ordinal)
+        )
         {
             NotificationTurn? currentTurn = await TryReadTurnAsync(
                 workspacePath,
                 sessionId,
                 current.NotificationTurnId,
-                cancellationToken);
-            if (currentTurn is not null
+                cancellationToken
+            );
+            if (
+                currentTurn is not null
                 && string.Equals(currentTurn.Status, "open", StringComparison.Ordinal)
                 && !await HasDurableDeliveryRecordAsync(
                     workspacePath,
                     sessionId,
                     currentTurn.NotificationTurnId,
-                    cancellationToken))
+                    cancellationToken
+                )
+            )
             {
-                NotificationTurn selectedTurn = latestOpenTurn is not null
+                NotificationTurn selectedTurn =
+                    latestOpenTurn is not null
                     && string.CompareOrdinal(latestOpenTurn.CreatedAt, currentTurn.CreatedAt) > 0
-                    ? latestOpenTurn
-                    : currentTurn;
+                        ? latestOpenTurn
+                        : currentTurn;
                 return await HasPendingHandoffAmbiguityAtEqualCreatedAtAsync(
                     workspacePath,
                     candidateOpenTurns,
                     selectedTurn.CreatedAt,
-                    cancellationToken)
+                    cancellationToken
+                )
                     ? null
                     : selectedTurn;
             }
         }
 
-        return latestOpenTurn is not null
+        return
+            latestOpenTurn is not null
             && await HasPendingHandoffAmbiguityAtEqualCreatedAtAsync(
                 workspacePath,
                 candidateOpenTurns,
                 latestOpenTurn.CreatedAt,
-                cancellationToken)
+                cancellationToken
+            )
             ? null
             : latestOpenTurn;
     }
@@ -825,32 +947,36 @@ internal sealed class WorkspaceStateStore(
         NotificationTurn supersedingTurn,
         string now,
         HashSet<string> pendingHandoffAmbiguousTiedTurnIds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
-        if (await HasDurableDeliveryRecordAsync(
+        if (
+            await HasDurableDeliveryRecordAsync(
                 workspacePath,
                 turn.SessionId,
                 turn.NotificationTurnId,
-                cancellationToken)
+                cancellationToken
+            )
             || await HasDurableDeliveryRecordAsync(
                 workspacePath,
                 supersedingTurn.SessionId,
                 supersedingTurn.NotificationTurnId,
-                cancellationToken)
+                cancellationToken
+            )
             || await HasFreshDeliveryClaimAsync(
                 workspacePath,
                 turn.SessionId,
                 turn.NotificationTurnId,
-                cancellationToken)
+                cancellationToken
+            )
             || pendingHandoffAmbiguousTiedTurnIds.Contains(turn.NotificationTurnId)
             || await HasTiedPendingHandoffAmbiguityForTurnAsync(
                 workspacePath,
                 turn,
-                cancellationToken)
-            || await HasAssignedSummaryWorthPreservingAsync(
-                workspacePath,
-                turn,
-                cancellationToken))
+                cancellationToken
+            )
+            || await HasAssignedSummaryWorthPreservingAsync(workspacePath, turn, cancellationToken)
+        )
         {
             return;
         }
@@ -862,33 +988,40 @@ internal sealed class WorkspaceStateStore(
 
         if (OnBeforeAbandonSupersededTurnForTestingAsync is not null)
         {
-            await OnBeforeAbandonSupersededTurnForTestingAsync(turn, supersedingTurn, cancellationToken);
+            await OnBeforeAbandonSupersededTurnForTestingAsync(
+                turn,
+                supersedingTurn,
+                cancellationToken
+            );
         }
 
-        if (await HasDurableDeliveryRecordAsync(
+        if (
+            await HasDurableDeliveryRecordAsync(
                 workspacePath,
                 turn.SessionId,
                 turn.NotificationTurnId,
-                cancellationToken)
+                cancellationToken
+            )
             || await HasDurableDeliveryRecordAsync(
                 workspacePath,
                 supersedingTurn.SessionId,
                 supersedingTurn.NotificationTurnId,
-                cancellationToken)
+                cancellationToken
+            )
             || await HasFreshDeliveryClaimAsync(
                 workspacePath,
                 turn.SessionId,
                 turn.NotificationTurnId,
-                cancellationToken)
+                cancellationToken
+            )
             || pendingHandoffAmbiguousTiedTurnIds.Contains(turn.NotificationTurnId)
             || await HasTiedPendingHandoffAmbiguityForTurnAsync(
                 workspacePath,
                 turn,
-                cancellationToken)
-            || await HasAssignedSummaryWorthPreservingAsync(
-                workspacePath,
-                turn,
-                cancellationToken))
+                cancellationToken
+            )
+            || await HasAssignedSummaryWorthPreservingAsync(workspacePath, turn, cancellationToken)
+        )
         {
             return;
         }
@@ -898,18 +1031,21 @@ internal sealed class WorkspaceStateStore(
             await OnAfterAbandonSupersededTurnFinalGuardForTestingAsync(
                 turn,
                 supersedingTurn,
-                cancellationToken);
+                cancellationToken
+            );
         }
 
         string turnDeliveryClaimPath = AppPaths.GetTurnDeliveryClaimPath(
             workspacePath,
             turn.SessionId,
-            turn.NotificationTurnId);
+            turn.NotificationTurnId
+        );
         string abandonmentClaimedAt = GetCurrentUtcTimestamp();
         FileStream? abandonmentClaim = await TryAcquireAbandonmentDeliveryClaimAsync(
             turnDeliveryClaimPath,
             abandonmentClaimedAt,
-            cancellationToken);
+            cancellationToken
+        );
         if (abandonmentClaim is null)
         {
             return;
@@ -917,30 +1053,40 @@ internal sealed class WorkspaceStateStore(
 
         try
         {
-            if (await HasDurableDeliveryRecordAsync(
+            if (
+                await HasDurableDeliveryRecordAsync(
                     workspacePath,
                     turn.SessionId,
                     turn.NotificationTurnId,
-                    cancellationToken)
+                    cancellationToken
+                )
                 || await HasDurableDeliveryRecordAsync(
                     workspacePath,
                     supersedingTurn.SessionId,
                     supersedingTurn.NotificationTurnId,
-                    cancellationToken)
+                    cancellationToken
+                )
                 || pendingHandoffAmbiguousTiedTurnIds.Contains(turn.NotificationTurnId)
                 || await HasTiedPendingHandoffAmbiguityForTurnAsync(
                     workspacePath,
                     turn,
-                    cancellationToken)
+                    cancellationToken
+                )
                 || await HasAssignedSummaryWorthPreservingAsync(
                     workspacePath,
                     turn,
-                    cancellationToken))
+                    cancellationToken
+                )
+            )
             {
                 return;
             }
 
-            await StampLegacyHookCreatedPendingPlaceholderAsync(workspacePath, turn, cancellationToken);
+            await StampLegacyHookCreatedPendingPlaceholderAsync(
+                workspacePath,
+                turn,
+                cancellationToken
+            );
             turn.Status = "abandoned";
             turn.UpdatedAt = now;
             await WriteTurnAsync(workspacePath, turn, cancellationToken);
@@ -951,14 +1097,16 @@ internal sealed class WorkspaceStateStore(
             await ReleaseOwnedStopNotificationClaimAsync(
                 turnDeliveryClaimPath,
                 abandonmentClaimedAt,
-                CancellationToken.None);
+                CancellationToken.None
+            );
         }
     }
 
     private static async Task<HashSet<string>> GetPendingHandoffAmbiguousTiedTurnIdsAsync(
         string workspacePath,
         IReadOnlyList<NotificationTurn> openTurns,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         HashSet<string> tiedTurnIds = openTurns
             .GroupBy(static turn => turn.CreatedAt, StringComparer.Ordinal)
@@ -974,12 +1122,15 @@ internal sealed class WorkspaceStateStore(
         HashSet<string> pendingHandoffAmbiguousTurnIds = new(StringComparer.Ordinal);
         foreach (NotificationTurn turn in openTurns)
         {
-            if (tiedTurnIds.Contains(turn.NotificationTurnId)
+            if (
+                tiedTurnIds.Contains(turn.NotificationTurnId)
                 && await HasPendingHandoffAmbiguityForAbandonmentAsync(
                     workspacePath,
                     turn,
                     includeHookCreatedPlaceholder: true,
-                    cancellationToken))
+                    cancellationToken
+                )
+            )
             {
                 pendingHandoffAmbiguousTurnIds.Add(turn.NotificationTurnId);
             }
@@ -992,7 +1143,8 @@ internal sealed class WorkspaceStateStore(
         string workspacePath,
         IReadOnlyList<NotificationTurn> openTurns,
         string createdAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         NotificationTurn[] tiedTurns = openTurns
             .Where(turn => string.Equals(turn.CreatedAt, createdAt, StringComparison.Ordinal))
@@ -1004,11 +1156,14 @@ internal sealed class WorkspaceStateStore(
 
         foreach (NotificationTurn tiedTurn in tiedTurns)
         {
-            if (await HasPendingHandoffAmbiguityForAbandonmentAsync(
+            if (
+                await HasPendingHandoffAmbiguityForAbandonmentAsync(
                     workspacePath,
                     tiedTurn,
                     includeHookCreatedPlaceholder: true,
-                    cancellationToken))
+                    cancellationToken
+                )
+            )
             {
                 return true;
             }
@@ -1020,13 +1175,17 @@ internal sealed class WorkspaceStateStore(
     private async Task<bool> HasTiedPendingHandoffAmbiguityForTurnAsync(
         string workspacePath,
         NotificationTurn turn,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
-        if (!await HasPendingHandoffAmbiguityForAbandonmentAsync(
+        if (
+            !await HasPendingHandoffAmbiguityForAbandonmentAsync(
                 workspacePath,
                 turn,
                 includeHookCreatedPlaceholder: false,
-                cancellationToken))
+                cancellationToken
+            )
+        )
         {
             return false;
         }
@@ -1034,25 +1193,29 @@ internal sealed class WorkspaceStateStore(
         IReadOnlyList<NotificationTurn> openTurns = await ListOpenTurnsAsync(
             workspacePath,
             turn.SessionId,
-            cancellationToken);
+            cancellationToken
+        );
         return openTurns.Any(candidate =>
             !string.Equals(
                 candidate.NotificationTurnId,
                 turn.NotificationTurnId,
-                StringComparison.Ordinal)
-            && string.Equals(candidate.CreatedAt, turn.CreatedAt, StringComparison.Ordinal));
+                StringComparison.Ordinal
+            ) && string.Equals(candidate.CreatedAt, turn.CreatedAt, StringComparison.Ordinal)
+        );
     }
 
     private static async Task<bool> HasPendingHandoffAmbiguityForAbandonmentAsync(
         string workspacePath,
         NotificationTurn turn,
         bool includeHookCreatedPlaceholder,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string summaryPath = AppPaths.GetSummaryStatePath(
             workspacePath,
             turn.SessionId,
-            turn.NotificationTurnId);
+            turn.NotificationTurnId
+        );
         if (!File.Exists(summaryPath))
         {
             return true;
@@ -1061,7 +1224,8 @@ internal sealed class WorkspaceStateStore(
         NotificationSummary? summary = await ReadJsonFileAsync(
             summaryPath,
             AppJsonSerializerContext.Default.NotificationSummary,
-            cancellationToken);
+            cancellationToken
+        );
         if (summary is null)
         {
             return true;
@@ -1075,7 +1239,8 @@ internal sealed class WorkspaceStateStore(
     private static async Task StampLegacyHookCreatedPendingPlaceholderAsync(
         string workspacePath,
         NotificationTurn turn,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (!string.IsNullOrWhiteSpace(turn.SummaryPlaceholderCreatedAt))
         {
@@ -1085,9 +1250,9 @@ internal sealed class WorkspaceStateStore(
         NotificationSummary? summary = await ReadJsonFileAsync(
             AppPaths.GetSummaryStatePath(workspacePath, turn.SessionId, turn.NotificationTurnId),
             AppJsonSerializerContext.Default.NotificationSummary,
-            cancellationToken);
-        if (summary is not null
-            && IsHookCreatedPendingPlaceholder(summary, turn))
+            cancellationToken
+        );
+        if (summary is not null && IsHookCreatedPendingPlaceholder(summary, turn))
         {
             turn.SummaryPlaceholderCreatedAt = summary.UpdatedAt;
         }
@@ -1097,33 +1262,51 @@ internal sealed class WorkspaceStateStore(
         string workspacePath,
         string sessionId,
         string notificationTurnId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
-        string claimPath = AppPaths.GetTurnDeliveryClaimPath(workspacePath, sessionId, notificationTurnId);
+        string claimPath = AppPaths.GetTurnDeliveryClaimPath(
+            workspacePath,
+            sessionId,
+            notificationTurnId
+        );
         return File.Exists(claimPath)
             && !await IsClaimStaleAsync(
                 claimPath,
                 GetCurrentUtcTimestamp(),
                 TimeSpan.FromMinutes(AppConstants.TurnDeliveryClaimStaleAfterMinutes),
-                cancellationToken);
+                cancellationToken
+            );
     }
 
     private static async Task<bool> HasAssignedSummaryWorthPreservingAsync(
         string workspacePath,
         NotificationTurn turn,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         NotificationSummary? summary = await ReadJsonFileAsync(
             AppPaths.GetSummaryStatePath(workspacePath, turn.SessionId, turn.NotificationTurnId),
             AppJsonSerializerContext.Default.NotificationSummary,
-            cancellationToken);
+            cancellationToken
+        );
         bool hasStopObservation = HasStopObservation(workspacePath, turn);
-        if (summary is null
+        if (
+            summary is null
             || !string.Equals(summary.SessionId, turn.SessionId, StringComparison.Ordinal)
-            || !string.Equals(summary.NotificationTurnId, turn.NotificationTurnId, StringComparison.Ordinal)
-            || !string.Equals(summary.NotificationNonce, turn.NotificationNonce, StringComparison.Ordinal)
+            || !string.Equals(
+                summary.NotificationTurnId,
+                turn.NotificationTurnId,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                summary.NotificationNonce,
+                turn.NotificationNonce,
+                StringComparison.Ordinal
+            )
             || string.IsNullOrWhiteSpace(summary.UpdatedAt)
-            || !IsValidUtcTimestamp(summary.UpdatedAt))
+            || !IsValidUtcTimestamp(summary.UpdatedAt)
+        )
         {
             return false;
         }
@@ -1136,23 +1319,30 @@ internal sealed class WorkspaceStateStore(
         return string.Equals(summary.Status, "pending", StringComparison.Ordinal)
             && string.IsNullOrWhiteSpace(summary.Summary)
             && !IsHookCreatedPendingPlaceholder(summary, turn)
-            && (!hasStopObservation
-                || (await HasPendingStopObservationForTimestampAsync(
+            && (
+                !hasStopObservation
+                || (
+                    await HasPendingStopObservationForTimestampAsync(
                         workspacePath,
                         turn,
                         summary.UpdatedAt,
-                        cancellationToken)));
+                        cancellationToken
+                    )
+                )
+            );
     }
 
     private static async Task<bool> HasPendingStopObservationForTimestampAsync(
         string workspacePath,
         NotificationTurn turn,
         string stopTimestamp,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string stopsDirectory = Path.Combine(
             AppPaths.GetTurnDirectoryPath(workspacePath, turn.SessionId, turn.NotificationTurnId),
-            AppConstants.StopsDirectoryName);
+            AppConstants.StopsDirectoryName
+        );
         if (!Directory.Exists(stopsDirectory))
         {
             return false;
@@ -1163,15 +1353,19 @@ internal sealed class WorkspaceStateStore(
             StopObservation? observation = await ReadJsonFileAsync(
                 observationPath,
                 AppJsonSerializerContext.Default.StopObservation,
-                cancellationToken);
-            if (observation is not null
+                cancellationToken
+            );
+            if (
+                observation is not null
                 && string.Equals(observation.SessionId, turn.SessionId, StringComparison.Ordinal)
                 && string.Equals(
                     observation.NotificationTurnId,
                     turn.NotificationTurnId,
-                    StringComparison.Ordinal)
+                    StringComparison.Ordinal
+                )
                 && observation.SummaryPendingHandoff
-                && string.Equals(observation.StopTimestamp, stopTimestamp, StringComparison.Ordinal))
+                && string.Equals(observation.StopTimestamp, stopTimestamp, StringComparison.Ordinal)
+            )
             {
                 return true;
             }
@@ -1182,14 +1376,16 @@ internal sealed class WorkspaceStateStore(
 
     private static bool IsHookCreatedPendingPlaceholder(
         NotificationSummary summary,
-        NotificationTurn turn)
+        NotificationTurn turn
+    )
     {
         if (!string.IsNullOrWhiteSpace(turn.SummaryPlaceholderCreatedAt))
         {
             return string.Equals(
                 summary.UpdatedAt,
                 turn.SummaryPlaceholderCreatedAt,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal
+            );
         }
 
         return string.Equals(summary.UpdatedAt, turn.CreatedAt, StringComparison.Ordinal)
@@ -1200,29 +1396,36 @@ internal sealed class WorkspaceStateStore(
     {
         string stopsDirectory = Path.Combine(
             AppPaths.GetTurnDirectoryPath(workspacePath, turn.SessionId, turn.NotificationTurnId),
-            AppConstants.StopsDirectoryName);
+            AppConstants.StopsDirectoryName
+        );
         return Directory.Exists(stopsDirectory)
-            && Directory.EnumerateFiles(stopsDirectory, "*.json", SearchOption.TopDirectoryOnly).Any();
+            && Directory
+                .EnumerateFiles(stopsDirectory, "*.json", SearchOption.TopDirectoryOnly)
+                .Any();
     }
 
     private static async Task WriteTurnAsync(
         string workspacePath,
         NotificationTurn turn,
-        CancellationToken cancellationToken)
-        => await WriteJsonAsync(
+        CancellationToken cancellationToken
+    ) =>
+        await WriteJsonAsync(
             AppPaths.GetTurnStatePath(
                 Path.GetFullPath(workspacePath),
                 turn.SessionId,
-                turn.NotificationTurnId),
+                turn.NotificationTurnId
+            ),
             turn,
             AppJsonSerializerContext.Default.NotificationTurn,
-            cancellationToken);
+            cancellationToken
+        );
 
     private async Task<T?> ReadJsonAsync<T>(
         string path,
         string stateFileKind,
         JsonTypeInfo<T> jsonTypeInfo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
         where T : class
     {
         if (!File.Exists(path))
@@ -1235,9 +1438,13 @@ internal sealed class WorkspaceStateStore(
             await using FileStream stream = File.OpenRead(path);
             return await JsonSerializer.DeserializeAsync(stream, jsonTypeInfo, cancellationToken);
         }
-        catch (Exception ex) when (
-            ex is IOException or JsonException or UnauthorizedAccessException
-                or NotSupportedException)
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or JsonException
+                        or UnauthorizedAccessException
+                        or NotSupportedException
+            )
         {
             AppLog.FailedToReadStateFile(logger, ex, stateFileKind, path);
             return null;
@@ -1248,7 +1455,8 @@ internal sealed class WorkspaceStateStore(
         string path,
         T value,
         JsonTypeInfo<T> jsonTypeInfo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
         string content = JsonSerializer.Serialize(value, jsonTypeInfo);
@@ -1262,57 +1470,72 @@ internal sealed class WorkspaceStateStore(
         string workspacePath,
         string sessionId,
         string notificationTurnId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string turnNotificationsDirectory = Path.Combine(
             AppPaths.GetTurnDirectoryPath(workspacePath, sessionId, notificationTurnId),
-            AppConstants.NotificationsRecordsDirectoryName);
-        if (await HasDurableDeliveryRecordInDirectoryAsync(
+            AppConstants.NotificationsRecordsDirectoryName
+        );
+        if (
+            await HasDurableDeliveryRecordInDirectoryAsync(
                 turnNotificationsDirectory,
                 sessionId,
                 notificationTurnId,
-                cancellationToken))
+                cancellationToken
+            )
+        )
         {
             return true;
         }
 
         string sessionNotificationsDirectory = Path.Combine(
             AppPaths.GetSessionDirectoryPath(workspacePath, sessionId),
-            AppConstants.NotificationsRecordsDirectoryName);
+            AppConstants.NotificationsRecordsDirectoryName
+        );
         return await HasDurableDeliveryRecordInDirectoryAsync(
             sessionNotificationsDirectory,
             sessionId,
             notificationTurnId,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     private static async Task<bool> HasDurableDeliveryRecordInDirectoryAsync(
         string notificationsDirectory,
         string sessionId,
         string notificationTurnId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (!Directory.Exists(notificationsDirectory))
         {
             return false;
         }
 
-        foreach (string notificationFile in Directory.EnumerateFiles(
-                     notificationsDirectory,
-                     "*.json",
-                     SearchOption.TopDirectoryOnly))
+        foreach (
+            string notificationFile in Directory.EnumerateFiles(
+                notificationsDirectory,
+                "*.json",
+                SearchOption.TopDirectoryOnly
+            )
+        )
         {
             NotificationRecord? record = await ReadJsonFileAsync(
                 notificationFile,
                 AppJsonSerializerContext.Default.NotificationRecord,
-                cancellationToken);
-            if (record is not null
+                cancellationToken
+            );
+            if (
+                record is not null
                 && string.Equals(record.SessionId, sessionId, StringComparison.Ordinal)
                 && string.Equals(
                     record.NotificationTurnId,
                     notificationTurnId,
-                    StringComparison.Ordinal)
-                && IsDurableDeliveryStatus(record.DeliveryStatus))
+                    StringComparison.Ordinal
+                )
+                && IsDurableDeliveryStatus(record.DeliveryStatus)
+            )
             {
                 return true;
             }
@@ -1321,15 +1544,16 @@ internal sealed class WorkspaceStateStore(
         return false;
     }
 
-    private static bool IsDurableDeliveryStatus(string? deliveryStatus)
-        => string.Equals(deliveryStatus, "sent", StringComparison.Ordinal)
-            || string.Equals(deliveryStatus, "partial", StringComparison.Ordinal);
+    private static bool IsDurableDeliveryStatus(string? deliveryStatus) =>
+        string.Equals(deliveryStatus, "sent", StringComparison.Ordinal)
+        || string.Equals(deliveryStatus, "partial", StringComparison.Ordinal);
 
     private static async Task<FileStream?> TryAcquireStaleReclaimLockAsync(
         string path,
         string claimedAt,
         TimeSpan staleAfter,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (!TryParseClaimedAt(claimedAt, out DateTimeOffset current))
         {
@@ -1345,13 +1569,16 @@ internal sealed class WorkspaceStateStore(
                 FileAccess.ReadWrite,
                 FileShare.None,
                 bufferSize: 4096,
-                FileOptions.Asynchronous);
+                FileOptions.Asynchronous
+            );
         }
-        catch (Exception ex) when (
-            ex is FileNotFoundException
-                or DirectoryNotFoundException
-                or IOException
-                or UnauthorizedAccessException)
+        catch (Exception ex)
+            when (ex
+                    is FileNotFoundException
+                        or DirectoryNotFoundException
+                        or IOException
+                        or UnauthorizedAccessException
+            )
         {
             return null;
         }
@@ -1362,11 +1589,13 @@ internal sealed class WorkspaceStateStore(
                 stream,
                 System.Text.Encoding.UTF8,
                 detectEncodingFromByteOrderMarks: true,
-                leaveOpen: true);
+                leaveOpen: true
+            );
             string existingClaimedAt = await reader.ReadToEndAsync(cancellationToken);
             DateTimeOffset existing = TryParseClaimedAt(
                 existingClaimedAt,
-                out DateTimeOffset parsedExisting)
+                out DateTimeOffset parsedExisting
+            )
                 ? parsedExisting
                 : GetClaimFileTimestamp(path);
             if (current - existing < staleAfter)
@@ -1392,7 +1621,8 @@ internal sealed class WorkspaceStateStore(
     private static async Task<FileStream?> TryAcquireAbandonmentDeliveryClaimAsync(
         string path,
         string claimedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         EnsureOwnerOnlyParentDirectory(path);
 
@@ -1403,7 +1633,8 @@ internal sealed class WorkspaceStateStore(
             {
                 await createdClaim.WriteAsync(
                     System.Text.Encoding.UTF8.GetBytes(claimedAt),
-                    cancellationToken);
+                    cancellationToken
+                );
                 await createdClaim.FlushAsync(cancellationToken);
                 return createdClaim;
             }
@@ -1420,25 +1651,29 @@ internal sealed class WorkspaceStateStore(
                 path,
                 claimedAt,
                 TimeSpan.FromMinutes(AppConstants.TurnDeliveryClaimStaleAfterMinutes),
-                cancellationToken);
+                cancellationToken
+            );
         }
     }
 
     private static async Task ReleaseOwnedStopNotificationClaimAsync(
         string path,
         string claimedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string existingClaimedAt;
         try
         {
             existingClaimedAt = await File.ReadAllTextAsync(path, cancellationToken);
         }
-        catch (Exception ex) when (
-            ex is FileNotFoundException
-                or DirectoryNotFoundException
-                or IOException
-                or UnauthorizedAccessException)
+        catch (Exception ex)
+            when (ex
+                    is FileNotFoundException
+                        or DirectoryNotFoundException
+                        or IOException
+                        or UnauthorizedAccessException
+            )
         {
             return;
         }
@@ -1453,7 +1688,8 @@ internal sealed class WorkspaceStateStore(
         string path,
         string currentClaimedAt,
         TimeSpan staleAfter,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         string existingClaimedAt;
         try
@@ -1476,7 +1712,8 @@ internal sealed class WorkspaceStateStore(
 
         DateTimeOffset existing = TryParseClaimedAt(
             existingClaimedAt,
-            out DateTimeOffset parsedExisting)
+            out DateTimeOffset parsedExisting
+        )
             ? parsedExisting
             : GetClaimFileTimestamp(path);
         return current - existing >= staleAfter;
@@ -1494,30 +1731,34 @@ internal sealed class WorkspaceStateStore(
         return new DateTimeOffset(creationTime, TimeSpan.Zero);
     }
 
-    private static bool TryParseClaimedAt(string claimedAt, out DateTimeOffset timestamp)
-        => DateTimeOffset.TryParseExact(
+    private static bool TryParseClaimedAt(string claimedAt, out DateTimeOffset timestamp) =>
+        DateTimeOffset.TryParseExact(
             claimedAt.Trim(),
             "yyyy-MM-ddTHH:mm:ss.fff'Z'",
             CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-            out timestamp);
+            out timestamp
+        );
 
-    private static bool IsValidUtcTimestamp(string value)
-        => DateTimeOffset.TryParseExact(
+    private static bool IsValidUtcTimestamp(string value) =>
+        DateTimeOffset.TryParseExact(
             value,
             "yyyy-MM-ddTHH:mm:ss.fff'Z'",
             CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-            out DateTimeOffset parsed)
-            && string.Equals(
-                parsed.ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
-                value,
-                StringComparison.Ordinal);
+            out DateTimeOffset parsed
+        )
+        && string.Equals(
+            parsed.ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
+            value,
+            StringComparison.Ordinal
+        );
 
     private static async Task<T?> ReadJsonFileAsync<T>(
         string path,
         JsonTypeInfo<T> jsonTypeInfo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
         where T : class
     {
         try
@@ -1525,9 +1766,13 @@ internal sealed class WorkspaceStateStore(
             await using FileStream stream = File.OpenRead(path);
             return await JsonSerializer.DeserializeAsync(stream, jsonTypeInfo, cancellationToken);
         }
-        catch (Exception ex) when (
-            ex is IOException or JsonException or UnauthorizedAccessException
-                or NotSupportedException)
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or JsonException
+                        or UnauthorizedAccessException
+                        or NotSupportedException
+            )
         {
             return null;
         }
@@ -1571,6 +1816,6 @@ internal sealed class WorkspaceStateStore(
 
 internal sealed record PromptClassification(string Kind, string Reason)
 {
-    public bool IsHighConfidenceMainPrompt
-        => string.Equals(Kind, "main-user-prompt", StringComparison.Ordinal);
+    public bool IsHighConfidenceMainPrompt =>
+        string.Equals(Kind, "main-user-prompt", StringComparison.Ordinal);
 }
