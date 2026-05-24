@@ -792,7 +792,7 @@ internal sealed class AppCommandService(
                 status = ChapterPlanStatus.Changed;
             }
             else if (cachedProbe.CatalogAccessState != chapter.CatalogAccessState
-                && !CanIgnoreCatalogAccessStateMismatchForSameUserPrivateVipFullCache(
+                && !CanIgnoreCatalogAccessStateMismatchForReusableVipFullCache(
                     chapter,
                     cachedProbe,
                     validatedLoginState))
@@ -956,33 +956,28 @@ internal sealed class AppCommandService(
             return false;
         }
 
-        if (vipFullContentProvenance == VipFullContentCacheProvenance.ValidatedUser)
+        return vipFullContentProvenance switch
         {
-            return string.Equals(
-                visibleToUserName,
-                userName,
-                StringComparison.Ordinal);
-        }
-
-        return string.Equals(
-            LoginState.NormalizeUserName(visibleToUserName),
-            userName,
-            StringComparison.Ordinal);
+            null or VipFullContentCacheProvenance.ValidatedUser
+                => IsSameNormalizedUser(visibleToUserName, userName),
+            _ => false,
+        };
     }
 
-    private static bool CanIgnoreCatalogAccessStateMismatchForSameUserPrivateVipFullCache(
+    private static bool IsSameNormalizedUser(string? left, string right)
+        => string.Equals(
+            LoginState.NormalizeUserName(left),
+            LoginState.NormalizeUserName(right),
+            StringComparison.Ordinal);
+
+    private static bool CanIgnoreCatalogAccessStateMismatchForReusableVipFullCache(
         ChapterDescriptor chapter,
         ChapterCacheProbe cachedProbe,
         LoginState? validatedLoginState)
-        => chapter is
-            {
-                IsVip: true,
-                CatalogAccessState: CatalogChapterAccessState.Accessible,
-            }
+        => chapter.IsVip
             && cachedProbe is
             {
                 IsPreview: false,
-                VipFullContentProvenance: not VipFullContentCacheProvenance.Public,
             }
             && CanReuseCachedChapter(
                 chapter,
