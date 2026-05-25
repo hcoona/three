@@ -213,8 +213,9 @@ missing or invalid when the agent tries to stop.
 
 The summary still needs correlation data. The documented `Stop` blocking path is
 a platform capability, but the current default design supersedes H-008's
-blocking direction and instead sends a non-blocking degraded fallback
-notification when the summary is missing or malformed.
+blocking direction: pending handoffs may defer notification while unresolved,
+and the `Stop` hook sends a non-blocking degraded fallback only when no pending
+handoff can satisfy the `Stop`.
 
 ### Practical implication
 
@@ -316,8 +317,9 @@ future strict/debug mode.
 
 Use hook-emitted notification assignments and explicit runtime state to
 correlate summaries. At `Stop`, validate the assigned summary if present; send a
-normal notification when valid, or a degraded fallback notification when missing
-or invalid.
+normal notification when valid. Pending assigned summaries may defer without a
+degraded fallback; send degraded fallback only when no pending handoff can
+satisfy the `Stop`.
 
 #### Pros
 
@@ -343,5 +345,7 @@ Based on the official docs surveyed here:
 - maintain per-turn summary state in workspace runtime files;
 - validate that file at `Stop` time;
 - send a normal notification when the summary is valid;
-- send a non-blocking degraded fallback notification when it is missing or invalid;
+- defer when a pending handoff may still satisfy the `Stop`, otherwise send a
+  non-blocking degraded fallback notification when the summary is missing or
+  invalid;
 - reserve `decision: "block"` only for future strict/debug recovery scope, not default behavior.

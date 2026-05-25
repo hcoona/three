@@ -143,8 +143,8 @@ These decisions were explicitly confirmed after the initial research pass and sh
 - User-level lifecycle support is required for interactive install, unattended install, repeated install, upgrade, uninstall, health diagnostics, test notifications, and configuration diagnostics.
 - The default summary path should avoid a separately installed
   custom-instruction artifact and should use hook-emitted notification
-  assignments plus non-blocking degraded fallback notifications when summary
-  content is missing or invalid.
+  assignments. Pending assigned summaries may defer without degraded fallback;
+  fallback applies only when no pending handoff can satisfy the `Stop`.
 - Stop-blocking summary recovery from H-008 is superseded for default behavior;
   it may only be considered as future strict/debug scope and is not implemented
   by the current redesign.
