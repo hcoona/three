@@ -1,0 +1,78 @@
+name: Renovate
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+    - cron: '0 3 * * 2'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: renovate-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    name: Run Renovate
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      RENOVATE_VERSION: 43.150.0
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Set up mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          experimental: true
+          install: false
+
+      - name: Install post-upgrade tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          mise install pkl powershell
+          mise reshim
+
+          command -v mise
+          command -v pkl
+          command -v pwsh
+          command -v dotnet
+          command -v node
+          pkl --version
+          pwsh -NoLogo -NoProfile -NonInteractive -Command "\$PSVersionTable.PSVersion.ToString()"
+          dotnet --version
+
+      - name: Install Renovate CLI
+        run: npm install --global "renovate@${RENOVATE_VERSION}"
+
+      - name: Run Renovate
+        env:
+          RENOVATE_CONFIG_FILE: .github/renovate/global.cjs
+          # RENOVATE_TOKEN may create dependency branches and PRs, but must not bypass branch protection.
+          # Renovate automerge is disabled in renovate.json.
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+        run: renovate
