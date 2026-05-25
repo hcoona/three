@@ -34,7 +34,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
 $dotNetInstallScriptUri =
-    [uri]"https://raw.githubusercontent.com/dotnet/install-scripts/5147e32300a8e908f5d737c8cff63a76b4b63531/src/dotnet-install.ps1"
+[uri]"https://raw.githubusercontent.com/dotnet/install-scripts/5147e32300a8e908f5d737c8cff63a76b4b63531/src/dotnet-install.ps1"
 $dotNetInstallScriptSha256 = "BB1CE92F4397E24D4736A4658B9728FB8F9DB64A0D3F8E636BA408A866A6661D"
 
 function Test-RequiredCommand {
@@ -225,6 +225,7 @@ function Get-MsBuildSdkVersionMap {
 }
 
 function Update-MiseLockDotNetSdkVersion {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
@@ -239,12 +240,12 @@ function Update-MiseLockDotNetSdkVersion {
 
     $content = Get-Content -Path $Path -Raw
     $blockRegex = [regex]::new('(?ms)(^\[\[tools\.dotnet\]\]\r?\n.*?)(?=^\[\[|\z)')
-    $matches = $blockRegex.Matches($content)
-    if ($matches.Count -ne 1) {
-        throw "Expected exactly one [[tools.dotnet]] block in '$Path', found $($matches.Count)."
+    $dotNetToolBlockMatches = $blockRegex.Matches($content)
+    if ($dotNetToolBlockMatches.Count -ne 1) {
+        throw "Expected exactly one [[tools.dotnet]] block in '$Path', found $($dotNetToolBlockMatches.Count)."
     }
 
-    $block = $matches[0].Value
+    $block = $dotNetToolBlockMatches[0].Value
     $backendMatches = [regex]::Matches($block, '(?m)^\s*backend\s*=\s*"([^"]+)"\s*$')
     if ($backendMatches.Count -ne 1) {
         throw "mise.lock [[tools.dotnet]] must contain exactly one backend entry; found $($backendMatches.Count)."
@@ -260,24 +261,21 @@ function Update-MiseLockDotNetSdkVersion {
         throw "mise.lock [[tools.dotnet]] must contain exactly one version entry; found $($versionMatches.Count)."
     }
 
-    $updatedBlock = $versionRegex.Replace(
-        $block,
-        {
-            param($match)
-            return $match.Groups[1].Value + $Version + $match.Groups[3].Value
-        },
-        1
-    )
-    $updatedContent = $content.Substring(0, $matches[0].Index) + $updatedBlock + $content.Substring($matches[0].Index + $matches[0].Length)
+    $replacementVersion = $Version.Replace('$', '$$')
+    $updatedBlock = $versionRegex.Replace($block, "`${1}$replacementVersion`${3}", 1)
+    $updatedContent = $content.Substring(0, $dotNetToolBlockMatches[0].Index) + $updatedBlock + $content.Substring($dotNetToolBlockMatches[0].Index + $dotNetToolBlockMatches[0].Length)
 
     if (-not $updatedContent.EndsWith("`n")) {
         $updatedContent += "`n"
     }
 
-    Set-Content -Path $Path -Value $updatedContent -NoNewline
+    if ($PSCmdlet.ShouldProcess($Path, "Update .NET SDK version in mise lock file")) {
+        Set-Content -Path $Path -Value $updatedContent -NoNewline
+    }
 }
 
-function Update-GlobalPklMsBuildSdkVersions {
+function Update-GlobalPklMsBuildSdkVersion {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
@@ -295,10 +293,10 @@ function Update-GlobalPklMsBuildSdkVersions {
     foreach ($name in $Versions.Keys) {
         $pattern = '(?m)(\["' + [regex]::Escape($name) + '"\]\s*=\s*")([^"]+)(")'
         $regex = [regex]::new($pattern)
-        $matches = $regex.Matches($content)
+        $sdkEntryMatches = $regex.Matches($content)
 
-        if ($matches.Count -ne 1) {
-            throw "Expected exactly one global.pkl MSBuild SDK entry for '$name', found $($matches.Count)."
+        if ($sdkEntryMatches.Count -ne 1) {
+            throw "Expected exactly one global.pkl MSBuild SDK entry for '$name', found $($sdkEntryMatches.Count)."
         }
 
         $version = $Versions[$name]
@@ -314,13 +312,15 @@ function Update-GlobalPklMsBuildSdkVersions {
         $content += "`n"
     }
 
-    Set-Content -Path $Path -Value $content -NoNewline
+    if ($PSCmdlet.ShouldProcess($Path, "Update MSBuild SDK versions in global.pkl")) {
+        Set-Content -Path $Path -Value $content -NoNewline
+    }
 }
 
 $dotNetSdkVersion = Get-DotNetSdkVersion -Path $GlobalJsonPath
 $msBuildSdkVersions = Get-MsBuildSdkVersionMap -Path $GlobalJsonPath
 Update-MiseLockDotNetSdkVersion -Path $MiseLockPath -Version $dotNetSdkVersion
-Update-GlobalPklMsBuildSdkVersions -Path $GlobalPklPath -Versions $msBuildSdkVersions
+Update-GlobalPklMsBuildSdkVersion -Path $GlobalPklPath -Versions $msBuildSdkVersions
 
 Test-RequiredCommand -Name "mise"
 mise run update-global-json

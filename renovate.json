@@ -20,14 +20,7 @@
   "branchConcurrentLimit": 8,
   "prHourlyLimit": 2,
   "rebaseWhen": "conflicted",
-  "enabledManagers": [
-    "bundler",
-    "github-actions",
-    "mise",
-    "npm",
-    "nuget",
-    "pep621"
-  ],
+  "enabledManagers": ["bundler", "github-actions", "mise", "npm", "nuget", "pep621"],
   "ignorePaths": ["**/node_modules/**", "**/bower_components/**", "**/vendor/**"],
   "lockFileMaintenance": {
     "enabled": true,
@@ -48,23 +41,13 @@
     },
     {
       "description": "Apps and labs may track fresher tested dependency lower bounds.",
-      "matchFileNames": [
-        "src/public/app/**",
-        "src/private/app/**",
-        "src/lab/**"
-      ],
+      "matchFileNames": ["src/public/app/**", "src/private/app/**", "src/lab/**"],
       "rangeStrategy": "replace",
       "automerge": false
     },
     {
       "description": "Repository-level tooling may update lower bounds normally.",
-      "matchFileNames": [
-        "package.json",
-        "pyproject.toml",
-        "global.json",
-        "mise.toml",
-        ".config/dotnet-tools.json"
-      ],
+      "matchFileNames": ["package.json", "pyproject.toml", "global.json", "mise.toml", ".config/dotnet-tools.json"],
       "rangeStrategy": "replace"
     },
     {
@@ -84,12 +67,7 @@
         "commands": [
           "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
         ],
-        "fileFilters": [
-          "mise.lock",
-          "global.pkl",
-          "global.json",
-          "**/packages.lock.json"
-        ],
+        "fileFilters": ["mise.lock", "global.pkl", "global.json", "**/packages.lock.json"],
         "executionMode": "branch"
       },
       "automerge": false
@@ -178,11 +156,7 @@
     {
       "description": "Group TypeScript compiler and Node typing updates.",
       "matchManagers": ["npm"],
-      "matchPackageNames": [
-        "typescript",
-        "@typescript/native-preview",
-        "@types/node"
-      ],
+      "matchPackageNames": ["typescript", "@typescript/native-preview", "@types/node"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "TypeScript and Node typings",
       "postUpdateOptions": ["pnpmDedupe"],
@@ -247,11 +221,7 @@
       "description": "Public Python library runtime minimums should not chase latest lower bounds.",
       "matchManagers": ["pep621"],
       "matchFileNames": ["src/public/lib/**/pyproject.toml"],
-      "matchDepTypes": [
-        "project.dependencies",
-        "project.optional-dependencies",
-        "requires-python"
-      ],
+      "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
       "rangeStrategy": "update-lockfile",
       "dependencyDashboardApproval": true,
       "automerge": false
@@ -259,10 +229,7 @@
     {
       "description": "Review publishable Python build backend minimums separately.",
       "matchManagers": ["pep621"],
-      "matchFileNames": [
-        "src/public/lib/**/pyproject.toml",
-        "src/sample/**/pyproject.toml"
-      ],
+      "matchFileNames": ["src/public/lib/**/pyproject.toml", "src/sample/**/pyproject.toml"],
       "matchDepTypes": ["build-system.requires"],
       "dependencyDashboardApproval": true,
       "groupName": "Python build backend minimums",
@@ -272,14 +239,7 @@
       "description": "Group Python lint, test, build, and type-check tooling from dependency groups.",
       "matchManagers": ["pep621"],
       "matchDepTypes": ["dependency-groups"],
-      "matchPackageNames": [
-        "ruff",
-        "pyrefly",
-        "pytest",
-        "hatch",
-        "hatchling",
-        "datamodel-code-generator"
-      ],
+      "matchPackageNames": ["ruff", "pyrefly", "pytest", "hatch", "hatchling", "datamodel-code-generator"],
       "groupName": "Python dev tooling dependencies",
       "rangeStrategy": "replace",
       "automerge": false
@@ -404,11 +364,7 @@
     {
       "description": "Update Nerdbank.GitVersioning packages and tools together.",
       "matchManagers": ["nuget", "npm"],
-      "matchPackageNames": [
-        "Nerdbank.GitVersioning",
-        "nbgv",
-        "nerdbank-gitversioning"
-      ],
+      "matchPackageNames": ["Nerdbank.GitVersioning", "nbgv", "nerdbank-gitversioning"],
       "groupName": "Nerdbank.GitVersioning",
       "automerge": false
     },
