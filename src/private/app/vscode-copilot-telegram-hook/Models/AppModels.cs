@@ -186,6 +186,9 @@ internal sealed class NotificationTurn
     [JsonPropertyName("status")]
     public string Status { get; set; } = "open";
 
+    [JsonPropertyName("summary_placeholder_created_at")]
+    public string? SummaryPlaceholderCreatedAt { get; set; }
+
     [JsonPropertyName("transcript_path")]
     public string? TranscriptPath { get; set; }
 }
@@ -205,6 +208,9 @@ internal sealed class NotificationSummary
 
     [JsonPropertyName("updated_at")]
     public string? UpdatedAt { get; set; }
+
+    [JsonPropertyName("placeholder_created_at")]
+    public string? PlaceholderCreatedAt { get; set; }
 
     [JsonPropertyName("status")]
     public string? Status { get; set; }
@@ -246,6 +252,9 @@ internal sealed class StopObservation
 
     [JsonPropertyName("summary_valid")]
     public bool SummaryValid { get; set; }
+
+    [JsonPropertyName("summary_pending_handoff")]
+    public bool SummaryPendingHandoff { get; set; }
 
     [JsonPropertyName("summary_failure_reason")]
     public string? SummaryFailureReason { get; set; }

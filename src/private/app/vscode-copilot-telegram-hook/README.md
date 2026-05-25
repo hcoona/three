@@ -157,8 +157,9 @@ supports Unix file modes:
 
 - Hook logs for valid session-scoped events:
   `.copilot/notifications/sessions/<safe-session-id>/hook.log`
-- Fallback hook log for malformed hook payloads before a session context is
-  usable: `.copilot/hook.log`
+- Fallback hook log for valid payloads that provide `cwd` but lack usable
+  session context: `.copilot/hook.log`; fully unparsable JSON only emits
+  stderr because the workspace log scope cannot be opened.
 - User command log for `user install`, `user uninstall`, `user health`,
   `user diagnose`, `user secret`, and `user test-notification`:
   `<install-root>/user-command.log`
@@ -220,14 +221,17 @@ mechanism for the managed user-level installation.
 
 For summary generation, the hook emits a Notification Assignment for
 high-confidence main user prompts. Only that assignment authorizes writing a
-summary, and the agent must write only the exact per-turn `summary.json` path
-with matching `session_id`, `notification_turn_id`, `notification_nonce`,
-`updated_at`, and non-empty `summary`; write the summary in Chinese when
+summary, and the agent must write only the exact per-turn `summary.json` path.
+The `session_id`, `notification_turn_id`, and `notification_nonce` fields must
+match the assignment; `updated_at` must be a valid UTC timestamp; and `summary`
+must be non-empty for completed delivery. Write the summary in Chinese when
 practical, but a usable non-Chinese summary is allowed. The default `Stop`
-behavior never blocks:
-valid summaries are sent normally, while missing, stale, ambiguous, or invalid
-handoffs produce a degraded fallback notification with durable duplicate
-suppression.
+behavior never blocks. Valid summaries are sent normally. Truly pending
+handoffs, including missing or unreadable `summary.json`, invalid JSON, JSON
+`null`, or an exact pending summary for the same Stop, may defer notification
+without fallback indefinitely while unresolved. Non-pending invalid, stale, or
+ambiguous handoffs produce a degraded fallback notification with durable
+duplicate suppression when no pending handoff can satisfy that Stop.
 
 ## Build and validation
 
