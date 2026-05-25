@@ -10,7 +10,8 @@ namespace Hcoona.QidianNovelDownloader.Tests;
 
 public sealed class CliFactoryTests
 {
-    private static readonly string[] DownloadWithConfigWithoutValueArgs = ["download", "--config", "--dry-run"];
+    private static readonly string[] DownloadWithConfigWithoutValueArgs =
+        ["download", "--config", "--dry-run"];
     private static readonly string[] LoginWithEmptyConfigValueArgs = ["--config=", "login"];
 
     [Fact]
