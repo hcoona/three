@@ -1,0 +1,441 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":separateMultipleMajorReleases",
+    "group:monorepos"
+  ],
+  "timezone": "Etc/UTC",
+  "schedule": ["before 6am on monday", "before 6am on tuesday"],
+  "labels": ["dependencies"],
+  "configMigration": true,
+  "dependencyDashboard": true,
+  "automerge": false,
+  "platformAutomerge": false,
+  "minimumReleaseAge": "3 days",
+  "prConcurrentLimit": 8,
+  "branchConcurrentLimit": 8,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "conflicted",
+  "enabledManagers": ["bundler", "github-actions", "mise", "npm", "nuget", "pep621"],
+  "ignorePaths": ["**/node_modules/**", "**/bower_components/**", "**/vendor/**"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on tuesday"],
+    "automerge": false,
+    "commitMessageAction": "refresh"
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  },
+  "packageRules": [
+    {
+      "description": "Require dashboard approval for major updates.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "Apps and labs may track fresher tested dependency lower bounds.",
+      "matchFileNames": ["src/public/app/**", "src/private/app/**", "src/lab/**"],
+      "rangeStrategy": "replace",
+      "automerge": false
+    },
+    {
+      "description": "Repository-level tooling may update lower bounds normally.",
+      "matchFileNames": ["package.json", "pyproject.toml", "global.json", "mise.toml", ".config/dotnet-tools.json"],
+      "rangeStrategy": "replace"
+    },
+    {
+      "description": "JavaScript development dependencies may update lower bounds normally.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "rangeStrategy": "replace",
+      "automerge": false
+    },
+    {
+      "description": "Use Renovate's native NuGet global.json support, then sync generated sources and .NET lockfiles.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["global.json"],
+      "matchDepTypes": ["dotnet-sdk", "msbuild-sdk"],
+      "rangeStrategy": "replace",
+      "postUpgradeTasks": {
+        "commands": [
+          "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
+        ],
+        "fileFilters": ["mise.lock", "global.pkl", "global.json", "**/packages.lock.json"],
+        "executionMode": "branch"
+      },
+      "automerge": false
+    },
+    {
+      "description": "Group GitHub Actions setup and CI tooling updates.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": [
+        "actions/checkout",
+        "actions/setup-dotnet",
+        "actions/setup-go",
+        "actions/setup-java",
+        "actions/setup-node",
+        "actions/setup-python",
+        "ruby/setup-ruby",
+        "pnpm/action-setup",
+        "jdx/mise-action",
+        "astral-sh/setup-uv",
+        "pkl-community/setup-pkl",
+        "dcarbone/install-jq-action",
+        "dorny/paths-filter"
+      ],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "GitHub Actions setup and CI tooling",
+      "automerge": false
+    },
+    {
+      "description": "Group GitHub Actions release, publishing, attestation, and security-sensitive updates.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": [
+        "actions/upload-artifact",
+        "actions/download-artifact",
+        "actions/attest-build-provenance",
+        "github/codeql-action",
+        "pypa/gh-action-pypi-publish",
+        "rubygems/configure-rubygems-credentials"
+      ],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "GitHub Actions release and security tooling",
+      "automerge": false
+    },
+    {
+      "description": "Pin third-party and security-sensitive GitHub Actions to immutable commits.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": [
+        "ruby/setup-ruby",
+        "pnpm/action-setup",
+        "jdx/mise-action",
+        "astral-sh/setup-uv",
+        "pkl-community/setup-pkl",
+        "dcarbone/install-jq-action",
+        "dorny/paths-filter",
+        "github/codeql-action",
+        "pypa/gh-action-pypi-publish",
+        "rubygems/configure-rubygems-credentials"
+      ],
+      "pinDigests": true,
+      "automerge": false
+    },
+    {
+      "description": "Group low-risk root JS formatter patch updates without automerge.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["package.json"],
+      "matchDepTypes": ["devDependencies"],
+      "matchPackageNames": ["@biomejs/biome", "markdownlint-cli2", "prettier"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": false
+    },
+    {
+      "description": "Group root repository JS tooling.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["package.json"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "repo JS tooling",
+      "postUpdateOptions": ["pnpmDedupe"]
+    },
+    {
+      "description": "Group Commitlint packages.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["/^@commitlint\\//"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Commitlint",
+      "postUpdateOptions": ["pnpmDedupe"]
+    },
+    {
+      "description": "Group TypeScript compiler and Node typing updates.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["typescript", "@typescript/native-preview", "@types/node"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "TypeScript and Node typings",
+      "postUpdateOptions": ["pnpmDedupe"],
+      "automerge": false
+    },
+    {
+      "description": "Group WXT browser-extension tooling.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["wxt", "@wxt-dev/auto-icons"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "WXT browser extension tooling",
+      "postUpdateOptions": ["pnpmDedupe"],
+      "automerge": false
+    },
+    {
+      "description": "Group JS build and test tooling.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["tsdown", "vitest", "@vitest/coverage-v8"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "JS build and test tooling",
+      "postUpdateOptions": ["pnpmDedupe"],
+      "automerge": false
+    },
+    {
+      "description": "Public npm library runtime and peer ranges require compatibility review.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["src/public/lib/**/package.json"],
+      "matchDepTypes": ["dependencies", "optionalDependencies", "peerDependencies"],
+      "groupName": "public npm library runtime compatibility",
+      "rangeStrategy": "update-lockfile",
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "Group Hexo development tooling separately from public runtime ranges.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["src/public/lib/hexo-renderer-asciidoc/package.json"],
+      "matchDepTypes": ["devDependencies"],
+      "matchPackageNames": ["hexo", "/^hexo-/"],
+      "groupName": "Hexo development tooling",
+      "rangeStrategy": "replace",
+      "postUpdateOptions": ["pnpmDedupe"],
+      "automerge": false
+    },
+    {
+      "description": "Group Hexo demo ecosystem updates separately from public runtime ranges.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["src/public/lib/hexo-renderer-asciidoc/examples/**/package.json"],
+      "matchPackageNames": ["hexo", "/^hexo-/"],
+      "groupName": "Hexo demo ecosystem",
+      "rangeStrategy": "replace",
+      "postUpdateOptions": ["pnpmDedupe"],
+      "automerge": false
+    },
+    {
+      "description": "Do not resolve the internal uv workspace package from PyPI.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["nbgv-python"],
+      "enabled": false
+    },
+    {
+      "description": "Public Python library runtime minimums should not chase latest lower bounds.",
+      "matchManagers": ["pep621"],
+      "matchFileNames": ["src/public/lib/**/pyproject.toml"],
+      "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
+      "rangeStrategy": "update-lockfile",
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "Review publishable Python build backend minimums separately.",
+      "matchManagers": ["pep621"],
+      "matchFileNames": ["src/public/lib/**/pyproject.toml", "src/sample/**/pyproject.toml"],
+      "matchDepTypes": ["build-system.requires"],
+      "dependencyDashboardApproval": true,
+      "groupName": "Python build backend minimums",
+      "automerge": false
+    },
+    {
+      "description": "Group Python lint, test, build, and type-check tooling from dependency groups.",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["dependency-groups"],
+      "matchPackageNames": ["ruff", "pyrefly", "pytest", "hatch", "hatchling", "datamodel-code-generator"],
+      "groupName": "Python dev tooling dependencies",
+      "rangeStrategy": "replace",
+      "automerge": false
+    },
+    {
+      "description": "Group Azure Python SDK updates.",
+      "matchManagers": ["pep621"],
+      "matchFileNames": [
+        "src/public/app/**/pyproject.toml",
+        "src/private/app/**/pyproject.toml",
+        "src/lab/**/pyproject.toml"
+      ],
+      "matchPackageNames": ["/^azure-/"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Azure Python SDK",
+      "automerge": false
+    },
+    {
+      "description": "Group OpenAI Python application stack updates.",
+      "matchManagers": ["pep621"],
+      "matchFileNames": [
+        "src/public/app/**/pyproject.toml",
+        "src/private/app/**/pyproject.toml",
+        "src/lab/**/pyproject.toml"
+      ],
+      "matchPackageNames": ["openai", "openai-agents", "tiktoken", "pydantic"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "OpenAI Python stack",
+      "automerge": false
+    },
+    {
+      "description": "Group MCP Python runtime updates.",
+      "matchManagers": ["pep621"],
+      "matchFileNames": [
+        "src/public/app/**/pyproject.toml",
+        "src/private/app/**/pyproject.toml",
+        "src/lab/**/pyproject.toml"
+      ],
+      "matchPackageNames": ["fastmcp"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "FastMCP Python",
+      "automerge": false
+    },
+    {
+      "description": "Group Python data application runtime updates.",
+      "matchManagers": ["pep621"],
+      "matchFileNames": [
+        "src/public/app/**/pyproject.toml",
+        "src/private/app/**/pyproject.toml",
+        "src/lab/**/pyproject.toml"
+      ],
+      "matchPackageNames": ["streamlit", "ortools", "aiohttp"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Python data application runtime",
+      "automerge": false
+    },
+    {
+      "description": "Group public Ruby runtime lockfile updates without changing compatibility ranges.",
+      "matchManagers": ["bundler"],
+      "matchFileNames": [
+        "src/public/lib/asciidoctor-latexmath/Gemfile",
+        "src/public/lib/asciidoctor-latexmath/asciidoctor-latexmath.gemspec",
+        "src/public/lib/hexo-renderer-asciidoc/Gemfile"
+      ],
+      "matchPackageNames": ["asciidoctor"],
+      "groupName": "Ruby runtime dependencies",
+      "rangeStrategy": "update-lockfile",
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "Group Ruby development and test tooling updates.",
+      "matchManagers": ["bundler"],
+      "matchPackageNames": ["rake", "rspec", "aruba", "standard"],
+      "groupName": "Ruby development dependencies",
+      "rangeStrategy": "replace",
+      "automerge": false
+    },
+    {
+      "description": "Group Microsoft.Extensions non-major updates.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["/^Microsoft\\.Extensions\\./"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Microsoft.Extensions packages"
+    },
+    {
+      "description": "Group Semantic Kernel non-major updates.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["/^Microsoft\\.SemanticKernel/"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Microsoft Semantic Kernel packages"
+    },
+    {
+      "description": "Group .NET test stack non-major updates.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": [
+        "/^Microsoft\\.Testing\\./",
+        "/^MSTest\\./",
+        "coverlet.collector",
+        "Microsoft.NET.Test.Sdk",
+        "xunit",
+        "xunit.abstractions",
+        "xunit.runner.visualstudio",
+        "xunit.v3"
+      ],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": ".NET test stack"
+    },
+    {
+      "description": "Group MSBuild and repository build tooling.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": [
+        "/^Microsoft\\.Build\\./",
+        "DotNet.ReproducibleBuilds",
+        "DotNet.ReproducibleBuilds.Isolated",
+        "Microsoft.SourceLink.GitHub",
+        "Nerdbank.GitVersioning"
+      ],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "MSBuild and repository build tooling"
+    },
+    {
+      "description": "Update Nerdbank.GitVersioning packages and tools together.",
+      "matchManagers": ["nuget", "npm"],
+      "matchPackageNames": ["Nerdbank.GitVersioning", "nbgv", "nerdbank-gitversioning"],
+      "groupName": "Nerdbank.GitVersioning",
+      "automerge": false
+    },
+    {
+      "description": "Public NuGet library dependency minimums require manual compatibility approval.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "dependencyDashboardApproval": true,
+      "groupName": "public NuGet library minimum dependency versions",
+      "automerge": false
+    },
+    {
+      "description": "Root NuGet versions used as public library minimums require manual compatibility approval.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["Directory.Packages.props"],
+      "matchPackageNames": ["System.Net.Http", "System.Text.Json"],
+      "dependencyDashboardApproval": true,
+      "groupName": "public NuGet library minimum dependency versions",
+      "automerge": false
+    },
+    {
+      "description": "Group Pkl generator mise updates separately.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["pkl"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "mise Pkl generator",
+      "automerge": false
+    },
+    {
+      "description": "Group language runtime mise updates.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["go", "java", "node", "powershell", "python", "ruby"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "mise language runtimes",
+      "automerge": false
+    },
+    {
+      "description": "Group package manager mise updates.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["pnpm", "uv"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "mise package managers",
+      "automerge": false
+    },
+    {
+      "description": "Group repository utility mise updates.",
+      "matchManagers": ["mise"],
+      "matchDepNames": [
+        "hk",
+        "pipx:prek",
+        "go:github.com/B1NARY-GR0UP/nwa",
+        "go:github.com/editorconfig-checker/editorconfig-checker/v3/cmd/editorconfig-checker",
+        "taplo",
+        "typos",
+        "go:github.com/rhysd/actionlint/cmd/actionlint",
+        "github:koalaman/shellcheck",
+        "go:mvdan.cc/sh/v3/cmd/shfmt",
+        "github:hadolint/hadolint",
+        "dotenv-linter",
+        "fd",
+        "ripgrep",
+        "github-cli"
+      ],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "mise repository tools",
+      "automerge": false
+    },
+    {
+      "description": "Do not automerge GitHub Actions, Python, Ruby, NuGet, or mise updates by default.",
+      "matchManagers": ["github-actions", "pep621", "bundler", "nuget", "mise"],
+      "automerge": false
+    }
+  ]
+}

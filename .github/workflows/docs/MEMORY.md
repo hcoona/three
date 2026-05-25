@@ -2,13 +2,14 @@
 
 ## Current repository reality
 
-- `AGENTS.md` says the repository has not yet completed the per-project root migration under `src/`.
-- The workflow design can describe the target release model now, but implementation must wait until that migration exists.
+- Active projects now follow the canonical monorepo roots under `src/`, `src/lab/`, and `tests/`.
+- The former `OneDotNet/` subtree has been migrated into those canonical roots.
+- Release pipelines for each project are not yet set up.
 
 ## Current design decisions to preserve
 
-- Keep externally exposed workflows exactly `ci.yml`, `buddy.yml`, and `official.yml`.
-- Do not add extra triggered top-level workflow files for readiness, drift, governance, or health monitoring.
+- Keep release and validation entry workflows exactly `ci.yml`, `buddy.yml`, and `official.yml`.
+- Do not add extra triggered top-level workflow files for readiness, drift, governance, health monitoring, or release authority. Scheduled dependency-maintenance workflows are allowed only without release authority and with workflow-level `permissions: {}` plus job-level least privilege. Dependency-maintenance tokens may create dependency branches and pull requests, but automerge must stay disabled unless a reviewed token contract prevents protected-branch and release-ref mutation or bypass.
 - Keep buddy publish authorization in direct jobs, not in same-repository reusable publish workflows.
 - Keep official publish authorization in direct `official.yml` jobs so OIDC-backed trusted publishing sees `.github/workflows/official.yml` as the workflow identity.
 - Use `github:release` as the GitHub Release target.
@@ -493,7 +494,9 @@
 
 - Current repository evidence still supports the NuGet split recorded above: NuGet.org trusted publishing exists, but this repository does not yet carry one approved closed audience value that resolves the `nuget` versus `https://www.nuget.org` conflict. Treating `nuget:official` as blocked pending provider review is therefore safer than pretending the audience question is already closed.
 - Azure Blob Storage remains the currently reviewed backend fit in repository memory for the control-plane suspension record because the design needs primary-endpoint strong consistency plus optimistic-concurrency writes on the current record.
-- GitHub Actions `pull_request_target` remains a metadata-only exception path in the design; the current checked-in `dependabot-auto-merge.yml` uses `pull_request`, not `pull_request_target`, and does not check out PR code.
+- GitHub Actions `pull_request_target` remains a metadata-only exception path
+  for release authorization. Dependency maintenance is handled by Renovate
+  configuration rather than a privileged repository-maintenance workflow.
 - The design’s external monitor already polls on a bounded cadence (`at least every 5 minutes` for active release-state monitoring), so any approval-timeout value equal to the baseline wait timer would leave no guaranteed operator window beyond that poll granularity.
 
 ### ASSUMPTION / UNCERTAINTY
