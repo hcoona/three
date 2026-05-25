@@ -84,10 +84,23 @@ jobs:
       - name: Install Renovate CLI
         run: npm install --global "renovate@${RENOVATE_VERSION}"
 
+      - name: Create Renovate GitHub App token
+        id: renovate-app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.SHUAIZHANG_RENOVATE_APP_ID }}
+          private-key: ${{ secrets.SHUAIZHANG_RENOVATE_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-workflows: write
+
       - name: Run Renovate
         env:
           RENOVATE_CONFIG_FILE: .github/renovate/global.cjs
-          # RENOVATE_TOKEN may create dependency branches and PRs, but must not bypass branch protection.
+          # The Renovate GitHub App may create dependency branches and PRs, but must not bypass branch protection.
           # Renovate automerge is disabled in renovate.json.
-          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          RENOVATE_TOKEN: ${{ steps.renovate-app-token.outputs.token }}
         run: renovate
