@@ -161,7 +161,7 @@ function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
 
     $env:DOTNET_ROOT = $dotNetInstallDir
     $env:DOTNET_MULTILEVEL_LOOKUP = "0"
-    & $dotNetExecutable restore $Project --force-evaluate
+    & $dotNetExecutable restore $Project --force-evaluate -p:RestoreLockedMode=false
     $miseLockContentAfterRestore = Get-Content -Path $MiseLockPath -Raw
     if ($miseLockContentAfterRestore -ne $ExpectedMiseLockContent) {
         throw "dotnet restore changed '$MiseLockPath' after installing exact .NET SDK '$ExpectedSdkVersion'."

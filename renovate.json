@@ -9,7 +9,7 @@
     "group:monorepos"
   ],
   "timezone": "Etc/UTC",
-  "schedule": ["before 6am on monday"],
+  "schedule": ["before 6am on monday", "before 6am on tuesday"],
   "labels": ["dependencies"],
   "configMigration": true,
   "dependencyDashboard": true,
