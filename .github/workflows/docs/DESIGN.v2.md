@@ -2,7 +2,7 @@
 
 This document describes the target GitHub Actions release design for the `three` monorepo.
 
-> **Implementation prerequisite:** `AGENTS.md` says the repository has not yet completed the per-project root migration under `src/`. This document is therefore a target design, not an already-implemented plan.
+> **Current repository layout:** Active projects now use the canonical monorepo roots under `src/`, `src/lab/`, and `tests/`; the former `OneDotNet/` subtree has been migrated into those canonical roots. Release pipelines are still not set up.
 
 > **Scope constraint:** Each releaseable project maps to exactly one language ecosystem and exactly one checked-in `buildKind`. Multi-language or multi-build-kind projects are out of scope.
 
@@ -373,11 +373,10 @@ Because implementation has not started, migration targets the repository’s leg
      - no same-repository reusable workflow still acts as an official publish authorization boundary
      - no extra top-level release entry workflow remains beyond `ci.yml`, `buddy.yml`, and `official.yml`
      - every remaining `pull_request_target` workflow that can affect release
-       authorization is metadata-only; dependency-maintenance automation must
-       not add a privileged repository-maintenance workflow unless it has narrow
-       same-repository bot gates, delayed privileged-token creation,
-       constrained push paths, and no release authority before official
-       enablement
+       authorization is metadata-only; dependency-maintenance automation may
+       exist only as non-release-authority Renovate-style maintenance with
+       least privilege, no release mutation worker calls, and no publish or
+       protected-ref bypass credentials
      - the branch already contains the checked-in bootstrap prerequisites from §1 and §4.1, so migration does not pause halfway through an enablement sequence
 3. **Land one enabling change set per protected branch.**
    - merge the workflow files, checked-in contract, admission-state files, CODEOWNERS/ruleset changes, and documentation updates together
@@ -2321,4 +2320,4 @@ Because this design exposes only `ci.yml`, `buddy.yml`, and `official.yml` as re
 - Recovery resumes only the already-frozen blocked release plan rather than recomputing release identity from a newer branch snapshot. Blocked-entry approval is bound to `(entryVersion, blockedStage, planDigest)`, `pre-provenance` recovery is a last-resort rebuild that stops after creating the first authoritative durable artifact identity for reviewed digest confirmation, `provenance-uncertain` recovery reconciles durable-store facts without publishing, `post-provenance` recovery reuses the persisted immutable artifact bundle, and `post-confirmation` recovery clears only a residual lock after confirming the already-successful publish state.
 - Successful official releases keep a durable canonical release-identity anchor on the annotated official release tag even after the live lock is cleared, and that tag annotation is also the documented read-only fallback release-identity source when durable-store reads are temporarily unavailable during classification or recovery. The durable artifact store still remains the authoritative source for blocked and successful bundles plus per-target confirmation evidence for the documented retention periods.
 - The design includes a reviewed `eng/scripts/release-status` operational helper plus a repository-owned external release monitor for blocked-project diagnostics, durable supersession notes, provider-freshness alerting, and monitor-health enforcement.
-- Implementation must wait until the repository completes the per-project root migration described in `AGENTS.md`.
+- Active projects use the canonical roots under `src/`, `src/lab/`, and `tests/`; the former `OneDotNet/` subtree has been migrated, but release pipelines are still not set up.

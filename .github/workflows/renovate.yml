@@ -42,6 +42,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@e65c17d16e57e481586a6a5a0282698790062f92 # v1
+        with:
+          ruby-version: '3.3'
+
       - name: Set up mise
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
@@ -54,17 +59,32 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          mise install pkl powershell
+          mise install pkl powershell pnpm uv
           mise reshim
+
+          gem install bundler -v 2.4.20 --no-document
+          gem install bundler -v 2.7.2 --no-document
 
           command -v mise
           command -v pkl
           command -v pwsh
           command -v dotnet
           command -v node
+          command -v pnpm
+          command -v uv
+          command -v ruby
+          command -v gem
+          command -v bundle
           pkl --version
           pwsh -NoLogo -NoProfile -NonInteractive -Command "\$PSVersionTable.PSVersion.ToString()"
           dotnet --version
+          node --version
+          pnpm --version
+          uv --version
+          ruby --version
+          gem --version
+          bundle _2.4.20_ --version
+          bundle _2.7.2_ --version
 
       - name: Install Renovate CLI
         run: npm install --global "renovate@${RENOVATE_VERSION}"

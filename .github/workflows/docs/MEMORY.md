@@ -2,8 +2,9 @@
 
 ## Current repository reality
 
-- `AGENTS.md` says the repository has not yet completed the per-project root migration under `src/`.
-- The workflow design can describe the target release model now, but implementation must wait until that migration exists.
+- Active projects now follow the canonical monorepo roots under `src/`, `src/lab/`, and `tests/`.
+- The former `OneDotNet/` subtree has been migrated into those canonical roots.
+- Release pipelines for each project are not yet set up.
 
 ## Current design decisions to preserve
 
