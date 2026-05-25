@@ -20,6 +20,7 @@ jobs:
       contents: read
     env:
       RENOVATE_VERSION: 43.150.0
+      GIT_LFS_SKIP_SMUDGE: 1
     defaults:
       run:
         shell: bash
