@@ -84,50 +84,41 @@ function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
         [string]$DotNetInstallRoot
     )
 
-    $savedEnvironment = @{}
     $sensitiveNames = Get-ChildItem Env: |
         Where-Object { Test-SensitiveRestoreEnvironmentName -Name $_.Name } |
         ForEach-Object { $_.Name }
 
     foreach ($name in $sensitiveNames) {
-        $savedEnvironment[$name] = (Get-Item -Path "Env:$name").Value
         Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
     }
 
-    try {
-        $dotNetInstallDir = Join-Path $DotNetInstallRoot $ExpectedSdkVersion
-        $dotNetExecutableName = if ($IsWindows) { "dotnet.exe" } else { "dotnet" }
-        $dotNetExecutable = Join-Path $dotNetInstallDir $dotNetExecutableName
+    $dotNetInstallDir = Join-Path $DotNetInstallRoot $ExpectedSdkVersion
+    $dotNetExecutableName = if ($IsWindows) { "dotnet.exe" } else { "dotnet" }
+    $dotNetExecutable = Join-Path $dotNetInstallDir $dotNetExecutableName
 
-        if (-not (Test-Path $dotNetExecutable)) {
-            New-Item -ItemType Directory -Path $dotNetInstallDir -Force | Out-Null
-            $dotNetInstallScript = Join-Path $DotNetInstallRoot "dotnet-install.ps1"
-            Invoke-WebRequest -UseBasicParsing -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile $dotNetInstallScript
-            & $dotNetInstallScript -Version $ExpectedSdkVersion -InstallDir $dotNetInstallDir -NoPath
-        }
-
-        $miseLockContentAfterInstall = Get-Content -Path $MiseLockPath -Raw
-        if ($miseLockContentAfterInstall -ne $ExpectedMiseLockContent) {
-            throw "Installing exact .NET SDK '$ExpectedSdkVersion' changed '$MiseLockPath'."
-        }
-
-        $actualSdkVersion = (& $dotNetExecutable --version).Trim()
-        if ($actualSdkVersion -ne $ExpectedSdkVersion) {
-            throw "Expected dotnet SDK version '$ExpectedSdkVersion', but found '$actualSdkVersion'."
-        }
-
-        $env:DOTNET_ROOT = $dotNetInstallDir
-        $env:DOTNET_MULTILEVEL_LOOKUP = "0"
-        & $dotNetExecutable restore $Project --force-evaluate
-        $miseLockContentAfterRestore = Get-Content -Path $MiseLockPath -Raw
-        if ($miseLockContentAfterRestore -ne $ExpectedMiseLockContent) {
-            throw "dotnet restore changed '$MiseLockPath' after installing exact .NET SDK '$ExpectedSdkVersion'."
-        }
+    if (-not (Test-Path $dotNetExecutable)) {
+        New-Item -ItemType Directory -Path $dotNetInstallDir -Force | Out-Null
+        $dotNetInstallScript = Join-Path $DotNetInstallRoot "dotnet-install.ps1"
+        Invoke-WebRequest -UseBasicParsing -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile $dotNetInstallScript
+        & $dotNetInstallScript -Version $ExpectedSdkVersion -InstallDir $dotNetInstallDir -NoPath
     }
-    finally {
-        foreach ($name in $savedEnvironment.Keys) {
-            Set-Item -Path "Env:$name" -Value $savedEnvironment[$name]
-        }
+
+    $miseLockContentAfterInstall = Get-Content -Path $MiseLockPath -Raw
+    if ($miseLockContentAfterInstall -ne $ExpectedMiseLockContent) {
+        throw "Installing exact .NET SDK '$ExpectedSdkVersion' changed '$MiseLockPath'."
+    }
+
+    $actualSdkVersion = (& $dotNetExecutable --version).Trim()
+    if ($actualSdkVersion -ne $ExpectedSdkVersion) {
+        throw "Expected dotnet SDK version '$ExpectedSdkVersion', but found '$actualSdkVersion'."
+    }
+
+    $env:DOTNET_ROOT = $dotNetInstallDir
+    $env:DOTNET_MULTILEVEL_LOOKUP = "0"
+    & $dotNetExecutable restore $Project --force-evaluate
+    $miseLockContentAfterRestore = Get-Content -Path $MiseLockPath -Raw
+    if ($miseLockContentAfterRestore -ne $ExpectedMiseLockContent) {
+        throw "dotnet restore changed '$MiseLockPath' after installing exact .NET SDK '$ExpectedSdkVersion'."
     }
 }
 
