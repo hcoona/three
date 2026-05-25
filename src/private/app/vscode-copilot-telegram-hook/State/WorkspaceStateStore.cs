@@ -952,31 +952,13 @@ internal sealed class WorkspaceStateStore(
     )
     {
         if (
-            await HasDurableDeliveryRecordAsync(
-                workspacePath,
-                turn.SessionId,
-                turn.NotificationTurnId,
-                cancellationToken
-            )
-            || await HasDurableDeliveryRecordAsync(
-                workspacePath,
-                supersedingTurn.SessionId,
-                supersedingTurn.NotificationTurnId,
-                cancellationToken
-            )
-            || await HasFreshDeliveryClaimAsync(
-                workspacePath,
-                turn.SessionId,
-                turn.NotificationTurnId,
-                cancellationToken
-            )
-            || pendingHandoffAmbiguousTiedTurnIds.Contains(turn.NotificationTurnId)
-            || await HasTiedPendingHandoffAmbiguityForTurnAsync(
+            !await ShouldAbandonSupersededTurnAsync(
                 workspacePath,
                 turn,
+                supersedingTurn,
+                pendingHandoffAmbiguousTiedTurnIds,
                 cancellationToken
             )
-            || await HasAssignedSummaryWorthPreservingAsync(workspacePath, turn, cancellationToken)
         )
         {
             return;
@@ -997,31 +979,13 @@ internal sealed class WorkspaceStateStore(
         }
 
         if (
-            await HasDurableDeliveryRecordAsync(
-                workspacePath,
-                turn.SessionId,
-                turn.NotificationTurnId,
-                cancellationToken
-            )
-            || await HasDurableDeliveryRecordAsync(
-                workspacePath,
-                supersedingTurn.SessionId,
-                supersedingTurn.NotificationTurnId,
-                cancellationToken
-            )
-            || await HasFreshDeliveryClaimAsync(
-                workspacePath,
-                turn.SessionId,
-                turn.NotificationTurnId,
-                cancellationToken
-            )
-            || pendingHandoffAmbiguousTiedTurnIds.Contains(turn.NotificationTurnId)
-            || await HasTiedPendingHandoffAmbiguityForTurnAsync(
+            !await ShouldAbandonSupersededTurnAsync(
                 workspacePath,
                 turn,
+                supersedingTurn,
+                pendingHandoffAmbiguousTiedTurnIds,
                 cancellationToken
             )
-            || await HasAssignedSummaryWorthPreservingAsync(workspacePath, turn, cancellationToken)
         )
         {
             return;
@@ -1102,6 +1066,39 @@ internal sealed class WorkspaceStateStore(
             );
         }
     }
+
+    private async Task<bool> ShouldAbandonSupersededTurnAsync(
+        string workspacePath,
+        NotificationTurn turn,
+        NotificationTurn supersedingTurn,
+        HashSet<string> pendingHandoffAmbiguousTiedTurnIds,
+        CancellationToken cancellationToken
+    ) =>
+        !await HasDurableDeliveryRecordAsync(
+            workspacePath,
+            turn.SessionId,
+            turn.NotificationTurnId,
+            cancellationToken
+        )
+        && !await HasDurableDeliveryRecordAsync(
+            workspacePath,
+            supersedingTurn.SessionId,
+            supersedingTurn.NotificationTurnId,
+            cancellationToken
+        )
+        && !await HasFreshDeliveryClaimAsync(
+            workspacePath,
+            turn.SessionId,
+            turn.NotificationTurnId,
+            cancellationToken
+        )
+        && !pendingHandoffAmbiguousTiedTurnIds.Contains(turn.NotificationTurnId)
+        && !await HasTiedPendingHandoffAmbiguityForTurnAsync(
+            workspacePath,
+            turn,
+            cancellationToken
+        )
+        && !await HasAssignedSummaryWorthPreservingAsync(workspacePath, turn, cancellationToken);
 
     private static async Task<HashSet<string>> GetPendingHandoffAmbiguousTiedTurnIdsAsync(
         string workspacePath,
