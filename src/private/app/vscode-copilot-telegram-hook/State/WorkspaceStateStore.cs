@@ -1709,6 +1709,14 @@ internal sealed class WorkspaceStateStore(
         {
             return false;
         }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
 
         if (!TryParseClaimedAt(currentClaimedAt, out DateTimeOffset current))
         {
