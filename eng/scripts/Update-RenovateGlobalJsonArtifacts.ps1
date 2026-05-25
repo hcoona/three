@@ -33,6 +33,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
+$dotNetInstallScriptUri =
+    [uri]"https://raw.githubusercontent.com/dotnet/install-scripts/5147e32300a8e908f5d737c8cff63a76b4b63531/src/dotnet-install.ps1"
+$dotNetInstallScriptSha256 = "BB1CE92F4397E24D4736A4658B9728FB8F9DB64A0D3F8E636BA408A866A6661D"
+
 function Test-RequiredCommand {
     param(
         [Parameter(Mandatory = $true)]
@@ -64,6 +68,45 @@ function Test-SensitiveRestoreEnvironmentName {
     }
 
     return $false
+}
+
+function Test-FileSha256 {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[0-9a-fA-F]{64}$')]
+        [string]$ExpectedSha256
+    )
+
+    $actualSha256 = (Get-FileHash -Path $Path -Algorithm SHA256).Hash
+    if (-not [string]::Equals($actualSha256, $ExpectedSha256, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "SHA256 mismatch for '$Path'. Expected '$ExpectedSha256', but found '$actualSha256'."
+    }
+}
+
+function Save-VerifiedDotNetInstallScript {
+    param(
+        [Parameter(Mandatory = $true)]
+        [uri]$Uri,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedSha256,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Path
+
+    try {
+        Test-FileSha256 -Path $Path -ExpectedSha256 $ExpectedSha256
+    }
+    catch {
+        Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
+        throw
+    }
 }
 
 function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
@@ -99,7 +142,10 @@ function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
     if (-not (Test-Path $dotNetExecutable)) {
         New-Item -ItemType Directory -Path $dotNetInstallDir -Force | Out-Null
         $dotNetInstallScript = Join-Path $DotNetInstallRoot "dotnet-install.ps1"
-        Invoke-WebRequest -UseBasicParsing -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile $dotNetInstallScript
+        Save-VerifiedDotNetInstallScript `
+            -Uri $dotNetInstallScriptUri `
+            -ExpectedSha256 $dotNetInstallScriptSha256 `
+            -Path $dotNetInstallScript
         & $dotNetInstallScript -Version $ExpectedSdkVersion -InstallDir $dotNetInstallDir -NoPath
     }
 
