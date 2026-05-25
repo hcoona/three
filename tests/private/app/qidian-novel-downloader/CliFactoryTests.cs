@@ -10,6 +10,9 @@ namespace Hcoona.QidianNovelDownloader.Tests;
 
 public sealed class CliFactoryTests
 {
+    private static readonly string[] DownloadWithConfigWithoutValueArgs = ["download", "--config", "--dry-run"];
+    private static readonly string[] LoginWithEmptyConfigValueArgs = ["--config=", "login"];
+
     [Fact]
     public void CreateRootCommandAllowsNonExistentConfigOverridePath()
     {
@@ -30,10 +33,11 @@ public sealed class CliFactoryTests
     }
 
     public static TheoryData<string[]> ConfigOptionWithoutUsableValueArgs =>
-    [
-        ["download", "--config", "--dry-run"],
-        ["--config=", "login"],
-    ];
+        new()
+        {
+            DownloadWithConfigWithoutValueArgs,
+            LoginWithEmptyConfigValueArgs,
+        };
 
     [Theory]
     [MemberData(nameof(ConfigOptionWithoutUsableValueArgs))]
