@@ -12,8 +12,9 @@
   "labels": ["dependencies"],
   "configMigration": true,
   "dependencyDashboard": true,
-  "automerge": false,
-  "platformAutomerge": false,
+  "automerge": true,
+  "platformAutomerge": true,
+  "automergeStrategy": "squash",
   "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 8,
   "branchConcurrentLimit": 8,
@@ -24,7 +25,7 @@
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on tuesday"],
-    "automerge": false,
+    "automerge": true,
     "commitMessageAction": "refresh"
   },
   "vulnerabilityAlerts": {
@@ -36,7 +37,7 @@
       "description": "Apps and labs may track fresher tested dependency lower bounds.",
       "matchFileNames": ["src/public/app/**", "src/private/app/**", "src/lab/**"],
       "rangeStrategy": "replace",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Repository-level tooling may update lower bounds normally.",
@@ -48,7 +49,7 @@
       "matchManagers": ["npm"],
       "matchDepTypes": ["devDependencies"],
       "rangeStrategy": "replace",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Do not update generated global.json .NET SDK through NuGet.",
@@ -70,7 +71,7 @@
         "fileFilters": ["mise.lock", "global.pkl", "global.json", "**/packages.lock.json"],
         "executionMode": "branch"
       },
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group GitHub Actions setup and CI tooling updates.",
@@ -92,7 +93,7 @@
       ],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "GitHub Actions setup and CI tooling",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group GitHub Actions release, publishing, attestation, and security-sensitive updates.",
@@ -108,7 +109,7 @@
       ],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "GitHub Actions release and security tooling",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Pin third-party and security-sensitive GitHub Actions to immutable commits.",
@@ -127,16 +128,16 @@
         "rubygems/configure-rubygems-credentials"
       ],
       "pinDigests": true,
-      "automerge": false
+      "automerge": true
     },
     {
-      "description": "Group low-risk root JS formatter patch updates without automerge.",
+      "description": "Group low-risk root JS formatter patch updates.",
       "matchManagers": ["npm"],
       "matchFileNames": ["package.json"],
       "matchDepTypes": ["devDependencies"],
       "matchPackageNames": ["@biomejs/biome", "markdownlint-cli2", "prettier"],
       "matchUpdateTypes": ["patch"],
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group root repository JS tooling.",
@@ -162,7 +163,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "TypeScript and Node typings",
       "postUpdateOptions": ["pnpmDedupe"],
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group WXT browser-extension tooling.",
@@ -171,7 +172,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "WXT browser extension tooling",
       "postUpdateOptions": ["pnpmDedupe"],
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group JS build and test tooling.",
@@ -180,7 +181,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "JS build and test tooling",
       "postUpdateOptions": ["pnpmDedupe"],
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Public npm library runtime and peer ranges require compatibility review.",
@@ -197,7 +198,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "public npm library runtime compatibility",
       "dependencyDashboardApproval": true,
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group Hexo development tooling separately from public runtime ranges.",
@@ -216,7 +217,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Hexo development tooling",
       "postUpdateOptions": ["pnpmDedupe"],
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group Hexo demo ecosystem updates separately from public runtime ranges.",
@@ -233,7 +234,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Hexo demo ecosystem",
       "postUpdateOptions": ["pnpmDedupe"],
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Do not resolve the internal uv workspace package from PyPI.",
@@ -264,7 +265,7 @@
       "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
       "matchUpdateTypes": ["minor", "patch"],
       "dependencyDashboardApproval": true,
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Review publishable Python build backend minimums separately.",
@@ -274,7 +275,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "dependencyDashboardApproval": true,
       "groupName": "Python build backend minimums",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group Python lint, test, build, and type-check tooling from dependency groups.",
@@ -290,7 +291,7 @@
       "matchPackageNames": ["ruff", "pyrefly", "pytest", "hatch", "hatchling", "datamodel-code-generator"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Python dev tooling dependencies",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group Azure Python SDK updates.",
@@ -303,7 +304,7 @@
       "matchPackageNames": ["/^azure-/"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Azure Python SDK",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group OpenAI Python application stack updates.",
@@ -316,7 +317,7 @@
       "matchPackageNames": ["openai", "openai-agents", "tiktoken", "pydantic"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "OpenAI Python stack",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group MCP Python runtime updates.",
@@ -329,7 +330,7 @@
       "matchPackageNames": ["fastmcp"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "FastMCP Python",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group Python data application runtime updates.",
@@ -343,7 +344,7 @@
       "matchDepTypes": ["project.dependencies"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Python data application runtime",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group public Ruby runtime lockfile updates without changing compatibility ranges.",
@@ -368,7 +369,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Ruby runtime dependencies",
       "dependencyDashboardApproval": true,
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group Ruby development and test tooling updates.",
@@ -382,7 +383,7 @@
       "matchPackageNames": ["rake", "rspec", "aruba", "standard"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Ruby development dependencies",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group Microsoft.Extensions non-major updates.",
@@ -433,7 +434,7 @@
       "matchPackageNames": ["Nerdbank.GitVersioning", "nbgv", "nerdbank-gitversioning"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Nerdbank.GitVersioning",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group Windows UI platform package non-major updates.",
@@ -449,7 +450,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "dependencyDashboardApproval": true,
       "groupName": "public NuGet library minimum dependency versions",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Root NuGet versions used as public library minimums require manual compatibility approval.",
@@ -459,7 +460,7 @@
       "matchUpdateTypes": ["minor", "patch"],
       "dependencyDashboardApproval": true,
       "groupName": "public NuGet library minimum dependency versions",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group Pkl generator mise updates separately.",
@@ -467,7 +468,7 @@
       "matchDepNames": ["pkl"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "mise Pkl generator",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group language runtime mise updates.",
@@ -475,7 +476,7 @@
       "matchDepNames": ["core:dotnet", "dotnet", "go", "java", "node", "powershell", "python", "ruby"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "mise language runtimes",
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Regenerate global.json after mise .NET SDK updates.",
@@ -486,7 +487,7 @@
         "fileFilters": ["global.json"],
         "executionMode": "branch"
       },
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group pnpm mise updates and refresh pnpm lockfiles.",
@@ -499,7 +500,7 @@
         "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
         "executionMode": "branch"
       },
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Refresh pnpm lockfiles after major pnpm mise updates.",
@@ -511,7 +512,7 @@
         "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
         "executionMode": "branch"
       },
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group uv mise updates and refresh uv lockfile.",
@@ -524,7 +525,7 @@
         "fileFilters": ["uv.lock"],
         "executionMode": "branch"
       },
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Refresh uv lockfile after major uv mise updates.",
@@ -536,7 +537,7 @@
         "fileFilters": ["uv.lock"],
         "executionMode": "branch"
       },
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Group repository utility mise updates.",
@@ -559,17 +560,11 @@
       ],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "mise repository tools",
-      "automerge": false
+      "automerge": true
     },
     {
-      "description": "Do not automerge GitHub Actions, Python, Ruby, NuGet, or mise updates by default.",
-      "matchManagers": ["github-actions", "pep621", "bundler", "nuget", "mise"],
-      "automerge": false
-    },
-    {
-      "description": "Automerge major updates after CI passes, overriding review-only defaults for major updates only.",
-      "matchUpdateTypes": ["major"],
-      "dependencyDashboardApproval": false,
+      "description": "Automerge all Renovate dependency PRs through GitHub after required checks pass.",
+      "matchManagers": ["bundler", "github-actions", "mise", "npm", "nuget", "pep621"],
       "automerge": true
     }
   ]
