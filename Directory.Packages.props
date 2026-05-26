@@ -4,7 +4,7 @@
   <ItemGroup Label="Direct">
     <PackageVersion Include="CommandLineParser" Version="2.9.1" />
     <PackageVersion Include="coverlet.collector" Version="8.0.1" />
-    <PackageVersion Include="FileSignatures" Version="7.1.0" />
+    <PackageVersion Include="FileSignatures" Version="7.2.1" />
     <PackageVersion Include="Google.OrTools" Version="9.15.6755" />
     <PackageVersion Include="Hjg.Pngcs" Version="1.1.5" />
     <PackageVersion Include="HtmlAgilityPack" Version="1.12.4" />
