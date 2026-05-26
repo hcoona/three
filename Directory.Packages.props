@@ -22,9 +22,9 @@
     <PackageVersion Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.74.0" />
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="17.14.2" />
     <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="1.9.1" />
-    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3351.48" />
-    <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
-    <PackageVersion Include="Microsoft.WindowsAppSDK" Version="1.7.250606001" />
+    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
+    <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
+    <PackageVersion Include="Microsoft.WindowsAppSDK" Version="1.8.260508005" />
     <PackageVersion Include="Nito.Guids" Version="1.1.1" />
     <PackageVersion Include="NuGet.ProjectModel" Version="6.14.3" />
     <PackageVersion Include="RocksDB" Version="9.10.0.55496" />
