@@ -420,6 +420,31 @@ public sealed class QidianBrowserSessionTests
     }
 
     [Fact]
+    public async Task PersistSessionStateAsyncPreservesCloseFailureWhenCleanupAlsoThrows()
+    {
+        FakePage page = new(new LoginState(false, null));
+        InvalidOperationException closeException = new("close failed");
+        InvalidOperationException disposeException = new("dispose failed");
+        bool afterDisposeCalled = false;
+        QidianBrowserSession session = CreateSession(
+            page.Page,
+            playwrightDisposeException: disposeException,
+            closeHandler: () => Task.FromException(closeException),
+            afterDisposeAsync: () =>
+            {
+                afterDisposeCalled = true;
+                throw new InvalidOperationException("after dispose failed");
+            });
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.PersistSessionStateAsync());
+
+        Assert.Equal("Failed to persist browser session state.", exception.Message);
+        Assert.Same(closeException, exception.InnerException);
+        Assert.True(afterDisposeCalled);
+    }
+
+    [Fact]
     public async Task DisposeBestEffortAsyncDisposesPlaywrightAndRunsCleanupWhenContextCloseHangs()
     {
         FakePage page = new(new LoginState(false, null));

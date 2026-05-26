@@ -306,6 +306,37 @@ internal sealed class AppCommandService(
                         return currentLoginState;
                     }
 
+                    CatalogSnapshot? anonymousCatalog = await TryGetFreshCatalogAsync(
+                        target.BookId,
+                        settings,
+                        paths,
+                        CatalogCacheScope.Anonymous,
+                        cancellationToken);
+                    bool isFreshAnonymousCatalog = anonymousCatalog is not null;
+
+                    CatalogSnapshot? catalog = anonymousCatalog;
+                    List<ChapterPlan>? plans = null;
+                    if (isFreshAnonymousCatalog)
+                    {
+                        plans = await BuildChapterPlansAsync(
+                            catalog!,
+                            paths.CacheRoot,
+                            validatedLoginState: null,
+                            cancellationToken);
+                        if (!plans.Any(plan => plan.Chapter.IsVip)
+                            && !RequiresCurrentSessionCatalogEvaluation(
+                                plans,
+                                isFreshAnonymousCatalog))
+                        {
+                            return (
+                                catalog!,
+                                plans,
+                                currentLoginState,
+                                HasAuthenticatedCacheIdentityUncertainty(currentLoginState),
+                                vipFullContentClassificationProbeCompleted);
+                        }
+                    }
+
                     LoginState? knownValidatedLoginState = GetValidatedLoginState(
                         currentLoginState);
                     if (knownValidatedLoginState is not null)
@@ -324,26 +355,23 @@ internal sealed class AppCommandService(
                             vipFullContentClassificationProbeCompleted);
                     }
 
-                    CatalogSnapshot? anonymousCatalog = await TryGetFreshCatalogAsync(
-                        target.BookId,
-                        settings,
-                        paths,
-                        CatalogCacheScope.Anonymous,
-                        cancellationToken);
-                    bool isFreshAnonymousCatalog = anonymousCatalog is not null;
+                    if (catalog is null)
+                    {
+                        catalog = await FetchCatalogAsync(
+                            target.BookId,
+                            paths,
+                            GetBrowserAsync,
+                            CatalogCacheScope.Anonymous,
+                            cancellationToken);
+                        plans = null;
+                    }
 
-                    CatalogSnapshot catalog = anonymousCatalog ?? await FetchCatalogAsync(
-                        target.BookId,
-                        paths,
-                        GetBrowserAsync,
-                        CatalogCacheScope.Anonymous,
-                        cancellationToken);
-
-                    List<ChapterPlan> plans = await BuildChapterPlansAsync(
+                    plans ??= await BuildChapterPlansAsync(
                         catalog,
                         paths.CacheRoot,
                         validatedLoginState: null,
                         cancellationToken);
+
                     if (RequiresCurrentSessionCatalogEvaluation(
                         plans,
                         isFreshAnonymousCatalog))
@@ -1266,7 +1294,7 @@ internal sealed class AppCommandService(
     {
         if (!chapter.IsVip)
         {
-            return true;
+            return !isPreview;
         }
 
         if (validatedLoginState is not { IsValidated: true, UserName: { Length: > 0 } userName })

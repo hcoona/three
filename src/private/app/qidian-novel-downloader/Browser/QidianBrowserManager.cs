@@ -905,7 +905,7 @@ internal sealed class QidianBrowserSession(
                 }
             }
 
-            if (disposeFailure is not null)
+            if (disposeFailure is not null && closeFailure is null)
             {
                 ExceptionDispatchInfo.Capture(disposeFailure).Throw();
             }
