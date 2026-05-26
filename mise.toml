@@ -99,6 +99,14 @@ run = 'pkl eval -f json global.pkl -o global.json'
 sources = ["global.pkl", "mise.lock"]
 outputs = ["global.json"]
 
+[tasks.update-pnpm-lockfiles]
+description = "Refresh tracked pnpm lockfiles"
+run = 'pnpm install --lockfile-only --no-frozen-lockfile && pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --lockfile-only --no-frozen-lockfile'
+
+[tasks.update-uv-lock]
+description = "Refresh root uv lockfile"
+run = 'uv lock'
+
 [tasks.update-pre-commit-config]
 description = "Update .pre-commit-config.yaml from .pre-commit-config.pkl"
 run = 'pkl eval .pre-commit-config.pkl -o .pre-commit-config.yaml'

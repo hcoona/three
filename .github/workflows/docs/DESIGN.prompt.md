@@ -2,13 +2,13 @@ This repository is a polyglot monorepo. I need you to design the best GitHub Act
 
 Before any implementation-oriented design detail: active projects now follow the canonical monorepo roots under `src/`, `src/lab/`, and `tests/`. The former `OneDotNet/` subtree has been migrated into those canonical roots. Release pipelines are still not set up, so the design must preserve release-pipeline implementation prerequisites without treating canonical-root migration as incomplete.
 
-The externally exposed release and validation entry workflows must remain exactly these 3 files:
+The externally exposed release and release-authority validation entry workflows must remain exactly these 3 files:
 
 1. `ci.yml`: triggered on pull requests, used for code-quality validation and test execution.
 2. `buddy.yml`: triggered manually, used for unofficial releases.
 3. `official.yml`: triggered manually, used for official production releases.
 
-Do **not** add extra triggered top-level workflows for readiness checks, health monitors, governance, drift detection, or similar control-plane tasks. If a capability is still needed, keep it inside one of the three entry workflows or make it checked-in repository state. A scheduled or manually dispatched Renovate dependency-maintenance workflow is allowed only when it has no release authority, uses least-privilege permissions, cannot call release mutation workers, and cannot mint publish credentials or protected-ref bypass credentials.
+Do **not** add extra triggered top-level workflows for readiness checks, health monitors, governance, drift detection, or similar control-plane tasks. If a capability is still needed, keep it inside one of the three entry workflows or make it checked-in repository state. `.github/workflows/codeql.yml` is allowed as a triggered top-level non-release security analysis workflow only when it has no release authority, cannot call release mutation workers, and cannot mint publish credentials or protected-ref bypass credentials. A scheduled, manually dispatched, or carefully dashboard-edit-triggered Renovate dependency-maintenance workflow is allowed only when it has no release authority, uses least-privilege permissions, cannot call release mutation workers, and cannot mint publish credentials or protected-ref bypass credentials.
 
 Behind these 3 entry workflows, you should assume a shared execution layer made of reusable build/test workflows plus reviewed local composite actions and scripts. The split axis for build/test reuse is ecosystem and packaging tool, not release channel. Security-sensitive publication may remain direct in the entry workflows instead of going through same-repository reusable publish workflows.
 

@@ -8,8 +8,9 @@
 
 ## Current design decisions to preserve
 
-- Keep release and validation entry workflows exactly `ci.yml`, `buddy.yml`, and `official.yml`.
-- Do not add extra triggered top-level workflow files for readiness, drift, governance, health monitoring, or release authority. Scheduled dependency-maintenance workflows are allowed only without release authority and with workflow-level `permissions: {}` plus job-level least privilege. Dependency-maintenance tokens may create dependency branches and pull requests, but automerge must stay disabled unless a reviewed token contract prevents protected-branch and release-ref mutation or bypass.
+- Keep release and release-authority validation entry workflows exactly `ci.yml`, `buddy.yml`, and `official.yml`.
+- Allow `.github/workflows/codeql.yml` as a triggered top-level non-release security analysis workflow only without release authority, publish credentials, protected-ref bypass credentials, or release mutation worker access.
+- Do not add extra triggered top-level workflow files for readiness, drift, governance, health monitoring, or release authority. Scheduled, manually dispatched, or carefully dashboard-edit-triggered Renovate dependency-maintenance workflows are allowed only without release authority and with workflow-level `permissions: {}` plus job-level least privilege. A dedicated GitHub App token may create dependency branches and pull requests, but must not bypass branch protection or mutate release refs. Platform automerge remains disabled; Renovate automerge is allowed only for configured major updates after required CI and branch protection pass.
 - Keep buddy publish authorization in direct jobs, not in same-repository reusable publish workflows.
 - Keep official publish authorization in direct `official.yml` jobs so OIDC-backed trusted publishing sees `.github/workflows/official.yml` as the workflow identity.
 - Use `github:release` as the GitHub Release target.
@@ -495,8 +496,10 @@
 - Current repository evidence still supports the NuGet split recorded above: NuGet.org trusted publishing exists, but this repository does not yet carry one approved closed audience value that resolves the `nuget` versus `https://www.nuget.org` conflict. Treating `nuget:official` as blocked pending provider review is therefore safer than pretending the audience question is already closed.
 - Azure Blob Storage remains the currently reviewed backend fit in repository memory for the control-plane suspension record because the design needs primary-endpoint strong consistency plus optimistic-concurrency writes on the current record.
 - GitHub Actions `pull_request_target` remains a metadata-only exception path
-  for release authorization. Dependency maintenance is handled by Renovate
-  configuration rather than a privileged repository-maintenance workflow.
+  if used for repository-maintenance work. Dependency maintenance is handled by
+  Renovate configuration plus the allowed self-hosted Renovate workflow, using
+  the GitHub App token without release authority, publish credentials, or
+  protected-ref bypass.
 - The design’s external monitor already polls on a bounded cadence (`at least every 5 minutes` for active release-state monitoring), so any approval-timeout value equal to the baseline wait timer would leave no guaranteed operator window beyond that poll granularity.
 
 ### ASSUMPTION / UNCERTAINTY

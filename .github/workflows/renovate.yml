@@ -2,9 +2,11 @@ name: Renovate
 
 on:
   schedule:
-    - cron: '0 3 * * 1'
-    - cron: '0 3 * * 2'
+    - cron: '0 3 * * *'
   workflow_dispatch:
+  issues:
+    types:
+      - edited
 
 permissions: {}
 
@@ -16,6 +18,19 @@ jobs:
   renovate:
     name: Run Renovate
     runs-on: windows-latest
+    if: >-
+      ${{
+        github.event_name != 'issues' ||
+        (
+          github.event.action == 'edited' &&
+          github.event.issue.title == 'Dependency Dashboard' &&
+          github.event.issue.user.login == 'shuai-s-private-renovate-app[bot]' &&
+          github.event.issue.user.type == 'Bot' &&
+          !github.event.issue.pull_request &&
+          github.event.changes.body &&
+          github.event.sender.type != 'Bot'
+        )
+      }}
     permissions:
       contents: read
     env:
@@ -102,6 +117,6 @@ jobs:
         env:
           RENOVATE_CONFIG_FILE: .github/renovate/global.cjs
           # The Renovate GitHub App may create dependency branches and PRs, but must not bypass branch protection.
-          # Renovate automerge is disabled in renovate.json.
+          # Renovate automerge is controlled by renovate.json and remains subject to CI and branch protection.
           RENOVATE_TOKEN: ${{ steps.renovate-app-token.outputs.token }}
         run: renovate
