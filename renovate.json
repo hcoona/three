@@ -131,6 +131,13 @@
       "automerge": true
     },
     {
+      "description": "Do not apply release-age checks to GitHub Actions digest pinning because Renovate cannot reliably timestamp digest and pinDigest updates.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest", "pin", "pinDigest"],
+      "minimumReleaseAge": null,
+      "automerge": true
+    },
+    {
       "description": "Group low-risk root JS formatter patch updates.",
       "matchManagers": ["npm"],
       "matchFileNames": ["package.json"],
