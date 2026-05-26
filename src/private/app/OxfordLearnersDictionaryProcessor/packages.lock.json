@@ -114,9 +114,9 @@
       },
       "System.IO.Hashing": {
         "type": "Direct",
-        "requested": "[9.0.15, )",
-        "resolved": "9.0.15",
-        "contentHash": "q6Rc5p/Z1HwX1FnJc7U1pjRDHJvcX6tF26+xNjfy4uvRw/mrPBL3DSPlcfsxUVHeH9knVb1Bp8LoAS8lGJn9yg=="
+        "requested": "[9.0.16, )",
+        "resolved": "9.0.16",
+        "contentHash": "SLqrkqD1sXopTXkaC8iECp9I9bOmqUizFTw9B3bOWIIu40k7bbCZJShnHw74yISv0f9Sm7mmhbKpBqfCFIwiJA=="
       },
       "Azure.AI.OpenAI": {
         "type": "Transitive",
