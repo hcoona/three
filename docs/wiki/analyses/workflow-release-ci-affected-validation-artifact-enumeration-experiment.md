@@ -146,44 +146,42 @@ Requirements for CI affected-validation LLD:
   name is acceptable only after an exact-count check proves one live artifact
   instance for the expected physical name.
 
-## Proposed Physical Artifact Name Strategy
+## Current Physical Artifact Name Strategy
 
-Candidate strategy:
+The earlier digest-only candidate name
+`three-ci-validation-{sha256(logical-ref)}` is superseded for current G5 CI
+validation artifacts. Current artifacts use attempt-scoped physical names:
 
 ```text
-three-ci-validation- + lowercase_sha256(logical_artifact_ref)
+three-ci-validation-{run-id}-{run-attempt}-{sha256(logical-ref)}
 ```
 
 Local shape check:
 
 ```text
-three-ci-validation-4e3491070a1b2f9cf9a95c0bc4af00fac21acc94427772719d75a3b8166342af
+three-ci-validation-25887422010-1-4e3491070a1b2f9cf9a95c0bc4af00fac21acc94427772719d75a3b8166342af
 ```
 
-The resulting name length is 84 characters:
+The resulting name is variable-length because `run-id` and `run-attempt` are
+variable-length decimal strings:
 
-- prefix length: 20
-- lowercase SHA-256 hex length: 64
-- total length: 84
+- fixed prefix length including its trailing hyphen: 20;
+- workflow run id length: variable;
+- separator between run id and run attempt: 1;
+- workflow run attempt length: variable;
+- separator before digest: 1;
+- lowercase SHA-256 hex length: 64.
 
 The character set is lowercase ASCII letters, digits, and hyphen. It avoids
 GitHub artifact-name problem characters such as slash, backslash, quote, colon,
-angle brackets, pipe, asterisk, question mark, and newlines, and is well below
-the practical artifact name length limit.
+angle brackets, pipe, asterisk, question mark, and newlines, and remains well
+below the practical artifact name length limit for GitHub Actions run ids and
+attempt numbers.
 
-This strategy satisfies enumeration, download, and conflict-detection needs if
-the logical artifact ref is canonical and includes all dimensions that must not
-collide, especially:
-
-- CI validation contract version;
-- logical artifact role;
-- repository identity if refs may be compared across repositories;
-- workflow run id;
-- workflow run attempt;
-- logical work group or receipt key where applicable.
-
-The digest-only suffix makes the physical name opaque. Therefore, diagnostics
-must log the logical ref, physical name, and artifact ID mapping.
+This strategy keeps content/hash identity deterministic while making the
+current attempt visible to bounded enumeration. Aggregation can ignore prior
+attempt artifacts by physical-name prefix and still fail closed on unknown live
+artifacts in the current attempt namespace.
 
 ## LLD Impact
 

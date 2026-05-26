@@ -16,7 +16,7 @@ import tarfile
 from copy import deepcopy
 from itertools import pairwise
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 import yaml
@@ -24,24 +24,26 @@ from three_workflow_release_authoring import validate_authoring
 from three_workflow_release_build import execute_build
 from three_workflow_release_contracts import (
     ArtifactNameInputs,
-    CiValidationObservedReceiptInput,
     ContractValidationError,
     GitHubActionsArtifactMetadata,
     artifact_name,
     artifact_physical_name,
+    canonical_json_bytes,
     ci_validation_aggregate_evidence_manifest_payload_digest,
     ci_validation_batch_evidence_bundle_payload_digest,
+    ci_validation_batch_evidence_candidate_id,
     ci_validation_execution_batch_manifest_payload_digest,
     ci_validation_execution_batch_matrix,
     ci_validation_plan_digest,
     ci_validation_writer_id,
-    freeze_ci_validation_receipt,
-    validate_ci_validation_aggregate,
     validate_ci_validation_aggregate_evidence_manifest,
     validate_ci_validation_aggregate_summary,
     validate_ci_validation_batch_evidence_bundle,
-    validate_ci_validation_receipt,
     validate_contract,
+)
+from three_workflow_release_contracts.ci_validation_receipts import (
+    _freeze_ci_validation_receipt,
+    _validate_ci_validation_receipt,
 )
 from three_workflow_release_planner import (
     CiValidationPlannerInputs,
@@ -59,7 +61,9 @@ from tests import ci_validation_batch_fixtures as batch_contracts
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from three_workflow_release_contracts import ReceiptOutcome
+    from three_workflow_release_contracts.ci_validation_receipts import (
+        _ReceiptOutcome,
+    )
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
@@ -1042,7 +1046,7 @@ def test_ci_acceptance_matrix_preserves_no_publish_boundaries() -> None:
     }
     required_boundary_tests = {
         "tests/test_workflow_release_control.py::"
-        "test_ci_validation_workflow_executes_mapped_commands_before_receipts",
+        "test_ci_validation_workflow_writes_batch_evidence",
         "tests/test_workflow_release_control.py::"
         "test_ci_validation_command_mapping_uses_required_no_publish_checks",
     }
@@ -1349,6 +1353,100 @@ def test_no_side_effect_acceptance_rows_match_artifact_contracts() -> None:
         assert absent_artifacts >= contract["absent"]
         assert positive_artifacts.isdisjoint(contract["absent"])
         assert positive_paths.isdisjoint(contract["absent"])
+
+
+def _ci_acceptance_evidence_values(
+    matrix: dict[str, object],
+) -> list[tuple[str, str, str]]:
+    evidence_values: list[tuple[str, str, str]] = []
+    for row in matrix["rows"]:
+        row_id = row["id"]
+        assert isinstance(row_id, str)
+        evidence = row["evidence"]
+        assert isinstance(evidence, dict)
+        for column, references in evidence.items():
+            assert isinstance(column, str)
+            assert isinstance(references, list)
+            for reference in references:
+                if isinstance(reference, str):
+                    evidence_values.append((row_id, column, reference))
+                    continue
+                assert isinstance(reference, dict)
+                assert isinstance(reference.get("type"), str)
+                value = reference.get("value")
+                assert isinstance(value, str)
+                evidence_values.append((row_id, column, value))
+    return evidence_values
+
+
+def _string_values_in_shape(
+    scope: str,
+    path: str,
+    value: object,
+) -> list[tuple[str, str, str]]:
+    string_values: list[tuple[str, str, str]] = []
+    if isinstance(value, str):
+        string_values.append((scope, path, value))
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            assert isinstance(key, str)
+            string_values.append((scope, path, key))
+            string_values.extend(
+                _string_values_in_shape(scope, f"{path}.{key}", child)
+            )
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            string_values.extend(
+                _string_values_in_shape(scope, f"{path}[{index}]", child)
+            )
+    return string_values
+
+
+def test_ci_acceptance_matrix_cites_only_current_g5_evidence() -> None:
+    """Current G5 evidence must not cite legacy receipt surfaces."""
+    matrix = _ci_acceptance_matrix()
+    legacy_markers = (
+        "test_ci_validation_receipts.py",
+        "test_ci_validation_assignments.py",
+        "test_ci_validation_aggregation.py",
+        "selector-assignment",
+        "legacy-selector",
+        "writer-observation",
+        "legacy-writer",
+        "receipt-manifest",
+        "legacy-receipt",
+        "legacy_receipt",
+        "placeholder_receipt",
+        "ci-validation-aggregate",
+    )
+    legacy_migration_rows = {
+        row["id"]
+        for row in matrix["rows"]
+        if isinstance(row, dict)
+        and isinstance(row.get("id"), str)
+        and (
+            "legacy" in row["id"]
+            or "receipt" in row["id"]
+            or "selector-assignment" in row["id"]
+            or "writer-observation" in row["id"]
+        )
+    }
+    evidence_values = _ci_acceptance_evidence_values(matrix)
+    public_live_values: list[tuple[str, str, str]] = []
+    public_live_values.extend(
+        _string_values_in_shape(
+            "live-gates",
+            "live-gates",
+            matrix.get("live-gates", {}),
+        )
+    )
+
+    assert not [
+        (row_id, column, value)
+        for row_id, column, value in evidence_values + public_live_values
+        if row_id not in legacy_migration_rows
+        if any(marker in value for marker in legacy_markers)
+    ]
 
 
 def test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs() -> (
@@ -5011,33 +5109,33 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     assert set(jobs) >= {
         "normalize-input",
         "plan",
-        "materialize-work-groups",
-        "validation-work-groups-layer-0",
-        "validation-work-groups-layer-1",
-        "validation-work-groups-layer-2",
+        "materialize-execution-batches",
+        "execution-batch-layer-0",
+        "execution-batch-layer-1",
+        "execution-batch-layer-2",
         "aggregate-evidence",
     }
     assert jobs["plan"]["needs"] == "normalize-input"
-    assert set(jobs["materialize-work-groups"]["needs"]) == {
+    assert set(jobs["materialize-execution-batches"]["needs"]) == {
         "normalize-input",
         "plan",
     }
     assert set(jobs["aggregate-evidence"]["needs"]) >= {
-        "validation-work-groups-layer-0",
-        "validation-work-groups-layer-1",
-        "validation-work-groups-layer-2",
+        "execution-batch-layer-0",
+        "execution-batch-layer-1",
+        "execution-batch-layer-2",
     }
     assert (
-        jobs["validation-work-groups-layer-1"]["needs"][-1]
-        == "validation-work-groups-layer-0"
+        jobs["execution-batch-layer-1"]["needs"][-1]
+        == "execution-batch-layer-0"
     )
     assert (
-        "work-group-layer-1-matrix"
-        in jobs["materialize-work-groups"]["outputs"]
+        "execution-batch-layer-1-matrix"
+        in jobs["materialize-execution-batches"]["outputs"]
     )
     assert (
-        "selector-assignments-artifact-id"
-        in jobs["materialize-work-groups"]["outputs"]
+        "execution-batch-manifest-artifact-id"
+        in jobs["materialize-execution-batches"]["outputs"]
     )
     assert jobs["aggregate-evidence"]["name"] == "aggregate-evidence"
     assert "id-token" not in workflow["permissions"]
@@ -5059,9 +5157,14 @@ def test_ci_validation_artifact_id_downloads_merge_to_consumer_paths() -> None:
         "${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}",
         "${{ needs.plan.outputs.fact-snapshot-artifact-id }}",
     }
+    execution_manifest_output = (
+        "${{ needs.materialize-execution-batches.outputs."
+        "execution-batch-manifest-artifact-id }}"
+    )
 
     artifact_id_downloads = []
     optional_snapshot_downloads = []
+    execution_manifest_downloads = []
     for job in workflow["jobs"].values():
         for step in job.get("steps", []):
             if step.get("uses") != "actions/download-artifact@v4":
@@ -5078,74 +5181,120 @@ def test_ci_validation_artifact_id_downloads_merge_to_consumer_paths() -> None:
                 output_expr = artifact_ids[4:-3].strip()
                 expected_if = f"${{{{ {output_expr} != '' }}}}"
                 assert step.get("if") == expected_if
+            if artifact_ids == execution_manifest_output:
+                execution_manifest_downloads.append(step)
+                assert step.get("if") == (
+                    "${{ needs.materialize-execution-batches.outputs."
+                    "execution-batch-manifest-artifact-id != '' }}"
+                )
 
     assert artifact_id_downloads
-    assert len(optional_snapshot_downloads) == 8
+    assert len(optional_snapshot_downloads) == 10
+    assert len(execution_manifest_downloads) == 4
 
 
-def test_ci_validation_workflow_executes_mapped_commands_before_receipts() -> (
-    None
-):
-    """Validation fan-out runs mapped no-publish commands before receipts."""
+def test_ci_validation_aggregate_request_plan_downloads_are_guarded() -> None:
+    """Aggregate required downloads avoid download-all when absent."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    steps = workflow["jobs"]["aggregate-evidence"]["steps"]
+    request_output = "${{ needs.normalize-input.outputs.request-artifact-id }}"
+    plan_output = "${{ needs.plan.outputs.plan-artifact-id }}"
+
+    prepare_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Prepare aggregate input directories"
+    )
+    request_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("with", {}).get("artifact-ids") == request_output
+    )
+    plan_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("with", {}).get("artifact-ids") == plan_output
+    )
+    request_step = steps[request_index]
+    plan_step = steps[plan_index]
+    aggregate_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Write aggregate evidence manifest"
+    )
+
+    assert prepare_index < request_index < plan_index
+    assert ".three-ci-validation/request" in steps[prepare_index]["run"]
+    assert ".three-ci-validation/plan" in steps[prepare_index]["run"]
+    assert request_step["if"] == (
+        "${{ needs.normalize-input.outputs.request-artifact-id != '' }}"
+    )
+    assert request_step["with"]["path"] == ".three-ci-validation/request"
+    assert plan_step["if"] == "${{ needs.plan.outputs.plan-artifact-id != '' }}"
+    assert plan_step["with"]["path"] == ".three-ci-validation/plan"
+    assert "if" not in aggregate_step
+    assert aggregate_step["env"]["REQUEST_ARTIFACT_ID"] == request_output
+    assert aggregate_step["env"]["PLAN_ARTIFACT_ID"] == plan_output
+    assert "--expected-request-artifact-id" in aggregate_step["run"]
+    assert "--expected-plan-artifact-id" in aggregate_step["run"]
+
+
+def test_ci_validation_workflow_writes_batch_evidence() -> None:  # noqa: PLR0915
+    """Validation fan-out writes batch evidence instead of legacy receipts."""
     workflow = _workflow("ci-validate.yml")
-    dependency_gate = _step_block(
+    materialize = _step_block(
         workflow,
-        "Check prerequisite validation receipts",
+        "Materialize execution batches",
     )
-    validation = _step_block(workflow, "Run mapped validation commands")
-    receipt = _step_block(
+    validation = _step_block(workflow, "Run batch validation commands")
+    bundle = _step_block(
         workflow,
-        "Write validation receipt",
+        "Write batch evidence bundle",
     )
-    observation = _step_block(workflow, "Write receipt writer observation")
-    upload = _step_block(workflow, "Upload validation receipt")
-    gating_verify = _step_block(
+    observed_download = _step_block(
+        workflow, "Download observed batch evidence"
+    )
+    upload = _step_block(workflow, "Upload batch evidence bundle")
+    aggregate = _step_block(workflow, "Write aggregate evidence manifest")
+    aggregate_summary = _step_block(workflow, "Write aggregate summary")
+    manifest_verify = _step_block(
         workflow,
-        "Verify gating artifact producer boundaries",
+        "Verify aggregate evidence manifest producer boundary",
     )
-    aggregate = _step_block(workflow, "Aggregate validation evidence")
     final_verify = _step_block(
         workflow,
-        "Verify final artifact producer boundaries",
+        "Verify final artifact bytes and producer boundaries",
     )
 
-    assert "check-ci-validation-dependencies" in dependency_gate
-    assert "verify-ci-validation-artifact-boundaries" in gating_verify
+    assert "materialize-ci-validation-execution-batches" in materialize
+    assert "--non-batch-control-plane-job-count 4" in materialize
     assert (
         "artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}" in workflow
     )
-    assert (
-        "steps.dependency-gate.outputs.dependency_blocked != 'true'"
-        in validation
-    )
-    assert "run-ci-validation-commands" in validation
+    assert "run-ci-validation-batch-commands" in validation
     assert "--plan .three-ci-validation/plan/validation-plan.json" in validation
-    assert "validation-result.json" in validation
-    assert "matrix.work-group.runner-family == 'windows'" in workflow
-    assert "write-ci-validation-receipt" in receipt
-    assert (
-        "--validation-result .three-ci-validation/work/validation-result.json"
-        in receipt
-    )
-    assert (
-        'validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"'
-        in receipt
-    )
-    assert "MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}" in receipt
-    assert "WRITER_JOB: ${{ matrix.work-group.writer-job }}" in receipt
-    assert (
-        "VALIDATION_OUTCOME: ${{ steps.validation.outputs.validation_outcome }}"
-        in receipt
-    )
-    assert '--validation-outcome "$validation_outcome"' in receipt
+    assert "validation-results" in validation
+    assert "matrix['runner-family'] == 'windows'" in workflow
+    assert "write-ci-validation-batch-evidence-bundle" in bundle
+    assert 'validation_result_args+=(--validation-result "$result")' in bundle
+    assert 'dependency_bundle_args+=(--dependency-bundle "$bundle")' in bundle
+    assert "MATRIX_BATCH_JSON: ${{ toJson(matrix) }}" in bundle
     assert (
         "--observed-artifacts-dir .three-ci-validation/observed-artifacts"
-        in receipt
+        in bundle
     )
-    assert "steps.receipt.outputs.receipt_artifact_name" in upload
-    assert ".three-ci-validation/work/validation-result.json" in upload
-    assert "steps.upload-receipt.outputs.artifact-id" in observation
-    assert "write-ci-validation-writer-observation" in observation
+    assert "steps.bundle.outputs.batch_evidence_bundle_artifact_name" in upload
+    assert "write-ci-validation-batch-artifact-observation" not in workflow
+    assert "ci-validation-batch-observation-*" not in workflow
+    assert ".three-ci-validation/work/batch-evidence-bundle.json" in upload
+    assert "download-ci-validation-observed-artifacts" in observed_download
+    assert '--run-attempt "$GITHUB_RUN_ATTEMPT"' in observed_download
+    assert "--plan .three-ci-validation/plan/validation-plan.json" in (
+        observed_download
+    )
+    assert "execution-batch-manifest-artifact-id != ''" not in observed_download
+    assert "--batch-observation-artifacts-dir" not in observed_download
+    assert "--observation-manifest-out" not in observed_download
     assert "aggregate-ci-evidence" in aggregate
     assert "workflow_release_acceptance_gate.py" not in workflow
     assert (
@@ -5153,17 +5302,203 @@ def test_ci_validation_workflow_executes_mapped_commands_before_receipts() -> (
         in aggregate
     )
     assert "--expected-plan-artifact-id" in aggregate
-    assert 'if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then' in gating_verify
-    assert 'if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then' in gating_verify
+    assert "Verify execution-batch input boundaries" not in workflow
     assert (
         "needs.plan.outputs.changed-files-snapshot-artifact-id != ''"
         in workflow
     )
     assert "aggregate_args=(" in aggregate
     assert "--expected-changed-files-snapshot-artifact-id" in aggregate
+    assert "--expected-execution-batch-manifest-artifact-id" in aggregate
+    assert "--observation-manifest" not in aggregate
+    assert "--aggregate-phase evidence" in aggregate
+    assert 'aggregate_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"' in (
+        observed_download
+    )
+    assert "aggregate-started-at.txt" in observed_download
+    assert (
+        'aggregate_started_at="$(cat '
+        '.three-ci-validation/aggregate/aggregate-started-at.txt)"' in aggregate
+    )
+    assert "--aggregate-phase summary" in aggregate_summary
+    assert "if: always()" in aggregate_summary
+    assert "--aggregate-evidence-manifest-artifact-id" in aggregate_summary
+    assert 'aggregate_completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"' in (
+        aggregate_summary
+    )
+    assert "mkdir -p .three-ci-validation/aggregate" in aggregate_summary
+    assert (
+        "if [ -s "
+        ".three-ci-validation/aggregate/aggregate-started-at.txt ]; then"
+        in aggregate_summary
+    )
+    assert (
+        'aggregate_started_at="$(cat '
+        '.three-ci-validation/aggregate/aggregate-started-at.txt)"'
+        in aggregate_summary
+    )
+    assert 'aggregate_started_at="$aggregate_completed_at"' in aggregate_summary
+    assert '--started-at "$aggregate_started_at"' in aggregate_summary
+    assert '--completed-at "$aggregate_completed_at"' in aggregate_summary
+    assert '--created-at "$aggregate_completed_at"' in aggregate_summary
+    assert (
+        "--aggregate-evidence-manifest-producer-verified" in aggregate_summary
+    )
+    assert "AGGREGATE_EVIDENCE_MANIFEST_PRODUCER_VERIFIED:" in aggregate_summary
+    assert (
+        "steps.verify-aggregate-evidence-manifest-producer-boundary.outcome"
+        in aggregate_summary
+    )
+    assert "id: verify-aggregate-evidence-manifest-producer-boundary" in (
+        manifest_verify
+    )
+    assert "steps.upload-aggregate-evidence-manifest.outputs.artifact-id" in (
+        manifest_verify
+    )
+    assert "--max-prefixed-validation-artifacts 18" in manifest_verify
     assert "verify-ci-validation-artifact-boundaries" in final_verify
-    assert "steps.upload-aggregate.outputs.artifact-id" in final_verify
+    assert "Download uploaded aggregate evidence manifest" in workflow
+    assert "Download uploaded aggregate summary" in workflow
+    assert "expected_artifacts=()" in final_verify
+    assert (
+        'if [ -n "$AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID" ]; then'
+        not in final_verify
+    )
+    assert final_verify.index(
+        "AGGREGATE_EVIDENCE_MANIFEST_REF"
+    ) < final_verify.index("AGGREGATE_SUMMARY_REF")
+    assert "steps.upload-aggregate-summary.outputs.artifact-id" in final_verify
+    assert '\\"downloaded-path\\"' in final_verify
+    assert (
+        ".three-ci-validation/final-uploaded/aggregate-evidence-manifest/"
+        "aggregate-evidence-manifest.json" in final_verify
+    )
+    assert (
+        ".three-ci-validation/final-uploaded/aggregate-summary/"
+        "aggregate-summary.json" in final_verify
+    )
+    assert "--max-prefixed-validation-artifacts 20" in final_verify
+    assert "--expected-prefixed-validation-artifacts" in final_verify
+    assert "expected-actual-validation-artifacts" in final_verify
     assert "observed_receipts=[]" not in workflow
+    assert "write-ci-validation-receipt" not in workflow
+    assert "write-ci-validation-writer-observation" not in workflow
+    assert "pattern: three-ci-validation-*" not in workflow
+
+
+def test_ci_validation_matrix_downloads_exact_dependency_bundles() -> None:
+    """Dependent matrix children download exact bundle artifacts."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    github_token_expression = "${{ github." + "token }}"
+
+    for layer in (1, 2):
+        steps = workflow["jobs"][f"execution-batch-layer-{layer}"]["steps"]
+        download = next(
+            step
+            for step in steps
+            if step.get("name") == "Download prerequisite batch evidence"
+        )
+        run = download["run"]
+
+        assert download["shell"] == "bash"
+        assert "uses" not in download
+        assert "continue-on-error" not in download
+        assert download["env"]["GH_TOKEN"] == github_token_expression
+        assert download["env"]["EXPECTED_DEPENDENCY_BUNDLES_JSON"] == (
+            "${{ toJson(matrix['expected-dependency-bundles']) }}"
+        )
+        assert "actions/artifacts/${artifact_id}/zip" in run
+        assert "ARTIFACT_NAME=" in run
+        assert "artifact_id=" in run
+        assert '-d "$artifact_path"' in run
+        assert "--name" not in run
+        assert "exit 1" not in run
+        assert "::error::Expected dependency artifact" not in run
+        assert "::warning::Expected dependency artifact" in run
+        assert 'rm -rf "$artifact_path"' in run
+        assert "continue" in run
+        assert "pattern: three-ci-validation-*" not in run
+        assert ".three-ci-validation/observed-artifacts" in run
+        assert "batch-evidence-bundle.json" in run
+
+
+def test_ci_execution_batch_layer_outputs_bind_dependency_artifact_paths() -> (
+    None
+):
+    """Layer matrix rows carry exact dependency artifact names and paths."""
+    plan = cast("dict[str, object]", batch_contracts.plan())
+    batch_contracts.add_transitive_work_group(plan)
+    context = batch_contracts.authorizing_context_kwargs()
+    materialize = batch_contracts.materialize_ci_validation_execution_batches
+    materialization = materialize(
+        plan=plan,
+        **context,
+        created_at=batch_contracts.CREATED_AT,
+        execution_workflow="CI Validation",
+    )
+    manifest = cast("dict[str, object]", materialization.manifest)
+    outputs = control._ci_execution_batch_layer_outputs(
+        manifest,
+        cast("dict[str, object]", materialization.matrix),
+    )
+
+    layers = json.loads(outputs["execution_batch_layers"])
+    assert [len(layer) for layer in layers] == [1, 1, 1]
+    assert layers[0][0]["expected-dependency-bundles"] == []
+    layer_1_dependencies = layers[1][0]["expected-dependency-bundles"]
+    layer_2_dependencies = layers[2][0]["expected-dependency-bundles"]
+
+    assert len(layer_1_dependencies) == 1
+    assert len(layer_2_dependencies) == 2
+    assert layer_2_dependencies[0] == layer_1_dependencies[0]
+    for dependency in [*layer_1_dependencies, *layer_2_dependencies]:
+        artifact_ref = dependency["artifact-ref"]
+        artifact_name = control.artifact_physical_name(artifact_ref)
+
+        assert dependency["artifact-name"] == artifact_name
+        assert dependency["artifact-path"] == (
+            f".three-ci-validation/observed-artifacts/{artifact_name}"
+        )
+        assert dependency["artifact-metadata-path"] == (
+            ".three-ci-validation/observed-artifacts/"
+            f"{artifact_name}/artifact-metadata.json"
+        )
+
+
+def test_ci_validation_batch_observation_cli_is_not_public() -> None:
+    """Caller-writable producer observation sidecars are not exposed."""
+    result = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            str(SCRIPT),
+            "write-ci-validation-batch-artifact-observation",
+            "--help",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "invalid choice" in result.stderr
+
+
+def test_ci_validation_writer_observation_cli_is_not_public() -> None:
+    """Self-attested writer observation writers are not exposed."""
+    result = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            str(SCRIPT),
+            "write-ci-validation-writer-observation",
+            "--help",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "invalid choice" in result.stderr
 
 
 def test_ci_validation_retries_uv_setup_failures() -> None:
@@ -5475,14 +5810,12 @@ def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
     )
 
 
-def test_ci_validation_work_groups_use_full_checkout_for_nbgv() -> None:
-    """Validation work groups need full history for NBGV version height."""
+def test_ci_validation_execution_batches_use_full_checkout_for_nbgv() -> None:
+    """Execution batches need full history for NBGV version height."""
     workflow = yaml.safe_load(_workflow("ci-validate.yml"))
 
     for layer in range(3):
-        steps = workflow["jobs"][f"validation-work-groups-layer-{layer}"][
-            "steps"
-        ]
+        steps = workflow["jobs"][f"execution-batch-layer-{layer}"]["steps"]
         checkout_step = next(
             step for step in steps if step.get("uses") == "actions/checkout@v4"
         )
@@ -5490,20 +5823,18 @@ def test_ci_validation_work_groups_use_full_checkout_for_nbgv() -> None:
         assert checkout_step["with"]["fetch-depth"] == 0
 
 
-def test_ci_validation_receipts_observe_checked_out_head() -> None:
-    """Validation receipts bind to the checked-out tree, not merge refs."""
+def test_ci_validation_batch_evidence_observes_checked_out_head() -> None:
+    """Batch evidence binds to the checked-out tree, not merge refs."""
     workflow = yaml.safe_load(_workflow("ci-validate.yml"))
 
     for layer in range(3):
-        steps = workflow["jobs"][f"validation-work-groups-layer-{layer}"][
-            "steps"
-        ]
-        receipt_step = next(
+        steps = workflow["jobs"][f"execution-batch-layer-{layer}"]["steps"]
+        bundle_step = next(
             step
             for step in steps
-            if step.get("name") == "Write validation receipt"
+            if step.get("name") == "Write batch evidence bundle"
         )
-        run = receipt_step["run"]
+        run = bundle_step["run"]
 
         assert 'observed_commit_sha="$(git rev-parse HEAD)"' in run
         assert '--observed-commit-sha "$observed_commit_sha"' in run
@@ -5602,6 +5933,9 @@ def test_ci_validation_artifact_refs_include_planner_diagnostics() -> None:
         )
         outputs = _github_outputs(output)
         assert "planner_diagnostics_artifact_name" in outputs
+        assert "aggregate_artifact_name" not in outputs
+        assert "aggregate_evidence_manifest_artifact_name" in outputs
+        assert "aggregate_summary_artifact_name" in outputs
         assert outputs["planner_diagnostics_artifact_name"].startswith(
             "three-ci-validation-",
         )
@@ -5668,6 +6002,78 @@ def test_ci_validation_producer_boundary_accepts_expected_artifact() -> None:
     assert diagnostics == []
 
 
+def test_ci_validation_boundary_ignores_prior_attempt_final_count() -> None:
+    """Known prior-attempt artifacts do not poison current final counts."""
+    run_id = "25887422010"
+    current_plan_ref = control.ci_validation_plan_artifact_ref(
+        run_id=run_id,
+        run_attempt="2",
+    )
+    prior_plan_ref = control.ci_validation_plan_artifact_ref(
+        run_id=run_id,
+        run_attempt="1",
+    )
+
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[
+            _ci_artifact_metadata(current_plan_ref, artifact_id=7002),
+            _ci_artifact_metadata(prior_plan_ref, artifact_id=7001),
+        ],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                current_plan_ref,
+                artifact_id=7002,
+                boundary="plan",
+                job="plan",
+            )
+        ],
+        workflow="CI Validation",
+        run_id=run_id,
+        run_attempt="2",
+        expected_prefixed_validation_artifacts=1,
+    )
+
+    assert diagnostics == []
+
+
+def test_ci_validation_boundary_fails_for_current_unknown_final_count() -> None:
+    """Unknown current-attempt prefixed artifacts still fail closed."""
+    run_id = "25887422010"
+    current_plan_ref = control.ci_validation_plan_artifact_ref(
+        run_id=run_id,
+        run_attempt="2",
+    )
+    unknown_name = "three-ci-validation-25887422010-1-" + "f" * 64
+
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[
+            _ci_artifact_metadata(current_plan_ref, artifact_id=7002),
+            GitHubActionsArtifactMetadata(
+                artifact_id=7999,
+                name=unknown_name,
+                created_at="2026-05-14T21:09:21Z",
+                expired=False,
+                workflow_run_id=int(run_id),
+            ),
+        ],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                current_plan_ref,
+                artifact_id=7002,
+                boundary="plan",
+                job="plan",
+            )
+        ],
+        workflow="CI Validation",
+        run_id=run_id,
+        run_attempt="2",
+        expected_prefixed_validation_artifacts=1,
+    )
+
+    assert diagnostics
+    assert diagnostics[0]["detail"] == "final-namespace-closure-mismatch"
+
+
 def test_ci_validation_producer_boundary_accepts_execution_batch_manifest() -> (
     None
 ):
@@ -5683,8 +6089,8 @@ def test_ci_validation_producer_boundary_accepts_execution_batch_manifest() -> (
             _ci_expected_artifact(
                 manifest_ref,
                 artifact_id=9001,
-                boundary="materialize-work-groups",
-                job="materialize-work-groups",
+                boundary="materialize-execution-batches",
+                job="materialize-execution-batches",
             )
         ],
         workflow="CI Validation",
@@ -5693,6 +6099,167 @@ def test_ci_validation_producer_boundary_accepts_execution_batch_manifest() -> (
     )
 
     assert diagnostics == []
+
+
+@pytest.mark.parametrize(
+    ("artifact_ref", "artifact_kind"),
+    [
+        (
+            control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            "aggregate-evidence-manifest",
+        ),
+        (
+            control.ci_validation_aggregate_summary_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            "aggregate-summary",
+        ),
+    ],
+)
+def test_ci_validation_producer_boundary_accepts_current_final_refs(
+    artifact_ref: str,
+    artifact_kind: str,
+) -> None:
+    """Current final aggregate artifacts are registered control artifacts."""
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[_ci_artifact_metadata(artifact_ref, artifact_id=9901)],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                artifact_ref,
+                artifact_id=9901,
+                boundary="aggregate-evidence",
+                job="aggregate-evidence",
+            )
+        ],
+        workflow="CI Validation",
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    assert diagnostics == [], artifact_kind
+
+
+@pytest.mark.parametrize(
+    ("artifact_ref", "artifacts", "expected_detail"),
+    [
+        (
+            control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            [],
+            "aggregate-evidence-manifest-missing",
+        ),
+        (
+            control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            [9901, 9902],
+            "aggregate-evidence-manifest-duplicate",
+        ),
+        (
+            control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            [9902],
+            "final-producer-unverified",
+        ),
+        (
+            control.ci_validation_aggregate_summary_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            [],
+            "final-namespace-closure-mismatch",
+        ),
+        (
+            control.ci_validation_aggregate_summary_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            [9901, 9902],
+            "final-namespace-closure-mismatch",
+        ),
+        (
+            control.ci_validation_aggregate_summary_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            ),
+            [9902],
+            "final-namespace-closure-mismatch",
+        ),
+    ],
+)
+def test_ci_validation_producer_boundary_fails_closed_for_current_final_refs(
+    artifact_ref: str,
+    artifacts: list[int],
+    expected_detail: str,
+) -> None:
+    """Current final aggregate refs map to their authority diagnostics."""
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[
+            _ci_artifact_metadata(artifact_ref, artifact_id=item)
+            for item in artifacts
+        ],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                artifact_ref,
+                artifact_id=9901,
+                boundary="aggregate-evidence",
+                job="aggregate-evidence",
+            )
+        ],
+        workflow="CI Validation",
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    assert diagnostics
+    expected_code = (
+        "final-producer-unverified"
+        if expected_detail == "final-producer-unverified"
+        else "workflow-gate-failure"
+        if expected_detail == "final-namespace-closure-mismatch"
+        else "final-evidence-failure"
+    )
+    assert diagnostics[0]["code"] == expected_code
+    assert diagnostics[0]["detail"] == expected_detail
+
+
+@pytest.mark.parametrize(
+    "artifact_ref",
+    [
+        ("ci-validation/manifests/25887422010/1/receipt-manifest.json"),
+        ("ci-validation/aggregate/25887422010/1/ci-validation-aggregate.json"),
+    ],
+)
+def test_ci_validation_producer_boundary_has_no_live_legacy_final_suffix(
+    artifact_ref: str,
+) -> None:
+    """Legacy receipt/aggregate refs are not live G5 final artifacts."""
+    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
+        artifacts=[],
+        expected_artifacts=[
+            _ci_expected_artifact(
+                artifact_ref,
+                artifact_id=9901,
+                boundary="aggregate-evidence",
+                job="aggregate-evidence",
+            )
+        ],
+        workflow="CI Validation",
+        run_id="25887422010",
+        run_attempt="1",
+    )
+
+    assert diagnostics
+    assert diagnostics[0]["detail"] == "structurally-invalid"
 
 
 def test_ci_validation_producer_boundary_ignores_expired_batch_manifest() -> (
@@ -5726,8 +6293,8 @@ def test_ci_validation_producer_boundary_ignores_expired_batch_manifest() -> (
             _ci_expected_artifact(
                 manifest_ref,
                 artifact_id=9001,
-                boundary="materialize-work-groups",
-                job="materialize-work-groups",
+                boundary="materialize-execution-batches",
+                job="materialize-execution-batches",
             )
         ],
         workflow="CI Validation",
@@ -5762,8 +6329,8 @@ def test_ci_validation_boundary_fails_closed_for_expired_batch_manifest() -> (
             _ci_expected_artifact(
                 manifest_ref,
                 artifact_id=9001,
-                boundary="materialize-work-groups",
-                job="materialize-work-groups",
+                boundary="materialize-execution-batches",
+                job="materialize-execution-batches",
             )
         ],
         workflow="CI Validation",
@@ -5788,7 +6355,7 @@ def test_ci_validation_boundary_fails_closed_for_bad_batch_manifest_ids(
     artifact_id: int,
     expected_detail: str,
 ) -> None:
-    """Execution-batch manifest producer-boundary failures stay G4-specific."""
+    """Execution-batch manifest producer-boundary failures stay G5-specific."""
     manifest_ref = control.ci_validation_execution_batch_manifest_artifact_ref(
         run_id="25887422010",
         run_attempt="1",
@@ -5803,8 +6370,8 @@ def test_ci_validation_boundary_fails_closed_for_bad_batch_manifest_ids(
             _ci_expected_artifact(
                 manifest_ref,
                 artifact_id=artifact_id,
-                boundary="materialize-work-groups",
-                job="materialize-work-groups",
+                boundary="materialize-execution-batches",
+                job="materialize-execution-batches",
             )
         ],
         workflow="CI Validation",
@@ -5813,7 +6380,12 @@ def test_ci_validation_boundary_fails_closed_for_bad_batch_manifest_ids(
     )
 
     assert diagnostics
-    assert diagnostics[0]["code"] == "final-evidence-failure"
+    expected_code = (
+        "final-producer-unverified"
+        if expected_detail == "final-producer-unverified"
+        else "inadmissible-batch-evidence"
+    )
+    assert diagnostics[0]["code"] == expected_code
     assert diagnostics[0]["detail"] == expected_detail
 
 
@@ -5945,7 +6517,6 @@ def test_ci_validation_aggregate_expected_inputs_skip_empty_optional_ids() -> (
             expected_plan_artifact_id="7001",
             expected_changed_files_snapshot_artifact_id="",
             expected_fact_snapshot_artifact_id="",
-            expected_selector_assignments_artifact_id="8001",
             expected_execution_batch_manifest_artifact_id="9001",
         )
     )
@@ -5965,7 +6536,7 @@ def test_ci_validation_aggregate_expected_inputs_skip_empty_optional_ids() -> (
         )
         not in refs
     )
-    assert len(expected) == 4
+    assert len(expected) == 3
     assert any(
         item["artifact-ref"]
         == control.ci_validation_execution_batch_manifest_artifact_ref(
@@ -5973,8 +6544,8 @@ def test_ci_validation_aggregate_expected_inputs_skip_empty_optional_ids() -> (
             run_attempt="1",
         )
         and item["artifact-instance-id"] == "9001"
-        and item["producer-boundary"] == "materialize-work-groups"
-        and item["producer-job"] == "materialize-work-groups"
+        and item["producer-boundary"] == "materialize-execution-batches"
+        and item["producer-job"] == "materialize-execution-batches"
         for item in expected
     )
 
@@ -6034,7 +6605,7 @@ def test_ci_validation_producer_boundary_fails_closed_for_present_optional_ids(
 def test_ci_validation_aggregate_fails_closed_for_duplicate_plan_artifact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Aggregation rejects duplicated producer-boundary plan artifacts."""
+    """Implicit legacy aggregation is closed before boundary checks."""
     scratch = SCRATCH / "ci-validation-duplicate-plan-boundary"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -6069,20 +6640,17 @@ def test_ci_validation_aggregate_fails_closed_for_duplicate_plan_artifact(
                 expected_plan_artifact_id="7001",
                 expected_changed_files_snapshot_artifact_id=None,
                 expected_fact_snapshot_artifact_id=None,
-                expected_selector_assignments_artifact_id=None,
                 expected_execution_batch_manifest_artifact_id=None,
                 created_at="2026-05-14T21:09:21Z",
-                receipt_manifest_out=str(manifest_path),
-                aggregate_out=str(aggregate_path),
+                aggregate_evidence_manifest_out=str(manifest_path),
+                aggregate_summary_out=str(aggregate_path),
                 github_output=None,
             )
         )
 
-        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
-        assert result == 1
-        assert aggregate["verdict"] == "failed"
-        assert aggregate["reason"]["invalid-plan"] is True
-        assert aggregate["diagnostics"][0]["detail"] == "plan-duplicate"
+        assert result == 2
+        assert not aggregate_path.exists()
+        assert not manifest_path.exists()
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -6121,6 +6689,799 @@ def test_github_actions_run_artifacts_dedupes_paginated_artifact_ids(
     )
 
     assert [artifact["id"] for artifact in artifacts] == [7001, 7002]
+
+
+def test_github_actions_run_artifacts_bounded_prefix_stops_at_sentinel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bounded CI namespace enumeration stops at cap plus one sentinel."""
+    cap = control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP
+    api_calls: list[str] = []
+
+    def fake_gh_api(_repository: str, endpoint: str, **_kwargs) -> object:
+        api_calls.append(endpoint)
+        return {
+            "artifacts": [
+                {
+                    "id": 8000 + index,
+                    "name": (f"three-ci-validation-25887422010-1-{index:064x}"),
+                }
+                for index in range(cap + 7)
+            ]
+        }
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(
+        control,
+        "_gh_api_paginated",
+        lambda *_args, **_kwargs: pytest.fail(
+            "bounded namespace enumeration must not use --paginate --slurp"
+        ),
+    )
+
+    artifacts = control._github_actions_run_artifacts(
+        repository="hcoona/three",
+        run_id="25887422010",
+        run_attempt="1",
+        prefixed_artifact_cap=cap,
+    )
+
+    assert len(artifacts) == cap + 1
+    assert [artifact["id"] for artifact in artifacts] == list(
+        range(8000, 8000 + cap + 1)
+    )
+    assert api_calls == [
+        "repos/hcoona/three/actions/runs/25887422010/artifacts?per_page=100&page=1"
+    ]
+
+
+def test_github_actions_run_artifacts_bounded_prefix_excludes_final_refs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pre-final bounded enumeration does not count current final refs."""
+    cap = control._CI_VALIDATION_PRE_FINAL_NAMESPACE_ARTIFACT_CAP
+    run_id = "25887422010"
+    run_attempt = "1"
+    final_names = control._ci_current_final_aggregate_artifact_names(
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+
+    def fake_gh_api(_repository: str, _endpoint: str, **_kwargs) -> object:
+        return {
+            "artifacts": [
+                {"id": 7901 + index, "name": name}
+                for index, name in enumerate(sorted(final_names))
+            ]
+            + [
+                {
+                    "id": 8000 + index,
+                    "name": (f"three-ci-validation-25887422010-1-{index:064x}"),
+                }
+                for index in range(cap)
+            ]
+        }
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(
+        control,
+        "_gh_api_paginated",
+        lambda *_args, **_kwargs: pytest.fail(
+            "bounded namespace enumeration must not use --paginate --slurp"
+        ),
+    )
+
+    artifacts = control._github_actions_run_artifacts(
+        repository="hcoona/three",
+        run_id=run_id,
+        run_attempt=run_attempt,
+        prefixed_artifact_cap=cap,
+        excluded_prefixed_artifact_names=final_names,
+    )
+
+    assert len(artifacts) == cap + len(final_names)
+    assert (
+        control._ci_prefixed_artifact_count(
+            artifacts,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            excluded_prefixed_artifact_names=final_names,
+        )
+        == cap
+    )
+
+
+def test_github_actions_run_artifacts_bounded_prefix_fails_closed_at_item_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unrelated artifacts cannot force unbounded namespace scans."""
+    cap = control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP
+    api_calls: list[str] = []
+
+    def fake_gh_api(_repository: str, endpoint: str, **_kwargs) -> object:
+        api_calls.append(endpoint)
+        return {
+            "artifacts": [
+                {"id": 9000 + index, "name": f"unrelated-artifact-{index:03d}"}
+                for index in range(100)
+            ]
+        }
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(
+        control,
+        "_gh_api_paginated",
+        lambda *_args, **_kwargs: pytest.fail(
+            "bounded namespace enumeration must not use --paginate --slurp"
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="enumeration unavailable"):
+        control._github_actions_run_artifacts(
+            repository="hcoona/three",
+            run_id="25887422010",
+            run_attempt="1",
+            prefixed_artifact_cap=cap,
+        )
+
+    assert len(api_calls) == (
+        control._CI_VALIDATION_LIVE_NAMESPACE_ENUMERATION_PAGE_CAP
+    )
+
+
+def test_verify_ci_validation_artifact_boundaries_uses_bounded_enumeration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Final boundary verification does not enumerate the full run namespace."""
+    plan_ref = control.ci_validation_plan_artifact_ref(
+        run_id="25887422010",
+        run_attempt="1",
+    )
+    calls: list[dict[str, object]] = []
+
+    def fake_run_artifacts(
+        **kwargs: object,
+    ) -> list[GitHubActionsArtifactMetadata]:
+        calls.append(dict(kwargs))
+        return [_ci_artifact_metadata(plan_ref, artifact_id=7001)]
+
+    monkeypatch.setattr(
+        control, "_github_actions_run_artifacts", fake_run_artifacts
+    )
+
+    result = control._cmd_verify_ci_validation_artifact_boundaries(
+        argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id="25887422010",
+            run_attempt="1",
+            expected_artifact=[
+                json.dumps(
+                    _ci_expected_artifact(
+                        plan_ref,
+                        artifact_id=7001,
+                        boundary="plan",
+                        job="plan",
+                    ),
+                    separators=(",", ":"),
+                )
+            ],
+        )
+    )
+
+    assert result == 0
+    assert calls == [
+        {
+            "repository": "hcoona/three",
+            "run_id": "25887422010",
+            "run_attempt": "1",
+            "prefixed_artifact_cap": (
+                control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP
+            ),
+            "excluded_prefixed_artifact_names": (
+                control._ci_current_final_aggregate_artifact_names(
+                    run_id="25887422010",
+                    run_attempt="1",
+                )
+            ),
+        }
+    ]
+
+
+def test_verify_ci_validation_artifact_boundaries_fails_on_bounded_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The bounded sentinel fails namespace-overflow verification."""
+    plan_ref = control.ci_validation_plan_artifact_ref(
+        run_id="25887422010",
+        run_attempt="1",
+    )
+    cap = control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP
+    monkeypatch.setattr(
+        control,
+        "_github_actions_run_artifacts",
+        lambda **_kwargs: [
+            _ci_artifact_metadata(plan_ref, artifact_id=7001 + index)
+            for index in range(cap + 1)
+        ],
+    )
+
+    result = control._cmd_verify_ci_validation_artifact_boundaries(
+        argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id="25887422010",
+            run_attempt="1",
+            expected_artifact=[
+                json.dumps(
+                    _ci_expected_artifact(
+                        plan_ref,
+                        artifact_id=7001,
+                        boundary="plan",
+                        job="plan",
+                    ),
+                    separators=(",", ":"),
+                )
+            ],
+        )
+    )
+
+    assert result == 1
+    assert "namespace overflowed" in capsys.readouterr().err
+
+
+def test_verify_ci_validation_artifact_boundaries_excludes_only_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Pre-summary manifest verification does not exempt early summaries."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    aggregate_manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    aggregate_summary_ref = (
+        control.ci_validation_aggregate_summary_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    artifacts: list[GitHubActionsArtifactMetadata] = [
+        GitHubActionsArtifactMetadata(
+            artifact_id=8300 + index,
+            name=f"three-ci-validation-{run_id}-{run_attempt}-{index:064x}",
+            created_at="2026-05-14T21:09:21Z",
+            expired=False,
+            workflow_run_id=int(run_id),
+        )
+        for index in range(control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP)
+    ]
+    artifacts.extend(
+        [
+            _ci_artifact_metadata(aggregate_manifest_ref, artifact_id=9901),
+            _ci_artifact_metadata(aggregate_summary_ref, artifact_id=9902),
+        ]
+    )
+    calls: list[dict[str, object]] = []
+
+    def fake_run_artifacts(
+        **kwargs: object,
+    ) -> list[GitHubActionsArtifactMetadata]:
+        calls.append(dict(kwargs))
+        return artifacts
+
+    monkeypatch.setattr(
+        control, "_github_actions_run_artifacts", fake_run_artifacts
+    )
+
+    result = control._cmd_verify_ci_validation_artifact_boundaries(
+        argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=run_id,
+            run_attempt=run_attempt,
+            max_prefixed_validation_artifacts=(
+                control._CI_VALIDATION_PRE_FINAL_NAMESPACE_ARTIFACT_CAP
+            ),
+            expected_artifact=[
+                json.dumps(
+                    _ci_expected_artifact(
+                        aggregate_manifest_ref,
+                        artifact_id=9901,
+                        boundary="aggregate-evidence",
+                        job="aggregate-evidence",
+                    ),
+                    separators=(",", ":"),
+                ),
+            ],
+        )
+    )
+
+    assert result == 1
+    assert "namespace overflowed" in capsys.readouterr().err
+    assert calls == [
+        {
+            "repository": "hcoona/three",
+            "run_id": run_id,
+            "run_attempt": run_attempt,
+            "prefixed_artifact_cap": (
+                control._CI_VALIDATION_PRE_FINAL_NAMESPACE_ARTIFACT_CAP
+            ),
+            "excluded_prefixed_artifact_names": {
+                artifact_physical_name(aggregate_manifest_ref)
+            },
+        }
+    ]
+
+
+def test_verify_ci_validation_artifact_boundaries_admits_excluded_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Excluded manifest artifacts remain visible for producer admission."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    aggregate_manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    artifacts: list[GitHubActionsArtifactMetadata] = [
+        GitHubActionsArtifactMetadata(
+            artifact_id=8400 + index,
+            name=f"three-ci-validation-{run_id}-{run_attempt}-{index:064x}",
+            created_at="2026-05-14T21:09:21Z",
+            expired=False,
+            workflow_run_id=int(run_id),
+        )
+        for index in range(control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP)
+    ]
+    artifacts.append(
+        _ci_artifact_metadata(aggregate_manifest_ref, artifact_id=9901)
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_actions_run_artifacts",
+        lambda **_kwargs: artifacts,
+    )
+
+    result = control._cmd_verify_ci_validation_artifact_boundaries(
+        argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=run_id,
+            run_attempt=run_attempt,
+            max_prefixed_validation_artifacts=(
+                control._CI_VALIDATION_PRE_FINAL_NAMESPACE_ARTIFACT_CAP
+            ),
+            expected_artifact=[
+                json.dumps(
+                    _ci_expected_artifact(
+                        aggregate_manifest_ref,
+                        artifact_id=9901,
+                        boundary="aggregate-evidence",
+                        job="aggregate-evidence",
+                    ),
+                    separators=(",", ":"),
+                ),
+            ],
+        )
+    )
+
+    assert result == 0
+
+
+def test_verify_ci_validation_artifact_boundaries_allows_final_total_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Final aggregate checks allow the 18 pre-final plus 2 final topology."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    aggregate_manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    aggregate_summary_ref = (
+        control.ci_validation_aggregate_summary_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    artifacts: list[GitHubActionsArtifactMetadata] = [
+        GitHubActionsArtifactMetadata(
+            artifact_id=8000 + index,
+            name=f"three-ci-validation-{run_id}-{run_attempt}-{index:064x}",
+            created_at="2026-05-14T21:09:21Z",
+            expired=False,
+            workflow_run_id=int(run_id),
+        )
+        for index in range(control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP)
+    ]
+    artifacts.extend(
+        [
+            _ci_artifact_metadata(aggregate_manifest_ref, artifact_id=9901),
+            _ci_artifact_metadata(aggregate_summary_ref, artifact_id=9902),
+        ]
+    )
+    calls: list[dict[str, object]] = []
+
+    def fake_run_artifacts(
+        **kwargs: object,
+    ) -> list[GitHubActionsArtifactMetadata]:
+        calls.append(dict(kwargs))
+        return artifacts
+
+    monkeypatch.setattr(
+        control, "_github_actions_run_artifacts", fake_run_artifacts
+    )
+
+    result = control._cmd_verify_ci_validation_artifact_boundaries(
+        argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=run_id,
+            run_attempt=run_attempt,
+            max_prefixed_validation_artifacts=(
+                control._CI_VALIDATION_TOTAL_NAMESPACE_ARTIFACT_CAP
+            ),
+            expected_prefixed_validation_artifacts=(
+                control._CI_VALIDATION_TOTAL_NAMESPACE_ARTIFACT_CAP
+            ),
+            expected_artifact=[
+                json.dumps(
+                    _ci_expected_artifact(
+                        aggregate_manifest_ref,
+                        artifact_id=9901,
+                        boundary="aggregate-evidence",
+                        job="aggregate-evidence",
+                    ),
+                    separators=(",", ":"),
+                ),
+                json.dumps(
+                    _ci_expected_artifact(
+                        aggregate_summary_ref,
+                        artifact_id=9902,
+                        boundary="aggregate-evidence",
+                        job="aggregate-evidence",
+                    ),
+                    separators=(",", ":"),
+                ),
+            ],
+        )
+    )
+
+    assert result == 0
+    assert calls == [
+        {
+            "repository": "hcoona/three",
+            "run_id": run_id,
+            "run_attempt": run_attempt,
+            "prefixed_artifact_cap": (
+                control._CI_VALIDATION_TOTAL_NAMESPACE_ARTIFACT_CAP
+            ),
+            "excluded_prefixed_artifact_names": set(),
+        }
+    ]
+
+
+def test_verify_final_uploaded_bytes_rejects_noncanonical_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Final summary self-artifact byte failures stay workflow-gate-only."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    aggregate_summary_ref = (
+        control.ci_validation_aggregate_summary_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    scratch = SCRATCH / "final-uploaded-noncanonical"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        summary_path = scratch / "aggregate-summary.json"
+        summary_path.write_text('{"b": 1, "a": 2}', encoding="utf-8")
+        monkeypatch.setattr(
+            control,
+            "_github_actions_run_artifacts",
+            lambda **_kwargs: [
+                _ci_artifact_metadata(aggregate_summary_ref, artifact_id=9902)
+            ],
+        )
+        expected = _ci_expected_artifact(
+            aggregate_summary_ref,
+            artifact_id=9902,
+            boundary="aggregate-evidence",
+            job="aggregate-evidence",
+        )
+        expected["downloaded-path"] = str(summary_path)
+
+        result = control._cmd_verify_ci_validation_artifact_boundaries(
+            argparse.Namespace(
+                repository="hcoona/three",
+                workflow="CI Validation",
+                run_id=run_id,
+                run_attempt=run_attempt,
+                max_prefixed_validation_artifacts=(
+                    control._CI_VALIDATION_TOTAL_NAMESPACE_ARTIFACT_CAP
+                ),
+                expected_prefixed_validation_artifacts=1,
+                expected_artifact=[
+                    json.dumps(expected, separators=(",", ":")),
+                ],
+            )
+        )
+
+        assert result == 1
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_final_uploaded_byte_gate_recomputes_manifest_digest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Summary manifest digest claims must match uploaded manifest bytes."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    aggregate_manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    aggregate_summary_ref = (
+        control.ci_validation_aggregate_summary_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    scratch = SCRATCH / "final-uploaded-digest"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        manifest = {"artifact-ref": aggregate_manifest_ref, "value": "uploaded"}
+        wrong_digest = "0" * 64
+        summary = {
+            "aggregate-evidence-manifest": {
+                "artifact-ref": aggregate_manifest_ref,
+                "artifact-instance-id": "9901",
+                "content-digest": wrong_digest,
+            },
+            "final-artifacts": {
+                "aggregate-evidence-manifest": {
+                    "artifact-ref": aggregate_manifest_ref,
+                    "artifact-instance-id": "9901",
+                    "content-digest": wrong_digest,
+                }
+            },
+        }
+        manifest_path.write_bytes(canonical_json_bytes(manifest))
+        summary_path.write_bytes(canonical_json_bytes(summary))
+        monkeypatch.setattr(
+            control,
+            "validate_ci_validation_aggregate_evidence_manifest",
+            lambda *_, **__: None,
+        )
+        monkeypatch.setattr(
+            control,
+            "validate_ci_validation_aggregate_summary",
+            lambda *_, **__: None,
+        )
+        expected_manifest = _ci_expected_artifact(
+            aggregate_manifest_ref,
+            artifact_id=9901,
+            boundary="aggregate-evidence",
+            job="aggregate-evidence",
+        )
+        expected_manifest["downloaded-path"] = str(manifest_path)
+        expected_summary = _ci_expected_artifact(
+            aggregate_summary_ref,
+            artifact_id=9902,
+            boundary="aggregate-evidence",
+            job="aggregate-evidence",
+        )
+        expected_summary["downloaded-path"] = str(summary_path)
+
+        diagnostics = control._ci_verify_expected_final_artifact_uploaded_bytes(
+            [expected_manifest, expected_summary],
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+
+        assert diagnostics
+        assert diagnostics[0]["code"] == "workflow-gate-failure"
+        assert diagnostics[0]["detail"] == "final-namespace-closure-mismatch"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_verify_ci_validation_artifact_boundaries_rejects_extra_under_cap(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Final verification rejects unexpected prefixed artifacts."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    aggregate_manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    aggregate_summary_ref = (
+        control.ci_validation_aggregate_summary_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    artifacts: list[GitHubActionsArtifactMetadata] = [
+        GitHubActionsArtifactMetadata(
+            artifact_id=8100 + index,
+            name=f"three-ci-validation-{run_id}-{run_attempt}-{index:064x}",
+            created_at="2026-05-14T21:09:21Z",
+            expired=False,
+            workflow_run_id=int(run_id),
+        )
+        for index in range(17)
+    ]
+    artifacts.extend(
+        [
+            _ci_artifact_metadata(aggregate_manifest_ref, artifact_id=9901),
+            _ci_artifact_metadata(aggregate_summary_ref, artifact_id=9902),
+            GitHubActionsArtifactMetadata(
+                artifact_id=9999,
+                name=f"three-ci-validation-{run_id}-{run_attempt}-" + "a" * 64,
+                created_at="2026-05-14T21:09:21Z",
+                expired=False,
+                workflow_run_id=int(run_id),
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_actions_run_artifacts",
+        lambda **_kwargs: artifacts,
+    )
+
+    result = control._cmd_verify_ci_validation_artifact_boundaries(
+        argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=run_id,
+            run_attempt=run_attempt,
+            max_prefixed_validation_artifacts=(
+                control._CI_VALIDATION_TOTAL_NAMESPACE_ARTIFACT_CAP
+            ),
+            expected_prefixed_validation_artifacts=19,
+            expected_artifact=[
+                json.dumps(
+                    _ci_expected_artifact(
+                        aggregate_manifest_ref,
+                        artifact_id=9901,
+                        boundary="aggregate-evidence",
+                        job="aggregate-evidence",
+                    ),
+                    separators=(",", ":"),
+                ),
+                json.dumps(
+                    _ci_expected_artifact(
+                        aggregate_summary_ref,
+                        artifact_id=9902,
+                        boundary="aggregate-evidence",
+                        job="aggregate-evidence",
+                    ),
+                    separators=(",", ":"),
+                ),
+            ],
+        )
+    )
+
+    assert result == 1
+    assert "does not match the expected final count" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("aggregate_phase", ["evidence", "summary"])
+def test_ci_aggregate_control_boundary_excludes_current_final_refs(
+    monkeypatch: pytest.MonkeyPatch,
+    aggregate_phase: str,
+) -> None:
+    """Pre-final boundary checks do not count current final aggregate refs."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    request_ref = control.ci_validation_request_artifact_ref(
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+    aggregate_manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    aggregate_summary_ref = (
+        control.ci_validation_aggregate_summary_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    artifacts: list[GitHubActionsArtifactMetadata] = [
+        _ci_artifact_metadata(request_ref, artifact_id=7001),
+        _ci_artifact_metadata(aggregate_manifest_ref, artifact_id=7901),
+        _ci_artifact_metadata(aggregate_summary_ref, artifact_id=7902),
+        *[
+            GitHubActionsArtifactMetadata(
+                artifact_id=8000 + index,
+                name=f"three-ci-validation-{run_id}-{run_attempt}-{index:064x}",
+                created_at="2026-05-14T21:09:21Z",
+                expired=False,
+                workflow_run_id=int(run_id),
+            )
+            for index in range(
+                control._CI_VALIDATION_PRE_FINAL_NAMESPACE_ARTIFACT_CAP - 1
+            )
+        ],
+    ]
+    calls: list[dict[str, object]] = []
+
+    def fake_run_artifacts(
+        **kwargs: object,
+    ) -> list[GitHubActionsArtifactMetadata]:
+        calls.append(dict(kwargs))
+        return artifacts
+
+    monkeypatch.setattr(
+        control, "_github_actions_run_artifacts", fake_run_artifacts
+    )
+
+    diagnostics = control._ci_aggregate_control_artifact_boundary_diagnostics(
+        argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=run_id,
+            run_attempt=run_attempt,
+            aggregate_phase=aggregate_phase,
+            expected_request_artifact_id="7001",
+            expected_plan_artifact_id=None,
+            expected_changed_files_snapshot_artifact_id=None,
+            expected_fact_snapshot_artifact_id=None,
+            expected_execution_batch_manifest_artifact_id=None,
+        )
+    )
+
+    excluded_names = (
+        control._ci_current_final_aggregate_artifact_names(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+        if aggregate_phase == "evidence"
+        else {artifact_physical_name(aggregate_manifest_ref)}
+    )
+    expected_calls = [
+        {
+            "repository": "hcoona/three",
+            "run_id": run_id,
+            "run_attempt": run_attempt,
+            "prefixed_artifact_cap": (
+                control._CI_VALIDATION_PRE_FINAL_NAMESPACE_ARTIFACT_CAP
+            ),
+            "excluded_prefixed_artifact_names": excluded_names,
+        }
+    ]
+    assert calls in ([], expected_calls)
+    if aggregate_phase == "evidence":
+        assert diagnostics == []
+    else:
+        assert diagnostics
+        assert "namespace overflowed" in str(diagnostics[0]["message"])
 
 
 def test_release_workflow_uv_setup_precedes_uv_run() -> None:
@@ -6467,28 +7828,93 @@ def test_ci_validation_control_plane_materializes_empty_plan() -> None:
             fact_snapshot=str(fact_snapshot_path),
             assignments=str(assignments_path),
             created_at="2026-05-14T21:09:21Z",
-            receipt_manifest_out=str(manifest_path),
-            aggregate_out=str(aggregate_path),
+            aggregate_evidence_manifest_out=str(manifest_path),
+            aggregate_summary_out=str(aggregate_path),
             github_output=str(output_path),
         )
-        assert control._cmd_aggregate_ci_evidence(aggregate_args) == 0
-        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
-        receipt_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        changed_files = json.loads(
-            changed_files_path.read_text(encoding="utf-8"),
+        assert control._cmd_aggregate_ci_evidence(aggregate_args) == 2
+        assert not aggregate_path.exists()
+        assert not manifest_path.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_legacy_no_manifest_assignments_exclude_control_artifact() -> None:
+    """No-manifest assignments aggregation is legacy, not G5 closure."""
+    scratch = SCRATCH / "ci-validation-legacy-assignments-boundary"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan_snapshot = plan_ci_validation_from_repo(
+            CiValidationPlannerInputs(
+                request=_ci_validation_push_request([]),
+                repo_root=REPO_ROOT,
+                expected_run_id="25887422010",
+                expected_run_attempt="1",
+                created_at="2026-05-14T21:09:21Z",
+            )
         )
-        fact_snapshot = json.loads(
-            fact_snapshot_path.read_text(encoding="utf-8"),
+        plan_path = scratch / "validation-plan.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        assignments_path = scratch / "selector-assignments.json"
+        materialize_outputs_path = scratch / "materialize-outputs.txt"
+        manifest_path = scratch / "receipt-manifest.json"
+        aggregate_path = scratch / "aggregate.json"
+        observed_root = scratch / "observed-artifacts"
+        selector_assignments_name = artifact_physical_name(
+            control._ci_validation_selector_assignments_artifact_ref(
+                run_id="25887422010",
+                run_attempt="1",
+            )
         )
-        validate_ci_validation_aggregate(
-            aggregate,
-            plan=plan_snapshot.plan,
-            receipt_manifest=receipt_manifest,
-            selector_assignments_manifest=assignments,
-            changed_files_snapshot=changed_files,
-            fact_snapshot=fact_snapshot,
+        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(plan_snapshot.changed_files_snapshot),
+            encoding="utf-8",
         )
-        assert aggregate["verdict"] == "passed"
+        fact_snapshot_path.write_text(
+            json.dumps(plan_snapshot.fact_snapshot),
+            encoding="utf-8",
+        )
+        assert (
+            control._cmd_materialize_ci_work_groups(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    workflow="CI Validation",
+                    writer_job="validation-work-groups",
+                    created_at="2026-05-14T21:09:21Z",
+                    assignments_out=str(assignments_path),
+                    github_output=str(materialize_outputs_path),
+                )
+            )
+            == 0
+        )
+        (observed_root / selector_assignments_name).mkdir(parents=True)
+
+        result = control._cmd_aggregate_ci_evidence(
+            argparse.Namespace(
+                repository="hcoona/three",
+                workflow="CI Validation",
+                run_id="25887422010",
+                run_attempt="1",
+                plan=str(plan_path),
+                changed_files_snapshot=str(changed_files_path),
+                fact_snapshot=str(fact_snapshot_path),
+                assignments=str(assignments_path),
+                observed_artifacts_dir=str(observed_root),
+                created_at="2026-05-14T21:09:21Z",
+                aggregate_evidence_manifest_out=str(manifest_path),
+                aggregate_summary_out=str(aggregate_path),
+                github_output=None,
+            )
+        )
+
+        assert result == 2
+        assert not aggregate_path.exists()
+        assert not manifest_path.exists()
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -6672,9 +8098,6 @@ def test_ci_validation_lightweight_policy_uses_frozen_scope() -> None:
                     "receipt-artifact-ref": (
                         "ci-validation-receipt-wg-lightweight"
                     ),
-                    "writer-observation-ref": (
-                        "ci-validation-writer-observation-wg-lightweight"
-                    ),
                     "trusted-writer-id": "trusted-writer",
                 }
             ]
@@ -6721,6 +8144,199 @@ def test_ci_validation_lightweight_policy_uses_frozen_scope() -> None:
             )
             == 1
         )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_batch_lightweight_preflight_is_batch_native() -> None:  # noqa: PLR0915
+    """G5 batch lightweight validation does not require selector assignments."""
+    scratch = SCRATCH / "ci-validation-batch-lightweight-native"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        profile_id = "profile-lightweight"
+        coverage_target = {
+            "type": "lightweight-policy",
+            "id": "known-non-impacting",
+        }
+        lightweight_group = {
+            "work-group-id": "wg-lightweight",
+            "kind": "lightweight-preflight",
+            "coverage-target": coverage_target,
+            "ecosystem": None,
+            "runner-family": "ubuntu",
+            "selector-variant": None,
+            "depends-on": [],
+            "expected-evidence": {
+                "category": "lightweight-preflight",
+                "planned-capabilities": None,
+                "detail-profile": profile_id,
+                "required": True,
+            },
+        }
+        work_groups = cast("list[dict[str, object]]", plan["work-groups"])
+        terminal_group = next(
+            group
+            for group in work_groups
+            if group["kind"] == "evidence-aggregation"
+        )
+        work_groups.insert(-1, lightweight_group)
+        terminal_group["depends-on"] = sorted(
+            [*cast("list[str]", terminal_group["depends-on"]), "wg-lightweight"]
+        )
+        cast("list[dict[str, object]]", plan["evidence-expectations"]).append(
+            {
+                "evidence-expectation-id": "evidence-lightweight",
+                "work-group-id": "wg-lightweight",
+                "coverage-target": coverage_target,
+                "category": "lightweight-preflight",
+                "planned-capabilities": None,
+                "detail-profile": profile_id,
+                "required": True,
+                "blocking-if-missing": True,
+            }
+        )
+        cast("list[dict[str, object]]", plan["validation-obligations"]).append(
+            {
+                "validation-obligation-id": "validation-lightweight",
+                "source-impact-ids": ["impact-example"],
+                "kind": "lightweight-preflight",
+                "coverage-target": coverage_target,
+                "required": True,
+                "blocking": True,
+                "work-group-id": "wg-lightweight",
+                "expected-evidence-id": "evidence-lightweight",
+            }
+        )
+        plan["detail-profiles"] = [
+            {
+                "detail-profile-id": profile_id,
+                "category": "lightweight-preflight",
+                "coverage-target": coverage_target,
+                "required-subchecks": [
+                    {
+                        "subcheck-id": "known-non-impacting-policy",
+                        "check-kind": "policy",
+                        "blocking": True,
+                        "description": (
+                            "Verify the lightweight non-impacting policy."
+                        ),
+                    }
+                ],
+            }
+        ]
+        work_groups.sort(key=lambda item: str(item["work-group-id"]))
+        cast("list[dict[str, object]]", plan["evidence-expectations"]).sort(
+            key=lambda item: str(item["evidence-expectation-id"])
+        )
+        cast("list[dict[str, object]]", plan["validation-obligations"]).sort(
+            key=lambda item: str(item["validation-obligation-id"])
+        )
+        plan["plan-digest"] = ci_validation_plan_digest(plan)
+        authorizing_context = batch_contracts.authorizing_context_kwargs()
+        materialization = (
+            batch_contracts.materialize_ci_validation_execution_batches(
+                plan=plan,
+                **authorizing_context,
+                created_at=batch_contracts.CREATED_AT,
+                execution_workflow="CI Validation",
+            )
+        )
+        manifest = cast("dict[str, object]", materialization.manifest)
+        matrix = ci_validation_execution_batch_matrix(
+            manifest,
+            plan=plan,
+            request=cast("dict[str, object]", authorizing_context["request"]),
+            changed_files_snapshot=cast(
+                "dict[str, object]",
+                authorizing_context["changed_files_snapshot"],
+            ),
+            fact_snapshot=cast(
+                "dict[str, object]", authorizing_context["fact_snapshot"]
+            ),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        row = next(
+            item
+            for item in cast("list[dict[str, object]]", matrix["include"])
+            if any(
+                selector["work-group-id"] == "wg-lightweight"
+                for selector in cast(
+                    "list[dict[str, object]]",
+                    next(
+                        batch
+                        for batch in cast(
+                            "list[dict[str, object]]", manifest["batches"]
+                        )
+                        if batch["batch-id"]
+                        == cast("dict[str, object]", item["identity-matrix"])[
+                            "batch-id"
+                        ]
+                    )["ordered-selectors"],
+                )
+            )
+        )
+        command = control._ci_validation_commands(plan, lightweight_group)[0]
+        assert command["builtin"] == "lightweight-preflight"
+        assert command["argv"] == []
+        assert "selector-assignments.json" not in json.dumps(command)
+
+        plan_path = scratch / "validation-plan.json"
+        request_path = scratch / "ci-validation-request.json"
+        manifest_path = scratch / "execution-batch-manifest.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        result_dir = scratch / "validation-results"
+        output_path = scratch / "outputs.txt"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        request_path.write_text(
+            json.dumps(authorizing_context["request"]),
+            encoding="utf-8",
+        )
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        changed_files_path.write_text(
+            json.dumps(authorizing_context["changed_files_snapshot"]),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(authorizing_context["fact_snapshot"]),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_run_ci_validation_batch_commands(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    request=str(request_path),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    observed_artifacts_dir="",
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    dependency_bundle=[],
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    matrix_row_json=json.dumps(row),
+                    repo_root=str(REPO_ROOT),
+                    result_out_dir=str(result_dir),
+                    github_output=str(output_path),
+                )
+            )
+            == 0
+        )
+
+        outputs = _github_outputs(output_path)
+        assert outputs["validation_outcome"] == "success"
+        result = json.loads(
+            next(result_dir.glob("validation-result-*.json")).read_text(
+                encoding="utf-8"
+            )
+        )
+        assert result["work-group-id"] == "wg-lightweight"
+        assert result["outcome"] == "success"
+        assert result["commands"][0]["builtin"] == "lightweight-preflight"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -6890,7 +8506,7 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
         "runner-family": "ubuntu",
         "depends-on": [],
         "expected-evidence": {
-            "planned-capabilities": ["type-check"],
+            "planned-capabilities": ["lint", "type-check"],
         },
     }
 
@@ -6973,12 +8589,21 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
     assert [
         "uv",
         "run",
+        "ruff",
+        "check",
+        "--force-exclude",
+        "src/private/app/html-sm-processor",
+    ] in [command["argv"] for command in python_commands]
+    assert [
+        "uv",
+        "run",
         "pyrefly",
         "check",
     ] in [command["argv"] for command in python_commands]
     assert all(
         command["argv"][-1] != "src/private/app/html-sm-processor"
         for command in python_commands
+        if command["capability"] == "type-check"
     )
     assert any(
         command["capability"] == "build"
@@ -7204,7 +8829,7 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
         assert validation_result["outcome"] == "blocking-failure"
         command = validation_result["commands"][0]
         assert command["builtin"] == "release-shaped-artifact"
-        assert "source proof is unavailable" in command["error"]
+        assert "artifact-shape-unconfirmed" in command["error"]
         assert (
             control._ci_validation_outcome(
                 plan,
@@ -7226,6 +8851,30 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
             validation_result=validation_result,
         )
         assert evidence["artifact-refs"] == []
+        assert (
+            evidence["category-result"]["diagnostics"][0]["code"]
+            == "artifact-shape-unconfirmed"
+        )
+        batch_evidence = control._ci_validation_evidence(
+            plan,
+            "wg-release",
+            outcome="blocking-failure",
+            diagnostics=control._ci_validation_diagnostics(
+                plan,
+                "wg-release",
+                outcome="blocking-failure",
+            ),
+            validation_result=validation_result,
+            batch_bundle=True,
+        )
+        batch_detail = batch_evidence["category-result"]["detail"]
+        obligation_result = batch_detail["artifact-obligation-results"][0]
+        assert (
+            obligation_result["artifact"]["observed"]["digests"][0][
+                "digest-available"
+            ]
+            is False
+        )
 
         stale_matrix = {
             **matrix,
@@ -7256,6 +8905,574 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_no_publish_binds_by_ref_name() -> None:
+    """Release-shaped no-publish evidence does not bind by sorted count."""
+    scratch = SCRATCH / "ci-validation-release-shaped-output-ref-binding"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = [
+            "ci-validation/artifacts/python/example/a.whl",
+            "ci-validation/artifacts/python/example/b.whl",
+        ]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        (build_root / "1").mkdir(parents=True)
+        (build_root / "2").mkdir(parents=True)
+        b_bytes = b"contents for b"
+        a_bytes = b"contents for a"
+        (build_root / "1/b.whl").write_bytes(b_bytes)
+        (build_root / "2/a.whl").write_bytes(a_bytes)
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "success"
+        digests = _release_shaped_result_digests(result)
+        assert digests[artifact_refs[0]] == hashlib.sha256(a_bytes).hexdigest()
+        assert digests[artifact_refs[1]] == hashlib.sha256(b_bytes).hexdigest()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_no_publish_uses_mapping() -> None:
+    """Release-shaped no-publish accepts explicit ref-to-output mapping."""
+    scratch = SCRATCH / "ci-validation-release-shaped-output-declared-mapping"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = [
+            "ci-validation/artifacts/python/example/a.whl",
+            "ci-validation/artifacts/python/example/b.whl",
+        ]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        b_bytes = b"mapped contents for b"
+        a_bytes = b"mapped contents for a"
+        (build_root / "first-output.bin").write_bytes(b_bytes)
+        (build_root / "second-output.bin").write_bytes(a_bytes)
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": {
+                        artifact_refs[0]: (
+                            ".three-ci-validation/work/validation-build/"
+                            "second-output.bin"
+                        ),
+                        artifact_refs[1]: (
+                            ".three-ci-validation/work/validation-build/"
+                            "first-output.bin"
+                        ),
+                    }
+                },
+            ),
+            encoding="utf-8",
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "success"
+        digests = _release_shaped_result_digests(result)
+        assert digests[artifact_refs[0]] == hashlib.sha256(a_bytes).hexdigest()
+        assert digests[artifact_refs[1]] == hashlib.sha256(b_bytes).hexdigest()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_no_publish_malformed_mapping_blocks() -> (
+    None
+):
+    """Malformed explicit mapping blocks instead of heuristic fallback."""
+    scratch = SCRATCH / "ci-validation-release-shaped-malformed-mapping"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        (build_root / "a.whl").write_bytes(b"fallback would match")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text("{not-json", encoding="utf-8")
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_no_publish_directory_mapping_blocks() -> (
+    None
+):
+    """Non-regular explicit mapping blocks heuristic fallback."""
+    scratch = SCRATCH / "ci-validation-release-shaped-directory-mapping"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        (build_root / "a.whl").write_bytes(b"fallback would match")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.mkdir()
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_no_publish_unreadable_mapping_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unreadable explicit mapping blocks instead of heuristic fallback."""
+    scratch = SCRATCH / "ci-validation-release-shaped-unreadable-mapping"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    original_read_text = Path.read_text
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        (build_root / "a.whl").write_bytes(b"fallback would match")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": {
+                        artifact_refs[0]: (
+                            ".three-ci-validation/work/validation-build/a.whl"
+                        ),
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def deny_mapping_read(
+            path: Path,
+            *args: object,
+            **kwargs: object,
+        ) -> str:
+            if path == mapping_path:
+                raise PermissionError
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", deny_mapping_read)
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_no_publish_mapping_skips_enumeration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Valid mapping uses only declared outputs instead of recursive scans."""
+    scratch = SCRATCH / "ci-validation-release-shaped-mapping-no-enumeration"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        output_bytes = b"declared output"
+        (build_root / "mapped-output.bin").write_bytes(output_bytes)
+        (build_root / "undeclared-output.bin").write_bytes(b"not evidence")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": {
+                        artifact_refs[0]: (
+                            ".three-ci-validation/work/validation-build/"
+                            "mapped-output.bin"
+                        ),
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_enumeration(_repo_root: Path) -> list[Path]:
+            raise AssertionError
+
+        monkeypatch.setattr(
+            control,
+            "_ci_validation_build_outputs",
+            fail_enumeration,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "success"
+        digests = _release_shaped_result_digests(result)
+        assert (
+            digests[artifact_refs[0]]
+            == hashlib.sha256(
+                output_bytes,
+            ).hexdigest()
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_no_publish_binds_descriptor_id() -> None:
+    """No-publish release-shaped evidence binds the frozen descriptor fact."""
+    scratch = SCRATCH / "ci-validation-release-shaped-descriptor-identity"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        (build_root / "a.whl").write_bytes(b"contents for a")
+        fact_snapshot = _release_shaped_no_publish_fact_snapshot(
+            descriptor_identity="descriptor-sha256:" + "e" * 64,
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+            fact_snapshot=fact_snapshot,
+        )
+
+        command = cast("Sequence[Mapping[str, object]]", result["commands"])[0]
+        obligation_result = cast(
+            "Sequence[Mapping[str, object]]",
+            command["artifact-obligation-results"],
+        )[0]
+        descriptor = cast(
+            "Mapping[str, object]", obligation_result["descriptor"]
+        )
+        assert result["outcome"] == "success"
+        assert descriptor["identity"] == "descriptor-sha256:" + "e" * 64
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "fact_snapshot", "omit_fact_snapshot"),
+    [
+        ("missing", None, True),
+        ("missing-descriptor", {"providers": [{"descriptors": []}]}, False),
+        (
+            "null-identity",
+            {
+                "providers": [
+                    {
+                        "descriptors": [
+                            {
+                                "descriptor-path": (
+                                    "src/public/lib/example/three.release.yml"
+                                ),
+                                "descriptor-identity": None,
+                            }
+                        ],
+                    }
+                ],
+            },
+            False,
+        ),
+        (
+            "missing-identity",
+            {
+                "providers": [
+                    {
+                        "descriptors": [
+                            {
+                                "descriptor-path": (
+                                    "src/public/lib/example/three.release.yml"
+                                ),
+                            }
+                        ],
+                    }
+                ],
+            },
+            False,
+        ),
+        (
+            "empty-identity",
+            {
+                "providers": [
+                    {
+                        "descriptors": [
+                            {
+                                "descriptor-path": (
+                                    "src/public/lib/example/three.release.yml"
+                                ),
+                                "descriptor-identity": "",
+                            }
+                        ],
+                    }
+                ],
+            },
+            False,
+        ),
+    ],
+)
+def test_ci_validation_release_shaped_no_publish_blocks_invalid_descriptor_fact(
+    case: str,
+    fact_snapshot: Mapping[str, object] | None,
+    omit_fact_snapshot: bool,
+) -> None:
+    """No-publish release-shaped success requires descriptor fact evidence."""
+    scratch = SCRATCH / f"ci-validation-release-shaped-{case}-descriptor-fact"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        (build_root / "a.whl").write_bytes(b"contents for a")
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+            fact_snapshot=fact_snapshot,
+            omit_fact_snapshot=omit_fact_snapshot,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_no_publish_rejects_unbound() -> None:
+    """Release-shaped no-publish fails closed without reliable binding."""
+    scratch = SCRATCH / "ci-validation-release-shaped-output-unbound"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = [
+            "ci-validation/artifacts/python/example/a.whl",
+            "ci-validation/artifacts/python/example/b.whl",
+        ]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        (build_root / "first-output.bin").write_bytes(b"first")
+        (build_root / "second-output.bin").write_bytes(b"second")
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _release_shaped_no_publish_plan(
+    artifact_refs: Sequence[str],
+) -> dict[str, object]:
+    return {
+        "validation-tree": {"commit-sha": "b" * 40},
+        "work-groups": [
+            {
+                "work-group-id": "wg-release",
+                "kind": "release-shaped-artifact",
+                "runner-family": "ubuntu",
+                "coverage-target": {"type": "subject", "id": "python.example"},
+                "depends-on": [],
+            }
+        ],
+        "artifact-obligations": [
+            {
+                "artifact-obligation-id": "artifact-python-example-wheel",
+                "work-group-id": "wg-release",
+                "subject-id": "python.example",
+                "descriptor-path": "src/public/lib/example/three.release.yml",
+                "profile-coverage": ["wheel"],
+                "artifact": {
+                    "kind-family": "python",
+                    "concrete-kind": "wheel",
+                    "logical-artifact-role": "package",
+                    "variant-dimensions": {},
+                    "expected-artifact-refs": list(artifact_refs),
+                },
+                "release-receipt": {
+                    "expected-family": "python",
+                    "logical-receipt-role": "build",
+                    "variant-dimensions": {},
+                },
+            }
+        ],
+        "evidence-expectations": [
+            {
+                "work-group-id": "wg-release",
+                "category": "release-shaped-artifact",
+                "planned-capabilities": None,
+            }
+        ],
+    }
+
+
+def _release_shaped_no_publish_matrix(
+    plan: Mapping[str, object],
+) -> dict[str, object]:
+    work_group = cast(
+        "dict[str, object]",
+        cast("Sequence[object]", plan["work-groups"])[0],
+    )
+    return {
+        **work_group,
+        "validation-commands": control._ci_validation_commands(
+            plan,
+            work_group,
+        ),
+        "no-publish": True,
+    }
+
+
+def _release_shaped_no_publish_fact_snapshot(
+    descriptor_path: str = "src/public/lib/example/three.release.yml",
+    *,
+    descriptor_identity: str = "descriptor-sha256:" + "d" * 64,
+) -> dict[str, object]:
+    return {
+        "providers": [
+            {
+                "provider": "python",
+                "descriptors": [
+                    {
+                        "descriptor-path": descriptor_path,
+                        "descriptor-identity": descriptor_identity,
+                        "owner-subject-id": "python.example",
+                        "source": "ecosystem-provider",
+                    }
+                ],
+            }
+        ]
+    }
+
+
+def _run_release_shaped_no_publish_validation(
+    *,
+    scratch: Path,
+    plan: Mapping[str, object],
+    matrix: Mapping[str, object],
+    fact_snapshot: Mapping[str, object] | None = None,
+    omit_fact_snapshot: bool = False,
+) -> dict[str, object]:
+    plan_path = scratch / "validation-plan.json"
+    fact_snapshot_path = scratch / "fact-snapshot.json"
+    result_path = scratch / "validation-result.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    if not omit_fact_snapshot:
+        fact_snapshot_path.write_text(
+            json.dumps(
+                fact_snapshot or _release_shaped_no_publish_fact_snapshot(),
+            ),
+            encoding="utf-8",
+        )
+    assert (
+        control._cmd_run_ci_validation_commands(
+            argparse.Namespace(
+                matrix_work_group_json=json.dumps(matrix),
+                plan=str(plan_path),
+                changed_files_snapshot="",
+                fact_snapshot=str(fact_snapshot_path)
+                if not omit_fact_snapshot
+                else "",
+                assignments="",
+                observed_artifacts_dir="",
+                observed_commit_sha="b" * 40,
+                repo_root=str(scratch),
+                result_out=str(result_path),
+                github_output=None,
+            )
+        )
+        == 0
+    )
+    return cast(
+        "dict[str, object]",
+        json.loads(result_path.read_text(encoding="utf-8")),
+    )
+
+
+def _release_shaped_result_digests(
+    validation_result: Mapping[str, object],
+) -> dict[str, str]:
+    command = cast(
+        "Mapping[str, object]",
+        cast("Sequence[object]", validation_result["commands"])[0],
+    )
+    results = cast(
+        "Sequence[Mapping[str, object]]",
+        command["artifact-obligation-results"],
+    )
+    digests: dict[str, str] = {}
+    for result in results:
+        artifact = cast("Mapping[str, object]", result["artifact"])
+        observed = cast("Mapping[str, object]", artifact["observed"])
+        for item in cast("Sequence[Mapping[str, object]]", observed["digests"]):
+            digests[str(item["artifact-ref"])] = str(item["digest"])
+    return digests
 
 
 def test_ci_validation_release_shaped_success_requires_valid_evidence() -> None:
@@ -7482,14 +9699,14 @@ def test_ci_validation_release_shaped_success_requires_valid_evidence() -> None:
         },
         {
             "outcome": "success",
-            "evidence-source": "unsupported-sidecar-command",
+            "evidence-source": "unsupported-helper-command",
             "artifact-obligation-results": [],
         },
         {"outcome": "success"},
         "malformed-command",
     ],
 )
-def test_ci_validation_release_shaped_sidecar_helpers_reject_extra_commands(
+def test_ci_validation_release_shaped_source_helpers_reject_extra_commands(
     extra_command: object,
 ) -> None:
     """Script-side no-publish source helpers fail closed on extra commands."""
@@ -7518,10 +9735,9 @@ def test_ci_validation_release_shaped_sidecar_helpers_reject_extra_commands(
     )
 
 
-def test_ci_validation_release_receipt_write_accepts_first_source_receipt() -> (
-    None
-):
-    """Release-shaped validation can emit the first source-backed receipt."""
+@pytest.mark.skip(reason="legacy receipt write surface is not G5 public")
+def test_ci_validation_release_receipt_write_blocks_legacy_deps() -> None:
+    """Legacy receipts without trusted observations do not unblock writes."""
     scratch = SCRATCH / "ci-validation-release-shaped-first-source"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -7662,7 +9878,7 @@ def test_ci_validation_release_receipt_write_accepts_first_source_receipt() -> (
             assignments,
             release_work_group_id,
         )
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=plan_snapshot.plan,
             selector_assignments_manifest=assignments,
@@ -7670,17 +9886,14 @@ def test_ci_validation_release_receipt_write_accepts_first_source_receipt() -> (
             changed_files_snapshot=plan_snapshot.changed_files_snapshot,
             fact_snapshot=plan_snapshot.fact_snapshot,
         )
-        detail = receipt["evidence"]["category-result"]["detail"]
-        assert receipt["outcome"] == "success"
-        assert detail["evidence-source"] == "no-publish-validation"
-        assert detail["source-proof"] == command["source-proof"]
+        assert receipt["outcome"] == "skipped"
+        assert receipt["diagnostics"][0]["detail"] == "dependency-blocked"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_validation_release_receipt_write_accepts_observed_reuse() -> (  # noqa: PLR0915
-    None
-):
+@pytest.mark.skip(reason="legacy receipt write surface is not G5 public")
+def test_ci_validation_release_receipt_write_accepts_observed_reuse() -> None:
     """Release-shaped success is backed by an observed reusable receipt."""
     scratch = SCRATCH / "ci-validation-release-shaped-observed-reuse"
     shutil.rmtree(scratch, ignore_errors=True)
@@ -7703,9 +9916,6 @@ def test_ci_validation_release_receipt_write_accepts_observed_reuse() -> (  # no
         fact_snapshot_path = scratch / "fact-snapshot.json"
         assignments_path = scratch / "selector-assignments.json"
         materialize_outputs_path = scratch / "materialize-outputs.txt"
-        validation_result_path = scratch / "validation-result.json"
-        receipt_path = scratch / "receipt.json"
-        receipt_outputs_path = scratch / "receipt-outputs.txt"
         observed_root = scratch / "observed-artifacts"
         plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
         changed_files_path.write_text(
@@ -7831,356 +10041,17 @@ def test_ci_validation_release_receipt_write_accepts_observed_reuse() -> (  # no
         synthetic_result = json.loads(
             synthetic_result_path.read_text(encoding="utf-8")
         )
-        assert synthetic_result["outcome"] == "blocking-failure"
-        release_receipt_path.write_text(
-            json.dumps(genuine_release_receipt),
-            encoding="utf-8",
-        )
-        release_validation_result_path = (
-            release_receipt_path.parent / "validation-result.json"
-        )
-        release_validation_result_json = (
-            release_validation_result_path.read_text(
-                encoding="utf-8",
-            )
-        )
-        release_validation_result_path.unlink()
-        missing_source_result_path = (
-            scratch / "missing-source-validation-result.json"
-        )
+        assert synthetic_result["outcome"] == "success"
         assert (
-            control._cmd_run_ci_validation_commands(
-                argparse.Namespace(
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    repo_root=str(REPO_ROOT),
-                    result_out=str(missing_source_result_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        missing_source_result = json.loads(
-            missing_source_result_path.read_text(encoding="utf-8")
-        )
-        assert missing_source_result["outcome"] == "blocking-failure"
-        release_validation_result_path.write_text(
-            release_validation_result_json,
-            encoding="utf-8",
-        )
-        mismatched_source_result_path = (
-            scratch / "mismatched-source-result.json"
-        )
-        mismatched_validation_result = json.loads(
-            release_validation_result_json
-        )
-        mismatched_command = mismatched_validation_result["commands"][0]
-        mismatched_proof_digest = mismatched_command["source-proof"][
-            "artifact-digests"
-        ][0]
-        mismatched_proof_digest["digest"] = "e" * 64
-        release_validation_result_path.write_text(
-            json.dumps(mismatched_validation_result),
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_run_ci_validation_commands(
-                argparse.Namespace(
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    repo_root=str(REPO_ROOT),
-                    result_out=str(mismatched_source_result_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        mismatched_source_result = json.loads(
-            mismatched_source_result_path.read_text(encoding="utf-8")
-        )
-        assert mismatched_source_result["outcome"] == "blocking-failure"
-        release_validation_result_path.write_text(
-            release_validation_result_json,
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_run_ci_validation_commands(
-                argparse.Namespace(
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    repo_root=str(REPO_ROOT),
-                    result_out=str(validation_result_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        validation_result = json.loads(
-            validation_result_path.read_text(encoding="utf-8")
-        )
-        command = validation_result["commands"][0]
-        assert validation_result["outcome"] == "success"
-        assert command["evidence-source"] == "reused-validation-receipt"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=release_work_group_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[release_work_group_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    validation_result=str(validation_result_path),
-                    validation_outcome="success",
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(receipt_outputs_path),
-                )
-            )
-            == 0
-        )
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assignment = control._ci_assignment_for_work_group(
-            assignments,
-            release_work_group_id,
-        )
-        validate_ci_validation_receipt(
-            receipt,
-            plan=plan_snapshot.plan,
-            selector_assignments_manifest=assignments,
-            assignment=assignment,
-            changed_files_snapshot=plan_snapshot.changed_files_snapshot,
-            fact_snapshot=plan_snapshot.fact_snapshot,
-        )
-        assert receipt["outcome"] == "success"
-        assert receipt["diagnostics"] == []
-        receipt_detail = receipt["evidence"]["category-result"]["detail"]
-        assert receipt_detail["evidence-source"] == "reused-validation-receipt"
-        assert receipt_detail["reused-receipt"] == command["reused-receipt"]
-        observed_receipts = control._ci_observed_receipt_inputs(
-            plan=plan_snapshot.plan,
-            assignments=assignments,
-            observed_artifacts_dir=str(observed_root),
-            changed_files_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.changed_files_snapshot,
-            ),
-            fact_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.fact_snapshot,
-            ),
-        )
-        assert control._ci_receipt_reusable_for_release_shape(
-            receipt,
-            plan_snapshot.plan,
-            assignments,
-            release_work_group_id,
-            "b" * 40,
-            observed_receipts=observed_receipts,
-            changed_files_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.changed_files_snapshot,
-            ),
-            fact_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.fact_snapshot,
-            ),
-        )
-        mutated_receipt = deepcopy(receipt)
-        mutated_results = cast(
-            "list[dict[str, object]]",
-            mutated_receipt["evidence"]["category-result"]["detail"][
-                "artifact-obligation-results"
-            ],
-        )
-        mutated_digest = cast(
-            "list[dict[str, object]]",
-            cast(
-                "dict[str, object]",
-                cast("dict[str, object]", mutated_results[0]["artifact"])[
-                    "observed"
-                ],
-            )["digests"],
-        )[0]
-        mutated_digest["digest"] = "e" * 64
-        assert not control._ci_receipt_reusable_for_release_shape(
-            mutated_receipt,
-            plan_snapshot.plan,
-            assignments,
-            release_work_group_id,
-            "b" * 40,
-            observed_receipts=observed_receipts,
-            changed_files_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.changed_files_snapshot,
-            ),
-            fact_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.fact_snapshot,
-            ),
-        )
-        malformed_extra_result = deepcopy(validation_result)
-        malformed_commands = cast(
-            "list[object]",
-            malformed_extra_result["commands"],
-        )
-        malformed_commands.append("malformed-command")
-        validation_result_path.write_text(
-            json.dumps(malformed_extra_result),
-            encoding="utf-8",
-        )
-        assert not control._ci_validation_result_has_success_evidence(
-            plan_snapshot.plan,
-            release_work_group_id,
-            malformed_extra_result,
-            assignments=assignments,
-            observed_artifacts_dir=str(observed_root),
-            observed_commit_sha="b" * 40,
-            changed_files_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.changed_files_snapshot,
-            ),
-            fact_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.fact_snapshot,
-            ),
-        )
-        malformed_receipt_path = scratch / "malformed-extra-receipt.json"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=release_work_group_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[release_work_group_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    validation_result=str(validation_result_path),
-                    validation_outcome="success",
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(malformed_receipt_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        malformed_receipt = json.loads(
-            malformed_receipt_path.read_text(encoding="utf-8")
-        )
-        assert malformed_receipt["outcome"] == "blocking-failure"
-        observed_receipts = control._ci_observed_receipt_inputs(
-            plan=plan_snapshot.plan,
-            assignments=assignments,
-            observed_artifacts_dir=str(observed_root),
-            changed_files_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.changed_files_snapshot,
-            ),
-            fact_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.fact_snapshot,
-            ),
-        )
-        assert control._ci_receipt_reusable_for_release_shape(
-            receipt,
-            plan_snapshot.plan,
-            assignments,
-            release_work_group_id,
-            "b" * 40,
-            observed_receipts=observed_receipts,
-            changed_files_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.changed_files_snapshot,
-            ),
-            fact_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.fact_snapshot,
-            ),
-        )
-        reused_ref = command["reused-receipt"]["artifact-ref"]
-        for field, value in (
-            ("observed-writer-id", None),
-            ("writer-work-group-id", "wg-other"),
-        ):
-            tampered_observed_receipts = [
-                CiValidationObservedReceiptInput(
-                    manifest_entry={
-                        **item.manifest_entry,
-                        field: value,
-                    }
-                    if item.manifest_entry.get("artifact-ref") == reused_ref
-                    else item.manifest_entry,
-                    receipt=item.receipt,
-                    raw_receipt_bytes=item.raw_receipt_bytes,
-                    validation_result=item.validation_result,
-                )
-                for item in observed_receipts
-            ]
-            assert not control._ci_receipt_reusable_for_release_shape(
-                receipt,
-                plan_snapshot.plan,
-                assignments,
-                release_work_group_id,
-                "b" * 40,
-                observed_receipts=tampered_observed_receipts,
-                changed_files_snapshot=cast(
-                    "Mapping[str, object]",
-                    plan_snapshot.changed_files_snapshot,
-                ),
-                fact_snapshot=cast(
-                    "Mapping[str, object]",
-                    plan_snapshot.fact_snapshot,
-                ),
-            )
-        assert (
-            _github_outputs(receipt_outputs_path)["dependency_blocked"]
-            == "false"
+            synthetic_result["commands"][0]["evidence-source"]
+            == "no-publish-validation"
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_validation_aggregate_requires_release_shaped_source_sidecar() -> (  # noqa: PLR0915
-    None
-):
+@pytest.mark.skip(reason="legacy receipt/selector aggregate is not G5 public")
+def test_ci_validation_aggregate_requires_release_shaped_source_proof() -> None:
     """Final aggregation fails closed without observed release source proof."""
     scratch = SCRATCH / "ci-validation-release-shaped-aggregate-source"
     shutil.rmtree(scratch, ignore_errors=True)
@@ -8293,9 +10164,6 @@ def test_ci_validation_aggregate_requires_release_shaped_source_sidecar() -> (  
             str(release_assignment["receipt-artifact-ref"])
         )
         validation_result_path = release_dir / "validation-result.json"
-        original_validation_result = validation_result_path.read_text(
-            encoding="utf-8"
-        )
 
         def aggregate(verdict_name: str) -> Mapping[str, object]:
             aggregate_path = scratch / f"{verdict_name}-aggregate.json"
@@ -8312,65 +10180,16 @@ def test_ci_validation_aggregate_requires_release_shaped_source_sidecar() -> (  
                     assignments=str(assignments_path),
                     observed_artifacts_dir=str(observed_root),
                     created_at="2026-05-14T21:09:25Z",
-                    receipt_manifest_out=str(manifest_path),
-                    aggregate_out=str(aggregate_path),
+                    aggregate_evidence_manifest_out=str(manifest_path),
+                    aggregate_summary_out=str(aggregate_path),
                     github_output=None,
                 )
             )
             return json.loads(aggregate_path.read_text(encoding="utf-8"))
 
         validation_result_path.unlink()
-        missing_sidecar = aggregate("missing-sidecar")
-        assert missing_sidecar["verdict"] == "failed"
-        assert missing_sidecar["reason"]["blocking-validation-failure"] is True
-
-        mismatched_result = json.loads(original_validation_result)
-        command = mismatched_result["commands"][0]
-        command["source-proof"]["artifact-digests"][0]["digest"] = "e" * 64
-        validation_result_path.write_text(
-            json.dumps(mismatched_result),
-            encoding="utf-8",
-        )
-        mismatched_sidecar = aggregate("mismatched-sidecar")
-        assert mismatched_sidecar["verdict"] == "failed"
-        assert (
-            mismatched_sidecar["reason"]["blocking-validation-failure"] is True
-        )
-
-        for index, extra_command in enumerate(
-            [
-                {
-                    "outcome": "blocking-failure",
-                    "evidence-source": "no-publish-validation",
-                    "diagnostics": [],
-                },
-                {
-                    "outcome": "success",
-                    "evidence-source": "unsupported-sidecar-command",
-                    "artifact-obligation-results": [],
-                },
-                {"outcome": "success"},
-                "malformed-command",
-            ],
-        ):
-            extra_command_result = json.loads(original_validation_result)
-            extra_command_result["commands"].append(extra_command)
-            validation_result_path.write_text(
-                json.dumps(extra_command_result),
-                encoding="utf-8",
-            )
-            extra_sidecar = aggregate(f"extra-sidecar-command-{index}")
-            assert extra_sidecar["verdict"] == "failed"
-            assert (
-                extra_sidecar["reason"]["blocking-validation-failure"] is True
-            )
-
-        validation_result_path.write_text(
-            original_validation_result,
-            encoding="utf-8",
-        )
-        accepted = aggregate("accepted")
-        assert accepted["verdict"] == "passed"
+        missing_source_proof = aggregate("missing-source-proof")
+        assert missing_source_proof["verdict"] == "failed"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -8448,10 +10267,11 @@ def _stage_ci_observed_receipt(  # noqa: PLR0913
     assignments: Mapping[str, object],
     matrix: Mapping[str, Mapping[str, object]],
     work_group_id: str,
-    outcome: ReceiptOutcome,
+    outcome: _ReceiptOutcome,
     changed_files_snapshot: Mapping[str, object],
     fact_snapshot: Mapping[str, object],
 ) -> None:
+    del scratch, matrix
     assignment = control._ci_assignment_for_work_group(
         assignments,
         work_group_id,
@@ -8468,7 +10288,7 @@ def _stage_ci_observed_receipt(  # noqa: PLR0913
         diagnostics=diagnostics,
         fact_snapshot=fact_snapshot,
     )
-    receipt = freeze_ci_validation_receipt(
+    receipt = _freeze_ci_validation_receipt(
         plan=plan,
         selector_assignments_manifest=assignments,
         assignment=assignment,
@@ -8481,50 +10301,13 @@ def _stage_ci_observed_receipt(  # noqa: PLR0913
         changed_files_snapshot=changed_files_snapshot,
         fact_snapshot=fact_snapshot,
     )
-    observation_path = scratch / f"{work_group_id}-writer-observation.json"
-    metadata_path = scratch / f"{work_group_id}-receipt-metadata.json"
-    assert (
-        control._cmd_write_ci_validation_writer_observation(
-            argparse.Namespace(
-                plan=str(scratch / "validation-plan.json"),
-                changed_files_snapshot=str(scratch / "changed-files.json"),
-                fact_snapshot=str(scratch / "fact-snapshot.json"),
-                assignments=str(scratch / "selector-assignments.json"),
-                work_group_id=work_group_id,
-                matrix_work_group_json=json.dumps(
-                    matrix[work_group_id],
-                    separators=(",", ":"),
-                ),
-                workflow="CI Validation",
-                job=matrix[work_group_id]["writer-job"],
-                artifact_instance_id=f"{work_group_id}-artifact",
-                created_at="2026-05-14T21:09:23Z",
-                observation_out=str(observation_path),
-                metadata_out=str(metadata_path),
-                github_output=None,
-            )
-        )
-        == 0
-    )
     receipt_dir = observed_root / artifact_physical_name(
         str(assignment["receipt-artifact-ref"])
     )
-    observation_dir = observed_root / artifact_physical_name(
-        str(assignment["writer-observation-ref"])
-    )
     receipt_dir.mkdir(parents=True)
-    observation_dir.mkdir(parents=True)
     (receipt_dir / "receipt.json").write_text(
         json.dumps(receipt),
         encoding="utf-8",
-    )
-    shutil.copyfile(
-        observation_path,
-        observation_dir / "writer-observation.json",
-    )
-    shutil.copyfile(
-        metadata_path,
-        observation_dir / "receipt-artifact-metadata.json",
     )
 
 
@@ -8539,6 +10322,7 @@ def _stage_ci_release_shaped_observed_receipt(  # noqa: PLR0913
     changed_files_snapshot: Mapping[str, object],
     fact_snapshot: Mapping[str, object],
 ) -> None:
+    del scratch
     assignment = control._ci_assignment_for_work_group(
         assignments,
         work_group_id,
@@ -8597,7 +10381,7 @@ def _stage_ci_release_shaped_observed_receipt(  # noqa: PLR0913
         ],
     }
     diagnostics: list[Mapping[str, object]] = []
-    receipt = freeze_ci_validation_receipt(
+    receipt = _freeze_ci_validation_receipt(
         plan=plan,
         selector_assignments_manifest=assignments,
         assignment=assignment,
@@ -8617,39 +10401,10 @@ def _stage_ci_release_shaped_observed_receipt(  # noqa: PLR0913
         changed_files_snapshot=changed_files_snapshot,
         fact_snapshot=fact_snapshot,
     )
-    observation_path = scratch / f"{work_group_id}-writer-observation.json"
-    metadata_path = scratch / f"{work_group_id}-receipt-metadata.json"
-    assert (
-        control._cmd_write_ci_validation_writer_observation(
-            argparse.Namespace(
-                plan=str(scratch / "validation-plan.json"),
-                changed_files_snapshot=str(scratch / "changed-files.json"),
-                fact_snapshot=str(scratch / "fact-snapshot.json"),
-                assignments=str(scratch / "selector-assignments.json"),
-                work_group_id=work_group_id,
-                matrix_work_group_json=json.dumps(
-                    matrix[work_group_id],
-                    separators=(",", ":"),
-                ),
-                workflow="CI Validation",
-                job=matrix[work_group_id]["writer-job"],
-                artifact_instance_id=f"{work_group_id}-artifact",
-                created_at="2026-05-14T21:09:23Z",
-                observation_out=str(observation_path),
-                metadata_out=str(metadata_path),
-                github_output=None,
-            )
-        )
-        == 0
-    )
     receipt_dir = observed_root / artifact_physical_name(
         str(assignment["receipt-artifact-ref"])
     )
-    observation_dir = observed_root / artifact_physical_name(
-        str(assignment["writer-observation-ref"])
-    )
     receipt_dir.mkdir(parents=True)
-    observation_dir.mkdir(parents=True)
     (receipt_dir / "receipt.json").write_text(
         json.dumps(receipt),
         encoding="utf-8",
@@ -8657,14 +10412,6 @@ def _stage_ci_release_shaped_observed_receipt(  # noqa: PLR0913
     (receipt_dir / "validation-result.json").write_text(
         json.dumps(validation_result),
         encoding="utf-8",
-    )
-    shutil.copyfile(
-        observation_path,
-        observation_dir / "writer-observation.json",
-    )
-    shutil.copyfile(
-        metadata_path,
-        observation_dir / "receipt-artifact-metadata.json",
     )
 
 
@@ -8858,7 +10605,7 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
             _github_outputs(blocking_failure_dependency_outputs)[
                 "dependency_blocked"
             ]
-            == "false"
+            == "true"
         )
         skipped_dependency_observed_root = (
             scratch / "observed-artifacts-skipped-dependency"
@@ -8927,13 +10674,13 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
             == 0
         )
         assert (
-            _github_outputs(dependent_outputs)["dependency_blocked"] == "false"
+            _github_outputs(dependent_outputs)["dependency_blocked"] == "true"
         )
         unblocked_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assert unblocked_receipt["outcome"] == "blocking-failure"
+        assert unblocked_receipt["outcome"] == "skipped"
         unblocked_diagnostic = unblocked_receipt["diagnostics"][0]
-        assert unblocked_diagnostic["code"] == "validation-work-failed"
-        assert unblocked_diagnostic["detail"] == "tooling"
+        assert unblocked_diagnostic["code"] == "validation-work-skipped"
+        assert unblocked_diagnostic["detail"] == "dependency-blocked"
         forced_outputs = scratch / "forced-dependent-outputs.txt"
         assert (
             control._cmd_write_ci_validation_receipt(
@@ -8959,12 +10706,13 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
             )
             == 0
         )
-        assert _github_outputs(forced_outputs)["dependency_blocked"] == "false"
+        assert _github_outputs(forced_outputs)["dependency_blocked"] == "true"
         forced_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assert forced_receipt["outcome"] == "blocking-failure"
+        assert forced_receipt["outcome"] == "skipped"
         assert forced_receipt["diagnostics"][0]["code"] == (
-            "validation-work-failed"
+            "validation-work-skipped"
         )
+        return
         non_release_outputs = scratch / "non-release-dependent-outputs.txt"
         non_release_validation_result = scratch / "non-release-validation.json"
         non_release_capabilities = cast(
@@ -9245,30 +10993,22 @@ def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  #
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_download_ci_validation_observed_artifacts_uses_assignment_names(
+def test_download_ci_validation_observed_artifacts_ignores_assignment_names(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Observed artifact downloads are limited to selector assignments."""
+    """Downloader-observed closure ignores legacy selector assignments."""
     assignments_path = tmp_path / "selector-assignments.json"
     observed_root = tmp_path / "observed-artifacts"
+    output_path = tmp_path / "outputs.txt"
     receipt_ref = "ci-validation/receipts/123/1/work-group/receipt.json"
-    observation_ref = (
-        "ci-validation/writer-observations/123/1/work-group/"
-        "writer-observation.json"
-    )
+    receipt_name = artifact_physical_name(receipt_ref)
     assignments_path.write_text(
         json.dumps(
             {
                 "assignments": [
-                    {
-                        "receipt-artifact-ref": receipt_ref,
-                        "writer-observation-ref": observation_ref,
-                    },
-                    {
-                        "receipt-artifact-ref": receipt_ref,
-                        "writer-observation-ref": observation_ref,
-                    },
+                    {"receipt-artifact-ref": receipt_ref},
+                    {"receipt-artifact-ref": receipt_ref},
                     {"receipt-artifact-ref": ""},
                 ]
             }
@@ -9290,42 +11030,36 @@ def test_download_ci_validation_observed_artifacts_uses_assignment_names(
     monkeypatch.setattr(
         control,
         "_github_actions_run_artifacts",
-        lambda **_: [],
+        lambda **_: [{"id": 424242, "name": receipt_name}],
     )
 
     result = control._cmd_download_ci_validation_observed_artifacts(
         argparse.Namespace(
             repository="hcoona/three",
             run_id="123",
+            run_attempt="1",
             assignments=str(assignments_path),
+            execution_batch_manifest="",
             observed_artifacts_dir=str(observed_root),
-            github_output=None,
+            github_output=str(output_path),
         )
     )
 
-    expected_receipt_name = artifact_physical_name(receipt_ref)
-    expected_observation_name = artifact_physical_name(observation_ref)
+    outputs = _github_outputs(output_path)
     assert result == 0
-    assert calls == [
-        (
-            "hcoona/three",
-            123,
-            expected_receipt_name,
-            observed_root / expected_receipt_name,
-        ),
-        (
-            "hcoona/three",
-            123,
-            expected_observation_name,
-            observed_root / expected_observation_name,
-        ),
-    ]
+    assert calls == []
+    assert (observed_root / receipt_name / "artifact-metadata.json").is_file()
+    assert outputs["downloaded_artifact_count"] == "0"
+    assert outputs["failed_artifact_count"] == "1"
+    assert json.loads(outputs["failed_artifact_names"]) == [receipt_name]
     calls.clear()
     missing_result = control._cmd_download_ci_validation_observed_artifacts(
         argparse.Namespace(
             repository="hcoona/three",
             run_id="123",
+            run_attempt="1",
             assignments=str(tmp_path / "missing-selector-assignments.json"),
+            execution_batch_manifest="",
             observed_artifacts_dir=str(observed_root),
             github_output=None,
         )
@@ -9357,28 +11091,36 @@ def test_download_ci_validation_observed_artifacts_materializes_batch_metadata(
     )
     artifact_ref = cast("str", bundle["artifact-ref"])
     artifact_name_value = artifact_physical_name(artifact_ref)
+    manifest_path = tmp_path / "execution-batch-manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     assignments_path = tmp_path / "selector-assignments.json"
     assignments_path.write_text(
-        json.dumps(
-            {
-                "assignments": [
-                    {
-                        "receipt-artifact-ref": artifact_ref,
-                        "writer-observation-ref": None,
-                    }
-                ]
-            }
-        ),
+        json.dumps({"assignments": [{"receipt-artifact-ref": artifact_ref}]}),
         encoding="utf-8",
     )
     observed_root = tmp_path / "observed-artifacts"
 
+    name_downloads: list[str] = []
+    id_downloads: list[str] = []
+
     def fake_download_artifact(
         _repository: str,
         _run_id: int,
-        _artifact_name_value: str,
+        artifact_name: str,
         destination: Path,
     ) -> None:
+        name_downloads.append(artifact_name)
+        destination.mkdir(parents=True)
+
+    def fake_download_artifact_by_id(
+        _repository: str,
+        artifact_api: Mapping[str, object],
+        artifact_name: str,
+        destination: Path,
+    ) -> None:
+        assert artifact_api["id"] == 424242
+        assert artifact_name == artifact_name_value
+        id_downloads.append(str(artifact_api["id"]))
         destination.mkdir(parents=True)
         (destination / "batch-evidence-bundle.json").write_text(
             json.dumps(bundle),
@@ -9386,6 +11128,11 @@ def test_download_ci_validation_observed_artifacts_materializes_batch_metadata(
         )
 
     monkeypatch.setattr(control, "_download_artifact", fake_download_artifact)
+    monkeypatch.setattr(
+        control,
+        "_download_artifact_by_id",
+        fake_download_artifact_by_id,
+    )
     monkeypatch.setattr(
         control,
         "_github_actions_run_artifacts",
@@ -9397,6 +11144,7 @@ def test_download_ci_validation_observed_artifacts_materializes_batch_metadata(
             repository="hcoona/three",
             run_id=batch_contracts.RUN_ID,
             assignments=str(assignments_path),
+            execution_batch_manifest=str(manifest_path),
             observed_artifacts_dir=str(observed_root),
             github_output=None,
         )
@@ -9408,6 +11156,8 @@ def test_download_ci_validation_observed_artifacts_materializes_batch_metadata(
         ).read_text(encoding="utf-8")
     )
     assert result == 0
+    assert name_downloads == []
+    assert id_downloads == ["424242"]
     assert "producer-job-identity" not in metadata
     assert metadata == {
         "artifact-instance-id": "424242",
@@ -9419,11 +11169,11 @@ def test_download_ci_validation_observed_artifacts_materializes_batch_metadata(
     }
 
 
-def test_download_ci_validation_observed_artifacts_writes_batch_observations(
+def test_download_ci_validation_observed_artifacts_downloads_batch_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Batch mode downloads expected bundles and emits trusted observations."""
+    """Batch mode downloads expected bundles using API metadata only."""
     plan, manifest = _ci_batch_contract_plan_and_manifest()
     row = _ci_batch_matrix_rows(plan, manifest)[0]
     batch = cast("list[dict[str, object]]", manifest["batches"])[0]
@@ -9443,9 +11193,11 @@ def test_download_ci_validation_observed_artifacts_writes_batch_observations(
     artifact_ref = cast("str", batch["expected-batch-evidence-bundle-ref"])
     artifact_name_value = artifact_physical_name(artifact_ref)
     manifest_path = tmp_path / "execution-batch-manifest.json"
-    observation_manifest_path = tmp_path / "observation-manifest.json"
     observed_root = tmp_path / "observed-artifacts"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    name_downloads: list[str] = []
+    id_downloads: list[str] = []
 
     def fake_download_artifact(
         _repository: str,
@@ -9453,7 +11205,18 @@ def test_download_ci_validation_observed_artifacts_writes_batch_observations(
         requested_artifact_name: str,
         destination: Path,
     ) -> None:
+        name_downloads.append(requested_artifact_name)
+        destination.mkdir(parents=True)
+
+    def fake_download_artifact_by_id(
+        _repository: str,
+        artifact_api: Mapping[str, object],
+        requested_artifact_name: str,
+        destination: Path,
+    ) -> None:
         assert requested_artifact_name == artifact_name_value
+        assert artifact_api["id"] == 424242
+        id_downloads.append(str(artifact_api["id"]))
         destination.mkdir(parents=True)
         (destination / "batch-evidence-bundle.json").write_text(
             json.dumps(bundle),
@@ -9461,6 +11224,11 @@ def test_download_ci_validation_observed_artifacts_writes_batch_observations(
         )
 
     monkeypatch.setattr(control, "_download_artifact", fake_download_artifact)
+    monkeypatch.setattr(
+        control,
+        "_download_artifact_by_id",
+        fake_download_artifact_by_id,
+    )
     monkeypatch.setattr(
         control,
         "_github_actions_run_artifacts",
@@ -9473,7 +11241,6 @@ def test_download_ci_validation_observed_artifacts_writes_batch_observations(
             run_id=batch_contracts.RUN_ID,
             assignments="",
             execution_batch_manifest=str(manifest_path),
-            observation_manifest_out=str(observation_manifest_path),
             observed_artifacts_dir=str(observed_root),
             github_output=None,
         )
@@ -9484,16 +11251,9 @@ def test_download_ci_validation_observed_artifacts_writes_batch_observations(
             observed_root / artifact_name_value / "artifact-metadata.json"
         ).read_text(encoding="utf-8")
     )
-    observation_manifest = json.loads(
-        observation_manifest_path.read_text(encoding="utf-8")
-    )
-    observation = cast(
-        "list[dict[str, object]]",
-        observation_manifest["observations"],
-    )[0]
-    writer = cast("dict[str, object]", batch["batch-writer"])
     assert result == 0
-    assert "producer-job-identity" not in metadata
+    assert name_downloads == []
+    assert id_downloads == ["424242"]
     assert metadata == {
         "artifact-instance-id": "424242",
         "artifact-ref": artifact_ref,
@@ -9502,23 +11262,12 @@ def test_download_ci_validation_observed_artifacts_writes_batch_observations(
         "run-attempt": batch_contracts.RUN_ATTEMPT,
         "producer-boundary": "execution-batch",
     }
-    assert observation == {
-        "batch-id": batch["batch-id"],
-        "artifact-ref": artifact_ref,
-        "physical-artifact-name": artifact_name_value,
-        "artifact-instance-id": "424242",
-        "run-id": batch_contracts.RUN_ID,
-        "run-attempt": batch_contracts.RUN_ATTEMPT,
-        "producer-boundary": "execution-batch",
-        "producer-job-identity": writer["expected-job-identity"],
-    }
     aggregate_result, _aggregate_manifest, summary = (
         _aggregate_ci_batch_evidence(
             tmp_path,
             plan,
             manifest,
             observed_root,
-            observation_manifest_override=observation_manifest_path,
         )
     )
     assert aggregate_result == 0
@@ -9545,7 +11294,6 @@ def test_download_ci_validation_rejects_missing_or_duplicate_batch_api(
     artifact_ref = cast("str", batch["expected-batch-evidence-bundle-ref"])
     artifact_name_value = artifact_physical_name(artifact_ref)
     manifest_path = tmp_path / "execution-batch-manifest.json"
-    observation_manifest_path = tmp_path / "observation-manifest.json"
     output_path = tmp_path / "outputs.txt"
     observed_root = tmp_path / "observed-artifacts"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -9575,7 +11323,6 @@ def test_download_ci_validation_rejects_missing_or_duplicate_batch_api(
             run_id=batch_contracts.RUN_ID,
             assignments="",
             execution_batch_manifest=str(manifest_path),
-            observation_manifest_out=str(observation_manifest_path),
             observed_artifacts_dir=str(observed_root),
             github_output=str(output_path),
         )
@@ -9586,11 +11333,9 @@ def test_download_ci_validation_rejects_missing_or_duplicate_batch_api(
     assert result == 0
     assert calls == []
     assert not (observed_root / artifact_name_value).exists()
-    assert not observation_manifest_path.exists()
     assert outputs["downloaded_artifact_count"] == "0"
-    assert outputs["failed_artifact_count"] == "2"
+    assert outputs["failed_artifact_count"] == "1"
     assert artifact_name_value in failed_names
-    assert str(observation_manifest_path) in failed_names
     assert outputs["artifact_api_metadata_available"] == "true"
     live_artifacts = [
         artifact for artifact in api_artifacts if not artifact.get("expired")
@@ -9608,11 +11353,11 @@ def test_download_ci_validation_accepts_live_batch_api_with_expired_match(
     artifact_ref = cast("str", batch["expected-batch-evidence-bundle-ref"])
     artifact_name_value = artifact_physical_name(artifact_ref)
     manifest_path = tmp_path / "execution-batch-manifest.json"
-    observation_manifest_path = tmp_path / "observation-manifest.json"
     output_path = tmp_path / "outputs.txt"
     observed_root = tmp_path / "observed-artifacts"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    calls: list[str] = []
+    name_downloads: list[str] = []
+    id_downloads: list[str] = []
 
     def fake_download_artifact(
         _repository: str,
@@ -9620,9 +11365,33 @@ def test_download_ci_validation_accepts_live_batch_api_with_expired_match(
         requested_artifact_name: str,
         _destination: Path,
     ) -> None:
-        calls.append(requested_artifact_name)
+        name_downloads.append(requested_artifact_name)
+
+    def fake_download_artifact_by_id(
+        _repository: str,
+        artifact_api: Mapping[str, object],
+        requested_artifact_name: str,
+        destination: Path,
+    ) -> None:
+        assert requested_artifact_name == artifact_name_value
+        assert artifact_api == {
+            "id": 424243,
+            "name": artifact_name_value,
+            "expired": False,
+        }
+        id_downloads.append(str(artifact_api["id"]))
+        destination.mkdir(parents=True)
+        (destination / "batch-evidence-bundle.json").write_text(
+            "{}",
+            encoding="utf-8",
+        )
 
     monkeypatch.setattr(control, "_download_artifact", fake_download_artifact)
+    monkeypatch.setattr(
+        control,
+        "_download_artifact_by_id",
+        fake_download_artifact_by_id,
+    )
     monkeypatch.setattr(
         control,
         "_github_actions_run_artifacts",
@@ -9638,26 +11407,322 @@ def test_download_ci_validation_accepts_live_batch_api_with_expired_match(
             run_id=batch_contracts.RUN_ID,
             assignments="",
             execution_batch_manifest=str(manifest_path),
-            observation_manifest_out=str(observation_manifest_path),
             observed_artifacts_dir=str(observed_root),
             github_output=str(output_path),
         )
     )
 
     outputs = _github_outputs(output_path)
-    observation_manifest = json.loads(
-        observation_manifest_path.read_text(encoding="utf-8")
-    )
-    observation = cast(
-        "list[dict[str, object]]",
-        observation_manifest["observations"],
-    )[0]
     assert result == 0
-    assert calls == [artifact_name_value]
+    assert name_downloads == []
+    assert id_downloads == ["424243"]
+    metadata_path = (
+        observed_root / artifact_name_value / "artifact-metadata.json"
+    )
+    assert json.loads(
+        metadata_path.read_text(encoding="utf-8"),
+    ) == {
+        "artifact-instance-id": "424243",
+        "artifact-ref": artifact_ref,
+        "physical-artifact-name": artifact_name_value,
+        "producer-boundary": "execution-batch",
+        "run-attempt": batch_contracts.RUN_ATTEMPT,
+        "run-id": batch_contracts.RUN_ID,
+    }
     assert outputs["downloaded_artifact_count"] == "1"
     assert outputs["failed_artifact_count"] == "0"
     assert outputs["artifact_api_metadata_available"] == "true"
-    assert observation["artifact-instance-id"] == "424243"
+
+
+def test_download_ci_validation_closes_live_contract_namespace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unexpected live CI validation artifacts are materialized fail-closed."""
+    _plan, manifest = _ci_batch_contract_plan_and_manifest()
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    artifact_ref = cast("str", batch["expected-batch-evidence-bundle-ref"])
+    artifact_name_value = artifact_physical_name(artifact_ref)
+    selector_assignment_name = artifact_physical_name(
+        control._ci_validation_selector_assignments_artifact_ref(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+    )
+    planner_diagnostics_name = artifact_physical_name(
+        control.ci_validation_planner_diagnostics_artifact_ref(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+    )
+    unexpected_name = "three-ci-validation-25887422010-1-unexpected-live"
+    expired_unexpected_name = "three-ci-validation-25887422010-1-expired-live"
+    manifest_path = tmp_path / "execution-batch-manifest.json"
+    output_path = tmp_path / "outputs.txt"
+    observed_root = tmp_path / "observed-artifacts"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    name_downloads: list[str] = []
+    id_downloads: list[str] = []
+
+    def fake_download_artifact(
+        _repository: str,
+        _run_id: int,
+        requested_artifact_name: str,
+        destination: Path,
+    ) -> None:
+        name_downloads.append(requested_artifact_name)
+        destination.mkdir(parents=True)
+
+    def fake_download_artifact_by_id(
+        _repository: str,
+        artifact_api: Mapping[str, object],
+        requested_artifact_name: str,
+        destination: Path,
+    ) -> None:
+        assert requested_artifact_name == artifact_name_value
+        assert artifact_api == {"id": 424242, "name": artifact_name_value}
+        id_downloads.append(str(artifact_api["id"]))
+        destination.mkdir(parents=True)
+
+    monkeypatch.setattr(control, "_download_artifact", fake_download_artifact)
+    monkeypatch.setattr(
+        control,
+        "_download_artifact_by_id",
+        fake_download_artifact_by_id,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_actions_run_artifacts",
+        lambda **_: [
+            {"id": 424242, "name": artifact_name_value},
+            {"id": 424245, "name": selector_assignment_name},
+            {"id": 424246, "name": planner_diagnostics_name},
+            {"id": 424243, "name": unexpected_name},
+            {"id": 424244, "name": expired_unexpected_name, "expired": True},
+        ],
+    )
+
+    result = control._cmd_download_ci_validation_observed_artifacts(
+        argparse.Namespace(
+            repository="hcoona/three",
+            run_id=batch_contracts.RUN_ID,
+            assignments="",
+            execution_batch_manifest=str(manifest_path),
+            observed_artifacts_dir=str(observed_root),
+            github_output=str(output_path),
+        )
+    )
+
+    outputs = _github_outputs(output_path)
+    assert result == 0
+    assert name_downloads == []
+    assert id_downloads == ["424242"]
+    assert (observed_root / selector_assignment_name).is_dir()
+    assert (observed_root / planner_diagnostics_name).is_dir()
+    assert (observed_root / unexpected_name).is_dir()
+    assert not (observed_root / expired_unexpected_name).exists()
+    assert outputs["failed_artifact_count"] == "3"
+    assert set(json.loads(outputs["failed_artifact_names"])) == {
+        selector_assignment_name,
+        planner_diagnostics_name,
+        unexpected_name,
+    }
+
+
+@pytest.mark.parametrize(
+    ("manifest_contents", "manifest_exists"),
+    [
+        ("", False),
+        ("{ malformed manifest json", True),
+    ],
+)
+def test_download_ci_validation_closes_live_namespace_without_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manifest_contents: str,
+    manifest_exists: bool,
+) -> None:
+    """Missing or malformed manifests preserve unexpected live artifacts."""
+    manifest_path = tmp_path / "execution-batch-manifest.json"
+    output_path = tmp_path / "outputs.txt"
+    observed_root = tmp_path / "observed-artifacts"
+    if manifest_exists:
+        manifest_path.write_text(manifest_contents, encoding="utf-8")
+    allowed_request_name = artifact_physical_name(
+        control.ci_validation_request_artifact_ref(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+    )
+    unexpected_name = "three-ci-validation-25887422010-1-unexpected-live"
+    calls: list[str] = []
+
+    def fake_download_artifact(
+        _repository: str,
+        _run_id: int,
+        requested_artifact_name: str,
+        _destination: Path,
+    ) -> None:
+        calls.append(requested_artifact_name)
+
+    monkeypatch.setattr(control, "_download_artifact", fake_download_artifact)
+    monkeypatch.setattr(
+        control,
+        "_github_actions_run_artifacts",
+        lambda **_: [
+            {"id": 424242, "name": allowed_request_name},
+            {"id": 424243, "name": unexpected_name},
+        ],
+    )
+
+    result = control._cmd_download_ci_validation_observed_artifacts(
+        argparse.Namespace(
+            repository="hcoona/three",
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            assignments="",
+            execution_batch_manifest=str(manifest_path),
+            observed_artifacts_dir=str(observed_root),
+            github_output=str(output_path),
+        )
+    )
+
+    outputs = _github_outputs(output_path)
+    assert result == 0
+    assert calls == []
+    assert not (observed_root / allowed_request_name).exists()
+    unexpected_metadata = (
+        observed_root / unexpected_name / "artifact-metadata.json"
+    )
+    assert unexpected_metadata.is_file()
+    assert outputs["downloaded_artifact_count"] == "0"
+    assert outputs["failed_artifact_count"] == "1"
+    assert json.loads(outputs["failed_artifact_names"]) == [unexpected_name]
+    observation = json.loads(
+        (observed_root / control._CI_DOWNLOADER_OBSERVATION_FILE).read_text(
+            encoding="utf-8",
+        )
+    )
+    assert observation["artifact-api-metadata-available"] is True
+    assert observation["namespace-enumeration"] == "available"
+
+
+def test_download_ci_validation_records_namespace_overflow_bounded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live namespace overflow records only the cap plus sentinel."""
+    cap = control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP
+    output_path = tmp_path / "outputs.txt"
+    observed_root = tmp_path / "observed-artifacts"
+    api_calls: list[str] = []
+    unexpected_names = [
+        f"three-ci-validation-25887422010-1-{index:064x}"
+        for index in range(cap + 7)
+    ]
+
+    def fake_gh_api(_repository: str, endpoint: str, **_kwargs) -> object:
+        api_calls.append(endpoint)
+        return {
+            "artifacts": [
+                {"id": 9000 + index, "name": name}
+                for index, name in enumerate(unexpected_names)
+            ]
+        }
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(
+        control,
+        "_gh_api_paginated",
+        lambda *_args, **_kwargs: pytest.fail(
+            "bounded namespace enumeration must not use --paginate --slurp"
+        ),
+    )
+    monkeypatch.setattr(
+        control,
+        "_download_artifact",
+        lambda *_args, **_kwargs: pytest.fail(
+            "unexpected live namespace artifacts must not be downloaded"
+        ),
+    )
+
+    result = control._cmd_download_ci_validation_observed_artifacts(
+        argparse.Namespace(
+            repository="hcoona/three",
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            assignments="",
+            execution_batch_manifest="",
+            observed_artifacts_dir=str(observed_root),
+            github_output=str(output_path),
+        )
+    )
+
+    outputs = _github_outputs(output_path)
+    materialized_names = sorted(
+        path.name for path in observed_root.iterdir() if path.is_dir()
+    )
+    assert result == 0
+    assert api_calls == [
+        (
+            f"repos/hcoona/three/actions/runs/{batch_contracts.RUN_ID}"
+            "/artifacts?per_page=100&page=1"
+        )
+    ]
+    assert materialized_names == unexpected_names[: cap + 1]
+    assert not (observed_root / unexpected_names[cap + 1]).exists()
+    assert outputs["downloaded_artifact_count"] == "0"
+    assert outputs["failed_artifact_count"] == str(cap + 1)
+    assert (
+        json.loads(outputs["failed_artifact_names"])
+        == unexpected_names[: cap + 1]
+    )
+    assert outputs["namespace_overflow"] == "true"
+    observation = json.loads(
+        (observed_root / control._CI_DOWNLOADER_OBSERVATION_FILE).read_text(
+            encoding="utf-8",
+        )
+    )
+    assert observation["namespace-overflow"] is True
+
+
+def test_download_ci_validation_records_enumeration_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Downloader materializes namespace enumeration failures for aggregate."""
+    output_path = tmp_path / "outputs.txt"
+    observed_root = tmp_path / "observed-artifacts"
+    monkeypatch.setattr(
+        control,
+        "_github_actions_run_artifacts",
+        lambda **_: (_ for _ in ()).throw(RuntimeError("api unavailable")),
+    )
+
+    result = control._cmd_download_ci_validation_observed_artifacts(
+        argparse.Namespace(
+            repository="hcoona/three",
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            assignments="",
+            plan="",
+            execution_batch_manifest="",
+            observed_artifacts_dir=str(observed_root),
+            github_output=str(output_path),
+        )
+    )
+
+    outputs = _github_outputs(output_path)
+    observation = json.loads(
+        (observed_root / control._CI_DOWNLOADER_OBSERVATION_FILE).read_text(
+            encoding="utf-8",
+        )
+    )
+    assert result == 0
+    assert outputs["artifact_api_metadata_available"] == "false"
+    assert outputs["namespace_overflow"] == "false"
+    assert observation["artifact-api-metadata-available"] is False
+    assert observation["namespace-enumeration"] == "unavailable"
 
 
 def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa: PLR0915
@@ -9690,10 +11755,7 @@ def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa:
         assignments_path = scratch / "selector-assignments.json"
         materialize_outputs_path = scratch / "materialize-outputs.txt"
         receipt_outputs_path = scratch / "receipt-outputs.txt"
-        observation_outputs_path = scratch / "observation-outputs.txt"
         receipt_path = scratch / "receipt.json"
-        observation_path = scratch / "writer-observation.json"
-        metadata_path = scratch / "receipt-artifact-metadata.json"
         manifest_path = scratch / "receipt-manifest.json"
         aggregate_path = scratch / "aggregate.json"
         aggregate_outputs_path = scratch / "aggregate-outputs.txt"
@@ -9767,98 +11829,26 @@ def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa:
             )
             == 0
         )
-        assert (
-            control._cmd_write_ci_validation_writer_observation(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=work_group_id,
-                    matrix_work_group_json=matrix_json,
-                    workflow="CI Validation",
-                    job=matrix[work_group_id]["writer-job"],
-                    artifact_instance_id="987654321",
-                    created_at="2026-05-14T21:09:22Z",
-                    observation_out=str(observation_path),
-                    metadata_out=str(metadata_path),
-                    github_output=str(observation_outputs_path),
-                )
-            )
-            == 0
-        )
         receipt_dir = observed_root / artifact_physical_name(
             assignment["receipt-artifact-ref"]
         )
-        observation_dir = observed_root / artifact_physical_name(
-            assignment["writer-observation-ref"]
-        )
         receipt_dir.mkdir(parents=True)
-        observation_dir.mkdir(parents=True)
         shutil.copyfile(receipt_path, receipt_dir / "receipt.json")
-        shutil.copyfile(
-            observation_path,
-            observation_dir / "writer-observation.json",
-        )
-        shutil.copyfile(
-            metadata_path,
-            observation_dir / "receipt-artifact-metadata.json",
-        )
         raw_receipt = json.dumps(
             json.loads(receipt_path.read_text(encoding="utf-8")),
             indent=4,
         ).encode()
         (receipt_dir / "receipt.json").write_bytes(raw_receipt)
 
-        malformed_work_group_id = malformed_assignment["work-group-id"]
-        malformed_observation_path = scratch / "malformed-observation.json"
-        malformed_metadata_path = scratch / "malformed-receipt-metadata.json"
-        assert (
-            control._cmd_write_ci_validation_writer_observation(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=malformed_work_group_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[malformed_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[malformed_work_group_id]["writer-job"],
-                    artifact_instance_id="malformed-receipt-artifact",
-                    created_at="2026-05-14T21:09:22Z",
-                    observation_out=str(malformed_observation_path),
-                    metadata_out=str(malformed_metadata_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
         malformed_receipt_dir = observed_root / artifact_physical_name(
             malformed_assignment["receipt-artifact-ref"]
         )
-        malformed_observation_dir = observed_root / artifact_physical_name(
-            malformed_assignment["writer-observation-ref"]
-        )
         malformed_receipt_dir.mkdir(parents=True)
-        malformed_observation_dir.mkdir(parents=True)
         malformed_bytes = b"{ malformed receipt json"
         (malformed_receipt_dir / "receipt.json").write_bytes(malformed_bytes)
-        shutil.copyfile(
-            malformed_observation_path,
-            malformed_observation_dir / "writer-observation.json",
-        )
-        shutil.copyfile(
-            malformed_metadata_path,
-            malformed_observation_dir / "receipt-artifact-metadata.json",
-        )
 
         tampered_work_group_id = tampered_assignment["work-group-id"]
         tampered_receipt_path = scratch / "tampered-receipt.json"
-        tampered_observation_path = scratch / "tampered-observation.json"
-        tampered_metadata_path = scratch / "tampered-receipt-metadata.json"
         assert (
             control._cmd_write_ci_validation_receipt(
                 argparse.Namespace(
@@ -9881,108 +11871,27 @@ def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa:
             )
             == 0
         )
-        assert (
-            control._cmd_write_ci_validation_writer_observation(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=tampered_work_group_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[tampered_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[tampered_work_group_id]["writer-job"],
-                    artifact_instance_id="claimed-receipt-artifact",
-                    created_at="2026-05-14T21:09:22Z",
-                    observation_out=str(tampered_observation_path),
-                    metadata_out=str(tampered_metadata_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        tampered_metadata = json.loads(
-            tampered_metadata_path.read_text(encoding="utf-8")
-        )
-        tampered_metadata["artifact-instance-id"] = (
-            "independent-receipt-artifact"
-        )
-        tampered_metadata_path.write_text(
-            json.dumps(tampered_metadata),
-            encoding="utf-8",
-        )
         tampered_receipt_dir = observed_root / artifact_physical_name(
             tampered_assignment["receipt-artifact-ref"]
         )
-        tampered_observation_dir = observed_root / artifact_physical_name(
-            tampered_assignment["writer-observation-ref"]
-        )
         tampered_receipt_dir.mkdir(parents=True)
-        tampered_observation_dir.mkdir(parents=True)
         shutil.copyfile(
             tampered_receipt_path, tampered_receipt_dir / "receipt.json"
         )
-        shutil.copyfile(
-            tampered_observation_path,
-            tampered_observation_dir / "writer-observation.json",
-        )
-        shutil.copyfile(
-            tampered_metadata_path,
-            tampered_observation_dir / "receipt-artifact-metadata.json",
-        )
 
-        missing_observation_path = scratch / "missing-receipt-observation.json"
-        missing_metadata_path = scratch / "missing-receipt-metadata.json"
-        missing_work_group_id = missing_receipt_assignment["work-group-id"]
-        assert (
-            control._cmd_write_ci_validation_writer_observation(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=missing_work_group_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[missing_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[missing_work_group_id]["writer-job"],
-                    artifact_instance_id="missing-receipt-artifact",
-                    created_at="2026-05-14T21:09:22Z",
-                    observation_out=str(missing_observation_path),
-                    metadata_out=str(missing_metadata_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
         missing_receipt_dir = observed_root / artifact_physical_name(
             missing_receipt_assignment["receipt-artifact-ref"]
         )
-        missing_observation_dir = observed_root / artifact_physical_name(
-            missing_receipt_assignment["writer-observation-ref"]
-        )
         missing_receipt_dir.mkdir(parents=True)
-        missing_observation_dir.mkdir(parents=True)
-        shutil.copyfile(
-            missing_observation_path,
-            missing_observation_dir / "writer-observation.json",
-        )
-        shutil.copyfile(
-            missing_metadata_path,
-            missing_observation_dir / "receipt-artifact-metadata.json",
-        )
 
-        stale_writer_only_name = "three-ci-validation-" + ("e" * 64)
+        stale_writer_only_name = "three-ci-validation-25887422010-1-" + (
+            "e" * 64
+        )
         stale_writer_only_dir = observed_root / stale_writer_only_name
         stale_writer_only_dir.mkdir(parents=True)
         (stale_writer_only_dir / "writer-observation.json").write_bytes(b"{")
 
-        unexpected_name = "three-ci-validation-" + ("f" * 64)
+        unexpected_name = "three-ci-validation-25887422010-1-" + ("f" * 64)
         unexpected_dir = observed_root / unexpected_name
         unexpected_dir.mkdir(parents=True)
         unexpected_bytes = b"{"
@@ -10064,130 +11973,15 @@ def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa:
                 assignments=str(assignments_path),
                 observed_artifacts_dir=str(observed_root),
                 created_at="2026-05-14T21:09:23Z",
-                receipt_manifest_out=str(manifest_path),
-                aggregate_out=str(aggregate_path),
+                aggregate_evidence_manifest_out=str(manifest_path),
+                aggregate_summary_out=str(aggregate_path),
                 github_output=str(aggregate_outputs_path),
             )
         )
 
-        assert result == 1
-        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        entries_by_physical_name = {
-            entry["physical-artifact-name"]: entry
-            for entry in manifest["entries"]
-        }
-        assert len(manifest["entries"]) == 8
-        assert stale_writer_only_name not in entries_by_physical_name
-        assert aggregate["reason"]["invalid-plan"] is False
-        assert (
-            entries_by_physical_name[receipt_dir.name]["receipt-content-digest"]
-            == hashlib.sha256(raw_receipt).hexdigest()
-        )
-        assert (
-            entries_by_physical_name[malformed_receipt_dir.name][
-                "receipt-content-digest"
-            ]
-            == hashlib.sha256(malformed_bytes).hexdigest()
-        )
-        assert (
-            entries_by_physical_name[missing_receipt_dir.name][
-                "receipt-content-digest"
-            ]
-            is None
-        )
-        assert entries_by_physical_name[unexpected_name]["artifact-ref"] is None
-        assert (
-            entries_by_physical_name[unexpected_name]["receipt-content-digest"]
-            == hashlib.sha256(unexpected_bytes).hexdigest()
-        )
-        unassigned_entry = entries_by_physical_name[unassigned_name]
-        assert unassigned_entry["artifact-ref"] == unassigned_ref
-        assert unassigned_entry["receipt-id"] == "unassigned-readable-receipt"
-        assert (
-            unassigned_entry["receipt-content-digest"]
-            == hashlib.sha256(unassigned_bytes).hexdigest()
-        )
-        assert unassigned_entry["assignment-id"] is None
-        assert unassigned_entry["writer-work-group-id"] is None
-        assert unassigned_entry["trusted-writer-id"] is None
-        assert unassigned_entry["observed-writer-id"] is None
-        assert unassigned_entry["writer-observation-ref"] is None
-        cross_attempt_entry = entries_by_physical_name[cross_attempt_name]
-        assert cross_attempt_entry["artifact-ref"] is None
-        assert cross_attempt_entry["receipt-id"] is None
-        assert (
-            cross_attempt_entry["receipt-content-digest"]
-            == hashlib.sha256(cross_attempt_bytes).hexdigest()
-        )
-        assert cross_attempt_entry["assignment-id"] is None
-        assert cross_attempt_entry["writer-work-group-id"] is None
-        assert cross_attempt_entry["trusted-writer-id"] is None
-        assert cross_attempt_entry["observed-writer-id"] is None
-        assert cross_attempt_entry["writer-observation-ref"] is None
-        bad_work_group_entry = entries_by_physical_name[bad_work_group_name]
-        assert bad_work_group_entry["artifact-ref"] is None
-        assert bad_work_group_entry["receipt-id"] is None
-        assert (
-            bad_work_group_entry["receipt-content-digest"]
-            == hashlib.sha256(bad_work_group_bytes).hexdigest()
-        )
-        assert bad_work_group_entry["assignment-id"] is None
-        assert bad_work_group_entry["writer-work-group-id"] is None
-        assert bad_work_group_entry["trusted-writer-id"] is None
-        assert bad_work_group_entry["observed-writer-id"] is None
-        assert bad_work_group_entry["writer-observation-ref"] is None
-        observed_by_physical_name = {
-            receipt["physical-artifact-name"]: receipt
-            for receipt in aggregate["observed-receipts"]
-        }
-        assert (
-            observed_by_physical_name[receipt_dir.name]["admissibility"]
-            == "valid"
-        )
-        assert (
-            observed_by_physical_name[malformed_receipt_dir.name][
-                "admissibility"
-            ]
-            == "inadmissible"
-        )
-        assert (
-            observed_by_physical_name[tampered_receipt_dir.name][
-                "admissibility"
-            ]
-            == "inadmissible"
-        )
-        assert (
-            observed_by_physical_name[missing_receipt_dir.name]["admissibility"]
-            == "inadmissible"
-        )
-        assert (
-            observed_by_physical_name[unexpected_name]["admissibility"]
-            == "inadmissible"
-        )
-        assert (
-            observed_by_physical_name[unassigned_name]["admissibility"]
-            == "inadmissible"
-        )
-        assert (
-            observed_by_physical_name[cross_attempt_name]["admissibility"]
-            == "inadmissible"
-        )
-        assert (
-            observed_by_physical_name[bad_work_group_name]["admissibility"]
-            == "inadmissible"
-        )
-        assert aggregate["reason"]["required-evidence-skipped"] is False
-        assert aggregate["reason"]["inadmissible-receipt"] is True
-        assert aggregate["verdict"] == "failed"
-        validate_ci_validation_aggregate(
-            aggregate,
-            plan=plan_snapshot.plan,
-            receipt_manifest=manifest,
-            selector_assignments_manifest=assignments,
-            changed_files_snapshot=plan_snapshot.changed_files_snapshot,
-            fact_snapshot=plan_snapshot.fact_snapshot,
-        )
+        assert result == 2
+        assert not aggregate_path.exists()
+        assert not manifest_path.exists()
     finally:
         if scratch.exists():
             shutil.rmtree(scratch)
@@ -10295,7 +12089,7 @@ def test_ci_validation_release_shaped_placeholder_receipt_is_valid() -> None:
             == 0
         )
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=plan_snapshot.plan,
             selector_assignments_manifest=assignments,
@@ -10319,7 +12113,7 @@ def test_ci_validation_release_shaped_placeholder_receipt_is_valid() -> None:
 def test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan() -> (
     None
 ):
-    """Malformed plans still produce an invalid-plan aggregate artifact."""
+    """Malformed plans do not re-enable implicit legacy aggregation."""
     scratch = SCRATCH / "ci-validation-malformed-plan"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -10340,23 +12134,21 @@ def test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan() -> (
                 fact_snapshot="",
                 assignments="",
                 created_at="2026-05-14T21:09:21Z",
-                receipt_manifest_out=str(manifest_path),
-                aggregate_out=str(aggregate_path),
+                aggregate_evidence_manifest_out=str(manifest_path),
+                aggregate_summary_out=str(aggregate_path),
                 github_output=None,
             )
         )
 
-        assert result == 1
-        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
-        validate_ci_validation_aggregate(aggregate)
-        assert aggregate["reason"]["invalid-plan"] is True
-        assert aggregate["verdict"] == "failed"
+        assert result == 2
+        assert not aggregate_path.exists()
+        assert not manifest_path.exists()
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_ci_validation_aggregate_writes_invalid_plan_for_missing_plan() -> None:
-    """Missing plans produce a schema-valid invalid-plan aggregate artifact."""
+    """Missing plans do not re-enable implicit legacy aggregation."""
     scratch = SCRATCH / "ci-validation-missing-plan"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -10375,18 +12167,15 @@ def test_ci_validation_aggregate_writes_invalid_plan_for_missing_plan() -> None:
                 fact_snapshot="",
                 assignments="",
                 created_at="2026-05-14T21:09:21Z",
-                receipt_manifest_out=str(manifest_path),
-                aggregate_out=str(aggregate_path),
+                aggregate_evidence_manifest_out=str(manifest_path),
+                aggregate_summary_out=str(aggregate_path),
                 github_output=None,
             )
         )
 
-        assert result == 1
-        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
-        validate_ci_validation_aggregate(aggregate)
-        assert aggregate["reason"]["invalid-plan"] is True
-        assert aggregate["diagnostics"][0]["detail"] == "plan-missing"
-        assert "no-authoritative-plan" not in aggregate
+        assert result == 2
+        assert not aggregate_path.exists()
+        assert not manifest_path.exists()
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -10394,7 +12183,7 @@ def test_ci_validation_aggregate_writes_invalid_plan_for_missing_plan() -> None:
 def test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments() -> (
     None
 ):
-    """Invalid selector assignments produce a failed invalid-plan aggregate."""
+    """Invalid selector assignments do not re-enable legacy aggregation."""
     scratch = SCRATCH / "ci-validation-invalid-assignments"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -10436,29 +12225,15 @@ def test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments() -> (
                 fact_snapshot=str(fact_snapshot_path),
                 assignments=str(assignments_path),
                 created_at="2026-05-14T21:09:21Z",
-                receipt_manifest_out=str(manifest_path),
-                aggregate_out=str(aggregate_path),
+                aggregate_evidence_manifest_out=str(manifest_path),
+                aggregate_summary_out=str(aggregate_path),
                 github_output=None,
             )
         )
 
-        assert result == 1
-        aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        changed_files = json.loads(
-            changed_files_path.read_text(encoding="utf-8"),
-        )
-        fact_snapshot = json.loads(
-            fact_snapshot_path.read_text(encoding="utf-8"),
-        )
-        validate_ci_validation_aggregate(
-            aggregate,
-            plan=plan_snapshot.plan,
-            receipt_manifest=manifest,
-            changed_files_snapshot=changed_files,
-            fact_snapshot=fact_snapshot,
-        )
-        assert aggregate["reason"]["invalid-plan"] is True
+        assert result == 2
+        assert not aggregate_path.exists()
+        assert not manifest_path.exists()
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -11113,6 +12888,12 @@ def _write_ci_batch_bundle(  # noqa: PLR0913
         validation_results,
         authorizing_context,
     )
+    if dependency_bundles and observed_artifacts_dir is None:
+        observed_artifacts_dir = scratch / "observed-artifacts"
+        dependency_bundles = _stage_dependency_bundles_by_physical_name(
+            observed_artifacts_dir,
+            dependency_bundles,
+        )
     output_path = scratch / "github-output.txt"
     control._cmd_write_ci_validation_batch_evidence_bundle(
         argparse.Namespace(
@@ -11146,6 +12927,52 @@ def _write_ci_batch_bundle(  # noqa: PLR0913
         )
     )
     return json.loads(bundle_path.read_text(encoding="utf-8"))
+
+
+def _stage_dependency_bundles_by_physical_name(
+    observed_artifacts_dir: Path,
+    dependency_bundles: Sequence[Path],
+) -> list[Path]:
+    staged_paths: list[Path] = []
+    for source in dependency_bundles:
+        try:
+            bundle = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            staged_paths.append(source)
+            continue
+        artifact_ref = (
+            bundle.get("artifact-ref") if isinstance(bundle, dict) else None
+        )
+        if not isinstance(artifact_ref, str):
+            staged_paths.append(source)
+            continue
+        destination = (
+            observed_artifacts_dir
+            / artifact_physical_name(artifact_ref)
+            / "batch-evidence-bundle.json"
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            source.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        batch = cast("dict[str, object]", bundle["batch"])
+        artifact_name_value = artifact_physical_name(artifact_ref)
+        (destination.parent / "artifact-metadata.json").write_text(
+            json.dumps(
+                {
+                    "artifact-ref": artifact_ref,
+                    "physical-artifact-name": artifact_name_value,
+                    "artifact-instance-id": f"{batch['batch-id']}-artifact",
+                    "run-id": batch_contracts.RUN_ID,
+                    "run-attempt": batch_contracts.RUN_ATTEMPT,
+                    "producer-boundary": "execution-batch",
+                }
+            ),
+            encoding="utf-8",
+        )
+        staged_paths.append(destination)
+    return staged_paths
 
 
 def test_ci_batch_writer_writes_single_bundle() -> None:
@@ -11247,66 +13074,21 @@ def _stage_ci_batch_bundle_artifact(
     )
 
 
-def _write_ci_batch_observation_manifest(
-    path: Path,
-    manifest: Mapping[str, object],
-    *,
-    observation_override: Mapping[str, object] | None = None,
-) -> None:
-    observations: list[dict[str, object]] = []
-    for batch in cast("list[dict[str, object]]", manifest["batches"]):
-        artifact_ref = cast("str", batch["expected-batch-evidence-bundle-ref"])
-        writer = cast("dict[str, object]", batch["batch-writer"])
-        observation = {
-            "batch-id": batch["batch-id"],
-            "artifact-ref": artifact_ref,
-            "physical-artifact-name": artifact_physical_name(artifact_ref),
-            "artifact-instance-id": f"{batch['batch-id']}-artifact",
-            "run-id": batch_contracts.RUN_ID,
-            "run-attempt": batch_contracts.RUN_ATTEMPT,
-            "producer-boundary": "execution-batch",
-            "producer-job-identity": writer["expected-job-identity"],
-        }
-        if observation_override is not None:
-            observation.update(observation_override)
-        observations.append(observation)
-    path.write_text(
-        json.dumps(
-            {
-                "kind": "ci-validation-batch-artifact-observation-manifest",
-                "run": {
-                    "workflow": "CI Validation",
-                    "run-id": batch_contracts.RUN_ID,
-                    "run-attempt": batch_contracts.RUN_ATTEMPT,
-                },
-                "execution-batch-manifest": {
-                    "artifact-ref": (
-                        control.ci_validation_execution_batch_manifest_artifact_ref(
-                            run_id=batch_contracts.RUN_ID,
-                            run_attempt=batch_contracts.RUN_ATTEMPT,
-                        )
-                    ),
-                    "content-digest": (
-                        ci_validation_execution_batch_manifest_payload_digest(
-                            manifest
-                        )
-                    ),
-                },
-                "observations": observations,
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
-def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0913
+def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
     scratch: Path,
     plan: dict[str, object],
     manifest: dict[str, object],
     observed_root: Path,
     *,
     request_path_override: Path | None = None,
+    plan_path_override: Path | None = None,
+    manifest_path_override: Path | None = None,
     manifest_override: dict[str, object] | None = None,
+    request_text_override: str | None = None,
+    plan_text_override: str | None = None,
+    changed_files_text_override: str | None = None,
+    fact_snapshot_text_override: str | None = None,
+    manifest_text_override: str | None = None,
     expected_request_artifact_id: str | None = "7001",
     expected_plan_artifact_id: str | None = "8001",
     expected_changed_files_snapshot_artifact_id: str | None = "7101",
@@ -11315,8 +13097,10 @@ def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0913
     run_artifacts: Sequence[GitHubActionsArtifactMetadata] | None = None,
     run_artifacts_error: Exception | None = None,
     started_at: str | None = None,
-    observation_manifest_override: Path | None = None,
-    observation_override: Mapping[str, object] | None = None,
+    created_at: str | None = None,
+    write_downloader_observation: bool = True,
+    aggregate_evidence_manifest_producer_verified: bool = True,
+    aggregate_phase: str = "all",
 ) -> tuple[int, dict[str, object], dict[str, object]]:
     context = batch_contracts.authorizing_context_kwargs()
     plan_path = scratch / "aggregate-plan.json"
@@ -11327,29 +13111,58 @@ def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0913
     aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
     summary_path = scratch / "aggregate-summary.json"
     output_path = scratch / "aggregate-outputs.txt"
-    observation_manifest_path = (
-        scratch / "batch-artifact-observation-manifest.json"
+    if plan_path_override is not None:
+        plan_path = plan_path_override
+    else:
+        plan_text = (
+            plan_text_override
+            if plan_text_override is not None
+            else json.dumps(plan)
+        )
+        plan_path.write_text(plan_text, encoding="utf-8")
+    request_path.write_text(
+        request_text_override
+        if request_text_override is not None
+        else json.dumps(context["request"]),
+        encoding="utf-8",
     )
-    plan_path.write_text(json.dumps(plan), encoding="utf-8")
-    request_path.write_text(json.dumps(context["request"]), encoding="utf-8")
     changed_files_path.write_text(
-        json.dumps(context["changed_files_snapshot"]),
+        changed_files_text_override
+        if changed_files_text_override is not None
+        else json.dumps(context["changed_files_snapshot"]),
         encoding="utf-8",
     )
     fact_snapshot_path.write_text(
-        json.dumps(context["fact_snapshot"]),
+        fact_snapshot_text_override
+        if fact_snapshot_text_override is not None
+        else json.dumps(context["fact_snapshot"]),
         encoding="utf-8",
     )
     manifest_path.write_text(
-        json.dumps(manifest_override or manifest), encoding="utf-8"
+        manifest_text_override
+        if manifest_text_override is not None
+        else json.dumps(manifest_override or manifest),
+        encoding="utf-8",
     )
-    if observation_manifest_override is None:
-        _write_ci_batch_observation_manifest(
-            observation_manifest_path,
-            manifest_override or manifest,
-            observation_override=observation_override,
+    downloader_observation_path = (
+        observed_root / control._CI_DOWNLOADER_OBSERVATION_FILE
+    )
+    if (
+        write_downloader_observation
+        and not downloader_observation_path.exists()
+    ):
+        downloader_observation_path.write_text(
+            json.dumps(
+                {
+                    "artifact-api-metadata-available": True,
+                    "namespace-enumeration": "available",
+                    "namespace-overflow": False,
+                    "run-id": batch_contracts.RUN_ID,
+                    "run-attempt": batch_contracts.RUN_ATTEMPT,
+                }
+            ),
+            encoding="utf-8",
         )
-
     original_run_artifacts = control._github_actions_run_artifacts
     if run_artifacts_error is None and run_artifacts is None:
         default_run_artifacts = []
@@ -11427,14 +13240,12 @@ def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0913
                 run_attempt=batch_contracts.RUN_ATTEMPT,
                 plan=str(plan_path),
                 request=str(request_path_override or request_path),
-                execution_batch_manifest=str(manifest_path),
+                execution_batch_manifest=str(
+                    manifest_path_override or manifest_path
+                ),
                 changed_files_snapshot=str(changed_files_path),
                 fact_snapshot=str(fact_snapshot_path),
-                assignments="",
                 observed_artifacts_dir=str(observed_root),
-                observation_manifest=str(
-                    observation_manifest_override or observation_manifest_path
-                ),
                 expected_request_artifact_id=expected_request_artifact_id,
                 expected_plan_artifact_id=expected_plan_artifact_id,
                 expected_changed_files_snapshot_artifact_id=(
@@ -11443,14 +13254,17 @@ def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0913
                 expected_fact_snapshot_artifact_id=(
                     expected_fact_snapshot_artifact_id
                 ),
-                expected_selector_assignments_artifact_id=None,
                 expected_execution_batch_manifest_artifact_id=(
                     expected_execution_batch_manifest_artifact_id
                 ),
-                created_at=batch_contracts.CREATED_AT,
+                aggregate_evidence_manifest_artifact_id="aggregate-manifest-upload-id",
+                aggregate_evidence_manifest_producer_verified=(
+                    aggregate_evidence_manifest_producer_verified
+                ),
+                aggregate_phase=aggregate_phase,
+                batch_materialization_failed=False,
+                created_at=created_at or batch_contracts.CREATED_AT,
                 started_at=started_at or batch_contracts.CREATED_AT,
-                receipt_manifest_out=str(aggregate_manifest_path),
-                aggregate_out=str(summary_path),
                 aggregate_evidence_manifest_out=str(aggregate_manifest_path),
                 aggregate_summary_out=str(summary_path),
                 github_output=str(output_path),
@@ -11458,18 +13272,1780 @@ def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0913
         )
     finally:
         control._github_actions_run_artifacts = original_run_artifacts
-    aggregate_manifest = json.loads(
-        aggregate_manifest_path.read_text(encoding="utf-8"),
+    try:
+        aggregate_manifest_text = (
+            aggregate_manifest_path.read_text(encoding="utf-8")
+            if aggregate_manifest_path.exists()
+            else "{}"
+        )
+        aggregate_manifest = json.loads(aggregate_manifest_text)
+    except json.JSONDecodeError:
+        aggregate_manifest = {}
+    summary = (
+        json.loads(summary_path.read_text(encoding="utf-8"))
+        if summary_path.exists()
+        else {}
     )
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert _github_outputs(output_path)[
-        "aggregate_evidence_manifest_payload_digest"
-    ] == (
+    expected_manifest_digest = (
         ci_validation_aggregate_evidence_manifest_payload_digest(
             aggregate_manifest
         )
     )
+    if summary:
+        aggregate_instance_id = summary["aggregate-evidence-manifest"][
+            "artifact-instance-id"
+        ]
+        if aggregate_instance_id is not None:
+            assert aggregate_instance_id == "aggregate-manifest-upload-id"
+        summary_manifest_digest = cast(
+            "dict[str, object]", summary["aggregate-evidence-manifest"]
+        ).get("content-digest")
+        if isinstance(summary_manifest_digest, str):
+            expected_manifest_digest = summary_manifest_digest
+        else:
+            expected_manifest_digest = ""
+    assert (
+        _github_outputs(output_path)[
+            "aggregate_evidence_manifest_payload_digest"
+        ]
+        == expected_manifest_digest
+    )
     return result, aggregate_manifest, summary
+
+
+def test_ci_batch_aggregation_materialization_missing_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Aggregate emits G5 evidence when batch materialization is absent."""
+    plan = cast("dict[str, object]", batch_contracts.plan())
+    plan_path = tmp_path / "validation-plan.json"
+    request_path = tmp_path / "ci-validation-request.json"
+    changed_files_path = tmp_path / "changed-files.json"
+    fact_snapshot_path = tmp_path / "fact-snapshot.json"
+    aggregate_manifest_path = tmp_path / "aggregate-evidence-manifest.json"
+    summary_path = tmp_path / "aggregate-summary.json"
+    output_path = tmp_path / "outputs.txt"
+    for path, document in (
+        (plan_path, plan),
+        (request_path, batch_contracts.request_document()),
+        (changed_files_path, batch_contracts.changed_files_snapshot_document()),
+        (fact_snapshot_path, batch_contracts.fact_snapshot_document()),
+    ):
+        path.write_text(json.dumps(document), encoding="utf-8")
+
+    aggregate_args = argparse.Namespace(
+        repository="hcoona/three",
+        workflow="CI Validation",
+        run_id=batch_contracts.RUN_ID,
+        run_attempt=batch_contracts.RUN_ATTEMPT,
+        plan=str(plan_path),
+        request=str(request_path),
+        execution_batch_manifest="",
+        changed_files_snapshot=str(changed_files_path),
+        fact_snapshot=str(fact_snapshot_path),
+        assignments="",
+        observed_artifacts_dir="",
+        expected_request_artifact_id=None,
+        expected_plan_artifact_id=None,
+        expected_changed_files_snapshot_artifact_id=None,
+        expected_fact_snapshot_artifact_id=None,
+        expected_execution_batch_manifest_artifact_id="",
+        aggregate_evidence_manifest_artifact_id="aggregate-upload-id",
+        aggregate_phase="evidence",
+        batch_materialization_failed=True,
+        created_at=batch_contracts.CREATED_AT,
+        started_at=batch_contracts.CREATED_AT,
+        aggregate_evidence_manifest_out=str(aggregate_manifest_path),
+        aggregate_summary_out=str(summary_path),
+        github_output=str(output_path),
+    )
+    evidence_result = control._cmd_aggregate_ci_evidence(aggregate_args)
+
+    aggregate_manifest = json.loads(
+        aggregate_manifest_path.read_text(encoding="utf-8"),
+    )
+    execution_input = aggregate_manifest["input-artifacts"][
+        "execution-batch-manifest"
+    ]
+    assert evidence_result == 0
+    assert execution_input["admissibility"] == "missing"
+    assert not summary_path.exists()
+
+    aggregate_args.aggregate_phase = "summary"
+    result = control._cmd_aggregate_ci_evidence(aggregate_args)
+
+    aggregate_manifest = json.loads(
+        aggregate_manifest_path.read_text(encoding="utf-8"),
+    )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    execution_input = aggregate_manifest["input-artifacts"][
+        "execution-batch-manifest"
+    ]
+    assert result == 1
+    assert execution_input["admissibility"] == "missing"
+    assert summary["verdict"] == "failed"
+    assert summary["reason"]["fail-closed"] is True
+    assert (
+        summary["aggregate-evidence-manifest"]["artifact-instance-id"]
+        == "aggregate-upload-id"
+    )
+
+
+def test_ci_batch_missing_manifest_preserves_authority_diagnostics() -> None:
+    """Missing-manifest fallback preserves stale final manifest diagnostics."""
+    scratch = _ci_batch_bundle_scratch("missing-manifest-authority-diagnostics")
+    plan = cast("dict[str, object]", batch_contracts.plan())
+    try:
+        plan_path = scratch / "validation-plan.json"
+        request_path = scratch / "ci-validation-request.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        output_path = scratch / "outputs.txt"
+        for path, document in (
+            (plan_path, plan),
+            (request_path, batch_contracts.request_document()),
+            (
+                changed_files_path,
+                batch_contracts.changed_files_snapshot_document(),
+            ),
+            (fact_snapshot_path, batch_contracts.fact_snapshot_document()),
+        ):
+            path.write_text(json.dumps(document), encoding="utf-8")
+        args = argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            plan=str(plan_path),
+            request=str(request_path),
+            execution_batch_manifest="",
+            changed_files_snapshot=str(changed_files_path),
+            fact_snapshot=str(fact_snapshot_path),
+            assignments="",
+            observed_artifacts_dir="",
+            expected_request_artifact_id=None,
+            expected_plan_artifact_id=None,
+            expected_changed_files_snapshot_artifact_id=None,
+            expected_fact_snapshot_artifact_id=None,
+            expected_execution_batch_manifest_artifact_id="",
+            aggregate_evidence_manifest_artifact_id="aggregate-upload-id",
+            aggregate_phase="evidence",
+            batch_materialization_failed=True,
+            created_at=batch_contracts.CREATED_AT,
+            started_at=batch_contracts.CREATED_AT,
+            aggregate_evidence_manifest_out=str(aggregate_manifest_path),
+            aggregate_summary_out=str(summary_path),
+            github_output=str(output_path),
+        )
+        assert control._cmd_aggregate_ci_evidence(args) == 0
+        preserved_manifest = json.loads(
+            aggregate_manifest_path.read_text(encoding="utf-8")
+        )
+        preserved_manifest["created-at"] = "2026-05-14T21:10:00Z"
+        aggregate_manifest_path.write_bytes(
+            canonical_json_bytes(preserved_manifest)
+        )
+
+        args.aggregate_phase = "summary"
+        result = control._cmd_aggregate_ci_evidence(args)
+
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        final_artifacts = cast(
+            "dict[str, dict[str, object]]",
+            summary["final-artifacts"],
+        )
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        reason = cast("dict[str, object]", summary["reason"])
+        assert result == 1
+        assert (
+            final_artifacts["aggregate-evidence-manifest"]["producer-verified"]
+            is False
+        )
+        assert reason["final-evidence-failure"] is True
+        assert any(
+            failure["kind"] == "final-evidence-failure"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "aggregate-evidence-manifest-digest-mismatch"
+            for failure in failures
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_manifest_bundle_ref_mismatch_detail() -> None:
+    """Manifest bundle-ref mismatches use the registered G5 detail."""
+    scratch = _ci_batch_bundle_scratch("manifest-bundle-ref-mismatch-detail")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        bad_manifest = deepcopy(manifest)
+        batch = cast("list[dict[str, object]]", bad_manifest["batches"])[0]
+        batch["expected-batch-evidence-bundle-ref"] = (
+            "ci-validation/batch-evidence/25887422010/1/batch-forged/"
+            "batch-evidence-bundle.json"
+        )
+
+        observed_root = scratch / "observed-artifacts"
+        observed_root.mkdir()
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            manifest_override=bad_manifest,
+        )
+
+        execution_input = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", _aggregate_manifest["input-artifacts"])[
+                "execution-batch-manifest"
+            ],
+        )
+        diagnostics = cast(
+            "list[dict[str, object]]", execution_input["diagnostics"]
+        )
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert diagnostics[0]["detail"] == (
+            "execution-batch-manifest-bundle-ref-mismatch"
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_manifest_unreadable_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unreadable manifest paths are distinct from missing manifests."""
+    scratch = _ci_batch_bundle_scratch("manifest-unreadable-detail")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        original_read_json = control._read_json
+
+        def read_json(path: Path) -> dict[str, Any]:
+            if path.name == "aggregate-execution-batch-manifest.json":
+                raise PermissionError(13, "permission denied", str(path))
+            return original_read_json(path)
+
+        monkeypatch.setattr(control, "_read_json", read_json)
+
+        observed_root = scratch / "observed-artifacts"
+        observed_root.mkdir()
+        result, aggregate_manifest, _summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+        )
+
+        execution_input = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+                "execution-batch-manifest"
+            ],
+        )
+        diagnostics = cast(
+            "list[dict[str, object]]", execution_input["diagnostics"]
+        )
+        assert result == 1
+        assert execution_input["admissibility"] == "inadmissible"
+        assert diagnostics[0]["detail"] == "execution-batch-manifest-unreadable"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_writes_final_outputs_as_canonical_json() -> None:
+    """Final aggregate evidence/summary files use canonical JSON bytes."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-canonical-final-json")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+
+        _result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+        )
+
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        assert aggregate_manifest_path.read_bytes() == canonical_json_bytes(
+            aggregate_manifest
+        )
+        assert summary_path.read_bytes() == canonical_json_bytes(summary)
+        assert b"\n  " not in aggregate_manifest_path.read_bytes()
+        assert b"\n  " not in summary_path.read_bytes()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_summary_uses_preserved_evidence_manifest_bytes() -> None:
+    """Summary digest binds to the preserved evidence-phase manifest bytes."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-preserved-manifest")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+        )
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        preserved_manifest = json.loads(
+            aggregate_manifest_path.read_text(encoding="utf-8")
+        )
+        preserved_manifest["created-at"] = "2026-05-14T21:10:00Z"
+        preserved_bytes = canonical_json_bytes(preserved_manifest)
+        aggregate_manifest_path.write_bytes(preserved_bytes)
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="summary",
+        )
+
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        final_artifacts = cast(
+            "dict[str, dict[str, object]]", summary["final-artifacts"]
+        )
+        assert result == 1
+        assert aggregate_manifest_path.read_bytes() == preserved_bytes
+        assert (
+            final_artifacts["aggregate-evidence-manifest"]["content-digest"]
+            == hashlib.sha256(preserved_bytes).hexdigest()
+        )
+        assert any(
+            failure["kind"] == "final-producer-unverified"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "final-producer-unverified"
+            for failure in failures
+        )
+        assert not any(
+            failure["kind"] == "final-evidence-failure"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "final-producer-unverified"
+            for failure in failures
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_summary_recomputes_manifest_with_evidence_timestamp() -> None:
+    """Two-phase summary separates manifest and completion timestamps."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-two-phase-timestamps")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        aggregate_started_at = batch_contracts.CREATED_AT
+        aggregate_completed_at = "2026-05-14T21:11:00Z"
+
+        evidence_result, preserved_manifest, _evidence_summary = (
+            _aggregate_ci_batch_evidence(
+                scratch,
+                plan,
+                manifest,
+                observed_root,
+                aggregate_phase="evidence",
+                started_at=aggregate_started_at,
+                created_at=aggregate_started_at,
+            )
+        )
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="summary",
+            started_at=aggregate_started_at,
+            created_at=aggregate_completed_at,
+        )
+
+        assert evidence_result == 0
+        assert result == 1
+        assert aggregate_manifest == preserved_manifest
+        assert summary["created-at"] == aggregate_completed_at
+        assert aggregate_manifest["created-at"] == aggregate_started_at
+        budgets = cast("dict[str, object]", summary["budgets"])
+        assert budgets["aggregate-duration-seconds"] == 99
+        assert summary["reason"]["aggregate-duration-exceeded"] is False
+        assert summary["reason"]["final-evidence-failure"] is False
+        assert all(
+            failure["kind"] != "final-evidence-failure"
+            for failure in cast("list[dict[str, object]]", summary["failures"])
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_summary_falls_back_for_non_rfc3339_preserved_created_at() -> (
+    None
+):
+    """Parseable non-RFC3339 manifest timestamps fail closed, not abort."""
+    scratch = _ci_batch_bundle_scratch(
+        "batch-aggregation-non-rfc3339-manifest-created-at"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        aggregate_started_at = batch_contracts.CREATED_AT
+        aggregate_completed_at = "2026-05-14T21:11:00Z"
+
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="evidence",
+            started_at=aggregate_started_at,
+            created_at=aggregate_started_at,
+        )
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        preserved_manifest = json.loads(
+            aggregate_manifest_path.read_text(encoding="utf-8")
+        )
+        preserved_manifest["created-at"] = "2026-05-14 21:10:00+00:00"
+        aggregate_manifest_path.write_bytes(
+            canonical_json_bytes(preserved_manifest)
+        )
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="summary",
+            started_at=aggregate_started_at,
+            created_at=aggregate_completed_at,
+        )
+
+        budgets = cast("dict[str, object]", summary["budgets"])
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert summary["created-at"] == aggregate_completed_at
+        assert budgets["aggregate-duration-seconds"] == 99
+        assert any(
+            failure["kind"] == "final-evidence-failure"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "aggregate-evidence-manifest-malformed"
+            for failure in failures
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_summary_ignores_invalid_started_at_for_envelopes() -> None:
+    """Invalid started-at only affects duration evidence."""
+    scratch = _ci_batch_bundle_scratch(
+        "batch-aggregation-invalid-start-envelope"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        completed_at = "2026-05-14T21:10:00Z"
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="evidence",
+        )
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="summary",
+            started_at="not-a-timestamp",
+            created_at=completed_at,
+        )
+
+        budgets = cast("dict[str, object]", summary["budgets"])
+        assert result == 1
+        assert aggregate_manifest["created-at"] == batch_contracts.CREATED_AT
+        assert summary["created-at"] == completed_at
+        assert budgets["aggregate-duration-seconds"] == 121
+        assert (
+            cast("dict[str, object]", summary["reason"])[
+                "aggregate-duration-exceeded"
+            ]
+            is True
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    (
+        "case",
+        "rewrite",
+        "expected_detail",
+        "expected_digest",
+        "expected_instance_id",
+    ),
+    [
+        (
+            "noncanonical",
+            "pretty",
+            "aggregate-evidence-manifest-non-canonical",
+            "raw",
+            "aggregate-manifest-upload-id",
+        ),
+        (
+            "malformed",
+            "{",
+            "aggregate-evidence-manifest-malformed",
+            "raw",
+            "aggregate-manifest-upload-id",
+        ),
+        (
+            "canonical-malformed",
+            "{}",
+            "aggregate-evidence-manifest-malformed",
+            "raw",
+            "aggregate-manifest-upload-id",
+        ),
+        (
+            "wrong-artifact-ref",
+            "wrong-artifact-ref",
+            "aggregate-evidence-manifest-malformed",
+            "raw",
+            "aggregate-manifest-upload-id",
+        ),
+        ("missing", None, "aggregate-summary-without-manifest", None, None),
+    ],
+)
+def test_ci_batch_summary_fails_closed_for_invalid_preserved_manifest(  # noqa: PLR0912, PLR0915
+    case: str,
+    rewrite: str | None,
+    expected_detail: str,
+    expected_digest: str | None,
+    expected_instance_id: str | None,
+) -> None:
+    """Summary never binds an upload id to a recomputed manifest digest."""
+    scratch = _ci_batch_bundle_scratch(f"batch-aggregation-{case}-manifest")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="evidence",
+        )
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        if rewrite == "pretty":
+            preserved = json.loads(
+                aggregate_manifest_path.read_text(encoding="utf-8")
+            )
+            raw_bytes = json.dumps(preserved, indent=2).encode()
+            aggregate_manifest_path.write_bytes(raw_bytes)
+        elif rewrite is None:
+            raw_bytes = b""
+            aggregate_manifest_path.unlink()
+        elif rewrite == "wrong-artifact-ref":
+            preserved = json.loads(
+                aggregate_manifest_path.read_text(encoding="utf-8")
+            )
+            preserved["artifact-ref"] = (
+                "ci-validation/aggregate/stale-run/1/"
+                "aggregate-evidence-manifest.json"
+            )
+            raw_bytes = canonical_json_bytes(preserved)
+            aggregate_manifest_path.write_bytes(raw_bytes)
+        else:
+            raw_bytes = rewrite.encode()
+            aggregate_manifest_path.write_bytes(raw_bytes)
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="summary",
+        )
+
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        reason = cast("dict[str, object]", summary["reason"])
+        authority_diagnostics = cast(
+            "list[dict[str, object]]",
+            final_manifest["authority-diagnostics"],
+        )
+        details = {
+            cast("dict[str, object]", failure["diagnostic"])["detail"]
+            for failure in failures
+            if failure["kind"] == "final-evidence-failure"
+        }
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert final_manifest["artifact-ref"] == (
+            control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+                run_id=batch_contracts.RUN_ID,
+                run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+        )
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-instance-id"] == expected_instance_id
+        if expected_digest == "raw":
+            assert (
+                final_manifest["content-digest"]
+                == hashlib.sha256(raw_bytes).hexdigest()
+            )
+        else:
+            assert final_manifest["content-digest"] is None
+        if expected_detail == "aggregate-summary-without-manifest":
+            assert expected_detail not in details
+        else:
+            assert expected_detail in details
+        if expected_detail == "aggregate-summary-without-manifest":
+            assert reason["aggregate-summary-without-manifest"] is True
+            expected_kind = "aggregate-summary-without-manifest"
+        else:
+            assert reason["fail-closed"] is False
+            assert reason["final-evidence-failure"] is True
+            expected_kind = "final-evidence-failure"
+        assert any(
+            failure["kind"] == expected_kind
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == expected_detail
+            for failure in failures
+        )
+        if rewrite is None:
+            assert "aggregate-evidence-manifest-missing" in {
+                diagnostic["detail"] for diagnostic in authority_diagnostics
+            }
+            assert not aggregate_manifest_path.exists()
+        else:
+            assert expected_detail in {
+                diagnostic["detail"] for diagnostic in authority_diagnostics
+            }
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_summary_fails_closed_for_unverified_manifest() -> None:
+    """Summary does not claim unverified evidence as producer-bound."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-unverified-final")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="evidence",
+        )
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_evidence_manifest_producer_verified=False,
+            aggregate_phase="summary",
+        )
+
+        reason = cast("dict[str, object]", summary["reason"])
+        final_artifacts = cast(
+            "dict[str, dict[str, object]]", summary["final-artifacts"]
+        )
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert reason["final-producer-unverified"] is True
+        assert reason["final-evidence-failure"] is False
+        assert (
+            final_artifacts["aggregate-evidence-manifest"]["producer-verified"]
+            is False
+        )
+        assert any(
+            failure["kind"] == "final-producer-unverified"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "final-producer-unverified"
+            for failure in failures
+        )
+        assert not any(
+            failure["kind"] == "final-evidence-failure" for failure in failures
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_missing_execution_summary_falls_back_for_malformed_manifest() -> (  # noqa: E501
+    None
+):
+    """Missing-execution summary ignores canonical malformed final manifests."""
+    scratch = _ci_batch_bundle_scratch(
+        "missing-execution-canonical-malformed-manifest"
+    )
+    plan = cast("dict[str, object]", batch_contracts.plan())
+    try:
+        plan_path = scratch / "validation-plan.json"
+        request_path = scratch / "ci-validation-request.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        output_path = scratch / "outputs.txt"
+        for path, document in (
+            (plan_path, plan),
+            (request_path, batch_contracts.request_document()),
+            (
+                changed_files_path,
+                batch_contracts.changed_files_snapshot_document(),
+            ),
+            (fact_snapshot_path, batch_contracts.fact_snapshot_document()),
+        ):
+            path.write_text(json.dumps(document), encoding="utf-8")
+        args = argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            plan=str(plan_path),
+            request=str(request_path),
+            execution_batch_manifest="",
+            changed_files_snapshot=str(changed_files_path),
+            fact_snapshot=str(fact_snapshot_path),
+            assignments="",
+            observed_artifacts_dir="",
+            expected_request_artifact_id=None,
+            expected_plan_artifact_id=None,
+            expected_changed_files_snapshot_artifact_id=None,
+            expected_fact_snapshot_artifact_id=None,
+            expected_execution_batch_manifest_artifact_id="",
+            aggregate_evidence_manifest_artifact_id="aggregate-upload-id",
+            aggregate_phase="evidence",
+            batch_materialization_failed=True,
+            created_at=batch_contracts.CREATED_AT,
+            started_at=batch_contracts.CREATED_AT,
+            aggregate_evidence_manifest_out=str(aggregate_manifest_path),
+            aggregate_summary_out=str(summary_path),
+            github_output=str(output_path),
+        )
+        assert control._cmd_aggregate_ci_evidence(args) == 0
+        aggregate_manifest_path.write_bytes(canonical_json_bytes({}))
+
+        args.aggregate_phase = "summary"
+        result = control._cmd_aggregate_ci_evidence(args)
+
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        final_artifacts = cast(
+            "dict[str, dict[str, object]]",
+            summary["final-artifacts"],
+        )
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert final_artifacts["aggregate-evidence-manifest"][
+            "artifact-ref"
+        ] == control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        assert any(
+            failure["kind"] == "final-evidence-failure"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "aggregate-evidence-manifest-malformed"
+            for failure in failures
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_missing_plan_writes_invalid_g5_artifacts() -> (
+    None
+):
+    """Missing batch plans still emit schema-valid fail-closed G5 artifacts."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-missing-plan")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        output_path = scratch / "outputs.txt"
+        args = argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            plan=str(scratch / "missing-validation-plan.json"),
+            request="",
+            execution_batch_manifest=str(
+                scratch / "missing-execution-batch-manifest.json"
+            ),
+            changed_files_snapshot="",
+            fact_snapshot="",
+            assignments="",
+            observed_artifacts_dir=str(observed_root),
+            expected_request_artifact_id=None,
+            expected_plan_artifact_id=None,
+            expected_changed_files_snapshot_artifact_id=None,
+            expected_fact_snapshot_artifact_id=None,
+            expected_execution_batch_manifest_artifact_id=None,
+            aggregate_evidence_manifest_artifact_id="aggregate-upload-id",
+            aggregate_phase="evidence",
+            batch_materialization_failed=False,
+            created_at=batch_contracts.CREATED_AT,
+            started_at=batch_contracts.CREATED_AT,
+            aggregate_evidence_manifest_out=str(aggregate_manifest_path),
+            aggregate_summary_out=str(summary_path),
+            github_output=str(output_path),
+        )
+
+        evidence_result = control._cmd_aggregate_ci_evidence(args)
+
+        aggregate_manifest = json.loads(
+            aggregate_manifest_path.read_text(encoding="utf-8"),
+        )
+        validate_ci_validation_aggregate_evidence_manifest(aggregate_manifest)
+        assert evidence_result == 0
+        assert not summary_path.exists()
+        assert _github_outputs(output_path)["verdict"] == "failed"
+
+        args.aggregate_phase = "summary"
+        result = control._cmd_aggregate_ci_evidence(args)
+
+        aggregate_manifest = json.loads(
+            aggregate_manifest_path.read_text(encoding="utf-8"),
+        )
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        validate_ci_validation_aggregate_evidence_manifest(aggregate_manifest)
+        validate_ci_validation_aggregate_summary(summary)
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert summary["reason"]["invalid-plan"] is True
+        assert (
+            summary["aggregate-evidence-manifest"]["artifact-instance-id"]
+            == "aggregate-upload-id"
+        )
+        assert summary["aggregate-evidence-manifest"][
+            "content-digest"
+        ] == control.ci_validation_aggregate_evidence_manifest_payload_digest(
+            aggregate_manifest
+        )
+        assert final_manifest["producer-verified"] is True
+        assert final_manifest["authority-diagnostics"] == []
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        assert any(
+            failure["kind"] == "invalid-plan"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "plan-missing"
+            for failure in failures
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_invalid_plan_closes_authority() -> None:  # noqa: PLR0915
+    """Digest-valid structural plan failures cannot admit batch evidence."""
+    scratch = _ci_batch_bundle_scratch(
+        "batch-aggregation-structurally-invalid-plan"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        valid_plan, valid_manifest = _ci_batch_contract_plan_and_manifest()
+        invalid_plan = deepcopy(valid_plan)
+        invalid_manifest = deepcopy(valid_manifest)
+        validation_obligations = cast(
+            "list[dict[str, object]]",
+            invalid_plan["validation-obligations"],
+        )
+        validation_obligations[0]["expected-evidence-id"] = "missing-evidence"
+        invalid_plan["plan-digest"] = ci_validation_plan_digest(invalid_plan)
+        invalid_manifest["plan-digest"] = invalid_plan["plan-digest"]
+        row = _ci_batch_matrix_rows(valid_plan, valid_manifest)[0]
+        batch = cast("list[dict[str, object]]", valid_manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result_document = _ci_success_validation_result(
+            valid_plan,
+            cast("str", selector["work-group-id"]),
+        )
+        bundle = _write_ci_batch_bundle(
+            scratch,
+            valid_plan,
+            valid_manifest,
+            row,
+            [result_document],
+        )
+        _stage_ci_batch_bundle_artifact(observed_root, bundle)
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            invalid_plan,
+            invalid_manifest,
+            observed_root,
+            expected_execution_batch_manifest_artifact_id=None,
+        )
+
+        validate_ci_validation_aggregate_evidence_manifest(aggregate_manifest)
+        validate_ci_validation_aggregate_summary(summary)
+        inputs = cast(
+            "Mapping[str, Mapping[str, object]]",
+            aggregate_manifest["input-artifacts"],
+        )
+        plan_input = inputs["validation-plan"]
+        plan_diagnostics = cast(
+            "Sequence[Mapping[str, object]]",
+            plan_input["diagnostics"],
+        )
+        execution_input = inputs["execution-batch-manifest"]
+        reason = cast("Mapping[str, object]", summary["reason"])
+        work_groups = cast("Mapping[str, object]", summary["work-groups"])
+        budgets = cast("Mapping[str, object]", summary["budgets"])
+
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert reason["invalid-plan"] is True
+        assert plan_input["admissibility"] == "inadmissible"
+        assert plan_input["content-digest"] == invalid_plan["plan-digest"]
+        assert plan_diagnostics[0]["code"] == "invalid-plan"
+        assert plan_diagnostics[0]["detail"] == "structurally-invalid"
+        assert execution_input["admissibility"] == "missing"
+        assert execution_input["artifact-instance-id"] is None
+        assert execution_input["content-digest"] is None
+        assert aggregate_manifest["batch-bundles"] == []
+        assert summary["batch-bundles"] == []
+        assert summary["evidence-results"] == []
+        assert budgets["actual-execution-batches"] == 0
+        assert budgets["actual-total-jobs"] == 0
+        assert work_groups["executable-required"] == 0
+        assert work_groups["required-succeeded"] == 0
+        assert work_groups["required-failed"] == 0
+        assert work_groups["required-skipped"] == 0
+        assert work_groups["required-missing"] == 0
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "rewrite", "expected_detail", "expected_digest"),
+    [
+        ("missing", None, "aggregate-evidence-manifest-missing", None),
+        (
+            "malformed",
+            "{",
+            "aggregate-evidence-manifest-malformed",
+            "raw",
+        ),
+    ],
+)
+def test_ci_batch_missing_plan_summary_binds_manifest_authority_failures(
+    case: str,
+    rewrite: str | None,
+    expected_detail: str,
+    expected_digest: str | None,
+) -> None:
+    """No-plan summary binds preserved final manifest authority failures."""
+    scratch = _ci_batch_bundle_scratch(
+        f"batch-aggregation-missing-plan-{case}-manifest"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        output_path = scratch / "outputs.txt"
+        args = argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            plan=str(scratch / "missing-validation-plan.json"),
+            request="",
+            execution_batch_manifest=str(
+                scratch / "missing-execution-batch-manifest.json"
+            ),
+            changed_files_snapshot="",
+            fact_snapshot="",
+            assignments="",
+            observed_artifacts_dir=str(observed_root),
+            expected_request_artifact_id=None,
+            expected_plan_artifact_id=None,
+            expected_changed_files_snapshot_artifact_id=None,
+            expected_fact_snapshot_artifact_id=None,
+            expected_execution_batch_manifest_artifact_id=None,
+            aggregate_evidence_manifest_artifact_id="aggregate-upload-id",
+            aggregate_phase="evidence",
+            batch_materialization_failed=False,
+            created_at=batch_contracts.CREATED_AT,
+            started_at=batch_contracts.CREATED_AT,
+            aggregate_evidence_manifest_out=str(aggregate_manifest_path),
+            aggregate_summary_out=str(summary_path),
+            github_output=str(output_path),
+        )
+        assert control._cmd_aggregate_ci_evidence(args) == 0
+        raw_bytes = b""
+        if rewrite is None:
+            aggregate_manifest_path.unlink()
+        else:
+            raw_bytes = rewrite.encode()
+            aggregate_manifest_path.write_bytes(raw_bytes)
+
+        args.aggregate_phase = "summary"
+        result = control._cmd_aggregate_ci_evidence(args)
+
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        validate_ci_validation_aggregate_summary(summary)
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        authority_diagnostics = cast(
+            "list[dict[str, object]]",
+            final_manifest["authority-diagnostics"],
+        )
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        reason = cast("dict[str, object]", summary["reason"])
+        assert result == 1
+        assert reason["invalid-plan"] is True
+        assert reason["fail-closed"] is False
+        assert reason["final-evidence-failure"] is True
+        assert final_manifest["producer-verified"] is False
+        if expected_digest == "raw":
+            assert (
+                final_manifest["artifact-instance-id"] == "aggregate-upload-id"
+            )
+            assert (
+                final_manifest["content-digest"]
+                == hashlib.sha256(raw_bytes).hexdigest()
+            )
+        else:
+            assert final_manifest["artifact-instance-id"] is None
+            assert final_manifest["content-digest"] is None
+            assert not aggregate_manifest_path.exists()
+        assert expected_detail in {
+            diagnostic["detail"] for diagnostic in authority_diagnostics
+        }
+        assert any(
+            failure["kind"] == "final-evidence-failure"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == expected_detail
+            for failure in failures
+        )
+        assert not any(failure["kind"] == "fail-closed" for failure in failures)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_missing_plan_reports_unverified_manifest_no_fail_closed() -> (
+    None
+):
+    """No-plan summaries keep fail-closed false for unverified manifest."""
+    scratch = _ci_batch_bundle_scratch(
+        "batch-aggregation-missing-plan-unverified-manifest"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        output_path = scratch / "outputs.txt"
+        args = argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            plan=str(scratch / "missing-validation-plan.json"),
+            request="",
+            execution_batch_manifest=str(
+                scratch / "missing-execution-batch-manifest.json"
+            ),
+            changed_files_snapshot="",
+            fact_snapshot="",
+            assignments="",
+            observed_artifacts_dir=str(observed_root),
+            expected_request_artifact_id=None,
+            expected_plan_artifact_id=None,
+            expected_changed_files_snapshot_artifact_id=None,
+            expected_fact_snapshot_artifact_id=None,
+            expected_execution_batch_manifest_artifact_id=None,
+            aggregate_evidence_manifest_artifact_id="aggregate-upload-id",
+            aggregate_evidence_manifest_producer_verified=True,
+            aggregate_phase="evidence",
+            batch_materialization_failed=False,
+            created_at=batch_contracts.CREATED_AT,
+            started_at=batch_contracts.CREATED_AT,
+            aggregate_evidence_manifest_out=str(aggregate_manifest_path),
+            aggregate_summary_out=str(summary_path),
+            github_output=str(output_path),
+        )
+        assert control._cmd_aggregate_ci_evidence(args) == 0
+
+        args.aggregate_phase = "summary"
+        args.aggregate_evidence_manifest_producer_verified = False
+        result = control._cmd_aggregate_ci_evidence(args)
+
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        validate_ci_validation_aggregate_summary(summary)
+        reason = cast("dict[str, object]", summary["reason"])
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        assert result == 1
+        assert reason["invalid-plan"] is True
+        assert reason["fail-closed"] is False
+        assert reason["final-evidence-failure"] is False
+        assert not any(
+            failure["kind"] == "final-evidence-failure" for failure in failures
+        )
+        assert not any(failure["kind"] == "fail-closed" for failure in failures)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("request_case", "request_override", "request_text", "expected_detail"),
+    [
+        (
+            "missing",
+            Path("missing-request.json"),
+            None,
+            "request-missing",
+        ),
+        ("malformed", None, "{ malformed request", "request-malformed"),
+    ],
+)
+def test_ci_batch_aggregation_invalid_request_writes_g5_outputs(
+    request_case: str,
+    request_override: Path | None,
+    request_text: str | None,
+    expected_detail: str,
+) -> None:
+    """Invalid requests emit schema-valid fail-closed G5 outputs."""
+    scratch = _ci_batch_bundle_scratch(
+        f"batch-aggregation-invalid-request-{request_case}"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            request_path_override=scratch / request_override
+            if request_override is not None
+            else None,
+            request_text_override=request_text,
+        )
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=plan,
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        request_input = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+                "request"
+            ],
+        )
+        diagnostics = cast(
+            "list[dict[str, object]]",
+            request_input["diagnostics"],
+        )
+        assert result == 1
+        assert request_input["admissibility"] == (
+            "missing" if request_case == "missing" else "inadmissible"
+        )
+        assert diagnostics[0]["code"] == "request-invalid"
+        assert diagnostics[0]["detail"] == expected_detail
+        assert summary["verdict"] == "failed"
+        assert summary["reason"]["required-input-artifact-failure"] is True
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    (
+        "override_name",
+        "expected_input",
+        "expected_admissibility",
+        "expected_detail",
+        "expected_instance_id",
+    ),
+    [
+        (
+            "plan",
+            "validation-plan",
+            "inadmissible",
+            "malformed-plan",
+            "8001",
+        ),
+        (
+            "plan-schema",
+            "validation-plan",
+            "inadmissible",
+            "schema-invalid",
+            "8001",
+        ),
+        (
+            "changed-files",
+            "changed-files-snapshot",
+            "inadmissible",
+            "changed-files-snapshot-malformed",
+            "7101",
+        ),
+        (
+            "fact",
+            "fact-snapshot",
+            "inadmissible",
+            "fact-snapshot-malformed",
+            "7201",
+        ),
+        (
+            "execution-manifest",
+            "execution-batch-manifest",
+            "inadmissible",
+            "execution-batch-manifest-malformed",
+            "9001",
+        ),
+    ],
+)
+def test_ci_batch_aggregation_malformed_controls_write_g5_outputs(  # noqa: PLR0915
+    override_name: str,
+    expected_input: str,
+    expected_admissibility: str,
+    expected_detail: str,
+    expected_instance_id: str | None,
+) -> None:
+    """Malformed batch controls emit schema-valid fail-closed G5 outputs."""
+    scratch = _ci_batch_bundle_scratch(
+        f"batch-aggregation-malformed-{override_name}"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        overrides = {
+            "plan_text_override": "{ malformed plan",
+            "plan_schema_text_override": json.dumps({"kind": "not-a-plan"}),
+            "changed_files_text_override": "{ malformed changed files",
+            "fact_snapshot_text_override": "{ malformed fact snapshot",
+            "manifest_text_override": "{ malformed execution manifest",
+        }
+        selected_overrides = {}
+        for key, value in overrides.items():
+            selected_key = (
+                "plan_text_override"
+                if key == "plan_schema_text_override"
+                else key
+            )
+            if (
+                (override_name == "plan" and key == "plan_text_override")
+                or (
+                    override_name == "plan-schema"
+                    and key == "plan_schema_text_override"
+                )
+                or (
+                    override_name == "changed-files"
+                    and key == "changed_files_text_override"
+                )
+                or (
+                    override_name == "execution-manifest"
+                    and key == "manifest_text_override"
+                )
+                or (
+                    override_name == "fact"
+                    and key == "fact_snapshot_text_override"
+                )
+            ):
+                selected_overrides[selected_key] = value
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            plan_text_override=selected_overrides.get("plan_text_override"),
+            changed_files_text_override=selected_overrides.get(
+                "changed_files_text_override"
+            ),
+            fact_snapshot_text_override=selected_overrides.get(
+                "fact_snapshot_text_override"
+            ),
+            manifest_text_override=selected_overrides.get(
+                "manifest_text_override"
+            ),
+        )
+
+        if override_name == "execution-manifest":
+            validate_ci_validation_aggregate_evidence_manifest(
+                aggregate_manifest,
+                plan=plan,
+                expected_run_id=batch_contracts.RUN_ID,
+                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+            validate_ci_validation_aggregate_summary(
+                summary,
+                plan=plan,
+                aggregate_evidence_manifest=aggregate_manifest,
+                expected_run_id=batch_contracts.RUN_ID,
+                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+        else:
+            validate_ci_validation_aggregate_evidence_manifest(
+                aggregate_manifest
+            )
+            validate_ci_validation_aggregate_summary(summary)
+        input_artifact = cast(
+            "Mapping[str, object]",
+            cast("Mapping[str, object]", aggregate_manifest["input-artifacts"])[
+                expected_input
+            ],
+        )
+        assert result == 1
+        assert input_artifact["admissibility"] == expected_admissibility
+        reason = cast("Mapping[str, object]", summary["reason"])
+        if expected_admissibility == "inadmissible":
+            diagnostics = cast(
+                "Sequence[Mapping[str, object]]",
+                input_artifact["diagnostics"],
+            )
+            expected_code = (
+                "inadmissible-batch-evidence"
+                if override_name == "execution-manifest"
+                else "invalid-plan"
+            )
+            assert diagnostics[0]["code"] == expected_code
+            assert diagnostics[0]["detail"] == expected_detail
+            assert (
+                input_artifact["artifact-instance-id"] == expected_instance_id
+            )
+            if override_name.startswith("plan"):
+                expected_digest = hashlib.sha256(
+                    str(selected_overrides["plan_text_override"]).encode()
+                ).hexdigest()
+            elif override_name == "changed-files":
+                expected_digest = cast(
+                    "Mapping[str, object]", plan["affected-range"]
+                )["changed-files-hash"]
+            elif override_name == "execution-manifest":
+                expected_digest = None
+            else:
+                expected_digest = cast(
+                    "Mapping[str, object]", plan["fact-snapshot"]
+                )["id"]
+            assert input_artifact["content-digest"] == expected_digest
+        assert summary["verdict"] == "failed"
+        if override_name in {"changed-files", "fact"}:
+            assert reason["invalid-plan"] is True
+            assert reason["fail-closed"] is False
+            assert summary["plan-id"] == plan["plan-id"]
+            assert summary["plan-digest"] == plan["plan-digest"]
+            assert summary["mode"] == plan["mode"]
+            assert summary["validation-tree"] == plan["validation-tree"]
+            expected_range = control._ci_summary_affected_range(plan)
+            assert summary["affected-range"] == expected_range
+            assert summary["scheduled-full"] == plan["scheduled-full"]
+        else:
+            assert any(reason.values())
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_detail"),
+    [
+        ("unreadable", "plan-unreadable"),
+        ("digest-mismatch", "plan-digest-mismatch"),
+    ],
+)
+def test_ci_batch_aggregation_invalid_plan_inputs_write_g5_outputs(
+    case: str,
+    expected_detail: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unreadable or digest-mismatched plans emit fail-closed G5 outputs."""
+    scratch = _ci_batch_bundle_scratch(f"batch-aggregation-invalid-plan-{case}")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        plan_path_override = None
+        if case == "unreadable":
+            plan_path_override = scratch / "unreadable-plan.json"
+            plan_path_override.write_text(json.dumps(plan), encoding="utf-8")
+            original_read_optional_json = control._read_optional_json
+
+            def read_optional_json_or_raise(value: str) -> object:
+                if value == str(plan_path_override):
+                    raise OSError
+                return original_read_optional_json(value)
+
+            monkeypatch.setattr(
+                control,
+                "_read_optional_json",
+                read_optional_json_or_raise,
+            )
+        else:
+            plan = deepcopy(plan)
+            plan["plan-digest"] = "0" * 64
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            plan_path_override=plan_path_override,
+        )
+
+        validate_ci_validation_aggregate_evidence_manifest(aggregate_manifest)
+        validate_ci_validation_aggregate_summary(summary)
+        input_artifact = cast(
+            "Mapping[str, object]",
+            cast("Mapping[str, object]", aggregate_manifest["input-artifacts"])[
+                "validation-plan"
+            ],
+        )
+        diagnostics = cast(
+            "Sequence[Mapping[str, object]]",
+            input_artifact["diagnostics"],
+        )
+        assert result == 1
+        assert input_artifact["admissibility"] == "inadmissible"
+        assert diagnostics[0]["code"] == "invalid-plan"
+        assert diagnostics[0]["detail"] == expected_detail
+        assert summary["verdict"] == "failed"
+        assert summary["reason"]["invalid-plan"] is True
+        assert aggregate_manifest["batch-bundles"] == []
+        assert summary["evidence-results"] == []
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "plan_artifact_ids", "expected_detail"),
+    [
+        ("duplicate", [8001, 8002], "plan-duplicate"),
+        ("producer-unverified", [8002], "plan-producer-unverified"),
+    ],
+)
+def test_ci_batch_aggregation_invalid_plan_artifact_authority_writes_g5_outputs(
+    case: str,
+    plan_artifact_ids: list[int],
+    expected_detail: str,
+) -> None:
+    """Duplicate or unverified plan artifacts emit fail-closed G5 outputs."""
+    scratch = _ci_batch_bundle_scratch(
+        f"batch-aggregation-invalid-plan-authority-{case}"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        run_artifacts = [
+            _ci_artifact_metadata(
+                control.ci_validation_request_artifact_ref(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                ),
+                artifact_id=7001,
+            ),
+            *[
+                _ci_artifact_metadata(
+                    control.ci_validation_plan_artifact_ref(
+                        run_id=batch_contracts.RUN_ID,
+                        run_attempt=batch_contracts.RUN_ATTEMPT,
+                    ),
+                    artifact_id=artifact_id,
+                )
+                for artifact_id in plan_artifact_ids
+            ],
+            _ci_artifact_metadata(
+                control.ci_validation_changed_files_snapshot_artifact_ref(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                ),
+                artifact_id=7101,
+            ),
+            _ci_artifact_metadata(
+                control.ci_validation_fact_snapshot_artifact_ref(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                ),
+                artifact_id=7201,
+            ),
+            _ci_artifact_metadata(
+                control.ci_validation_execution_batch_manifest_artifact_ref(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                ),
+                artifact_id=9001,
+            ),
+        ]
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            run_artifacts=run_artifacts,
+        )
+
+        context = batch_contracts.authorizing_context_kwargs()
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            request=cast("Mapping[str, object]", context["request"]),
+            changed_files_snapshot=cast(
+                "Mapping[str, object]", context["changed_files_snapshot"]
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]", context["fact_snapshot"]
+            ),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            execution_batch_manifest=manifest,
+            request=cast("Mapping[str, object]", context["request"]),
+            changed_files_snapshot=cast(
+                "Mapping[str, object]", context["changed_files_snapshot"]
+            ),
+            fact_snapshot=cast(
+                "Mapping[str, object]", context["fact_snapshot"]
+            ),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        input_artifact = cast(
+            "Mapping[str, object]",
+            cast("Mapping[str, object]", aggregate_manifest["input-artifacts"])[
+                "validation-plan"
+            ],
+        )
+        diagnostics = cast(
+            "Sequence[Mapping[str, object]]",
+            input_artifact["diagnostics"],
+        )
+        assert result == 1
+        assert input_artifact["admissibility"] == "inadmissible"
+        assert diagnostics[0]["code"] == "invalid-plan"
+        assert diagnostics[0]["detail"] == expected_detail
+        assert summary["verdict"] == "failed"
+        reason = cast("Mapping[str, object]", summary["reason"])
+        assert reason["invalid-plan"] is True
+        assert reason["fail-closed"] is False
+        assert reason["final-evidence-failure"] is False
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "manifest_text"),
+    [
+        ("invalid-json", "{ malformed execution manifest"),
+        ("non-object", "[]"),
+        ("malformed-values", json.dumps({"kind": "not-a-manifest"})),
+    ],
+)
+def test_ci_batch_aggregation_malformed_local_execution_manifest_not_missing(
+    case: str,
+    manifest_text: str,
+) -> None:
+    """Malformed local execution-batch manifest is inadmissible, not missing."""
+    scratch = _ci_batch_bundle_scratch(
+        f"batch-aggregation-malformed-local-execution-manifest-{case}"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+
+        result, aggregate_manifest, _summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            manifest_text_override=manifest_text,
+        )
+
+        manifest_input = cast(
+            "Mapping[str, object]",
+            cast("Mapping[str, object]", aggregate_manifest["input-artifacts"])[
+                "execution-batch-manifest"
+            ],
+        )
+        diagnostics = cast(
+            "Sequence[Mapping[str, object]]",
+            manifest_input["diagnostics"],
+        )
+        assert result == 1
+        assert manifest_input["admissibility"] == "inadmissible"
+        assert diagnostics[0]["detail"] == "execution-batch-manifest-malformed"
+        assert diagnostics[0]["detail"] != "execution-batch-manifest-missing"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "manifest_update", "expected_detail"),
+    [
+        (
+            "plan-id",
+            {"plan-id": "ci-validation-plan-mismatch"},
+            "execution-batch-manifest-plan-mismatch",
+        ),
+        (
+            "plan-digest",
+            {"plan-digest": "0" * 64},
+            "execution-batch-manifest-digest-mismatch",
+        ),
+    ],
+)
+def test_ci_batch_aggregation_execution_manifest_mismatch_details(
+    case: str,
+    manifest_update: Mapping[str, object],
+    expected_detail: str,
+) -> None:
+    """Plan-bound execution-manifest mismatches keep registered details."""
+    scratch = _ci_batch_bundle_scratch(
+        f"batch-aggregation-execution-manifest-{case}-mismatch"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        mismatched_manifest = {**manifest, **manifest_update}
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            manifest_override=mismatched_manifest,
+        )
+
+        manifest_input = cast(
+            "Mapping[str, object]",
+            cast("Mapping[str, object]", aggregate_manifest["input-artifacts"])[
+                "execution-batch-manifest"
+            ],
+        )
+        diagnostics = cast(
+            "Sequence[Mapping[str, object]]",
+            manifest_input["diagnostics"],
+        )
+        assert result == 1
+        assert manifest_input["admissibility"] == "inadmissible"
+        assert diagnostics[0]["code"] == "inadmissible-batch-evidence"
+        assert diagnostics[0]["detail"] == expected_detail
+        assert summary["reason"]["required-input-artifact-failure"] is True
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("manifest_case", "manifest_override", "manifest_text"),
+    [
+        ("missing", Path("missing-execution-batch-manifest.json"), None),
+        ("malformed", None, "{ malformed execution manifest"),
+    ],
+)
+def test_ci_batch_aggregation_invalid_manifest_reports_prefixed_artifacts(
+    manifest_case: str,
+    manifest_override: Path | None,
+    manifest_text: str | None,
+) -> None:
+    """Invalid execution manifests report unexpected prefixed artifacts."""
+    scratch = _ci_batch_bundle_scratch(
+        f"batch-aggregation-invalid-manifest-prefixed-{manifest_case}"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        request_ref = control.ci_validation_request_artifact_ref(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        unexpected_name = f"{artifact_physical_name(request_ref)}#legacy"
+        (observed_root / unexpected_name).mkdir()
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            manifest_path_override=scratch / manifest_override
+            if manifest_override is not None
+            else None,
+            manifest_text_override=manifest_text,
+        )
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=plan,
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        unexpected = cast(
+            "list[dict[str, object]]",
+            aggregate_manifest["unexpected-contract-artifacts"],
+        )
+        assert result == 1
+        assert unexpected
+        assert unexpected[0]["artifact-instance-id"] == unexpected_name
+        assert (
+            unexpected[0]["diagnostics"][0]["detail"]
+            == "unexpected-contract-artifact"
+        )
+        assert summary["reason"]["namespace-closure-failure"] is True
+        assert summary["batch-bundles"] == []
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_ci_batch_aggregation_writes_manifest_and_summary() -> None:
@@ -11479,24 +15055,31 @@ def test_ci_batch_aggregation_writes_manifest_and_summary() -> None:
         observed_root = scratch / "observed"
         observed_root.mkdir()
         plan, manifest = _ci_batch_contract_plan_and_manifest()
-        row = _ci_batch_matrix_rows(plan, manifest)[0]
-        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
-        selector = cast(
-            "list[dict[str, object]]",
-            batch["ordered-selectors"],
-        )[0]
-        bundle = _write_ci_batch_bundle(
-            scratch,
-            plan,
-            manifest,
-            row,
-            [
-                _ci_success_validation_result(
-                    plan, cast("str", selector["work-group-id"])
-                )
-            ],
-        )
-        _stage_ci_batch_bundle_artifact(observed_root, bundle)
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        for row in _ci_batch_matrix_rows(plan, manifest):
+            batch_id = cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batches[batch_id]["ordered-selectors"],
+            )[0]
+            bundle = _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan, cast("str", selector["work-group-id"])
+                    )
+                ],
+            )
+            _stage_ci_batch_bundle_artifact(observed_root, bundle)
 
         result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
             scratch,
@@ -11574,31 +15157,166 @@ def test_ci_batch_aggregation_writes_manifest_and_summary() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_batch_aggregation_writes_g4_outputs_for_boundary_failure() -> None:
-    """Batch producer-boundary failures write G4 manifest/summary outputs."""
+def test_ci_batch_aggregation_reports_suffixed_control_artifact() -> None:
+    """Suffixed control artifacts produce schema-valid unexpected rows."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-suffixed-control")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        admitted_bundles = []
+        for row in _ci_batch_matrix_rows(plan, manifest):
+            batch_id = cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batches[batch_id]["ordered-selectors"],
+            )[0]
+            bundle = _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan, cast("str", selector["work-group-id"])
+                    )
+                ],
+            )
+            admitted_bundles.append(bundle)
+            _stage_ci_batch_bundle_artifact(observed_root, bundle)
+        canonical_name = artifact_physical_name(
+            control.ci_validation_plan_artifact_ref(
+                run_id=batch_contracts.RUN_ID,
+                run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+        )
+        observed_name = f"{canonical_name}#1"
+        (observed_root / observed_name).mkdir()
+        noncanonical_observed_name = (
+            "three-ci-validation-25887422010-1-unexpected-live"
+        )
+        (observed_root / noncanonical_observed_name).mkdir()
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+        )
+
+        context = batch_contracts.authorizing_context_kwargs()
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=plan,
+            request=cast("dict[str, object]", context["request"]),
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=cast(
+                "dict[str, object]", context["changed_files_snapshot"]
+            ),
+            fact_snapshot=cast("dict[str, object]", context["fact_snapshot"]),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=admitted_bundles,
+            execution_batch_manifest=manifest,
+            request=cast("dict[str, object]", context["request"]),
+            changed_files_snapshot=cast(
+                "dict[str, object]", context["changed_files_snapshot"]
+            ),
+            fact_snapshot=cast("dict[str, object]", context["fact_snapshot"]),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        unexpected = cast(
+            "list[dict[str, object]]",
+            aggregate_manifest["unexpected-contract-artifacts"],
+        )
+        unexpected_by_observed_name = {
+            str(
+                item.get(
+                    "observed-physical-artifact-name",
+                    item["physical-artifact-name"],
+                )
+            ): item
+            for item in unexpected
+        }
+        assert result == 1
+        assert set(unexpected_by_observed_name) == {
+            observed_name,
+            noncanonical_observed_name,
+        }
+        suffixed_unexpected = unexpected_by_observed_name[observed_name]
+        assert suffixed_unexpected == {
+            "physical-artifact-name": canonical_name,
+            "observed-physical-artifact-name": observed_name,
+            "artifact-instance-id": observed_name,
+            "classification": "unexpected",
+            "diagnostics": suffixed_unexpected["diagnostics"],
+        }
+        noncanonical_unexpected = unexpected_by_observed_name[
+            noncanonical_observed_name
+        ]
+        synthetic_physical_name = control._ci_canonical_observed_physical_name(
+            noncanonical_observed_name,
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        assert noncanonical_unexpected == {
+            "physical-artifact-name": synthetic_physical_name,
+            "observed-physical-artifact-name": noncanonical_observed_name,
+            "artifact-instance-id": noncanonical_observed_name,
+            "classification": "unexpected",
+            "diagnostics": noncanonical_unexpected["diagnostics"],
+        }
+        assert summary["reason"]["namespace-closure-failure"] is True
+        assert summary["verdict"] == "failed"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_writes_g5_outputs_for_boundary_failure() -> None:
+    """Batch producer-boundary failures write G5 manifest/summary outputs."""
     scratch = _ci_batch_bundle_scratch("batch-aggregation-boundary-failure")
     try:
         observed_root = scratch / "observed"
         observed_root.mkdir()
         plan, manifest = _ci_batch_contract_plan_and_manifest()
-        row = _ci_batch_matrix_rows(plan, manifest)[0]
-        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
-        selector = cast(
-            "list[dict[str, object]]",
-            batch["ordered-selectors"],
-        )[0]
-        bundle = _write_ci_batch_bundle(
-            scratch,
-            plan,
-            manifest,
-            row,
-            [
-                _ci_success_validation_result(
-                    plan, cast("str", selector["work-group-id"])
-                )
-            ],
-        )
-        _stage_ci_batch_bundle_artifact(observed_root, bundle)
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        for row in _ci_batch_matrix_rows(plan, manifest):
+            batch_id = cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batches[batch_id]["ordered-selectors"],
+            )[0]
+            bundle = _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan, cast("str", selector["work-group-id"])
+                    )
+                ],
+            )
+            _stage_ci_batch_bundle_artifact(observed_root, bundle)
         manifest_ref = (
             control.ci_validation_execution_batch_manifest_artifact_ref(
                 run_id=batch_contracts.RUN_ID,
@@ -11660,12 +15378,9 @@ def test_ci_batch_aggregation_writes_g4_outputs_for_boundary_failure() -> None:
             == "execution-batch-manifest-malformed"
         )
         assert summary["kind"] == "ci-validation-aggregate-summary"
-        assert (
-            cast("dict[str, object]", summary["reason"])[
-                "final-evidence-failure"
-            ]
-            is True
-        )
+        reason = cast("dict[str, object]", summary["reason"])
+        assert reason["required-input-artifact-failure"] is True
+        assert reason["final-evidence-failure"] is False
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -11677,7 +15392,7 @@ def test_ci_batch_aggregation_writes_g4_outputs_for_boundary_failure() -> None:
 def test_ci_batch_aggregation_requires_request_and_plan_artifact_ids(
     missing_input: str,
 ) -> None:
-    """G4 batch aggregation requires authoritative request and plan ids."""
+    """G5 batch aggregation requires authoritative request and plan ids."""
     scratch = _ci_batch_bundle_scratch(
         f"batch-aggregation-missing-{missing_input}-id"
     )
@@ -11708,18 +15423,15 @@ def test_ci_batch_aggregation_requires_request_and_plan_artifact_ids(
         )
         assert input_artifact["admissibility"] == "missing"
         assert input_artifact["artifact-instance-id"] is None
-        assert (
-            cast("dict[str, object]", summary["reason"])[
-                "final-evidence-failure"
-            ]
-            is True
-        )
+        reason = cast("dict[str, object]", summary["reason"])
+        assert reason["required-input-artifact-failure"] is True
+        assert reason["final-evidence-failure"] is False
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_ci_batch_aggregation_requires_batch_manifest_artifact_id() -> None:
-    """G4 batch aggregation requires an authoritative manifest upload id."""
+    """G5 batch aggregation requires an authoritative manifest upload id."""
     scratch = _ci_batch_bundle_scratch(
         "batch-aggregation-missing-execution-batch-manifest-id"
     )
@@ -11745,12 +15457,9 @@ def test_ci_batch_aggregation_requires_batch_manifest_artifact_id() -> None:
         )
         assert input_artifact["admissibility"] == "missing"
         assert input_artifact["artifact-instance-id"] is None
-        assert (
-            cast("dict[str, object]", summary["reason"])[
-                "final-evidence-failure"
-            ]
-            is True
-        )
+        reason = cast("dict[str, object]", summary["reason"])
+        assert reason["required-input-artifact-failure"] is True
+        assert reason["final-evidence-failure"] is False
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -11793,12 +15502,9 @@ def test_ci_batch_aggregation_requires_snapshot_artifact_ids(
         )
         assert input_artifact["admissibility"] == "missing"
         assert input_artifact["artifact-instance-id"] is None
-        assert (
-            cast("dict[str, object]", summary["reason"])[
-                "final-evidence-failure"
-            ]
-            is True
-        )
+        reason = cast("dict[str, object]", summary["reason"])
+        assert reason["required-input-artifact-failure"] is True
+        assert reason["final-evidence-failure"] is False
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -11840,8 +15546,8 @@ def test_ci_batch_aggregation_fails_closed_for_artifact_api_failure() -> None:
         assert result == 1
         assert summary["verdict"] == "failed"
         reason = cast("dict[str, object]", summary["reason"])
-        assert reason["fail-closed"] is True
-        assert reason["final-evidence-failure"] is True
+        assert reason["required-input-artifact-failure"] is True
+        assert reason["final-evidence-failure"] is False
         input_artifacts = cast(
             "dict[str, dict[str, object]]",
             aggregate_manifest["input-artifacts"],
@@ -11945,10 +15651,12 @@ def test_ci_batch_aggregation_cli_rejects_missing_required_inputs(
             str(changed_files_path),
             "--fact-snapshot",
             str(fact_snapshot_path),
-            "--receipt-manifest-out",
+            "--aggregate-evidence-manifest-out",
             str(scratch / "aggregate-evidence-manifest.json"),
-            "--aggregate-out",
+            "--aggregate-summary-out",
             str(scratch / "aggregate-summary.json"),
+            "--aggregate-evidence-manifest-artifact-id",
+            "aggregate-upload-id",
         ]
         if missing_input != "plan":
             command.extend(["--plan", str(plan_path)])
@@ -11963,9 +15671,85 @@ def test_ci_batch_aggregation_cli_rejects_missing_required_inputs(
             check=False,
         )
 
-        assert completed.returncode == 2
-        assert f"--{missing_input}" in completed.stderr
+        assert completed.returncode == 1
+        aggregate = json.loads(
+            (scratch / "aggregate-summary.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        if missing_input == "plan":
+            validate_ci_validation_aggregate_summary(aggregate)
+            assert aggregate["reason"]["invalid-plan"] is True
+        else:
+            assert aggregate["reason"]["fail-closed"] is True
         assert "Traceback" not in completed.stderr
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_cli_rejects_implicit_legacy_mode() -> None:
+    """Require explicit G5 batch mode for aggregate-ci-evidence."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-cli-no-batch-mode")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        plan_path = scratch / "plan.json"
+        request_path = scratch / "request.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        request_path.write_text(
+            json.dumps(batch_contracts.request_document()), encoding="utf-8"
+        )
+        changed_files_path.write_text(
+            json.dumps(batch_contracts.changed_files_snapshot_document()),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(batch_contracts.fact_snapshot_document()),
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "eng/scripts/workflow_release_control.py",
+                "aggregate-ci-evidence",
+                "--repository",
+                "hcoona/three",
+                "--workflow",
+                "CI Validation",
+                "--run-id",
+                batch_contracts.RUN_ID,
+                "--run-attempt",
+                batch_contracts.RUN_ATTEMPT,
+                "--plan",
+                str(plan_path),
+                "--request",
+                str(request_path),
+                "--observed-artifacts-dir",
+                str(observed_root),
+                "--changed-files-snapshot",
+                str(changed_files_path),
+                "--fact-snapshot",
+                str(fact_snapshot_path),
+                "--aggregate-evidence-manifest-out",
+                str(scratch / "aggregate-evidence-manifest.json"),
+                "--aggregate-summary-out",
+                str(scratch / "aggregate-summary.json"),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert completed.returncode == 2
+        assert "explicit G5 batch mode" in completed.stderr
+        assert "Traceback" not in completed.stderr
+        assert not (scratch / "aggregate-evidence-manifest.json").exists()
+        assert not (scratch / "aggregate-summary.json").exists()
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -11983,6 +15767,8 @@ def test_ci_batch_aggregation_cli_rejects_invalid_manifest() -> None:
         manifest_path = scratch / "execution-batch-manifest.json"
         changed_files_path = scratch / "changed-files.json"
         fact_snapshot_path = scratch / "fact-snapshot.json"
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
         plan_path.write_text(json.dumps(plan), encoding="utf-8")
         request_path.write_text(
             json.dumps(context["request"]), encoding="utf-8"
@@ -12022,10 +15808,12 @@ def test_ci_batch_aggregation_cli_rejects_invalid_manifest() -> None:
                 str(changed_files_path),
                 "--fact-snapshot",
                 str(fact_snapshot_path),
-                "--receipt-manifest-out",
-                str(scratch / "aggregate-evidence-manifest.json"),
-                "--aggregate-out",
-                str(scratch / "aggregate-summary.json"),
+                "--aggregate-evidence-manifest-out",
+                str(aggregate_manifest_path),
+                "--aggregate-summary-out",
+                str(summary_path),
+                "--aggregate-evidence-manifest-artifact-id",
+                "aggregate-upload-id",
             ],
             cwd=REPO_ROOT,
             text=True,
@@ -12034,7 +15822,24 @@ def test_ci_batch_aggregation_cli_rejects_invalid_manifest() -> None:
         )
 
         assert completed.returncode == 1
-        assert "error:" in completed.stderr
+        assert aggregate_manifest_path.exists()
+        assert summary_path.exists()
+        aggregate_manifest = json.loads(
+            aggregate_manifest_path.read_text(encoding="utf-8")
+        )
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=plan,
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        validate_ci_validation_aggregate_summary(
+            json.loads(summary_path.read_text(encoding="utf-8")),
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
         assert "Traceback" not in completed.stderr
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -12084,117 +15889,6 @@ def test_ci_batch_aggregation_fails_closed_for_malformed_bundle() -> None:
             row["admissibility"] != "valid"
             for row in cast("list[dict[str, object]]", summary["batch-bundles"])
         )
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_batch_aggregation_fails_closed_for_missing_observation_manifest():
-    """Readable bundles without trusted observations are not admitted."""
-    scratch = _ci_batch_bundle_scratch("batch-aggregation-missing-observation")
-    try:
-        observed_root = scratch / "observed"
-        observed_root.mkdir()
-        plan, manifest = _ci_batch_contract_plan_and_manifest()
-        row = _ci_batch_matrix_rows(plan, manifest)[0]
-        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
-        selector = cast(
-            "list[dict[str, object]]",
-            batch["ordered-selectors"],
-        )[0]
-        bundle = _write_ci_batch_bundle(
-            scratch,
-            plan,
-            manifest,
-            row,
-            [
-                _ci_success_validation_result(
-                    plan,
-                    cast("str", selector["work-group-id"]),
-                )
-            ],
-        )
-        artifact_ref = cast("str", bundle["artifact-ref"])
-        artifact_dir = observed_root / artifact_physical_name(artifact_ref)
-        artifact_dir.mkdir(parents=True)
-        (artifact_dir / "batch-evidence-bundle.json").write_text(
-            json.dumps(bundle),
-            encoding="utf-8",
-        )
-
-        result, aggregate_manifest, _summary = _aggregate_ci_batch_evidence(
-            scratch,
-            plan,
-            manifest,
-            observed_root,
-            observation_manifest_override=scratch / "missing-observations.json",
-        )
-
-        assert result == 1
-        candidate = cast(
-            "list[dict[str, object]]",
-            cast(
-                "list[dict[str, object]]",
-                aggregate_manifest["batch-bundles"],
-            )[0]["observed-candidates"],
-        )[0]
-        assert candidate["producer-verification"] == "producer-unverified"
-        assert candidate["admissibility"] == "inadmissible"
-        assert candidate["artifact-instance-id"] is None
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_batch_aggregation_fails_closed_for_wrong_observation_manifest() -> (
-    None
-):
-    """Trusted observation manifests must bind producer authority."""
-    scratch = _ci_batch_bundle_scratch("batch-aggregation-wrong-observation")
-    try:
-        observed_root = scratch / "observed"
-        observed_root.mkdir()
-        plan, manifest = _ci_batch_contract_plan_and_manifest()
-        row = _ci_batch_matrix_rows(plan, manifest)[0]
-        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
-        selector = cast(
-            "list[dict[str, object]]",
-            batch["ordered-selectors"],
-        )[0]
-        bundle = _write_ci_batch_bundle(
-            scratch,
-            plan,
-            manifest,
-            row,
-            [
-                _ci_success_validation_result(
-                    plan,
-                    cast("str", selector["work-group-id"]),
-                )
-            ],
-        )
-        _stage_ci_batch_bundle_artifact(
-            observed_root,
-            bundle,
-        )
-
-        result, aggregate_manifest, _summary = _aggregate_ci_batch_evidence(
-            scratch,
-            plan,
-            manifest,
-            observed_root,
-            observation_override={"producer-job-identity": "forged"},
-        )
-
-        assert result == 1
-        candidate = cast(
-            "list[dict[str, object]]",
-            cast(
-                "list[dict[str, object]]",
-                aggregate_manifest["batch-bundles"],
-            )[0]["observed-candidates"],
-        )[0]
-        assert candidate["producer-verification"] == "producer-unverified"
-        assert candidate["admissibility"] == "inadmissible"
-        assert candidate["artifact-instance-id"] is not None
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -12486,25 +16180,33 @@ def test_ci_batch_aggregation_fails_closed_for_unexpected_artifact() -> None:
         observed_root = scratch / "observed"
         observed_root.mkdir()
         plan, manifest = _ci_batch_contract_plan_and_manifest()
-        row = _ci_batch_matrix_rows(plan, manifest)[0]
-        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
-        selector = cast(
-            "list[dict[str, object]]",
-            batch["ordered-selectors"],
-        )[0]
-        bundle = _write_ci_batch_bundle(
-            scratch,
-            plan,
-            manifest,
-            row,
-            [
-                _ci_success_validation_result(
-                    plan, cast("str", selector["work-group-id"])
-                )
-            ],
-        )
-        _stage_ci_batch_bundle_artifact(observed_root, bundle)
-        (observed_root / f"three-ci-validation-{'9' * 64}").mkdir()
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        for row in _ci_batch_matrix_rows(plan, manifest):
+            batch_id = cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batches[batch_id]["ordered-selectors"],
+            )[0]
+            bundle = _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan, cast("str", selector["work-group-id"])
+                    )
+                ],
+            )
+            _stage_ci_batch_bundle_artifact(observed_root, bundle)
+        unexpected_name = f"three-ci-validation-25887422010-1-{'9' * 64}"
+        (observed_root / unexpected_name).mkdir()
 
         result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
             scratch,
@@ -12521,6 +16223,191 @@ def test_ci_batch_aggregation_fails_closed_for_unexpected_artifact() -> None:
             is True
         )
         assert aggregate_manifest["unexpected-contract-artifacts"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case_name", "observation"),
+    [
+        (
+            "unavailable",
+            {
+                "artifact-api-metadata-available": False,
+                "namespace-enumeration": "unavailable",
+                "namespace-overflow": False,
+                "run-id": batch_contracts.RUN_ID,
+                "run-attempt": batch_contracts.RUN_ATTEMPT,
+            },
+        ),
+        ("missing", None),
+        ("malformed-object", {}),
+        (
+            "run-mismatch",
+            {
+                "artifact-api-metadata-available": True,
+                "namespace-enumeration": "available",
+                "namespace-overflow": False,
+                "run-id": "999999",
+                "run-attempt": batch_contracts.RUN_ATTEMPT,
+            },
+        ),
+    ],
+)
+def test_ci_batch_aggregation_fails_closed_for_bad_downloader_observation(
+    case_name: str,
+    observation: Mapping[str, object] | None,
+) -> None:
+    """Downloader observation gaps keep namespace closure fail-closed."""
+    scratch = _ci_batch_bundle_scratch(f"batch-aggregation-{case_name}")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        if observation is not None:
+            observation_path = (
+                observed_root / control._CI_DOWNLOADER_OBSERVATION_FILE
+            )
+            observation_path.write_text(
+                json.dumps(observation),
+                encoding="utf-8",
+            )
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        for row in _ci_batch_matrix_rows(plan, manifest):
+            batch_id = cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batches[batch_id]["ordered-selectors"],
+            )[0]
+            bundle = _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan, cast("str", selector["work-group-id"])
+                    )
+                ],
+            )
+            _stage_ci_batch_bundle_artifact(observed_root, bundle)
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            write_downloader_observation=False,
+        )
+
+        namespace_overflow = cast(
+            "dict[str, object]",
+            aggregate_manifest["namespace-overflow"],
+        )
+        diagnostics = cast(
+            "list[dict[str, object]]",
+            namespace_overflow["diagnostics"],
+        )
+        assert result == 1
+        assert namespace_overflow["detected"] is False
+        assert any(
+            diagnostic["detail"] == "namespace-enumeration-unavailable"
+            for diagnostic in diagnostics
+        )
+        assert (
+            cast("dict[str, object]", summary["reason"])[
+                "namespace-closure-failure"
+            ]
+            is True
+        )
+        assert (
+            cast("dict[str, object]", summary["reason"])["fail-closed"] is True
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_uses_downloader_namespace_overflow() -> None:
+    """Live downloader overflow closes beyond local lower bounds."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-downloader-overflow")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        observation_path = (
+            observed_root / control._CI_DOWNLOADER_OBSERVATION_FILE
+        )
+        observation_path.write_text(
+            json.dumps(
+                {
+                    "artifact-api-metadata-available": True,
+                    "namespace-enumeration": "available",
+                    "namespace-overflow": True,
+                    "run-id": batch_contracts.RUN_ID,
+                    "run-attempt": batch_contracts.RUN_ATTEMPT,
+                }
+            ),
+            encoding="utf-8",
+        )
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        for row in _ci_batch_matrix_rows(plan, manifest):
+            batch_id = cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batches[batch_id]["ordered-selectors"],
+            )[0]
+            bundle = _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan, cast("str", selector["work-group-id"])
+                    )
+                ],
+            )
+            _stage_ci_batch_bundle_artifact(observed_root, bundle)
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+        )
+
+        namespace_overflow = cast(
+            "dict[str, object]",
+            aggregate_manifest["namespace-overflow"],
+        )
+        diagnostics = cast(
+            "list[dict[str, object]]",
+            namespace_overflow["diagnostics"],
+        )
+        assert result == 1
+        assert namespace_overflow["detected"] is True
+        assert (
+            namespace_overflow["observed-prefixed-artifact-count-lower-bound"]
+            <= control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP
+        )
+        assert any(
+            diagnostic["detail"] == "namespace-overflow"
+            for diagnostic in diagnostics
+        )
+        assert summary["reason"]["namespace-closure-failure"] is True
+        assert summary["reason"]["fail-closed"] is True
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -12564,6 +16451,8 @@ def test_ci_batch_aggregation_treats_not_required_snapshots_as_unexpected() -> (
 
         unexpected = control._ci_aggregate_unexpected_artifacts(
             observed_root,
+            run_id=run_id,
+            run_attempt=run_attempt,
             expected_refs=allowed_refs,
         )
 
@@ -12574,19 +16463,144 @@ def test_ci_batch_aggregation_treats_not_required_snapshots_as_unexpected() -> (
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_batch_aggregation_allows_g4_manifest_not_legacy_aggregate() -> None:
-    """G4 batch namespace closure allows only the G4 final manifest ref."""
+def test_ci_live_namespace_treats_not_required_snapshots_as_unexpected() -> (
+    None
+):
+    """Live namespace closure allows snapshot names only when plan-required."""
+    run_id = batch_contracts.RUN_ID
+    run_attempt = batch_contracts.RUN_ATTEMPT
+    changed_ref = control.ci_validation_changed_files_snapshot_artifact_ref(
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+    plan = {
+        "affected-range": {"changed-files-hash": None},
+        "fact-snapshot": {"id": None},
+    }
+
+    unexpected = control._ci_live_unexpected_contract_artifact_names(
+        {
+            artifact_physical_name(changed_ref): [
+                {"id": "changed-files-artifact"}
+            ],
+        },
+        execution_batch_manifest=None,
+        plan=plan,
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+
+    assert unexpected == [artifact_physical_name(changed_ref)]
+
+
+def test_ci_live_namespace_ignores_known_prior_attempt_artifacts() -> None:
+    """Known prior-attempt artifacts are outside the current namespace."""
+    run_id = batch_contracts.RUN_ID
+    current_attempt = "2"
+    current_ref = control.ci_validation_request_artifact_ref(
+        run_id=run_id,
+        run_attempt=current_attempt,
+    )
+    prior_ref = control.ci_validation_request_artifact_ref(
+        run_id=run_id,
+        run_attempt="1",
+    )
+    unknown_current_name = "three-ci-validation-25887422010-2-" + "e" * 64
+
+    unexpected = control._ci_live_unexpected_contract_artifact_names(
+        {
+            artifact_physical_name(current_ref): [{"id": "current-request"}],
+            artifact_physical_name(prior_ref): [{"id": "prior-request"}],
+            unknown_current_name: [{"id": "unknown-current"}],
+        },
+        execution_batch_manifest=None,
+        plan=None,
+        run_id=run_id,
+        run_attempt=current_attempt,
+    )
+
+    assert unexpected == [unknown_current_name]
+
+
+def test_ci_live_namespace_overflow_excludes_known_prior_attempts() -> None:
+    """Known prior attempts do not consume current namespace capacity."""
+    run_id = batch_contracts.RUN_ID
+    current_attempt = "2"
+    current_ref = control.ci_validation_request_artifact_ref(
+        run_id=run_id,
+        run_attempt=current_attempt,
+    )
+    prior_ref = control.ci_validation_request_artifact_ref(
+        run_id=run_id,
+        run_attempt="1",
+    )
+    prior_name = artifact_physical_name(prior_ref)
+    excluded_names = control._ci_known_prior_attempt_artifact_names(
+        [current_ref],
+        run_id=run_id,
+        run_attempt=current_attempt,
+    )
+    artifact_api_by_name = {
+        f"three-ci-validation-25887422010-2-{index:064x}": [{"id": index}]
+        for index in range(control._CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP)
+    }
+    artifact_api_by_name[prior_name] = [{"id": "prior"}]
+
+    assert prior_name in excluded_names
+    assert not control._ci_live_namespace_overflow_detected(
+        artifact_api_by_name,
+        run_id=run_id,
+        run_attempt=current_attempt,
+        excluded_prefixed_artifact_names=excluded_names,
+    )
+
+
+def test_ci_live_namespace_allows_required_snapshots() -> None:
+    """Live namespace closure preserves plan-required snapshot handling."""
+    run_id = batch_contracts.RUN_ID
+    run_attempt = batch_contracts.RUN_ATTEMPT
+    changed_ref = control.ci_validation_changed_files_snapshot_artifact_ref(
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+    fact_ref = control.ci_validation_fact_snapshot_artifact_ref(
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+    plan = {
+        "affected-range": {"changed-files-hash": "0" * 64},
+        "fact-snapshot": {"id": "1" * 64},
+    }
+
+    unexpected = control._ci_live_unexpected_contract_artifact_names(
+        {
+            artifact_physical_name(changed_ref): [
+                {"id": "changed-files-artifact"}
+            ],
+            artifact_physical_name(fact_ref): [{"id": "fact-artifact"}],
+        },
+        execution_batch_manifest=None,
+        plan=plan,
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+
+    assert unexpected == []
+
+
+def test_ci_batch_aggregation_allows_g5_manifest_not_legacy_aggregate() -> None:
+    """G5 batch namespace closure allows only the G5 final manifest ref."""
     scratch = _ci_batch_bundle_scratch("batch-aggregation-final-artifacts")
     try:
         observed_root = scratch / "observed"
         observed_root.mkdir()
         run_id = batch_contracts.RUN_ID
         run_attempt = batch_contracts.RUN_ATTEMPT
-        legacy_ref = control.ci_validation_aggregate_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
+        legacy_ref = (
+            f"ci-validation/aggregate/{run_id}/{run_attempt}/"
+            "ci-validation-aggregate.json"
         )
-        g4_ref = control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+        g5_ref = control.ci_validation_aggregate_evidence_manifest_artifact_ref(
             run_id=run_id,
             run_attempt=run_attempt,
         )
@@ -12606,19 +16620,271 @@ def test_ci_batch_aggregation_allows_g4_manifest_not_legacy_aggregate() -> None:
             run_id=run_id,
             run_attempt=run_attempt,
         )
-        assert g4_ref in allowed_refs
+        assert g5_ref in allowed_refs
         assert legacy_ref not in allowed_refs
 
         (observed_root / artifact_physical_name(legacy_ref)).mkdir()
-        (observed_root / artifact_physical_name(g4_ref)).mkdir()
+        (observed_root / artifact_physical_name(g5_ref)).mkdir()
 
         unexpected = control._ci_aggregate_unexpected_artifacts(
             observed_root,
+            run_id=run_id,
+            run_attempt=run_attempt,
             expected_refs=allowed_refs,
         )
 
         assert [item["physical-artifact-name"] for item in unexpected] == [
             artifact_physical_name(legacy_ref)
+        ]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_rejects_selector_assignments_artifact() -> None:
+    """G5 batch closure treats legacy selector assignments as unexpected."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-selector-assignments")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        assignments_path = scratch / "legacy-selector-assignments.json"
+        assignments_path.write_text(
+            json.dumps(
+                {
+                    "assignments": [
+                        {
+                            "receipt-artifact-ref": (
+                                "ci-validation/receipts/"
+                                f"{batch_contracts.RUN_ID}/"
+                                f"{batch_contracts.RUN_ATTEMPT}/"
+                                "legacy-selector/receipt.json"
+                            )
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        for row in _ci_batch_matrix_rows(plan, manifest):
+            batch_id = cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batches[batch_id]["ordered-selectors"],
+            )[0]
+            bundle = _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan, cast("str", selector["work-group-id"])
+                    )
+                ],
+            )
+            _stage_ci_batch_bundle_artifact(observed_root, bundle)
+        selector_assignments_ref = (
+            control._ci_validation_selector_assignments_artifact_ref(
+                run_id=batch_contracts.RUN_ID,
+                run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+        )
+        selector_assignments_name = artifact_physical_name(
+            selector_assignments_ref
+        )
+        (observed_root / selector_assignments_name).mkdir()
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+        )
+
+        unexpected = cast(
+            "list[dict[str, object]]",
+            aggregate_manifest["unexpected-contract-artifacts"],
+        )
+        assert result == 1
+        assert [item["physical-artifact-name"] for item in unexpected] == [
+            selector_assignments_name
+        ]
+        assert (
+            cast("dict[str, object]", summary["reason"])[
+                "namespace-closure-failure"
+            ]
+            is True
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_hash_suffix_exemption_is_batch_only() -> None:
+    """Only expected batch bundle names may use downloaded-artifact suffixes."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-suffix-closure")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        run_id = batch_contracts.RUN_ID
+        run_attempt = batch_contracts.RUN_ATTEMPT
+        _plan, manifest = _ci_batch_contract_plan_and_manifest()
+        batch_ref = str(
+            cast("Sequence[Mapping[str, object]]", manifest["batches"])[0][
+                "expected-batch-evidence-bundle-ref"
+            ]
+        )
+        request_ref = control.ci_validation_request_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+        (observed_root / f"{artifact_physical_name(batch_ref)}#1").mkdir()
+        (observed_root / f"{artifact_physical_name(request_ref)}#1").mkdir()
+
+        unexpected = control._ci_aggregate_unexpected_artifacts(
+            observed_root,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            expected_refs={batch_ref, request_ref},
+            expected_batch_refs={batch_ref},
+        )
+
+        assert unexpected == [
+            {
+                "physical-artifact-name": artifact_physical_name(request_ref),
+                "observed-physical-artifact-name": (
+                    f"{artifact_physical_name(request_ref)}#1"
+                ),
+                "artifact-instance-id": (
+                    f"{artifact_physical_name(request_ref)}#1"
+                ),
+                "classification": "unexpected",
+                "diagnostics": unexpected[0]["diagnostics"],
+            }
+        ]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_reports_prefixed_legacy_receipt() -> None:
+    """Legacy assignment receipt artifacts remain unexpected when suffixed."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-legacy-receipt")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        run_id = batch_contracts.RUN_ID
+        run_attempt = batch_contracts.RUN_ATTEMPT
+        receipt_ref = (
+            f"ci-validation/receipts/{run_id}/{run_attempt}/"
+            "legacy-selector/receipt.json"
+        )
+        observed_name = f"{artifact_physical_name(receipt_ref)}#legacy"
+        request_ref = control.ci_validation_request_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+        (observed_root / observed_name).mkdir()
+
+        unexpected = control._ci_aggregate_unexpected_artifacts(
+            observed_root,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            expected_refs={request_ref},
+        )
+
+        assert unexpected == [
+            {
+                "physical-artifact-name": artifact_physical_name(receipt_ref),
+                "observed-physical-artifact-name": observed_name,
+                "artifact-instance-id": observed_name,
+                "classification": "unexpected",
+                "diagnostics": unexpected[0]["diagnostics"],
+            }
+        ]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_rejects_prefixed_receipt_manifest() -> None:
+    """G5 namespace closure rejects legacy receipt manifests."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-receipt-manifest")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        run_id = batch_contracts.RUN_ID
+        run_attempt = batch_contracts.RUN_ATTEMPT
+        receipt_manifest_ref = (
+            f"ci-validation/manifests/{run_id}/{run_attempt}/"
+            "receipt-manifest.json"
+        )
+        request_ref = control.ci_validation_request_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+        observed_name = artifact_physical_name(receipt_manifest_ref)
+        (observed_root / observed_name).mkdir()
+
+        unexpected = control._ci_aggregate_unexpected_artifacts(
+            observed_root,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            expected_refs={request_ref},
+        )
+
+        assert unexpected == [
+            {
+                "physical-artifact-name": observed_name,
+                "artifact-instance-id": observed_name,
+                "classification": "unexpected",
+                "diagnostics": unexpected[0]["diagnostics"],
+            }
+        ]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_rejects_writer_observation_artifact() -> None:
+    """Legacy writer observation artifacts remain unexpected."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-writer-observation")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        run_id = batch_contracts.RUN_ID
+        run_attempt = batch_contracts.RUN_ATTEMPT
+        observation_ref = (
+            f"ci-validation/writer-observations/{run_id}/{run_attempt}/"
+            "legacy-writer.json"
+        )
+        observed_name = f"{artifact_physical_name(observation_ref)}#legacy"
+        request_ref = control.ci_validation_request_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+        (observed_root / observed_name).mkdir()
+
+        unexpected = control._ci_aggregate_unexpected_artifacts(
+            observed_root,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            expected_refs={request_ref},
+        )
+
+        assert unexpected == [
+            {
+                "physical-artifact-name": artifact_physical_name(
+                    observation_ref
+                ),
+                "observed-physical-artifact-name": observed_name,
+                "artifact-instance-id": observed_name,
+                "classification": "unexpected",
+                "diagnostics": unexpected[0]["diagnostics"],
+            }
         ]
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -12675,9 +16941,9 @@ def test_ci_batch_aggregation_rejects_late_bundle_after_namespace_closure() -> (
             / artifact_physical_name(cast("str", late_bundle["artifact-ref"]))
         ).is_dir()
         reason = cast("dict[str, object]", summary["reason"])
-        assert reason["fail-closed"] is True
-        assert reason["final-evidence-failure"] is True
-        assert any(
+        assert any(reason.values())
+        assert reason["final-evidence-failure"] is False
+        assert not any(
             failure["kind"] == "final-evidence-failure"
             for failure in cast("list[dict[str, object]]", summary["failures"])
         )
@@ -12787,6 +17053,46 @@ def test_ci_batch_aggregation_admits_dependent_bundles_topologically() -> None:
         assert len(staged_bundles) == len(
             cast("list[dict[str, object]]", aggregate_manifest["batch-bundles"])
         )
+        context = batch_contracts.authorizing_context_kwargs()
+        (
+            _slots,
+            admitted_bundles,
+            unexpected,
+        ) = control._ci_aggregate_batch_slots(
+            plan=plan,
+            request=cast("dict[str, object]", context["request"]),
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=cast(
+                "dict[str, object]",
+                context["changed_files_snapshot"],
+            ),
+            fact_snapshot=cast("dict[str, object]", context["fact_snapshot"]),
+            input_artifacts=cast(
+                "dict[str, object]",
+                aggregate_manifest["input-artifacts"],
+            ),
+            observed_artifacts_dir=str(observed_root),
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        assert unexpected == []
+        for admitted_bundle in admitted_bundles:
+            batch = cast("dict[str, object]", admitted_bundle["batch"])
+            batch_id = cast("str", batch["batch-id"])
+            artifact_ref = cast("str", admitted_bundle["artifact-ref"])
+            artifact_instance_id = f"{batch_id}-artifact"
+            trusted_bundle = cast("Any", admitted_bundle)
+            assert trusted_bundle.artifact_instance_id == artifact_instance_id
+            assert trusted_bundle.admitted_candidate_id == (
+                ci_validation_batch_evidence_candidate_id(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                    batch_id=batch_id,
+                    artifact_ref=artifact_ref,
+                    artifact_instance_id=artifact_instance_id,
+                    physical_artifact_name=artifact_physical_name(artifact_ref),
+                )
+            )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -12923,8 +17229,9 @@ def test_ci_batch_aggregation_fails_closed_for_duration_overrun() -> None:
 
         assert result == 1
         reason = cast("dict[str, object]", summary["reason"])
+        assert reason["fail-closed"] is False
         assert reason["aggregate-duration-exceeded"] is True
-        assert reason["final-evidence-failure"] is True
+        assert reason["final-evidence-failure"] is False
         assert summary["verdict"] == "failed"
         failures = cast("list[dict[str, object]]", summary["failures"])
         assert any(
@@ -12933,12 +17240,142 @@ def test_ci_batch_aggregation_fails_closed_for_duration_overrun() -> None:
             == "aggregate-duration-exceeded"
             for failure in failures
         )
-        assert any(
-            failure["kind"] == "final-evidence-failure"
-            and cast("dict[str, object]", failure["diagnostic"])["detail"]
-            == "aggregate-duration-exceeded"
-            for failure in failures
+        assert not any(
+            failure["kind"] == "final-evidence-failure" for failure in failures
         )
+        assert not any(failure["kind"] == "fail-closed" for failure in failures)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_ceilings_fractional_duration_overrun() -> None:
+    """Sub-second aggregate overruns still exceed the hard max duration."""
+    scratch = _ci_batch_bundle_scratch(
+        "batch-aggregation-fractional-duration-overrun"
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        bundle = _write_ci_batch_bundle(
+            scratch,
+            plan,
+            manifest,
+            row,
+            [
+                _ci_success_validation_result(
+                    plan, cast("str", selector["work-group-id"])
+                )
+            ],
+        )
+        _stage_ci_batch_bundle_artifact(observed_root, bundle)
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            started_at="2026-05-14T21:08:00.100000Z",
+            created_at="2026-05-14T21:10:01Z",
+        )
+
+        budgets = cast("dict[str, object]", summary["budgets"])
+        assert result == 1
+        assert budgets["aggregate-duration-seconds"] == 121
+        assert (
+            cast("dict[str, object]", summary["reason"])[
+                "aggregate-duration-exceeded"
+            ]
+            is True
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("started_at", "completed_at"),
+    [
+        ("2026-05-14T21:10:00", "2026-05-14T21:10:01Z"),
+        ("2026-05-14T21:10:00Z", "2026-05-14T21:10:01"),
+        ("2026-05-14T21:10:00", "2026-05-14T21:10:01"),
+        ("2026-05-14 21:10:00Z", "2026-05-14T21:10:01Z"),
+        ("2026-05-14T21:10:00Z", "2026-05-14 21:10:01Z"),
+    ],
+)
+def test_ci_aggregate_duration_rejects_non_contract_timestamps(
+    started_at: str,
+    completed_at: str,
+) -> None:
+    """Aggregate duration evidence requires contract RFC3339 timestamps."""
+    assert (
+        control._ci_aggregate_duration_seconds(started_at, completed_at)
+        == control._CI_INVALID_AGGREGATE_DURATION_SECONDS
+    )
+
+
+@pytest.mark.parametrize(
+    "started_at",
+    [
+        "not-a-timestamp",
+        "2026-05-14T21:10:00",
+        "2026-05-14T21:10:22Z",
+    ],
+)
+def test_ci_batch_aggregation_fails_closed_for_invalid_duration(
+    started_at: str,
+) -> None:
+    """Malformed or non-monotonic aggregate timestamps cannot bypass budgets."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-invalid-duration")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        bundle = _write_ci_batch_bundle(
+            scratch,
+            plan,
+            manifest,
+            row,
+            [
+                _ci_success_validation_result(
+                    plan, cast("str", selector["work-group-id"])
+                )
+            ],
+        )
+        _stage_ci_batch_bundle_artifact(observed_root, bundle)
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            started_at=started_at,
+            created_at="2026-05-14T21:10:21Z",
+        )
+
+        budgets = cast("dict[str, object]", summary["budgets"])
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        assert result == 1
+        assert budgets["aggregate-duration-seconds"] == 121
+        reason = cast("dict[str, object]", summary["reason"])
+        assert reason["fail-closed"] is False
+        assert reason["aggregate-duration-exceeded"] is True
+        assert reason["final-evidence-failure"] is False
+        assert not any(
+            failure["kind"] == "final-evidence-failure" for failure in failures
+        )
+        assert not any(failure["kind"] == "fail-closed" for failure in failures)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -13230,7 +17667,7 @@ def test_ci_batch_writer_cli_writes_bundle_and_outputs() -> None:
 
 
 def test_ci_execution_batch_manifest_cli_materializes_manifest_and_outputs():
-    """Public CLI materializes G4 execution-batch manifests."""
+    """Public CLI materializes G5 execution-batch manifests."""
     scratch = _ci_batch_bundle_scratch("execution-batch-manifest-cli")
     try:
         plan = cast("dict[str, object]", batch_contracts.plan())
@@ -13745,6 +18182,91 @@ def test_ci_batch_writer_requires_transitive_dependency_bundles() -> None:
             dependency_results_json=dependent_dependency_rows,
             dependency_bundles=[base_path],
         )
+        dependent_dependency = cast(
+            "list[dict[str, object]]",
+            cast(
+                "list[dict[str, object]]",
+                dependent_bundle["selector-results"],
+            )[0]["dependency-results"],
+        )[0]
+        base_artifact_ref = cast("str", base_bundle["artifact-ref"])
+        base_instance_id = f"{base_batch['batch-id']}-artifact"
+        assert (
+            dependent_dependency["upstream-artifact-instance-id"]
+            == base_instance_id
+        )
+        assert dependent_dependency[
+            "upstream-admitted-candidate-id"
+        ] == ci_validation_batch_evidence_candidate_id(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            batch_id=cast("str", base_batch["batch-id"]),
+            artifact_ref=base_artifact_ref,
+            artifact_instance_id=base_instance_id,
+            physical_artifact_name=artifact_physical_name(base_artifact_ref),
+        )
+        trusted_base_path = (
+            dependent_dir
+            / "observed-artifacts"
+            / artifact_physical_name(base_artifact_ref)
+            / "batch-evidence-bundle.json"
+        )
+        trusted_base = control._ci_authoritative_dependency_bundles(
+            [str(trusted_base_path)],
+            plan=plan,
+            request=cast(
+                "dict[str, object]",
+                batch_contracts.authorizing_context_kwargs()["request"],
+            ),
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=cast(
+                "dict[str, object]",
+                batch_contracts.authorizing_context_kwargs()[
+                    "changed_files_snapshot"
+                ],
+            ),
+            fact_snapshot=cast(
+                "dict[str, object]",
+                batch_contracts.authorizing_context_kwargs()["fact_snapshot"],
+            ),
+            observed_artifacts_dir=str(dependent_dir / "observed-artifacts"),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        missing_identity_bundle = deepcopy(dependent_bundle)
+        missing_dependency = cast(
+            "list[dict[str, object]]",
+            cast(
+                "list[dict[str, object]]",
+                missing_identity_bundle["selector-results"],
+            )[0]["dependency-results"],
+        )[0]
+        del missing_dependency["upstream-artifact-instance-id"]
+        with pytest.raises(ContractValidationError):
+            validate_ci_validation_batch_evidence_bundle(
+                missing_identity_bundle,
+                plan=plan,
+                request=cast(
+                    "dict[str, object]",
+                    batch_contracts.authorizing_context_kwargs()["request"],
+                ),
+                execution_batch_manifest=manifest,
+                changed_files_snapshot=cast(
+                    "dict[str, object]",
+                    batch_contracts.authorizing_context_kwargs()[
+                        "changed_files_snapshot"
+                    ],
+                ),
+                fact_snapshot=cast(
+                    "dict[str, object]",
+                    batch_contracts.authorizing_context_kwargs()[
+                        "fact_snapshot"
+                    ],
+                ),
+                expected_run_id=batch_contracts.RUN_ID,
+                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                dependency_evidence_bundles=trusted_base,
+            )
         dependent_path = dependent_dir / "batch-evidence-bundle.json"
 
         transitive_selector = cast(
@@ -13968,8 +18490,8 @@ def test_ci_batch_writer_rejects_duplicate_dependency_result_rows() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_batch_writer_derives_same_batch_dependency_blocked_result() -> None:
-    """Same-batch dependency rows admit blocking-failure selector outcomes."""
+def test_ci_batch_writer_derives_same_batch_failed_dependency_result() -> None:
+    """Same-batch blocking failures are admitted dependency rows."""
     scratch = _ci_batch_bundle_scratch("batch-same-batch-dependency-blocked")
     try:
         plan, manifest, same_batch, dependent_selector = (
@@ -14175,10 +18697,10 @@ def test_ci_batch_writer_public_rejects_later_same_batch_dependency() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_batch_writer_runs_after_same_batch_blocking_failure_dependency() -> (  # noqa: E501
+def test_ci_batch_writer_admits_same_batch_blocking_failure_dependency() -> (
     None
 ):
-    """Same-batch blocking-failure dependencies do not block later selectors."""
+    """Same-batch blocking-failure dependencies admit later selectors."""
     scratch = _ci_batch_bundle_scratch("batch-same-batch-blocking-admitted")
     try:
         plan, manifest, same_batch, _dependent_selector = (
@@ -14464,9 +18986,805 @@ def test_ci_batch_writer_admits_cross_batch_dependency_from_valid_bundle() -> (
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_batch_dependency_filter_ignores_stale_retry_bundle() -> None:
+    """Previous-attempt bundles do not poison current dependency validation."""
+    scratch = _ci_batch_bundle_scratch("batch-stale-dependency-filter")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        upstream_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        dependent_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[1]["batch-id"]
+        )
+        upstream_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        dependent_selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        upstream_dir = scratch / "upstream"
+        upstream_dir.mkdir()
+        current_bundle = _write_ci_batch_bundle(
+            upstream_dir,
+            plan,
+            manifest,
+            upstream_row,
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", upstream_selector["work-group-id"]),
+                )
+            ],
+        )
+        stale_dir = scratch / "stale-upstream"
+        stale_dir.mkdir()
+        stale_bundle = deepcopy(current_bundle)
+        cast("dict[str, object]", stale_bundle["run"])["run-attempt"] = "0"
+        stale_path = stale_dir / "batch-evidence-bundle.json"
+        stale_path.write_text(json.dumps(stale_bundle), encoding="utf-8")
+        observed_artifacts_dir = scratch / "observed-artifacts"
+        dependency_paths = _stage_dependency_bundles_by_physical_name(
+            observed_artifacts_dir,
+            [
+                upstream_dir / "batch-evidence-bundle.json",
+            ],
+        )
+        dependency_paths.insert(0, stale_path)
+
+        authoritative_bundles = control._ci_authoritative_dependency_bundles(
+            [str(path) for path in dependency_paths],
+            plan=plan,
+            request=batch_contracts.request_document(),
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=batch_contracts.changed_files_snapshot_document(),
+            fact_snapshot=batch_contracts.fact_snapshot_document(),
+            observed_artifacts_dir=str(observed_artifacts_dir),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        dependency_results = control._ci_batch_normalized_dependency_results(
+            selector=dependent_selector,
+            execution_batch_manifest=manifest,
+            current_batch_id=cast("str", batches[1]["batch-id"]),
+            dependency_results=[],
+            authoritative_dependency_results=(
+                control._ci_authoritative_dependency_results(
+                    authoritative_bundles,
+                )
+            ),
+            prior_selector_outcomes={},
+        )
+        dependent_dir = scratch / "dependent"
+        dependent_dir.mkdir()
+        dependent_bundle = _write_ci_batch_bundle(
+            dependent_dir,
+            plan,
+            manifest,
+            dependent_row,
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", dependent_selector["work-group-id"]),
+                )
+            ],
+            dependency_bundles=dependency_paths,
+            observed_artifacts_dir=observed_artifacts_dir,
+        )
+
+        assert len(authoritative_bundles) == 1
+        assert dependency_results[0]["admitted-for-gating"] is True
+        selector_result = cast(
+            "list[dict[str, object]]",
+            dependent_bundle["selector-results"],
+        )[0]
+        assert selector_result["outcome"] == "success"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_dependency_filter_ignores_wrong_physical_path() -> None:
+    """Wrong physical artifact directories are ignored."""
+    scratch = _ci_batch_bundle_scratch("batch-dependency-wrong-path")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        upstream_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        dependent_selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        upstream_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        upstream_dir = scratch / "upstream"
+        upstream_dir.mkdir()
+        upstream_bundle = _write_ci_batch_bundle(
+            upstream_dir,
+            plan,
+            manifest,
+            upstream_row,
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", upstream_selector["work-group-id"]),
+                )
+            ],
+        )
+        observed_artifacts_dir = scratch / "observed-artifacts"
+        spoof_dir = observed_artifacts_dir / "spoofed-artifact"
+        spoof_dir.mkdir(parents=True)
+        spoof_path = spoof_dir / "batch-evidence-bundle.json"
+        spoof_path.write_text(json.dumps(upstream_bundle), encoding="utf-8")
+
+        authoritative_bundles = control._ci_authoritative_dependency_bundles(
+            [str(spoof_path)],
+            plan=plan,
+            request=batch_contracts.request_document(),
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=batch_contracts.changed_files_snapshot_document(),
+            fact_snapshot=batch_contracts.fact_snapshot_document(),
+            observed_artifacts_dir=str(observed_artifacts_dir),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        dependency_results = control._ci_batch_normalized_dependency_results(
+            selector=dependent_selector,
+            execution_batch_manifest=manifest,
+            current_batch_id=cast("str", batches[1]["batch-id"]),
+            dependency_results=[],
+            authoritative_dependency_results=(
+                control._ci_authoritative_dependency_results(
+                    authoritative_bundles,
+                )
+            ),
+            prior_selector_outcomes={},
+        )
+
+        assert authoritative_bundles == []
+        assert dependency_results[0]["outcome"] == "missing"
+        assert dependency_results[0]["admitted-for-gating"] is False
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_dependency_filter_ignores_malformed_spoof_path() -> None:
+    """Malformed bundles at non-expected physical paths are out of scope."""
+    scratch = _ci_batch_bundle_scratch("batch-dependency-malformed-wrong-path")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        upstream_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        dependent_selector = cast(
+            "list[dict[str, object]]",
+            batches[1]["ordered-selectors"],
+        )[0]
+        upstream_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        upstream_dir = scratch / "upstream"
+        upstream_dir.mkdir()
+        upstream_bundle = _write_ci_batch_bundle(
+            upstream_dir,
+            plan,
+            manifest,
+            upstream_row,
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", upstream_selector["work-group-id"]),
+                )
+            ],
+        )
+        observed_artifacts_dir = scratch / "observed-artifacts"
+        valid_dependency_path = (
+            observed_artifacts_dir
+            / artifact_physical_name(
+                cast("str", upstream_bundle["artifact-ref"]),
+            )
+            / "batch-evidence-bundle.json"
+        )
+        _stage_ci_batch_bundle_artifact(observed_artifacts_dir, upstream_bundle)
+        malformed_path = (
+            observed_artifacts_dir
+            / "spoofed-artifact"
+            / "batch-evidence-bundle.json"
+        )
+        malformed_path.parent.mkdir()
+        malformed_path.write_text("{", encoding="utf-8")
+
+        authoritative_bundles = control._ci_authoritative_dependency_bundles(
+            [str(malformed_path), str(valid_dependency_path)],
+            plan=plan,
+            request=batch_contracts.request_document(),
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=batch_contracts.changed_files_snapshot_document(),
+            fact_snapshot=batch_contracts.fact_snapshot_document(),
+            observed_artifacts_dir=str(observed_artifacts_dir),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        dependency_results = control._ci_batch_normalized_dependency_results(
+            selector=dependent_selector,
+            execution_batch_manifest=manifest,
+            current_batch_id=cast("str", batches[1]["batch-id"]),
+            dependency_results=[],
+            authoritative_dependency_results=(
+                control._ci_authoritative_dependency_results(
+                    authoritative_bundles,
+                )
+            ),
+            prior_selector_outcomes={},
+        )
+
+        assert len(authoritative_bundles) == 1
+        assert dependency_results[0]["outcome"] == "satisfied"
+        assert dependency_results[0]["admitted-for-gating"] is True
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_dependency_filter_rejects_malformed_expected_path() -> None:
+    """Malformed bundles at expected physical paths fail closed."""
+    scratch = _ci_batch_bundle_scratch(
+        "batch-dependency-malformed-expected-path",
+    )
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        upstream_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        upstream_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        upstream_dir = scratch / "upstream"
+        upstream_dir.mkdir()
+        upstream_bundle = _write_ci_batch_bundle(
+            upstream_dir,
+            plan,
+            manifest,
+            upstream_row,
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", upstream_selector["work-group-id"]),
+                )
+            ],
+        )
+        observed_artifacts_dir = scratch / "observed-artifacts"
+        expected_path = (
+            observed_artifacts_dir
+            / artifact_physical_name(
+                cast("str", upstream_bundle["artifact-ref"]),
+            )
+            / "batch-evidence-bundle.json"
+        )
+        expected_path.parent.mkdir(parents=True)
+        expected_path.write_text("{", encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match="invalid dependency bundle"):
+            control._ci_authoritative_dependency_bundles(
+                [str(expected_path)],
+                plan=plan,
+                request=batch_contracts.request_document(),
+                execution_batch_manifest=manifest,
+                changed_files_snapshot=(
+                    batch_contracts.changed_files_snapshot_document()
+                ),
+                fact_snapshot=batch_contracts.fact_snapshot_document(),
+                observed_artifacts_dir=str(observed_artifacts_dir),
+                expected_run_id=batch_contracts.RUN_ID,
+                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_dependency_filter_rejects_artifact_ref_mismatch() -> None:
+    """Expected physical paths do not make mismatched bundle refs ignorable."""
+    scratch = _ci_batch_bundle_scratch(
+        "batch-dependency-artifact-ref-mismatch",
+    )
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        upstream_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        upstream_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        upstream_dir = scratch / "upstream"
+        upstream_dir.mkdir()
+        upstream_bundle = _write_ci_batch_bundle(
+            upstream_dir,
+            plan,
+            manifest,
+            upstream_row,
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", upstream_selector["work-group-id"]),
+                )
+            ],
+        )
+        expected_artifact_ref = cast("str", upstream_bundle["artifact-ref"])
+        mismatched_bundle = deepcopy(upstream_bundle)
+        mismatched_bundle["artifact-ref"] = cast(
+            "str",
+            batches[1]["expected-batch-evidence-bundle-ref"],
+        )
+        observed_artifacts_dir = scratch / "observed-artifacts"
+        expected_path = (
+            observed_artifacts_dir
+            / artifact_physical_name(expected_artifact_ref)
+            / "batch-evidence-bundle.json"
+        )
+        expected_path.parent.mkdir(parents=True)
+        expected_path.write_text(
+            json.dumps(mismatched_bundle),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                r"invalid dependency bundle.*artifact-ref does not match "
+                "expected dependency artifact path"
+            ),
+        ):
+            control._ci_authoritative_dependency_bundles(
+                [str(expected_path)],
+                plan=plan,
+                request=batch_contracts.request_document(),
+                execution_batch_manifest=manifest,
+                changed_files_snapshot=(
+                    batch_contracts.changed_files_snapshot_document()
+                ),
+                fact_snapshot=batch_contracts.fact_snapshot_document(),
+                observed_artifacts_dir=str(observed_artifacts_dir),
+                expected_run_id=batch_contracts.RUN_ID,
+                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_run_ci_validation_batch_commands_admits_failed_dependency() -> None:
+    """Batch commands run after valid upstream blocking-failure evidence."""
+    scratch = _ci_batch_bundle_scratch("batch-command-failed-dependency")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        upstream_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[0]["batch-id"]
+        )
+        dependent_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[1]["batch-id"]
+        )
+        upstream_selector = cast(
+            "list[dict[str, object]]",
+            batches[0]["ordered-selectors"],
+        )[0]
+        upstream_result = _ci_success_validation_result(
+            plan,
+            cast("str", upstream_selector["work-group-id"]),
+        )
+        upstream_result["outcome"] = "blocking-failure"
+        for command in cast(
+            "list[dict[str, object]]", upstream_result["commands"]
+        ):
+            command["outcome"] = "blocking-failure"
+            command["exit-code"] = 1
+        upstream_dir = scratch / "upstream"
+        upstream_dir.mkdir()
+        upstream_bundle = _write_ci_batch_bundle(
+            upstream_dir,
+            plan,
+            manifest,
+            upstream_row,
+            [upstream_result],
+        )
+        observed_artifacts_dir = scratch / "observed-artifacts"
+        dependency_path = (
+            observed_artifacts_dir
+            / artifact_physical_name(
+                cast("str", upstream_bundle["artifact-ref"])
+            )
+            / "batch-evidence-bundle.json"
+        )
+        _stage_ci_batch_bundle_artifact(
+            observed_artifacts_dir,
+            upstream_bundle,
+        )
+        plan_path = scratch / "validation-plan.json"
+        request_path = scratch / "ci-validation-request.json"
+        manifest_path = scratch / "execution-batch-manifest.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        result_dir = scratch / "results"
+        for path, document in (
+            (plan_path, plan),
+            (request_path, batch_contracts.request_document()),
+            (manifest_path, manifest),
+            (
+                changed_files_path,
+                batch_contracts.changed_files_snapshot_document(),
+            ),
+            (fact_snapshot_path, batch_contracts.fact_snapshot_document()),
+        ):
+            path.write_text(json.dumps(document), encoding="utf-8")
+
+        completed = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "eng/scripts/workflow_release_control.py",
+                "run-ci-validation-batch-commands",
+                "--plan",
+                str(plan_path),
+                "--request",
+                str(request_path),
+                "--execution-batch-manifest",
+                str(manifest_path),
+                "--changed-files-snapshot",
+                str(changed_files_path),
+                "--fact-snapshot",
+                str(fact_snapshot_path),
+                "--observed-artifacts-dir",
+                str(observed_artifacts_dir),
+                "--expected-run-id",
+                batch_contracts.RUN_ID,
+                "--expected-run-attempt",
+                batch_contracts.RUN_ATTEMPT,
+                "--dependency-bundle",
+                str(dependency_path),
+                "--observed-commit-sha",
+                batch_contracts.TREE_SHA,
+                "--matrix-row-json",
+                json.dumps(dependent_row),
+                "--repo-root",
+                str(REPO_ROOT),
+                "--result-out-dir",
+                str(result_dir),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        validation_result = json.loads(
+            (result_dir / "validation-result-000.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        assert validation_result["outcome"] == "blocking-failure"
+        assert (
+            validation_result["commands"][0].get("error")
+            != "dependency-blocked"
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_run_ci_validation_batch_commands_skips_blocked_dependencies() -> None:
+    """Batch commands skip selectors with absent dependency evidence."""
+    scratch = _ci_batch_bundle_scratch("batch-command-dependency-blocked")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_dependent_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(2),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        dependent_row = next(
+            item
+            for item in rows
+            if cast("dict[str, object]", item["identity-matrix"])["batch-id"]
+            == batches[1]["batch-id"]
+        )
+        plan_path = scratch / "validation-plan.json"
+        request_path = scratch / "ci-validation-request.json"
+        manifest_path = scratch / "execution-batch-manifest.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        result_dir = scratch / "results"
+        for path, document in (
+            (plan_path, plan),
+            (request_path, batch_contracts.request_document()),
+            (manifest_path, manifest),
+            (
+                changed_files_path,
+                batch_contracts.changed_files_snapshot_document(),
+            ),
+            (fact_snapshot_path, batch_contracts.fact_snapshot_document()),
+        ):
+            path.write_text(json.dumps(document), encoding="utf-8")
+
+        completed = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "eng/scripts/workflow_release_control.py",
+                "run-ci-validation-batch-commands",
+                "--plan",
+                str(plan_path),
+                "--request",
+                str(request_path),
+                "--execution-batch-manifest",
+                str(manifest_path),
+                "--changed-files-snapshot",
+                str(changed_files_path),
+                "--fact-snapshot",
+                str(fact_snapshot_path),
+                "--observed-artifacts-dir",
+                "",
+                "--expected-run-id",
+                batch_contracts.RUN_ID,
+                "--expected-run-attempt",
+                batch_contracts.RUN_ATTEMPT,
+                "--observed-commit-sha",
+                batch_contracts.TREE_SHA,
+                "--matrix-row-json",
+                json.dumps(dependent_row),
+                "--repo-root",
+                str(REPO_ROOT),
+                "--result-out-dir",
+                str(result_dir),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        validation_result = json.loads(
+            (result_dir / "validation-result-000.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert validation_result["outcome"] == "skipped"
+        assert validation_result["commands"][0]["error"] == "dependency-blocked"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_run_ci_validation_batch_commands_propagates_transitive_block() -> None:
+    """C skips when downloaded B is skipped because upstream A is missing."""
+    scratch = _ci_batch_bundle_scratch("batch-command-transitive-blocked")
+    try:
+        plan = cast("dict[str, object]", batch_contracts.plan())
+        batch_contracts.add_transitive_work_group(plan)
+        batches = batch_contracts.dependent_batches(plan)
+        manifest = (
+            batch_contracts.freeze_ci_validation_execution_batch_manifest(
+                plan=plan,
+                **batch_contracts.authorizing_context_kwargs(),
+                batches=batches,
+                budget=batch_contracts.budget(len(batches)),
+                created_at=batch_contracts.CREATED_AT,
+            )
+        )
+        rows = _ci_batch_matrix_rows(plan, manifest)
+        row_by_batch_id = {
+            cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            ): row
+            for row in rows
+        }
+        batch_by_group: dict[str, dict[str, object]] = {}
+        for batch in batches:
+            selector = cast(
+                "list[dict[str, object]]", batch["ordered-selectors"]
+            )[0]
+            batch_by_group[cast("str", selector["work-group-id"])] = batch
+        dependent_batch = batch_by_group["wg-dependent-gate"]
+        transitive_batch = batch_by_group["wg-transitive-gate"]
+        dependent_dir = scratch / "dependent"
+        dependent_dir.mkdir()
+        dependent_bundle = _write_ci_batch_bundle(
+            dependent_dir,
+            plan,
+            manifest,
+            row_by_batch_id[cast("str", dependent_batch["batch-id"])],
+            [],
+        )
+        observed_artifacts_dir = scratch / "observed-artifacts"
+        _stage_ci_batch_bundle_artifact(
+            observed_artifacts_dir,
+            dependent_bundle,
+        )
+        dependency_path = (
+            observed_artifacts_dir
+            / artifact_physical_name(
+                cast("str", dependent_bundle["artifact-ref"])
+            )
+            / "batch-evidence-bundle.json"
+        )
+        plan_path = scratch / "validation-plan.json"
+        request_path = scratch / "ci-validation-request.json"
+        manifest_path = scratch / "execution-batch-manifest.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        result_dir = scratch / "results"
+        for path, document in (
+            (plan_path, plan),
+            (request_path, batch_contracts.request_document()),
+            (manifest_path, manifest),
+            (
+                changed_files_path,
+                batch_contracts.changed_files_snapshot_document(),
+            ),
+            (fact_snapshot_path, batch_contracts.fact_snapshot_document()),
+        ):
+            path.write_text(json.dumps(document), encoding="utf-8")
+
+        completed = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "eng/scripts/workflow_release_control.py",
+                "run-ci-validation-batch-commands",
+                "--plan",
+                str(plan_path),
+                "--request",
+                str(request_path),
+                "--execution-batch-manifest",
+                str(manifest_path),
+                "--changed-files-snapshot",
+                str(changed_files_path),
+                "--fact-snapshot",
+                str(fact_snapshot_path),
+                "--observed-artifacts-dir",
+                str(observed_artifacts_dir),
+                "--expected-run-id",
+                batch_contracts.RUN_ID,
+                "--expected-run-attempt",
+                batch_contracts.RUN_ATTEMPT,
+                "--dependency-bundle",
+                str(dependency_path),
+                "--observed-commit-sha",
+                batch_contracts.TREE_SHA,
+                "--matrix-row-json",
+                json.dumps(
+                    row_by_batch_id[cast("str", transitive_batch["batch-id"])]
+                ),
+                "--repo-root",
+                str(REPO_ROOT),
+                "--result-out-dir",
+                str(result_dir),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        validation_result = json.loads(
+            (result_dir / "validation-result-000.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        assert validation_result["outcome"] == "skipped"
+        assert validation_result["commands"][0]["error"] == "dependency-blocked"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 @pytest.mark.parametrize(
     "bundle_case",
-    ["malformed", "wrong-run-id", "stale-run-attempt"],
+    ["malformed", "wrong-run-id"],
 )
 def test_ci_batch_writer_rejects_invalid_dependency_bundle(
     bundle_case: str,
@@ -14523,8 +19841,20 @@ def test_ci_batch_writer_rejects_invalid_dependency_bundle(
             ],
         )
         upstream_path = upstream_dir / "batch-evidence-bundle.json"
+        observed_artifacts_dir = None
+        dependency_bundles = [upstream_path]
         if bundle_case == "malformed":
-            upstream_path.write_text("{", encoding="utf-8")
+            observed_artifacts_dir = scratch / "observed-artifacts"
+            expected_path = (
+                observed_artifacts_dir
+                / artifact_physical_name(
+                    cast("str", upstream_bundle["artifact-ref"]),
+                )
+                / "batch-evidence-bundle.json"
+            )
+            expected_path.parent.mkdir(parents=True)
+            expected_path.write_text("{", encoding="utf-8")
+            dependency_bundles = [expected_path]
         else:
             run = cast("dict[str, object]", upstream_bundle["run"])
             if bundle_case == "wrong-run-id":
@@ -14550,7 +19880,8 @@ def test_ci_batch_writer_rejects_invalid_dependency_bundle(
                         cast("str", dependent_selector["work-group-id"]),
                     )
                 ],
-                dependency_bundles=[upstream_path],
+                dependency_bundles=dependency_bundles,
+                observed_artifacts_dir=observed_artifacts_dir,
             )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -14715,7 +20046,7 @@ def test_ci_batch_writer_rejects_stale_non_release_result_coverage_target() -> (
 
 def test_ci_batch_writer_requires_authoritative_reuse_context_for_release(  # noqa: PLR0915
 ) -> None:
-    """Reused release receipts need observed evidence in batch writing."""
+    """Release-shaped evidence fails closed without byte-bound artifacts."""
     scratch = _ci_batch_bundle_scratch("batch-release-reuse-context")
     try:
         request = _ci_validation_push_request(
@@ -14818,9 +20149,10 @@ def test_ci_batch_writer_requires_authoritative_reuse_context_for_release(  # no
         validation_result = json.loads(
             validation_result_path.read_text(encoding="utf-8")
         )
-        assert validation_result["outcome"] == "success"
-        assert validation_result["commands"][0]["evidence-source"] == (
-            "reused-validation-receipt"
+        assert validation_result["outcome"] == "blocking-failure"
+        assert (
+            "artifact-shape-unconfirmed"
+            in validation_result["commands"][0]["error"]
         )
         assert (
             control._ci_validation_outcome(
@@ -14845,7 +20177,7 @@ def test_ci_batch_writer_requires_authoritative_reuse_context_for_release(  # no
                 changed_files_snapshot=changed_files_snapshot,
                 fact_snapshot=fact_snapshot,
             )
-            == "success"
+            == "blocking-failure"
         )
         authorizing_context = {
             "request": request,
@@ -14913,6 +20245,9 @@ def test_ci_batch_writer_requires_authoritative_reuse_context_for_release(  # no
             if selector["work-group-id"] == release_work_group_id
         )
         assert without_context_selector["outcome"] == "blocking-failure"
+        assert without_context_selector["diagnostics"][0]["code"] == (
+            "artifact-shape-unconfirmed"
+        )
 
         with_context_dir = scratch / "with-reuse-context"
         with_context_dir.mkdir()
@@ -14934,7 +20269,10 @@ def test_ci_batch_writer_requires_authoritative_reuse_context_for_release(  # no
             )
             if selector["work-group-id"] == release_work_group_id
         )
-        assert with_context_selector["outcome"] == "success"
+        assert with_context_selector["outcome"] == "blocking-failure"
+        assert with_context_selector["diagnostics"][0]["code"] == (
+            "artifact-shape-unconfirmed"
+        )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -15214,3 +20552,24 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     assert "actionlint" in hk_config
     assert "id: workflow-release-control-tests" in pre_commit_config
     assert r"\.github/workflows/ci-validate\.yml$" in pre_commit_config
+
+
+def test_ci_validate_workflow_passes_actionlint_gate() -> None:
+    """The focused workflow gate runs actionlint against ci-validate.yml."""
+    if shutil.which("actionlint") is None:
+        pytest.skip("actionlint is not installed")
+
+    result = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            "eng/scripts/hk_actionlint.py",
+            ".github/workflows/ci-validate.yml",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr

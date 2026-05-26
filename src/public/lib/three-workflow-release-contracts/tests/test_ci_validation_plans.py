@@ -2135,6 +2135,67 @@ def test_validate_plan_accepts_repository_root_directory_roots() -> None:
     )
 
 
+def test_validate_plan_accepts_nullable_non_release_descriptor_identity() -> (
+    None
+):
+    """General descriptor facts may carry null identity."""
+    provider = _fact_provider()
+    provider["descriptors"] = [
+        {
+            "descriptor-path": "src/public/lib/example/private.release.yml",
+            "descriptor-identity": None,
+            "owner-subject-id": None,
+            "source": "ecosystem-provider",
+        },
+    ]
+    snapshot = freeze_ci_validation_plan(
+        request=_normalized_request(),
+        plan_id=PLAN_ID,
+        created_at=CREATED_AT,
+        observed_commit_sha=TREE_SHA,
+        verdict_intent="executable",
+        classification=_classification(),
+        subjects=[_subject(), _unsupported_subject()],
+        validation_obligations=[_validation_obligation()],
+        work_groups=[_ecosystem_gate_work_group()],
+        evidence_expectations=[_evidence_expectation()],
+        fact_snapshot_providers=[provider],
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+
+
+def test_validate_plan_rejects_missing_descriptor_identity_field() -> None:
+    """Descriptor fact identity is present even when its value is null."""
+    snapshot = _plan_snapshot()
+    fact_snapshot = cast("dict[str, object]", deepcopy(snapshot.fact_snapshot))
+    provider = cast("list[dict[str, object]]", fact_snapshot["providers"])[0]
+    provider["descriptors"] = [
+        {
+            "descriptor-path": "src/public/lib/example/private.release.yml",
+            "owner-subject-id": None,
+            "source": "ecosystem-provider",
+        },
+    ]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_plan(
+            snapshot.plan,
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+        )
+
+    assert any(
+        issue.path.endswith("providers[0].descriptors[0].descriptor-identity")
+        and issue.message == "is required"
+        for issue in error.value.issues
+    )
+
+
 def test_validate_plan_rejects_noncanonical_descriptor_catalog_paths() -> None:
     """Descriptor and target catalog paths use canonical Git path spelling."""
     snapshot = freeze_ci_validation_plan(

@@ -18,12 +18,12 @@ from three_workflow_release_contracts.ci_validation import (
     CommonEnvelope,
     DiagnosticSeverity,
     DiagnosticVerdictEffect,
+    _validate_common_envelope_with_versions,
     canonical_json_bytes,
     validate_artifact_logical_ref,
-    validate_common_envelope,
 )
 from three_workflow_release_contracts.ci_validation_assignments import (
-    validate_ci_validation_selector_assignments,
+    _validate_ci_validation_selector_assignments,
 )
 from three_workflow_release_contracts.ci_validation_plans import (
     PLANNED_CAPABILITY_ORDER,
@@ -35,10 +35,15 @@ from three_workflow_release_contracts.contracts import (
     ValidationIssue,
 )
 
-ReceiptOutcome = Literal["success", "blocking-failure", "skipped"]
+_ReceiptOutcome = Literal["success", "blocking-failure", "skipped"]
 
 _LOCAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_VALIDATION_RECEIPT_KIND = "ci-validation-receipt"
+_VALIDATION_RECEIPT_API_VERSION = "three.ci.validation.receipt/v1alpha1"
+_LEGACY_ENVELOPE_API_VERSIONS_BY_KIND = {
+    _VALIDATION_RECEIPT_KIND: _VALIDATION_RECEIPT_API_VERSION,
+}
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _OUTCOMES = frozenset({"success", "blocking-failure", "skipped"})
 _CAPABILITIES = frozenset(PLANNED_CAPABILITY_ORDER)
@@ -170,7 +175,7 @@ _RELEASE_RECEIPT_PLANNED_KEYS = frozenset(
 )
 
 
-def ci_validation_receipt_content_digest(raw_receipt_bytes: bytes) -> str:
+def _ci_validation_receipt_content_digest(raw_receipt_bytes: bytes) -> str:
     """Return the SHA-256 digest for observed raw receipt artifact bytes."""
     if not isinstance(raw_receipt_bytes, bytes):
         raise ContractValidationError(
@@ -179,7 +184,7 @@ def ci_validation_receipt_content_digest(raw_receipt_bytes: bytes) -> str:
     return hashlib.sha256(raw_receipt_bytes).hexdigest()
 
 
-def load_ci_validation_receipt_payload(
+def _load_ci_validation_receipt_payload(
     raw_receipt_bytes: bytes,
 ) -> Mapping[str, object]:
     """Parse a receipt JSON artifact and fail closed on non-I-JSON content."""
@@ -229,7 +234,7 @@ def _reject_duplicate_object_members(
     return members
 
 
-def ci_validation_receipt_payload_digest(receipt: Mapping[str, object]) -> str:
+def _ci_validation_receipt_payload_digest(receipt: Mapping[str, object]) -> str:
     """Return the canonical digest of a JSON-safe receipt payload."""
     try:
         return hashlib.sha256(canonical_json_bytes(receipt)).hexdigest()
@@ -239,7 +244,7 @@ def ci_validation_receipt_payload_digest(receipt: Mapping[str, object]) -> str:
         ) from error
 
 
-def freeze_ci_validation_receipt(  # noqa: PLR0913
+def _freeze_ci_validation_receipt(  # noqa: PLR0913
     *,
     plan: Mapping[str, object],
     selector_assignments_manifest: Mapping[str, object],
@@ -247,7 +252,7 @@ def freeze_ci_validation_receipt(  # noqa: PLR0913
     receipt_id: str,
     created_at: str,
     execution_observed_commit_sha: str,
-    outcome: ReceiptOutcome,
+    outcome: _ReceiptOutcome,
     evidence: Mapping[str, object],
     diagnostics: Sequence[Mapping[str, object]] = (),
     changed_files_snapshot: Mapping[str, object] | None = None,
@@ -285,10 +290,8 @@ def freeze_ci_validation_receipt(  # noqa: PLR0913
         raise ContractValidationError(issues)
     envelope = context.envelope
     receipt = {
-        "api-version": API_VERSIONS_BY_KIND[
-            CiValidationKind.VALIDATION_RECEIPT.value
-        ],
-        "kind": CiValidationKind.VALIDATION_RECEIPT.value,
+        "api-version": _VALIDATION_RECEIPT_API_VERSION,
+        "kind": _VALIDATION_RECEIPT_KIND,
         "created-at": created_at,
         "repository": {
             "owner": envelope.repository_owner,
@@ -325,7 +328,7 @@ def freeze_ci_validation_receipt(  # noqa: PLR0913
         "diagnostics": [dict(item) for item in diagnostics],
         "proof-admissibility": "validation-only",
     }
-    validate_ci_validation_receipt(
+    _validate_ci_validation_receipt(
         receipt,
         plan=plan,
         selector_assignments_manifest=selector_assignments_manifest,
@@ -339,7 +342,7 @@ def freeze_ci_validation_receipt(  # noqa: PLR0913
     return receipt
 
 
-def validate_ci_validation_receipt(  # noqa: PLR0913
+def _validate_ci_validation_receipt(  # noqa: PLR0913
     receipt: object,
     *,
     plan: Mapping[str, object],
@@ -463,7 +466,7 @@ def _validated_receipt_context(  # noqa: PLR0913
         expected_run_id=expected_run_id,
         expected_run_attempt=expected_run_attempt,
     )
-    validate_ci_validation_selector_assignments(
+    _validate_ci_validation_selector_assignments(
         selector_assignments_manifest,
         plan=plan,
         changed_files_snapshot=changed_files_snapshot,
@@ -2380,7 +2383,7 @@ def _plan_envelope_or_collect(
     issues: list[ValidationIssue],
 ) -> CommonEnvelope | None:
     try:
-        return validate_common_envelope(
+        return _validate_common_envelope_with_versions(
             plan,
             api_version=API_VERSIONS_BY_KIND[CiValidationKind.PLAN.value],
             kind=CiValidationKind.PLAN,
@@ -2395,12 +2398,11 @@ def _receipt_envelope_or_collect(
     issues: list[ValidationIssue],
 ) -> CommonEnvelope | None:
     try:
-        return validate_common_envelope(
+        return _validate_common_envelope_with_versions(
             receipt,
-            api_version=API_VERSIONS_BY_KIND[
-                CiValidationKind.VALIDATION_RECEIPT.value
-            ],
-            kind=CiValidationKind.VALIDATION_RECEIPT,
+            api_version=_VALIDATION_RECEIPT_API_VERSION,
+            kind=_VALIDATION_RECEIPT_KIND,
+            extra_api_versions_by_kind=_LEGACY_ENVELOPE_API_VERSIONS_BY_KIND,
         )
     except ContractValidationError as error:
         issues.extend(error.issues)

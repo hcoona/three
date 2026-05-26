@@ -25,9 +25,9 @@ jobs:
       planner-diagnostics-artifact-name: ${{ steps.refs.outputs.planner_diagnostics_artifact_name }}
       changed-files-snapshot-artifact-name: ${{ steps.refs.outputs.changed_files_snapshot_artifact_name }}
       fact-snapshot-artifact-name: ${{ steps.refs.outputs.fact_snapshot_artifact_name }}
-      selector-assignments-artifact-name: ${{ steps.refs.outputs.selector_assignments_artifact_name }}
-      receipt-manifest-artifact-name: ${{ steps.refs.outputs.receipt_manifest_artifact_name }}
-      aggregate-artifact-name: ${{ steps.refs.outputs.aggregate_artifact_name }}
+      execution-batch-manifest-artifact-name: ${{ steps.refs.outputs.execution_batch_manifest_artifact_name }}
+      aggregate-evidence-manifest-artifact-name: ${{ steps.refs.outputs.aggregate_evidence_manifest_artifact_name }}
+      aggregate-summary-artifact-name: ${{ steps.refs.outputs.aggregate_summary_artifact_name }}
       request-artifact-id: ${{ steps.upload-request.outputs.artifact-id }}
       mode: ${{ steps.mode.outputs.mode }}
     steps:
@@ -331,6 +331,7 @@ jobs:
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --expected-artifact "{\"artifact-ref\":\"${REQUEST_REF}\",\"artifact-instance-id\":\"${REQUEST_ARTIFACT_ID}\",\"producer-boundary\":\"normalize-input\",\"producer-job\":\"normalize-input\"}"
       - uses: actions/download-artifact@v4
+        if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
           merge-multiple: true
@@ -386,8 +387,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  materialize-work-groups:
-    name: materialize-work-groups
+  materialize-execution-batches:
+    name: materialize-execution-batches
     needs:
       - normalize-input
       - plan
@@ -397,16 +398,16 @@ jobs:
       contents: read
       actions: read
     outputs:
-      has-work-groups: ${{ steps.materialize.outputs.has_work_groups }}
-      work-group-matrix: ${{ steps.materialize.outputs.work_group_matrix }}
-      work-group-layers: ${{ steps.materialize.outputs.work_group_layers }}
-      has-work-group-layer-0: ${{ steps.materialize.outputs.has_work_group_layer_0 }}
-      work-group-layer-0-matrix: ${{ steps.materialize.outputs.work_group_layer_0_matrix }}
-      has-work-group-layer-1: ${{ steps.materialize.outputs.has_work_group_layer_1 }}
-      work-group-layer-1-matrix: ${{ steps.materialize.outputs.work_group_layer_1_matrix }}
-      has-work-group-layer-2: ${{ steps.materialize.outputs.has_work_group_layer_2 }}
-      work-group-layer-2-matrix: ${{ steps.materialize.outputs.work_group_layer_2_matrix }}
-      selector-assignments-artifact-id: ${{ steps.upload-assignments.outputs.artifact-id }}
+      has-execution-batches: ${{ steps.materialize.outputs.has_execution_batches }}
+      execution-batch-matrix: ${{ steps.materialize.outputs.execution_batch_matrix }}
+      execution-batch-layers: ${{ steps.materialize.outputs.execution_batch_layers }}
+      has-execution-batch-layer-0: ${{ steps.materialize.outputs.has_execution_batch_layer_0 }}
+      execution-batch-layer-0-matrix: ${{ steps.materialize.outputs.execution_batch_layer_0_matrix }}
+      has-execution-batch-layer-1: ${{ steps.materialize.outputs.has_execution_batch_layer_1 }}
+      execution-batch-layer-1-matrix: ${{ steps.materialize.outputs.execution_batch_layer_1_matrix }}
+      has-execution-batch-layer-2: ${{ steps.materialize.outputs.has_execution_batch_layer_2 }}
+      execution-batch-layer-2-matrix: ${{ steps.materialize.outputs.execution_batch_layer_2_matrix }}
+      execution-batch-manifest-artifact-id: ${{ steps.upload-execution-batch-manifest.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -427,14 +428,17 @@ jobs:
       - name: Verify planning artifact producer boundaries
         env:
           GH_TOKEN: ${{ github.token }}
+          REQUEST_REF: ci-validation/requests/${{ github.run_id }}/${{ github.run_attempt }}/ci-validation-request.json
           PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
           CHANGED_FILES_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/changed-files-snapshot.json
           FACT_SNAPSHOT_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/fact-snapshot.json
+          REQUEST_ARTIFACT_ID: ${{ needs.normalize-input.outputs.request-artifact-id }}
           PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
           CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
           FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
         run: |
           expected_artifacts=(
+            --expected-artifact "{\"artifact-ref\":\"${REQUEST_REF}\",\"artifact-instance-id\":\"${REQUEST_ARTIFACT_ID}\",\"producer-boundary\":\"normalize-input\",\"producer-job\":\"normalize-input\"}"
             --expected-artifact "{\"artifact-ref\":\"${PLAN_REF}\",\"artifact-instance-id\":\"${PLAN_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}"
           )
           if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
@@ -450,13 +454,19 @@ jobs:
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             "${expected_artifacts[@]}"
       - uses: actions/download-artifact@v4
+        if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
+        with:
+          artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/request
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download changed-files snapshot
         if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
-        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
@@ -464,46 +474,48 @@ jobs:
           path: .three-ci-validation/plan
       - name: Download fact snapshot
         if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
-        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
-      - name: Materialize selector assignments
+      - name: Materialize execution batches
         id: materialize
         run: |
           mkdir -p .three-ci-validation/materialize
-          uv run python eng/scripts/workflow_release_control.py materialize-ci-work-groups \
+          uv run python eng/scripts/workflow_release_control.py materialize-ci-validation-execution-batches \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
             --workflow "CI Validation" \
-            --writer-job "validation-work-groups" \
-            --assignments-out .three-ci-validation/materialize/selector-assignments.json \
+            --execution-job "execution-batch" \
+            --non-batch-control-plane-job-count 4 \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --execution-batch-manifest-out .three-ci-validation/materialize/execution-batch-manifest.json \
             --github-output "$GITHUB_OUTPUT"
-      - name: Upload selector assignments
-        id: upload-assignments
+      - name: Upload execution-batch manifest
+        id: upload-execution-batch-manifest
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
-          path: .three-ci-validation/materialize/selector-assignments.json
+          name: ${{ needs.normalize-input.outputs.execution-batch-manifest-artifact-name }}
+          path: .three-ci-validation/materialize/execution-batch-manifest.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
 
-  validation-work-groups-layer-0:
-    name: validation-work-groups-layer-0
+  execution-batch-layer-0:
+    name: execution-batch-layer-0
     needs:
       - normalize-input
       - plan
-      - materialize-work-groups
-    if: always() && needs.materialize-work-groups.outputs.has-work-group-layer-0 == 'true'
-    runs-on: ${{ matrix.work-group.runner-family == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+      - materialize-execution-batches
+    if: always() && needs.materialize-execution-batches.outputs.has-execution-batch-layer-0 == 'true'
+    runs-on: ${{ matrix['runner-family'] == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
-      matrix:
-        work-group: ${{ fromJson(needs.materialize-work-groups.outputs.work-group-layer-0-matrix) }}
+      matrix: ${{ fromJson(needs.materialize-execution-batches.outputs.execution-batch-layer-0-matrix) }}
     permissions:
       contents: read
       actions: read
@@ -525,56 +537,36 @@ jobs:
         with:
           version: '0.10.9'
       - name: Install Node.js for JavaScript/TypeScript validation
-        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        if: ${{ matrix.ecosystem == 'javascript' || matrix.ecosystem == 'typescript' }}
         uses: actions/setup-node@v4
         with:
           node-version: '24'
       - name: Enable pnpm for JavaScript/TypeScript validation
-        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        if: ${{ matrix.ecosystem == 'javascript' || matrix.ecosystem == 'typescript' }}
         shell: bash
         run: corepack enable pnpm
       - name: Install Ruby for RubyGems validation
-        if: ${{ matrix.work-group.ecosystem == 'ruby' }}
+        if: ${{ matrix.ecosystem == 'ruby' }}
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-      - name: Verify gating artifact producer boundaries
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
-          CHANGED_FILES_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/changed-files-snapshot.json
-          FACT_SNAPSHOT_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/fact-snapshot.json
-          ASSIGNMENTS_REF: ci-validation/assignments/${{ github.run_id }}/${{ github.run_attempt }}/selector-assignments.json
-          PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
-          CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
-          FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
-          ASSIGNMENTS_ARTIFACT_ID: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
-        run: |
-          expected_artifacts=(
-            --expected-artifact "{\"artifact-ref\":\"${PLAN_REF}\",\"artifact-instance-id\":\"${PLAN_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}"
-            --expected-artifact "{\"artifact-ref\":\"${ASSIGNMENTS_REF}\",\"artifact-instance-id\":\"${ASSIGNMENTS_ARTIFACT_ID}\",\"producer-boundary\":\"materialize-work-groups\",\"producer-job\":\"materialize-work-groups\"}"
-          )
-          if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
-            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${CHANGED_FILES_REF}\",\"artifact-instance-id\":\"${CHANGED_FILES_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
-          fi
-          if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
-            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${FACT_SNAPSHOT_REF}\",\"artifact-instance-id\":\"${FACT_SNAPSHOT_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
-          fi
-          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
-            --repository "$GITHUB_REPOSITORY" \
-            --workflow "CI Validation" \
-            --run-id "$GITHUB_RUN_ID" \
-            --run-attempt "$GITHUB_RUN_ATTEMPT" \
-            "${expected_artifacts[@]}"
       - uses: actions/download-artifact@v4
+        if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
+        with:
+          artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/request
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
-      - uses: actions/download-artifact@v4
+      - name: Download execution-batch manifest
+        if: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id != '' }}
+        uses: actions/download-artifact@v4
         with:
-          artifact-ids: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+          artifact-ids: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
@@ -591,130 +583,90 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
-      - name: Download prerequisite validation artifacts
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: three-ci-validation-*
-          path: .three-ci-validation/observed-artifacts
-      - name: Check prerequisite validation receipts
-        id: dependency-gate
-        shell: bash
-        env:
-          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
-        run: |
-          uv run python eng/scripts/workflow_release_control.py check-ci-validation-dependencies \
-            --plan .three-ci-validation/plan/validation-plan.json \
-            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
-            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --work-group-id "$WORK_GROUP_ID" \
-            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
-            --github-output "$GITHUB_OUTPUT"
-      - name: Run mapped validation commands
-        if: ${{ steps.dependency-gate.outputs.dependency_blocked != 'true' }}
+      - name: Run batch validation commands
         id: validation
         shell: bash
         env:
-          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          MATRIX_BATCH_JSON: ${{ toJson(matrix) }}
         run: |
-          mkdir -p .three-ci-validation/work
+          mkdir -p .three-ci-validation/work/validation-results
+          shopt -s nullglob globstar
+          dependency_bundle_args=()
+          for bundle in .three-ci-validation/observed-artifacts/**/batch-evidence-bundle.json; do
+            dependency_bundle_args+=(--dependency-bundle "$bundle")
+          done
           observed_commit_sha="$(git rev-parse HEAD)"
-          uv run python eng/scripts/workflow_release_control.py run-ci-validation-commands \
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-batch-commands \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$observed_commit_sha" \
-            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --matrix-row-json "$MATRIX_BATCH_JSON" \
             --repo-root . \
-            --result-out .three-ci-validation/work/validation-result.json \
+            --result-out-dir .three-ci-validation/work/validation-results \
+            "${dependency_bundle_args[@]}" \
             --github-output "$GITHUB_OUTPUT"
-      - name: Write validation receipt
-        id: receipt
+      - name: Write batch evidence bundle
+        id: bundle
         shell: bash
         env:
-          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
-          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
-          WRITER_JOB: ${{ matrix.work-group.writer-job }}
-          VALIDATION_OUTCOME: ${{ steps.validation.outputs.validation_outcome }}
+          MATRIX_BATCH_JSON: ${{ toJson(matrix) }}
         run: |
-          mkdir -p .three-ci-validation/work
-          validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"
+          shopt -s nullglob globstar
+          validation_result_args=()
+          for result in .three-ci-validation/work/validation-results/*.json; do
+            validation_result_args+=(--validation-result "$result")
+          done
+          dependency_bundle_args=()
+          for bundle in .three-ci-validation/observed-artifacts/**/batch-evidence-bundle.json; do
+            dependency_bundle_args+=(--dependency-bundle "$bundle")
+          done
           observed_commit_sha="$(git rev-parse HEAD)"
-          uv run python eng/scripts/workflow_release_control.py write-ci-validation-receipt \
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-batch-evidence-bundle \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --work-group-id "$WORK_GROUP_ID" \
-            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --matrix-row-json "$MATRIX_BATCH_JSON" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --workflow "CI Validation" \
-            --job "$WRITER_JOB" \
+            --job "execution-batch" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$observed_commit_sha" \
-            --validation-result .three-ci-validation/work/validation-result.json \
-            --validation-outcome "$validation_outcome" \
-            --receipt-out .three-ci-validation/work/receipt.json \
+            "${validation_result_args[@]}" \
+            "${dependency_bundle_args[@]}" \
+            --bundle-out .three-ci-validation/work/batch-evidence-bundle.json \
             --github-output "$GITHUB_OUTPUT"
-      - name: Upload validation receipt
-        id: upload-receipt
+      - name: Upload batch evidence bundle
+        id: upload-batch-evidence
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.receipt.outputs.receipt_artifact_name }}
+          name: ${{ steps.bundle.outputs.batch_evidence_bundle_artifact_name }}
           path: |
-            .three-ci-validation/work/receipt.json
-            .three-ci-validation/work/validation-result.json
+            .three-ci-validation/work/batch-evidence-bundle.json
+            .three-ci-validation/work/validation-results/*.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - name: Write receipt writer observation
-        id: writer-observation
-        shell: bash
-        env:
-          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
-          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
-          WRITER_JOB: ${{ matrix.work-group.writer-job }}
-          RECEIPT_ARTIFACT_ID: ${{ steps.upload-receipt.outputs.artifact-id }}
-        run: |
-          uv run python eng/scripts/workflow_release_control.py write-ci-validation-writer-observation \
-            --plan .three-ci-validation/plan/validation-plan.json \
-            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
-            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --work-group-id "$WORK_GROUP_ID" \
-            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
-            --workflow "CI Validation" \
-            --job "$WRITER_JOB" \
-            --artifact-instance-id "$RECEIPT_ARTIFACT_ID" \
-            --observation-out .three-ci-validation/work/writer-observation.json \
-            --metadata-out .three-ci-validation/work/receipt-artifact-metadata.json \
-            --github-output "$GITHUB_OUTPUT"
-      - name: Upload writer observation
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.writer-observation.outputs.writer_observation_artifact_name }}
-          path: |
-            .three-ci-validation/work/writer-observation.json
-            .three-ci-validation/work/receipt-artifact-metadata.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-
-  validation-work-groups-layer-1:
-    name: validation-work-groups-layer-1
+  execution-batch-layer-1:
+    name: execution-batch-layer-1
     needs:
       - normalize-input
       - plan
-      - materialize-work-groups
-      - validation-work-groups-layer-0
-    if: always() && needs.materialize-work-groups.outputs.has-work-group-layer-1 == 'true'
-    runs-on: ${{ matrix.work-group.runner-family == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+      - materialize-execution-batches
+      - execution-batch-layer-0
+    if: always() && needs.materialize-execution-batches.outputs.has-execution-batch-layer-1 == 'true'
+    runs-on: ${{ matrix['runner-family'] == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
-      matrix:
-        work-group: ${{ fromJson(needs.materialize-work-groups.outputs.work-group-layer-1-matrix) }}
+      matrix: ${{ fromJson(needs.materialize-execution-batches.outputs.execution-batch-layer-1-matrix) }}
     permissions:
       contents: read
       actions: read
@@ -736,56 +688,36 @@ jobs:
         with:
           version: '0.10.9'
       - name: Install Node.js for JavaScript/TypeScript validation
-        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        if: ${{ matrix.ecosystem == 'javascript' || matrix.ecosystem == 'typescript' }}
         uses: actions/setup-node@v4
         with:
           node-version: '24'
       - name: Enable pnpm for JavaScript/TypeScript validation
-        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        if: ${{ matrix.ecosystem == 'javascript' || matrix.ecosystem == 'typescript' }}
         shell: bash
         run: corepack enable pnpm
       - name: Install Ruby for RubyGems validation
-        if: ${{ matrix.work-group.ecosystem == 'ruby' }}
+        if: ${{ matrix.ecosystem == 'ruby' }}
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-      - name: Verify gating artifact producer boundaries
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
-          CHANGED_FILES_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/changed-files-snapshot.json
-          FACT_SNAPSHOT_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/fact-snapshot.json
-          ASSIGNMENTS_REF: ci-validation/assignments/${{ github.run_id }}/${{ github.run_attempt }}/selector-assignments.json
-          PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
-          CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
-          FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
-          ASSIGNMENTS_ARTIFACT_ID: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
-        run: |
-          expected_artifacts=(
-            --expected-artifact "{\"artifact-ref\":\"${PLAN_REF}\",\"artifact-instance-id\":\"${PLAN_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}"
-            --expected-artifact "{\"artifact-ref\":\"${ASSIGNMENTS_REF}\",\"artifact-instance-id\":\"${ASSIGNMENTS_ARTIFACT_ID}\",\"producer-boundary\":\"materialize-work-groups\",\"producer-job\":\"materialize-work-groups\"}"
-          )
-          if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
-            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${CHANGED_FILES_REF}\",\"artifact-instance-id\":\"${CHANGED_FILES_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
-          fi
-          if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
-            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${FACT_SNAPSHOT_REF}\",\"artifact-instance-id\":\"${FACT_SNAPSHOT_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
-          fi
-          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
-            --repository "$GITHUB_REPOSITORY" \
-            --workflow "CI Validation" \
-            --run-id "$GITHUB_RUN_ID" \
-            --run-attempt "$GITHUB_RUN_ATTEMPT" \
-            "${expected_artifacts[@]}"
       - uses: actions/download-artifact@v4
+        if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
+        with:
+          artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/request
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
-      - uses: actions/download-artifact@v4
+      - name: Download execution-batch manifest
+        if: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id != '' }}
+        uses: actions/download-artifact@v4
         with:
-          artifact-ids: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+          artifact-ids: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
@@ -802,131 +734,192 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
-      - name: Download prerequisite validation artifacts
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: three-ci-validation-*
-          path: .three-ci-validation/observed-artifacts
-      - name: Check prerequisite validation receipts
-        id: dependency-gate
-        shell: bash
+      - name: Download prerequisite batch evidence
+        if: ${{ needs.materialize-execution-batches.outputs.has-execution-batch-layer-0 == 'true' }}
         env:
-          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+          GH_TOKEN: ${{ github.token }}
+          CI_REPOSITORY: ${{ github.repository }}
+          EXPECTED_DEPENDENCY_BUNDLES_JSON: ${{ toJson(matrix['expected-dependency-bundles']) }}
+        shell: bash
         run: |
-          uv run python eng/scripts/workflow_release_control.py check-ci-validation-dependencies \
-            --plan .three-ci-validation/plan/validation-plan.json \
-            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
-            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --work-group-id "$WORK_GROUP_ID" \
-            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
-            --github-output "$GITHUB_OUTPUT"
-      - name: Run mapped validation commands
-        if: ${{ steps.dependency-gate.outputs.dependency_blocked != 'true' }}
+          mkdir -p .three-ci-validation/observed-artifacts
+          while IFS=$'\t' read -r artifact_name artifact_path metadata_path; do
+            if [ -z "$artifact_name" ]; then
+              continue
+            fi
+                      rm -rf "$artifact_path"
+                      mkdir -p "$artifact_path"
+                      if ! artifact_json="$(gh api \
+                        --repo "$CI_REPOSITORY" \
+                        -H "Accept: application/vnd.github+json" \
+                        "/repos/$CI_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$artifact_name")"; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} could not be listed"
+                        rm -rf "$artifact_path"
+                        continue
+                      fi
+                      if ! artifact_id="$(ARTIFACT_NAME="$artifact_name" ARTIFACT_JSON="$artifact_json" python - <<'PY'
+          import json
+          import os
+
+          document = json.loads(os.environ["ARTIFACT_JSON"])
+          matches = [
+              artifact
+              for artifact in document.get("artifacts", [])
+              if artifact.get("name") == os.environ["ARTIFACT_NAME"]
+              and artifact.get("expired") is not True
+          ]
+          if len(matches) != 1 or not matches[0].get("id"):
+              raise SystemExit(
+                  f"expected exactly one live dependency artifact named "
+                  f"{os.environ['ARTIFACT_NAME']}, found {len(matches)}"
+              )
+          print(matches[0]["id"])
+          PY
+          )"; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} was not uniquely available"
+                        rm -rf "$artifact_path"
+                        continue
+                      fi
+                      archive_path="${artifact_path}.zip"
+                      if ! gh api \
+                        --repo "$CI_REPOSITORY" \
+                        -H "Accept: application/zip" \
+                        "/repos/$CI_REPOSITORY/actions/artifacts/${artifact_id}/zip" \
+                        > "$archive_path"; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} (${artifact_id}) could not be downloaded"
+                        rm -rf "$artifact_path" "$archive_path"
+                        continue
+                      fi
+                      if ! unzip -q "$archive_path" -d "$artifact_path"; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} (${artifact_id}) could not be extracted"
+                        rm -rf "$artifact_path" "$archive_path"
+                        continue
+                      fi
+                      rm -f "$archive_path"
+                      if [ ! -f "${artifact_path}/batch-evidence-bundle.json" ]; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} (${artifact_id}) did not contain batch-evidence-bundle.json"
+                        rm -rf "$artifact_path"
+                        continue
+                      fi
+                      if ! ARTIFACT_ID="$artifact_id" ARTIFACT_NAME="$artifact_name" ARTIFACT_PATH="$artifact_path" METADATA_PATH="$metadata_path" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          bundle_path = Path(os.environ["ARTIFACT_PATH"]) / "batch-evidence-bundle.json"
+          bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+          metadata = {
+              "artifact-instance-id": os.environ["ARTIFACT_ID"],
+              "artifact-ref": bundle["artifact-ref"],
+              "physical-artifact-name": os.environ["ARTIFACT_NAME"],
+              "run-id": os.environ["GITHUB_RUN_ID"],
+              "run-attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "producer-boundary": "execution-batch",
+          }
+          Path(os.environ["METADATA_PATH"]).write_text(
+              json.dumps(metadata, separators=(",", ":"), sort_keys=True),
+              encoding="utf-8",
+          )
+          PY
+                      then
+                        echo "::warning::Expected dependency artifact ${artifact_name} (${artifact_id}) did not contain readable trusted bundle identity"
+                        rm -rf "$artifact_path"
+                        continue
+                      fi
+          done < <(
+            python - <<'PY'
+          import json
+          import os
+
+          for bundle in json.loads(os.environ["EXPECTED_DEPENDENCY_BUNDLES_JSON"] or "[]"):
+              print(f"{bundle['artifact-name']}\t{bundle['artifact-path']}\t{bundle['artifact-metadata-path']}")
+          PY
+          )
+      - name: Run batch validation commands
         id: validation
         shell: bash
         env:
-          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          MATRIX_BATCH_JSON: ${{ toJson(matrix) }}
         run: |
-          mkdir -p .three-ci-validation/work
+          mkdir -p .three-ci-validation/work/validation-results
+          shopt -s nullglob globstar
+          dependency_bundle_args=()
+          for bundle in .three-ci-validation/observed-artifacts/**/batch-evidence-bundle.json; do
+            dependency_bundle_args+=(--dependency-bundle "$bundle")
+          done
           observed_commit_sha="$(git rev-parse HEAD)"
-          uv run python eng/scripts/workflow_release_control.py run-ci-validation-commands \
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-batch-commands \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$observed_commit_sha" \
-            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --matrix-row-json "$MATRIX_BATCH_JSON" \
             --repo-root . \
-            --result-out .three-ci-validation/work/validation-result.json \
+            --result-out-dir .three-ci-validation/work/validation-results \
+            "${dependency_bundle_args[@]}" \
             --github-output "$GITHUB_OUTPUT"
-      - name: Write validation receipt
-        id: receipt
+      - name: Write batch evidence bundle
+        id: bundle
         shell: bash
         env:
-          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
-          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
-          WRITER_JOB: ${{ matrix.work-group.writer-job }}
-          VALIDATION_OUTCOME: ${{ steps.validation.outputs.validation_outcome }}
+          MATRIX_BATCH_JSON: ${{ toJson(matrix) }}
         run: |
-          mkdir -p .three-ci-validation/work
-          validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"
+          shopt -s nullglob globstar
+          validation_result_args=()
+          for result in .three-ci-validation/work/validation-results/*.json; do
+            validation_result_args+=(--validation-result "$result")
+          done
+          dependency_bundle_args=()
+          for bundle in .three-ci-validation/observed-artifacts/**/batch-evidence-bundle.json; do
+            dependency_bundle_args+=(--dependency-bundle "$bundle")
+          done
           observed_commit_sha="$(git rev-parse HEAD)"
-          uv run python eng/scripts/workflow_release_control.py write-ci-validation-receipt \
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-batch-evidence-bundle \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --work-group-id "$WORK_GROUP_ID" \
-            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --matrix-row-json "$MATRIX_BATCH_JSON" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --workflow "CI Validation" \
-            --job "$WRITER_JOB" \
+            --job "execution-batch" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$observed_commit_sha" \
-            --validation-result .three-ci-validation/work/validation-result.json \
-            --validation-outcome "$validation_outcome" \
-            --receipt-out .three-ci-validation/work/receipt.json \
+            "${validation_result_args[@]}" \
+            "${dependency_bundle_args[@]}" \
+            --bundle-out .three-ci-validation/work/batch-evidence-bundle.json \
             --github-output "$GITHUB_OUTPUT"
-      - name: Upload validation receipt
-        id: upload-receipt
+      - name: Upload batch evidence bundle
+        id: upload-batch-evidence
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.receipt.outputs.receipt_artifact_name }}
+          name: ${{ steps.bundle.outputs.batch_evidence_bundle_artifact_name }}
           path: |
-            .three-ci-validation/work/receipt.json
-            .three-ci-validation/work/validation-result.json
+            .three-ci-validation/work/batch-evidence-bundle.json
+            .three-ci-validation/work/validation-results/*.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - name: Write receipt writer observation
-        id: writer-observation
-        shell: bash
-        env:
-          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
-          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
-          WRITER_JOB: ${{ matrix.work-group.writer-job }}
-          RECEIPT_ARTIFACT_ID: ${{ steps.upload-receipt.outputs.artifact-id }}
-        run: |
-          uv run python eng/scripts/workflow_release_control.py write-ci-validation-writer-observation \
-            --plan .three-ci-validation/plan/validation-plan.json \
-            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
-            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --work-group-id "$WORK_GROUP_ID" \
-            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
-            --workflow "CI Validation" \
-            --job "$WRITER_JOB" \
-            --artifact-instance-id "$RECEIPT_ARTIFACT_ID" \
-            --observation-out .three-ci-validation/work/writer-observation.json \
-            --metadata-out .three-ci-validation/work/receipt-artifact-metadata.json \
-            --github-output "$GITHUB_OUTPUT"
-      - name: Upload writer observation
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.writer-observation.outputs.writer_observation_artifact_name }}
-          path: |
-            .three-ci-validation/work/writer-observation.json
-            .three-ci-validation/work/receipt-artifact-metadata.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-
-  validation-work-groups-layer-2:
-    name: validation-work-groups-layer-2
+  execution-batch-layer-2:
+    name: execution-batch-layer-2
     needs:
       - normalize-input
       - plan
-      - materialize-work-groups
-      - validation-work-groups-layer-0
-      - validation-work-groups-layer-1
-    if: always() && needs.materialize-work-groups.outputs.has-work-group-layer-2 == 'true'
-    runs-on: ${{ matrix.work-group.runner-family == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+      - materialize-execution-batches
+      - execution-batch-layer-0
+      - execution-batch-layer-1
+    if: always() && needs.materialize-execution-batches.outputs.has-execution-batch-layer-2 == 'true'
+    runs-on: ${{ matrix['runner-family'] == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
-      matrix:
-        work-group: ${{ fromJson(needs.materialize-work-groups.outputs.work-group-layer-2-matrix) }}
+      matrix: ${{ fromJson(needs.materialize-execution-batches.outputs.execution-batch-layer-2-matrix) }}
     permissions:
       contents: read
       actions: read
@@ -948,56 +941,36 @@ jobs:
         with:
           version: '0.10.9'
       - name: Install Node.js for JavaScript/TypeScript validation
-        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        if: ${{ matrix.ecosystem == 'javascript' || matrix.ecosystem == 'typescript' }}
         uses: actions/setup-node@v4
         with:
           node-version: '24'
       - name: Enable pnpm for JavaScript/TypeScript validation
-        if: ${{ matrix.work-group.ecosystem == 'javascript' || matrix.work-group.ecosystem == 'typescript' }}
+        if: ${{ matrix.ecosystem == 'javascript' || matrix.ecosystem == 'typescript' }}
         shell: bash
         run: corepack enable pnpm
       - name: Install Ruby for RubyGems validation
-        if: ${{ matrix.work-group.ecosystem == 'ruby' }}
+        if: ${{ matrix.ecosystem == 'ruby' }}
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-      - name: Verify gating artifact producer boundaries
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PLAN_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/validation-plan.json
-          CHANGED_FILES_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/changed-files-snapshot.json
-          FACT_SNAPSHOT_REF: ci-validation/planning/${{ github.run_id }}/${{ github.run_attempt }}/fact-snapshot.json
-          ASSIGNMENTS_REF: ci-validation/assignments/${{ github.run_id }}/${{ github.run_attempt }}/selector-assignments.json
-          PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
-          CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
-          FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
-          ASSIGNMENTS_ARTIFACT_ID: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
-        run: |
-          expected_artifacts=(
-            --expected-artifact "{\"artifact-ref\":\"${PLAN_REF}\",\"artifact-instance-id\":\"${PLAN_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}"
-            --expected-artifact "{\"artifact-ref\":\"${ASSIGNMENTS_REF}\",\"artifact-instance-id\":\"${ASSIGNMENTS_ARTIFACT_ID}\",\"producer-boundary\":\"materialize-work-groups\",\"producer-job\":\"materialize-work-groups\"}"
-          )
-          if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
-            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${CHANGED_FILES_REF}\",\"artifact-instance-id\":\"${CHANGED_FILES_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
-          fi
-          if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
-            expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${FACT_SNAPSHOT_REF}\",\"artifact-instance-id\":\"${FACT_SNAPSHOT_ARTIFACT_ID}\",\"producer-boundary\":\"plan\",\"producer-job\":\"plan\"}")
-          fi
-          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
-            --repository "$GITHUB_REPOSITORY" \
-            --workflow "CI Validation" \
-            --run-id "$GITHUB_RUN_ID" \
-            --run-attempt "$GITHUB_RUN_ATTEMPT" \
-            "${expected_artifacts[@]}"
       - uses: actions/download-artifact@v4
+        if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
+        with:
+          artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/request
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
-      - uses: actions/download-artifact@v4
+      - name: Download execution-batch manifest
+        if: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id != '' }}
+        uses: actions/download-artifact@v4
         with:
-          artifact-ids: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+          artifact-ids: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
@@ -1014,113 +987,176 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
-      - name: Download prerequisite validation artifacts
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: three-ci-validation-*
-          path: .three-ci-validation/observed-artifacts
-      - name: Check prerequisite validation receipts
-        id: dependency-gate
-        shell: bash
+      - name: Download prerequisite batch evidence
+        if: ${{ needs.materialize-execution-batches.outputs.has-execution-batch-layer-1 == 'true' }}
         env:
-          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
+          GH_TOKEN: ${{ github.token }}
+          CI_REPOSITORY: ${{ github.repository }}
+          EXPECTED_DEPENDENCY_BUNDLES_JSON: ${{ toJson(matrix['expected-dependency-bundles']) }}
+        shell: bash
         run: |
-          uv run python eng/scripts/workflow_release_control.py check-ci-validation-dependencies \
-            --plan .three-ci-validation/plan/validation-plan.json \
-            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
-            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --work-group-id "$WORK_GROUP_ID" \
-            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
-            --github-output "$GITHUB_OUTPUT"
-      - name: Run mapped validation commands
-        if: ${{ steps.dependency-gate.outputs.dependency_blocked != 'true' }}
+          mkdir -p .three-ci-validation/observed-artifacts
+          while IFS=$'\t' read -r artifact_name artifact_path metadata_path; do
+            if [ -z "$artifact_name" ]; then
+              continue
+            fi
+                      rm -rf "$artifact_path"
+                      mkdir -p "$artifact_path"
+                      if ! artifact_json="$(gh api \
+                        --repo "$CI_REPOSITORY" \
+                        -H "Accept: application/vnd.github+json" \
+                        "/repos/$CI_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$artifact_name")"; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} could not be listed"
+                        rm -rf "$artifact_path"
+                        continue
+                      fi
+                      if ! artifact_id="$(ARTIFACT_NAME="$artifact_name" ARTIFACT_JSON="$artifact_json" python - <<'PY'
+          import json
+          import os
+
+          document = json.loads(os.environ["ARTIFACT_JSON"])
+          matches = [
+              artifact
+              for artifact in document.get("artifacts", [])
+              if artifact.get("name") == os.environ["ARTIFACT_NAME"]
+              and artifact.get("expired") is not True
+          ]
+          if len(matches) != 1 or not matches[0].get("id"):
+              raise SystemExit(
+                  f"expected exactly one live dependency artifact named "
+                  f"{os.environ['ARTIFACT_NAME']}, found {len(matches)}"
+              )
+          print(matches[0]["id"])
+          PY
+          )"; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} was not uniquely available"
+                        rm -rf "$artifact_path"
+                        continue
+                      fi
+                      archive_path="${artifact_path}.zip"
+                      if ! gh api \
+                        --repo "$CI_REPOSITORY" \
+                        -H "Accept: application/zip" \
+                        "/repos/$CI_REPOSITORY/actions/artifacts/${artifact_id}/zip" \
+                        > "$archive_path"; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} (${artifact_id}) could not be downloaded"
+                        rm -rf "$artifact_path" "$archive_path"
+                        continue
+                      fi
+                      if ! unzip -q "$archive_path" -d "$artifact_path"; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} (${artifact_id}) could not be extracted"
+                        rm -rf "$artifact_path" "$archive_path"
+                        continue
+                      fi
+                      rm -f "$archive_path"
+                      if [ ! -f "${artifact_path}/batch-evidence-bundle.json" ]; then
+                        echo "::warning::Expected dependency artifact ${artifact_name} (${artifact_id}) did not contain batch-evidence-bundle.json"
+                        rm -rf "$artifact_path"
+                        continue
+                      fi
+                      if ! ARTIFACT_ID="$artifact_id" ARTIFACT_NAME="$artifact_name" ARTIFACT_PATH="$artifact_path" METADATA_PATH="$metadata_path" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          bundle_path = Path(os.environ["ARTIFACT_PATH"]) / "batch-evidence-bundle.json"
+          bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+          metadata = {
+              "artifact-instance-id": os.environ["ARTIFACT_ID"],
+              "artifact-ref": bundle["artifact-ref"],
+              "physical-artifact-name": os.environ["ARTIFACT_NAME"],
+              "run-id": os.environ["GITHUB_RUN_ID"],
+              "run-attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "producer-boundary": "execution-batch",
+          }
+          Path(os.environ["METADATA_PATH"]).write_text(
+              json.dumps(metadata, separators=(",", ":"), sort_keys=True),
+              encoding="utf-8",
+          )
+          PY
+                      then
+                        echo "::warning::Expected dependency artifact ${artifact_name} (${artifact_id}) did not contain readable trusted bundle identity"
+                        rm -rf "$artifact_path"
+                        continue
+                      fi
+          done < <(
+            python - <<'PY'
+          import json
+          import os
+
+          for bundle in json.loads(os.environ["EXPECTED_DEPENDENCY_BUNDLES_JSON"] or "[]"):
+              print(f"{bundle['artifact-name']}\t{bundle['artifact-path']}\t{bundle['artifact-metadata-path']}")
+          PY
+          )
+      - name: Run batch validation commands
         id: validation
         shell: bash
         env:
-          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
+          MATRIX_BATCH_JSON: ${{ toJson(matrix) }}
         run: |
-          mkdir -p .three-ci-validation/work
+          mkdir -p .three-ci-validation/work/validation-results
+          shopt -s nullglob globstar
+          dependency_bundle_args=()
+          for bundle in .three-ci-validation/observed-artifacts/**/batch-evidence-bundle.json; do
+            dependency_bundle_args+=(--dependency-bundle "$bundle")
+          done
           observed_commit_sha="$(git rev-parse HEAD)"
-          uv run python eng/scripts/workflow_release_control.py run-ci-validation-commands \
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-batch-commands \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$observed_commit_sha" \
-            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --matrix-row-json "$MATRIX_BATCH_JSON" \
             --repo-root . \
-            --result-out .three-ci-validation/work/validation-result.json \
+            --result-out-dir .three-ci-validation/work/validation-results \
+            "${dependency_bundle_args[@]}" \
             --github-output "$GITHUB_OUTPUT"
-      - name: Write validation receipt
-        id: receipt
+      - name: Write batch evidence bundle
+        id: bundle
         shell: bash
         env:
-          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
-          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
-          WRITER_JOB: ${{ matrix.work-group.writer-job }}
-          VALIDATION_OUTCOME: ${{ steps.validation.outputs.validation_outcome }}
+          MATRIX_BATCH_JSON: ${{ toJson(matrix) }}
         run: |
-          mkdir -p .three-ci-validation/work
-          validation_outcome="${VALIDATION_OUTCOME:-blocking-failure}"
+          shopt -s nullglob globstar
+          validation_result_args=()
+          for result in .three-ci-validation/work/validation-results/*.json; do
+            validation_result_args+=(--validation-result "$result")
+          done
+          dependency_bundle_args=()
+          for bundle in .three-ci-validation/observed-artifacts/**/batch-evidence-bundle.json; do
+            dependency_bundle_args+=(--dependency-bundle "$bundle")
+          done
           observed_commit_sha="$(git rev-parse HEAD)"
-          uv run python eng/scripts/workflow_release_control.py write-ci-validation-receipt \
+          uv run python eng/scripts/workflow_release_control.py write-ci-validation-batch-evidence-bundle \
             --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --work-group-id "$WORK_GROUP_ID" \
-            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
+            --matrix-row-json "$MATRIX_BATCH_JSON" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --workflow "CI Validation" \
-            --job "$WRITER_JOB" \
+            --job "execution-batch" \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --observed-commit-sha "$observed_commit_sha" \
-            --validation-result .three-ci-validation/work/validation-result.json \
-            --validation-outcome "$validation_outcome" \
-            --receipt-out .three-ci-validation/work/receipt.json \
+            "${validation_result_args[@]}" \
+            "${dependency_bundle_args[@]}" \
+            --bundle-out .three-ci-validation/work/batch-evidence-bundle.json \
             --github-output "$GITHUB_OUTPUT"
-      - name: Upload validation receipt
-        id: upload-receipt
+      - name: Upload batch evidence bundle
+        id: upload-batch-evidence
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.receipt.outputs.receipt_artifact_name }}
+          name: ${{ steps.bundle.outputs.batch_evidence_bundle_artifact_name }}
           path: |
-            .three-ci-validation/work/receipt.json
-            .three-ci-validation/work/validation-result.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-      - name: Write receipt writer observation
-        id: writer-observation
-        shell: bash
-        env:
-          WORK_GROUP_ID: ${{ matrix.work-group.work-group-id }}
-          MATRIX_WORK_GROUP_JSON: ${{ toJson(matrix.work-group) }}
-          WRITER_JOB: ${{ matrix.work-group.writer-job }}
-          RECEIPT_ARTIFACT_ID: ${{ steps.upload-receipt.outputs.artifact-id }}
-        run: |
-          uv run python eng/scripts/workflow_release_control.py write-ci-validation-writer-observation \
-            --plan .three-ci-validation/plan/validation-plan.json \
-            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
-            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
-            --work-group-id "$WORK_GROUP_ID" \
-            --matrix-work-group-json "$MATRIX_WORK_GROUP_JSON" \
-            --workflow "CI Validation" \
-            --job "$WRITER_JOB" \
-            --artifact-instance-id "$RECEIPT_ARTIFACT_ID" \
-            --observation-out .three-ci-validation/work/writer-observation.json \
-            --metadata-out .three-ci-validation/work/receipt-artifact-metadata.json \
-            --github-output "$GITHUB_OUTPUT"
-      - name: Upload writer observation
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.writer-observation.outputs.writer_observation_artifact_name }}
-          path: |
-            .three-ci-validation/work/writer-observation.json
-            .three-ci-validation/work/receipt-artifact-metadata.json
+            .three-ci-validation/work/batch-evidence-bundle.json
+            .three-ci-validation/work/validation-results/*.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
@@ -1130,10 +1166,10 @@ jobs:
     needs:
       - normalize-input
       - plan
-      - materialize-work-groups
-      - validation-work-groups-layer-0
-      - validation-work-groups-layer-1
-      - validation-work-groups-layer-2
+      - materialize-execution-batches
+      - execution-batch-layer-0
+      - execution-batch-layer-1
+      - execution-batch-layer-2
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -1156,44 +1192,65 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Prepare aggregate input directories
+        run: |
+          mkdir -p \
+            .three-ci-validation/request \
+            .three-ci-validation/plan \
+            .three-ci-validation/materialize \
+            .three-ci-validation/observed-artifacts \
+            .three-ci-validation/aggregate
+      - name: Download CI validation request
+        if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/request
       - name: Download validation plan
-        continue-on-error: true
+        if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
-      - name: Download selector assignments
-        continue-on-error: true
+      - name: Download execution-batch manifest
+        if: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id != '' }}
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.selector-assignments-artifact-name }}
+          artifact-ids: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
         if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
-        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download fact snapshot
         if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
-        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
+          artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          merge-multiple: true
           path: .three-ci-validation/plan
-      - name: Download observed validation artifacts
+      - name: Download observed batch evidence
         env:
           GH_TOKEN: ${{ github.token }}
           CI_REPOSITORY: ${{ github.repository }}
         run: |
-          mkdir -p .three-ci-validation/observed-artifacts
+          mkdir -p .three-ci-validation/observed-artifacts .three-ci-validation/aggregate
+          aggregate_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf '%s\n' "$aggregate_started_at" > .three-ci-validation/aggregate/aggregate-started-at.txt
           uv run python eng/scripts/workflow_release_control.py download-ci-validation-observed-artifacts \
             --repository "$CI_REPOSITORY" \
             --run-id "$GITHUB_RUN_ID" \
-            --assignments .three-ci-validation/materialize/selector-assignments.json \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
             --observed-artifacts-dir .three-ci-validation/observed-artifacts
-      - name: Aggregate validation evidence
+      - name: Write aggregate evidence manifest
         env:
           GH_TOKEN: ${{ github.token }}
           CI_REPOSITORY: ${{ github.repository }}
@@ -1201,25 +1258,35 @@ jobs:
           PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
           CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
           FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
-          ASSIGNMENTS_ARTIFACT_ID: ${{ needs.materialize-work-groups.outputs.selector-assignments-artifact-id }}
+          EXECUTION_BATCH_MANIFEST_ARTIFACT_ID: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
         run: |
           mkdir -p .three-ci-validation/aggregate
+          aggregate_started_at="$(cat .three-ci-validation/aggregate/aggregate-started-at.txt)"
           aggregate_args=(
             --repository "$CI_REPOSITORY"
             --workflow "CI Validation"
             --run-id "$GITHUB_RUN_ID"
             --run-attempt "$GITHUB_RUN_ATTEMPT"
+            --request .three-ci-validation/request/ci-validation-request.json
             --plan .three-ci-validation/plan/validation-plan.json
             --changed-files-snapshot .three-ci-validation/plan/changed-files.json
             --fact-snapshot .three-ci-validation/plan/fact-snapshot.json
-            --assignments .three-ci-validation/materialize/selector-assignments.json
             --observed-artifacts-dir .three-ci-validation/observed-artifacts
             --expected-request-artifact-id "$REQUEST_ARTIFACT_ID"
             --expected-plan-artifact-id "$PLAN_ARTIFACT_ID"
-            --expected-selector-assignments-artifact-id "$ASSIGNMENTS_ARTIFACT_ID"
-            --receipt-manifest-out .three-ci-validation/aggregate/receipt-manifest.json
-            --aggregate-out .three-ci-validation/aggregate/ci-validation-aggregate.json
+            --created-at "$aggregate_started_at"
+            --aggregate-phase evidence
+            --aggregate-evidence-manifest-out .three-ci-validation/aggregate/aggregate-evidence-manifest.json
+            --aggregate-summary-out .three-ci-validation/aggregate/aggregate-summary.json
           )
+          if [ -n "$EXECUTION_BATCH_MANIFEST_ARTIFACT_ID" ]; then
+            aggregate_args+=(
+              --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json
+              --expected-execution-batch-manifest-artifact-id "$EXECUTION_BATCH_MANIFEST_ARTIFACT_ID"
+            )
+          else
+            aggregate_args+=(--batch-materialization-failed)
+          fi
           if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
             aggregate_args+=(--expected-changed-files-snapshot-artifact-id "$CHANGED_FILES_ARTIFACT_ID")
           fi
@@ -1227,39 +1294,144 @@ jobs:
             aggregate_args+=(--expected-fact-snapshot-artifact-id "$FACT_SNAPSHOT_ARTIFACT_ID")
           fi
           uv run python eng/scripts/workflow_release_control.py aggregate-ci-evidence "${aggregate_args[@]}"
-      - name: Upload receipt manifest
+      - name: Upload aggregate evidence manifest
         if: always()
-        id: upload-receipt-manifest
+        id: upload-aggregate-evidence-manifest
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ needs.normalize-input.outputs.receipt-manifest-artifact-name }}
-          path: .three-ci-validation/aggregate/receipt-manifest.json
+          name: ${{ needs.normalize-input.outputs.aggregate-evidence-manifest-artifact-name }}
+          path: .three-ci-validation/aggregate/aggregate-evidence-manifest.json
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 30
-      - name: Upload aggregate evidence
-        if: always()
-        id: upload-aggregate
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ needs.normalize-input.outputs.aggregate-artifact-name }}
-          path: .three-ci-validation/aggregate/ci-validation-aggregate.json
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 30
-      - name: Verify final artifact producer boundaries
-        if: always()
+      - name: Verify aggregate evidence manifest producer boundary
+        if: always() && steps.upload-aggregate-evidence-manifest.outputs.artifact-id != ''
+        id: verify-aggregate-evidence-manifest-producer-boundary
         env:
           GH_TOKEN: ${{ github.token }}
-          MANIFEST_REF: ci-validation/manifests/${{ github.run_id }}/${{ github.run_attempt }}/receipt-manifest.json
-          AGGREGATE_REF: ci-validation/aggregate/${{ github.run_id }}/${{ github.run_attempt }}/ci-validation-aggregate.json
-          MANIFEST_ARTIFACT_ID: ${{ steps.upload-receipt-manifest.outputs.artifact-id }}
-          AGGREGATE_ARTIFACT_ID: ${{ steps.upload-aggregate.outputs.artifact-id }}
+          AGGREGATE_EVIDENCE_MANIFEST_REF: ci-validation/aggregate/${{ github.run_id }}/${{ github.run_attempt }}/aggregate-evidence-manifest.json
+          AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID: ${{ steps.upload-aggregate-evidence-manifest.outputs.artifact-id }}
         run: |
           uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
             --repository "$GITHUB_REPOSITORY" \
             --workflow "CI Validation" \
             --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
-            --expected-artifact "{\"artifact-ref\":\"${MANIFEST_REF}\",\"artifact-instance-id\":\"${MANIFEST_ARTIFACT_ID}\",\"producer-boundary\":\"aggregate-evidence\",\"producer-job\":\"aggregate-evidence\"}" \
-            --expected-artifact "{\"artifact-ref\":\"${AGGREGATE_REF}\",\"artifact-instance-id\":\"${AGGREGATE_ARTIFACT_ID}\",\"producer-boundary\":\"aggregate-evidence\",\"producer-job\":\"aggregate-evidence\"}"
+            --max-prefixed-validation-artifacts 18 \
+            --expected-artifact "{\"artifact-ref\":\"${AGGREGATE_EVIDENCE_MANIFEST_REF}\",\"artifact-instance-id\":\"${AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID}\",\"producer-boundary\":\"aggregate-evidence\",\"producer-job\":\"aggregate-evidence\"}"
+      - name: Write aggregate summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_REPOSITORY: ${{ github.repository }}
+          REQUEST_ARTIFACT_ID: ${{ needs.normalize-input.outputs.request-artifact-id }}
+          PLAN_ARTIFACT_ID: ${{ needs.plan.outputs.plan-artifact-id }}
+          CHANGED_FILES_ARTIFACT_ID: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          FACT_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          EXECUTION_BATCH_MANIFEST_ARTIFACT_ID: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
+          AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID: ${{ steps.upload-aggregate-evidence-manifest.outputs.artifact-id }}
+          AGGREGATE_EVIDENCE_MANIFEST_PRODUCER_VERIFIED: ${{ steps.verify-aggregate-evidence-manifest-producer-boundary.outcome == 'success' }}
+        run: |
+          mkdir -p .three-ci-validation/aggregate
+          aggregate_completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ -s .three-ci-validation/aggregate/aggregate-started-at.txt ]; then
+            aggregate_started_at="$(cat .three-ci-validation/aggregate/aggregate-started-at.txt)"
+          else
+            aggregate_started_at="$aggregate_completed_at"
+          fi
+          aggregate_args=(
+            --repository "$CI_REPOSITORY"
+            --workflow "CI Validation"
+            --run-id "$GITHUB_RUN_ID"
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+            --request .three-ci-validation/request/ci-validation-request.json
+            --plan .three-ci-validation/plan/validation-plan.json
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts
+            --expected-request-artifact-id "$REQUEST_ARTIFACT_ID"
+            --expected-plan-artifact-id "$PLAN_ARTIFACT_ID"
+            --aggregate-evidence-manifest-artifact-id "$AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID"
+            --started-at "$aggregate_started_at"
+            --completed-at "$aggregate_completed_at"
+            --created-at "$aggregate_completed_at"
+            --aggregate-phase summary
+            --aggregate-evidence-manifest-out .three-ci-validation/aggregate/aggregate-evidence-manifest.json
+            --aggregate-summary-out .three-ci-validation/aggregate/aggregate-summary.json
+          )
+          if [ -n "$EXECUTION_BATCH_MANIFEST_ARTIFACT_ID" ]; then
+            aggregate_args+=(
+              --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json
+              --expected-execution-batch-manifest-artifact-id "$EXECUTION_BATCH_MANIFEST_ARTIFACT_ID"
+            )
+          else
+            aggregate_args+=(--batch-materialization-failed)
+          fi
+          if [ -n "$CHANGED_FILES_ARTIFACT_ID" ]; then
+            aggregate_args+=(--expected-changed-files-snapshot-artifact-id "$CHANGED_FILES_ARTIFACT_ID")
+          fi
+          if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
+            aggregate_args+=(--expected-fact-snapshot-artifact-id "$FACT_SNAPSHOT_ARTIFACT_ID")
+          fi
+          if [ "$AGGREGATE_EVIDENCE_MANIFEST_PRODUCER_VERIFIED" = "true" ]; then
+            aggregate_args+=(--aggregate-evidence-manifest-producer-verified)
+          fi
+          uv run python eng/scripts/workflow_release_control.py aggregate-ci-evidence "${aggregate_args[@]}"
+      - name: Upload aggregate summary
+        if: always()
+        id: upload-aggregate-summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.normalize-input.outputs.aggregate-summary-artifact-name }}
+          path: .three-ci-validation/aggregate/aggregate-summary.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Download uploaded aggregate evidence manifest
+        if: always() && steps.upload-aggregate-evidence-manifest.outputs.artifact-id != ''
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.upload-aggregate-evidence-manifest.outputs.artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/final-uploaded/aggregate-evidence-manifest
+      - name: Download uploaded aggregate summary
+        if: always() && steps.upload-aggregate-summary.outputs.artifact-id != ''
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.upload-aggregate-summary.outputs.artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/final-uploaded/aggregate-summary
+      - name: Verify final artifact bytes and producer boundaries
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AGGREGATE_EVIDENCE_MANIFEST_REF: ci-validation/aggregate/${{ github.run_id }}/${{ github.run_attempt }}/aggregate-evidence-manifest.json
+          AGGREGATE_SUMMARY_REF: ci-validation/aggregate/${{ github.run_id }}/${{ github.run_attempt }}/aggregate-summary.json
+          AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID: ${{ steps.upload-aggregate-evidence-manifest.outputs.artifact-id }}
+          AGGREGATE_SUMMARY_ARTIFACT_ID: ${{ steps.upload-aggregate-summary.outputs.artifact-id }}
+        run: |
+          read -r expected_prefixed_validation_artifacts aggregate_manifest_digest aggregate_summary_digest <<EOF
+          $(uv run python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          summary = json.loads(Path('.three-ci-validation/aggregate/aggregate-summary.json').read_text(encoding='utf-8'))
+          aggregate_manifest = summary.get('aggregate-evidence-manifest', {})
+          aggregate_manifest_digest = aggregate_manifest.get('content-digest') or ''
+          aggregate_summary_digest = hashlib.sha256(Path('.three-ci-validation/aggregate/aggregate-summary.json').read_bytes()).hexdigest()
+          print(summary['budgets']['expected-actual-validation-artifacts'], aggregate_manifest_digest, aggregate_summary_digest)
+          PY
+          )
+          EOF
+          expected_artifacts=()
+          expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${AGGREGATE_EVIDENCE_MANIFEST_REF}\",\"artifact-instance-id\":\"${AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID}\",\"producer-boundary\":\"aggregate-evidence\",\"producer-job\":\"aggregate-evidence\",\"downloaded-path\":\".three-ci-validation/final-uploaded/aggregate-evidence-manifest/aggregate-evidence-manifest.json\",\"content-digest\":\"${aggregate_manifest_digest}\"}")
+          expected_artifacts+=(--expected-artifact "{\"artifact-ref\":\"${AGGREGATE_SUMMARY_REF}\",\"artifact-instance-id\":\"${AGGREGATE_SUMMARY_ARTIFACT_ID}\",\"producer-boundary\":\"aggregate-evidence\",\"producer-job\":\"aggregate-evidence\",\"downloaded-path\":\".three-ci-validation/final-uploaded/aggregate-summary/aggregate-summary.json\",\"content-digest\":\"${aggregate_summary_digest}\"}")
+          uv run python eng/scripts/workflow_release_control.py verify-ci-validation-artifact-boundaries \
+           --repository "$GITHUB_REPOSITORY" \
+           --workflow "CI Validation" \
+           --run-id "$GITHUB_RUN_ID" \
+           --run-attempt "$GITHUB_RUN_ATTEMPT" \
+           --max-prefixed-validation-artifacts 20 \
+           --expected-prefixed-validation-artifacts "$expected_prefixed_validation_artifacts" \
+           "${expected_artifacts[@]}"

@@ -9,6 +9,7 @@ from types import ModuleType
 from typing import Any, cast
 
 import pytest
+import three_workflow_release_contracts.ci_validation_aggregation as aggregation
 from three_workflow_release_contracts import (
     ContractValidationError,
     DiagnosticDetail,
@@ -17,19 +18,24 @@ from three_workflow_release_contracts import (
     DiagnosticVerdictEffect,
     artifact_physical_name,
     canonical_json_bytes,
-    ci_validation_aggregate_payload_digest,
     ci_validation_diagnostic,
-    ci_validation_observed_entry_id,
-    ci_validation_receipt_artifact_ref,
-    ci_validation_receipt_content_digest,
-    ci_validation_receipt_manifest_payload_digest,
     ci_validation_writer_id,
-    ci_validation_writer_observation_artifact_ref,
-    freeze_ci_validation_aggregate,
-    freeze_ci_validation_invalid_plan_aggregate,
-    freeze_ci_validation_receipt_manifest,
-    validate_ci_validation_aggregate,
-    validate_ci_validation_receipt_manifest,
+)
+from three_workflow_release_contracts.ci_validation_aggregation import (
+    _ci_validation_aggregate_payload_digest,
+    _ci_validation_observed_entry_id,
+    _ci_validation_receipt_manifest_payload_digest,
+    _freeze_ci_validation_aggregate,
+    _freeze_ci_validation_invalid_plan_aggregate,
+    _freeze_ci_validation_receipt_manifest,
+    _validate_ci_validation_aggregate,
+    _validate_ci_validation_receipt_manifest,
+)
+from three_workflow_release_contracts.ci_validation_assignments import (
+    _ci_validation_receipt_artifact_ref,
+)
+from three_workflow_release_contracts.ci_validation_receipts import (
+    _ci_validation_receipt_content_digest,
 )
 
 _RECEIPTS_TEST_PATH = Path(__file__).with_name("test_ci_validation_receipts.py")
@@ -80,6 +86,25 @@ _artifact_evidence_expectation = _RECEIPTS_MODULE.__dict__[
 _artifact_validation_obligation = _RECEIPTS_MODULE.__dict__[
     "_artifact_validation_obligation"
 ]
+
+
+def _legacy_receipt_diagnostic(
+    *,
+    diagnostic_id: str,
+    detail: str | None = None,
+    message: str = "tampered diagnostic family",
+) -> dict[str, object]:
+    return {
+        "diagnostic-id": diagnostic_id,
+        "code": "inadmissible-receipt",
+        "detail": detail,
+        "message": message,
+        "source": {"type": "aggregation", "id": None},
+        "severity": DiagnosticSeverity.BLOCKING_FAILURE.value,
+        "verdict-effect": DiagnosticVerdictEffect.FAILED.value,
+    }
+
+
 _artifact_obligation = _RECEIPTS_MODULE.__dict__["_artifact_obligation"]
 _release_receipt_evidence = _RECEIPTS_MODULE.__dict__[
     "_release_receipt_evidence"
@@ -95,19 +120,30 @@ ARTIFACT_WORK_GROUP_ID = cast(
 _REF_SENTINEL = object()
 
 
+def test_legacy_aggregate_aliases_are_private() -> None:
+    """Quarantined legacy aggregate annotations are not public aliases."""
+    for name in (
+        "ReceiptAdmissibility",
+        "AggregateVerdict",
+        "EvidenceResultOutcome",
+        "FailureKind",
+    ):
+        assert not hasattr(aggregation, name)
+
+    for name in (
+        "_ReceiptAdmissibility",
+        "_AggregateVerdict",
+        "_EvidenceResultOutcome",
+        "_FailureKind",
+    ):
+        assert hasattr(aggregation, name)
+
+
 def _writer_id(work_group_id: str) -> str:
     return ci_validation_writer_id(
         workflow="CI Validation",
         job="ci-validation-selector-python",
         matrix={"selector": work_group_id},
-    )
-
-
-def _writer_observation_ref(work_group_id: str) -> str:
-    return ci_validation_writer_observation_artifact_ref(
-        run_id=RUN_ID,
-        run_attempt=RUN_ATTEMPT,
-        assignment_id=work_group_id,
     )
 
 
@@ -128,7 +164,7 @@ def _entry(
             else None
         )
     )
-    entry_id = ci_validation_observed_entry_id(
+    entry_id = _ci_validation_observed_entry_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         artifact_ref=ref,
@@ -148,11 +184,8 @@ def _entry(
         "writer-work-group-id": work_group_id,
         "trusted-writer-id": trusted_writer_id,
         "observed-writer-id": trusted_writer_id,
-        "writer-observation-ref": _writer_observation_ref(work_group_id)
-        if work_group_id
-        else None,
         "receipt-id": receipt_id,
-        "receipt-content-digest": ci_validation_receipt_content_digest(
+        "receipt-content-digest": _ci_validation_receipt_content_digest(
             canonical_json_bytes(receipt)
         )
         if receipt is not None
@@ -165,7 +198,7 @@ def _entry_for_assignment(
 ) -> dict[str, object]:
     artifact_ref = cast("str", assignment["receipt-artifact-ref"])
     instance_id = "1001"
-    entry_id = ci_validation_observed_entry_id(
+    entry_id = _ci_validation_observed_entry_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         artifact_ref=artifact_ref,
@@ -180,9 +213,8 @@ def _entry_for_assignment(
         "writer-work-group-id": assignment["work-group-id"],
         "trusted-writer-id": assignment["trusted-writer-id"],
         "observed-writer-id": assignment["trusted-writer-id"],
-        "writer-observation-ref": assignment["writer-observation-ref"],
         "receipt-id": receipt["receipt-id"],
-        "receipt-content-digest": ci_validation_receipt_content_digest(
+        "receipt-content-digest": _ci_validation_receipt_content_digest(
             canonical_json_bytes(receipt)
         ),
     }
@@ -308,7 +340,7 @@ def _release_reused_receipt_chain_inputs() -> tuple[
         ),
     )
     current_entry["artifact-instance-id"] = "1002"
-    current_entry["observed-entry-id"] = ci_validation_observed_entry_id(
+    current_entry["observed-entry-id"] = _ci_validation_observed_entry_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         artifact_ref=cast("str", current_entry["artifact-ref"]),
@@ -329,7 +361,7 @@ def _manifest(
     entries: list[dict[str, object]],
 ) -> tuple[dict[str, object], object, dict[str, object]]:
     _receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=entries,
         created_at=CREATED_AT,
@@ -342,14 +374,14 @@ def _manifest(
 def _valid_aggregate() -> tuple[Any, dict[str, object]]:
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -404,7 +436,7 @@ def test_freeze_manifest_sorts_entries_and_closes_namespace() -> None:
     first = _entry(receipt, instance_id="1001")
     second = _entry(receipt, instance_id="1002")
 
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[second, first],
         created_at=CREATED_AT,
@@ -421,7 +453,7 @@ def test_freeze_manifest_sorts_entries_and_closes_namespace() -> None:
     expected_entry_count = 2
     assert closure["closed-receipt-count"] == expected_entry_count
     assert closure["observed-entry-ids"] == ids
-    validate_ci_validation_receipt_manifest(
+    _validate_ci_validation_receipt_manifest(
         manifest,
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -435,14 +467,14 @@ def test_aggregate_rejects_readable_receipt_without_content_digest() -> None:
     entry = _entry(receipt)
     entry["receipt-content-digest"] = None
 
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -461,7 +493,7 @@ def test_aggregate_rejects_parsed_receipt_without_raw_bytes() -> None:
     """Parsed receipts are inadmissible without observed raw artifact bytes."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -469,7 +501,7 @@ def test_aggregate_rejects_parsed_receipt_without_raw_bytes() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -489,7 +521,7 @@ def test_manifest_allows_classified_ref_without_receipt_id_or_digest() -> None:
     entry = _entry(receipt, receipt_id=None)
     entry["receipt-content-digest"] = None
 
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -506,7 +538,7 @@ def test_freeze_manifest_rejects_missing_observed_entry_id() -> None:
     del entry["observed-entry-id"]
 
     with pytest.raises(ContractValidationError, match="observed-entry-id"):
-        freeze_ci_validation_receipt_manifest(
+        _freeze_ci_validation_receipt_manifest(
             plan=snapshot.plan,
             entries=[entry],
             created_at=CREATED_AT,
@@ -522,7 +554,7 @@ def test_manifest_rejects_malformed_writer_ids() -> None:
     entry["trusted-writer-id"] = "github-actions-job:not-a-digest"
 
     with pytest.raises(ContractValidationError, match="github-actions-job"):
-        freeze_ci_validation_receipt_manifest(
+        _freeze_ci_validation_receipt_manifest(
             plan=snapshot.plan,
             entries=[entry],
             created_at=CREATED_AT,
@@ -540,7 +572,7 @@ def test_manifest_allows_unclassified_null_ref_without_content_digest() -> None:
     entry["writer-work-group-id"] = None
     entry["receipt-content-digest"] = None
 
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -562,7 +594,6 @@ def test_manifest_allows_unclassified_null_ref_without_content_digest() -> None:
         ("assignment-id", "other-assignment"),
         ("trusted-writer-id", "github-actions-job:" + "2" * 64),
         ("observed-writer-id", "github-actions-job:" + "3" * 64),
-        ("writer-observation-ref", None),
     ],
 )
 def test_manifest_writer_identity_mismatch_is_inadmissible(
@@ -572,7 +603,7 @@ def test_manifest_writer_identity_mismatch_is_inadmissible(
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
     entry[field] = value
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -580,7 +611,7 @@ def test_manifest_writer_identity_mismatch_is_inadmissible(
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -593,27 +624,43 @@ def test_manifest_writer_identity_mismatch_is_inadmissible(
     observed = cast("list[dict[str, object]]", aggregate["observed-receipts"])
     diagnostics = cast("list[dict[str, object]]", observed[0]["diagnostics"])
     assert observed[0]["admissibility"] == "inadmissible"
-    assert diagnostics[0]["detail"] == (
-        DiagnosticDetail.MISMATCHED_WRITER_IDENTITY.value
-    )
+    assert diagnostics[0]["detail"] == ("mismatched-writer-identity")
     assert (
         cast("dict[str, object]", aggregate["reason"])["inadmissible-receipt"]
         is True
     )
 
 
+def test_receipt_manifest_rejects_legacy_observation_ref() -> None:
+    """Current receipt manifests do not carry writer-observation refs."""
+    receipt, snapshot, _selector_manifest, _assignment = _valid_receipt()
+    entry = _entry(receipt)
+    entry["writer-observation-ref"] = (
+        "ci-validation/writer-observations/25887422010/1/wg-python-gate.json"
+    )
+
+    with pytest.raises(ContractValidationError, match="not allowed"):
+        _freeze_ci_validation_receipt_manifest(
+            plan=snapshot.plan,
+            entries=[entry],
+            created_at=CREATED_AT,
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=snapshot.fact_snapshot,
+        )
+
+
 def test_aggregate_rejects_valid_observed_receipt_without_digest() -> None:
     """Valid readable observed receipts must carry a content digest."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -627,14 +674,14 @@ def test_aggregate_rejects_valid_observed_receipt_without_digest() -> None:
     ] = None
 
     with pytest.raises(ContractValidationError, match="content-digest"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_manifest_rejects_tampered_observed_entry_id() -> None:
     """Observed entry IDs are recomputed from run, ref, and instance ID."""
     receipt, snapshot, _selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -647,7 +694,7 @@ def test_manifest_rejects_tampered_observed_entry_id() -> None:
     closure["observed-entry-ids"] = [tampered_entry["observed-entry-id"]]
 
     with pytest.raises(ContractValidationError, match="canonical derivation"):
-        validate_ci_validation_receipt_manifest(
+        _validate_ci_validation_receipt_manifest(
             manifest,
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -658,7 +705,7 @@ def test_manifest_rejects_tampered_observed_entry_id() -> None:
 def test_manifest_rejects_boolean_closed_receipt_count() -> None:
     """Namespace closure count is an integer, not a bool."""
     receipt, snapshot, _selector_manifest, _assignment = _valid_receipt()
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[_entry(receipt)],
         created_at=CREATED_AT,
@@ -669,7 +716,7 @@ def test_manifest_rejects_boolean_closed_receipt_count() -> None:
     closure["closed-receipt-count"] = True
 
     with pytest.raises(ContractValidationError, match="integer"):
-        validate_ci_validation_receipt_manifest(
+        _validate_ci_validation_receipt_manifest(
             manifest,
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -695,13 +742,13 @@ def test_manifest_rejects_non_current_receipt_artifact_refs(
     entry = _entry(receipt)
     entry["artifact-ref"] = artifact_ref
     entry["physical-artifact-name"] = artifact_physical_name(artifact_ref)
-    entry["observed-entry-id"] = ci_validation_observed_entry_id(
+    entry["observed-entry-id"] = _ci_validation_observed_entry_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         artifact_ref=artifact_ref,
         artifact_instance_id=cast("str", entry["artifact-instance-id"]),
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=None,
         entries=[],
         created_at=CREATED_AT,
@@ -721,7 +768,7 @@ def test_manifest_rejects_non_current_receipt_artifact_refs(
     with pytest.raises(
         ContractValidationError, match=r"receipt ref|manifest|path-safe"
     ):
-        validate_ci_validation_receipt_manifest(
+        _validate_ci_validation_receipt_manifest(
             manifest,
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -733,7 +780,7 @@ def test_freeze_aggregate_passes_with_matching_manifest_and_receipt() -> None:
     """A valid required receipt satisfies its evidence expectation."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -741,7 +788,7 @@ def test_freeze_aggregate_passes_with_matching_manifest_and_receipt() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -760,24 +807,24 @@ def test_freeze_aggregate_passes_with_matching_manifest_and_receipt() -> None:
         ]
         == 1
     )
-    assert ci_validation_aggregate_payload_digest(aggregate)
+    assert _ci_validation_aggregate_payload_digest(aggregate)
     assert cast("dict[str, object]", aggregate["receipt-manifest"])[
         "content-digest"
-    ] == ci_validation_receipt_manifest_payload_digest(manifest)
+    ] == _ci_validation_receipt_manifest_payload_digest(manifest)
 
 
 def test_aggregate_rejects_unjustified_fail_closed_failure() -> None:
     """Fail-closed failures must come from a fail-closed validated plan."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -787,9 +834,9 @@ def test_aggregate_rejects_unjustified_fail_closed_failure() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
     diagnostic = ci_validation_diagnostic(
-        diagnostic_id="final-evidence-failure/final-manifest-missing",
+        diagnostic_id="final-evidence-failure/aggregate-evidence-manifest-missing",
         code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
-        detail=DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
+        detail=DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value,
         message="manifest missing",
         source_type="aggregation",
         source_id=None,
@@ -814,7 +861,7 @@ def test_aggregate_rejects_unjustified_fail_closed_failure() -> None:
     aggregate["diagnostics"] = [diagnostic]
 
     with pytest.raises(ContractValidationError, match="justified"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -827,14 +874,14 @@ def test_aggregate_rejects_unjustified_evidence_failure() -> None:
     """Evidence failures require a matching non-success evidence result."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -865,7 +912,7 @@ def test_aggregate_rejects_unjustified_evidence_failure() -> None:
     aggregate["diagnostics"] = [diagnostic]
 
     with pytest.raises(ContractValidationError, match="justified"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -879,7 +926,7 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     first = _entry(receipt, instance_id="1001")
     second = _entry(receipt, instance_id="1002")
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[first, second],
         created_at=CREATED_AT,
@@ -888,7 +935,7 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="mirror"):
-        freeze_ci_validation_aggregate(
+        _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -898,7 +945,7 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
             fact_snapshot=snapshot.fact_snapshot,
         )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -916,7 +963,7 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
         )
     )
     with pytest.raises(ContractValidationError, match="mirror"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -924,7 +971,7 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
             fact_snapshot=snapshot.fact_snapshot,
         )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -939,7 +986,7 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
     observed = cast("list[dict[str, object]]", aggregate["observed-receipts"])
     observed[0]["receipt-content-digest"] = "0" * 64
     with pytest.raises(ContractValidationError, match="mirror"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -951,14 +998,14 @@ def test_aggregate_observed_receipts_must_mirror_manifest_entries() -> None:
 def test_aggregate_reports_required_evidence_failures() -> None:
     """Required evidence states map to reason booleans and failures."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
-    missing_manifest = freeze_ci_validation_receipt_manifest(
+    missing_manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    missing = freeze_ci_validation_aggregate(
+    missing = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=missing_manifest,
         selector_assignments_manifest=selector_manifest,
@@ -985,7 +1032,7 @@ def test_aggregate_reports_required_evidence_failures() -> None:
     skipped_results[1]["diagnostics"] = [_skipped_diagnostic()]
     skipped_entry = _entry(skipped_receipt)
     skipped_manifest, _, _ = _manifest([skipped_entry])
-    skipped = freeze_ci_validation_aggregate(
+    skipped = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=skipped_manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1012,7 +1059,7 @@ def test_aggregate_reports_required_evidence_failures() -> None:
     failed_results[1]["diagnostics"] = [_failed_diagnostic()]
     failed_entry = _entry(failed_receipt)
     failed_manifest, _, _ = _manifest([failed_entry])
-    failed = freeze_ci_validation_aggregate(
+    failed = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=failed_manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1032,7 +1079,7 @@ def test_aggregate_reports_required_evidence_failures() -> None:
     wrong_plan_receipt["plan-id"] = "other-plan"
     bad_entry = _entry(wrong_plan_receipt)
     bad_manifest, _, _ = _manifest([bad_entry])
-    inadmissible = freeze_ci_validation_aggregate(
+    inadmissible = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=bad_manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1051,7 +1098,7 @@ def test_release_success_accepts_single_no_publish_source_command() -> None:
     snapshot, selector_manifest, entry, observed_input = (
         _release_observed_input_with_no_publish_result()
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -1059,7 +1106,7 @@ def test_release_success_accepts_single_no_publish_source_command() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1081,7 +1128,7 @@ def test_release_success_accepts_single_no_publish_source_command() -> None:
         failure["work-group-id"] == ARTIFACT_WORK_GROUP_ID
         for failure in cast("list[dict[str, object]]", aggregate["failures"])
     )
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=snapshot.plan,
         receipt_manifest=manifest,
@@ -1102,7 +1149,7 @@ def test_release_success_accepts_same_work_group_reused_receipt_chain() -> None:
         current_entry,
         current_input,
     ) = _release_reused_receipt_chain_inputs()
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[prior_entry, current_entry],
         created_at=CREATED_AT,
@@ -1110,7 +1157,7 @@ def test_release_success_accepts_same_work_group_reused_receipt_chain() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1143,7 +1190,7 @@ def test_release_success_accepts_same_work_group_reused_receipt_chain() -> None:
             "list[dict[str, object]]", aggregate["observed-receipts"]
         )
     } == {"valid"}
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=snapshot.plan,
         receipt_manifest=manifest,
@@ -1184,9 +1231,9 @@ def test_release_success_rejects_reused_receipt_result_mismatch() -> None:
     raw_current = canonical_json_bytes(current_receipt)
     current_input["raw-receipt-bytes"] = raw_current
     current_entry["receipt-content-digest"] = (
-        ci_validation_receipt_content_digest(raw_current)
+        _ci_validation_receipt_content_digest(raw_current)
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[prior_entry, current_entry],
         created_at=CREATED_AT,
@@ -1194,7 +1241,7 @@ def test_release_success_rejects_reused_receipt_result_mismatch() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1225,14 +1272,14 @@ def test_validation_accepts_duplicate_release_chain_bound_to_raw_bytes() -> (
         current_entry,
         current_input,
     ) = _release_reused_receipt_chain_inputs()
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[prior_entry, current_entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1242,7 +1289,7 @@ def test_validation_accepts_duplicate_release_chain_bound_to_raw_bytes() -> (
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=snapshot.plan,
         receipt_manifest=manifest,
@@ -1269,14 +1316,14 @@ def test_validation_rejects_duplicate_release_chain_bad_raw_bytes(
         current_entry,
         current_input,
     ) = _release_reused_receipt_chain_inputs()
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[prior_entry, current_entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1289,7 +1336,7 @@ def test_validation_rejects_duplicate_release_chain_bad_raw_bytes(
     tampered_current_input["raw-receipt-bytes"] = bad_raw_bytes
 
     with pytest.raises(ContractValidationError, match="duplicate valid"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -1342,14 +1389,14 @@ def test_release_success_accepts_multi_hop_same_work_group_reused_chain() -> (
         ),
     )
     latest_entry["artifact-instance-id"] = "1003"
-    latest_entry["observed-entry-id"] = ci_validation_observed_entry_id(
+    latest_entry["observed-entry-id"] = _ci_validation_observed_entry_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         artifact_ref=cast("str", latest_entry["artifact-ref"]),
         artifact_instance_id="1003",
     )
     latest_input = _observed_input(latest_entry, latest_receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[prior_entry, current_entry, latest_entry],
         created_at=CREATED_AT,
@@ -1357,7 +1404,7 @@ def test_release_success_accepts_multi_hop_same_work_group_reused_chain() -> (
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1385,7 +1432,7 @@ def test_release_success_accepts_multi_hop_same_work_group_reused_chain() -> (
             "list[dict[str, object]]", aggregate["observed-receipts"]
         )
     } == {"valid"}
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=snapshot.plan,
         receipt_manifest=manifest,
@@ -1406,14 +1453,14 @@ def test_aggregate_rejects_forged_current_reused_release_receipt() -> None:
         current_entry,
         current_input,
     ) = _release_reused_receipt_chain_inputs()
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[prior_entry, current_entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1429,7 +1476,7 @@ def test_aggregate_rejects_forged_current_reused_release_receipt() -> None:
     )
     forged_validation_tree["commit-sha"] = "f" * 40
     forged_raw = canonical_json_bytes(forged_receipt)
-    forged_digest = ci_validation_receipt_content_digest(forged_raw)
+    forged_digest = _ci_validation_receipt_content_digest(forged_raw)
     forged_input["raw-receipt-bytes"] = forged_raw
     forged_entry = cast("dict[str, object]", forged_input["manifest-entry"])
     forged_entry["receipt-content-digest"] = forged_digest
@@ -1451,10 +1498,10 @@ def test_aggregate_rejects_forged_current_reused_release_receipt() -> None:
             result["receipt-content-digest"] = forged_digest
     cast("dict[str, object]", forged_aggregate["receipt-manifest"])[
         "content-digest"
-    ] = ci_validation_receipt_manifest_payload_digest(forged_manifest)
+    ] = _ci_validation_receipt_manifest_payload_digest(forged_manifest)
 
     with pytest.raises(ContractValidationError, match="observed source proof"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             forged_aggregate,
             plan=snapshot.plan,
             receipt_manifest=forged_manifest,
@@ -1475,14 +1522,14 @@ def test_aggregate_rejects_duplicate_release_summaries_without_proof() -> None:
         current_entry,
         current_input,
     ) = _release_reused_receipt_chain_inputs()
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[prior_entry, current_entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1493,7 +1540,7 @@ def test_aggregate_rejects_duplicate_release_summaries_without_proof() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="duplicate valid"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -1513,14 +1560,14 @@ def test_aggregate_rejects_forged_single_reused_release_summary() -> None:
         current_entry,
         current_input,
     ) = _release_reused_receipt_chain_inputs()
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[prior_entry, current_entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1539,7 +1586,7 @@ def test_aggregate_rejects_forged_single_reused_release_summary() -> None:
     ]
 
     with pytest.raises(ContractValidationError, match="observed source proof"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -1569,18 +1616,18 @@ def test_release_success_rejects_same_work_group_duplicate_current_reuse() -> (
     duplicate_entry = deepcopy(current_entry)
     duplicate_entry["receipt-id"] = duplicate_receipt["receipt-id"]
     duplicate_entry["artifact-instance-id"] = "1003"
-    duplicate_entry["observed-entry-id"] = ci_validation_observed_entry_id(
+    duplicate_entry["observed-entry-id"] = _ci_validation_observed_entry_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         artifact_ref=cast("str", duplicate_entry["artifact-ref"]),
         artifact_instance_id="1003",
     )
     duplicate_entry["receipt-content-digest"] = (
-        ci_validation_receipt_content_digest(
+        _ci_validation_receipt_content_digest(
             canonical_json_bytes(duplicate_receipt)
         )
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[prior_entry, current_entry, duplicate_entry],
         created_at=CREATED_AT,
@@ -1588,7 +1635,7 @@ def test_release_success_rejects_same_work_group_duplicate_current_reuse() -> (
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1609,7 +1656,7 @@ def test_release_success_rejects_same_work_group_duplicate_current_reuse() -> (
     )
     assert any(
         cast("dict[str, object]", failure["diagnostic"])["detail"]
-        == DiagnosticDetail.DUPLICATE_RECEIPT.value
+        == "duplicate-receipt"
         for failure in cast("list[dict[str, object]]", aggregate["failures"])
     )
 
@@ -1637,7 +1684,7 @@ def test_release_success_rejects_self_asserted_reused_receipt_chain() -> None:
     reused = cast("dict[str, object]", detail["reused-receipt"])
     reused["receipt-id"] = current_entry["receipt-id"]
     reused["receipt-content-digest"] = current_entry["receipt-content-digest"]
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[current_entry],
         created_at=CREATED_AT,
@@ -1645,7 +1692,7 @@ def test_release_success_rejects_self_asserted_reused_receipt_chain() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1689,7 +1736,7 @@ def test_release_success_rejects_extra_no_publish_sidecar_commands(
             extra_commands=[extra_command]
         )
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -1697,7 +1744,7 @@ def test_release_success_rejects_extra_no_publish_sidecar_commands(
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1715,7 +1762,7 @@ def test_release_success_rejects_extra_no_publish_sidecar_commands(
         and failure["work-group-id"] == ARTIFACT_WORK_GROUP_ID
         for failure in cast("list[dict[str, object]]", aggregate["failures"])
     )
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=snapshot.plan,
         receipt_manifest=manifest,
@@ -1728,26 +1775,19 @@ def test_release_success_rejects_extra_no_publish_sidecar_commands(
 def test_evidence_failure_kinds_reject_wrong_diagnostic_families() -> None:
     """Failure kind and mirrored evidence diagnostics must align."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
-    wrong_diagnostic = ci_validation_diagnostic(
+    wrong_diagnostic = _legacy_receipt_diagnostic(
         diagnostic_id="inadmissible-receipt/tampered",
-        code=DiagnosticFamily.INADMISSIBLE_RECEIPT.value,
-        detail=None,
-        message="tampered diagnostic family",
-        source_type="aggregation",
-        source_id=None,
-        severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
-        verdict_effect=DiagnosticVerdictEffect.FAILED.value,
     )
     aggregates: list[tuple[dict[str, object], dict[str, object]]] = []
 
-    missing_manifest = freeze_ci_validation_receipt_manifest(
+    missing_manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    missing = freeze_ci_validation_aggregate(
+    missing = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=missing_manifest,
         selector_assignments_manifest=selector_manifest,
@@ -1772,14 +1812,14 @@ def test_evidence_failure_kinds_reject_wrong_diagnostic_families() -> None:
         capability_results[1]["outcome"] = outcome
         capability_results[1]["diagnostics"] = [helper()]
         entry = _entry(non_success)
-        manifest = freeze_ci_validation_receipt_manifest(
+        manifest = _freeze_ci_validation_receipt_manifest(
             plan=snapshot.plan,
             entries=[entry],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
         )
-        aggregate = freeze_ci_validation_aggregate(
+        aggregate = _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -1810,7 +1850,7 @@ def test_evidence_failure_kinds_reject_wrong_diagnostic_families() -> None:
         )
 
         with pytest.raises(ContractValidationError, match="failure kind"):
-            validate_ci_validation_aggregate(
+            _validate_ci_validation_aggregate(
                 tampered,
                 plan=snapshot.plan,
                 receipt_manifest=manifest,
@@ -1836,7 +1876,7 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
 
     if failure_kind == "invalid-plan":
-        aggregate = freeze_ci_validation_invalid_plan_aggregate(
+        aggregate = _freeze_ci_validation_invalid_plan_aggregate(
             created_at=CREATED_AT,
             repository_owner="hcoona",
             repository_name="three",
@@ -1847,14 +1887,14 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
         manifest = None
     elif failure_kind == "final-evidence-failure":
         entry = _entry(receipt)
-        manifest = freeze_ci_validation_receipt_manifest(
+        manifest = _freeze_ci_validation_receipt_manifest(
             plan=snapshot.plan,
             entries=[entry],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
         )
-        aggregate = freeze_ci_validation_aggregate(
+        aggregate = _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -1862,10 +1902,10 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
             final_evidence_diagnostics=[
                 ci_validation_diagnostic(
                     diagnostic_id=(
-                        "final-evidence-failure/final-manifest-missing"
+                        "final-evidence-failure/aggregate-evidence-manifest-missing"
                     ),
                     code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
-                    detail=DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
+                    detail=DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value,
                     message="manifest missing",
                     source_type="aggregation",
                     source_id=None,
@@ -1881,14 +1921,14 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
         wrong_plan_receipt = deepcopy(receipt)
         wrong_plan_receipt["plan-id"] = "other-plan"
         entry = _entry(wrong_plan_receipt)
-        manifest = freeze_ci_validation_receipt_manifest(
+        manifest = _freeze_ci_validation_receipt_manifest(
             plan=snapshot.plan,
             entries=[entry],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
         )
-        aggregate = freeze_ci_validation_aggregate(
+        aggregate = _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -1911,14 +1951,14 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
         skipped_results[1]["outcome"] = "skipped"
         skipped_results[1]["diagnostics"] = [_skipped_diagnostic()]
         entry = _entry(skipped_receipt)
-        manifest = freeze_ci_validation_receipt_manifest(
+        manifest = _freeze_ci_validation_receipt_manifest(
             plan=snapshot.plan,
             entries=[entry],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
         )
-        aggregate = freeze_ci_validation_aggregate(
+        aggregate = _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -1928,14 +1968,14 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
             fact_snapshot=snapshot.fact_snapshot,
         )
     else:
-        manifest = freeze_ci_validation_receipt_manifest(
+        manifest = _freeze_ci_validation_receipt_manifest(
             plan=snapshot.plan,
             entries=[],
             created_at=CREATED_AT,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
         )
-        aggregate = freeze_ci_validation_aggregate(
+        aggregate = _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -1960,11 +2000,11 @@ def test_failed_aggregate_failures_require_failed_verdict_effect(
 
     if failure_kind == "invalid-plan":
         with pytest.raises(ContractValidationError, match="verdict-effect"):
-            validate_ci_validation_aggregate(aggregate)
+            _validate_ci_validation_aggregate(aggregate)
     else:
         assert manifest is not None
         with pytest.raises(ContractValidationError, match="verdict-effect"):
-            validate_ci_validation_aggregate(
+            _validate_ci_validation_aggregate(
                 aggregate,
                 plan=snapshot.plan,
                 receipt_manifest=manifest,
@@ -1978,14 +2018,14 @@ def test_aggregate_evidence_results_drive_failures_counts_and_verdict() -> None:
     """Non-success evidence requires failures and failed verdict."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -2001,7 +2041,7 @@ def test_aggregate_evidence_results_drive_failures_counts_and_verdict() -> None:
     counts["required-failed"] = 1
 
     with pytest.raises(ContractValidationError, match="non-success"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2013,7 +2053,7 @@ def test_aggregate_evidence_results_drive_failures_counts_and_verdict() -> None:
     counts["required-succeeded"] = 0
     counts["required-failed"] = 0
     with pytest.raises(ContractValidationError, match="evidence-result"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2028,14 +2068,14 @@ def test_missing_evidence_result_rejects_existing_valid_observed_receipt() -> (
     """Missing evidence cannot ignore a valid receipt for the work group."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -2087,7 +2127,7 @@ def test_missing_evidence_result_rejects_existing_valid_observed_receipt() -> (
     aggregate["diagnostics"] = [diagnostic]
 
     with pytest.raises(ContractValidationError, match="zero valid"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2101,7 +2141,7 @@ def test_aggregate_evidence_results_must_cover_plan_expectations() -> None:
     """Evidence result IDs and work groups must exactly match the plan."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -2110,7 +2150,7 @@ def test_aggregate_evidence_results_must_cover_plan_expectations() -> None:
     )
 
     def valid_aggregate() -> dict[str, object]:
-        return freeze_ci_validation_aggregate(
+        return _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -2126,7 +2166,7 @@ def test_aggregate_evidence_results_must_cover_plan_expectations() -> None:
     counts["executable-required"] = 0
     counts["required-succeeded"] = 0
     with pytest.raises(ContractValidationError, match="plan evidence"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             omitted,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2146,7 +2186,7 @@ def test_aggregate_evidence_results_must_cover_plan_expectations() -> None:
     counts["executable-required"] = 2
     counts["required-succeeded"] = 2
     with pytest.raises(ContractValidationError, match="plan evidence"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             extra,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2165,7 +2205,7 @@ def test_aggregate_evidence_results_must_cover_plan_expectations() -> None:
     counts["executable-required"] = 2
     counts["required-succeeded"] = 2
     with pytest.raises(ContractValidationError, match="unique"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             duplicate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2178,7 +2218,7 @@ def test_aggregate_evidence_results_must_cover_plan_expectations() -> None:
         "evidence-expectation-id"
     ] = "evidence-renamed"
     with pytest.raises(ContractValidationError, match="plan evidence"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             renamed,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2191,7 +2231,7 @@ def test_aggregate_evidence_results_must_cover_plan_expectations() -> None:
         "work-group-id"
     ] = "wg-other"
     with pytest.raises(ContractValidationError, match="plan evidence"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             mismatched,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2206,14 +2246,14 @@ def test_inadmissible_observed_receipts_require_failures() -> None:
     wrong_plan_receipt = deepcopy(receipt)
     wrong_plan_receipt["plan-id"] = "other-plan"
     entry = _entry(wrong_plan_receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -2232,7 +2272,7 @@ def test_inadmissible_observed_receipts_require_failures() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="inadmissible receipts"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2251,14 +2291,14 @@ def test_null_or_malformed_ref_entries_cannot_derive_work_group() -> None:
         instance_id="null-ref",
         receipt_id=None,
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[null_entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -2279,13 +2319,12 @@ def test_null_or_malformed_ref_entries_cannot_derive_work_group() -> None:
         "writer-work-group-id": WORK_GROUP_ID,
         "trusted-writer-id": _writer_id(WORK_GROUP_ID),
         "observed-writer-id": _writer_id(WORK_GROUP_ID),
-        "writer-observation-ref": _writer_observation_ref(WORK_GROUP_ID),
         "receipt-id": "receipt-001",
     }.items():
         invalid_null_entry = deepcopy(null_entry)
         invalid_null_entry[key] = value
         with pytest.raises(ContractValidationError, match="established"):
-            freeze_ci_validation_receipt_manifest(
+            _freeze_ci_validation_receipt_manifest(
                 plan=snapshot.plan,
                 entries=[invalid_null_entry],
                 created_at=CREATED_AT,
@@ -2299,7 +2338,7 @@ def test_null_or_malformed_ref_entries_cannot_derive_work_group() -> None:
     malformed_entry["physical-artifact-name"] = artifact_physical_name(
         malformed_ref
     )
-    malformed_entry["observed-entry-id"] = ci_validation_observed_entry_id(
+    malformed_entry["observed-entry-id"] = _ci_validation_observed_entry_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         artifact_ref=malformed_ref,
@@ -2311,7 +2350,7 @@ def test_null_or_malformed_ref_entries_cannot_derive_work_group() -> None:
     with pytest.raises(
         ContractValidationError, match=r"established|receipt ref"
     ):
-        freeze_ci_validation_receipt_manifest(
+        _freeze_ci_validation_receipt_manifest(
             plan=snapshot.plan,
             entries=[malformed_entry],
             created_at=CREATED_AT,
@@ -2324,14 +2363,14 @@ def test_aggregate_receipt_manifest_ref_binding_is_unconditional() -> None:
     """Standalone validation enforces manifest ref invariants."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -2346,7 +2385,7 @@ def test_aggregate_receipt_manifest_ref_binding_is_unconditional() -> None:
         "ci-validation/manifests/other/1/receipt-manifest.json"
     )
     with pytest.raises(ContractValidationError, match="contract-owned"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             wrong_ref,
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2358,7 +2397,7 @@ def test_aggregate_receipt_manifest_ref_binding_is_unconditional() -> None:
     binding["artifact-ref"] = None
     binding["content-digest"] = None
     with pytest.raises(ContractValidationError, match="authoritative"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             null_ref,
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2370,7 +2409,7 @@ def test_aggregate_receipt_manifest_ref_binding_is_unconditional() -> None:
         "content-digest"
     ] = None
     with pytest.raises(ContractValidationError, match="both"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             null_digest,
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2382,7 +2421,7 @@ def test_aggregate_receipt_manifest_ref_binding_is_unconditional() -> None:
         "artifact-ref"
     ] = None
     with pytest.raises(ContractValidationError, match="both"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             digest_without_ref,
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2393,7 +2432,7 @@ def test_aggregate_receipt_manifest_ref_binding_is_unconditional() -> None:
 def test_standalone_aggregate_binds_observed_receipts_to_envelope() -> None:
     """Standalone validation binds observed receipt refs to envelope."""
     snapshot, aggregate = _valid_aggregate()
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2408,7 +2447,7 @@ def test_standalone_aggregate_binds_observed_receipts_to_envelope() -> None:
 
     for ref, match in (
         (
-            ci_validation_receipt_artifact_ref(
+            _ci_validation_receipt_artifact_ref(
                 run_id="other-run",
                 run_attempt=RUN_ATTEMPT,
                 work_group_id=WORK_GROUP_ID,
@@ -2416,7 +2455,7 @@ def test_standalone_aggregate_binds_observed_receipts_to_envelope() -> None:
             "aggregate run",
         ),
         (
-            ci_validation_receipt_artifact_ref(
+            _ci_validation_receipt_artifact_ref(
                 run_id=RUN_ID,
                 run_attempt="2",
                 work_group_id=WORK_GROUP_ID,
@@ -2436,14 +2475,14 @@ def test_standalone_aggregate_binds_observed_receipts_to_envelope() -> None:
         )
         observed["artifact-ref"] = ref
         observed["physical-artifact-name"] = artifact_physical_name(ref)
-        observed["observed-entry-id"] = ci_validation_observed_entry_id(
+        observed["observed-entry-id"] = _ci_validation_observed_entry_id(
             run_id=RUN_ID,
             run_attempt=RUN_ATTEMPT,
             artifact_ref=ref,
             artifact_instance_id=instance_id,
         )
         with pytest.raises(ContractValidationError, match=match):
-            validate_ci_validation_aggregate(
+            _validate_ci_validation_aggregate(
                 tampered,
                 plan=snapshot.plan,
                 changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2461,7 +2500,7 @@ def test_standalone_aggregate_rejects_tampered_observed_entry_id() -> None:
     observed["observed-entry-id"] = "receipt-" + "0" * 64
 
     with pytest.raises(ContractValidationError, match="canonical derivation"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2479,14 +2518,14 @@ def test_standalone_aggregate_rejects_duplicate_observed_entry_id() -> None:
         instance_id="unclassified-receipt",
         receipt_id=None,
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[null_entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -2495,7 +2534,7 @@ def test_standalone_aggregate_rejects_duplicate_observed_entry_id() -> None:
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2508,7 +2547,7 @@ def test_standalone_aggregate_rejects_duplicate_observed_entry_id() -> None:
     with pytest.raises(
         ContractValidationError, match=r"unique|duplicate|observed-entry-id"
     ):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -2524,16 +2563,16 @@ def test_standalone_non_invalid_aggregate_requires_verified_plan() -> None:
     aggregate["mode"] = "unknown"
 
     with pytest.raises(ContractValidationError, match="validated plan"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_standalone_final_evidence_failure_requires_verified_plan() -> None:
     """Standalone final-only failure aggregate still requires a plan."""
     snapshot, aggregate = _valid_aggregate()
     diagnostic = ci_validation_diagnostic(
-        diagnostic_id="final-evidence-failure/final-manifest-missing",
+        diagnostic_id="final-evidence-failure/aggregate-evidence-manifest-missing",
         code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
-        detail=DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
+        detail=DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value,
         message="manifest missing",
         source_type="aggregation",
         source_id=None,
@@ -2573,7 +2612,7 @@ def test_standalone_final_evidence_failure_requires_verified_plan() -> None:
     assert snapshot.plan["plan-id"]
 
     with pytest.raises(ContractValidationError, match="validated plan"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_invalid_plan_mode_does_not_create_inadmissible_receipt_failures() -> (
@@ -2582,7 +2621,7 @@ def test_invalid_plan_mode_does_not_create_inadmissible_receipt_failures() -> (
     """Invalid-plan aggregates keep observed receipts inspection-only."""
     entry = _entry(None, artifact_ref=None, work_group_id=None, receipt_id=None)
 
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2610,7 +2649,7 @@ def test_invalid_plan_mode_does_not_create_inadmissible_receipt_failures() -> (
 
 def test_invalid_plan_aggregate_rejects_extra_failure_modes() -> None:
     """Invalid-plan aggregates are isolated from other failure reasons."""
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2622,9 +2661,9 @@ def test_invalid_plan_aggregate_rejects_extra_failure_modes() -> None:
         **cast("list[dict[str, object]]", aggregate["failures"])[0],
         "kind": "final-evidence-failure",
         "diagnostic": ci_validation_diagnostic(
-            diagnostic_id="final-evidence-failure/final-manifest-missing",
+            diagnostic_id="final-evidence-failure/aggregate-evidence-manifest-missing",
             code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
-            detail=DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
+            detail=DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value,
             message="manifest missing",
             source_type="aggregation",
             source_id=None,
@@ -2645,14 +2684,14 @@ def test_invalid_plan_aggregate_rejects_extra_failure_modes() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="invalid-plan"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_invalid_plan_aggregate_rejects_duplicate_invalid_plan_failures() -> (
     None
 ):
     """Invalid-plan aggregates carry exactly one applicable failure."""
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2666,12 +2705,12 @@ def test_invalid_plan_aggregate_rejects_duplicate_invalid_plan_failures() -> (
     cast("list[dict[str, object]]", aggregate["failures"]).append(failure)
 
     with pytest.raises(ContractValidationError, match="exactly one"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_invalid_plan_failure_diagnostic_must_match_family() -> None:
     """Invalid-plan failures carry only invalid-plan diagnostics."""
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2681,9 +2720,9 @@ def test_invalid_plan_failure_diagnostic_must_match_family() -> None:
     )
     failure = cast("list[dict[str, object]]", aggregate["failures"])[0]
     failure["diagnostic"] = ci_validation_diagnostic(
-        diagnostic_id="final-evidence-failure/final-manifest-missing",
+        diagnostic_id="final-evidence-failure/aggregate-evidence-manifest-missing",
         code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
-        detail=DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
+        detail=DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value,
         message="manifest missing",
         source_type="aggregation",
         source_id=None,
@@ -2692,12 +2731,12 @@ def test_invalid_plan_failure_diagnostic_must_match_family() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="invalid-plan"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_invalid_plan_failure_diagnostic_requires_detail() -> None:
     """Invalid-plan failures cannot omit the registered detail."""
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2711,21 +2750,21 @@ def test_invalid_plan_failure_diagnostic_requires_detail() -> None:
     aggregate["diagnostics"] = [diagnostic]
 
     with pytest.raises(ContractValidationError, match="detail"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_invalid_plan_aggregate_rejects_valid_observed_receipts() -> None:
     """Invalid-plan aggregates only carry inspection-only observed receipts."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    valid_aggregate = freeze_ci_validation_aggregate(
+    valid_aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -2734,7 +2773,7 @@ def test_invalid_plan_aggregate_rejects_valid_observed_receipts() -> None:
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    invalid_aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    invalid_aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2747,13 +2786,13 @@ def test_invalid_plan_aggregate_rejects_valid_observed_receipts() -> None:
     ]
 
     with pytest.raises(ContractValidationError, match="inadmissible"):
-        validate_ci_validation_aggregate(invalid_aggregate)
+        _validate_ci_validation_aggregate(invalid_aggregate)
 
 
 def test_invalid_plan_helper_validates_manifest_mirroring() -> None:
     """Invalid-plan helper rejects manifest/aggregate observed mismatches."""
     entry = _entry(None, artifact_ref=None, work_group_id=None, receipt_id=None)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=None,
         entries=[entry],
         created_at=CREATED_AT,
@@ -2765,7 +2804,7 @@ def test_invalid_plan_helper_validates_manifest_mirroring() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="mirror"):
-        freeze_ci_validation_invalid_plan_aggregate(
+        _freeze_ci_validation_invalid_plan_aggregate(
             created_at=CREATED_AT,
             repository_owner="hcoona",
             repository_name="three",
@@ -2780,7 +2819,7 @@ def test_invalid_plan_helper_validates_manifest_mirroring() -> None:
 def test_post_plan_invalid_preserves_only_verified_plan_fields() -> None:
     """Post-plan invalid copies only verified plan fields."""
     _receipt, snapshot, _selector_manifest, _assignment = _valid_receipt()
-    unverified = freeze_ci_validation_invalid_plan_aggregate(
+    unverified = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2793,7 +2832,7 @@ def test_post_plan_invalid_preserves_only_verified_plan_fields() -> None:
     assert unverified["plan-id"] is None
     assert unverified["mode"] == "unknown"
 
-    verified = freeze_ci_validation_invalid_plan_aggregate(
+    verified = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2806,14 +2845,14 @@ def test_post_plan_invalid_preserves_only_verified_plan_fields() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
     assert verified["plan-id"] == snapshot.plan["plan-id"]
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         verified,
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
     with pytest.raises(ContractValidationError, match="verified plan"):
-        validate_ci_validation_aggregate(verified)
+        _validate_ci_validation_aggregate(verified)
 
 
 def test_invalid_plan_observed_receipts_ignore_unclassified_writer() -> None:
@@ -2824,7 +2863,7 @@ def test_invalid_plan_observed_receipts_ignore_unclassified_writer() -> None:
         work_group_id=WORK_GROUP_ID,
         receipt_id=None,
     )
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2836,7 +2875,7 @@ def test_invalid_plan_observed_receipts_ignore_unclassified_writer() -> None:
 
     observed = cast("list[dict[str, object]]", aggregate["observed-receipts"])
     assert observed[0]["work-group-id"] is None
-    validate_ci_validation_aggregate(aggregate)
+    _validate_ci_validation_aggregate(aggregate)
 
 
 def test_observed_receipt_work_group_requires_receipt_ref() -> None:
@@ -2847,7 +2886,7 @@ def test_observed_receipt_work_group_requires_receipt_ref() -> None:
         work_group_id=None,
         receipt_id=None,
     )
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -2860,7 +2899,7 @@ def test_observed_receipt_work_group_requires_receipt_ref() -> None:
         "work-group-id"
     ] = WORK_GROUP_ID
     with pytest.raises(ContractValidationError, match="receipt artifact-ref"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
     malformed_ref = f"ci-validation/planning/{RUN_ID}/{RUN_ATTEMPT}/x.json"
     malformed_entry = deepcopy(null_entry)
@@ -2868,7 +2907,7 @@ def test_observed_receipt_work_group_requires_receipt_ref() -> None:
     malformed_entry["physical-artifact-name"] = artifact_physical_name(
         malformed_ref
     )
-    malformed_entry["observed-entry-id"] = ci_validation_observed_entry_id(
+    malformed_entry["observed-entry-id"] = _ci_validation_observed_entry_id(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         artifact_ref=malformed_ref,
@@ -2877,7 +2916,7 @@ def test_observed_receipt_work_group_requires_receipt_ref() -> None:
         ),
     )
     with pytest.raises(ContractValidationError, match="receipt ref"):
-        freeze_ci_validation_invalid_plan_aggregate(
+        _freeze_ci_validation_invalid_plan_aggregate(
             created_at=CREATED_AT,
             repository_owner="hcoona",
             repository_name="three",
@@ -2892,7 +2931,7 @@ def test_satisfied_evidence_result_requires_observed_receipt_binding() -> None:
     """Satisfied evidence must point at its matching valid observed receipt."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -2901,7 +2940,7 @@ def test_satisfied_evidence_result_requires_observed_receipt_binding() -> None:
     )
 
     def valid_aggregate() -> dict[str, object]:
-        return freeze_ci_validation_aggregate(
+        return _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -2917,7 +2956,7 @@ def test_satisfied_evidence_result_requires_observed_receipt_binding() -> None:
     ]
     result["receipt-content-digest"] = None
     with pytest.raises(ContractValidationError, match="satisfied evidence"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             null_binding,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2931,7 +2970,7 @@ def test_satisfied_evidence_result_requires_observed_receipt_binding() -> None:
     )[0]
     result["observed-entry-id"] = "missing-entry"
     with pytest.raises(ContractValidationError, match="observed receipt"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             missing_observed,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2945,7 +2984,7 @@ def test_satisfied_evidence_result_requires_observed_receipt_binding() -> None:
     )[0]
     result["receipt-content-digest"] = "0" * 64
     with pytest.raises(ContractValidationError, match="observed receipt"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             mismatched_digest,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2958,7 +2997,7 @@ def test_satisfied_evidence_result_requires_observed_receipt_binding() -> None:
         0
     ]["admissibility"] = "inadmissible"
     with pytest.raises(ContractValidationError, match="valid observed receipt"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             inadmissible_observed,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -2986,7 +3025,7 @@ def test_non_success_evidence_results_require_observed_receipt_binding() -> (
         capability_results[1]["outcome"] = receipt_outcome
         capability_results[1]["diagnostics"] = [diagnostic]
         entry = _entry(receipt)
-        manifest = freeze_ci_validation_receipt_manifest(
+        manifest = _freeze_ci_validation_receipt_manifest(
             plan=snapshot.plan,
             entries=[entry],
             created_at=CREATED_AT,
@@ -3003,7 +3042,7 @@ def test_non_success_evidence_results_require_observed_receipt_binding() -> (
             ),
             ("receipt-content-digest", "0" * 64),
         ):
-            tampered = freeze_ci_validation_aggregate(
+            tampered = _freeze_ci_validation_aggregate(
                 plan=snapshot.plan,
                 receipt_manifest=manifest,
                 selector_assignments_manifest=selector_manifest,
@@ -3033,7 +3072,7 @@ def test_non_success_evidence_results_require_observed_receipt_binding() -> (
             with pytest.raises(
                 ContractValidationError, match="observed receipt"
             ):
-                validate_ci_validation_aggregate(
+                _validate_ci_validation_aggregate(
                     tampered,
                     plan=snapshot.plan,
                     receipt_manifest=manifest,
@@ -3057,7 +3096,7 @@ def test_satisfied_evidence_result_rejects_verdict_affecting_diagnostics(
     diagnostic = ci_validation_diagnostic(
         diagnostic_id=f"satisfied/verdict-affecting-{verdict_effect}",
         code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
-        detail=DiagnosticDetail.FINAL_AGGREGATE_MALFORMED.value,
+        detail=DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value,
         message="Satisfied evidence carried a verdict-affecting diagnostic",
         source_type="aggregation",
         source_id=None,
@@ -3073,12 +3112,12 @@ def test_satisfied_evidence_result_rejects_verdict_affecting_diagnostics(
     )
 
     with pytest.raises(ContractValidationError, match="satisfied evidence"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_aggregate_root_diagnostics_cover_referenced_diagnostics() -> None:
     """Root diagnostics are the canonical set referenced by nested records."""
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -3090,14 +3129,14 @@ def test_aggregate_root_diagnostics_cover_referenced_diagnostics() -> None:
     omitted = deepcopy(aggregate)
     omitted["diagnostics"] = []
     with pytest.raises(ContractValidationError, match="referenced diagnostics"):
-        validate_ci_validation_aggregate(omitted)
+        _validate_ci_validation_aggregate(omitted)
 
     mismatched = deepcopy(aggregate)
     cast("list[dict[str, object]]", mismatched["diagnostics"])[0]["message"] = (
         "tampered diagnostic"
     )
     with pytest.raises(ContractValidationError, match="referenced diagnostics"):
-        validate_ci_validation_aggregate(mismatched)
+        _validate_ci_validation_aggregate(mismatched)
 
     extra = deepcopy(aggregate)
     extra_diagnostic = deepcopy(
@@ -3108,7 +3147,7 @@ def test_aggregate_root_diagnostics_cover_referenced_diagnostics() -> None:
         extra_diagnostic
     )
     with pytest.raises(ContractValidationError, match="referenced diagnostics"):
-        validate_ci_validation_aggregate(extra)
+        _validate_ci_validation_aggregate(extra)
 
 
 def test_failed_descriptor_receipt_preserves_descriptor_diagnostic() -> None:
@@ -3135,7 +3174,7 @@ def test_failed_descriptor_receipt_preserves_descriptor_diagnostic() -> None:
     results[0]["outcome"] = "blocking-failure"
     results[0]["diagnostics"] = [diagnostic]
     entry = _entry_for_assignment(receipt, assignment)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -3143,7 +3182,7 @@ def test_failed_descriptor_receipt_preserves_descriptor_diagnostic() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3160,7 +3199,7 @@ def test_failed_descriptor_receipt_preserves_descriptor_diagnostic() -> None:
         and item["work-group-id"] == DESCRIPTOR_WORK_GROUP_ID
     )
     assert failure["diagnostic"] == diagnostic
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=snapshot.plan,
         receipt_manifest=manifest,
@@ -3200,7 +3239,7 @@ def test_failed_artifact_receipt_preserves_artifact_shape_diagnostic() -> None:
     receipt["outcome"] = "blocking-failure"
     receipt["diagnostics"] = [_failed_diagnostic(ARTIFACT_WORK_GROUP_ID)]
     entry = _entry_for_assignment(receipt, assignment)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -3208,7 +3247,7 @@ def test_failed_artifact_receipt_preserves_artifact_shape_diagnostic() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3225,7 +3264,7 @@ def test_failed_artifact_receipt_preserves_artifact_shape_diagnostic() -> None:
         and item["work-group-id"] == ARTIFACT_WORK_GROUP_ID
     )
     assert failure["diagnostic"] == diagnostic
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=snapshot.plan,
         receipt_manifest=manifest,
@@ -3248,7 +3287,7 @@ def test_evidence_failures_mirror_receipt_fields_and_diagnostic() -> None:
     failed_results[1]["outcome"] = "blocking-failure"
     failed_results[1]["diagnostics"] = [_failed_diagnostic()]
     entry = _entry(failed_receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -3257,7 +3296,7 @@ def test_evidence_failures_mirror_receipt_fields_and_diagnostic() -> None:
     )
 
     def aggregate() -> dict[str, object]:
-        return freeze_ci_validation_aggregate(
+        return _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -3283,7 +3322,7 @@ def test_evidence_failures_mirror_receipt_fields_and_diagnostic() -> None:
         )
         failure[field] = value
         with pytest.raises(ContractValidationError, match="non-success"):
-            validate_ci_validation_aggregate(
+            _validate_ci_validation_aggregate(
                 tampered,
                 plan=snapshot.plan,
                 receipt_manifest=manifest,
@@ -3306,7 +3345,7 @@ def test_evidence_failures_mirror_receipt_fields_and_diagnostic() -> None:
         key=lambda item: str(item["diagnostic-id"]),
     )
     with pytest.raises(ContractValidationError, match="non-success"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             tampered,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -3321,7 +3360,7 @@ def test_inadmissible_failures_mirror_receipt_fields_and_diagnostic() -> None:
     wrong_plan_receipt = deepcopy(receipt)
     wrong_plan_receipt["plan-id"] = "other-plan"
     entry = _entry(wrong_plan_receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -3330,7 +3369,7 @@ def test_inadmissible_failures_mirror_receipt_fields_and_diagnostic() -> None:
     )
 
     def aggregate() -> dict[str, object]:
-        return freeze_ci_validation_aggregate(
+        return _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -3359,7 +3398,7 @@ def test_inadmissible_failures_mirror_receipt_fields_and_diagnostic() -> None:
         with pytest.raises(
             ContractValidationError, match="inadmissible receipts"
         ):
-            validate_ci_validation_aggregate(
+            _validate_ci_validation_aggregate(
                 tampered,
                 plan=snapshot.plan,
                 receipt_manifest=manifest,
@@ -3382,7 +3421,7 @@ def test_inadmissible_failures_mirror_receipt_fields_and_diagnostic() -> None:
         key=lambda item: str(item["diagnostic-id"]),
     )
     with pytest.raises(ContractValidationError, match="inadmissible receipts"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             tampered,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -3425,7 +3464,7 @@ def test_inadmissible_failures_mirror_receipt_fields_and_diagnostic() -> None:
         key=lambda item: str(item["diagnostic-id"]),
     )
     with pytest.raises(ContractValidationError, match="failure kind"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             wrong_family,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -3438,14 +3477,14 @@ def test_aggregate_rejects_manifest_digest_mismatch() -> None:
     """Aggregate final evidence binds the exact receipt manifest digest."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3459,7 +3498,7 @@ def test_aggregate_rejects_manifest_digest_mismatch() -> None:
     ] = "0" * 64
 
     with pytest.raises(ContractValidationError, match="manifest"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -3472,14 +3511,14 @@ def test_aggregate_validates_supplied_manifest_before_binding() -> None:
     """Validation does not trust a digest-matching invalid manifest."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3492,10 +3531,10 @@ def test_aggregate_validates_supplied_manifest_before_binding() -> None:
     bad_manifest["kind"] = "ci-validation-aggregate"
     cast("dict[str, object]", aggregate["receipt-manifest"])[
         "content-digest"
-    ] = ci_validation_receipt_manifest_payload_digest(bad_manifest)
+    ] = _ci_validation_receipt_manifest_payload_digest(bad_manifest)
 
     with pytest.raises(ContractValidationError, match="receipt-manifest"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=bad_manifest,
@@ -3508,14 +3547,14 @@ def test_aggregate_rejects_manifest_with_wrong_run_attempt() -> None:
     """Supplied manifest envelope must match the aggregate run attempt."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3528,10 +3567,10 @@ def test_aggregate_rejects_manifest_with_wrong_run_attempt() -> None:
     cast("dict[str, object]", bad_manifest["run"])["run-attempt"] = "2"
     cast("dict[str, object]", aggregate["receipt-manifest"])[
         "content-digest"
-    ] = ci_validation_receipt_manifest_payload_digest(bad_manifest)
+    ] = _ci_validation_receipt_manifest_payload_digest(bad_manifest)
 
     with pytest.raises(ContractValidationError, match="run attempt"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=bad_manifest,
@@ -3544,14 +3583,14 @@ def test_aggregate_rejects_manifest_bound_to_wrong_plan() -> None:
     """Supplied manifest plan fields must match the validated plan."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3564,10 +3603,10 @@ def test_aggregate_rejects_manifest_bound_to_wrong_plan() -> None:
     bad_manifest["plan-id"] = "other-plan"
     cast("dict[str, object]", aggregate["receipt-manifest"])[
         "content-digest"
-    ] = ci_validation_receipt_manifest_payload_digest(bad_manifest)
+    ] = _ci_validation_receipt_manifest_payload_digest(bad_manifest)
 
     with pytest.raises(ContractValidationError, match="plan"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=bad_manifest,
@@ -3588,7 +3627,7 @@ def test_duplicate_unreadable_and_unclassified_entries_fail_closed() -> None:
         receipt_id=None,
         instance_id="9999",
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[unclassified, duplicate_b, duplicate_a],
         created_at=CREATED_AT,
@@ -3596,7 +3635,7 @@ def test_duplicate_unreadable_and_unclassified_entries_fail_closed() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3623,7 +3662,7 @@ def test_duplicate_unreadable_and_unclassified_entries_fail_closed() -> None:
 def test_terminal_aggregation_receipt_is_inadmissible() -> None:
     """The terminal evidence-aggregation selector never emits receipts."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
-    terminal_ref = ci_validation_receipt_artifact_ref(
+    terminal_ref = _ci_validation_receipt_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         work_group_id="evidence-aggregation",
@@ -3634,7 +3673,7 @@ def test_terminal_aggregation_receipt_is_inadmissible() -> None:
         work_group_id="evidence-aggregation",
         instance_id="2001",
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[terminal_entry],
         created_at=CREATED_AT,
@@ -3642,7 +3681,7 @@ def test_terminal_aggregation_receipt_is_inadmissible() -> None:
         fact_snapshot=snapshot.fact_snapshot,
     )
 
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3661,7 +3700,7 @@ def test_terminal_aggregation_receipt_is_inadmissible() -> None:
         for item in cast("list[dict[str, object]]", aggregate["failures"])
         if item["kind"] == "inadmissible-receipt"
     ]
-    assert DiagnosticDetail.UNEXPECTED_RECEIPT.value in details
+    assert "unexpected-receipt" in details
 
 
 def test_validate_recomputes_null_ref_receipt_admissibility() -> None:
@@ -3671,14 +3710,14 @@ def test_validate_recomputes_null_ref_receipt_admissibility() -> None:
         receipt, artifact_ref=None, work_group_id=None, receipt_id=None
     )
     null_entry["receipt-content-digest"] = None
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[null_entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3695,7 +3734,7 @@ def test_validate_recomputes_null_ref_receipt_admissibility() -> None:
     with pytest.raises(
         ContractValidationError, match="valid observed receipts"
     ):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -3709,14 +3748,14 @@ def test_validate_recomputes_duplicate_receipt_admissibility() -> None:
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     duplicate_a = _entry(receipt, instance_id="1001")
     duplicate_b = _entry(receipt, instance_id="1002")
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[duplicate_b, duplicate_a],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3736,7 +3775,7 @@ def test_validate_recomputes_duplicate_receipt_admissibility() -> None:
     _remove_inadmissible_receipt_accounting(aggregate)
 
     with pytest.raises(ContractValidationError, match="duplicate valid"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -3748,7 +3787,7 @@ def test_validate_recomputes_duplicate_receipt_admissibility() -> None:
 def test_validate_recomputes_terminal_receipt_admissibility() -> None:
     """Validation rejects terminal observations tampered into valid receipts."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
-    terminal_ref = ci_validation_receipt_artifact_ref(
+    terminal_ref = _ci_validation_receipt_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         work_group_id="evidence-aggregation",
@@ -3759,14 +3798,14 @@ def test_validate_recomputes_terminal_receipt_admissibility() -> None:
         work_group_id="evidence-aggregation",
         instance_id="2001",
     )
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[terminal_entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3783,7 +3822,7 @@ def test_validate_recomputes_terminal_receipt_admissibility() -> None:
     _remove_inadmissible_receipt_accounting(aggregate)
 
     with pytest.raises(ContractValidationError, match="terminal aggregation"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -3796,14 +3835,14 @@ def test_validate_rejects_valid_receipt_with_inadmissible_diagnostics() -> None:
     """Validation does not trust valid admissibility over diagnostics."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3816,22 +3855,17 @@ def test_validate_rejects_valid_receipt_with_inadmissible_diagnostics() -> None:
         0
     ]
     observed["diagnostics"] = [
-        ci_validation_diagnostic(
+        _legacy_receipt_diagnostic(
             diagnostic_id="inadmissible-receipt/tampered/wrong-plan",
-            code=DiagnosticFamily.INADMISSIBLE_RECEIPT.value,
-            detail=DiagnosticDetail.WRONG_PLAN.value,
+            detail="wrong-plan",
             message="tampered diagnostic",
-            source_type="aggregation",
-            source_id=None,
-            severity=DiagnosticSeverity.BLOCKING_FAILURE.value,
-            verdict_effect=DiagnosticVerdictEffect.FAILED.value,
         )
     ]
 
     with pytest.raises(
         ContractValidationError, match="valid observed receipts"
     ):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -3842,7 +3876,7 @@ def test_validate_rejects_valid_receipt_with_inadmissible_diagnostics() -> None:
 
 def test_aggregate_validation_requires_canonical_failure_order() -> None:
     """Failures are validated with the LLD tuple ordering."""
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -3854,9 +3888,9 @@ def test_aggregate_validation_requires_canonical_failure_order() -> None:
         **cast("list[dict[str, object]]", aggregate["failures"])[0],
         "kind": "final-evidence-failure",
         "diagnostic": ci_validation_diagnostic(
-            diagnostic_id="final-evidence-failure/final-manifest-missing",
+            diagnostic_id="final-evidence-failure/aggregate-evidence-manifest-missing",
             code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
-            detail=DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
+            detail=DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value,
             message="manifest missing",
             source_type="aggregation",
             source_id=None,
@@ -3877,12 +3911,12 @@ def test_aggregate_validation_requires_canonical_failure_order() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="sorted"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_sorted_diagnostics_validation_handles_malformed_ids() -> None:
     """Malformed diagnostic ids produce validation errors, not TypeError."""
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -3897,7 +3931,7 @@ def test_sorted_diagnostics_validation_handles_malformed_ids() -> None:
     cast("list[dict[str, object]]", aggregate["diagnostics"]).append(malformed)
 
     with pytest.raises(ContractValidationError):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_sorted_evidence_results_validation_handles_malformed_ids() -> None:
@@ -3912,7 +3946,7 @@ def test_sorted_evidence_results_validation_handles_malformed_ids() -> None:
     )
 
     with pytest.raises(ContractValidationError):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 @pytest.mark.parametrize(
@@ -3937,15 +3971,6 @@ def test_sorted_evidence_results_validation_handles_malformed_ids() -> None:
             "observed-writer-id",
         ),
         ("assignment-id", "tampered-assignment", "assignment-id"),
-        (
-            "writer-observation-ref",
-            ci_validation_writer_observation_artifact_ref(
-                run_id=RUN_ID,
-                run_attempt=RUN_ATTEMPT,
-                assignment_id="tampered-assignment",
-            ),
-            "writer-observation-ref",
-        ),
     ],
 )
 def test_aggregate_supplied_manifest_rejects_rebound_writer_binding(
@@ -3956,14 +3981,14 @@ def test_aggregate_supplied_manifest_rejects_rebound_writer_binding(
     """Supplied manifests cannot rebind valid receipts to writer identity."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -3975,10 +4000,10 @@ def test_aggregate_supplied_manifest_rejects_rebound_writer_binding(
     cast("list[dict[str, object]]", manifest["entries"])[0][field] = value
     cast("dict[str, object]", aggregate["receipt-manifest"])[
         "content-digest"
-    ] = ci_validation_receipt_manifest_payload_digest(manifest)
+    ] = _ci_validation_receipt_manifest_payload_digest(manifest)
 
     with pytest.raises(ContractValidationError, match=message):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -3994,14 +4019,14 @@ def test_aggregate_supplied_manifest_rejects_coherent_rebound_writer_ids() -> (
     """Supplied manifests cannot rebind valid receipts to another writer."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
     )
-    aggregate = freeze_ci_validation_aggregate(
+    aggregate = _freeze_ci_validation_aggregate(
         plan=snapshot.plan,
         receipt_manifest=manifest,
         selector_assignments_manifest=selector_manifest,
@@ -4023,10 +4048,10 @@ def test_aggregate_supplied_manifest_rejects_coherent_rebound_writer_ids() -> (
     ] = rebound_writer_id
     cast("dict[str, object]", aggregate["receipt-manifest"])[
         "content-digest"
-    ] = ci_validation_receipt_manifest_payload_digest(manifest)
+    ] = _ci_validation_receipt_manifest_payload_digest(manifest)
 
     with pytest.raises(ContractValidationError, match="selector assignment"):
-        validate_ci_validation_aggregate(
+        _validate_ci_validation_aggregate(
             aggregate,
             plan=snapshot.plan,
             receipt_manifest=manifest,
@@ -4040,7 +4065,7 @@ def test_freeze_aggregate_rejects_non_final_evidence_diagnostics() -> None:
     """Final evidence failures require final evidence diagnostics."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -4049,7 +4074,7 @@ def test_freeze_aggregate_rejects_non_final_evidence_diagnostics() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="final-evidence"):
-        freeze_ci_validation_aggregate(
+        _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,
@@ -4074,7 +4099,7 @@ def test_freeze_aggregate_rejects_non_final_evidence_diagnostics() -> None:
 
 def test_aggregate_rejects_final_evidence_failure_diagnostic_family() -> None:
     """Tampered final-evidence failures cannot cite other families."""
-    aggregate = freeze_ci_validation_invalid_plan_aggregate(
+    aggregate = _freeze_ci_validation_invalid_plan_aggregate(
         created_at=CREATED_AT,
         repository_owner="hcoona",
         repository_name="three",
@@ -4086,14 +4111,14 @@ def test_aggregate_rejects_final_evidence_failure_diagnostic_family() -> None:
     failure["kind"] = "final-evidence-failure"
 
     with pytest.raises(ContractValidationError, match="final-evidence"):
-        validate_ci_validation_aggregate(aggregate)
+        _validate_ci_validation_aggregate(aggregate)
 
 
 def test_final_evidence_failure_diagnostic_requires_detail() -> None:
     """Final-evidence failures cannot omit the registered detail."""
     receipt, snapshot, selector_manifest, _assignment = _valid_receipt()
     entry = _entry(receipt)
-    manifest = freeze_ci_validation_receipt_manifest(
+    manifest = _freeze_ci_validation_receipt_manifest(
         plan=snapshot.plan,
         entries=[entry],
         created_at=CREATED_AT,
@@ -4102,7 +4127,7 @@ def test_final_evidence_failure_diagnostic_requires_detail() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="final-evidence"):
-        freeze_ci_validation_aggregate(
+        _freeze_ci_validation_aggregate(
             plan=snapshot.plan,
             receipt_manifest=manifest,
             selector_assignments_manifest=selector_manifest,

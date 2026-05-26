@@ -2729,11 +2729,19 @@ def _validate_descriptors(
             continue
         descriptors.append(item)
         descriptor_path = _required_str(item, "descriptor-path", issues)
-        _nullable_str(
-            item.get("descriptor-identity"),
-            f"{item_path}.descriptor-identity",
-            issues,
-        )
+        if "descriptor-identity" not in item:
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.descriptor-identity",
+                    "is required",
+                )
+            )
+        else:
+            _nullable_str(
+                item.get("descriptor-identity"),
+                f"{item_path}.descriptor-identity",
+                issues,
+            )
         _nullable_str(
             item.get("owner-subject-id"),
             f"{item_path}.owner-subject-id",

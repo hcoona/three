@@ -1,4 +1,4 @@
-"""Selector-assignment and writer-observation contract helpers."""
+"""Selector-assignment contract helpers."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from three_workflow_release_contracts.ci_validation import (
     API_VERSIONS_BY_KIND,
     CiValidationKind,
     CommonEnvelope,
+    _validate_common_envelope_with_versions,
     canonical_json_digest,
     validate_artifact_logical_ref,
-    validate_common_envelope,
 )
 from three_workflow_release_contracts.ci_validation_plans import (
     ci_validation_plan_digest,
@@ -29,19 +29,28 @@ from three_workflow_release_contracts.contracts import (
     ValidationIssue,
 )
 
-WriterIdentitySource = Literal["github-actions-job-context"]
-ProducerBoundary = Literal[
-    "materialize-work-groups",
-    "trusted-observation-boundary",
-]
+_WriterIdentitySource = Literal["github-actions-job-context"]
+type _ProducerBoundary = Literal["materialize-work-groups"]
 
 _LOCAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _WRITER_ID_RE = re.compile(r"^github-actions-job:[0-9a-f]{64}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _WRITER_IDENTITY_API_VERSION = "three.ci.validation.writer-id/v1alpha1"
 _WRITER_IDENTITY_SOURCE = "github-actions-job-context"
+_LEGACY_WRITER_OBSERVATION_API_VERSION = (
+    "three.ci.validation.writer-observation/v1alpha1"
+)
+_LEGACY_WRITER_OBSERVATION_KIND = "ci-validation-writer-observation"
 _SELECTOR_ASSIGNMENTS_BOUNDARY = "materialize-work-groups"
 _WRITER_OBSERVATION_BOUNDARY = "trusted-observation-boundary"
+_SELECTOR_ASSIGNMENTS_KIND = "ci-validation-selector-assignments"
+_SELECTOR_ASSIGNMENTS_API_VERSION = (
+    "three.ci.validation.selector-assignments/v1alpha1"
+)
+_LEGACY_ENVELOPE_API_VERSIONS_BY_KIND = {
+    _SELECTOR_ASSIGNMENTS_KIND: _SELECTOR_ASSIGNMENTS_API_VERSION,
+}
+type _LegacyProducerBoundary = Literal["trusted-observation-boundary"]
 _EXECUTABLE_WORK_GROUP_KINDS = frozenset(
     {
         "lightweight-preflight",
@@ -76,7 +85,6 @@ _SELECTOR_ASSIGNMENT_KEYS = frozenset(
         "trusted-writer-id",
         "writer-identity-source",
         "receipt-artifact-ref",
-        "writer-observation-ref",
     },
 )
 _WRITER_OBSERVATION_ROOT_KEYS = frozenset(
@@ -100,11 +108,11 @@ _WRITER_OBSERVATION_ROOT_KEYS = frozenset(
 
 
 @dataclass(frozen=True, slots=True)
-class CiValidationArtifactProducerAuthority:
+class _CiValidationArtifactProducerAuthority:
     """Non-payload producer-boundary verification for one artifact instance."""
 
     artifact_id: int
-    boundary: ProducerBoundary
+    boundary: _ProducerBoundary
     verified: bool
 
     def __post_init__(self) -> None:
@@ -118,7 +126,6 @@ class CiValidationArtifactProducerAuthority:
             issues.append(ValidationIssue("artifact-id", "must be >= 1"))
         if self.boundary not in {
             _SELECTOR_ASSIGNMENTS_BOUNDARY,
-            _WRITER_OBSERVATION_BOUNDARY,
         }:
             issues.append(ValidationIssue("boundary", "is not registered"))
         if not isinstance(self.verified, bool):
@@ -127,7 +134,31 @@ class CiValidationArtifactProducerAuthority:
             raise ContractValidationError(issues)
 
 
-def ci_validation_selector_assignments_artifact_ref(
+@dataclass(frozen=True, slots=True)
+class _LegacyCiValidationArtifactProducerAuthority:
+    """Internal legacy producer verification for writer observations."""
+
+    artifact_id: int
+    boundary: _LegacyProducerBoundary
+    verified: bool
+
+    def __post_init__(self) -> None:
+        issues: list[ValidationIssue] = []
+        if not isinstance(self.artifact_id, int) or isinstance(
+            self.artifact_id, bool
+        ):
+            issues.append(ValidationIssue("artifact-id", "must be an integer"))
+        elif self.artifact_id < 1:
+            issues.append(ValidationIssue("artifact-id", "must be >= 1"))
+        if self.boundary != _WRITER_OBSERVATION_BOUNDARY:
+            issues.append(ValidationIssue("boundary", "is not registered"))
+        if not isinstance(self.verified, bool):
+            issues.append(ValidationIssue("verified", "must be a boolean"))
+        if issues:
+            raise ContractValidationError(issues)
+
+
+def _ci_validation_selector_assignments_artifact_ref(
     *,
     run_id: str,
     run_attempt: str,
@@ -139,7 +170,7 @@ def ci_validation_selector_assignments_artifact_ref(
     )
 
 
-def ci_validation_receipt_artifact_ref(
+def _ci_validation_receipt_artifact_ref(
     *,
     run_id: str,
     run_attempt: str,
@@ -153,7 +184,7 @@ def ci_validation_receipt_artifact_ref(
     )
 
 
-def ci_validation_writer_observation_artifact_ref(
+def _legacy_ci_validation_writer_observation_artifact_ref(
     *,
     run_id: str,
     run_attempt: str,
@@ -167,7 +198,7 @@ def ci_validation_writer_observation_artifact_ref(
     )
 
 
-def ci_validation_assignment_id(*, work_group_id: str) -> str:
+def _ci_validation_assignment_id(*, work_group_id: str) -> str:
     """Return the default stable assignment ID for a work-group selector."""
     _validate_local_id_or_raise(work_group_id, "work-group-id")
     return work_group_id
@@ -216,7 +247,7 @@ def ci_validation_writer_id(
     return f"github-actions-job:{digest}"
 
 
-def freeze_ci_validation_selector_assignments(  # noqa: PLR0913
+def _freeze_ci_validation_selector_assignments(  # noqa: PLR0913
     *,
     plan: Mapping[str, object],
     trusted_writer_ids: Mapping[str, str],
@@ -262,10 +293,8 @@ def freeze_ci_validation_selector_assignments(  # noqa: PLR0913
         for work_group_id in sorted(executable_work_groups)
     ]
     return {
-        "api-version": API_VERSIONS_BY_KIND[
-            CiValidationKind.SELECTOR_ASSIGNMENTS.value
-        ],
-        "kind": CiValidationKind.SELECTOR_ASSIGNMENTS.value,
+        "api-version": _SELECTOR_ASSIGNMENTS_API_VERSION,
+        "kind": _SELECTOR_ASSIGNMENTS_KIND,
         "created-at": created_at,
         "repository": {
             "owner": plan_envelope.repository_owner,
@@ -283,7 +312,7 @@ def freeze_ci_validation_selector_assignments(  # noqa: PLR0913
     }
 
 
-def validate_ci_validation_selector_assignments(  # noqa: PLR0913
+def _validate_ci_validation_selector_assignments(  # noqa: PLR0913
     manifest: object,
     *,
     plan: Mapping[str, object],
@@ -358,7 +387,7 @@ def validate_ci_validation_selector_assignments(  # noqa: PLR0913
         raise ContractValidationError(issues)
 
 
-def freeze_ci_validation_writer_observation(  # noqa: PLR0913
+def _legacy_freeze_ci_validation_writer_observation(  # noqa: PLR0913
     *,
     plan: Mapping[str, object],
     selector_assignments_manifest: Mapping[str, object],
@@ -400,10 +429,8 @@ def freeze_ci_validation_writer_observation(  # noqa: PLR0913
     plan_digest = cast("str", plan_digest)
 
     return {
-        "api-version": API_VERSIONS_BY_KIND[
-            CiValidationKind.WRITER_OBSERVATION.value
-        ],
-        "kind": CiValidationKind.WRITER_OBSERVATION.value,
+        "api-version": _LEGACY_WRITER_OBSERVATION_API_VERSION,
+        "kind": _LEGACY_WRITER_OBSERVATION_KIND,
         "created-at": created_at,
         "repository": {
             "owner": plan_envelope.repository_owner,
@@ -426,7 +453,7 @@ def freeze_ci_validation_writer_observation(  # noqa: PLR0913
     }
 
 
-def validate_ci_validation_writer_observation(  # noqa: PLR0913
+def _legacy_validate_ci_validation_writer_observation(  # noqa: PLR0913
     observation: object,
     *,
     plan: Mapping[str, object],
@@ -505,17 +532,17 @@ def validate_ci_validation_writer_observation(  # noqa: PLR0913
         raise ContractValidationError(issues)
 
 
-def admit_ci_validation_selector_assignments_artifact(
+def _admit_ci_validation_selector_assignments_artifact(
     artifact_groups: ArtifactGroups,
     *,
     run_id: str,
     run_attempt: str,
-    producer_authority: CiValidationArtifactProducerAuthority,
+    producer_authority: _CiValidationArtifactProducerAuthority,
 ) -> ArtifactAdmission:
     """Admit one verified selector-assignment manifest artifact instance."""
     admission = admit_exactly_one_artifact(
         artifact_groups,
-        logical_ref=ci_validation_selector_assignments_artifact_ref(
+        logical_ref=_ci_validation_selector_assignments_artifact_ref(
             run_id=run_id,
             run_attempt=run_attempt,
         ),
@@ -528,11 +555,11 @@ def admit_ci_validation_selector_assignments_artifact(
     return admission
 
 
-def admit_ci_validation_writer_observation_artifact(
+def _legacy_admit_ci_validation_writer_observation_artifact(
     artifact_groups: ArtifactGroups,
     *,
     assignment: Mapping[str, object],
-    producer_authority: CiValidationArtifactProducerAuthority,
+    producer_authority: _LegacyCiValidationArtifactProducerAuthority,
 ) -> ArtifactAdmission:
     """Admit one verified writer-observation artifact for an assignment."""
     observation_ref = assignment.get("writer-observation-ref")
@@ -559,11 +586,20 @@ def admit_ci_validation_writer_observation_artifact(
 
 def _verify_producer_authority(
     admission: ArtifactAdmission,
-    authority: CiValidationArtifactProducerAuthority,
+    authority: (
+        _CiValidationArtifactProducerAuthority
+        | _LegacyCiValidationArtifactProducerAuthority
+    ),
     *,
-    expected_boundary: ProducerBoundary,
+    expected_boundary: str,
 ) -> None:
-    if not isinstance(authority, CiValidationArtifactProducerAuthority):
+    if not isinstance(
+        authority,
+        (
+            _CiValidationArtifactProducerAuthority,
+            _LegacyCiValidationArtifactProducerAuthority,
+        ),
+    ):
         raise ContractValidationError(
             [
                 ValidationIssue(
@@ -605,21 +641,16 @@ def _assignment_record(
     work_group_id: str,
     trusted_writer_id: str,
 ) -> dict[str, object]:
-    assignment_id = ci_validation_assignment_id(work_group_id=work_group_id)
+    assignment_id = _ci_validation_assignment_id(work_group_id=work_group_id)
     return {
         "assignment-id": assignment_id,
         "work-group-id": work_group_id,
         "trusted-writer-id": trusted_writer_id,
         "writer-identity-source": _WRITER_IDENTITY_SOURCE,
-        "receipt-artifact-ref": ci_validation_receipt_artifact_ref(
+        "receipt-artifact-ref": _ci_validation_receipt_artifact_ref(
             run_id=run_id,
             run_attempt=run_attempt,
             work_group_id=work_group_id,
-        ),
-        "writer-observation-ref": ci_validation_writer_observation_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-            assignment_id=assignment_id,
         ),
     }
 
@@ -633,7 +664,7 @@ def _validated_manifest_assignment(  # noqa: PLR0913
     fact_snapshot: Mapping[str, object] | None,
     pull_request_merge_commit_verification: Mapping[str, object] | None,
 ) -> Mapping[str, object]:
-    validate_ci_validation_selector_assignments(
+    _validate_ci_validation_selector_assignments(
         manifest,
         plan=plan,
         changed_files_snapshot=changed_files_snapshot,
@@ -691,12 +722,11 @@ def _selector_assignments_envelope_or_collect(
     issues: list[ValidationIssue],
 ) -> CommonEnvelope | None:
     try:
-        return validate_common_envelope(
+        return _validate_common_envelope_with_versions(
             document,
-            api_version=API_VERSIONS_BY_KIND[
-                CiValidationKind.SELECTOR_ASSIGNMENTS.value
-            ],
-            kind=CiValidationKind.SELECTOR_ASSIGNMENTS,
+            api_version=_SELECTOR_ASSIGNMENTS_API_VERSION,
+            kind=_SELECTOR_ASSIGNMENTS_KIND,
+            extra_api_versions_by_kind=_LEGACY_ENVELOPE_API_VERSIONS_BY_KIND,
         )
     except ContractValidationError as error:
         issues.extend(error.issues)
@@ -707,17 +737,49 @@ def _writer_observation_envelope_or_collect(
     document: Mapping[str, object],
     issues: list[ValidationIssue],
 ) -> CommonEnvelope | None:
+    envelope_issues: list[ValidationIssue] = []
     try:
-        return validate_common_envelope(
-            document,
-            api_version=API_VERSIONS_BY_KIND[
-                CiValidationKind.WRITER_OBSERVATION.value
-            ],
-            kind=CiValidationKind.WRITER_OBSERVATION,
+        envelope = _validate_common_envelope_with_versions(
+            {
+                **document,
+                "api-version": API_VERSIONS_BY_KIND[
+                    CiValidationKind.REQUEST.value
+                ],
+                "kind": CiValidationKind.REQUEST.value,
+            },
+            api_version=API_VERSIONS_BY_KIND[CiValidationKind.REQUEST.value],
+            kind=CiValidationKind.REQUEST,
         )
     except ContractValidationError as error:
         issues.extend(error.issues)
         return None
+    if document.get("api-version") != _LEGACY_WRITER_OBSERVATION_API_VERSION:
+        envelope_issues.append(
+            ValidationIssue(
+                "$.api-version",
+                f"must be {_LEGACY_WRITER_OBSERVATION_API_VERSION}",
+            )
+        )
+    if document.get("kind") != _LEGACY_WRITER_OBSERVATION_KIND:
+        envelope_issues.append(
+            ValidationIssue(
+                "$.kind",
+                f"must be {_LEGACY_WRITER_OBSERVATION_KIND}",
+            )
+        )
+    if envelope_issues:
+        issues.extend(envelope_issues)
+        return None
+    return CommonEnvelope(
+        api_version=_LEGACY_WRITER_OBSERVATION_API_VERSION,
+        kind=_LEGACY_WRITER_OBSERVATION_KIND,
+        created_at=envelope.created_at,
+        repository_owner=envelope.repository_owner,
+        repository_name=envelope.repository_name,
+        workflow=envelope.workflow,
+        run_id=envelope.run_id,
+        run_attempt=envelope.run_attempt,
+    )
 
 
 def _plan_envelope_or_collect(
@@ -725,7 +787,7 @@ def _plan_envelope_or_collect(
     issues: list[ValidationIssue],
 ) -> CommonEnvelope | None:
     try:
-        return validate_common_envelope(
+        return _validate_common_envelope_with_versions(
             plan,
             api_version=API_VERSIONS_BY_KIND[CiValidationKind.PLAN.value],
             kind=CiValidationKind.PLAN,
@@ -850,7 +912,7 @@ def _validate_writer_mapping(
         )
 
 
-def _validate_assignments(  # noqa: C901
+def _validate_assignments(
     assignments: Sequence[object],
     *,
     run_id: str,
@@ -861,7 +923,6 @@ def _validate_assignments(  # noqa: C901
     previous_work_group_id: str | None = None
     seen_work_groups: set[str] = set()
     seen_receipt_refs: set[str] = set()
-    seen_observation_refs: set[str] = set()
     for index, assignment in enumerate(assignments):
         path = f"$.assignments[{index}]"
         if not isinstance(assignment, Mapping):
@@ -893,7 +954,7 @@ def _validate_assignments(  # noqa: C901
                 f"{path}.work-group-id",
                 issues,
             )
-            expected_receipt_ref = ci_validation_receipt_artifact_ref(
+            expected_receipt_ref = _ci_validation_receipt_artifact_ref(
                 run_id=run_id,
                 run_attempt=run_attempt,
                 work_group_id=work_group_id,
@@ -905,7 +966,7 @@ def _validate_assignments(  # noqa: C901
                         "must match work-group receipt ref",
                     ),
                 )
-            if assignment.get("assignment-id") != ci_validation_assignment_id(
+            if assignment.get("assignment-id") != _ci_validation_assignment_id(
                 work_group_id=work_group_id,
             ):
                 issues.append(
@@ -914,39 +975,12 @@ def _validate_assignments(  # noqa: C901
                         "must match derived work-group assignment id",
                     ),
                 )
-        assignment_id = assignment.get("assignment-id")
-        if isinstance(assignment_id, str):
-            expected_observation_ref = (
-                ci_validation_writer_observation_artifact_ref(
-                    run_id=run_id,
-                    run_attempt=run_attempt,
-                    assignment_id=assignment_id,
-                )
-            )
-            if (
-                assignment.get("writer-observation-ref")
-                != expected_observation_ref
-            ):
-                issues.append(
-                    ValidationIssue(
-                        f"{path}.writer-observation-ref",
-                        "must match assignment observation ref",
-                    ),
-                )
         receipt_ref = assignment.get("receipt-artifact-ref")
         if isinstance(receipt_ref, str):
             _record_unique(
                 seen_receipt_refs,
                 receipt_ref,
                 f"{path}.receipt-artifact-ref",
-                issues,
-            )
-        observation_ref = assignment.get("writer-observation-ref")
-        if isinstance(observation_ref, str):
-            _record_unique(
-                seen_observation_refs,
-                observation_ref,
-                f"{path}.writer-observation-ref",
                 issues,
             )
     if seen_work_groups != executable_work_groups:
@@ -989,11 +1023,6 @@ def _validate_assignment_shape(
     _validate_artifact_ref(
         assignment.get("receipt-artifact-ref"),
         f"{path}.receipt-artifact-ref",
-        issues,
-    )
-    _validate_artifact_ref(
-        assignment.get("writer-observation-ref"),
-        f"{path}.writer-observation-ref",
         issues,
     )
 

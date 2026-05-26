@@ -10,10 +10,11 @@ import hashlib
 import re
 from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast
 
 from three_workflow_release_contracts.ci_validation import (
     API_VERSIONS_BY_KIND,
+    DETAILS_BY_DIAGNOSTIC_CODE,
     CiValidationKind,
     CommonEnvelope,
     DiagnosticDetail,
@@ -82,37 +83,38 @@ _MAX_VALIDATION_ARTIFACTS = 20
 _MAX_PREFINAL_VALIDATION_ARTIFACTS = (
     _MAX_VALIDATION_ARTIFACTS - _EXPECTED_FINAL_VALIDATION_ARTIFACTS
 )
+_BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS = 12
+_BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS = 4
 _MAX_TOTAL_JOBS = 18
 _MAX_WINDOWS_JOBS = 8
 _MAX_EXECUTION_BATCHES = 13
 _G1_FINAL_EVIDENCE_DETAILS = frozenset(
     {
-        "aggregate-duration-exceeded",
         "aggregate-evidence-manifest-missing",
         "aggregate-evidence-manifest-duplicate",
         "aggregate-evidence-manifest-unreadable",
         "aggregate-evidence-manifest-malformed",
         "aggregate-evidence-manifest-non-canonical",
         "aggregate-evidence-manifest-digest-mismatch",
-        "aggregate-summary-missing",
-        "aggregate-summary-duplicate",
-        "aggregate-summary-unreadable",
-        "aggregate-summary-malformed",
-        "aggregate-summary-non-canonical",
-        "aggregate-summary-digest-mismatch",
-        "aggregate-summary-without-manifest",
-        "required-input-artifact-failure",
-        "execution-batch-manifest-missing",
-        "execution-batch-manifest-duplicate",
-        "execution-batch-manifest-unreadable",
-        "execution-batch-manifest-malformed",
-        "execution-batch-manifest-non-canonical",
-        "execution-batch-manifest-digest-mismatch",
-        "execution-batch-manifest-plan-mismatch",
-        "namespace-overflow",
+    }
+)
+_AGGREGATE_MANIFEST_AUTHORITY_DETAILS = frozenset(
+    {
+        "aggregate-evidence-manifest-missing",
+        "aggregate-evidence-manifest-duplicate",
+        "aggregate-evidence-manifest-unreadable",
+        "aggregate-evidence-manifest-malformed",
+        "aggregate-evidence-manifest-non-canonical",
+        "aggregate-evidence-manifest-digest-mismatch",
     }
 )
 _G1_DETAILS_BY_DIAGNOSTIC_CODE = {
+    DiagnosticFamily.REQUEST_INVALID.value: DETAILS_BY_DIAGNOSTIC_CODE[
+        DiagnosticFamily.REQUEST_INVALID.value
+    ],
+    DiagnosticFamily.INVALID_PLAN.value: DETAILS_BY_DIAGNOSTIC_CODE[
+        DiagnosticFamily.INVALID_PLAN.value
+    ],
     DiagnosticFamily.REQUIRED_EVIDENCE_MISSING.value: frozenset(
         {DiagnosticDetail.MISSING_BUNDLE.value}
     ),
@@ -126,8 +128,14 @@ _G1_DETAILS_BY_DIAGNOSTIC_CODE = {
         {
             DiagnosticDetail.MALFORMED_BUNDLE.value,
             DiagnosticDetail.MISSING_BUNDLE.value,
+            DiagnosticDetail.DUPLICATE_BUNDLE_CANDIDATES.value,
+            DiagnosticDetail.BUNDLE_PRODUCER_UNVERIFIED.value,
+            DiagnosticDetail.BUNDLE_METADATA_AUTHORITY_INVALID.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MISSING.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DUPLICATE.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_UNREADABLE.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MALFORMED.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_NON_CANONICAL.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DIGEST_MISMATCH.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_PLAN_MISMATCH.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_BUNDLE_REF_MISMATCH.value,
@@ -135,12 +143,22 @@ _G1_DETAILS_BY_DIAGNOSTIC_CODE = {
     ),
     DiagnosticFamily.NAMESPACE_CLOSURE_FAILURE.value: frozenset(
         {
+            DiagnosticDetail.NAMESPACE_ENUMERATION_UNAVAILABLE.value,
             DiagnosticDetail.UNEXPECTED_CONTRACT_ARTIFACT.value,
             DiagnosticDetail.NAMESPACE_OVERFLOW.value,
         }
     ),
     DiagnosticFamily.AGGREGATE_DURATION_EXCEEDED.value: frozenset(
         {DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value}
+    ),
+    DiagnosticFamily.REQUIRED_INPUT_ARTIFACT_FAILURE.value: frozenset(
+        {DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value}
+    ),
+    DiagnosticFamily.AGGREGATE_SUMMARY_WITHOUT_MANIFEST.value: frozenset(
+        {DiagnosticDetail.AGGREGATE_SUMMARY_WITHOUT_MANIFEST.value}
+    ),
+    DiagnosticFamily.FINAL_PRODUCER_UNVERIFIED.value: frozenset(
+        {DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value}
     ),
     DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value: _G1_FINAL_EVIDENCE_DETAILS,
 }
@@ -260,6 +278,10 @@ _DEPENDENCY_RESULT_KEYS = frozenset(
     {
         "work-group-id",
         "source-batch-id",
+        "upstream-artifact-ref",
+        "upstream-bundle-id",
+        "upstream-artifact-instance-id",
+        "upstream-admitted-candidate-id",
         "outcome",
         "admitted-for-gating",
     },
@@ -339,6 +361,7 @@ _CANDIDATE_KEYS = frozenset(
 _UNEXPECTED_KEYS = frozenset(
     {
         "physical-artifact-name",
+        "observed-physical-artifact-name",
         "artifact-instance-id",
         "classification",
         "diagnostics",
@@ -398,6 +421,7 @@ _FINAL_AGGREGATE_EVIDENCE_MANIFEST_ENTRY_KEYS = frozenset(
         "artifact-instance-id",
         "content-digest",
         "producer-verified",
+        "authority-diagnostics",
     },
 )
 _FINAL_AGGREGATE_SUMMARY_ENTRY_KEYS = frozenset(
@@ -405,6 +429,23 @@ _FINAL_AGGREGATE_SUMMARY_ENTRY_KEYS = frozenset(
         "artifact-ref",
     },
 )
+
+AggregateSummaryFailureKind = Literal[
+    "invalid-plan",
+    "fail-closed",
+    "required-evidence-missing",
+    "required-evidence-skipped",
+    "blocking-validation-failure",
+    "inadmissible-batch-evidence",
+    "namespace-closure-failure",
+    "aggregate-duration-exceeded",
+    "required-input-artifact-failure",
+    "aggregate-summary-without-manifest",
+    "final-producer-unverified",
+    "final-evidence-failure",
+]
+FailureKind = AggregateSummaryFailureKind
+
 _SUMMARY_REASON_KEYS = frozenset(
     {
         "invalid-plan",
@@ -415,6 +456,9 @@ _SUMMARY_REASON_KEYS = frozenset(
         "inadmissible-batch-evidence",
         "namespace-closure-failure",
         "aggregate-duration-exceeded",
+        "required-input-artifact-failure",
+        "aggregate-summary-without-manifest",
+        "final-producer-unverified",
         "final-evidence-failure",
     },
 )
@@ -569,6 +613,25 @@ _INVALID_PLAN_FAILURE = {
     },
     "message": "No authoritative validation plan was available.",
 }
+_INVALID_PLAN_INPUT_FALLBACK_DETAILS = {
+    "validation-plan": {
+        "missing": DiagnosticDetail.PLAN_MISSING.value,
+        "duplicate": DiagnosticDetail.PLAN_DUPLICATE.value,
+        "inadmissible": DiagnosticDetail.SCHEMA_INVALID.value,
+    },
+    "changed-files-snapshot": {
+        "missing": DiagnosticDetail.CHANGED_FILES_SNAPSHOT_MISSING.value,
+        "duplicate": DiagnosticDetail.CHANGED_FILES_SNAPSHOT_DUPLICATE.value,
+        "inadmissible": (
+            DiagnosticDetail.CHANGED_FILES_SNAPSHOT_SCHEMA_INVALID.value
+        ),
+    },
+    "fact-snapshot": {
+        "missing": DiagnosticDetail.FACT_SNAPSHOT_MISSING.value,
+        "duplicate": DiagnosticDetail.FACT_SNAPSHOT_DUPLICATE.value,
+        "inadmissible": DiagnosticDetail.FACT_SNAPSHOT_SCHEMA_INVALID.value,
+    },
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -577,6 +640,21 @@ class CiValidationExecutionBatchMaterialization:
 
     manifest: Mapping[str, object]
     matrix: Mapping[str, object]
+
+
+class _TrustedDependencyBundle(dict[str, object]):
+    """Validated dependency bundle plus aggregate-admitted identity metadata."""
+
+    def __init__(
+        self,
+        bundle: Mapping[str, object],
+        *,
+        artifact_instance_id: str,
+        admitted_candidate_id: str,
+    ) -> None:
+        super().__init__(bundle)
+        self.artifact_instance_id = artifact_instance_id
+        self.admitted_candidate_id = admitted_candidate_id
 
 
 def ci_validation_execution_batch_manifest_content_digest(
@@ -1213,6 +1291,7 @@ def _validate_ci_validation_execution_batch_manifest(  # noqa: C901, PLR0913
         len(batches),
         batches,
         plan_work_groups,
+        plan if plan_context_valid else None,
         issues,
     )
     if issues:
@@ -1613,6 +1692,8 @@ def validate_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
         batch,
         execution_batch_manifest,
         bundle,
+        plan,
+        fact_snapshot,
         issues,
     )
     if authorizing_context_supplied:
@@ -2156,7 +2237,7 @@ def freeze_ci_validation_aggregate_summary(  # noqa: PLR0913
         "request": dict(_mapping(projection["request"])),
         "scheduled-full": dict(_mapping(projection["scheduled-full"])),
         "verdict": verdict,
-        "reason": dict(reason),
+        "reason": _summary_reason_with_defaults(reason),
         "budgets": dict(budgets),
         "diagnostics": sorted(
             (dict(item) for item in diagnostics),
@@ -2177,14 +2258,61 @@ def freeze_ci_validation_aggregate_summary(  # noqa: PLR0913
         "work-groups": dict(work_groups),
         "proof-admissibility": _PROOF_ADMISSIBILITY,
     }
+    invalid_plan_input_detail = _invalid_plan_failure_detail_from_inputs(
+        aggregate_evidence_manifest_document
+    )
+    if invalid_plan_input_detail is not None:
+        summary_reason = summary.get("reason")
+        if isinstance(summary_reason, MutableMapping):
+            cast("MutableMapping[str, object]", summary_reason)[
+                "invalid-plan"
+            ] = True
     if _is_invalid_plan_summary(summary):
-        _force_invalid_plan_summary_fields(summary)
+        if plan is not None:
+            invalid_plan_projection = (
+                _invalid_plan_summary_projection_from_context(
+                    plan,
+                    aggregate_evidence_manifest_document,
+                )
+            )
+            summary["plan-id"] = plan.get("plan-id")
+            summary["plan-digest"] = _verified_plan_digest(plan)
+            summary["mode"] = invalid_plan_projection["mode"]
+            summary["validation-tree"] = dict(
+                _mapping(invalid_plan_projection["validation-tree"])
+            )
+            summary["affected-range"] = dict(
+                _mapping(invalid_plan_projection["affected-range"])
+            )
+            summary["request"] = dict(
+                _mapping(invalid_plan_projection["request"])
+            )
+            summary["scheduled-full"] = dict(
+                _mapping(invalid_plan_projection["scheduled-full"])
+            )
+        _force_invalid_plan_summary_fields(
+            summary,
+            preserve_manifest_claim=(
+                aggregate_evidence_manifest_document is not None
+                or bool(
+                    _summary_aggregate_manifest_authority_failure_details(
+                        summary
+                    )
+                )
+            ),
+            preserve_projection=plan is not None,
+            invalid_plan_detail=invalid_plan_input_detail,
+        )
     missing_manifest_fail_closed = _summary_has_missing_manifest_failure(
         summary
+    )
+    manifest_authority_fail_closed = bool(
+        _summary_aggregate_manifest_authority_failure_details(summary)
     )
     if (
         not _is_invalid_plan_summary(summary)
         and not missing_manifest_fail_closed
+        and not manifest_authority_fail_closed
         and aggregate_evidence_manifest_document is None
         and _summary_freezer_requires_manifest_document(
             summary,
@@ -2213,6 +2341,17 @@ def freeze_ci_validation_aggregate_summary(  # noqa: PLR0913
         _require_aggregate_evidence_manifest=missing_manifest_fail_closed,
     )
     return summary
+
+
+def _summary_reason_with_defaults(
+    reason: Mapping[str, object],
+) -> dict[str, object]:
+    summary_reason: dict[str, object] = dict.fromkeys(
+        _SUMMARY_REASON_KEYS,
+        False,
+    )
+    summary_reason.update(reason)
+    return summary_reason
 
 
 def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, PLR0915
@@ -2269,7 +2408,20 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
         envelope, expected_run_id, expected_run_attempt, issues
     )
     _validate_summary_ref(summary, envelope, issues)
-    _validate_plan_nullable_fields(summary, plan, envelope, issues)
+    invalid_plan_summary = _is_invalid_plan_summary(summary)
+    invalid_plan_detail = (
+        _invalid_plan_failure_detail_from_summary(summary)
+        if invalid_plan_summary
+        else None
+    )
+    aggregate_manifest_plan_unbound = (
+        aggregate_evidence_manifest is not None
+        and _aggregate_manifest_has_no_authoritative_plan(
+            aggregate_evidence_manifest
+        )
+    )
+    identity_plan = None if aggregate_manifest_plan_unbound else plan
+    _validate_plan_nullable_fields(summary, identity_plan, envelope, issues)
     _validate_supplied_plan_document_for_aggregate(
         plan,
         envelope,
@@ -2288,7 +2440,13 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
     authoritative_execution_batch_manifest = None
     if execution_batch_manifest_authoritative:
         authoritative_execution_batch_manifest = execution_batch_manifest
-    if plan is None and aggregate_evidence_manifest is None:
+    if (
+        plan is None
+        and aggregate_evidence_manifest is None
+        and not _invalid_plan_detail_allows_retained_plan_context(
+            invalid_plan_detail
+        )
+    ):
         _validate_null_plan_identity(summary, "$", issues)
     if (
         plan is None
@@ -2298,7 +2456,13 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
         )
     ):
         _validate_null_plan_identity(summary, "$", issues)
-    if _is_invalid_plan_summary(summary):
+    if (
+        invalid_plan_summary
+        and plan is None
+        and not _invalid_plan_detail_allows_retained_plan_context(
+            invalid_plan_detail
+        )
+    ):
         _validate_null_plan_identity(summary, "$", issues)
     elif authoritative_execution_batch_manifest is not None:
         _validate_plan_identity_matches(
@@ -2310,19 +2474,39 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
         )
     if summary.get("mode") not in _SUMMARY_MODES:
         issues.append(ValidationIssue("$.mode", "is not registered"))
+    aggregate_manifest_authority_failure_details = (
+        _aggregate_manifest_authority_failure_details_from_context(
+            summary,
+            aggregate_evidence_manifest,
+        )
+    )
     require_non_authoritative_manifest = (
         aggregate_evidence_manifest is None
+        and not aggregate_manifest_authority_failure_details
         and (
-            _is_invalid_plan_summary(summary)
-            or _require_aggregate_evidence_manifest
+            (
+                invalid_plan_summary
+                and not _summary_manifest_claim_has_content_digest(summary)
+            )
+            or (
+                _require_aggregate_evidence_manifest
+                and not (
+                    invalid_plan_summary
+                    and _summary_manifest_claim_has_content_digest(summary)
+                )
+            )
             or _summary_has_missing_manifest_failure(summary)
         )
+    )
+    skip_manifest_digest_match = bool(
+        aggregate_manifest_authority_failure_details
     )
     manifest_claim = _validate_summary_manifest_claim(
         summary.get("aggregate-evidence-manifest"),
         envelope,
         aggregate_evidence_manifest,
         require_non_authoritative_manifest=require_non_authoritative_manifest,
+        skip_manifest_digest_match=skip_manifest_digest_match,
         issues=issues,
     )
     _validate_final_artifacts(
@@ -2331,7 +2515,14 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
         manifest_claim,
         aggregate_evidence_manifest,
         require_non_authoritative_manifest=require_non_authoritative_manifest,
+        skip_manifest_digest_match=skip_manifest_digest_match,
         issues=issues,
+    )
+    _validate_summary_manifest_authority_diagnostics_match_context(
+        summary,
+        aggregate_manifest_authority_failure_details,
+        aggregate_evidence_manifest,
+        issues,
     )
     _validate_validation_tree(
         summary.get("validation-tree"),
@@ -2371,7 +2562,9 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
     _validate_summary_bundles(summary.get("batch-bundles"), envelope, issues)
     _validate_summary_bundle_ids_match_execution_manifest(
         summary.get("batch-bundles"),
-        authoritative_execution_batch_manifest,
+        None
+        if invalid_plan_summary
+        else authoritative_execution_batch_manifest,
         issues,
     )
     _validate_no_summary_admitted_candidates_without_manifest(
@@ -2401,6 +2594,9 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
         if aggregate_evidence_manifest is not None
         else False
     )
+    invalid_plan_input_failure_details = _invalid_plan_input_failure_details(
+        aggregate_evidence_manifest
+    )
     _validate_summary_derived_status(
         summary,
         summary_evidence_rows,
@@ -2408,9 +2604,28 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
         namespace_failure_details=namespace_failure_details,
         required_input_failure=required_input_failure,
         aggregate_duration_exceeded=_summary_duration_exceeded(summary),
+        aggregate_manifest_producer_unverified=(
+            _summary_aggregate_manifest_producer_unverified(summary)
+        ),
+        aggregate_manifest_authority_failure_details=(
+            aggregate_manifest_authority_failure_details
+        ),
         aggregate_summary_without_manifest=(
-            not _is_invalid_plan_summary(summary)
+            not invalid_plan_summary
             and aggregate_evidence_manifest is None
+            and (
+                not _summary_manifest_claim_has_content_digest(summary)
+                or not _summary_aggregate_manifest_authority_failure_details(
+                    summary
+                )
+            )
+        ),
+        invalid_plan_input_failure_details=invalid_plan_input_failure_details,
+        invalid_plan_expected_projection=(
+            _invalid_plan_summary_projection_from_context(
+                plan,
+                aggregate_evidence_manifest,
+            )
         ),
         issues=issues,
     )
@@ -2418,7 +2633,15 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
     # Missing aggregate evidence manifests are represented as an explicit
     # final-evidence-failure cause in the summary itself.
     if aggregate_evidence_manifest is not None:
-        if execution_batch_manifest is None:
+        execution_batch_manifest_input_not_valid = (
+            _aggregate_execution_batch_manifest_input_not_valid(
+                aggregate_evidence_manifest
+            )
+        )
+        if (
+            execution_batch_manifest is None
+            and not execution_batch_manifest_input_not_valid
+        ):
             issues.append(
                 ValidationIssue(
                     "execution_batch_manifest",
@@ -3078,7 +3301,7 @@ def _materializer_batch_specs(
             groups,
         )
     )
-    specs_by_key: dict[str, dict[str, object]] = {}
+    specs: list[dict[str, object]] = []
     for work_group_id in ordered_group_ids:
         group = groups[work_group_id]
         key_payload = _materializer_compatibility_key(
@@ -3086,16 +3309,28 @@ def _materializer_batch_specs(
             artifact_obligations=artifact_obligations,
         )
         key = canonical_json_digest(key_payload)
-        spec = specs_by_key.setdefault(
-            key,
-            {
+        spec = next(
+            (
+                item
+                for item in specs
+                if item["key"] == key
+                and not _materializer_batch_specs_would_cycle(
+                    specs,
+                    groups,
+                    candidate_spec=item,
+                    candidate_work_group_id=work_group_id,
+                )
+            ),
+            None,
+        )
+        if spec is None:
+            spec = {
                 "key": key,
                 "key-payload": key_payload,
                 "work-group-ids": [],
-            },
-        )
+            }
+            specs.append(spec)
         cast("list[str]", spec["work-group-ids"]).append(work_group_id)
-    specs = list(specs_by_key.values())
     for spec in specs:
         profile = _materializer_compatibility_profile(
             groups=groups,
@@ -3108,6 +3343,87 @@ def _materializer_batch_specs(
             work_group_ids=cast("Sequence[str]", spec["work-group-ids"]),
         )
     return sorted(specs, key=lambda item: str(item["batch-id"]))
+
+
+def _materializer_batch_specs_would_cycle(
+    specs: Sequence[Mapping[str, object]],
+    groups: Mapping[str, Mapping[str, object]],
+    *,
+    candidate_spec: Mapping[str, object],
+    candidate_work_group_id: str,
+) -> bool:
+    batch_by_work_group = _materializer_candidate_batch_assignments(
+        specs,
+        groups,
+        candidate_spec=candidate_spec,
+        candidate_work_group_id=candidate_work_group_id,
+    )
+    return _directed_graph_has_cycle(
+        _materializer_batch_dependency_graph(groups, batch_by_work_group)
+    )
+
+
+def _materializer_candidate_batch_assignments(
+    specs: Sequence[Mapping[str, object]],
+    groups: Mapping[str, Mapping[str, object]],
+    *,
+    candidate_spec: Mapping[str, object],
+    candidate_work_group_id: str,
+) -> dict[str, str]:
+    batch_by_work_group: dict[str, str] = {}
+    for index, spec in enumerate(specs):
+        batch_key = f"batch:{index}"
+        work_group_ids = list(cast("Sequence[str]", spec["work-group-ids"]))
+        if spec is candidate_spec:
+            work_group_ids.append(candidate_work_group_id)
+        for work_group_id in work_group_ids:
+            batch_by_work_group[work_group_id] = batch_key
+    for work_group_id in groups:
+        batch_by_work_group.setdefault(
+            work_group_id, f"work-group:{work_group_id}"
+        )
+    return batch_by_work_group
+
+
+def _materializer_batch_dependency_graph(
+    groups: Mapping[str, Mapping[str, object]],
+    batch_by_work_group: Mapping[str, str],
+) -> dict[str, set[str]]:
+    dependencies_by_batch: dict[str, set[str]] = {
+        batch_id: set() for batch_id in batch_by_work_group.values()
+    }
+    for work_group_id, group in groups.items():
+        consumer_batch = batch_by_work_group[work_group_id]
+        for dependency in _sequence(group.get("depends-on", [])):
+            if not isinstance(dependency, str) or dependency not in groups:
+                continue
+            producer_batch = batch_by_work_group[dependency]
+            if producer_batch != consumer_batch:
+                dependencies_by_batch[consumer_batch].add(producer_batch)
+    return dependencies_by_batch
+
+
+def _directed_graph_has_cycle(
+    dependencies_by_node: Mapping[str, set[str]],
+) -> bool:
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> bool:
+        if node_id in visited:
+            return False
+        if node_id in visiting:
+            return True
+        visiting.add(node_id)
+        has_cycle = any(
+            visit(dependency)
+            for dependency in dependencies_by_node.get(node_id, set())
+        )
+        visiting.remove(node_id)
+        visited.add(node_id)
+        return has_cycle
+
+    return any(visit(node_id) for node_id in dependencies_by_node)
 
 
 def _materializer_compatibility_key(
@@ -3451,10 +3767,43 @@ def _materializer_budget(  # noqa: PLR0913
         batches,
         _work_groups_by_id(plan),
     )
+    fixed_lower_bounds_apply = _fixed_lower_bounds_apply(plan, batch_count)
+    min_total_jobs = (
+        _BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS
+        if fixed_lower_bounds_apply
+        else actual_total_jobs
+        if batch_count
+        else 0
+    )
+    min_windows_jobs = (
+        _BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS
+        if fixed_lower_bounds_apply
+        else actual_windows_jobs
+        if batch_count
+        else 0
+    )
+    lower_bound_issues: list[ValidationIssue] = []
+    if fixed_lower_bounds_apply:
+        if actual_total_jobs < _BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS:
+            lower_bound_issues.append(
+                ValidationIssue(
+                    "budget.actual-total-jobs",
+                    "must meet broad/full/global min total jobs",
+                )
+            )
+        if actual_windows_jobs < _BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS:
+            lower_bound_issues.append(
+                ValidationIssue(
+                    "budget.actual-windows-jobs",
+                    "must meet broad/full/global min windows jobs",
+                )
+            )
+    if lower_bound_issues:
+        raise ContractValidationError(lower_bound_issues)
     return {
-        "min-total-jobs": actual_total_jobs if batch_count else 0,
+        "min-total-jobs": min_total_jobs,
         "max-total-jobs": _MAX_TOTAL_JOBS,
-        "min-windows-jobs": actual_windows_jobs if batch_count else 0,
+        "min-windows-jobs": min_windows_jobs,
         "max-windows-jobs": _MAX_WINDOWS_JOBS,
         "non-batch-control-plane-job-count": non_batch_control_plane_job_count,
         "actual-total-jobs": actual_total_jobs,
@@ -3474,6 +3823,77 @@ def _materializer_budget(  # noqa: PLR0913
         "aggregate-target-duration-seconds": aggregate_target_duration_seconds,
         "aggregate-max-duration-seconds": aggregate_max_duration_seconds,
     }
+
+
+def _fixed_lower_bounds_apply(
+    plan: Mapping[str, object] | None,
+    batch_count: int,
+) -> bool:
+    if plan is None or batch_count == 0:
+        return False
+    if plan.get("verdict-intent") != "executable":
+        return False
+    classification = plan.get("classification")
+    if not isinstance(classification, Mapping):
+        return False
+    if classification.get("lightweight-only") is True:
+        return False
+    return _plan_has_broad_full_global_scope(plan, classification)
+
+
+def _plan_has_broad_full_global_scope(
+    plan: Mapping[str, object],
+    classification: Mapping[str, object],
+) -> bool:
+    scheduled_full = plan.get("scheduled-full")
+    scheduled_full_enabled = (
+        isinstance(scheduled_full, Mapping)
+        and scheduled_full.get("enabled") is True
+    )
+    return (
+        plan.get("mode") == "scheduled_full"
+        or scheduled_full_enabled
+        or bool(_sequence(classification.get("broad-expansions", [])))
+        or any(
+            _impact_requires_broad_full_global_scope(impact)
+            for impact in _sequence(classification.get("impacts", []))
+        )
+        or any(
+            _provenance_requires_broad_full_global_scope(provenance)
+            for provenance in _sequence(
+                classification.get("subject-selection-provenance", [])
+            )
+        )
+    )
+
+
+def _impact_requires_broad_full_global_scope(impact: object) -> bool:
+    if not isinstance(impact, Mapping):
+        return False
+    coverage_target = impact.get("coverage-target")
+    requires = impact.get("requires")
+    return (
+        impact.get("category") == "global"
+        or (
+            isinstance(coverage_target, Mapping)
+            and coverage_target.get("type") == "global"
+        )
+        or (
+            isinstance(requires, Mapping)
+            and requires.get("broad-expansion") is True
+        )
+    )
+
+
+def _provenance_requires_broad_full_global_scope(provenance: object) -> bool:
+    if not isinstance(provenance, Mapping):
+        return False
+    return (
+        provenance.get("selection-kind")
+        in {"broad-expansion", "scheduled-full"}
+        or provenance.get("scheduled-full-source") is True
+        or provenance.get("broad-expansion-id") is not None
+    )
 
 
 def _materializer_max_execution_batches(
@@ -3516,11 +3936,12 @@ def _expected_input_non_bundle_validation_artifacts(
     return count
 
 
-def _validate_budget(  # noqa: C901,PLR0912,PLR0915
+def _validate_budget(  # noqa: C901,PLR0912,PLR0913,PLR0915
     value: object,
     batch_count: int,
     batches: Sequence[Mapping[str, object]],
     plan_work_groups: Mapping[str, Mapping[str, object]],
+    plan: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> None:
     budget = _validate_object(value, _BUDGET_KEYS, "$.budget", issues)
@@ -3732,6 +4153,61 @@ def _validate_budget(  # noqa: C901,PLR0912,PLR0915
             ),
         )
     lower_bounds_apply = batch_count > 0
+    fixed_lower_bounds_apply = _fixed_lower_bounds_apply(plan, batch_count)
+    if batch_count == 0:
+        if isinstance(min_total, int) and min_total != 0:
+            issues.append(
+                ValidationIssue(
+                    "$.budget.min-total-jobs",
+                    "must be zero for empty batch manifests",
+                )
+            )
+        if isinstance(min_windows, int) and min_windows != 0:
+            issues.append(
+                ValidationIssue(
+                    "$.budget.min-windows-jobs",
+                    "must be zero for empty batch manifests",
+                )
+            )
+    if fixed_lower_bounds_apply:
+        if isinstance(min_total, int) and (
+            min_total < _BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS
+        ):
+            issues.append(
+                ValidationIssue(
+                    "$.budget.min-total-jobs",
+                    "must be at least 12 for broad/full/global "
+                    "materializations",
+                )
+            )
+        if isinstance(min_windows, int) and (
+            min_windows < _BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS
+        ):
+            issues.append(
+                ValidationIssue(
+                    "$.budget.min-windows-jobs",
+                    "must be at least 4 for broad/full/global materializations",
+                )
+            )
+        if isinstance(actual_total, int) and (
+            actual_total < _BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS
+        ):
+            issues.append(
+                ValidationIssue(
+                    "$.budget.actual-total-jobs",
+                    "must be at least 12 for broad/full/global "
+                    "materializations",
+                )
+            )
+        if isinstance(actual_windows, int) and (
+            actual_windows < _BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS
+        ):
+            issues.append(
+                ValidationIssue(
+                    "$.budget.actual-windows-jobs",
+                    "must be at least 4 for broad/full/global materializations",
+                )
+            )
     if (
         lower_bounds_apply
         and isinstance(min_total, int)
@@ -5103,11 +5579,13 @@ def _validate_execution_tree(
             )
 
 
-def _validate_selector_results(
+def _validate_selector_results(  # noqa: PLR0913
     value: object,
     batch: Mapping[str, object] | None,
     execution_batch_manifest: Mapping[str, object] | None,
     bundle: Mapping[str, object],
+    plan: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> None:
     if not isinstance(value, Sequence) or isinstance(value, str | bytes):
@@ -5136,7 +5614,7 @@ def _validate_selector_results(
         if not isinstance(result, Mapping):
             issues.append(ValidationIssue(path, "must be an object"))
             continue
-        _validate_selector_result(result, path, issues)
+        _validate_selector_result(result, path, issues, plan, fact_snapshot)
         if index < len(ordered):
             expected = ordered[index]
             _validate_selector_result_matches_slot(
@@ -5153,6 +5631,8 @@ def _validate_selector_result(
     result: Mapping[str, object],
     path: str,
     issues: list[ValidationIssue],
+    plan: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
 ) -> None:
     _validate_root_keys(result, _SELECTOR_RESULT_KEYS, path, issues)
     _validate_local_id(
@@ -5210,6 +5690,9 @@ def _validate_selector_result(
         result.get("evidence"),
         f"{path}.evidence",
         issues,
+        selector_result=result,
+        plan=plan,
+        fact_snapshot=fact_snapshot,
     )
     if (
         evidence_outcome is not None
@@ -5352,6 +5835,11 @@ def _validate_authorizing_batch_dependency_evidence(  # noqa: C901, PLR0912, PLR
                     else authoritative.get(work_group_id)
                 )
             if actual is None:
+                if _is_unresolved_dependency_result(
+                    dependency,
+                    execution_batch_manifest,
+                ):
+                    continue
                 issues.append(
                     ValidationIssue(
                         item_path,
@@ -5359,7 +5847,15 @@ def _validate_authorizing_batch_dependency_evidence(  # noqa: C901, PLR0912, PLR
                     )
                 )
                 continue
-            for key in ("outcome", "admitted-for-gating", "source-batch-id"):
+            for key in (
+                "outcome",
+                "admitted-for-gating",
+                "source-batch-id",
+                "upstream-artifact-ref",
+                "upstream-bundle-id",
+                "upstream-artifact-instance-id",
+                "upstream-admitted-candidate-id",
+            ):
                 if dependency.get(key) != actual.get(key):
                     issues.append(
                         ValidationIssue(
@@ -5375,11 +5871,44 @@ def _validate_authorizing_batch_dependency_evidence(  # noqa: C901, PLR0912, PLR
             same_batch_authoritative[work_group_id] = {
                 "work-group-id": work_group_id,
                 "source-batch-id": current_batch_id,
+                "upstream-artifact-ref": None,
+                "upstream-bundle-id": None,
+                "upstream-artifact-instance-id": None,
+                "upstream-admitted-candidate-id": None,
                 "outcome": outcome,
                 "admitted-for-gating": _selector_outcome_admitted_for_gating(
                     selector.get("outcome")
                 ),
             }
+
+
+def _is_unresolved_dependency_result(
+    dependency: Mapping[str, object],
+    execution_batch_manifest: Mapping[str, object] | None,
+) -> bool:
+    work_group_id = dependency.get("work-group-id")
+    source_batch_id = dependency.get("source-batch-id")
+    if not isinstance(work_group_id, str) or not isinstance(
+        source_batch_id, str
+    ):
+        return False
+    if _selector_batch_positions(execution_batch_manifest).get(
+        work_group_id
+    ) != source_batch_id:
+        return False
+    if dependency.get("outcome") not in {"missing", "skipped"}:
+        return False
+    if dependency.get("admitted-for-gating") is not False:
+        return False
+    return not any(
+        dependency.get(key) is not None
+        for key in (
+            "upstream-artifact-ref",
+            "upstream-bundle-id",
+            "upstream-artifact-instance-id",
+            "upstream-admitted-candidate-id",
+        )
+    )
 
 
 def _reject_dependency_results_without_manifest(
@@ -5485,6 +6014,8 @@ def _authoritative_dependency_evidence_lookup(  # noqa: C901, PLR0912, PLR0913
             outcome = _selector_outcome_to_summary_outcome(
                 selector.get("outcome")
             )
+            artifact_ref = dependency_bundle.get("artifact-ref")
+            bundle_id = dependency_bundle.get("bundle-id")
             if work_group_id in authoritative:
                 issues.append(
                     ValidationIssue(
@@ -5493,9 +6024,40 @@ def _authoritative_dependency_evidence_lookup(  # noqa: C901, PLR0912, PLR0913
                     )
                 )
                 continue
+            artifact_instance_id = getattr(
+                dependency_bundle,
+                "artifact_instance_id",
+                None,
+            )
+            admitted_candidate_id = getattr(
+                dependency_bundle,
+                "admitted_candidate_id",
+                None,
+            )
+            if not isinstance(artifact_instance_id, str) or not isinstance(
+                admitted_candidate_id, str
+            ):
+                issues.append(
+                    ValidationIssue(
+                        "dependency_evidence_bundles",
+                        "requires trusted upstream artifact identity metadata",
+                    )
+                )
             authoritative[work_group_id] = {
                 "work-group-id": work_group_id,
                 "source-batch-id": batch_id,
+                "upstream-artifact-ref": artifact_ref
+                if isinstance(artifact_ref, str)
+                else None,
+                "upstream-bundle-id": bundle_id
+                if isinstance(bundle_id, str)
+                else None,
+                "upstream-artifact-instance-id": artifact_instance_id
+                if isinstance(artifact_instance_id, str)
+                else None,
+                "upstream-admitted-candidate-id": admitted_candidate_id
+                if isinstance(admitted_candidate_id, str)
+                else None,
                 "outcome": outcome,
                 "admitted-for-gating": _selector_outcome_admitted_for_gating(
                     selector.get("outcome")
@@ -5504,7 +6066,7 @@ def _authoritative_dependency_evidence_lookup(  # noqa: C901, PLR0912, PLR0913
     return authoritative
 
 
-def _validate_dependency_results(  # noqa: C901,PLR0912
+def _validate_dependency_results(  # noqa: C901,PLR0912,PLR0915
     result: Mapping[str, object],
     expected: Mapping[str, object],
     execution_batch_manifest: Mapping[str, object] | None,
@@ -5529,7 +6091,20 @@ def _validate_dependency_results(  # noqa: C901,PLR0912
         if not isinstance(item, Mapping):
             issues.append(ValidationIssue(item_path, "must be an object"))
             continue
-        _validate_root_keys(item, _DEPENDENCY_RESULT_KEYS, item_path, issues)
+        _validate_root_keys_with_optional(
+            item,
+            _DEPENDENCY_RESULT_KEYS,
+            frozenset(
+                {
+                    "upstream-artifact-ref",
+                    "upstream-bundle-id",
+                    "upstream-artifact-instance-id",
+                    "upstream-admitted-candidate-id",
+                }
+            ),
+            item_path,
+            issues,
+        )
         work_group_id = item.get("work-group-id")
         _validate_local_id(work_group_id, f"{item_path}.work-group-id", issues)
         if isinstance(work_group_id, str):
@@ -5540,6 +6115,45 @@ def _validate_dependency_results(  # noqa: C901,PLR0912
         _validate_local_id(
             source_batch_id, f"{item_path}.source-batch-id", issues
         )
+        upstream_ref = item.get("upstream-artifact-ref")
+        if upstream_ref is not None:
+            _validate_artifact_ref(
+                upstream_ref, f"{item_path}.upstream-artifact-ref", issues
+            )
+        upstream_bundle_id = item.get("upstream-bundle-id")
+        if upstream_bundle_id is not None:
+            _validate_non_empty_string(
+                upstream_bundle_id, f"{item_path}.upstream-bundle-id", issues
+            )
+        upstream_instance_id = item.get("upstream-artifact-instance-id")
+        if upstream_instance_id is not None:
+            _validate_non_empty_string(
+                upstream_instance_id,
+                f"{item_path}.upstream-artifact-instance-id",
+                issues,
+            )
+        upstream_candidate_id = item.get("upstream-admitted-candidate-id")
+        if upstream_candidate_id is not None:
+            _validate_non_empty_string(
+                upstream_candidate_id,
+                f"{item_path}.upstream-admitted-candidate-id",
+                issues,
+            )
+        if upstream_ref is not None or upstream_bundle_id is not None:
+            if upstream_instance_id is None:
+                issues.append(
+                    ValidationIssue(
+                        f"{item_path}.upstream-artifact-instance-id",
+                        "is required for upstream artifact evidence",
+                    )
+                )
+            if upstream_candidate_id is None:
+                issues.append(
+                    ValidationIssue(
+                        f"{item_path}.upstream-admitted-candidate-id",
+                        "is required for upstream artifact evidence",
+                    )
+                )
         if isinstance(work_group_id, str) and isinstance(source_batch_id, str):
             expected_batch_id = positions.get(work_group_id)
             if (
@@ -5642,10 +6256,14 @@ def _has_dependency_blocked_diagnostic(value: object) -> bool:
     )
 
 
-def _validate_evidence(  # noqa: C901,PLR0912
+def _validate_evidence(  # noqa: C901,PLR0912,PLR0913
     value: object,
     path: str,
     issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object] | None = None,
+    plan: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
 ) -> str | None:
     if not isinstance(value, Mapping):
         issues.append(ValidationIssue(path, "must be an object"))
@@ -5751,6 +6369,9 @@ def _validate_evidence(  # noqa: C901,PLR0912
             category,
             f"{path}.category-result",
             issues,
+            selector_result=selector_result,
+            plan=plan,
+            fact_snapshot=fact_snapshot,
         )
     if sorted(top_level_refs) != sorted(nested_refs):
         issues.append(
@@ -5832,18 +6453,24 @@ def _validate_capability_results(  # noqa: C901
     return _derive_selector_outcome(outcomes), refs
 
 
-def _validate_category_result(
+def _validate_category_result(  # noqa: PLR0913
     value: object,
     expected_category: object,
     path: str,
     issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object] | None = None,
+    plan: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
 ) -> tuple[str | None, list[str]]:
     if not isinstance(value, Mapping):
         issues.append(ValidationIssue(path, "must be an object"))
         return None, []
     _validate_allowed_keys(
         value,
-        frozenset({"category", "outcome", "diagnostics", "artifact-refs"}),
+        frozenset(
+            {"category", "outcome", "diagnostics", "artifact-refs", "detail"}
+        ),
         path,
         issues,
     )
@@ -5863,12 +6490,646 @@ def _validate_category_result(
     _validate_diagnostics(
         value.get("diagnostics"), f"{path}.diagnostics", issues
     )
+    if (
+        expected_category == "release-shaped-artifact"
+        and selector_result is not None
+        and value.get("diagnostics") != selector_result.get("diagnostics")
+    ):
+        issues.append(
+            ValidationIssue(f"{path}.diagnostics", "must match selector")
+        )
     refs = _validate_optional_artifact_refs(
         value.get("artifact-refs"),
         f"{path}.artifact-refs",
         issues,
     )
+    if expected_category == "release-shaped-artifact":
+        _validate_release_shaped_batch_detail(
+            value.get("detail"),
+            outcome,
+            refs,
+            f"{path}.detail",
+            issues,
+            selector_result=selector_result,
+            plan=plan,
+            fact_snapshot=fact_snapshot,
+        )
+    elif "detail" in value:
+        issues.append(ValidationIssue(f"{path}.detail", "is not allowed"))
     return derived, refs
+
+
+def _validate_release_shaped_batch_detail(  # noqa: PLR0913
+    value: object,
+    outcome: object,
+    artifact_refs: Sequence[str],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object] | None = None,
+    plan: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(
+            ValidationIssue(
+                path,
+                "is required for release-shaped evidence",
+            )
+        )
+        return
+    _validate_allowed_keys(
+        value,
+        frozenset(
+            {
+                "artifact-obligation-results",
+                "evidence-source",
+                "reused-receipt",
+                "source-proof",
+            }
+        ),
+        path,
+        issues,
+    )
+    source = value.get("evidence-source")
+    results = value.get("artifact-obligation-results")
+    observed_digests = _validate_release_result_digests(
+        results,
+        f"{path}.artifact-obligation-results",
+        issues,
+        outcome=outcome,
+        diagnostics=(
+            selector_result.get("diagnostics")
+            if selector_result is not None
+            else None
+        ),
+        plan=plan,
+        fact_snapshot=fact_snapshot,
+        selector_result=selector_result,
+    )
+    if outcome != "success":
+        for key in ("evidence-source", "source-proof", "reused-receipt"):
+            if key in value:
+                issues.append(
+                    ValidationIssue(
+                        f"{path}.{key}",
+                        "is not allowed for non-success release-shaped "
+                        "evidence",
+                    )
+                )
+        return
+    if source == "no-publish-validation":
+        _validate_no_publish_source_proof(
+            value.get("source-proof"),
+            artifact_refs,
+            f"{path}.source-proof",
+            issues,
+            selector_result=selector_result,
+            observed_digests=observed_digests,
+        )
+    elif source == "reused-validation-receipt":
+        issues.append(
+            ValidationIssue(
+                f"{path}.evidence-source",
+                "is not public batch evidence",
+            )
+        )
+    else:
+        issues.append(
+            ValidationIssue(f"{path}.evidence-source", "is not registered")
+        )
+
+
+def _validate_release_result_digests(  # noqa: C901,PLR0912,PLR0913,PLR0915
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    outcome: object,
+    diagnostics: object,
+    plan: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    selector_result: Mapping[str, object] | None,
+) -> dict[str, str]:
+    observed: dict[str, str] = {}
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        issues.append(ValidationIssue(path, "is required"))
+        return observed
+    if not value:
+        issues.append(ValidationIssue(path, "must not be empty"))
+    plan_obligations = _release_shaped_obligations_for_selector(
+        plan,
+        selector_result,
+    )
+    if plan_obligations is not None:
+        result_ids = [
+            item.get("artifact-obligation-id")
+            for item in value
+            if isinstance(item, Mapping)
+        ]
+        expected_ids = [
+            item.get("artifact-obligation-id") for item in plan_obligations
+        ]
+        if result_ids != expected_ids:
+            issues.append(
+                ValidationIssue(path, "must cover plan obligations exactly")
+            )
+    obligations_by_id = {
+        str(item["artifact-obligation-id"]): item
+        for item in plan_obligations or []
+        if isinstance(item.get("artifact-obligation-id"), str)
+    }
+    for result_index, result in enumerate(value):
+        result_path = f"{path}[{result_index}]"
+        if not isinstance(result, Mapping):
+            issues.append(ValidationIssue(result_path, "must be an object"))
+            continue
+        obligation = obligations_by_id.get(
+            str(result.get("artifact-obligation-id"))
+        )
+        _validate_release_shaped_obligation_result(
+            result,
+            result_path,
+            issues,
+            outcome=outcome,
+            diagnostics=diagnostics,
+            obligation=obligation,
+            fact_snapshot=fact_snapshot,
+        )
+        artifact = result.get("artifact")
+        if not isinstance(artifact, Mapping):
+            issues.append(
+                ValidationIssue(f"{result_path}.artifact", "must be an object")
+            )
+            continue
+        artifact_observed = artifact.get("observed")
+        if not isinstance(artifact_observed, Mapping):
+            issues.append(
+                ValidationIssue(
+                    f"{result_path}.artifact.observed", "must be an object"
+                )
+            )
+            continue
+        digests = artifact_observed.get("digests")
+        if not isinstance(digests, Sequence) or isinstance(
+            digests, str | bytes
+        ):
+            issues.append(
+                ValidationIssue(
+                    f"{result_path}.artifact.observed.digests",
+                    "must be an array",
+                )
+            )
+            continue
+        for digest_index, item in enumerate(digests):
+            item_path = (
+                f"{result_path}.artifact.observed.digests[{digest_index}]"
+            )
+            if not isinstance(item, Mapping):
+                issues.append(ValidationIssue(item_path, "must be an object"))
+                continue
+            artifact_ref = item.get("artifact-ref")
+            digest = item.get("digest")
+            if not isinstance(artifact_ref, str):
+                issues.append(
+                    ValidationIssue(
+                        f"{item_path}.artifact-ref",
+                        "must be a string",
+                    )
+                )
+                continue
+            digest_available = item.get("digest-available")
+            digest_is_valid = isinstance(digest, str) and (
+                _DIGEST_RE.fullmatch(digest) is not None
+            )
+            unavailable_digest_is_valid = (
+                digest_available is False and digest == ""
+            )
+            if item.get("algorithm") != "sha256":
+                issues.append(
+                    ValidationIssue(f"{item_path}.algorithm", "must be sha256")
+                )
+            if outcome == "success":
+                if digest_available is not True:
+                    issues.append(
+                        ValidationIssue(
+                            f"{item_path}.digest-available", "must be true"
+                        )
+                    )
+                if not digest_is_valid:
+                    issues.append(
+                        ValidationIssue(
+                            f"{item_path}.digest",
+                            "must be a digest",
+                        )
+                    )
+            elif not (digest_is_valid or unavailable_digest_is_valid):
+                issues.append(
+                    ValidationIssue(
+                        f"{item_path}.digest",
+                        "must be a digest or unavailable marker",
+                    )
+                )
+            if (
+                item.get("algorithm") == "sha256"
+                and digest_available is True
+                and digest_is_valid
+            ):
+                if artifact_ref in observed:
+                    issues.append(
+                        ValidationIssue(
+                            f"{result_path}.artifact.observed.digests",
+                            "must be unique",
+                        )
+                    )
+                observed[artifact_ref] = digest
+            if (
+                outcome != "success"
+                and digest_available is False
+                and item.get("diagnostics") != diagnostics
+            ):
+                issues.append(
+                    ValidationIssue(
+                        f"{item_path}.diagnostics",
+                        "must match selector",
+                    )
+                )
+        if obligation is not None and outcome == "success":
+            expected_refs = set(_artifact_expected_refs(obligation))
+            result_refs = {
+                str(item.get("artifact-ref"))
+                for item in digests
+                if isinstance(item, Mapping)
+                and isinstance(item.get("artifact-ref"), str)
+            }
+            if result_refs != expected_refs:
+                issues.append(
+                    ValidationIssue(
+                        f"{result_path}.artifact.observed.digests",
+                        "must cover expected artifact refs exactly",
+                    )
+                )
+    return observed
+
+
+def _release_shaped_obligations_for_selector(
+    plan: Mapping[str, object] | None,
+    selector_result: Mapping[str, object] | None,
+) -> list[Mapping[str, object]] | None:
+    if plan is None or selector_result is None:
+        return None
+    work_group_id = selector_result.get("work-group-id")
+    if not isinstance(work_group_id, str):
+        return None
+    obligations = [
+        item
+        for item in _sequence(plan.get("artifact-obligations", []))
+        if isinstance(item, Mapping)
+        and item.get("work-group-id") == work_group_id
+    ]
+    return obligations if obligations else None
+
+
+def _validate_release_shaped_obligation_result(  # noqa: C901, PLR0912, PLR0913
+    result: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    outcome: object,
+    diagnostics: object,
+    obligation: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+) -> None:
+    if result.get("outcome") != outcome:
+        issues.append(ValidationIssue(f"{path}.outcome", "must match selector"))
+    if result.get("diagnostics") != diagnostics:
+        issues.append(
+            ValidationIssue(f"{path}.diagnostics", "must match selector")
+        )
+    if obligation is None:
+        return
+    descriptor = result.get("descriptor")
+    if not isinstance(descriptor, Mapping):
+        issues.append(
+            ValidationIssue(f"{path}.descriptor", "must be an object")
+        )
+    else:
+        descriptor_path = str(obligation.get("descriptor-path"))
+        if descriptor.get("path") != descriptor_path:
+            issues.append(
+                ValidationIssue(f"{path}.descriptor.path", "must match plan")
+            )
+        fact = _descriptor_fact(fact_snapshot, descriptor_path)
+        expected_identity = (
+            fact.get("descriptor-identity") if fact is not None else None
+        )
+        if not isinstance(expected_identity, str) or not expected_identity:
+            issues.append(
+                ValidationIssue(
+                    f"{path}.descriptor.identity",
+                    "must have a non-empty descriptor fact identity",
+                )
+            )
+        if descriptor.get("identity") != expected_identity:
+            issues.append(
+                ValidationIssue(
+                    f"{path}.descriptor.identity",
+                    "must match fact snapshot",
+                )
+            )
+    if result.get("profile-coverage") != obligation.get("profile-coverage"):
+        issues.append(
+            ValidationIssue(f"{path}.profile-coverage", "must match plan")
+        )
+    artifact = result.get("artifact")
+    release_receipt = result.get("release-receipt")
+    if not isinstance(artifact, Mapping):
+        issues.append(ValidationIssue(f"{path}.artifact", "must be an object"))
+        return
+    if not isinstance(release_receipt, Mapping):
+        issues.append(
+            ValidationIssue(f"{path}.release-receipt", "must be an object")
+        )
+        return
+    if artifact.get("planned") != obligation.get("artifact"):
+        issues.append(
+            ValidationIssue(f"{path}.artifact.planned", "must match plan")
+        )
+    if release_receipt.get("planned") != obligation.get("release-receipt"):
+        issues.append(
+            ValidationIssue(
+                f"{path}.release-receipt.planned",
+                "must match plan",
+            )
+        )
+    for branch_name, branch in (
+        ("artifact", artifact),
+        ("release-receipt", release_receipt),
+    ):
+        if branch.get("outcome") != outcome:
+            issues.append(
+                ValidationIssue(
+                    f"{path}.{branch_name}.outcome",
+                    "must match selector",
+                )
+            )
+        if branch.get("diagnostics") != diagnostics:
+            issues.append(
+                ValidationIssue(
+                    f"{path}.{branch_name}.diagnostics",
+                    "must match selector",
+                )
+            )
+    if release_receipt.get("expected") is not True:
+        issues.append(
+            ValidationIssue(f"{path}.release-receipt.expected", "must be true")
+        )
+    expected_schema_checked = outcome == "success"
+    if release_receipt.get("schema-checked") is not expected_schema_checked:
+        issues.append(
+            ValidationIssue(
+                f"{path}.release-receipt.schema-checked",
+                "must match outcome",
+            )
+        )
+    _validate_release_shaped_observed_artifact(
+        artifact,
+        path,
+        issues,
+        outcome=outcome,
+        obligation=obligation,
+    )
+
+
+def _validate_release_shaped_observed_artifact(
+    artifact: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    outcome: object,
+    obligation: Mapping[str, object],
+) -> None:
+    observed = artifact.get("observed")
+    if not isinstance(observed, Mapping):
+        issues.append(
+            ValidationIssue(f"{path}.artifact.observed", "must be an object")
+        )
+        return
+    expected_refs = _artifact_expected_refs(obligation)
+    refs = observed.get("refs")
+    if not isinstance(refs, Sequence) or isinstance(refs, str | bytes):
+        issues.append(
+            ValidationIssue(
+                f"{path}.artifact.observed.refs",
+                "must be an array",
+            )
+        )
+        return
+    observed_refs = [item for item in refs if isinstance(item, str)]
+    if len(observed_refs) != len(refs):
+        issues.append(
+            ValidationIssue(
+                f"{path}.artifact.observed.refs",
+                "must contain strings",
+            )
+        )
+    if outcome == "success" and observed_refs != expected_refs:
+        issues.append(
+            ValidationIssue(
+                f"{path}.artifact.observed.refs",
+                "must match expected artifact refs",
+            )
+        )
+    if outcome != "success" and observed_refs not in ([], expected_refs):
+        issues.append(
+            ValidationIssue(
+                f"{path}.artifact.observed.refs",
+                "must be empty or expected artifact refs",
+            )
+        )
+
+
+def _artifact_expected_refs(obligation: Mapping[str, object]) -> list[str]:
+    artifact = obligation.get("artifact")
+    if not isinstance(artifact, Mapping):
+        return []
+    refs = artifact.get("expected-artifact-refs")
+    if not isinstance(refs, Sequence) or isinstance(refs, str | bytes):
+        return []
+    return [item for item in refs if isinstance(item, str)]
+
+
+def _descriptor_fact(
+    fact_snapshot: Mapping[str, object] | None,
+    descriptor_path: str,
+) -> Mapping[str, object] | None:
+    if fact_snapshot is None:
+        return None
+    providers = fact_snapshot.get("providers")
+    if not isinstance(providers, Sequence) or isinstance(
+        providers, str | bytes
+    ):
+        return None
+    for provider in providers:
+        if not isinstance(provider, Mapping):
+            continue
+        descriptors = provider.get("descriptors")
+        if not isinstance(descriptors, Sequence) or isinstance(
+            descriptors, str | bytes
+        ):
+            continue
+        for descriptor in descriptors:
+            if (
+                isinstance(descriptor, Mapping)
+                and descriptor.get("descriptor-path") == descriptor_path
+            ):
+                return descriptor
+    return None
+
+
+def _validate_no_publish_source_proof(  # noqa: C901, PLR0912, PLR0913
+    value: object,
+    artifact_refs: Sequence[str],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object] | None = None,
+    observed_digests: Mapping[str, str] | None = None,
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    _validate_allowed_keys(
+        value,
+        frozenset(
+            {
+                "kind",
+                "work-group-id",
+                "coverage-target",
+                "observed-commit-sha",
+                "artifact-digests",
+            }
+        ),
+        path,
+        issues,
+    )
+    if value.get("kind") != "no-publish-validation-result":
+        issues.append(ValidationIssue(f"{path}.kind", "is not registered"))
+    if selector_result is not None:
+        if value.get("work-group-id") != selector_result.get("work-group-id"):
+            issues.append(
+                ValidationIssue(f"{path}.work-group-id", "must match selector")
+            )
+        if value.get("coverage-target") != selector_result.get(
+            "coverage-target"
+        ):
+            issues.append(
+                ValidationIssue(
+                    f"{path}.coverage-target", "must match selector"
+                )
+            )
+        validation_tree = selector_result.get("validation-tree")
+        expected_commit = (
+            validation_tree.get("commit-sha")
+            if isinstance(validation_tree, Mapping)
+            else None
+        )
+        if value.get("observed-commit-sha") != expected_commit:
+            issues.append(
+                ValidationIssue(
+                    f"{path}.observed-commit-sha",
+                    "must match validation tree commit",
+                )
+            )
+    digests = value.get("artifact-digests")
+    if not isinstance(digests, Sequence) or isinstance(digests, str | bytes):
+        issues.append(
+            ValidationIssue(f"{path}.artifact-digests", "must be an array")
+        )
+        return
+    seen: set[str] = set()
+    for index, item in enumerate(digests):
+        item_path = f"{path}.artifact-digests[{index}]"
+        if not isinstance(item, Mapping):
+            issues.append(ValidationIssue(item_path, "must be an object"))
+            continue
+        _validate_allowed_keys(
+            item,
+            frozenset({"artifact-ref", "algorithm", "digest", "byte-source"}),
+            item_path,
+            issues,
+        )
+        artifact_ref = item.get("artifact-ref")
+        _validate_artifact_ref(
+            artifact_ref,
+            f"{item_path}.artifact-ref",
+            issues,
+        )
+        if isinstance(artifact_ref, str):
+            if artifact_ref in seen:
+                issues.append(
+                    ValidationIssue(
+                        f"{path}.artifact-digests",
+                        "must be unique",
+                    )
+                )
+            seen.add(artifact_ref)
+        if item.get("algorithm") != "sha256":
+            issues.append(
+                ValidationIssue(f"{item_path}.algorithm", "must be sha256")
+            )
+        _validate_digest(item.get("digest"), f"{item_path}.digest", issues)
+        if (
+            isinstance(artifact_ref, str)
+            and observed_digests is not None
+            and item.get("digest") != observed_digests.get(artifact_ref)
+        ):
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.digest",
+                    "must match artifact obligation result digest",
+                )
+            )
+        byte_source = item.get("byte-source")
+        if not isinstance(byte_source, Mapping):
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.byte-source",
+                    "must be an object",
+                )
+            )
+            continue
+        _validate_allowed_keys(
+            byte_source,
+            frozenset({"kind", "path", "size"}),
+            f"{item_path}.byte-source",
+            issues,
+        )
+        if byte_source.get("kind") != "validation-build-output":
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.byte-source.kind",
+                    "is not registered",
+                )
+            )
+        _validate_non_empty_string(
+            byte_source.get("path"), f"{item_path}.byte-source.path", issues
+        )
+        size = byte_source.get("size")
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.byte-source.size",
+                    "must be a non-negative integer",
+                )
+            )
+    if seen != set(artifact_refs):
+        issues.append(
+            ValidationIssue(
+                f"{path}.artifact-digests",
+                "must cover release-shaped artifact refs exactly",
+            )
+        )
 
 
 def _validate_optional_artifact_refs(
@@ -6501,6 +7762,18 @@ def _summary_projection_from_authority(  # noqa: PLR0913
         projection.update(_no_authority_summary_projection())
         return projection
     projection.update(_no_authority_summary_projection())
+    return projection
+
+
+def _invalid_plan_summary_projection_from_context(
+    plan: Mapping[str, object] | None,
+    aggregate_evidence_manifest: Mapping[str, object] | None,
+) -> dict[str, object]:
+    if plan is None:
+        return _no_authority_summary_projection()
+    projection = _summary_projection_from_plan(plan)
+    if not _aggregate_manifest_has_valid_request(aggregate_evidence_manifest):
+        projection["request"] = dict(_UNKNOWN_REQUEST_SUMMARY)
     return projection
 
 
@@ -7268,6 +8541,8 @@ def _validate_null_plan_identity(
 def _aggregate_manifest_has_no_authoritative_plan(
     manifest: Mapping[str, object],
 ) -> bool:
+    if _invalid_plan_input_failure_details(manifest):
+        return True
     inputs = manifest.get("input-artifacts")
     if not isinstance(inputs, Mapping):
         return False
@@ -7351,8 +8626,10 @@ def _validate_valid_validation_plan_input_has_document(
     plan: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> None:
-    if plan is not None or not _aggregate_manifest_has_valid_plan_input(
-        manifest
+    if (
+        plan is not None
+        or _aggregate_manifest_has_no_authoritative_plan(manifest)
+        or not _aggregate_manifest_has_valid_plan_input(manifest)
     ):
         return
     issues.append(
@@ -8600,7 +9877,13 @@ def _validate_unexpected_artifacts(
         if not isinstance(item, Mapping):
             issues.append(ValidationIssue(path, "must be an object"))
             continue
-        _validate_root_keys(item, _UNEXPECTED_KEYS, path, issues)
+        _validate_root_keys_with_optional(
+            item,
+            _UNEXPECTED_KEYS,
+            frozenset({"observed-physical-artifact-name"}),
+            path,
+            issues,
+        )
         if envelope is not None:
             current = _unexpected_implicit_id(
                 item,
@@ -8629,8 +9912,8 @@ def _validate_unexpected_artifacts(
             issues.append(
                 ValidationIssue(
                     f"{path}.physical-artifact-name",
-                    "must be three-ci-validation- followed by 64 lowercase "
-                    "hex chars",
+                    "must be an attempt-visible three-ci-validation physical "
+                    "artifact name",
                 ),
             )
         _validate_nullable_non_empty_string(
@@ -8638,6 +9921,13 @@ def _validate_unexpected_artifacts(
             f"{path}.artifact-instance-id",
             issues,
         )
+        observed_physical_name = item.get("observed-physical-artifact-name")
+        if observed_physical_name is not None:
+            _validate_nullable_non_empty_string(
+                observed_physical_name,
+                f"{path}.observed-physical-artifact-name",
+                issues,
+            )
         if item.get("classification") not in {
             "unexpected",
             "unreadable",
@@ -8719,12 +10009,13 @@ def _validate_namespace_overflow(
     )
 
 
-def _validate_summary_manifest_claim(
+def _validate_summary_manifest_claim(  # noqa: C901, PLR0913
     value: object,
     envelope: CommonEnvelope | None,
     aggregate_evidence_manifest: Mapping[str, object] | None,
     *,
     require_non_authoritative_manifest: bool,
+    skip_manifest_digest_match: bool,
     issues: list[ValidationIssue],
 ) -> Mapping[str, object] | None:
     claim = _validate_object(
@@ -8750,16 +10041,23 @@ def _validate_summary_manifest_claim(
                     )
                 )
     else:
-        _validate_non_empty_string(
-            claim.get("artifact-instance-id"),
-            "$.aggregate-evidence-manifest.artifact-instance-id",
-            issues,
-        )
-        _validate_digest(
-            claim.get("content-digest"),
-            "$.aggregate-evidence-manifest.content-digest",
-            issues,
-        )
+        if not (
+            skip_manifest_digest_match
+            and claim.get("artifact-instance-id") is None
+        ):
+            _validate_non_empty_string(
+                claim.get("artifact-instance-id"),
+                "$.aggregate-evidence-manifest.artifact-instance-id",
+                issues,
+            )
+        if not (
+            skip_manifest_digest_match and claim.get("content-digest") is None
+        ):
+            _validate_digest(
+                claim.get("content-digest"),
+                "$.aggregate-evidence-manifest.content-digest",
+                issues,
+            )
     if envelope is not None:
         expected_ref = ci_validation_aggregate_evidence_manifest_artifact_ref(
             run_id=envelope.run_id,
@@ -8781,7 +10079,7 @@ def _validate_summary_manifest_claim(
                     "must match aggregate evidence manifest",
                 ),
             )
-        if claim.get("content-digest") != (
+        if not skip_manifest_digest_match and claim.get("content-digest") != (
             ci_validation_aggregate_evidence_manifest_payload_digest(
                 aggregate_evidence_manifest,
             )
@@ -8802,6 +10100,7 @@ def _validate_final_artifacts(  # noqa: C901,PLR0912,PLR0913
     aggregate_evidence_manifest: Mapping[str, object] | None,
     *,
     require_non_authoritative_manifest: bool,
+    skip_manifest_digest_match: bool,
     issues: list[ValidationIssue],
 ) -> None:
     final_artifacts = _validate_object(
@@ -8849,25 +10148,46 @@ def _validate_final_artifacts(  # noqa: C901,PLR0912,PLR0913
                     ),
                 )
         else:
-            _validate_non_empty_string(
-                manifest.get("artifact-instance-id"),
-                "$.final-artifacts.aggregate-evidence-manifest."
-                "artifact-instance-id",
-                issues,
-            )
-            _validate_digest(
-                manifest.get("content-digest"),
-                "$.final-artifacts.aggregate-evidence-manifest.content-digest",
-                issues,
-            )
-            if manifest.get("producer-verified") is not True:
+            if not (
+                skip_manifest_digest_match
+                and manifest.get("artifact-instance-id") is None
+            ):
+                _validate_non_empty_string(
+                    manifest.get("artifact-instance-id"),
+                    "$.final-artifacts.aggregate-evidence-manifest."
+                    "artifact-instance-id",
+                    issues,
+                )
+            if not (
+                skip_manifest_digest_match
+                and manifest.get("content-digest") is None
+            ):
+                _validate_digest(
+                    manifest.get("content-digest"),
+                    "$.final-artifacts.aggregate-evidence-manifest.content-digest",
+                    issues,
+                )
+            if manifest.get("producer-verified") not in {True, False}:
                 issues.append(
                     ValidationIssue(
                         "$.final-artifacts.aggregate-evidence-manifest."
                         "producer-verified",
-                        "must be true",
+                        "must be a boolean",
                     ),
                 )
+        if "authority-diagnostics" in manifest:
+            _validate_diagnostics(
+                manifest.get("authority-diagnostics"),
+                "$.final-artifacts.aggregate-evidence-manifest."
+                "authority-diagnostics",
+                issues,
+            )
+            _validate_aggregate_manifest_authority_diagnostic_details(
+                manifest.get("authority-diagnostics"),
+                "$.final-artifacts.aggregate-evidence-manifest."
+                "authority-diagnostics",
+                issues,
+            )
         if manifest_claim is not None:
             for key in (
                 "artifact-ref",
@@ -8881,10 +10201,13 @@ def _validate_final_artifacts(  # noqa: C901,PLR0912,PLR0913
                             "must match aggregate evidence manifest claim",
                         )
                     )
-        if aggregate_evidence_manifest is not None and manifest.get(
-            "content-digest"
-        ) != ci_validation_aggregate_evidence_manifest_payload_digest(
-            aggregate_evidence_manifest
+        if (
+            aggregate_evidence_manifest is not None
+            and not skip_manifest_digest_match
+            and manifest.get("content-digest")
+            != ci_validation_aggregate_evidence_manifest_payload_digest(
+                aggregate_evidence_manifest
+            )
         ):
             issues.append(
                 ValidationIssue(
@@ -9595,7 +10918,7 @@ def _context_for_valid_aggregate_input(
     return context
 
 
-def _validate_summary_matches_aggregate_manifest(  # noqa: C901,PLR0912,PLR0913
+def _validate_summary_matches_aggregate_manifest(  # noqa: C901,PLR0912,PLR0913,PLR0915
     summary: Mapping[str, object],
     aggregate_manifest: Mapping[str, object],
     plan: Mapping[str, object] | None,
@@ -9619,6 +10942,10 @@ def _validate_summary_matches_aggregate_manifest(  # noqa: C901,PLR0912,PLR0913
                 "$.aggregate-evidence-manifest",
                 issues,
             )
+    if _is_invalid_plan_summary(
+        summary
+    ) and _invalid_plan_input_failure_details(aggregate_manifest):
+        return
     if summary.get("plan-id") != aggregate_manifest.get("plan-id"):
         issues.append(
             ValidationIssue(
@@ -9934,17 +11261,6 @@ def _validate_summary_matches_admitted_bundles(  # noqa: C901, PLR0912, PLR0913
                     )
                 )
             bundle_by_batch[batch_id] = bundle
-    _validate_admitted_bundles_topologically(
-        bundles,
-        plan=plan,
-        request=request,
-        execution_batch_manifest=execution_batch_manifest,
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-        envelope=envelope,
-        issues=issues,
-    )
-    derived_results: dict[str, dict[str, object]] = {}
     if aggregate_manifest is not None:
         manifest_rows = _rows_by_local_id(
             aggregate_manifest.get("batch-bundles"),
@@ -9954,6 +11270,18 @@ def _validate_summary_matches_admitted_bundles(  # noqa: C901, PLR0912, PLR0913
         )
     else:
         manifest_rows = {}
+    _validate_admitted_bundles_topologically(
+        bundles,
+        manifest_rows=manifest_rows,
+        plan=plan,
+        request=request,
+        execution_batch_manifest=execution_batch_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        envelope=envelope,
+        issues=issues,
+    )
+    derived_results: dict[str, dict[str, object]] = {}
     summary_bundle_rows = _rows_by_local_id(
         summary.get("batch-bundles"),
         "batch-id",
@@ -10014,7 +11342,11 @@ def _validate_summary_matches_admitted_bundles(  # noqa: C901, PLR0912, PLR0913
                 issues=issues,
             )
         _derive_summary_results_from_bundle(bundle, derived_results, issues)
-    _validate_admitted_bundle_dependency_results(bundle_by_batch, issues)
+    _validate_admitted_bundle_dependency_results(
+        bundle_by_batch,
+        manifest_rows,
+        issues,
+    )
     summary_rows = _rows_by_local_id(
         summary.get("evidence-results"),
         "evidence-expectation-id",
@@ -10056,6 +11388,7 @@ def _validate_summary_matches_admitted_bundles(  # noqa: C901, PLR0912, PLR0913
 def _validate_admitted_bundles_topologically(  # noqa: PLR0913
     bundles: Sequence[Mapping[str, object]],
     *,
+    manifest_rows: Mapping[str, Mapping[str, object]] | None = None,
     plan: Mapping[str, object] | None,
     request: Mapping[str, object] | None,
     execution_batch_manifest: Mapping[str, object] | None,
@@ -10091,7 +11424,12 @@ def _validate_admitted_bundles_topologically(  # noqa: PLR0913
                 last_errors[index] = error
                 next_pending.append((index, bundle))
                 continue
-            validated_dependency_bundles.append(bundle)
+            validated_dependency_bundles.append(
+                _trusted_dependency_bundle_from_manifest(
+                    bundle,
+                    manifest_rows or {},
+                )
+            )
             progressed = True
         if not next_pending:
             break
@@ -10173,6 +11511,28 @@ def _validate_admitted_bundle_candidate(
                 "must match admitted aggregate manifest candidate",
             )
         )
+
+
+def _trusted_dependency_bundle_from_manifest(
+    bundle: Mapping[str, object],
+    manifest_rows: Mapping[str, Mapping[str, object]],
+) -> Mapping[str, object]:
+    batch = bundle.get("batch")
+    batch_id = batch.get("batch-id") if isinstance(batch, Mapping) else None
+    if not isinstance(batch_id, str):
+        return bundle
+    artifact_instance_id, admitted_candidate_id = _admitted_batch_identity(
+        manifest_rows.get(batch_id)
+    )
+    if not isinstance(artifact_instance_id, str) or not isinstance(
+        admitted_candidate_id, str
+    ):
+        return bundle
+    return _TrustedDependencyBundle(
+        bundle,
+        artifact_instance_id=artifact_instance_id,
+        admitted_candidate_id=admitted_candidate_id,
+    )
 
 
 def _validate_summary_bundle_row_matches_admitted_bundle(
@@ -10265,15 +11625,21 @@ def _derive_summary_results_from_bundle(
 
 def _validate_admitted_bundle_dependency_results(
     bundle_by_batch: Mapping[str, Mapping[str, object]],
+    manifest_rows: Mapping[str, Mapping[str, object]],
     issues: list[ValidationIssue],
 ) -> None:
-    selector_lookup: dict[str, tuple[str, bool, str | None]] = {}
+    selector_lookup: dict[
+        str, tuple[str, bool, str | None, str | None, str | None]
+    ] = {}
     for batch_id, bundle in bundle_by_batch.items():
         selector_results = bundle.get("selector-results")
         if not isinstance(selector_results, Sequence) or isinstance(
             selector_results, str | bytes
         ):
             continue
+        artifact_instance_id, admitted_candidate_id = _admitted_batch_identity(
+            manifest_rows.get(batch_id)
+        )
         for selector in selector_results:
             if not isinstance(selector, Mapping):
                 continue
@@ -10287,6 +11653,8 @@ def _validate_admitted_bundle_dependency_results(
                         selector.get("outcome")
                     ),
                     batch_id,
+                    artifact_instance_id,
+                    admitted_candidate_id,
                 )
     for batch_id, bundle in bundle_by_batch.items():
         selector_results = bundle.get("selector-results")
@@ -10306,11 +11674,13 @@ def _validate_admitted_bundle_dependency_results(
             )
 
 
-def _validate_selector_dependencies_against_admitted_evidence(  # noqa: C901
+def _validate_selector_dependencies_against_admitted_evidence(  # noqa: C901, PLR0912
     batch_id: str,
     selector_index: int,
     selector: Mapping[str, object],
-    selector_lookup: Mapping[str, tuple[str, bool, str | None]],
+    selector_lookup: Mapping[
+        str, tuple[str, bool, str | None, str | None, str | None]
+    ],
     issues: list[ValidationIssue],
 ) -> None:
     dependency_results = selector.get("dependency-results")
@@ -10327,10 +11697,18 @@ def _validate_selector_dependencies_against_admitted_evidence(  # noqa: C901
         if not isinstance(dependency, Mapping):
             continue
         work_group_id = dependency.get("work-group-id")
-        actual_outcome, actual_admitted, actual_batch_id = (
-            selector_lookup.get(work_group_id, ("missing", False, None))
+        (
+            actual_outcome,
+            actual_admitted,
+            actual_batch_id,
+            actual_artifact_instance_id,
+            actual_candidate_id,
+        ) = (
+            selector_lookup.get(
+                work_group_id, ("missing", False, None, None, None)
+            )
             if isinstance(work_group_id, str)
-            else ("missing", False, None)
+            else ("missing", False, None, None, None)
         )
         item_path = f"{dep_path}[{dependency_index}]"
         if dependency.get("outcome") != actual_outcome:
@@ -10357,6 +11735,26 @@ def _validate_selector_dependencies_against_admitted_evidence(  # noqa: C901
             )
         if not actual_admitted:
             blocked_by_actual_evidence = True
+        if actual_batch_id is not None and (
+            dependency.get("upstream-artifact-instance-id")
+            != actual_artifact_instance_id
+        ):
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.upstream-artifact-instance-id",
+                    "must match admitted upstream artifact instance",
+                )
+            )
+        if actual_batch_id is not None and (
+            dependency.get("upstream-admitted-candidate-id")
+            != actual_candidate_id
+        ):
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.upstream-admitted-candidate-id",
+                    "must match admitted upstream candidate",
+                )
+            )
     selector_path = (
         f"admitted_batch_evidence_bundles[{batch_id}]"
         f".selector-results[{selector_index}]"
@@ -10386,6 +11784,37 @@ def _validate_selector_dependencies_against_admitted_evidence(  # noqa: C901
         )
 
 
+def _admitted_batch_identity(
+    manifest_row: Mapping[str, object] | None,
+) -> tuple[str | None, str | None]:
+    if manifest_row is None:
+        return None, None
+    admitted_candidate_id = manifest_row.get("admitted-candidate-id")
+    candidates = manifest_row.get("observed-candidates")
+    if (
+        not isinstance(admitted_candidate_id, str)
+        or not isinstance(candidates, Sequence)
+        or isinstance(candidates, str | bytes)
+    ):
+        return None, None
+    admitted = next(
+        (
+            candidate
+            for candidate in candidates
+            if isinstance(candidate, Mapping)
+            and candidate.get("candidate-id") == admitted_candidate_id
+        ),
+        None,
+    )
+    if not isinstance(admitted, Mapping):
+        return None, admitted_candidate_id
+    artifact_instance_id = admitted.get("artifact-instance-id")
+    return (
+        artifact_instance_id if isinstance(artifact_instance_id, str) else None,
+        admitted_candidate_id,
+    )
+
+
 def _selector_outcome_to_summary_outcome(outcome: object) -> str:
     if outcome == "success":
         return "satisfied"
@@ -10403,14 +11832,187 @@ def _is_invalid_plan_summary(summary: Mapping[str, object]) -> bool:
     return isinstance(reason, Mapping) and reason.get("invalid-plan") is True
 
 
-def _force_invalid_plan_summary_fields(summary: dict[str, object]) -> None:
-    summary["plan-id"] = None
-    summary["plan-digest"] = None
-    summary["mode"] = "unknown"
-    summary["validation-tree"] = dict(_UNKNOWN_VALIDATION_TREE)
-    summary["affected-range"] = dict(_UNKNOWN_AFFECTED_RANGE)
-    summary["request"] = dict(_UNKNOWN_REQUEST_SUMMARY)
-    summary["scheduled-full"] = dict(_UNKNOWN_SCHEDULED_FULL)
+def _invalid_plan_failure(detail: str | None = None) -> dict[str, object]:
+    failure = {
+        **_INVALID_PLAN_FAILURE,
+        "diagnostic": dict(
+            cast("Mapping[str, object]", _INVALID_PLAN_FAILURE["diagnostic"])
+        ),
+    }
+    if detail is None or detail == DiagnosticDetail.PLAN_MISSING.value:
+        return failure
+    diagnostic = cast("dict[str, object]", failure["diagnostic"])
+    diagnostic["diagnostic-id"] = f"invalid-plan/{detail}"
+    diagnostic["detail"] = detail
+    diagnostic["message"] = "CI validation plan evidence is not authoritative."
+    failure["message"] = "CI validation plan evidence is not authoritative."
+    return failure
+
+
+def _invalid_plan_failure_detail_from_inputs(
+    aggregate_manifest: Mapping[str, object] | None,
+) -> str | None:
+    details = _invalid_plan_input_failure_details(aggregate_manifest)
+    return sorted(details)[0] if details else None
+
+
+def _invalid_plan_failure_detail_from_summary(
+    summary: Mapping[str, object],
+) -> str | None:
+    failures = summary.get("failures")
+    if not isinstance(failures, Sequence) or isinstance(failures, str | bytes):
+        return None
+    details: list[str] = []
+    for failure in failures:
+        if not isinstance(failure, Mapping):
+            continue
+        if failure.get("kind") != "invalid-plan":
+            continue
+        diagnostic = failure.get("diagnostic")
+        detail = (
+            diagnostic.get("detail")
+            if isinstance(diagnostic, Mapping)
+            else None
+        )
+        if (
+            isinstance(detail, str)
+            and detail
+            in DETAILS_BY_DIAGNOSTIC_CODE[DiagnosticFamily.INVALID_PLAN.value]
+        ):
+            details.append(detail)
+    return details[0] if len(details) == 1 else None
+
+
+def _invalid_plan_input_failure_details(
+    aggregate_manifest: Mapping[str, object] | None,
+) -> set[str]:
+    if aggregate_manifest is None:
+        return set()
+    input_artifacts = aggregate_manifest.get("input-artifacts")
+    if not isinstance(input_artifacts, Mapping):
+        return set()
+    details: set[str] = set()
+    for input_name in (
+        "validation-plan",
+        "changed-files-snapshot",
+        "fact-snapshot",
+    ):
+        item = input_artifacts.get(input_name)
+        if not isinstance(item, Mapping) or item.get("required") is not True:
+            continue
+        if item.get("admissibility") == "valid":
+            continue
+        diagnostic_details = _input_artifact_invalid_plan_diagnostic_details(
+            item
+        )
+        details.update(diagnostic_details)
+        fallback = _INVALID_PLAN_INPUT_FALLBACK_DETAILS[input_name].get(
+            str(item.get("admissibility")),
+        )
+        diagnostics = item.get("diagnostics")
+        has_non_invalid_plan_diagnostics = (
+            isinstance(diagnostics, Sequence)
+            and not isinstance(diagnostics, str | bytes)
+            and len(diagnostics) > 0
+            and not diagnostic_details
+        )
+        if (
+            fallback is not None
+            and not diagnostic_details
+            and not has_non_invalid_plan_diagnostics
+        ):
+            details.add(fallback)
+    return details
+
+
+def _input_artifact_invalid_plan_diagnostic_details(
+    item: Mapping[str, object],
+) -> set[str]:
+    diagnostics = item.get("diagnostics")
+    if not isinstance(diagnostics, Sequence) or isinstance(
+        diagnostics,
+        str | bytes,
+    ):
+        return set()
+    details: set[str] = set()
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, Mapping):
+            continue
+        if diagnostic.get("code") != DiagnosticFamily.INVALID_PLAN.value:
+            continue
+        detail = diagnostic.get("detail")
+        if (
+            isinstance(detail, str)
+            and detail
+            in DETAILS_BY_DIAGNOSTIC_CODE[DiagnosticFamily.INVALID_PLAN.value]
+        ):
+            details.add(detail)
+    return details
+
+
+def _clear_invalid_plan_manifest_claims(summary: dict[str, object]) -> None:
+    manifest_claim = summary.get("aggregate-evidence-manifest")
+    if isinstance(manifest_claim, MutableMapping):
+        manifest_claim["artifact-instance-id"] = None
+        manifest_claim["content-digest"] = None
+    final_artifacts = summary.get("final-artifacts")
+    final_manifest = (
+        final_artifacts.get("aggregate-evidence-manifest")
+        if isinstance(final_artifacts, Mapping)
+        else None
+    )
+    if isinstance(final_manifest, MutableMapping):
+        final_manifest["artifact-instance-id"] = None
+        final_manifest["content-digest"] = None
+        final_manifest["producer-verified"] = False
+
+
+def _authorized_invalid_plan_final_failures(
+    failures: object,
+    authority_failure_details: set[str],
+) -> list[dict[str, object]]:
+    if not isinstance(failures, Sequence) or isinstance(failures, str | bytes):
+        return []
+    authorized: list[dict[str, object]] = []
+    for failure in failures:
+        if not isinstance(failure, Mapping):
+            continue
+        diagnostic = failure.get("diagnostic")
+        detail = (
+            diagnostic.get("detail")
+            if isinstance(diagnostic, Mapping)
+            else None
+        )
+        if (
+            failure.get("kind") == "final-evidence-failure"
+            and isinstance(detail, str)
+            and detail in authority_failure_details
+        ):
+            authorized.append(dict(failure))
+            continue
+    return authorized
+
+
+def _force_invalid_plan_summary_fields(
+    summary: dict[str, object],
+    *,
+    preserve_manifest_claim: bool = False,
+    preserve_projection: bool = False,
+    invalid_plan_detail: str | None = None,
+) -> None:
+    authority_failure_details = (
+        _summary_aggregate_manifest_authority_failure_details(summary)
+    )
+    if not preserve_projection:
+        summary["plan-id"] = None
+        summary["plan-digest"] = None
+        summary["mode"] = "unknown"
+        summary["validation-tree"] = dict(_UNKNOWN_VALIDATION_TREE)
+        summary["affected-range"] = dict(_UNKNOWN_AFFECTED_RANGE)
+        summary["request"] = dict(_UNKNOWN_REQUEST_SUMMARY)
+        summary["scheduled-full"] = dict(_UNKNOWN_SCHEDULED_FULL)
+    if not preserve_manifest_claim:
+        _clear_invalid_plan_manifest_claims(summary)
     summary["verdict"] = "failed"
     reason = summary.get("reason")
     if isinstance(reason, MutableMapping):
@@ -10430,21 +12032,129 @@ def _force_invalid_plan_summary_fields(summary: dict[str, object]) -> None:
         work_groups["required-missing"] = 0
     summary["batch-bundles"] = []
     summary["evidence-results"] = []
-    summary["failures"] = [dict(_INVALID_PLAN_FAILURE)]
-    manifest_claim = summary.get("aggregate-evidence-manifest")
-    if isinstance(manifest_claim, MutableMapping):
-        manifest_claim["artifact-instance-id"] = None
-        manifest_claim["content-digest"] = None
-    final_artifacts = summary.get("final-artifacts")
-    final_manifest = (
-        final_artifacts.get("aggregate-evidence-manifest")
-        if isinstance(final_artifacts, Mapping)
-        else None
+    final_failures = _authorized_invalid_plan_final_failures(
+        summary.get("failures"),
+        authority_failure_details,
     )
-    if isinstance(final_manifest, MutableMapping):
-        final_manifest["artifact-instance-id"] = None
-        final_manifest["content-digest"] = None
-        final_manifest["producer-verified"] = False
+    summary["failures"] = sorted(
+        [_invalid_plan_failure(invalid_plan_detail), *final_failures],
+        key=_summary_failure_sort_key,
+    )
+    reason = summary.get("reason")
+    if isinstance(reason, MutableMapping):
+        reason["fail-closed"] = False
+        reason["final-evidence-failure"] = bool(authority_failure_details)
+
+
+def _summary_aggregate_manifest_producer_unverified(
+    summary: Mapping[str, object],
+) -> bool:
+    final_artifacts = summary.get("final-artifacts")
+    if not isinstance(final_artifacts, Mapping):
+        return False
+    final_manifest = final_artifacts.get("aggregate-evidence-manifest")
+    return (
+        isinstance(final_manifest, Mapping)
+        and isinstance(final_manifest.get("artifact-instance-id"), str)
+        and bool(final_manifest.get("artifact-instance-id"))
+        and final_manifest.get("producer-verified") is False
+    )
+
+
+def _summary_manifest_claim_has_content_digest(
+    summary: Mapping[str, object],
+) -> bool:
+    manifest_claim = summary.get("aggregate-evidence-manifest")
+    return (
+        isinstance(manifest_claim, Mapping)
+        and isinstance(manifest_claim.get("content-digest"), str)
+        and bool(manifest_claim.get("content-digest"))
+    )
+
+
+def _summary_aggregate_manifest_authority_failure_details(
+    summary: Mapping[str, object],
+) -> set[str]:
+    final_artifacts = summary.get("final-artifacts")
+    if not isinstance(final_artifacts, Mapping):
+        return set()
+    final_manifest = final_artifacts.get("aggregate-evidence-manifest")
+    if not isinstance(final_manifest, Mapping):
+        return set()
+    diagnostics = final_manifest.get("authority-diagnostics")
+    if not isinstance(diagnostics, Sequence) or isinstance(
+        diagnostics,
+        str | bytes,
+    ):
+        return set()
+    details: set[str] = set()
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, Mapping):
+            continue
+        detail = diagnostic.get("detail")
+        if (
+            isinstance(detail, str)
+            and detail in _AGGREGATE_MANIFEST_AUTHORITY_DETAILS
+        ):
+            details.add(detail)
+    return details
+
+
+def _aggregate_manifest_authority_failure_details_from_context(
+    summary: Mapping[str, object],
+    aggregate_evidence_manifest: Mapping[str, object] | None,
+) -> set[str]:
+    if aggregate_evidence_manifest is not None:
+        return set()
+    return _summary_aggregate_manifest_authority_failure_details(summary)
+
+
+def _validate_summary_manifest_authority_diagnostics_match_context(
+    summary: Mapping[str, object],
+    authority_failure_details: set[str],
+    aggregate_evidence_manifest: Mapping[str, object] | None,
+    issues: list[ValidationIssue],
+) -> None:
+    if aggregate_evidence_manifest is None:
+        return
+    summary_details = _summary_aggregate_manifest_authority_failure_details(
+        summary
+    )
+    unsupported = summary_details - authority_failure_details
+    if unsupported:
+        issues.append(
+            ValidationIssue(
+                "$.final-artifacts.aggregate-evidence-manifest."
+                "authority-diagnostics",
+                "must match supplied aggregate evidence manifest authority",
+            )
+        )
+
+
+def _invalid_plan_final_evidence_failure_details(
+    summary: Mapping[str, object],
+) -> set[str]:
+    return _summary_aggregate_manifest_authority_failure_details(summary)
+
+
+def _validate_aggregate_manifest_authority_diagnostic_details(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        return
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping):
+            continue
+        detail = item.get("detail")
+        if detail not in _AGGREGATE_MANIFEST_AUTHORITY_DETAILS:
+            issues.append(
+                ValidationIssue(
+                    f"{path}[{index}].detail",
+                    "must be an aggregate evidence manifest authority detail",
+                )
+            )
 
 
 def _validate_summary_derived_status(  # noqa: PLR0913
@@ -10455,38 +12165,62 @@ def _validate_summary_derived_status(  # noqa: PLR0913
     namespace_failure_details: set[str],
     required_input_failure: bool,
     aggregate_duration_exceeded: bool,
+    aggregate_manifest_producer_unverified: bool,
+    aggregate_manifest_authority_failure_details: set[str],
     aggregate_summary_without_manifest: bool,
+    invalid_plan_input_failure_details: set[str],
+    invalid_plan_expected_projection: Mapping[str, object],
     issues: list[ValidationIssue],
 ) -> None:
     namespace_failure = bool(namespace_failure_details)
+    aggregate_manifest_authority_failure = bool(
+        aggregate_manifest_authority_failure_details
+    )
     outcomes = [row.get("outcome") for row in evidence_rows]
     missing = sum(1 for outcome in outcomes if outcome == "missing")
     skipped = sum(1 for outcome in outcomes if outcome == "skipped")
     failed = sum(1 for outcome in outcomes if outcome == "failed")
     satisfied = sum(1 for outcome in outcomes if outcome == "satisfied")
-    final_evidence_failure = (
-        aggregate_duration_exceeded
-        or required_input_failure
-        or aggregate_summary_without_manifest
-    )
+    final_evidence_failure = aggregate_manifest_authority_failure
+    invalid_plan_input_failure = bool(invalid_plan_input_failure_details)
     expected_reason = {
-        "invalid-plan": False,
-        "fail-closed": (
-            namespace_failure
-            or required_input_failure
-            or aggregate_summary_without_manifest
-        ),
-        "required-evidence-missing": missing > 0,
-        "required-evidence-skipped": skipped > 0,
-        "blocking-validation-failure": failed > 0,
-        "inadmissible-batch-evidence": inadmissible_batch,
-        "namespace-closure-failure": namespace_failure,
-        "aggregate-duration-exceeded": aggregate_duration_exceeded,
-        "final-evidence-failure": final_evidence_failure,
+        "invalid-plan": invalid_plan_input_failure,
+        "fail-closed": namespace_failure and not invalid_plan_input_failure,
+        "required-evidence-missing": missing > 0
+        and not invalid_plan_input_failure,
+        "required-evidence-skipped": skipped > 0
+        and not invalid_plan_input_failure,
+        "blocking-validation-failure": failed > 0
+        and not invalid_plan_input_failure,
+        "inadmissible-batch-evidence": inadmissible_batch
+        and not invalid_plan_input_failure,
+        "namespace-closure-failure": namespace_failure
+        and not invalid_plan_input_failure,
+        "aggregate-duration-exceeded": aggregate_duration_exceeded
+        and not invalid_plan_input_failure,
+        "required-input-artifact-failure": required_input_failure
+        and not invalid_plan_input_failure,
+        "aggregate-summary-without-manifest": aggregate_summary_without_manifest
+        and not invalid_plan_input_failure,
+        "final-producer-unverified": aggregate_manifest_producer_unverified
+        and not invalid_plan_input_failure,
+        "final-evidence-failure": final_evidence_failure
+        and not invalid_plan_input_failure,
     }
     reason = summary.get("reason")
     if isinstance(reason, Mapping) and reason.get("invalid-plan") is True:
-        _validate_invalid_plan_summary_mode(summary, evidence_rows, issues)
+        invalid_plan_detail = (
+            sorted(invalid_plan_input_failure_details)[0]
+            if invalid_plan_input_failure_details
+            else _invalid_plan_failure_detail_from_summary(summary)
+        )
+        _validate_invalid_plan_summary_mode(
+            summary,
+            evidence_rows,
+            issues,
+            invalid_plan_detail=invalid_plan_detail,
+            expected_projection=invalid_plan_expected_projection,
+        )
         return
     required_failure_attributions = _required_summary_failure_attributions(
         summary,
@@ -10494,11 +12228,14 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         {
             "namespace-closure-failure": namespace_failure,
             "aggregate-duration-exceeded": aggregate_duration_exceeded,
-            "final-evidence-failure": (
-                required_input_failure
-                or aggregate_duration_exceeded
-                or aggregate_summary_without_manifest
+            "required-input-artifact-failure": required_input_failure,
+            "aggregate-summary-without-manifest": (
+                aggregate_summary_without_manifest
             ),
+            "final-producer-unverified": (
+                aggregate_manifest_producer_unverified
+            ),
+            "final-evidence-failure": (aggregate_manifest_authority_failure),
         },
     )
     _validate_summary_failure_coverage(
@@ -10511,8 +12248,19 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         _final_evidence_failure_causes(
             required_input_failure=required_input_failure,
             aggregate_duration_exceeded=aggregate_duration_exceeded,
+            aggregate_manifest_producer_unverified=(
+                aggregate_manifest_producer_unverified
+            ),
             aggregate_summary_without_manifest=aggregate_summary_without_manifest,
+            aggregate_manifest_authority_failure_details=(
+                aggregate_manifest_authority_failure_details
+            ),
         ),
+        issues,
+    )
+    _validate_namespace_closure_failure_details(
+        summary,
+        namespace_failure_details,
         issues,
     )
     _validate_fail_closed_failure_details(
@@ -10520,7 +12268,14 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         _fail_closed_failure_causes(
             namespace_failure_details=namespace_failure_details,
             required_input_failure=required_input_failure,
+            aggregate_duration_exceeded=aggregate_duration_exceeded,
+            aggregate_manifest_producer_unverified=(
+                aggregate_manifest_producer_unverified
+            ),
             aggregate_summary_without_manifest=aggregate_summary_without_manifest,
+            aggregate_manifest_authority_failure_details=(
+                aggregate_manifest_authority_failure_details
+            ),
         ),
         issues,
     )
@@ -10541,7 +12296,10 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         or namespace_failure
         or required_input_failure
         or aggregate_duration_exceeded
+        or aggregate_manifest_producer_unverified
         or aggregate_summary_without_manifest
+        or aggregate_manifest_authority_failure
+        or invalid_plan_input_failure
         else "passed"
     )
     if summary.get("verdict") != expected_verdict:
@@ -10570,40 +12328,84 @@ def _final_evidence_failure_causes(
     *,
     required_input_failure: bool,
     aggregate_duration_exceeded: bool,
+    aggregate_manifest_producer_unverified: bool,
     aggregate_summary_without_manifest: bool,
+    aggregate_manifest_authority_failure_details: set[str],
 ) -> set[str]:
-    causes: set[str] = set()
-    if required_input_failure:
-        causes.add("required-input-artifact-failure")
-    if aggregate_duration_exceeded:
-        causes.add("aggregate-duration-exceeded")
-    if aggregate_summary_without_manifest:
-        causes.add("aggregate-summary-without-manifest")
-    return causes
+    del required_input_failure
+    del aggregate_duration_exceeded
+    del aggregate_manifest_producer_unverified
+    del aggregate_summary_without_manifest
+    return set(aggregate_manifest_authority_failure_details)
 
 
 type _FailClosedCause = tuple[str, str]
 
 
-def _fail_closed_failure_causes(
+def _fail_closed_failure_causes(  # noqa: PLR0913
     *,
     namespace_failure_details: set[str],
     required_input_failure: bool,
+    aggregate_duration_exceeded: bool,
+    aggregate_manifest_producer_unverified: bool,
     aggregate_summary_without_manifest: bool,
+    aggregate_manifest_authority_failure_details: set[str],
 ) -> set[_FailClosedCause]:
-    causes = {
-        ("namespace-closure-failure", detail)
-        for detail in namespace_failure_details
-    }
-    if required_input_failure:
-        causes.add(
-            ("final-evidence-failure", "required-input-artifact-failure")
-        )
-    if aggregate_summary_without_manifest:
-        causes.add(
-            ("final-evidence-failure", "aggregate-summary-without-manifest")
-        )
+    causes: set[_FailClosedCause] = set()
+    del namespace_failure_details
+    del required_input_failure
+    del aggregate_duration_exceeded
+    del aggregate_manifest_producer_unverified
+    del aggregate_summary_without_manifest
+    del aggregate_manifest_authority_failure_details
     return causes
+
+
+def _validate_namespace_closure_failure_details(
+    summary: Mapping[str, object],
+    causes: set[str],
+    issues: list[ValidationIssue],
+) -> None:
+    failures = summary.get("failures")
+    if not isinstance(failures, Sequence) or isinstance(failures, str | bytes):
+        return
+    observed_details: list[str] = []
+    for index, failure in enumerate(failures):
+        if (
+            not isinstance(failure, Mapping)
+            or failure.get("kind") != "namespace-closure-failure"
+        ):
+            continue
+        diagnostic = failure.get("diagnostic")
+        detail = (
+            diagnostic.get("detail")
+            if isinstance(diagnostic, Mapping)
+            else None
+        )
+        if isinstance(detail, str):
+            observed_details.append(detail)
+        if detail not in causes:
+            issues.append(
+                ValidationIssue(
+                    f"$.failures[{index}].diagnostic.detail",
+                    "must match actual namespace closure failure cause",
+                )
+            )
+    observed_causes = set(observed_details)
+    if len(observed_details) != len(observed_causes):
+        issues.append(
+            ValidationIssue(
+                "$.failures",
+                "must include at most one namespace closure failure per cause",
+            )
+        )
+    if observed_causes != causes:
+        issues.append(
+            ValidationIssue(
+                "$.failures",
+                "must exactly cover namespace closure failure causes",
+            )
+        )
 
 
 def _validate_fail_closed_failure_details(
@@ -10662,7 +12464,11 @@ def _summary_has_missing_manifest_failure(
     for failure in failures:
         if not isinstance(failure, Mapping):
             continue
-        if failure.get("kind") != "final-evidence-failure":
+        if failure.get("kind") not in {
+            "aggregate-summary-without-manifest",
+            "final-evidence-failure",
+            "fail-closed",
+        }:
             continue
         diagnostic = failure.get("diagnostic")
         if (
@@ -10723,38 +12529,26 @@ def _validate_invalid_plan_summary_mode(  # noqa: C901,PLR0912
     summary: Mapping[str, object],
     evidence_rows: Sequence[Mapping[str, object]],
     issues: list[ValidationIssue],
+    *,
+    invalid_plan_detail: str | None = None,
+    expected_projection: Mapping[str, object],
 ) -> None:
+    expected_final_failure_details = (
+        _invalid_plan_final_evidence_failure_details(summary)
+    )
+    expected_fail_closed_causes: set[_FailClosedCause] = set()
     if summary.get("verdict") != "failed":
         issues.append(ValidationIssue("$.verdict", "must be failed"))
-    if summary.get("mode") != "unknown":
-        issues.append(ValidationIssue("$.mode", "must be unknown"))
-    if summary.get("validation-tree") != _UNKNOWN_VALIDATION_TREE:
-        issues.append(
-            ValidationIssue(
-                "$.validation-tree",
-                "must be unknown for invalid-plan summary mode",
-            )
-        )
-    if summary.get("affected-range") != _UNKNOWN_AFFECTED_RANGE:
-        issues.append(
-            ValidationIssue(
-                "$.affected-range",
-                "must be unknown for invalid-plan summary mode",
-            )
-        )
-    if summary.get("request") != _UNKNOWN_REQUEST_SUMMARY:
-        issues.append(
-            ValidationIssue(
-                "$.request",
-                "must be empty for invalid-plan summary mode",
-            )
-        )
-    if summary.get("scheduled-full") != _UNKNOWN_SCHEDULED_FULL:
-        issues.append(
-            ValidationIssue(
-                "$.scheduled-full",
-                "must be disabled for invalid-plan summary mode",
-            )
+    if not _invalid_plan_summary_allows_retained_projection(
+        summary,
+        invalid_plan_detail,
+        expected_projection,
+    ):
+        _validate_summary_projection_matches(
+            summary,
+            expected_projection,
+            "invalid-plan context",
+            issues,
         )
     batch_bundles = summary.get("batch-bundles")
     if (
@@ -10776,9 +12570,13 @@ def _validate_invalid_plan_summary_mode(  # noqa: C901,PLR0912
             )
         )
     reason = summary.get("reason")
+    failures = summary.get("failures")
     if isinstance(reason, Mapping):
         expected_reason = dict.fromkeys(_SUMMARY_REASON_KEYS, False)
         expected_reason["invalid-plan"] = True
+        expected_reason["final-evidence-failure"] = bool(
+            expected_final_failure_details
+        )
         for key, expected in expected_reason.items():
             if reason.get(key) != expected:
                 issues.append(
@@ -10812,30 +12610,86 @@ def _validate_invalid_plan_summary_mode(  # noqa: C901,PLR0912
                 "must be zeroed for invalid-plan summary mode",
             )
         )
-    failures = summary.get("failures")
     if not isinstance(failures, Sequence) or isinstance(failures, str | bytes):
         return
-    if len(failures) != 1 or not isinstance(failures[0], Mapping):
+    invalid_plan_failures = [
+        failure
+        for failure in failures
+        if isinstance(failure, Mapping)
+        and failure.get("kind") == "invalid-plan"
+    ]
+    if len(invalid_plan_failures) != 1:
         issues.append(
             ValidationIssue(
                 "$.failures",
                 "must contain exactly one invalid-plan failure",
             )
         )
-    elif failures[0].get("kind") != "invalid-plan":
+    elif invalid_plan_failures[0] != _invalid_plan_failure(invalid_plan_detail):
         issues.append(
             ValidationIssue(
-                "$.failures[0].kind",
-                "must be invalid-plan",
-            )
-        )
-    elif failures[0] != _INVALID_PLAN_FAILURE:
-        issues.append(
-            ValidationIssue(
-                "$.failures[0]",
+                "$.failures",
                 "must match canonical invalid-plan failure",
             )
         )
+    unexpected_failures = [
+        failure
+        for failure in failures
+        if isinstance(failure, Mapping)
+        and failure.get("kind")
+        not in {"invalid-plan", "final-evidence-failure"}
+    ]
+    if unexpected_failures:
+        issues.append(
+            ValidationIssue(
+                "$.failures",
+                "must contain only invalid-plan or final evidence failures",
+            )
+        )
+    _validate_final_evidence_failure_details(
+        summary,
+        expected_final_failure_details,
+        issues,
+    )
+    _validate_fail_closed_failure_details(
+        summary,
+        expected_fail_closed_causes,
+        issues,
+    )
+
+
+def _invalid_plan_detail_allows_retained_plan_context(
+    detail: str | None,
+) -> bool:
+    return detail in {
+        DiagnosticDetail.CHANGED_FILES_SNAPSHOT_MALFORMED.value,
+        DiagnosticDetail.CHANGED_FILES_SNAPSHOT_SCHEMA_INVALID.value,
+        DiagnosticDetail.CHANGED_FILES_SNAPSHOT_REF_MISMATCH.value,
+        DiagnosticDetail.CHANGED_FILES_SNAPSHOT_ENVELOPE_MISMATCH.value,
+        DiagnosticDetail.CHANGED_FILES_SNAPSHOT_NONCANONICAL.value,
+        DiagnosticDetail.CHANGED_FILES_SNAPSHOT_DIGEST_MISMATCH.value,
+        DiagnosticDetail.FACT_SNAPSHOT_MALFORMED.value,
+        DiagnosticDetail.FACT_SNAPSHOT_SCHEMA_INVALID.value,
+        DiagnosticDetail.FACT_SNAPSHOT_REF_MISMATCH.value,
+        DiagnosticDetail.FACT_SNAPSHOT_ENVELOPE_MISMATCH.value,
+        DiagnosticDetail.FACT_SNAPSHOT_PLAN_MISMATCH.value,
+        DiagnosticDetail.FACT_SNAPSHOT_CROSS_REFERENCE_INVALID.value,
+        DiagnosticDetail.FACT_SNAPSHOT_NONCANONICAL.value,
+        DiagnosticDetail.FACT_SNAPSHOT_DIGEST_MISMATCH.value,
+    }
+
+
+def _invalid_plan_summary_allows_retained_projection(
+    summary: Mapping[str, object],
+    invalid_plan_detail: str | None,
+    expected_projection: Mapping[str, object],
+) -> bool:
+    return (
+        _invalid_plan_detail_allows_retained_plan_context(invalid_plan_detail)
+        and expected_projection == _no_authority_summary_projection()
+        and isinstance(summary.get("plan-id"), str)
+        and isinstance(summary.get("plan-digest"), str)
+    )
 
 
 type _FailureAttribution = tuple[
@@ -10862,6 +12716,8 @@ def _required_summary_failure_attributions(
     if isinstance(reason, Mapping):
         for kind in _SUMMARY_FAILURE_KINDS:
             if reason.get(kind) is not True:
+                continue
+            if kind == "fail-closed":
                 continue
             if not any(item[0] == kind for item in required):
                 required.add((kind, None, None, None, None))
@@ -10932,7 +12788,12 @@ def _validate_summary_failure_coverage(
     duplicate_checked = [
         attribution
         for attribution in observed_list
-        if attribution[0] not in {"fail-closed", "final-evidence-failure"}
+        if attribution[0]
+        not in {
+            "fail-closed",
+            "final-evidence-failure",
+            "namespace-closure-failure",
+        }
     ]
     if len(duplicate_checked) != len(set(duplicate_checked)):
         issues.append(
@@ -11071,6 +12932,18 @@ def _aggregate_namespace_failure_details(
             and observed > _MAX_PREFINAL_VALIDATION_ARTIFACTS
         ):
             details.add("namespace-overflow")
+        diagnostics = overflow.get("diagnostics")
+        if isinstance(diagnostics, Sequence) and not isinstance(
+            diagnostics, str | bytes
+        ):
+            for diagnostic in diagnostics:
+                if (
+                    isinstance(diagnostic, Mapping)
+                    and diagnostic.get("code") == "namespace-closure-failure"
+                    and diagnostic.get("detail")
+                    == "namespace-enumeration-unavailable"
+                ):
+                    details.add("namespace-enumeration-unavailable")
     return details
 
 
@@ -11085,6 +12958,20 @@ def _aggregate_required_input_failure(
         and item.get("required") is True
         and item.get("admissibility") != "valid"
         for item in inputs.values()
+    )
+
+
+def _aggregate_execution_batch_manifest_input_not_valid(
+    aggregate_manifest: Mapping[str, object],
+) -> bool:
+    inputs = aggregate_manifest.get("input-artifacts")
+    if not isinstance(inputs, Mapping):
+        return False
+    execution_manifest = inputs.get("execution-batch-manifest")
+    return (
+        isinstance(execution_manifest, Mapping)
+        and execution_manifest.get("required") is True
+        and execution_manifest.get("admissibility") != "valid"
     )
 
 
@@ -11260,17 +13147,21 @@ def _unexpected_implicit_id(
     run_attempt: str,
 ) -> str:
     physical_name = _sort_component(item.get("physical-artifact-name"))
+    observed_physical_name = _sort_component(
+        item.get("observed-physical-artifact-name")
+    )
     instance_id = _sort_component(item.get("artifact-instance-id"))
     classification = _sort_component(item.get("classification"))
-    return canonical_json_digest(
-        {
-            "run-id": run_id,
-            "run-attempt": run_attempt,
-            "physical-artifact-name": physical_name,
-            "artifact-instance-id": instance_id,
-            "classification": classification,
-        },
-    )
+    preimage = {
+        "run-id": run_id,
+        "run-attempt": run_attempt,
+        "physical-artifact-name": physical_name,
+        "artifact-instance-id": instance_id,
+        "classification": classification,
+    }
+    if observed_physical_name:
+        preimage["observed-physical-artifact-name"] = observed_physical_name
+    return canonical_json_digest(preimage)
 
 
 def _mapping(value: object) -> Mapping[str, object]:

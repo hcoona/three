@@ -1,14 +1,13 @@
-"""Selector-assignment and writer-observation helper tests."""
+"""Selector-assignment helper tests."""
 
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import cast
+from typing import cast, get_args
 
 import pytest
 from three_workflow_release_contracts import (
     API_VERSIONS_BY_KIND,
-    CiValidationArtifactProducerAuthority,
     CiValidationKind,
     ContractValidationError,
     DiagnosticDetail,
@@ -16,26 +15,26 @@ from three_workflow_release_contracts import (
     DiagnosticSeverity,
     DiagnosticVerdictEffect,
     GitHubActionsArtifactMetadata,
-    admit_ci_validation_selector_assignments_artifact,
-    admit_ci_validation_writer_observation_artifact,
     artifact_physical_name,
     canonical_json_digest,
-    ci_validation_assignment_id,
     ci_validation_diagnostic,
     ci_validation_plan_digest,
-    ci_validation_receipt_artifact_ref,
     ci_validation_request_artifact_ref,
     ci_validation_request_projection,
-    ci_validation_selector_assignments_artifact_ref,
     ci_validation_writer_id,
-    ci_validation_writer_observation_artifact_ref,
     collect_artifacts_by_name,
     freeze_ci_validation_plan,
-    freeze_ci_validation_selector_assignments,
-    freeze_ci_validation_writer_observation,
     normalize_ci_validation_request,
-    validate_ci_validation_selector_assignments,
-    validate_ci_validation_writer_observation,
+)
+from three_workflow_release_contracts.ci_validation_assignments import (
+    _admit_ci_validation_selector_assignments_artifact,
+    _ci_validation_assignment_id,
+    _ci_validation_receipt_artifact_ref,
+    _ci_validation_selector_assignments_artifact_ref,
+    _CiValidationArtifactProducerAuthority,
+    _freeze_ci_validation_selector_assignments,
+    _ProducerBoundary,
+    _validate_ci_validation_selector_assignments,
 )
 
 RUN_ID = "25887422010"
@@ -334,7 +333,7 @@ def _writer_id(*, job: str = "ci-validation-selector-python") -> str:
 
 def _manifest() -> dict[str, object]:
     snapshot = _valid_snapshot()
-    return freeze_ci_validation_selector_assignments(
+    return _freeze_ci_validation_selector_assignments(
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -344,7 +343,7 @@ def _manifest() -> dict[str, object]:
 
 
 def _validate_manifest(manifest: object, snapshot) -> None:
-    validate_ci_validation_selector_assignments(
+    _validate_ci_validation_selector_assignments(
         manifest,
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
@@ -354,7 +353,7 @@ def _validate_manifest(manifest: object, snapshot) -> None:
 
 def _writer_context():
     snapshot = _valid_snapshot()
-    manifest = freeze_ci_validation_selector_assignments(
+    manifest = _freeze_ci_validation_selector_assignments(
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -368,29 +367,24 @@ def _writer_context():
     return snapshot, manifest, assignment
 
 
-def test_assignment_and_observation_refs_are_contract_owned() -> None:
+def test_assignment_and_receipt_refs_are_contract_owned() -> None:
     """Derive path-safe IDs and logical refs without payload identity claims."""
     writer_id = _writer_id()
 
-    assert ci_validation_assignment_id(work_group_id=WORK_GROUP_ID) == (
+    assert _ci_validation_assignment_id(work_group_id=WORK_GROUP_ID) == (
         WORK_GROUP_ID
     )
     assert writer_id.startswith("github-actions-job:")
     assert writer_id == _writer_id()
-    assert ci_validation_selector_assignments_artifact_ref(
+    assert _ci_validation_selector_assignments_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
     ) == ("ci-validation/assignments/25887422010/1/selector-assignments.json")
-    assert ci_validation_receipt_artifact_ref(
+    assert _ci_validation_receipt_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         work_group_id=WORK_GROUP_ID,
     ) == ("ci-validation/receipts/25887422010/1/wg-python-gate/receipt.json")
-    assert ci_validation_writer_observation_artifact_ref(
-        run_id=RUN_ID,
-        run_attempt=RUN_ATTEMPT,
-        assignment_id=WORK_GROUP_ID,
-    ) == ("ci-validation/writer-observations/25887422010/1/wg-python-gate.json")
 
 
 def test_writer_id_canonicalizes_matrix_order() -> None:
@@ -421,25 +415,19 @@ def test_writer_id_canonicalizes_matrix_order() -> None:
 def test_refs_reject_non_path_safe_ids(work_group_id: str) -> None:
     """Assignment-bearing path segments fail closed before ref construction."""
     with pytest.raises(ContractValidationError):
-        ci_validation_assignment_id(work_group_id=work_group_id)
+        _ci_validation_assignment_id(work_group_id=work_group_id)
     with pytest.raises(ContractValidationError):
-        ci_validation_receipt_artifact_ref(
+        _ci_validation_receipt_artifact_ref(
             run_id=RUN_ID,
             run_attempt=RUN_ATTEMPT,
             work_group_id=work_group_id,
-        )
-    with pytest.raises(ContractValidationError):
-        ci_validation_writer_observation_artifact_ref(
-            run_id=RUN_ID,
-            run_attempt=RUN_ATTEMPT,
-            assignment_id=work_group_id,
         )
 
 
 def test_freeze_selector_assignments_binds_executable_work_groups() -> None:
     """Materialize exactly one assignment per executable selector."""
     snapshot = _valid_snapshot()
-    manifest = freeze_ci_validation_selector_assignments(
+    manifest = _freeze_ci_validation_selector_assignments(
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -457,17 +445,10 @@ def test_freeze_selector_assignments_binds_executable_work_groups() -> None:
             "work-group-id": WORK_GROUP_ID,
             "trusted-writer-id": _writer_id(),
             "writer-identity-source": "github-actions-job-context",
-            "receipt-artifact-ref": ci_validation_receipt_artifact_ref(
+            "receipt-artifact-ref": _ci_validation_receipt_artifact_ref(
                 run_id=RUN_ID,
                 run_attempt=RUN_ATTEMPT,
                 work_group_id=WORK_GROUP_ID,
-            ),
-            "writer-observation-ref": (
-                ci_validation_writer_observation_artifact_ref(
-                    run_id=RUN_ID,
-                    run_attempt=RUN_ATTEMPT,
-                    assignment_id=WORK_GROUP_ID,
-                )
             ),
         },
     ]
@@ -477,7 +458,7 @@ def test_empty_selector_assignments_are_valid_for_no_executable_work() -> None:
     """Fail-closed or no-work plans still get one empty manifest."""
     snapshot = _fail_closed_snapshot()
 
-    manifest = freeze_ci_validation_selector_assignments(
+    manifest = _freeze_ci_validation_selector_assignments(
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -494,7 +475,7 @@ def test_evidence_aggregation_does_not_receive_writer_assignment() -> None:
     snapshot = _fail_closed_snapshot()
 
     with pytest.raises(ContractValidationError, match="executable work group"):
-        freeze_ci_validation_selector_assignments(
+        _freeze_ci_validation_selector_assignments(
             plan=snapshot.plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -506,7 +487,7 @@ def test_evidence_aggregation_does_not_receive_writer_assignment() -> None:
 def test_incomplete_plan_rejected_before_assignment_materialization() -> None:
     """Partial plan payloads cannot authorize selector receipt writers."""
     with pytest.raises(ContractValidationError, match="is required"):
-        freeze_ci_validation_selector_assignments(
+        _freeze_ci_validation_selector_assignments(
             plan=_incomplete_plan(),
             trusted_writer_ids={WORK_GROUP_ID: _writer_id()},
             created_at=CREATED_AT,
@@ -524,7 +505,7 @@ def test_unknown_work_group_kind_rejected_before_assignment() -> None:
     plan["plan-digest"] = ci_validation_plan_digest(plan)
 
     with pytest.raises(ContractValidationError, match="not registered"):
-        freeze_ci_validation_selector_assignments(
+        _freeze_ci_validation_selector_assignments(
             plan=plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,
             fact_snapshot=snapshot.fact_snapshot,
@@ -547,11 +528,12 @@ def test_selector_assignment_validation_rejects_wrong_receipt_ref() -> None:
     manifest = _manifest()
     assignments = manifest["assignments"]
     assert isinstance(assignments, list)
-    assignments[0]["receipt-artifact-ref"] = ci_validation_receipt_artifact_ref(
+    wrong_receipt_ref = _ci_validation_receipt_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
         work_group_id=SECOND_WORK_GROUP_ID,
     )
+    assignments[0]["receipt-artifact-ref"] = wrong_receipt_ref
 
     with pytest.raises(ContractValidationError, match="receipt ref"):
         _validate_manifest(manifest, _valid_snapshot())
@@ -563,245 +545,26 @@ def test_selector_assignments_reject_mismatched_assignment_id() -> None:
     assignments = manifest["assignments"]
     assert isinstance(assignments, list)
     assignments[0]["assignment-id"] = "arbitrary-assignment"
-    assignments[0]["writer-observation-ref"] = (
-        ci_validation_writer_observation_artifact_ref(
-            run_id=RUN_ID,
-            run_attempt=RUN_ATTEMPT,
-            assignment_id="arbitrary-assignment",
-        )
-    )
-
     with pytest.raises(ContractValidationError, match="derived work-group"):
         _validate_manifest(manifest, _valid_snapshot())
 
 
-def test_selector_assignments_reject_duplicate_observation_refs() -> None:
-    """Duplicate writer-observation refs are not ambiguous authority."""
+def test_selector_assignments_reject_legacy_observation_ref() -> None:
+    """Current selector assignments do not carry writer-observation refs."""
     manifest = _manifest()
     assignments = manifest["assignments"]
     assert isinstance(assignments, list)
-    assignments.append(deepcopy(assignments[0]))
-
-    with pytest.raises(ContractValidationError, match="unique"):
-        _validate_manifest(manifest, _valid_snapshot())
-
-
-def test_writer_observation_binds_assignment_and_artifact_instance() -> None:
-    """Validate observed writer identity from boundary data."""
-    snapshot, manifest, assignment = _writer_context()
-    observation = freeze_ci_validation_writer_observation(
-        plan=snapshot.plan,
-        selector_assignments_manifest=manifest,
-        assignment=assignment,
-        artifact_instance_id="7005183651",
-        observed_writer_id=assignment["trusted-writer-id"],
-        created_at=CREATED_AT,
-        changed_files_snapshot=snapshot.changed_files_snapshot,
-        fact_snapshot=snapshot.fact_snapshot,
+    assignments[0]["writer-observation-ref"] = (
+        "ci-validation/writer-observations/25887422010/1/wg-python-gate.json"
     )
-
-    validate_ci_validation_writer_observation(
-        observation,
-        plan=snapshot.plan,
-        selector_assignments_manifest=manifest,
-        assignment=assignment,
-        expected_artifact_instance_id="7005183651",
-        changed_files_snapshot=snapshot.changed_files_snapshot,
-        fact_snapshot=snapshot.fact_snapshot,
-    )
-
-    assert observation["assignment-id"] == assignment["assignment-id"]
-    assert observation["observed-writer-id"] == assignment["trusted-writer-id"]
-
-
-def test_writer_observation_freeze_rejects_assignment_outside_manifest() -> (
-    None
-):
-    """Writer observations must use selector-manifest-backed assignments."""
-    snapshot, manifest, assignment = _writer_context()
-    forged_assignment = dict(assignment)
-    forged_assignment["work-group-id"] = "forged-work-group"
-    forged_assignment["assignment-id"] = "forged-work-group"
-    forged_assignment["receipt-artifact-ref"] = (
-        ci_validation_receipt_artifact_ref(
-            run_id=RUN_ID,
-            run_attempt=RUN_ATTEMPT,
-            work_group_id="forged-work-group",
-        )
-    )
-    forged_assignment["writer-observation-ref"] = (
-        ci_validation_writer_observation_artifact_ref(
-            run_id=RUN_ID,
-            run_attempt=RUN_ATTEMPT,
-            assignment_id="forged-work-group",
-        )
-    )
-
-    with pytest.raises(ContractValidationError, match="manifest entry"):
-        freeze_ci_validation_writer_observation(
-            plan=snapshot.plan,
-            selector_assignments_manifest=manifest,
-            assignment=forged_assignment,
-            artifact_instance_id="7005183651",
-            observed_writer_id=forged_assignment["trusted-writer-id"],
-            created_at=CREATED_AT,
-            changed_files_snapshot=snapshot.changed_files_snapshot,
-            fact_snapshot=snapshot.fact_snapshot,
-        )
-
-
-def test_writer_observation_validate_rejects_forged_assignment_mapping() -> (
-    None
-):
-    """An internally consistent assignment mapping is not enough authority."""
-    snapshot, manifest, assignment = _writer_context()
-    observation = freeze_ci_validation_writer_observation(
-        plan=snapshot.plan,
-        selector_assignments_manifest=manifest,
-        assignment=assignment,
-        artifact_instance_id="7005183651",
-        observed_writer_id=assignment["trusted-writer-id"],
-        created_at=CREATED_AT,
-        changed_files_snapshot=snapshot.changed_files_snapshot,
-        fact_snapshot=snapshot.fact_snapshot,
-    )
-    forged_assignment = dict(assignment)
-    forged_assignment["trusted-writer-id"] = ci_validation_writer_id(
-        workflow="CI Validation",
-        job="forged-job",
-        matrix={"selector": WORK_GROUP_ID},
-    )
-
-    with pytest.raises(ContractValidationError, match="exactly match"):
-        validate_ci_validation_writer_observation(
-            observation,
-            plan=snapshot.plan,
-            selector_assignments_manifest=manifest,
-            assignment=forged_assignment,
-            expected_artifact_instance_id="7005183651",
-            changed_files_snapshot=snapshot.changed_files_snapshot,
-            fact_snapshot=snapshot.fact_snapshot,
-        )
-
-
-def test_writer_observation_rejects_self_attested_mismatched_writer() -> None:
-    """A payload writer claim cannot override the trusted assignment writer."""
-    snapshot, manifest, assignment = _writer_context()
-    observation = freeze_ci_validation_writer_observation(
-        plan=snapshot.plan,
-        selector_assignments_manifest=manifest,
-        assignment=assignment,
-        artifact_instance_id="7005183651",
-        observed_writer_id=assignment["trusted-writer-id"],
-        created_at=CREATED_AT,
-        changed_files_snapshot=snapshot.changed_files_snapshot,
-        fact_snapshot=snapshot.fact_snapshot,
-    )
-    observation["observed-writer-id"] = ci_validation_writer_id(
-        workflow="CI Validation",
-        job="different-job",
-        matrix={"selector": WORK_GROUP_ID},
-    )
-
-    with pytest.raises(ContractValidationError, match="trusted writer"):
-        validate_ci_validation_writer_observation(
-            observation,
-            plan=snapshot.plan,
-            selector_assignments_manifest=manifest,
-            assignment=assignment,
-            expected_artifact_instance_id="7005183651",
-            changed_files_snapshot=snapshot.changed_files_snapshot,
-            fact_snapshot=snapshot.fact_snapshot,
-        )
-
-
-def test_writer_observation_rejects_artifact_instance_mismatch() -> None:
-    """Observation must bind the exact already-uploaded receipt artifact."""
-    snapshot, manifest, assignment = _writer_context()
-    observation = freeze_ci_validation_writer_observation(
-        plan=snapshot.plan,
-        selector_assignments_manifest=manifest,
-        assignment=assignment,
-        artifact_instance_id="7005183651",
-        observed_writer_id=assignment["trusted-writer-id"],
-        created_at=CREATED_AT,
-        changed_files_snapshot=snapshot.changed_files_snapshot,
-        fact_snapshot=snapshot.fact_snapshot,
-    )
-
-    with pytest.raises(ContractValidationError, match="artifact instance"):
-        validate_ci_validation_writer_observation(
-            observation,
-            plan=snapshot.plan,
-            selector_assignments_manifest=manifest,
-            assignment=assignment,
-            expected_artifact_instance_id="7005183492",
-            changed_files_snapshot=snapshot.changed_files_snapshot,
-            fact_snapshot=snapshot.fact_snapshot,
-        )
-
-
-def test_writer_observation_rejects_missing_expected_artifact_instance() -> (
-    None
-):
-    """Payload-only writer-observation validation is not admission-safe."""
-    snapshot, manifest, assignment = _writer_context()
-    observation = freeze_ci_validation_writer_observation(
-        plan=snapshot.plan,
-        selector_assignments_manifest=manifest,
-        assignment=assignment,
-        artifact_instance_id="7005183651",
-        observed_writer_id=assignment["trusted-writer-id"],
-        created_at=CREATED_AT,
-        changed_files_snapshot=snapshot.changed_files_snapshot,
-        fact_snapshot=snapshot.fact_snapshot,
-    )
-
-    with pytest.raises(
-        ContractValidationError,
-        match="expected-artifact-instance-id",
-    ):
-        validate_ci_validation_writer_observation(
-            observation,
-            plan=snapshot.plan,
-            selector_assignments_manifest=manifest,
-            assignment=assignment,
-            expected_artifact_instance_id=cast("str", None),
-            changed_files_snapshot=snapshot.changed_files_snapshot,
-            fact_snapshot=snapshot.fact_snapshot,
-        )
-
-
-def test_writer_observation_rejects_extra_payload_fields() -> None:
-    """Keep the writer-observation schema closed."""
-    snapshot, manifest, assignment = _writer_context()
-    observation = freeze_ci_validation_writer_observation(
-        plan=snapshot.plan,
-        selector_assignments_manifest=manifest,
-        assignment=assignment,
-        artifact_instance_id="7005183651",
-        observed_writer_id=assignment["trusted-writer-id"],
-        created_at=CREATED_AT,
-        changed_files_snapshot=snapshot.changed_files_snapshot,
-        fact_snapshot=snapshot.fact_snapshot,
-    )
-    observation["payload-writer-id"] = assignment["trusted-writer-id"]
 
     with pytest.raises(ContractValidationError, match="not allowed"):
-        validate_ci_validation_writer_observation(
-            observation,
-            plan=snapshot.plan,
-            selector_assignments_manifest=manifest,
-            assignment=assignment,
-            expected_artifact_instance_id="7005183651",
-            changed_files_snapshot=snapshot.changed_files_snapshot,
-            fact_snapshot=snapshot.fact_snapshot,
-        )
+        _validate_manifest(manifest, _valid_snapshot())
 
 
 def test_selector_manifest_exact_one_admission_uses_contract_ref() -> None:
     """Existing artifact admission enforces exact-one manifest instances."""
-    logical_ref = ci_validation_selector_assignments_artifact_ref(
+    logical_ref = _ci_validation_selector_assignments_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
     )
@@ -816,11 +579,11 @@ def test_selector_manifest_exact_one_admission_uses_contract_ref() -> None:
         ],
     )
 
-    admission = admit_ci_validation_selector_assignments_artifact(
+    admission = _admit_ci_validation_selector_assignments_artifact(
         groups,
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
-        producer_authority=CiValidationArtifactProducerAuthority(
+        producer_authority=_CiValidationArtifactProducerAuthority(
             artifact_id=7001,
             boundary="materialize-work-groups",
             verified=True,
@@ -832,7 +595,7 @@ def test_selector_manifest_exact_one_admission_uses_contract_ref() -> None:
 
 def test_selector_manifest_admission_rejects_unverified_producer() -> None:
     """Selector-assignment authority requires non-payload boundary proof."""
-    logical_ref = ci_validation_selector_assignments_artifact_ref(
+    logical_ref = _ci_validation_selector_assignments_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
     )
@@ -848,11 +611,11 @@ def test_selector_manifest_admission_rejects_unverified_producer() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="non-payload"):
-        admit_ci_validation_selector_assignments_artifact(
+        _admit_ci_validation_selector_assignments_artifact(
             groups,
             run_id=RUN_ID,
             run_attempt=RUN_ATTEMPT,
-            producer_authority=CiValidationArtifactProducerAuthority(
+            producer_authority=_CiValidationArtifactProducerAuthority(
                 artifact_id=7001,
                 boundary="materialize-work-groups",
                 verified=False,
@@ -860,72 +623,9 @@ def test_selector_manifest_admission_rejects_unverified_producer() -> None:
         )
 
 
-def test_writer_observation_exact_one_admission_uses_assignment_ref() -> None:
-    """Observation artifacts are admitted only at assignment-derived refs."""
-    manifest = _manifest()
-    assignments = manifest["assignments"]
-    assert isinstance(assignments, list)
-    assignment = assignments[0]
-    logical_ref = assignment["writer-observation-ref"]
-    assert isinstance(logical_ref, str)
-    groups = collect_artifacts_by_name(
-        [
-            GitHubActionsArtifactMetadata(
-                artifact_id=7002,
-                name=artifact_physical_name(logical_ref),
-                created_at=CREATED_AT,
-                expired=False,
-            ),
-        ],
-    )
-
-    admission = admit_ci_validation_writer_observation_artifact(
-        groups,
-        assignment=assignment,
-        producer_authority=CiValidationArtifactProducerAuthority(
-            artifact_id=7002,
-            boundary="trusted-observation-boundary",
-            verified=True,
-        ),
-    )
-
-    assert admission.logical_ref == logical_ref
-
-
-def test_writer_observation_admission_rejects_unverified_producer() -> None:
-    """Writer-observation authority requires observation-boundary proof."""
-    manifest = _manifest()
-    assignments = manifest["assignments"]
-    assert isinstance(assignments, list)
-    assignment = assignments[0]
-    logical_ref = assignment["writer-observation-ref"]
-    assert isinstance(logical_ref, str)
-    groups = collect_artifacts_by_name(
-        [
-            GitHubActionsArtifactMetadata(
-                artifact_id=7002,
-                name=artifact_physical_name(logical_ref),
-                created_at=CREATED_AT,
-                expired=False,
-            ),
-        ],
-    )
-
-    with pytest.raises(ContractValidationError, match="non-payload"):
-        admit_ci_validation_writer_observation_artifact(
-            groups,
-            assignment=assignment,
-            producer_authority=CiValidationArtifactProducerAuthority(
-                artifact_id=7002,
-                boundary="trusted-observation-boundary",
-                verified=False,
-            ),
-        )
-
-
 def test_admission_rejects_authority_for_different_artifact_instance() -> None:
     """Producer verification is bound to the admitted artifact instance."""
-    logical_ref = ci_validation_selector_assignments_artifact_ref(
+    logical_ref = _ci_validation_selector_assignments_artifact_ref(
         run_id=RUN_ID,
         run_attempt=RUN_ATTEMPT,
     )
@@ -941,11 +641,11 @@ def test_admission_rejects_authority_for_different_artifact_instance() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="artifact instance"):
-        admit_ci_validation_selector_assignments_artifact(
+        _admit_ci_validation_selector_assignments_artifact(
             groups,
             run_id=RUN_ID,
             run_attempt=RUN_ATTEMPT,
-            producer_authority=CiValidationArtifactProducerAuthority(
+            producer_authority=_CiValidationArtifactProducerAuthority(
                 artifact_id=7002,
                 boundary="materialize-work-groups",
                 verified=True,
@@ -953,35 +653,18 @@ def test_admission_rejects_authority_for_different_artifact_instance() -> None:
         )
 
 
-def test_admission_rejects_wrong_producer_boundary() -> None:
-    """Verified producer authority must match the required logical boundary."""
-    logical_ref = ci_validation_selector_assignments_artifact_ref(
-        run_id=RUN_ID,
-        run_attempt=RUN_ATTEMPT,
-    )
-    groups = collect_artifacts_by_name(
-        [
-            GitHubActionsArtifactMetadata(
-                artifact_id=7001,
-                name=artifact_physical_name(logical_ref),
-                created_at=CREATED_AT,
-                expired=False,
-            ),
-        ],
-    )
+def test_public_producer_boundary_excludes_writer_observation() -> None:
+    """Current public producer authority does not expose legacy observations."""
+    assert get_args(_ProducerBoundary.__value__) == ("materialize-work-groups",)
 
-    with pytest.raises(
-        ContractValidationError, match="materialize-work-groups"
-    ):
-        admit_ci_validation_selector_assignments_artifact(
-            groups,
-            run_id=RUN_ID,
-            run_attempt=RUN_ATTEMPT,
-            producer_authority=CiValidationArtifactProducerAuthority(
-                artifact_id=7001,
-                boundary="trusted-observation-boundary",
-                verified=True,
-            ),
+
+def test_public_authority_rejects_writer_observation_boundary() -> None:
+    """Legacy observation boundary is not accepted by public authority."""
+    with pytest.raises(ContractValidationError, match="not registered"):
+        _CiValidationArtifactProducerAuthority(
+            artifact_id=7001,
+            boundary=cast("_ProducerBoundary", "trusted-observation-boundary"),
+            verified=True,
         )
 
 
@@ -994,7 +677,7 @@ def test_validator_rejects_plan_digest_mismatch() -> None:
     mutated_plan["plan-digest"] = "1" * 64
 
     with pytest.raises(ContractValidationError, match="does not match plan"):
-        validate_ci_validation_selector_assignments(
+        _validate_ci_validation_selector_assignments(
             manifest,
             plan=mutated_plan,
             changed_files_snapshot=snapshot.changed_files_snapshot,

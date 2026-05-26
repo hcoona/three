@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import three_workflow_release_contracts
+import three_workflow_release_contracts.ci_validation_assignments as assignments
 from three_workflow_release_contracts import (
     REGISTERED_BUILD_DIAGNOSTIC_CODES,
     REGISTERED_DIAGNOSTIC_CODES,
@@ -78,6 +80,20 @@ def test_registered_diagnostic_vocabulary_is_exposed() -> None:
     assert "REQ_INVALID_INPUT" in REGISTERED_DIAGNOSTIC_CODES
     assert "PLAN_INTERNAL_INVARIANT" in REGISTERED_DIAGNOSTIC_CODES
     assert "BUILD_CHECKOUT_FAILED" in REGISTERED_BUILD_DIAGNOSTIC_CODES
+
+
+def test_writer_observation_helpers_are_not_public_exports() -> None:
+    """Legacy writer-observation helpers are not current public APIs."""
+    names = {
+        "admit_ci_validation_writer_observation_artifact",
+        "ci_validation_writer_observation_artifact_ref",
+        "freeze_ci_validation_writer_observation",
+        "validate_ci_validation_writer_observation",
+    }
+    for name in names:
+        assert name not in three_workflow_release_contracts.__all__
+        assert not hasattr(three_workflow_release_contracts, name)
+        assert not hasattr(assignments, name)
 
 
 def test_dotnet_metadata_requires_metadata_input_context() -> None:

@@ -17,13 +17,19 @@ from three_workflow_release_contracts.contracts import (
 
 CONTRACT_API_VERSION_PREFIX = "three.ci.validation."
 ARTIFACT_PHYSICAL_NAME_PREFIX = "three-ci-validation-"
-ARTIFACT_PHYSICAL_NAME_LENGTH = len(ARTIFACT_PHYSICAL_NAME_PREFIX) + 64
+ARTIFACT_PHYSICAL_NAME_LENGTH = None
 DIGEST_ALGORITHM = "sha256"
 CANONICAL_JSON_PROFILE = "rfc8785-ijson-no-floats"
 MAX_IJSON_SAFE_INTEGER = 9_007_199_254_740_991
 
 _PHYSICAL_ARTIFACT_NAME_RE = re.compile(
-    rf"^{re.escape(ARTIFACT_PHYSICAL_NAME_PREFIX)}[0-9a-f]{{64}}$",
+    rf"^{re.escape(ARTIFACT_PHYSICAL_NAME_PREFIX)}"
+    r"(?P<run_id>[A-Za-z0-9._-]+)-(?P<run_attempt>[A-Za-z0-9._-]+)-"
+    r"(?P<digest>[0-9a-f]{64})$",
+)
+_LOGICAL_REF_ATTEMPT_RE = re.compile(
+    r"^ci-validation/[^/]+/(?P<run_id>[A-Za-z0-9._-]+)/"
+    r"(?P<run_attempt>[A-Za-z0-9._-]+)/"
 )
 _ARTIFACT_REF_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _RFC3339_TIMESTAMP_RE = re.compile(
@@ -44,15 +50,10 @@ class CiValidationKind(StrEnum):
     PLAN = "ci-validation-plan"
     CHANGED_FILES_SNAPSHOT = "ci-validation-changed-files-snapshot"
     FACT_SNAPSHOT = "ci-validation-fact-snapshot"
-    SELECTOR_ASSIGNMENTS = "ci-validation-selector-assignments"
     EXECUTION_BATCH_MANIFEST = "ci-validation-execution-batch-manifest"
     BATCH_EVIDENCE_BUNDLE = "ci-validation-batch-evidence-bundle"
     AGGREGATE_EVIDENCE_MANIFEST = "ci-validation-aggregate-evidence-manifest"
     AGGREGATE_SUMMARY = "ci-validation-aggregate-summary"
-    VALIDATION_RECEIPT = "ci-validation-receipt"
-    WRITER_OBSERVATION = "ci-validation-writer-observation"
-    RECEIPT_MANIFEST = "ci-validation-receipt-manifest"
-    AGGREGATE = "ci-validation-aggregate"
 
 
 class DiagnosticFamily(StrEnum):
@@ -73,11 +74,13 @@ class DiagnosticFamily(StrEnum):
     KNOWN_NON_IMPACTING = "known-non-impacting"
     REQUIRED_EVIDENCE_MISSING = "required-evidence-missing"
     REQUIRED_EVIDENCE_SKIPPED = "required-evidence-skipped"
-    INADMISSIBLE_RECEIPT = "inadmissible-receipt"
     BLOCKING_VALIDATION_FAILURE = "blocking-validation-failure"
     INADMISSIBLE_BATCH_EVIDENCE = "inadmissible-batch-evidence"
     NAMESPACE_CLOSURE_FAILURE = "namespace-closure-failure"
     AGGREGATE_DURATION_EXCEEDED = "aggregate-duration-exceeded"
+    REQUIRED_INPUT_ARTIFACT_FAILURE = "required-input-artifact-failure"
+    AGGREGATE_SUMMARY_WITHOUT_MANIFEST = "aggregate-summary-without-manifest"
+    FINAL_PRODUCER_UNVERIFIED = "final-producer-unverified"
     FINAL_EVIDENCE_FAILURE = "final-evidence-failure"
     INVALID_PLAN = "invalid-plan"
 
@@ -98,17 +101,6 @@ class DiagnosticDetail(StrEnum):
     INCOMPLETE = "incomplete"
     INCONSISTENT = "inconsistent"
     UNCONFIRMED_PROVENANCE = "unconfirmed-provenance"
-    MALFORMED_ARTIFACT_REF = "malformed-artifact-ref"
-    MALFORMED_RECEIPT = "malformed-receipt"
-    WRONG_PLAN = "wrong-plan"
-    UNKNOWN_WORK_GROUP = "unknown-work-group"
-    MISMATCHED_WORK_GROUP = "mismatched-work-group"
-    MISMATCHED_WRITER_IDENTITY = "mismatched-writer-identity"
-    MISMATCHED_EVIDENCE_PAYLOAD = "mismatched-evidence-payload"
-    MISMATCHED_OUTCOME = "mismatched-outcome"
-    DUPLICATE_RECEIPT = "duplicate-receipt"
-    UNSTABLE_ARTIFACT_INSTANCE_ID = "unstable-artifact-instance-id"
-    UNEXPECTED_RECEIPT = "unexpected-receipt"
     PLAN_UNREADABLE = "plan-unreadable"
     PLAN_MISSING = "plan-missing"
     PLAN_DUPLICATE = "plan-duplicate"
@@ -154,18 +146,6 @@ class DiagnosticDetail(StrEnum):
     )
     FACT_SNAPSHOT_NONCANONICAL = "fact-snapshot-noncanonical"
     FACT_SNAPSHOT_DIGEST_MISMATCH = "fact-snapshot-digest-mismatch"
-    SELECTOR_ASSIGNMENT_MISSING = "selector-assignment-missing"
-    SELECTOR_ASSIGNMENT_DUPLICATE = "selector-assignment-duplicate"
-    SELECTOR_ASSIGNMENT_UNREADABLE = "selector-assignment-unreadable"
-    SELECTOR_ASSIGNMENT_MALFORMED = "selector-assignment-malformed"
-    SELECTOR_ASSIGNMENT_SCHEMA_INVALID = "selector-assignment-schema-invalid"
-    SELECTOR_ASSIGNMENT_PLAN_MISMATCH = "selector-assignment-plan-mismatch"
-    SELECTOR_ASSIGNMENT_PRODUCER_UNVERIFIED = (
-        "selector-assignment-producer-unverified"
-    )
-    SELECTOR_ASSIGNMENT_STRUCTURALLY_INVALID = (
-        "selector-assignment-structurally-invalid"
-    )
     STRUCTURALLY_INVALID = "structurally-invalid"
     BUILD = "build"
     TEST = "test"
@@ -176,6 +156,9 @@ class DiagnosticDetail(StrEnum):
     DEPENDENCY_BLOCKED = "dependency-blocked"
     MALFORMED_BUNDLE = "malformed-bundle"
     MISSING_BUNDLE = "missing-bundle"
+    DUPLICATE_BUNDLE_CANDIDATES = "duplicate-bundle-candidates"
+    BUNDLE_PRODUCER_UNVERIFIED = "bundle-producer-unverified"
+    BUNDLE_METADATA_AUTHORITY_INVALID = "bundle-metadata-authority-invalid"
     UNEXPECTED_CONTRACT_ARTIFACT = "unexpected-contract-artifact"
     EXECUTION_BATCH_MANIFEST_MISSING = "execution-batch-manifest-missing"
     EXECUTION_BATCH_MANIFEST_DUPLICATE = "execution-batch-manifest-duplicate"
@@ -193,11 +176,8 @@ class DiagnosticDetail(StrEnum):
     EXECUTION_BATCH_MANIFEST_BUNDLE_REF_MISMATCH = (
         "execution-batch-manifest-bundle-ref-mismatch"
     )
-    REQUIRED_EVIDENCE_MISSING = "required-evidence-missing"
-    REQUIRED_EVIDENCE_SKIPPED = "required-evidence-skipped"
     BLOCKING_VALIDATION_FAILURE = "blocking-validation-failure"
-    INADMISSIBLE_BATCH_EVIDENCE = "inadmissible-batch-evidence"
-    NAMESPACE_CLOSURE_FAILURE = "namespace-closure-failure"
+    NAMESPACE_ENUMERATION_UNAVAILABLE = "namespace-enumeration-unavailable"
     AGGREGATE_DURATION_EXCEEDED = "aggregate-duration-exceeded"
     REQUIRED_INPUT_ARTIFACT_FAILURE = "required-input-artifact-failure"
     AGGREGATE_EVIDENCE_MANIFEST_MISSING = "aggregate-evidence-manifest-missing"
@@ -216,29 +196,9 @@ class DiagnosticDetail(StrEnum):
     AGGREGATE_EVIDENCE_MANIFEST_DIGEST_MISMATCH = (
         "aggregate-evidence-manifest-digest-mismatch"
     )
-    AGGREGATE_SUMMARY_MISSING = "aggregate-summary-missing"
-    AGGREGATE_SUMMARY_DUPLICATE = "aggregate-summary-duplicate"
-    AGGREGATE_SUMMARY_UNREADABLE = "aggregate-summary-unreadable"
-    AGGREGATE_SUMMARY_MALFORMED = "aggregate-summary-malformed"
-    AGGREGATE_SUMMARY_NON_CANONICAL = "aggregate-summary-non-canonical"
-    AGGREGATE_SUMMARY_DIGEST_MISMATCH = "aggregate-summary-digest-mismatch"
-    FINAL_MANIFEST_MISSING = "final-manifest-missing"
-    FINAL_MANIFEST_DUPLICATE = "final-manifest-duplicate"
-    FINAL_MANIFEST_UNREADABLE = "final-manifest-unreadable"
-    FINAL_MANIFEST_MALFORMED = "final-manifest-malformed"
-    FINAL_MANIFEST_NON_CANONICAL = "final-manifest-non-canonical"
-    FINAL_MANIFEST_DIGEST_MISMATCH = "final-manifest-digest-mismatch"
-    FINAL_AGGREGATE_MISSING = "final-aggregate-missing"
-    FINAL_AGGREGATE_DUPLICATE = "final-aggregate-duplicate"
-    FINAL_AGGREGATE_UNREADABLE = "final-aggregate-unreadable"
-    FINAL_AGGREGATE_MALFORMED = "final-aggregate-malformed"
-    FINAL_AGGREGATE_NON_CANONICAL = "final-aggregate-non-canonical"
-    FINAL_AGGREGATE_DIGEST_MISMATCH = "final-aggregate-digest-mismatch"
     FINAL_PRODUCER_UNVERIFIED = "final-producer-unverified"
-    FINAL_NAMESPACE_CLOSURE_MISMATCH = "final-namespace-closure-mismatch"
     AGGREGATE_SUMMARY_WITHOUT_MANIFEST = "aggregate-summary-without-manifest"
     NAMESPACE_OVERFLOW = "namespace-overflow"
-    AGGREGATE_WITHOUT_MANIFEST = "aggregate-without-manifest"
 
 
 class DiagnosticSeverity(StrEnum):
@@ -311,21 +271,6 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
         _COMMON_DIAGNOSTIC_DETAILS
     ),
     DiagnosticFamily.KNOWN_NON_IMPACTING.value: _COMMON_DIAGNOSTIC_DETAILS,
-    DiagnosticFamily.INADMISSIBLE_RECEIPT.value: frozenset(
-        {
-            DiagnosticDetail.MALFORMED_ARTIFACT_REF.value,
-            DiagnosticDetail.MALFORMED_RECEIPT.value,
-            DiagnosticDetail.WRONG_PLAN.value,
-            DiagnosticDetail.UNKNOWN_WORK_GROUP.value,
-            DiagnosticDetail.MISMATCHED_WORK_GROUP.value,
-            DiagnosticDetail.MISMATCHED_WRITER_IDENTITY.value,
-            DiagnosticDetail.MISMATCHED_EVIDENCE_PAYLOAD.value,
-            DiagnosticDetail.MISMATCHED_OUTCOME.value,
-            DiagnosticDetail.DUPLICATE_RECEIPT.value,
-            DiagnosticDetail.UNSTABLE_ARTIFACT_INSTANCE_ID.value,
-            DiagnosticDetail.UNEXPECTED_RECEIPT.value,
-        },
-    ),
     DiagnosticFamily.INVALID_PLAN.value: frozenset(
         {
             DiagnosticDetail.PLAN_UNREADABLE.value,
@@ -361,14 +306,6 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
             DiagnosticDetail.FACT_SNAPSHOT_CROSS_REFERENCE_INVALID.value,
             DiagnosticDetail.FACT_SNAPSHOT_NONCANONICAL.value,
             DiagnosticDetail.FACT_SNAPSHOT_DIGEST_MISMATCH.value,
-            DiagnosticDetail.SELECTOR_ASSIGNMENT_MISSING.value,
-            DiagnosticDetail.SELECTOR_ASSIGNMENT_DUPLICATE.value,
-            DiagnosticDetail.SELECTOR_ASSIGNMENT_UNREADABLE.value,
-            DiagnosticDetail.SELECTOR_ASSIGNMENT_MALFORMED.value,
-            DiagnosticDetail.SELECTOR_ASSIGNMENT_SCHEMA_INVALID.value,
-            DiagnosticDetail.SELECTOR_ASSIGNMENT_PLAN_MISMATCH.value,
-            DiagnosticDetail.SELECTOR_ASSIGNMENT_PRODUCER_UNVERIFIED.value,
-            DiagnosticDetail.SELECTOR_ASSIGNMENT_STRUCTURALLY_INVALID.value,
             DiagnosticDetail.STRUCTURALLY_INVALID.value,
         },
     ),
@@ -385,34 +322,27 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
     DiagnosticFamily.VALIDATION_WORK_SKIPPED.value: frozenset(
         {DiagnosticDetail.DEPENDENCY_BLOCKED.value},
     ),
-    DiagnosticFamily.REQUIRED_EVIDENCE_MISSING.value: (
-        _COMMON_DIAGNOSTIC_DETAILS
-        | frozenset(
-            {
-                DiagnosticDetail.REQUIRED_EVIDENCE_MISSING.value,
-                DiagnosticDetail.MISSING_BUNDLE.value,
-            }
-        )
+    DiagnosticFamily.REQUIRED_EVIDENCE_MISSING.value: frozenset(
+        {DiagnosticDetail.MISSING_BUNDLE.value},
     ),
-    DiagnosticFamily.REQUIRED_EVIDENCE_SKIPPED.value: (
-        _COMMON_DIAGNOSTIC_DETAILS
-        | frozenset(
-            {
-                DiagnosticDetail.REQUIRED_EVIDENCE_SKIPPED.value,
-                DiagnosticDetail.DEPENDENCY_BLOCKED.value,
-            }
-        )
+    DiagnosticFamily.REQUIRED_EVIDENCE_SKIPPED.value: frozenset(
+        {DiagnosticDetail.DEPENDENCY_BLOCKED.value},
     ),
     DiagnosticFamily.BLOCKING_VALIDATION_FAILURE.value: frozenset(
         {DiagnosticDetail.BLOCKING_VALIDATION_FAILURE.value},
     ),
     DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value: frozenset(
         {
-            DiagnosticDetail.INADMISSIBLE_BATCH_EVIDENCE.value,
             DiagnosticDetail.MALFORMED_BUNDLE.value,
             DiagnosticDetail.MISSING_BUNDLE.value,
+            DiagnosticDetail.DUPLICATE_BUNDLE_CANDIDATES.value,
+            DiagnosticDetail.BUNDLE_PRODUCER_UNVERIFIED.value,
+            DiagnosticDetail.BUNDLE_METADATA_AUTHORITY_INVALID.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MISSING.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DUPLICATE.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_UNREADABLE.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MALFORMED.value,
+            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_NON_CANONICAL.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DIGEST_MISMATCH.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_PLAN_MISMATCH.value,
             DiagnosticDetail.EXECUTION_BATCH_MANIFEST_BUNDLE_REF_MISMATCH.value,
@@ -420,13 +350,22 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
     ),
     DiagnosticFamily.NAMESPACE_CLOSURE_FAILURE.value: frozenset(
         {
-            DiagnosticDetail.NAMESPACE_CLOSURE_FAILURE.value,
+            DiagnosticDetail.NAMESPACE_ENUMERATION_UNAVAILABLE.value,
             DiagnosticDetail.UNEXPECTED_CONTRACT_ARTIFACT.value,
             DiagnosticDetail.NAMESPACE_OVERFLOW.value,
         },
     ),
     DiagnosticFamily.AGGREGATE_DURATION_EXCEEDED.value: frozenset(
         {DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value},
+    ),
+    DiagnosticFamily.REQUIRED_INPUT_ARTIFACT_FAILURE.value: frozenset(
+        {DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value},
+    ),
+    DiagnosticFamily.AGGREGATE_SUMMARY_WITHOUT_MANIFEST.value: frozenset(
+        {DiagnosticDetail.AGGREGATE_SUMMARY_WITHOUT_MANIFEST.value},
+    ),
+    DiagnosticFamily.FINAL_PRODUCER_UNVERIFIED.value: frozenset(
+        {DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value},
     ),
     DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value: frozenset(
         {
@@ -436,38 +375,6 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
             DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value,
             DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_NON_CANONICAL.value,
             DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_DIGEST_MISMATCH.value,
-            DiagnosticDetail.AGGREGATE_SUMMARY_MISSING.value,
-            DiagnosticDetail.AGGREGATE_SUMMARY_DUPLICATE.value,
-            DiagnosticDetail.AGGREGATE_SUMMARY_UNREADABLE.value,
-            DiagnosticDetail.AGGREGATE_SUMMARY_MALFORMED.value,
-            DiagnosticDetail.AGGREGATE_SUMMARY_NON_CANONICAL.value,
-            DiagnosticDetail.AGGREGATE_SUMMARY_DIGEST_MISMATCH.value,
-            DiagnosticDetail.FINAL_MANIFEST_MISSING.value,
-            DiagnosticDetail.FINAL_MANIFEST_DUPLICATE.value,
-            DiagnosticDetail.FINAL_MANIFEST_UNREADABLE.value,
-            DiagnosticDetail.FINAL_MANIFEST_MALFORMED.value,
-            DiagnosticDetail.FINAL_MANIFEST_NON_CANONICAL.value,
-            DiagnosticDetail.FINAL_MANIFEST_DIGEST_MISMATCH.value,
-            DiagnosticDetail.FINAL_AGGREGATE_MISSING.value,
-            DiagnosticDetail.FINAL_AGGREGATE_DUPLICATE.value,
-            DiagnosticDetail.FINAL_AGGREGATE_UNREADABLE.value,
-            DiagnosticDetail.FINAL_AGGREGATE_MALFORMED.value,
-            DiagnosticDetail.FINAL_AGGREGATE_NON_CANONICAL.value,
-            DiagnosticDetail.FINAL_AGGREGATE_DIGEST_MISMATCH.value,
-            DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value,
-            DiagnosticDetail.FINAL_NAMESPACE_CLOSURE_MISMATCH.value,
-            DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value,
-            DiagnosticDetail.AGGREGATE_SUMMARY_WITHOUT_MANIFEST.value,
-            DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value,
-            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MISSING.value,
-            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DUPLICATE.value,
-            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_UNREADABLE.value,
-            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_MALFORMED.value,
-            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_NON_CANONICAL.value,
-            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_DIGEST_MISMATCH.value,
-            DiagnosticDetail.EXECUTION_BATCH_MANIFEST_PLAN_MISMATCH.value,
-            DiagnosticDetail.NAMESPACE_OVERFLOW.value,
-            DiagnosticDetail.AGGREGATE_WITHOUT_MANIFEST.value,
         },
     ),
 }
@@ -481,9 +388,6 @@ API_VERSIONS_BY_KIND = {
     CiValidationKind.FACT_SNAPSHOT.value: (
         "three.ci.validation.fact-snapshot/v1alpha1"
     ),
-    CiValidationKind.SELECTOR_ASSIGNMENTS.value: (
-        "three.ci.validation.selector-assignments/v1alpha1"
-    ),
     CiValidationKind.EXECUTION_BATCH_MANIFEST.value: (
         "three.ci.validation.execution-batch-manifest/v1alpha1"
     ),
@@ -496,22 +400,12 @@ API_VERSIONS_BY_KIND = {
     CiValidationKind.AGGREGATE_SUMMARY.value: (
         "three.ci.validation.aggregate-summary/v1alpha1"
     ),
-    CiValidationKind.VALIDATION_RECEIPT.value: (
-        "three.ci.validation.receipt/v1alpha1"
-    ),
-    CiValidationKind.WRITER_OBSERVATION.value: (
-        "three.ci.validation.writer-observation/v1alpha1"
-    ),
-    CiValidationKind.RECEIPT_MANIFEST.value: (
-        "three.ci.validation.receipt-manifest/v1alpha1"
-    ),
-    CiValidationKind.AGGREGATE.value: "three.ci.validation.aggregate/v1alpha1",
 }
 
 
 @dataclass(frozen=True, slots=True)
 class ArtifactPhysicalName:
-    """Logical artifact ref and its fixed GitHub artifact name."""
+    """Logical ref and attempt-scoped GitHub artifact name; no fixed length."""
 
     logical_ref: str
     physical_name: str
@@ -547,18 +441,51 @@ def canonical_json_digest(value: object) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
-def artifact_physical_name(logical_ref: str) -> str:
-    """Map a logical CI validation artifact ref to its physical name."""
+def artifact_physical_name(
+    logical_ref: str,
+    *,
+    run_id: str | int | None = None,
+    run_attempt: str | int | None = None,
+) -> str:
+    """Map a logical CI validation artifact ref to its attempt-scoped name."""
     validate_artifact_logical_ref(logical_ref)
+    attempt = _logical_ref_attempt(logical_ref)
+    physical_run_id = str(run_id) if run_id is not None else attempt[0]
+    physical_run_attempt = (
+        str(run_attempt) if run_attempt is not None else attempt[1]
+    )
+    _validate_physical_attempt_segment(physical_run_id, "run_id")
+    _validate_physical_attempt_segment(physical_run_attempt, "run_attempt")
+    if (physical_run_id, physical_run_attempt) != attempt:
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "physical-artifact-name",
+                    "attempt discriminator must match logical artifact ref",
+                )
+            ],
+        )
     digest = hashlib.sha256(logical_ref.encode("utf-8")).hexdigest()
-    return f"{ARTIFACT_PHYSICAL_NAME_PREFIX}{digest}"
+    return (
+        f"{ARTIFACT_PHYSICAL_NAME_PREFIX}"
+        f"{physical_run_id}-{physical_run_attempt}-{digest}"
+    )
 
 
-def artifact_physical_ref(logical_ref: str) -> ArtifactPhysicalName:
+def artifact_physical_ref(
+    logical_ref: str,
+    *,
+    run_id: str | int | None = None,
+    run_attempt: str | int | None = None,
+) -> ArtifactPhysicalName:
     """Return the logical/physical artifact ref pair."""
     return ArtifactPhysicalName(
         logical_ref=logical_ref,
-        physical_name=artifact_physical_name(logical_ref),
+        physical_name=artifact_physical_name(
+            logical_ref,
+            run_id=run_id,
+            run_attempt=run_attempt,
+        ),
     )
 
 
@@ -651,20 +578,29 @@ def validate_artifact_logical_ref(logical_ref: object) -> None:
 
 
 def validate_artifact_physical_name(physical_name: object) -> None:
-    """Validate a fixed-length CI validation physical artifact name."""
+    """Validate an attempt-scoped CI validation physical artifact name."""
     issues: list[ValidationIssue] = []
     if not isinstance(physical_name, str):
         issues.append(
             ValidationIssue("physical-artifact-name", "must be a string"),
         )
-    elif _PHYSICAL_ARTIFACT_NAME_RE.fullmatch(physical_name) is None:
+    elif (match := _PHYSICAL_ARTIFACT_NAME_RE.fullmatch(physical_name)) is None:
         issues.append(
             ValidationIssue(
                 "physical-artifact-name",
-                "must be three-ci-validation- followed by 64 lowercase "
-                "hex chars",
+                "must be three-ci-validation-{run-id}-{run-attempt}-"
+                " followed by 64 lowercase hex chars",
             ),
         )
+    else:
+        for group_name in ("run_id", "run_attempt"):
+            if match.group(group_name) in {".", ".."}:
+                issues.append(
+                    ValidationIssue(
+                        f"physical-artifact-name.{group_name}",
+                        "must not be . or ..",
+                    ),
+                )
     if issues:
         raise ContractValidationError(issues)
 
@@ -674,6 +610,22 @@ def validate_common_envelope(
     *,
     api_version: str,
     kind: CiValidationKind | str,
+) -> CommonEnvelope:
+    """Validate and return the minimum CI validation common envelope."""
+    return _validate_common_envelope_with_versions(
+        document,
+        api_version=api_version,
+        kind=kind,
+        extra_api_versions_by_kind={},
+    )
+
+
+def _validate_common_envelope_with_versions(
+    document: JsonObject,
+    *,
+    api_version: str,
+    kind: CiValidationKind | str,
+    extra_api_versions_by_kind: Mapping[str, str] | None = None,
 ) -> CommonEnvelope:
     """Validate and return the minimum CI validation common envelope."""
     expected_kind = kind.value if isinstance(kind, CiValidationKind) else kind
@@ -694,8 +646,13 @@ def validate_common_envelope(
         "$.schema-diagnostics",
         issues,
     )
-    registered_api_version = API_VERSIONS_BY_KIND.get(document_kind)
-    expected_api_version = API_VERSIONS_BY_KIND.get(expected_kind)
+    extra_versions = extra_api_versions_by_kind or {}
+    registered_api_version = API_VERSIONS_BY_KIND.get(
+        document_kind
+    ) or extra_versions.get(document_kind)
+    expected_api_version = API_VERSIONS_BY_KIND.get(
+        expected_kind
+    ) or extra_versions.get(expected_kind)
     if registered_api_version is None and isinstance(document_kind, str):
         issues.append(ValidationIssue("$.kind", "is not registered"))
     if expected_api_version is None:
@@ -805,6 +762,40 @@ def _is_artifact_logical_ref(value: str) -> bool:
         and _ARTIFACT_REF_SEGMENT_RE.fullmatch(part) is not None
         for part in parts
     )
+
+
+def _logical_ref_attempt(logical_ref: str) -> tuple[str, str]:
+    match = _LOGICAL_REF_ATTEMPT_RE.fullmatch(
+        logical_ref[: logical_ref.find("/", len("ci-validation/") + 1) + 1]
+    )
+    if match is None:
+        match = _LOGICAL_REF_ATTEMPT_RE.match(logical_ref)
+    if match is None:
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "artifact-ref",
+                    "must include run-id and run-attempt segments",
+                )
+            ],
+        )
+    return match.group("run_id"), match.group("run_attempt")
+
+
+def _validate_physical_attempt_segment(value: object, path: str) -> None:
+    if (
+        not isinstance(value, str)
+        or value in {".", ".."}
+        or _ARTIFACT_REF_SEGMENT_RE.fullmatch(value) is None
+    ):
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    path,
+                    "must be a non-empty normalized artifact ref segment",
+                )
+            ],
+        )
 
 
 def _require_mapping(

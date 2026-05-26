@@ -1,4 +1,8 @@
-"""Receipt-manifest and aggregate evidence helpers for CI validation."""
+"""Quarantined G4 receipt-manifest and aggregate helpers for CI validation.
+
+Live G5 code uses ``ci_validation_batches`` for execution-batch, batch evidence
+bundle, aggregate evidence manifest, and aggregate summary surfaces.
+"""
 
 from __future__ import annotations
 
@@ -19,39 +23,34 @@ from three_workflow_release_contracts.ci_validation import (
     DiagnosticFamily,
     DiagnosticSeverity,
     DiagnosticVerdictEffect,
+    _validate_common_envelope_with_versions,
     artifact_physical_name,
     canonical_json_bytes,
     canonical_json_digest,
     validate_artifact_logical_ref,
     validate_artifact_physical_name,
-    validate_common_envelope,
 )
 from three_workflow_release_contracts.ci_validation_assignments import (
-    ci_validation_writer_observation_artifact_ref,
-    validate_ci_validation_selector_assignments,
+    _validate_ci_validation_selector_assignments,
 )
 from three_workflow_release_contracts.ci_validation_plans import (
     ci_validation_plan_digest,
     validate_ci_validation_plan,
 )
 from three_workflow_release_contracts.ci_validation_receipts import (
-    ci_validation_receipt_content_digest,
-    load_ci_validation_receipt_payload,
-    validate_ci_validation_receipt,
-)
-from three_workflow_release_contracts.ci_validation_requests import (
-    ci_validation_diagnostic,
-    ci_validation_receipt_manifest_artifact_ref,
+    _ci_validation_receipt_content_digest,
+    _load_ci_validation_receipt_payload,
+    _validate_ci_validation_receipt,
 )
 from three_workflow_release_contracts.contracts import (
     ContractValidationError,
     ValidationIssue,
 )
 
-ReceiptAdmissibility = Literal["valid", "inadmissible"]
-AggregateVerdict = Literal["passed", "failed"]
-EvidenceResultOutcome = Literal["satisfied", "missing", "skipped", "failed"]
-FailureKind = Literal[
+_ReceiptAdmissibility = Literal["valid", "inadmissible"]
+_AggregateVerdict = Literal["passed", "failed"]
+_EvidenceResultOutcome = Literal["satisfied", "missing", "skipped", "failed"]
+_FailureKind = Literal[
     "invalid-plan",
     "required-evidence-missing",
     "required-evidence-skipped",
@@ -63,6 +62,14 @@ FailureKind = Literal[
 
 _LOCAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_RECEIPT_MANIFEST_KIND = "ci-validation-receipt-manifest"
+_RECEIPT_MANIFEST_API_VERSION = "three.ci.validation.receipt-manifest/v1alpha1"
+_LEGACY_AGGREGATE_KIND = "ci-validation-aggregate"
+_LEGACY_AGGREGATE_API_VERSION = "three.ci.validation.aggregate/v1alpha1"
+_LEGACY_ENVELOPE_API_VERSIONS_BY_KIND = {
+    _RECEIPT_MANIFEST_KIND: _RECEIPT_MANIFEST_API_VERSION,
+    _LEGACY_AGGREGATE_KIND: _LEGACY_AGGREGATE_API_VERSION,
+}
 _WRITER_ID_RE = re.compile(r"^github-actions-job:[0-9a-f]{64}$")
 _RECEIPT_REF_RE = re.compile(
     r"^ci-validation/receipts/([^/]+)/([^/]+)/([^/]+)/receipt\.json$"
@@ -96,6 +103,47 @@ _VALID_RECEIPT_SELECTOR_CONTEXT_MSG = (
 )
 _RESULT_OUTCOMES = frozenset({"satisfied", "missing", "skipped", "failed"})
 _RECEIPT_ADMISSIBILITIES = frozenset({"valid", "inadmissible"})
+_LEGACY_RECEIPT_DIAGNOSTIC_CODE = "inadmissible-receipt"
+_LEGACY_RECEIPT_DIAGNOSTIC_DETAILS = frozenset(
+    {
+        "malformed-artifact-ref",
+        "malformed-receipt",
+        "wrong-plan",
+        "unknown-work-group",
+        "mismatched-work-group",
+        "mismatched-writer-identity",
+        "mismatched-evidence-payload",
+        "mismatched-outcome",
+        "duplicate-receipt",
+        "unstable-artifact-instance-id",
+        "unexpected-receipt",
+    }
+)
+
+
+def _ci_validation_receipt_manifest_artifact_ref(
+    *,
+    run_id: str,
+    run_attempt: str,
+) -> str:
+    """Return the legacy receipt-manifest ref for quarantined helpers."""
+    return (
+        f"ci-validation/manifests/{run_id}/{run_attempt}/receipt-manifest.json"
+    )
+
+
+_AGGREGATION_DIAGNOSTIC_CODES = (
+    REGISTERED_CI_VALIDATION_DIAGNOSTIC_CODES
+    | frozenset({_LEGACY_RECEIPT_DIAGNOSTIC_CODE})
+)
+_AGGREGATION_DIAGNOSTIC_DETAILS = (
+    REGISTERED_CI_VALIDATION_DIAGNOSTIC_DETAILS
+    | _LEGACY_RECEIPT_DIAGNOSTIC_DETAILS
+)
+_AGGREGATION_DETAILS_BY_DIAGNOSTIC_CODE = {
+    **DETAILS_BY_DIAGNOSTIC_CODE,
+    _LEGACY_RECEIPT_DIAGNOSTIC_CODE: _LEGACY_RECEIPT_DIAGNOSTIC_DETAILS,
+}
 
 _BLOCKING_VALIDATION_FAILURE_FAMILIES = (
     DiagnosticFamily.DESCRIPTOR_INVALID.value,
@@ -135,7 +183,6 @@ _MANIFEST_ENTRY_KEYS = frozenset(
         "writer-work-group-id",
         "trusted-writer-id",
         "observed-writer-id",
-        "writer-observation-ref",
         "receipt-id",
         "receipt-content-digest",
     }
@@ -247,7 +294,7 @@ _DIAGNOSTIC_SOURCE_KEYS = frozenset({"type", "id"})
 
 
 @dataclass(frozen=True, slots=True)
-class CiValidationObservedReceiptInput:
+class _CiValidationObservedReceiptInput:
     """One manifest entry plus independently observed readable payloads."""
 
     manifest_entry: Mapping[str, object]
@@ -256,7 +303,7 @@ class CiValidationObservedReceiptInput:
     validation_result: Mapping[str, object] | None = None
 
 
-def ci_validation_observed_entry_id(
+def _ci_validation_observed_entry_id(
     *,
     run_id: str,
     run_attempt: str,
@@ -285,7 +332,7 @@ def ci_validation_observed_entry_id(
     return f"receipt-{digest}"
 
 
-def ci_validation_receipt_manifest_content_digest(
+def _ci_validation_receipt_manifest_content_digest(
     raw_manifest_bytes: bytes,
 ) -> str:
     """Return the SHA-256 digest for raw receipt-manifest bytes."""
@@ -296,14 +343,14 @@ def ci_validation_receipt_manifest_content_digest(
     return hashlib.sha256(raw_manifest_bytes).hexdigest()
 
 
-def ci_validation_receipt_manifest_payload_digest(
+def _ci_validation_receipt_manifest_payload_digest(
     manifest: Mapping[str, object],
 ) -> str:
     """Return the canonical payload digest for a receipt manifest."""
     return _payload_digest(manifest, "manifest")
 
 
-def ci_validation_aggregate_content_digest(raw_aggregate_bytes: bytes) -> str:
+def _ci_validation_aggregate_content_digest(raw_aggregate_bytes: bytes) -> str:
     """Return the SHA-256 digest for raw aggregate bytes."""
     if not isinstance(raw_aggregate_bytes, bytes):
         raise ContractValidationError(
@@ -312,14 +359,14 @@ def ci_validation_aggregate_content_digest(raw_aggregate_bytes: bytes) -> str:
     return hashlib.sha256(raw_aggregate_bytes).hexdigest()
 
 
-def ci_validation_aggregate_payload_digest(
+def _ci_validation_aggregate_payload_digest(
     aggregate: Mapping[str, object],
 ) -> str:
     """Return the canonical payload digest for an aggregate report."""
     return _payload_digest(aggregate, "aggregate")
 
 
-def freeze_ci_validation_receipt_manifest(  # noqa: PLR0913
+def _freeze_ci_validation_receipt_manifest(  # noqa: PLR0913
     *,
     plan: Mapping[str, object] | None,
     entries: Sequence[Mapping[str, object]],
@@ -356,10 +403,8 @@ def freeze_ci_validation_receipt_manifest(  # noqa: PLR0913
         raise ContractValidationError(issues)
     sorted_entries.sort(key=lambda item: str(item.get("observed-entry-id")))
     manifest = {
-        "api-version": API_VERSIONS_BY_KIND[
-            CiValidationKind.RECEIPT_MANIFEST.value
-        ],
-        "kind": CiValidationKind.RECEIPT_MANIFEST.value,
+        "api-version": _RECEIPT_MANIFEST_API_VERSION,
+        "kind": _RECEIPT_MANIFEST_KIND,
         "created-at": created_at,
         "repository": {
             "owner": envelope.repository_owner,
@@ -384,7 +429,7 @@ def freeze_ci_validation_receipt_manifest(  # noqa: PLR0913
         },
         "entries": sorted_entries,
     }
-    validate_ci_validation_receipt_manifest(
+    _validate_ci_validation_receipt_manifest(
         manifest,
         plan=plan,
         changed_files_snapshot=changed_files_snapshot,
@@ -396,7 +441,7 @@ def freeze_ci_validation_receipt_manifest(  # noqa: PLR0913
     return manifest
 
 
-def validate_ci_validation_receipt_manifest(  # noqa: C901,PLR0912,PLR0913,PLR0915
+def _validate_ci_validation_receipt_manifest(  # noqa: C901,PLR0912,PLR0913,PLR0915
     manifest: object,
     *,
     plan: Mapping[str, object] | None = None,
@@ -415,7 +460,7 @@ def validate_ci_validation_receipt_manifest(  # noqa: C901,PLR0912,PLR0913,PLR09
     _validate_canonical(manifest, "$", issues)
     envelope = _envelope_or_collect(
         manifest,
-        CiValidationKind.RECEIPT_MANIFEST,
+        _RECEIPT_MANIFEST_KIND,
         issues,
     )
     _validate_root_keys(manifest, _MANIFEST_ROOT_KEYS, "$", issues)
@@ -508,13 +553,13 @@ def validate_ci_validation_receipt_manifest(  # noqa: C901,PLR0912,PLR0913,PLR09
         raise ContractValidationError(issues)
 
 
-def freeze_ci_validation_aggregate(  # noqa: PLR0913
+def _freeze_ci_validation_aggregate(  # noqa: PLR0913
     *,
     plan: Mapping[str, object],
     receipt_manifest: Mapping[str, object],
     selector_assignments_manifest: Mapping[str, object],
     observed_receipts: Sequence[
-        CiValidationObservedReceiptInput | Mapping[str, object]
+        _CiValidationObservedReceiptInput | Mapping[str, object]
     ],
     created_at: str,
     changed_files_snapshot: Mapping[str, object] | None = None,
@@ -531,7 +576,7 @@ def freeze_ci_validation_aggregate(  # noqa: PLR0913
             pull_request_merge_commit_verification
         ),
     )
-    validate_ci_validation_selector_assignments(
+    _validate_ci_validation_selector_assignments(
         selector_assignments_manifest,
         plan=plan,
         changed_files_snapshot=changed_files_snapshot,
@@ -540,7 +585,7 @@ def freeze_ci_validation_aggregate(  # noqa: PLR0913
             pull_request_merge_commit_verification
         ),
     )
-    validate_ci_validation_receipt_manifest(
+    _validate_ci_validation_receipt_manifest(
         receipt_manifest,
         plan=plan,
         changed_files_snapshot=changed_files_snapshot,
@@ -555,7 +600,7 @@ def freeze_ci_validation_aggregate(  # noqa: PLR0913
         raise ContractValidationError(issues)
 
     envelope = _envelope(plan, CiValidationKind.PLAN)
-    manifest_digest = ci_validation_receipt_manifest_payload_digest(
+    manifest_digest = _ci_validation_receipt_manifest_payload_digest(
         receipt_manifest
     )
     inputs = _normalize_observed_inputs(observed_receipts)
@@ -617,8 +662,8 @@ def freeze_ci_validation_aggregate(  # noqa: PLR0913
         "final-evidence-failure": bool(final_failures),
     }
     aggregate = {
-        "api-version": API_VERSIONS_BY_KIND[CiValidationKind.AGGREGATE.value],
-        "kind": CiValidationKind.AGGREGATE.value,
+        "api-version": _LEGACY_AGGREGATE_API_VERSION,
+        "kind": _LEGACY_AGGREGATE_KIND,
         "created-at": created_at,
         "repository": {
             "owner": envelope.repository_owner,
@@ -634,7 +679,7 @@ def freeze_ci_validation_aggregate(  # noqa: PLR0913
         "plan-digest": _verified_plan_digest(plan),
         "mode": plan["mode"],
         "receipt-manifest": {
-            "artifact-ref": ci_validation_receipt_manifest_artifact_ref(
+            "artifact-ref": _ci_validation_receipt_manifest_artifact_ref(
                 run_id=envelope.run_id,
                 run_attempt=envelope.run_attempt,
             ),
@@ -653,7 +698,7 @@ def freeze_ci_validation_aggregate(  # noqa: PLR0913
         "work-groups": counts,
         "proof-admissibility": "validation-only",
     }
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=plan,
         receipt_manifest=receipt_manifest,
@@ -668,7 +713,7 @@ def freeze_ci_validation_aggregate(  # noqa: PLR0913
     return aggregate
 
 
-def freeze_ci_validation_invalid_plan_aggregate(  # noqa: PLR0913
+def _freeze_ci_validation_invalid_plan_aggregate(  # noqa: PLR0913
     *,
     created_at: str,
     repository_owner: str,
@@ -734,16 +779,16 @@ def freeze_ci_validation_invalid_plan_aggregate(  # noqa: PLR0913
     manifest_ref = None
     manifest_digest = None
     if receipt_manifest is not None:
-        manifest_ref = ci_validation_receipt_manifest_artifact_ref(
+        manifest_ref = _ci_validation_receipt_manifest_artifact_ref(
             run_id=run_id,
             run_attempt=run_attempt,
         )
-        manifest_digest = ci_validation_receipt_manifest_payload_digest(
+        manifest_digest = _ci_validation_receipt_manifest_payload_digest(
             receipt_manifest
         )
     aggregate = {
-        "api-version": API_VERSIONS_BY_KIND[CiValidationKind.AGGREGATE.value],
-        "kind": CiValidationKind.AGGREGATE.value,
+        "api-version": _LEGACY_AGGREGATE_API_VERSION,
+        "kind": _LEGACY_AGGREGATE_KIND,
         "created-at": created_at,
         "repository": {"owner": repository_owner, "name": repository_name},
         "run": {
@@ -783,7 +828,7 @@ def freeze_ci_validation_invalid_plan_aggregate(  # noqa: PLR0913
         "work-groups": _zero_work_group_counts(),
         "proof-admissibility": "validation-only",
     }
-    validate_ci_validation_aggregate(
+    _validate_ci_validation_aggregate(
         aggregate,
         plan=plan if plan_fields["plan-id"] is not None else None,
         receipt_manifest=receipt_manifest,
@@ -796,14 +841,14 @@ def freeze_ci_validation_invalid_plan_aggregate(  # noqa: PLR0913
     return aggregate
 
 
-def validate_ci_validation_aggregate(  # noqa: C901,PLR0913
+def _validate_ci_validation_aggregate(  # noqa: C901,PLR0913
     aggregate: object,
     *,
     plan: Mapping[str, object] | None = None,
     receipt_manifest: Mapping[str, object] | None = None,
     selector_assignments_manifest: Mapping[str, object] | None = None,
     observed_receipts: Sequence[
-        CiValidationObservedReceiptInput | Mapping[str, object]
+        _CiValidationObservedReceiptInput | Mapping[str, object]
     ]
     | None = None,
     changed_files_snapshot: Mapping[str, object] | None = None,
@@ -819,9 +864,7 @@ def validate_ci_validation_aggregate(  # noqa: C901,PLR0913
         )
     issues: list[ValidationIssue] = []
     _validate_canonical(aggregate, "$", issues)
-    envelope = _envelope_or_collect(
-        aggregate, CiValidationKind.AGGREGATE, issues
-    )
+    envelope = _envelope_or_collect(aggregate, _LEGACY_AGGREGATE_KIND, issues)
     _validate_root_keys(aggregate, _AGGREGATE_ROOT_KEYS, "$", issues)
     if (
         expected_run_id is not None
@@ -931,7 +974,7 @@ def _receipt_digest_matches_payload(
     try:
         if raw_receipt_bytes is None:
             return False
-        observed_digest = ci_validation_receipt_content_digest(
+        observed_digest = _ci_validation_receipt_content_digest(
             raw_receipt_bytes
         )
     except (ContractValidationError, TypeError, ValueError):
@@ -949,7 +992,7 @@ def _receipt_payload_matches_observed_bytes(
     ):
         return False
     try:
-        return load_ci_validation_receipt_payload(raw_receipt_bytes) == receipt
+        return _load_ci_validation_receipt_payload(raw_receipt_bytes) == receipt
     except (ContractValidationError, TypeError, ValueError):
         return False
 
@@ -992,10 +1035,8 @@ def _manifest_envelope_from_plan_or_args(  # noqa: PLR0913
     if issues:
         raise ContractValidationError(issues)
     return CommonEnvelope(
-        api_version=API_VERSIONS_BY_KIND[
-            CiValidationKind.RECEIPT_MANIFEST.value
-        ],
-        kind=CiValidationKind.RECEIPT_MANIFEST.value,
+        api_version=_RECEIPT_MANIFEST_API_VERSION,
+        kind=_RECEIPT_MANIFEST_KIND,
         created_at="1970-01-01T00:00:00Z",
         repository_owner=cast("str", repository_owner),
         repository_name=cast("str", repository_name),
@@ -1007,12 +1048,12 @@ def _manifest_envelope_from_plan_or_args(  # noqa: PLR0913
 
 def _normalize_observed_inputs(
     observed_receipts: Sequence[
-        CiValidationObservedReceiptInput | Mapping[str, object]
+        _CiValidationObservedReceiptInput | Mapping[str, object]
     ],
-) -> list[CiValidationObservedReceiptInput]:
-    normalized: list[CiValidationObservedReceiptInput] = []
+) -> list[_CiValidationObservedReceiptInput]:
+    normalized: list[_CiValidationObservedReceiptInput] = []
     for item in observed_receipts:
-        if isinstance(item, CiValidationObservedReceiptInput):
+        if isinstance(item, _CiValidationObservedReceiptInput):
             normalized.append(item)
         elif isinstance(item, Mapping):
             entry = item.get("manifest-entry")
@@ -1022,7 +1063,7 @@ def _normalize_observed_inputs(
             if not isinstance(entry, Mapping):
                 entry = item
             normalized.append(
-                CiValidationObservedReceiptInput(
+                _CiValidationObservedReceiptInput(
                     manifest_entry=entry,
                     receipt=receipt if isinstance(receipt, Mapping) else None,
                     raw_receipt_bytes=raw_receipt_bytes
@@ -1040,7 +1081,7 @@ def _receipt_summaries(  # noqa: C901,PLR0913
     *,
     plan: Mapping[str, object],
     selector_assignments_manifest: Mapping[str, object],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
     pull_request_merge_commit_verification: Mapping[str, object] | None,
@@ -1058,25 +1099,25 @@ def _receipt_summaries(  # noqa: C901,PLR0913
         if receipt is None:
             diagnostic = _inadmissible_diagnostic(
                 entry_id,
-                DiagnosticDetail.MALFORMED_RECEIPT.value,
+                "malformed-receipt",
                 "Receipt artifact is not readable as a valid payload",
             )
         elif work_group_id is None:
             diagnostic = _inadmissible_diagnostic(
                 entry_id,
-                DiagnosticDetail.UNKNOWN_WORK_GROUP.value,
+                "unknown-work-group",
                 "Receipt does not identify an executable work group",
             )
         elif _work_group_kind(plan, work_group_id) == _TERMINAL_WORK_GROUP_KIND:
             diagnostic = _inadmissible_diagnostic(
                 entry_id,
-                DiagnosticDetail.UNEXPECTED_RECEIPT.value,
+                "unexpected-receipt",
                 "Terminal aggregation work group must not emit a receipt",
             )
         elif entry.get("receipt-content-digest") is None:
             diagnostic = _inadmissible_diagnostic(
                 entry_id,
-                DiagnosticDetail.MALFORMED_RECEIPT.value,
+                "malformed-receipt",
                 "Readable receipt artifact is missing observed content digest",
             )
         elif not _receipt_payload_matches_observed_bytes(
@@ -1086,13 +1127,13 @@ def _receipt_summaries(  # noqa: C901,PLR0913
         ):
             diagnostic = _inadmissible_diagnostic(
                 entry_id,
-                DiagnosticDetail.MISMATCHED_EVIDENCE_PAYLOAD.value,
+                "mismatched-evidence-payload",
                 "Receipt content digest does not match readable payload",
             )
         elif work_group_id not in assignments:
             diagnostic = _inadmissible_diagnostic(
                 entry_id,
-                DiagnosticDetail.UNKNOWN_WORK_GROUP.value,
+                "unknown-work-group",
                 "Receipt work group is not assigned",
             )
         elif not _manifest_entry_matches_assignment(
@@ -1100,12 +1141,12 @@ def _receipt_summaries(  # noqa: C901,PLR0913
         ):
             diagnostic = _inadmissible_diagnostic(
                 entry_id,
-                DiagnosticDetail.MISMATCHED_WRITER_IDENTITY.value,
+                "mismatched-writer-identity",
                 "Receipt manifest writer identity does not match assignment",
             )
         else:
             try:
-                validate_ci_validation_receipt(
+                _validate_ci_validation_receipt(
                     receipt,
                     plan=plan,
                     selector_assignments_manifest=selector_assignments_manifest,
@@ -1147,7 +1188,7 @@ def _apply_duplicate_admissibility(  # noqa: PLR0913
     plan: Mapping[str, object],
     summaries: list[dict[str, object]],
     receipts_by_entry: dict[str, Mapping[str, object]],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
     selector_assignments_manifest: Mapping[str, object],
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
@@ -1202,7 +1243,7 @@ def _mark_duplicate_summary_inadmissible(
     summary["diagnostics"] = [
         _inadmissible_diagnostic(
             entry_id,
-            DiagnosticDetail.DUPLICATE_RECEIPT.value,
+            "duplicate-receipt",
             "More than one admissible receipt matched expectation",
         )
     ]
@@ -1214,7 +1255,7 @@ def _valid_reused_chain_entry_ids_for_duplicate_group(  # noqa: PLR0913
     work_group_id: str,
     summaries: Sequence[Mapping[str, object]],
     receipts_by_entry: Mapping[str, Mapping[str, object]],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
     selector_assignments_manifest: Mapping[str, object],
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
@@ -1276,7 +1317,7 @@ def _valid_evidence_summary_by_work_group(  # noqa: PLR0913
     work_group_id: str,
     summaries: Sequence[Mapping[str, object]],
     receipts_by_entry: Mapping[str, Mapping[str, object]],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
     selector_assignments_manifest: Mapping[str, object],
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
@@ -1332,7 +1373,7 @@ def _evidence_results_and_failures(  # noqa: PLR0913
     plan: Mapping[str, object],
     summaries: Sequence[Mapping[str, object]],
     receipts_by_entry: Mapping[str, Mapping[str, object]],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
     selector_assignments_manifest: Mapping[str, object],
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
@@ -1546,7 +1587,7 @@ def _release_shaped_success_source_is_admissible(  # noqa: PLR0913
     work_group_id: str,
     entry_id: str,
     receipts_by_entry: Mapping[str, Mapping[str, object]],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
     pull_request_merge_commit_verification: Mapping[str, object] | None,
@@ -1580,7 +1621,7 @@ def _release_shaped_success_source_chain_entry_ids(  # noqa: C901,PLR0911,PLR091
     work_group_id: str,
     entry_id: str,
     receipts_by_entry: Mapping[str, Mapping[str, object]],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
     pull_request_merge_commit_verification: Mapping[str, object] | None,
@@ -1651,7 +1692,7 @@ def _release_shaped_success_source_chain_entry_ids(  # noqa: C901,PLR0911,PLR091
     ):
         return None
     try:
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             prior_receipt,
             plan=plan,
             selector_assignments_manifest=selector_assignments_manifest,
@@ -1697,7 +1738,7 @@ def _release_shaped_receipt_validates_against_current_context(  # noqa: PLR0913
     if assignment is None:
         return False
     try:
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=plan,
             selector_assignments_manifest=selector_assignments_manifest,
@@ -1761,8 +1802,8 @@ def _release_shaped_reused_receipt_matches_source_results(
 
 
 def _observed_input_by_entry_id(
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
-) -> dict[str, CiValidationObservedReceiptInput]:
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
+) -> dict[str, _CiValidationObservedReceiptInput]:
     return {
         entry_id: item
         for item in observed_inputs
@@ -1882,12 +1923,12 @@ def _release_shaped_digest_proof_entries_from_results(
 
 def _observed_reused_receipt_input(
     reused_receipt: Mapping[str, object],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
     *,
     observed_commit_sha: str | None,
     work_group_id: str,
     expected_writer_id: object,
-) -> CiValidationObservedReceiptInput | None:
+) -> _CiValidationObservedReceiptInput | None:
     if (
         observed_commit_sha is None
         or reused_receipt.get("observed-commit-sha") != observed_commit_sha
@@ -2021,7 +2062,7 @@ def _evidence_result(
     *,
     expectation_id: str,
     work_group_id: str,
-    outcome: EvidenceResultOutcome,
+    outcome: _EvidenceResultOutcome,
     summary: Mapping[str, object] | None = None,
     diagnostic: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
@@ -2247,7 +2288,7 @@ def _inspection_observed_receipt(
 ) -> dict[str, object]:
     diagnostic = _inadmissible_diagnostic(
         str(entry.get("observed-entry-id", "unknown")),
-        DiagnosticDetail.MALFORMED_RECEIPT.value,
+        "malformed-receipt",
         "Receipt was observed while plan authority was invalid",
     )
     return {
@@ -2269,12 +2310,10 @@ def _validate_manifest_binding(
     selector_assignments_manifest: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> None:
-    envelope = _envelope_or_collect(
-        aggregate, CiValidationKind.AGGREGATE, issues
-    )
+    envelope = _envelope_or_collect(aggregate, _LEGACY_AGGREGATE_KIND, issues)
     if envelope is None:
         return
-    expected_ref = ci_validation_receipt_manifest_artifact_ref(
+    expected_ref = _ci_validation_receipt_manifest_artifact_ref(
         run_id=envelope.run_id,
         run_attempt=envelope.run_attempt,
     )
@@ -2292,7 +2331,7 @@ def _validate_manifest_binding(
         )
     if binding.get(
         "content-digest"
-    ) != ci_validation_receipt_manifest_payload_digest(receipt_manifest):
+    ) != _ci_validation_receipt_manifest_payload_digest(receipt_manifest):
         issues.append(
             ValidationIssue(
                 "$.receipt-manifest.content-digest", "must match manifest"
@@ -2307,7 +2346,6 @@ def _validate_manifest_binding(
         aggregate.get("observed-receipts"),
         receipt_manifest.get("entries"),
         selector_assignments_manifest,
-        envelope,
         issues,
     )
 
@@ -2331,7 +2369,7 @@ def _validate_supplied_selector_assignments_manifest(  # noqa: PLR0913
         )
         return
     try:
-        validate_ci_validation_selector_assignments(
+        _validate_ci_validation_selector_assignments(
             selector_assignments_manifest,
             plan=plan,
             changed_files_snapshot=changed_files_snapshot,
@@ -2362,7 +2400,7 @@ def _validate_supplied_receipt_manifest(  # noqa: PLR0913
     issues: list[ValidationIssue],
 ) -> None:
     try:
-        validate_ci_validation_receipt_manifest(
+        _validate_ci_validation_receipt_manifest(
             receipt_manifest,
             plan=plan,
             changed_files_snapshot=changed_files_snapshot,
@@ -2444,7 +2482,6 @@ def _validate_valid_observed_receipt_manifest_writer_bindings(
     observed: object,
     manifest_entries: object,
     selector_assignments_manifest: Mapping[str, object] | None,
-    envelope: CommonEnvelope,
     issues: list[ValidationIssue],
 ) -> None:
     if not isinstance(observed, Sequence) or isinstance(observed, str | bytes):
@@ -2482,7 +2519,6 @@ def _validate_valid_observed_receipt_manifest_writer_bindings(
             entry,
             receipt,
             assignments,
-            envelope,
             entry_path,
             f"$.observed-receipts[{observed_index}]",
             issues,
@@ -2493,7 +2529,6 @@ def _validate_valid_manifest_entry_writer_binding(  # noqa: C901,PLR0912,PLR0913
     entry: Mapping[str, object],
     receipt: Mapping[str, object],
     assignments: Mapping[str, Mapping[str, object]] | None,
-    envelope: CommonEnvelope,
     entry_path: str,
     receipt_path: str,
     issues: list[ValidationIssue],
@@ -2523,7 +2558,6 @@ def _validate_valid_manifest_entry_writer_binding(  # noqa: C901,PLR0912,PLR0913
         "writer-work-group-id",
         "trusted-writer-id",
         "observed-writer-id",
-        "writer-observation-ref",
     ):
         if not isinstance(entry.get(key), str):
             issues.append(
@@ -2538,7 +2572,6 @@ def _validate_valid_manifest_entry_writer_binding(  # noqa: C901,PLR0912,PLR0913
             ("writer-work-group-id", "work-group-id"),
             ("artifact-ref", "receipt-artifact-ref"),
             ("trusted-writer-id", "trusted-writer-id"),
-            ("writer-observation-ref", "writer-observation-ref"),
         ):
             if entry.get(entry_key) != assignment.get(assignment_key):
                 issues.append(
@@ -2577,28 +2610,6 @@ def _validate_valid_manifest_entry_writer_binding(  # noqa: C901,PLR0912,PLR0913
                 "must match trusted writer for valid observed receipts",
             )
         )
-    assignment_id = entry.get("assignment-id")
-    if isinstance(assignment_id, str):
-        try:
-            expected_observation_ref = (
-                ci_validation_writer_observation_artifact_ref(
-                    run_id=envelope.run_id,
-                    run_attempt=envelope.run_attempt,
-                    assignment_id=assignment_id,
-                )
-            )
-        except ContractValidationError:
-            expected_observation_ref = None
-        if (
-            expected_observation_ref is not None
-            and entry.get("writer-observation-ref") != expected_observation_ref
-        ):
-            issues.append(
-                ValidationIssue(
-                    f"{entry_path}.writer-observation-ref",
-                    "must match valid observed receipt assignment",
-                )
-            )
     if entry.get("artifact-ref") != receipt.get("artifact-ref"):
         issues.append(
             ValidationIssue(
@@ -2717,7 +2728,7 @@ def _validate_receipt_manifest_ref_binding(
         return
     if artifact_ref is not None:
         if envelope is not None:
-            expected_ref = ci_validation_receipt_manifest_artifact_ref(
+            expected_ref = _ci_validation_receipt_manifest_artifact_ref(
                 run_id=envelope.run_id,
                 run_attempt=envelope.run_attempt,
             )
@@ -2848,7 +2859,7 @@ def _validate_aggregate_shapes(  # noqa: C901
 def _validate_aggregate_consistency(  # noqa: C901,PLR0912,PLR0913
     aggregate: Mapping[str, object],
     plan: Mapping[str, object] | None,
-    observed_inputs: Sequence[CiValidationObservedReceiptInput] | None,
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput] | None,
     selector_assignments_manifest: Mapping[str, object] | None,
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
@@ -3396,7 +3407,7 @@ def _validate_valid_observed_receipts(  # noqa: C901,PLR0912,PLR0913
     observed: object,
     results: object,
     plan: Mapping[str, object] | None,
-    observed_inputs: Sequence[CiValidationObservedReceiptInput] | None,
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput] | None,
     selector_assignments_manifest: Mapping[str, object] | None,
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
@@ -3531,7 +3542,7 @@ def _validate_satisfied_release_shaped_sources(  # noqa: PLR0913
     observed: object,
     results: object,
     plan: Mapping[str, object] | None,
-    observed_inputs: Sequence[CiValidationObservedReceiptInput] | None,
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput] | None,
     selector_assignments_manifest: Mapping[str, object] | None,
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
@@ -3628,7 +3639,7 @@ def _duplicate_valid_receipts_are_chain_shaped(  # noqa: PLR0913
     receipts: Sequence[Mapping[str, object]],
     evidence_entry_ids: Mapping[str, set[str]],
     plan: Mapping[str, object],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput] | None,
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput] | None,
     selector_assignments_manifest: Mapping[str, object] | None,
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
@@ -3674,7 +3685,7 @@ def _duplicate_valid_receipts_are_chain_shaped(  # noqa: PLR0913
 
 def _observed_receipts_by_summary_entry_id(
     summaries: Sequence[Mapping[str, object]],
-    observed_inputs: Sequence[CiValidationObservedReceiptInput],
+    observed_inputs: Sequence[_CiValidationObservedReceiptInput],
 ) -> dict[str, Mapping[str, object]]:
     summaries_by_entry = {
         cast("str", summary["observed-entry-id"]): summary
@@ -3961,7 +3972,7 @@ def _validate_observed_receipt_entry_id(
     ):
         return
     try:
-        expected = ci_validation_observed_entry_id(
+        expected = _ci_validation_observed_entry_id(
             run_id=envelope.run_id,
             run_attempt=envelope.run_attempt,
             artifact_ref=artifact_ref,
@@ -4127,7 +4138,7 @@ def _validate_failure_diagnostic_binding(
     elif kind == "inadmissible-receipt":
         _validate_failure_diagnostic_family(
             diagnostic,
-            DiagnosticFamily.INADMISSIBLE_RECEIPT.value,
+            "inadmissible-receipt",
             f"{path}.diagnostic",
             issues,
         )
@@ -4378,11 +4389,6 @@ def _validate_manifest_entry(
     _validate_nullable_writer_id(
         entry.get("observed-writer-id"), f"{path}.observed-writer-id", issues
     )
-    _validate_nullable_artifact_ref(
-        entry.get("writer-observation-ref"),
-        f"{path}.writer-observation-ref",
-        issues,
-    )
     _validate_nullable_local_id(
         entry.get("receipt-id"), f"{path}.receipt-id", issues
     )
@@ -4398,7 +4404,6 @@ def _validate_manifest_entry(
             "writer-work-group-id",
             "trusted-writer-id",
             "observed-writer-id",
-            "writer-observation-ref",
             "receipt-id",
         ):
             if entry.get(key) is not None:
@@ -4435,7 +4440,7 @@ def _validate_manifest_observed_entry_id(
     ):
         return
     try:
-        expected = ci_validation_observed_entry_id(
+        expected = _ci_validation_observed_entry_id(
             run_id=envelope.run_id,
             run_attempt=envelope.run_attempt,
             artifact_ref=artifact_ref,
@@ -4566,7 +4571,6 @@ def _manifest_entry_matches_assignment(
             ("writer-work-group-id", "work-group-id"),
             ("artifact-ref", "receipt-artifact-ref"),
             ("trusted-writer-id", "trusted-writer-id"),
-            ("writer-observation-ref", "writer-observation-ref"),
         )
     ) and entry.get("observed-writer-id") == assignment.get("trusted-writer-id")
 
@@ -4619,12 +4623,12 @@ def _evidence_expectations(
 def _receipt_error_detail(error: ContractValidationError) -> str:
     text = " ".join(f"{issue.path} {issue.message}" for issue in error.issues)
     if "plan" in text:
-        return DiagnosticDetail.WRONG_PLAN.value
+        return "wrong-plan"
     if "work-group" in text:
-        return DiagnosticDetail.MISMATCHED_WORK_GROUP.value
+        return "mismatched-work-group"
     if "outcome" in text:
-        return DiagnosticDetail.MISMATCHED_OUTCOME.value
-    return DiagnosticDetail.MISMATCHED_EVIDENCE_PAYLOAD.value
+        return "mismatched-outcome"
+    return "mismatched-evidence-payload"
 
 
 def _inadmissible_diagnostic(
@@ -4632,7 +4636,7 @@ def _inadmissible_diagnostic(
 ) -> dict[str, object]:
     return _diagnostic(
         diagnostic_id=f"inadmissible-receipt/{entry_id}/{detail}",
-        code=DiagnosticFamily.INADMISSIBLE_RECEIPT.value,
+        code="inadmissible-receipt",
         detail=detail,
         message=message,
     )
@@ -4649,21 +4653,23 @@ def _diagnostic(  # noqa: PLR0913
     severity: str = DiagnosticSeverity.BLOCKING_FAILURE.value,
     verdict_effect: str = DiagnosticVerdictEffect.FAILED.value,
 ) -> dict[str, object]:
-    return ci_validation_diagnostic(
-        diagnostic_id=diagnostic_id,
-        code=code,
-        detail=detail,
-        message=message,
-        source_type=source_type,
-        source_id=source_id,
-        severity=severity,
-        verdict_effect=verdict_effect,
-    )
+    return {
+        "diagnostic-id": diagnostic_id,
+        "code": code,
+        "detail": detail,
+        "message": message,
+        "source": {
+            "type": source_type,
+            "id": source_id,
+        },
+        "severity": severity,
+        "verdict-effect": verdict_effect,
+    }
 
 
 def _failure(  # noqa: PLR0913
     *,
-    kind: FailureKind,
+    kind: _FailureKind,
     diagnostic: Mapping[str, object],
     message: str,
     work_group_id: str | None = None,
@@ -4714,18 +4720,26 @@ def _validated_plan_envelope(  # noqa: PLR0913
 
 
 def _envelope(
-    document: Mapping[str, object], kind: CiValidationKind
+    document: Mapping[str, object], kind: CiValidationKind | str
 ) -> CommonEnvelope:
-    return validate_common_envelope(
+    if isinstance(kind, str):
+        if kind in _LEGACY_ENVELOPE_API_VERSIONS_BY_KIND:
+            api_version = _LEGACY_ENVELOPE_API_VERSIONS_BY_KIND[kind]
+        else:
+            api_version = API_VERSIONS_BY_KIND[kind]
+    else:
+        api_version = API_VERSIONS_BY_KIND[kind.value]
+    return _validate_common_envelope_with_versions(
         document,
-        api_version=API_VERSIONS_BY_KIND[kind.value],
+        api_version=api_version,
         kind=kind,
+        extra_api_versions_by_kind=_LEGACY_ENVELOPE_API_VERSIONS_BY_KIND,
     )
 
 
 def _envelope_or_collect(
     document: Mapping[str, object],
-    kind: CiValidationKind,
+    kind: CiValidationKind | str,
     issues: list[ValidationIssue],
 ) -> CommonEnvelope | None:
     try:
@@ -4833,17 +4847,19 @@ def _validate_diagnostic(  # noqa: C901
             ValidationIssue(f"{path}.diagnostic-id", "must be a string")
         )
     code = diagnostic.get("code")
-    if code not in REGISTERED_CI_VALIDATION_DIAGNOSTIC_CODES:
+    if code not in _AGGREGATION_DIAGNOSTIC_CODES:
         issues.append(ValidationIssue(f"{path}.code", "is not registered"))
     detail = diagnostic.get("detail")
     if detail is not None:
-        if detail not in REGISTERED_CI_VALIDATION_DIAGNOSTIC_DETAILS:
+        if detail not in _AGGREGATION_DIAGNOSTIC_DETAILS:
             issues.append(
                 ValidationIssue(f"{path}.detail", "is not registered")
             )
         elif isinstance(
             code, str
-        ) and detail not in DETAILS_BY_DIAGNOSTIC_CODE.get(code, frozenset()):
+        ) and detail not in _AGGREGATION_DETAILS_BY_DIAGNOSTIC_CODE.get(
+            code, frozenset()
+        ):
             issues.append(
                 ValidationIssue(
                     f"{path}.detail", "is not valid for this diagnostic code"

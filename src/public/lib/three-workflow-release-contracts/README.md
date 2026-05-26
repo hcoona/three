@@ -14,8 +14,10 @@ foundation data for future CI affected-validation implementation work:
 - closed diagnostic code/detail/severity/verdict-effect vocabulary;
 - common-envelope validation for `api-version`, `kind`, repository, run, and
   RFC 3339 `created-at` values, plus schema diagnostics;
-- logical artifact-ref to physical GitHub artifact name mapping using
-  `three-ci-validation-` plus lowercase SHA-256 of the UTF-8 logical ref;
+- logical artifact-ref to attempt-scoped physical GitHub artifact name mapping
+  using `three-ci-validation-{run-id}-{run-attempt}-{sha256}`, where the
+  run-id and run-attempt segments are variable-length artifact-ref segments and
+  sha256 is the lowercase SHA-256 digest of the UTF-8 logical ref;
 - canonical JSON bytes and SHA-256 digest helpers.
 - GitHub Actions artifact metadata helpers for normalizing run-scoped artifact
   lists, grouping instances by physical name, admitting exactly one live

@@ -18,18 +18,22 @@ from three_workflow_release_contracts import (
     DiagnosticVerdictEffect,
     canonical_json_digest,
     ci_validation_diagnostic,
-    ci_validation_receipt_content_digest,
-    ci_validation_receipt_payload_digest,
     ci_validation_request_artifact_ref,
     ci_validation_request_projection,
-    ci_validation_selector_assignments_artifact_ref,
     ci_validation_writer_id,
     freeze_ci_validation_plan,
-    freeze_ci_validation_receipt,
-    freeze_ci_validation_selector_assignments,
-    load_ci_validation_receipt_payload,
     normalize_ci_validation_request,
-    validate_ci_validation_receipt,
+)
+from three_workflow_release_contracts.ci_validation_assignments import (
+    _ci_validation_selector_assignments_artifact_ref,
+    _freeze_ci_validation_selector_assignments,
+)
+from three_workflow_release_contracts.ci_validation_receipts import (
+    _ci_validation_receipt_content_digest,
+    _ci_validation_receipt_payload_digest,
+    _freeze_ci_validation_receipt,
+    _load_ci_validation_receipt_payload,
+    _validate_ci_validation_receipt,
 )
 
 RUN_ID = "25887422010"
@@ -258,7 +262,7 @@ def _context() -> tuple[
         job="ci-validation-selector-python",
         matrix={"selector": WORK_GROUP_ID},
     )
-    manifest = freeze_ci_validation_selector_assignments(
+    manifest = _freeze_ci_validation_selector_assignments(
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -372,7 +376,7 @@ def _detail_profile_receipt() -> tuple[
         job="ci-validation-selector-preflight",
         matrix={"selector": preflight_work_group_id},
     )
-    manifest = freeze_ci_validation_selector_assignments(
+    manifest = _freeze_ci_validation_selector_assignments(
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -392,7 +396,7 @@ def _detail_profile_receipt() -> tuple[
         for item in assignments
         if item["work-group-id"] == preflight_work_group_id
     )
-    receipt = freeze_ci_validation_receipt(
+    receipt = _freeze_ci_validation_receipt(
         plan=snapshot.plan,
         selector_assignments_manifest=manifest,
         assignment=assignment,
@@ -506,7 +510,7 @@ def _valid_receipt() -> tuple[
     dict[str, object],
 ]:
     snapshot, manifest, assignment = _context()
-    receipt = freeze_ci_validation_receipt(
+    receipt = _freeze_ci_validation_receipt(
         plan=snapshot.plan,
         selector_assignments_manifest=manifest,
         assignment=assignment,
@@ -525,7 +529,7 @@ def test_freeze_and_validate_capability_receipt() -> None:
     """Freeze a receipt bound to the plan and assignment."""
     receipt, snapshot, manifest, assignment = _valid_receipt()
 
-    validate_ci_validation_receipt(
+    _validate_ci_validation_receipt(
         receipt,
         plan=snapshot.plan,
         selector_assignments_manifest=manifest,
@@ -544,7 +548,7 @@ def test_receipt_rejects_extra_self_attested_writer_identity() -> None:
     receipt["trusted-writer-id"] = assignment["trusted-writer-id"]
 
     with pytest.raises(ContractValidationError, match="not allowed"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -561,7 +565,7 @@ def test_receipt_rejects_mismatched_execution_tree() -> None:
     execution_tree["observed-commit-sha"] = "d" * 40
 
     with pytest.raises(ContractValidationError, match="validation-tree"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -592,7 +596,7 @@ def test_receipt_rejects_capability_outcome_mismatch() -> None:
     ]
 
     with pytest.raises(ContractValidationError, match="capability results"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -608,7 +612,7 @@ def test_receipt_rejects_top_level_non_success_without_diagnostics() -> None:
     receipt["outcome"] = "skipped"
 
     with pytest.raises(ContractValidationError, match="non-success outcome"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -628,7 +632,7 @@ def test_receipt_rejects_capability_non_success_without_diagnostics() -> None:
     results[1]["outcome"] = "blocking-failure"
 
     with pytest.raises(ContractValidationError, match="non-success outcome"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -643,14 +647,14 @@ def test_receipt_rejects_non_release_artifact_refs() -> None:
     receipt, snapshot, manifest, assignment = _valid_receipt()
     evidence = cast("dict[str, object]", receipt["evidence"])
     evidence["artifact-refs"] = [
-        ci_validation_selector_assignments_artifact_ref(
+        _ci_validation_selector_assignments_artifact_ref(
             run_id=RUN_ID,
             run_attempt=RUN_ATTEMPT,
         ),
     ]
 
     with pytest.raises(ContractValidationError, match="non-artifact"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -671,7 +675,7 @@ def test_receipt_rejects_assignment_outside_selector_manifest() -> None:
     )
 
     with pytest.raises(ContractValidationError, match="exactly match"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -684,19 +688,19 @@ def test_receipt_rejects_assignment_outside_selector_manifest() -> None:
 def test_receipt_payload_loader_rejects_non_ijson_numbers() -> None:
     """Convert non-I-JSON receipt content into validation errors."""
     with pytest.raises(ContractValidationError, match="floats"):
-        load_ci_validation_receipt_payload(b'{"value":1.5}')
+        _load_ci_validation_receipt_payload(b'{"value":1.5}')
 
 
 def test_receipt_payload_loader_rejects_duplicate_members() -> None:
     """Reject duplicate object member names before canonicalization."""
     with pytest.raises(ContractValidationError, match="duplicate"):
-        load_ci_validation_receipt_payload(b'{"value":1,"value":2}')
+        _load_ci_validation_receipt_payload(b'{"value":1,"value":2}')
 
 
 def test_receipt_payload_loader_rejects_nested_duplicate_members() -> None:
     """Reject duplicate object member names in nested objects."""
     with pytest.raises(ContractValidationError, match="duplicate"):
-        load_ci_validation_receipt_payload(b'{"outer":{"value":1,"value":2}}')
+        _load_ci_validation_receipt_payload(b'{"outer":{"value":1,"value":2}}')
 
 
 def test_receipt_digest_helpers_are_canonical_and_raw() -> None:
@@ -704,10 +708,10 @@ def test_receipt_digest_helpers_are_canonical_and_raw() -> None:
     receipt, _, _, _ = _valid_receipt()
     raw = json.dumps(receipt, sort_keys=True).encode("utf-8")
 
-    assert ci_validation_receipt_content_digest(raw) != (
-        ci_validation_receipt_payload_digest(receipt)
+    assert _ci_validation_receipt_content_digest(raw) != (
+        _ci_validation_receipt_payload_digest(receipt)
     )
-    assert len(ci_validation_receipt_content_digest(raw)) == SHA256_HEX_LENGTH
+    assert len(_ci_validation_receipt_content_digest(raw)) == SHA256_HEX_LENGTH
 
 
 def _descriptor_path() -> str:
@@ -948,7 +952,7 @@ def _specialized_context(
         )
         for item in work_groups
     }
-    manifest = freeze_ci_validation_selector_assignments(
+    manifest = _freeze_ci_validation_selector_assignments(
         plan=snapshot.plan,
         changed_files_snapshot=snapshot.changed_files_snapshot,
         fact_snapshot=snapshot.fact_snapshot,
@@ -1062,7 +1066,7 @@ def _receipt_for_context(
     assignment: dict[str, object],
     evidence: dict[str, object],
 ) -> dict[str, object]:
-    return freeze_ci_validation_receipt(
+    return _freeze_ci_validation_receipt(
         plan=snapshot.plan,
         selector_assignments_manifest=manifest,
         assignment=assignment,
@@ -1082,7 +1086,7 @@ def _validate_specialized_receipt(
     manifest: dict[str, object],
     assignment: dict[str, object],
 ) -> None:
-    validate_ci_validation_receipt(
+    _validate_ci_validation_receipt(
         receipt,
         plan=snapshot.plan,
         selector_assignments_manifest=manifest,
@@ -1239,7 +1243,7 @@ def test_top_level_failed_diagnostic_requires_blocking_failure() -> None:
     ]
 
     with pytest.raises(ContractValidationError, match="blocking-failure"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -1276,7 +1280,7 @@ def test_top_level_failed_diagnostic_allows_blocking_failure() -> None:
         ),
     ]
 
-    validate_ci_validation_receipt(
+    _validate_ci_validation_receipt(
         receipt,
         plan=snapshot.plan,
         selector_assignments_manifest=manifest,
@@ -1294,7 +1298,7 @@ def test_failed_diagnostic_code_requires_failed_verdict_effect() -> None:
     diagnostics[0]["verdict-effect"] = DiagnosticVerdictEffect.NONE.value
 
     with pytest.raises(ContractValidationError, match="failed verdict-effect"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -1312,7 +1316,7 @@ def test_artifact_shape_diagnostic_requires_failed_verdict_effect() -> None:
     diagnostics[0]["verdict-effect"] = DiagnosticVerdictEffect.NONE.value
 
     with pytest.raises(ContractValidationError, match="failed verdict-effect"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -1339,7 +1343,7 @@ def test_known_non_impacting_is_not_receipt_diagnostic_code() -> None:
     ]
 
     with pytest.raises(ContractValidationError, match="valid for receipts"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -1356,7 +1360,7 @@ def test_receipt_rejects_foreign_diagnostic_source_id() -> None:
     receipt["diagnostics"] = [_failed_diagnostic("wg-foreign")]
 
     with pytest.raises(ContractValidationError, match="receipt work group"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -1376,7 +1380,7 @@ def test_receipt_rejects_null_diagnostic_source_id() -> None:
     source["id"] = None
 
     with pytest.raises(ContractValidationError, match="receipt work group"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -1394,7 +1398,7 @@ def test_descriptor_invalid_diagnostic_requires_failed_verdict_effect() -> None:
     diagnostics[0]["verdict-effect"] = DiagnosticVerdictEffect.NONE.value
 
     with pytest.raises(ContractValidationError, match="failed verdict-effect"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -1441,7 +1445,7 @@ def test_descriptor_invalid_diagnostic_rejected_for_ecosystem_gate() -> None:
     with pytest.raises(
         ContractValidationError, match="receipt category or location"
     ):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -1460,7 +1464,7 @@ def test_artifact_shape_diagnostic_rejected_outside_release_context() -> None:
     with pytest.raises(
         ContractValidationError, match="receipt category or location"
     ):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -1551,7 +1555,7 @@ def test_skipped_diagnostic_is_not_success_evidence() -> None:
     receipt["diagnostics"] = [_skipped_diagnostic()]
 
     with pytest.raises(ContractValidationError, match="must be skipped"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -2192,7 +2196,7 @@ def test_release_receipt_accepts_dependency_blocked_skip() -> None:
     release_receipt["diagnostics"] = [
         _skipped_diagnostic(ARTIFACT_WORK_GROUP_ID)
     ]
-    receipt = freeze_ci_validation_receipt(
+    receipt = _freeze_ci_validation_receipt(
         plan=snapshot.plan,
         selector_assignments_manifest=manifest,
         assignment=assignment,
@@ -2244,7 +2248,7 @@ def test_release_receipt_rejects_dependency_skip_without_depends_on() -> None:
     ]
 
     with pytest.raises(ContractValidationError, match="depends-on"):
-        freeze_ci_validation_receipt(
+        _freeze_ci_validation_receipt(
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
             assignment=assignment,
@@ -2294,7 +2298,7 @@ def test_release_receipt_rejects_dependency_blocked_skip_when_unexpected() -> (
     release_receipt["diagnostics"] = [
         _skipped_diagnostic(ARTIFACT_WORK_GROUP_ID)
     ]
-    receipt = freeze_ci_validation_receipt(
+    receipt = _freeze_ci_validation_receipt(
         plan=snapshot.plan,
         selector_assignments_manifest=manifest,
         assignment=assignment,
@@ -2328,7 +2332,7 @@ def test_detail_profile_requires_diagnostics_for_skipped_subcheck() -> None:
     subchecks[0]["outcome"] = "skipped"
 
     with pytest.raises(ContractValidationError, match="must explain skipped"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,
@@ -2350,7 +2354,7 @@ def test_detail_profile_rejects_success_subcheck_with_failed_diagnostic() -> (
     subchecks[0]["diagnostics"] = [_failed_diagnostic()]
 
     with pytest.raises(ContractValidationError, match="blocking-failure"):
-        validate_ci_validation_receipt(
+        _validate_ci_validation_receipt(
             receipt,
             plan=snapshot.plan,
             selector_assignments_manifest=manifest,

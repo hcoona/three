@@ -516,3 +516,95 @@ Updated the workflow-release design notes to move live acceptance away from the 
   workflow runs.
 - Recorded the implementation-readiness recommendation, validated platform
   assumptions, design constraints, remaining risks, and OA scope-out items.
+
+## [2026-05-23] query | Rebaseline G5 CI batch admission
+
+- Updated the CI affected-validation LLD to remove G5 reliance on producer-side
+  batch observation sidecars for live CI gating.
+- Clarified that G5 batch bundle admission is internal validation-grade evidence,
+  while the G4 trusted-observation seam remains available for future trusted
+  observer topologies.
+
+## [2026-05-23] query | Remove self-attested CI batch observations
+
+- Removed the public caller-writable batch observation writer and observation
+  manifest consumer path from the CI control script.
+- Clarified that future trusted observations must come from a genuine trusted
+  observer, not producer-side sidecar artifacts.
+
+## [2026-05-24] query | Clarify G5 aggregate evidence schemas
+
+- Corrected the CI affected-validation LLD dependency-result outcome enum and
+  clarified `admitted-for-gating` as evidence admission rather than success.
+- Documented downloader-observed unexpected-artifact names and strengthened the
+  aggregate metadata trust boundary language.
+
+## [2026-05-24] query | CI validation artifact boundary updates
+
+Updated the CI affected-validation LLD to clarify that matrix execution-batch jobs do not enumerate the artifact API, final aggregation performs live namespace checks, and snapshot artifact names are only allowed when plan-required.
+
+## [2026-05-24] query | Remove selector writer-observation refs
+
+- Clarified that legacy selector-assignment compatibility binds receipt refs and
+  writer IDs directly, without requiring, producing, or validating
+  writer-observation refs.
+
+## [2026-05-24] query | Attempt-visible CI artifact namespace
+
+- Updated the CI validation artifact enumeration analysis and LLD to describe
+  current G5 attempt-visible physical artifact names and current-attempt-only
+  namespace reconciliation.
+
+## [2026-05-24] query | Clean G5 legacy surface removal
+
+- Updated the CI affected-validation LLD to state that clean G5 has no selector-assignment, standalone-receipt, receipt-manifest, or writer-observation compatibility contract.
+
+## [2026-05-25] query | Simplify aggregate summary artifact contract
+
+- Clarified that aggregate-summary self-artifact problems discovered after upload
+  are post-upload workflow gate diagnostics, not public aggregate summary JSON
+  reasons, failure kinds, or final evidence details.
+
+## [2026-05-25] query | Bind release-shaped validation evidence
+
+- Documented `projection-authority` in the aggregate evidence manifest schema.
+- Clarified that release-shaped public batch evidence rejects unbound reused receipts and carries per-obligation blocking/skipped detail.
+
+## [2026-05-25] query | Align projection authority schema
+
+- Updated the CI affected-validation LLD so aggregate `projection-authority` documents the implemented mode, validation tree, affected range, request, scheduled-full, and projection digest shape.
+
+## [2026-05-25] query | Clarify CI artifact physical names
+
+- Updated the CI validation artifact enumeration analysis to supersede the
+  digest-only physical-name proposal with current attempt-scoped
+  `three-ci-validation-{run-id}-{run-attempt}-{sha256(logical-ref)}` guidance.
+
+## [2026-05-25] query | Rebaseline matrix dependency downloads
+
+- Updated the CI affected-validation LLD to describe artifact-ID/API singleton
+  downloads and downloader-observed `artifact-metadata.json` for matrix
+  inter-batch dependency evidence.
+
+## [2026-05-25] query | Reconcile CI diagnostic detail contract
+
+- Updated the CI affected-validation LLD to remove stale `invalid-plan`
+  diagnostic details for request-boundary and execution-batch-manifest failures,
+  aligning the documentation with the implemented public registry.
+
+## [2026-05-25] query | Align execution manifest diagnostics
+
+- Updated the CI affected-validation LLD and acceptance fixture wording so
+  invalid execution-batch manifests use `required-input-artifact-failure` with
+  `inadmissible-batch-evidence` details instead of `invalid-plan` details.
+
+## [2026-05-25] query | Tighten release descriptor identity
+
+- Updated the CI affected-validation LLD so release-shaped descriptor identity
+  must be a non-empty string, and clarified execution-batch manifest mismatch
+  details under `inadmissible-batch-evidence`.
+
+## [2026-05-25] query | Bind dependency upstream identity
+
+- Updated the CI affected-validation LLD dependency-result schema with trusted upstream artifact and admitted-candidate identity fields.
+- Clarified when upstream identity fields may be null or omitted and when authoritative upstream evidence requires non-empty matching IDs.
