@@ -323,7 +323,7 @@ Update-MiseLockDotNetSdkVersion -Path $MiseLockPath -Version $dotNetSdkVersion
 Update-GlobalPklMsBuildSdkVersion -Path $GlobalPklPath -Versions $msBuildSdkVersions
 
 Test-RequiredCommand -Name "mise"
-mise run update-global-json
+mise run --skip-tools update-global-json
 
 if (-not $SkipRestore) {
     $expectedMiseLockContent = Get-Content -Path $MiseLockPath -Raw

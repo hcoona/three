@@ -5,9 +5,9 @@
     ":dependencyDashboard",
     ":semanticCommits",
     ":semanticCommitTypeAll(chore)",
-    ":separateMultipleMajorReleases",
-    "group:monorepos"
+    ":separateMultipleMajorReleases"
   ],
+  "ignorePresets": ["group:monorepos", "group:recommended"],
   "timezone": "Etc/UTC",
   "labels": ["dependencies"],
   "configMigration": true,
@@ -51,10 +51,17 @@
       "automerge": false
     },
     {
-      "description": "Use Renovate's native NuGet global.json support, then sync generated sources and .NET lockfiles.",
+      "description": "Do not update generated global.json .NET SDK through NuGet.",
       "matchManagers": ["nuget"],
       "matchFileNames": ["global.json"],
-      "matchDepTypes": ["dotnet-sdk", "msbuild-sdk"],
+      "matchDepTypes": ["dotnet-sdk"],
+      "enabled": false
+    },
+    {
+      "description": "Use Renovate's native NuGet global.json MSBuild SDK support, then sync generated sources and .NET lockfiles.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["global.json"],
+      "matchDepTypes": ["msbuild-sdk"],
       "rangeStrategy": "replace",
       "postUpgradeTasks": {
         "commands": [
@@ -94,6 +101,7 @@
         "actions/upload-artifact",
         "actions/download-artifact",
         "actions/attest-build-provenance",
+        "actions/create-github-app-token",
         "github/codeql-action",
         "pypa/gh-action-pypi-publish",
         "rubygems/configure-rubygems-credentials"
@@ -113,6 +121,7 @@
         "pkl-community/setup-pkl",
         "dcarbone/install-jq-action",
         "dorny/paths-filter",
+        "actions/create-github-app-token",
         "github/codeql-action",
         "pypa/gh-action-pypi-publish",
         "rubygems/configure-rubygems-credentials"
@@ -178,8 +187,15 @@
       "matchManagers": ["npm"],
       "matchFileNames": ["src/public/lib/**/package.json"],
       "matchDepTypes": ["dependencies", "optionalDependencies", "peerDependencies"],
+      "rangeStrategy": "update-lockfile"
+    },
+    {
+      "description": "Public npm library runtime and peer ranges require compatibility review.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["src/public/lib/**/package.json"],
+      "matchDepTypes": ["dependencies", "optionalDependencies", "peerDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "public npm library runtime compatibility",
-      "rangeStrategy": "update-lockfile",
       "dependencyDashboardApproval": true,
       "automerge": false
     },
@@ -189,8 +205,16 @@
       "matchFileNames": ["src/public/lib/hexo-renderer-asciidoc/package.json"],
       "matchDepTypes": ["devDependencies"],
       "matchPackageNames": ["hexo", "/^hexo-/"],
+      "rangeStrategy": "replace"
+    },
+    {
+      "description": "Group Hexo development tooling separately from public runtime ranges.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["src/public/lib/hexo-renderer-asciidoc/package.json"],
+      "matchDepTypes": ["devDependencies"],
+      "matchPackageNames": ["hexo", "/^hexo-/"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Hexo development tooling",
-      "rangeStrategy": "replace",
       "postUpdateOptions": ["pnpmDedupe"],
       "automerge": false
     },
@@ -199,8 +223,15 @@
       "matchManagers": ["npm"],
       "matchFileNames": ["src/public/lib/hexo-renderer-asciidoc/examples/**/package.json"],
       "matchPackageNames": ["hexo", "/^hexo-/"],
+      "rangeStrategy": "replace"
+    },
+    {
+      "description": "Group Hexo demo ecosystem updates separately from public runtime ranges.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["src/public/lib/hexo-renderer-asciidoc/examples/**/package.json"],
+      "matchPackageNames": ["hexo", "/^hexo-/"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Hexo demo ecosystem",
-      "rangeStrategy": "replace",
       "postUpdateOptions": ["pnpmDedupe"],
       "automerge": false
     },
@@ -211,11 +242,27 @@
       "enabled": false
     },
     {
+      "description": "Refresh uv.lock after Python dependency updates.",
+      "matchManagers": ["pep621"],
+      "postUpgradeTasks": {
+        "commands": ["mise run --skip-tools --force update-uv-lock"],
+        "fileFilters": ["uv.lock"],
+        "executionMode": "branch"
+      }
+    },
+    {
       "description": "Public Python library runtime minimums should not chase latest lower bounds.",
       "matchManagers": ["pep621"],
       "matchFileNames": ["src/public/lib/**/pyproject.toml"],
       "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
-      "rangeStrategy": "update-lockfile",
+      "rangeStrategy": "update-lockfile"
+    },
+    {
+      "description": "Public Python library runtime minimums should not chase latest lower bounds.",
+      "matchManagers": ["pep621"],
+      "matchFileNames": ["src/public/lib/**/pyproject.toml"],
+      "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
+      "matchUpdateTypes": ["minor", "patch"],
       "dependencyDashboardApproval": true,
       "automerge": false
     },
@@ -224,6 +271,7 @@
       "matchManagers": ["pep621"],
       "matchFileNames": ["src/public/lib/**/pyproject.toml", "src/sample/**/pyproject.toml"],
       "matchDepTypes": ["build-system.requires"],
+      "matchUpdateTypes": ["minor", "patch"],
       "dependencyDashboardApproval": true,
       "groupName": "Python build backend minimums",
       "automerge": false
@@ -233,8 +281,15 @@
       "matchManagers": ["pep621"],
       "matchDepTypes": ["dependency-groups"],
       "matchPackageNames": ["ruff", "pyrefly", "pytest", "hatch", "hatchling", "datamodel-code-generator"],
+      "rangeStrategy": "replace"
+    },
+    {
+      "description": "Group Python lint, test, build, and type-check tooling from dependency groups.",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["dependency-groups"],
+      "matchPackageNames": ["ruff", "pyrefly", "pytest", "hatch", "hatchling", "datamodel-code-generator"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Python dev tooling dependencies",
-      "rangeStrategy": "replace",
       "automerge": false
     },
     {
@@ -285,6 +340,7 @@
         "src/lab/**/pyproject.toml"
       ],
       "matchPackageNames": ["streamlit", "ortools", "aiohttp"],
+      "matchDepTypes": ["project.dependencies"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Python data application runtime",
       "automerge": false
@@ -298,8 +354,19 @@
         "src/public/lib/hexo-renderer-asciidoc/Gemfile"
       ],
       "matchPackageNames": ["asciidoctor"],
+      "rangeStrategy": "update-lockfile"
+    },
+    {
+      "description": "Group public Ruby runtime lockfile updates without changing compatibility ranges.",
+      "matchManagers": ["bundler"],
+      "matchFileNames": [
+        "src/public/lib/asciidoctor-latexmath/Gemfile",
+        "src/public/lib/asciidoctor-latexmath/asciidoctor-latexmath.gemspec",
+        "src/public/lib/hexo-renderer-asciidoc/Gemfile"
+      ],
+      "matchPackageNames": ["asciidoctor"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Ruby runtime dependencies",
-      "rangeStrategy": "update-lockfile",
       "dependencyDashboardApproval": true,
       "automerge": false
     },
@@ -307,8 +374,14 @@
       "description": "Group Ruby development and test tooling updates.",
       "matchManagers": ["bundler"],
       "matchPackageNames": ["rake", "rspec", "aruba", "standard"],
+      "rangeStrategy": "replace"
+    },
+    {
+      "description": "Group Ruby development and test tooling updates.",
+      "matchManagers": ["bundler"],
+      "matchPackageNames": ["rake", "rspec", "aruba", "standard"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Ruby development dependencies",
-      "rangeStrategy": "replace",
       "automerge": false
     },
     {
@@ -358,13 +431,22 @@
       "description": "Update Nerdbank.GitVersioning packages and tools together.",
       "matchManagers": ["nuget", "npm"],
       "matchPackageNames": ["Nerdbank.GitVersioning", "nbgv", "nerdbank-gitversioning"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Nerdbank.GitVersioning",
       "automerge": false
+    },
+    {
+      "description": "Group Windows UI platform package non-major updates.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["Microsoft.Web.WebView2", "Microsoft.Windows.SDK.BuildTools", "Microsoft.WindowsAppSDK"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Windows UI platform packages"
     },
     {
       "description": "Public NuGet library dependency minimums require manual compatibility approval.",
       "matchManagers": ["nuget"],
       "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "matchUpdateTypes": ["minor", "patch"],
       "dependencyDashboardApproval": true,
       "groupName": "public NuGet library minimum dependency versions",
       "automerge": false
@@ -374,6 +456,7 @@
       "matchManagers": ["nuget"],
       "matchFileNames": ["Directory.Packages.props"],
       "matchPackageNames": ["System.Net.Http", "System.Text.Json"],
+      "matchUpdateTypes": ["minor", "patch"],
       "dependencyDashboardApproval": true,
       "groupName": "public NuGet library minimum dependency versions",
       "automerge": false
@@ -399,18 +482,60 @@
       "matchManagers": ["mise"],
       "matchDepNames": ["core:dotnet", "dotnet"],
       "postUpgradeTasks": {
-        "commands": ["mise run update-global-json"],
+        "commands": ["mise run --skip-tools update-global-json"],
         "fileFilters": ["global.json"],
         "executionMode": "branch"
       },
       "automerge": false
     },
     {
-      "description": "Group package manager mise updates.",
+      "description": "Group pnpm mise updates and refresh pnpm lockfiles.",
       "matchManagers": ["mise"],
-      "matchDepNames": ["pnpm", "uv"],
+      "matchDepNames": ["pnpm"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
-      "groupName": "mise package managers",
+      "groupName": "mise pnpm",
+      "postUpgradeTasks": {
+        "commands": ["mise install pnpm && mise run --skip-tools --force update-pnpm-lockfiles"],
+        "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
+        "executionMode": "branch"
+      },
+      "automerge": false
+    },
+    {
+      "description": "Refresh pnpm lockfiles after major pnpm mise updates.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["pnpm"],
+      "matchUpdateTypes": ["major"],
+      "postUpgradeTasks": {
+        "commands": ["mise install pnpm && mise run --skip-tools --force update-pnpm-lockfiles"],
+        "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
+        "executionMode": "branch"
+      },
+      "automerge": false
+    },
+    {
+      "description": "Group uv mise updates and refresh uv lockfile.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["uv"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "mise uv",
+      "postUpgradeTasks": {
+        "commands": ["mise install uv && mise run --skip-tools --force update-uv-lock"],
+        "fileFilters": ["uv.lock"],
+        "executionMode": "branch"
+      },
+      "automerge": false
+    },
+    {
+      "description": "Refresh uv lockfile after major uv mise updates.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["uv"],
+      "matchUpdateTypes": ["major"],
+      "postUpgradeTasks": {
+        "commands": ["mise install uv && mise run --skip-tools --force update-uv-lock"],
+        "fileFilters": ["uv.lock"],
+        "executionMode": "branch"
+      },
       "automerge": false
     },
     {
