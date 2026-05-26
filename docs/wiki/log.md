@@ -608,3 +608,9 @@ Updated the CI affected-validation LLD to clarify that matrix execution-batch jo
 
 - Updated the CI affected-validation LLD dependency-result schema with trusted upstream artifact and admitted-candidate identity fields.
 - Clarified when upstream identity fields may be null or omitted and when authoritative upstream evidence requires non-empty matching IDs.
+
+## [2026-05-26] query | Remove reused receipt authority
+
+- Updated the CI affected-validation LLD to state that public CI batch evidence
+  has no reused-receipt authority and release-shaped public source proof is
+  admitted only through `evidence-source: no-publish-validation` output.

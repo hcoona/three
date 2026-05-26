@@ -4296,6 +4296,14 @@ def test_lightweight_preflight_rejects_non_ubuntu_runner() -> None:
     [
         ({"type": "tooling-surface", "id": "unknown-surface"}, "registered"),
         ({"type": "subject", "id": "python.src-public-lib-example"}, "tooling"),
+        ({"type": "ecosystem", "id": "python"}, "tooling"),
+        (
+            {
+                "type": "descriptor",
+                "id": "src/public/lib/example/three.release.yml",
+            },
+            "tooling",
+        ),
     ],
 )
 def test_lightweight_preflight_rejects_invalid_no_scope_targets(

@@ -35,20 +35,13 @@ from three_workflow_release_contracts import (
     ci_validation_execution_batch_manifest_payload_digest,
     ci_validation_execution_batch_matrix,
     ci_validation_plan_digest,
-    ci_validation_writer_id,
     validate_ci_validation_aggregate_evidence_manifest,
     validate_ci_validation_aggregate_summary,
     validate_ci_validation_batch_evidence_bundle,
     validate_contract,
 )
-from three_workflow_release_contracts.ci_validation_receipts import (
-    _freeze_ci_validation_receipt,
-    _validate_ci_validation_receipt,
-)
 from three_workflow_release_planner import (
-    CiValidationPlannerInputs,
     PlannerInputs,
-    plan_ci_validation_from_repo,
     plan_release,
 )
 from three_workflow_release_proof import (
@@ -60,10 +53,6 @@ from tests import ci_validation_batch_fixtures as batch_contracts
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
-
-    from three_workflow_release_contracts.ci_validation_receipts import (
-        _ReceiptOutcome,
-    )
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
@@ -448,6 +437,8 @@ def _copy_authoring_repo(destination: Path) -> None:
     ).stdout.decode("utf-8")
     for relative in (item for item in paths.split("\0") if item):
         source = REPO_ROOT / relative
+        if not source.exists():
+            continue
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
@@ -1046,7 +1037,7 @@ def test_ci_acceptance_matrix_preserves_no_publish_boundaries() -> None:
     }
     required_boundary_tests = {
         "tests/test_workflow_release_control.py::"
-        "test_ci_validation_workflow_writes_batch_evidence",
+        "test_ci_validation_workflow_exposes_control_plane_boundaries",
         "tests/test_workflow_release_control.py::"
         "test_ci_validation_command_mapping_uses_required_no_publish_checks",
     }
@@ -1402,53 +1393,6 @@ def _string_values_in_shape(
     return string_values
 
 
-def test_ci_acceptance_matrix_cites_only_current_g5_evidence() -> None:
-    """Current G5 evidence must not cite legacy receipt surfaces."""
-    matrix = _ci_acceptance_matrix()
-    legacy_markers = (
-        "test_ci_validation_receipts.py",
-        "test_ci_validation_assignments.py",
-        "test_ci_validation_aggregation.py",
-        "selector-assignment",
-        "legacy-selector",
-        "writer-observation",
-        "legacy-writer",
-        "receipt-manifest",
-        "legacy-receipt",
-        "legacy_receipt",
-        "placeholder_receipt",
-        "ci-validation-aggregate",
-    )
-    legacy_migration_rows = {
-        row["id"]
-        for row in matrix["rows"]
-        if isinstance(row, dict)
-        and isinstance(row.get("id"), str)
-        and (
-            "legacy" in row["id"]
-            or "receipt" in row["id"]
-            or "selector-assignment" in row["id"]
-            or "writer-observation" in row["id"]
-        )
-    }
-    evidence_values = _ci_acceptance_evidence_values(matrix)
-    public_live_values: list[tuple[str, str, str]] = []
-    public_live_values.extend(
-        _string_values_in_shape(
-            "live-gates",
-            "live-gates",
-            matrix.get("live-gates", {}),
-        )
-    )
-
-    assert not [
-        (row_id, column, value)
-        for row_id, column, value in evidence_values + public_live_values
-        if row_id not in legacy_migration_rows
-        if any(marker in value for marker in legacy_markers)
-    ]
-
-
 def test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs() -> (
     None
 ):
@@ -1457,76 +1401,80 @@ def test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs() -> (
     if scratch.exists():
         shutil.rmtree(scratch)
     scratch.mkdir(parents=True)
-
-    _validate_mutated_authoring_repo(
-        scratch,
-        "invalid-descriptor",
-        _mutate_descriptor_extra_field,
-        "DESC_SCHEMA_INVALID",
-    )
-    _validate_mutated_authoring_repo(
-        scratch,
-        "invalid-catalog",
-        _mutate_catalog_schema,
-        "CATALOG_SCHEMA_INVALID",
-    )
-    _validate_mutated_authoring_repo(
-        scratch,
-        "missing-catalog-ref",
-        _mutate_missing_catalog_ref,
-        "CATALOG_REF_NOT_FOUND",
-    )
-    _validate_mutated_authoring_repo(
-        scratch,
-        "profile-coexistence-conflict",
-        _mutate_profile_coexistence_conflict,
-        "DESC_STATIC_INVALID",
-    )
-
-    unknown_project = scratch / "unknown-project"
-    unknown_project.mkdir()
-    request = unknown_project / "planner-request.json"
-    request.write_text(
-        json.dumps(
-            {
-                "api-version": "three.release.planner-request/v1alpha1",
-                "kind": "planner-request",
-                "profile": "buddy",
-                "commit-sha": SHA_B,
-                "requested-project-ids": ["nbgv-python", "missing-project"],
-                "request-flags": {"force": False},
-            },
-            indent=2,
-            sort_keys=True,
+    try:
+        _validate_mutated_authoring_repo(
+            scratch,
+            "invalid-descriptor",
+            _mutate_descriptor_extra_field,
+            "DESC_SCHEMA_INVALID",
         )
-        + "\n",
-        encoding="utf-8",
-    )
-    unknown_project_diag = unknown_project / "planner-diagnostics.json"
-    unknown_project_result = subprocess.run(  # noqa: S603
-        [
-            sys.executable,
-            "-m",
-            "three_workflow_release_planner.cli",
-            "plan",
-            "--repo-root",
-            str(REPO_ROOT),
-            "--request",
-            str(request),
-            "--plan-out",
-            str(unknown_project / "release-plan.json"),
-            "--execution-sets-out",
-            str(unknown_project / "execution-sets.json"),
-            "--diagnostics-out",
-            str(unknown_project_diag),
-        ],
-        cwd=REPO_ROOT,
-        check=False,
-    )
-    assert unknown_project_result.returncode == 1
-    assert unknown_project_diag.is_file()
-    assert "REQ_PROJECT_NOT_FOUND" in _diagnostic_codes(unknown_project_diag)
-    _assert_forbidden_outputs_absent(unknown_project)
+        _validate_mutated_authoring_repo(
+            scratch,
+            "invalid-catalog",
+            _mutate_catalog_schema,
+            "CATALOG_SCHEMA_INVALID",
+        )
+        _validate_mutated_authoring_repo(
+            scratch,
+            "missing-catalog-ref",
+            _mutate_missing_catalog_ref,
+            "CATALOG_REF_NOT_FOUND",
+        )
+        _validate_mutated_authoring_repo(
+            scratch,
+            "profile-coexistence-conflict",
+            _mutate_profile_coexistence_conflict,
+            "DESC_STATIC_INVALID",
+        )
+
+        unknown_project = scratch / "unknown-project"
+        unknown_project.mkdir()
+        request = unknown_project / "planner-request.json"
+        request.write_text(
+            json.dumps(
+                {
+                    "api-version": "three.release.planner-request/v1alpha1",
+                    "kind": "planner-request",
+                    "profile": "buddy",
+                    "commit-sha": SHA_B,
+                    "requested-project-ids": ["nbgv-python", "missing-project"],
+                    "request-flags": {"force": False},
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        unknown_project_diag = unknown_project / "planner-diagnostics.json"
+        unknown_project_result = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "-m",
+                "three_workflow_release_planner.cli",
+                "plan",
+                "--repo-root",
+                str(REPO_ROOT),
+                "--request",
+                str(request),
+                "--plan-out",
+                str(unknown_project / "release-plan.json"),
+                "--execution-sets-out",
+                str(unknown_project / "execution-sets.json"),
+                "--diagnostics-out",
+                str(unknown_project_diag),
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        assert unknown_project_result.returncode == 1
+        assert unknown_project_diag.is_file()
+        assert "REQ_PROJECT_NOT_FOUND" in _diagnostic_codes(
+            unknown_project_diag
+        )
+        _assert_forbidden_outputs_absent(unknown_project)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_pre_plan_fail_closed_acceptance_allows_final_report_only() -> None:
@@ -5150,6 +5098,147 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     )
 
 
+def test_ci_validation_workflow_uses_current_batch_evidence_commands() -> None:
+    """CI workflow must not invoke retired receipt or writer-observation."""
+    workflow_text = _workflow("ci-validate.yml")
+    forbidden_commands = {
+        "materialize-ci-work-groups",
+        "check-ci-validation-dependencies",
+        "validate-ci-validation-lightweight-policy",
+        "write-ci-validation-receipt",
+        "write-ci-validation-observation",
+        "write-ci-validation-writer-observation",
+    }
+    forbidden_legacy_surfaces = {
+        "ci-validation-receipt",
+        "receipt-manifest",
+        "selector-assignment",
+        "writer-observation",
+    }
+    required_current_commands = {
+        "materialize-ci-validation-execution-batches",
+        "run-ci-validation-batch-commands",
+        "write-ci-validation-batch-evidence-bundle",
+        "download-ci-validation-observed-artifacts",
+        "aggregate-ci-evidence",
+        "verify-ci-validation-artifact-boundaries",
+    }
+
+    for forbidden in forbidden_commands | forbidden_legacy_surfaces:
+        assert forbidden not in workflow_text
+    for required in required_current_commands:
+        assert required in workflow_text
+
+
+def test_ci_validation_workflow_downloads_only_explicit_artifacts() -> None:
+    """Workflow downloads use explicit artifact IDs/API, not broad patterns."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    download_steps = []
+
+    for job in workflow["jobs"].values():
+        for step in job.get("steps", []):
+            if step.get("uses") != "actions/download-artifact@v4":
+                continue
+            download_steps.append(step)
+            with_args = step["with"]
+            assert "artifact-ids" in with_args
+            assert with_args["artifact-ids"]
+            assert with_args.get("merge-multiple") is True
+            assert "pattern" not in with_args
+            assert "name" not in with_args
+
+    assert download_steps
+    workflow_text = _workflow("ci-validate.yml")
+    assert "pattern: three-ci-validation-*" not in workflow_text
+    assert "name: three-ci-validation-*" not in workflow_text
+
+
+def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
+    """Final aggregate artifacts are redownloaded and boundary-verified."""
+    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    aggregate = workflow["jobs"]["aggregate-evidence"]
+    steps = aggregate["steps"]
+
+    assert aggregate["needs"] == [
+        "normalize-input",
+        "plan",
+        "materialize-execution-batches",
+        "execution-batch-layer-0",
+        "execution-batch-layer-1",
+        "execution-batch-layer-2",
+    ]
+
+    step_by_name = {step.get("name"): step for step in steps}
+    manifest_upload = step_by_name["Upload aggregate evidence manifest"]
+    manifest_boundary = step_by_name[
+        "Verify aggregate evidence manifest producer boundary"
+    ]
+    summary_write = step_by_name["Write aggregate summary"]
+    summary_upload = step_by_name["Upload aggregate summary"]
+    manifest_download = step_by_name[
+        "Download uploaded aggregate evidence manifest"
+    ]
+    summary_download = step_by_name["Download uploaded aggregate summary"]
+    final_verify = step_by_name[
+        "Verify final artifact bytes and producer boundaries"
+    ]
+
+    assert manifest_upload["id"] == "upload-aggregate-evidence-manifest"
+    assert summary_upload["id"] == "upload-aggregate-summary"
+    assert manifest_boundary["id"] == (
+        "verify-aggregate-evidence-manifest-producer-boundary"
+    )
+    assert summary_write["env"]["AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID"] == (
+        "${{ steps.upload-aggregate-evidence-manifest.outputs.artifact-id }}"
+    )
+    assert summary_write["env"][
+        "AGGREGATE_EVIDENCE_MANIFEST_PRODUCER_VERIFIED"
+    ] == (
+        "${{ steps.verify-aggregate-evidence-manifest-producer-boundary."
+        "outcome == 'success' }}"
+    )
+    assert (
+        "--aggregate-evidence-manifest-producer-verified"
+        in summary_write["run"]
+    )
+
+    assert manifest_download["with"]["artifact-ids"] == (
+        "${{ steps.upload-aggregate-evidence-manifest.outputs.artifact-id }}"
+    )
+    assert manifest_download["with"]["merge-multiple"] is True
+    assert manifest_download["with"]["path"] == (
+        ".three-ci-validation/final-uploaded/aggregate-evidence-manifest"
+    )
+    assert summary_download["with"]["artifact-ids"] == (
+        "${{ steps.upload-aggregate-summary.outputs.artifact-id }}"
+    )
+    assert summary_download["with"]["merge-multiple"] is True
+    assert summary_download["with"]["path"] == (
+        ".three-ci-validation/final-uploaded/aggregate-summary"
+    )
+
+    final_run = final_verify["run"]
+    assert "--max-prefixed-validation-artifacts 20" in final_run
+    assert "--expected-prefixed-validation-artifacts" in final_run
+    assert (
+        "summary['budgets']['expected-actual-validation-artifacts']"
+        in final_run
+    )
+    assert '\\"producer-boundary\\":\\"aggregate-evidence\\"' in final_run
+    assert (
+        ".three-ci-validation/final-uploaded/aggregate-evidence-manifest/"
+        "aggregate-evidence-manifest.json"
+    ) in final_run
+    assert (
+        ".three-ci-validation/final-uploaded/aggregate-summary/"
+        "aggregate-summary.json"
+    ) in final_run
+    assert (
+        '\\"content-digest\\":\\"${aggregate_manifest_digest}\\"' in final_run
+    )
+    assert '\\"content-digest\\":\\"${aggregate_summary_digest}\\"' in final_run
+
+
 def test_ci_validation_artifact_id_downloads_merge_to_consumer_paths() -> None:
     """Artifact-id downloads preserve flat paths consumed by scripts."""
     workflow = yaml.safe_load(_workflow("ci-validate.yml"))
@@ -5239,153 +5328,6 @@ def test_ci_validation_aggregate_request_plan_downloads_are_guarded() -> None:
     assert "--expected-plan-artifact-id" in aggregate_step["run"]
 
 
-def test_ci_validation_workflow_writes_batch_evidence() -> None:  # noqa: PLR0915
-    """Validation fan-out writes batch evidence instead of legacy receipts."""
-    workflow = _workflow("ci-validate.yml")
-    materialize = _step_block(
-        workflow,
-        "Materialize execution batches",
-    )
-    validation = _step_block(workflow, "Run batch validation commands")
-    bundle = _step_block(
-        workflow,
-        "Write batch evidence bundle",
-    )
-    observed_download = _step_block(
-        workflow, "Download observed batch evidence"
-    )
-    upload = _step_block(workflow, "Upload batch evidence bundle")
-    aggregate = _step_block(workflow, "Write aggregate evidence manifest")
-    aggregate_summary = _step_block(workflow, "Write aggregate summary")
-    manifest_verify = _step_block(
-        workflow,
-        "Verify aggregate evidence manifest producer boundary",
-    )
-    final_verify = _step_block(
-        workflow,
-        "Verify final artifact bytes and producer boundaries",
-    )
-
-    assert "materialize-ci-validation-execution-batches" in materialize
-    assert "--non-batch-control-plane-job-count 4" in materialize
-    assert (
-        "artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}" in workflow
-    )
-    assert "run-ci-validation-batch-commands" in validation
-    assert "--plan .three-ci-validation/plan/validation-plan.json" in validation
-    assert "validation-results" in validation
-    assert "matrix['runner-family'] == 'windows'" in workflow
-    assert "write-ci-validation-batch-evidence-bundle" in bundle
-    assert 'validation_result_args+=(--validation-result "$result")' in bundle
-    assert 'dependency_bundle_args+=(--dependency-bundle "$bundle")' in bundle
-    assert "MATRIX_BATCH_JSON: ${{ toJson(matrix) }}" in bundle
-    assert (
-        "--observed-artifacts-dir .three-ci-validation/observed-artifacts"
-        in bundle
-    )
-    assert "steps.bundle.outputs.batch_evidence_bundle_artifact_name" in upload
-    assert "write-ci-validation-batch-artifact-observation" not in workflow
-    assert "ci-validation-batch-observation-*" not in workflow
-    assert ".three-ci-validation/work/batch-evidence-bundle.json" in upload
-    assert "download-ci-validation-observed-artifacts" in observed_download
-    assert '--run-attempt "$GITHUB_RUN_ATTEMPT"' in observed_download
-    assert "--plan .three-ci-validation/plan/validation-plan.json" in (
-        observed_download
-    )
-    assert "execution-batch-manifest-artifact-id != ''" not in observed_download
-    assert "--batch-observation-artifacts-dir" not in observed_download
-    assert "--observation-manifest-out" not in observed_download
-    assert "aggregate-ci-evidence" in aggregate
-    assert "workflow_release_acceptance_gate.py" not in workflow
-    assert (
-        "--observed-artifacts-dir .three-ci-validation/observed-artifacts"
-        in aggregate
-    )
-    assert "--expected-plan-artifact-id" in aggregate
-    assert "Verify execution-batch input boundaries" not in workflow
-    assert (
-        "needs.plan.outputs.changed-files-snapshot-artifact-id != ''"
-        in workflow
-    )
-    assert "aggregate_args=(" in aggregate
-    assert "--expected-changed-files-snapshot-artifact-id" in aggregate
-    assert "--expected-execution-batch-manifest-artifact-id" in aggregate
-    assert "--observation-manifest" not in aggregate
-    assert "--aggregate-phase evidence" in aggregate
-    assert 'aggregate_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"' in (
-        observed_download
-    )
-    assert "aggregate-started-at.txt" in observed_download
-    assert (
-        'aggregate_started_at="$(cat '
-        '.three-ci-validation/aggregate/aggregate-started-at.txt)"' in aggregate
-    )
-    assert "--aggregate-phase summary" in aggregate_summary
-    assert "if: always()" in aggregate_summary
-    assert "--aggregate-evidence-manifest-artifact-id" in aggregate_summary
-    assert 'aggregate_completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"' in (
-        aggregate_summary
-    )
-    assert "mkdir -p .three-ci-validation/aggregate" in aggregate_summary
-    assert (
-        "if [ -s "
-        ".three-ci-validation/aggregate/aggregate-started-at.txt ]; then"
-        in aggregate_summary
-    )
-    assert (
-        'aggregate_started_at="$(cat '
-        '.three-ci-validation/aggregate/aggregate-started-at.txt)"'
-        in aggregate_summary
-    )
-    assert 'aggregate_started_at="$aggregate_completed_at"' in aggregate_summary
-    assert '--started-at "$aggregate_started_at"' in aggregate_summary
-    assert '--completed-at "$aggregate_completed_at"' in aggregate_summary
-    assert '--created-at "$aggregate_completed_at"' in aggregate_summary
-    assert (
-        "--aggregate-evidence-manifest-producer-verified" in aggregate_summary
-    )
-    assert "AGGREGATE_EVIDENCE_MANIFEST_PRODUCER_VERIFIED:" in aggregate_summary
-    assert (
-        "steps.verify-aggregate-evidence-manifest-producer-boundary.outcome"
-        in aggregate_summary
-    )
-    assert "id: verify-aggregate-evidence-manifest-producer-boundary" in (
-        manifest_verify
-    )
-    assert "steps.upload-aggregate-evidence-manifest.outputs.artifact-id" in (
-        manifest_verify
-    )
-    assert "--max-prefixed-validation-artifacts 18" in manifest_verify
-    assert "verify-ci-validation-artifact-boundaries" in final_verify
-    assert "Download uploaded aggregate evidence manifest" in workflow
-    assert "Download uploaded aggregate summary" in workflow
-    assert "expected_artifacts=()" in final_verify
-    assert (
-        'if [ -n "$AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID" ]; then'
-        not in final_verify
-    )
-    assert final_verify.index(
-        "AGGREGATE_EVIDENCE_MANIFEST_REF"
-    ) < final_verify.index("AGGREGATE_SUMMARY_REF")
-    assert "steps.upload-aggregate-summary.outputs.artifact-id" in final_verify
-    assert '\\"downloaded-path\\"' in final_verify
-    assert (
-        ".three-ci-validation/final-uploaded/aggregate-evidence-manifest/"
-        "aggregate-evidence-manifest.json" in final_verify
-    )
-    assert (
-        ".three-ci-validation/final-uploaded/aggregate-summary/"
-        "aggregate-summary.json" in final_verify
-    )
-    assert "--max-prefixed-validation-artifacts 20" in final_verify
-    assert "--expected-prefixed-validation-artifacts" in final_verify
-    assert "expected-actual-validation-artifacts" in final_verify
-    assert "observed_receipts=[]" not in workflow
-    assert "write-ci-validation-receipt" not in workflow
-    assert "write-ci-validation-writer-observation" not in workflow
-    assert "pattern: three-ci-validation-*" not in workflow
-
-
 def test_ci_validation_matrix_downloads_exact_dependency_bundles() -> None:
     """Dependent matrix children download exact bundle artifacts."""
     workflow = yaml.safe_load(_workflow("ci-validate.yml"))
@@ -5472,24 +5414,6 @@ def test_ci_validation_batch_observation_cli_is_not_public() -> None:
             sys.executable,
             str(SCRIPT),
             "write-ci-validation-batch-artifact-observation",
-            "--help",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode != 0
-    assert "invalid choice" in result.stderr
-
-
-def test_ci_validation_writer_observation_cli_is_not_public() -> None:
-    """Self-attested writer observation writers are not exposed."""
-    result = subprocess.run(  # noqa: S603
-        [
-            sys.executable,
-            str(SCRIPT),
-            "write-ci-validation-writer-observation",
             "--help",
         ],
         check=False,
@@ -6232,36 +6156,6 @@ def test_ci_validation_producer_boundary_fails_closed_for_current_final_refs(
     assert diagnostics[0]["detail"] == expected_detail
 
 
-@pytest.mark.parametrize(
-    "artifact_ref",
-    [
-        ("ci-validation/manifests/25887422010/1/receipt-manifest.json"),
-        ("ci-validation/aggregate/25887422010/1/ci-validation-aggregate.json"),
-    ],
-)
-def test_ci_validation_producer_boundary_has_no_live_legacy_final_suffix(
-    artifact_ref: str,
-) -> None:
-    """Legacy receipt/aggregate refs are not live G5 final artifacts."""
-    diagnostics = control._ci_verify_expected_artifact_producer_boundaries(
-        artifacts=[],
-        expected_artifacts=[
-            _ci_expected_artifact(
-                artifact_ref,
-                artifact_id=9901,
-                boundary="aggregate-evidence",
-                job="aggregate-evidence",
-            )
-        ],
-        workflow="CI Validation",
-        run_id="25887422010",
-        run_attempt="1",
-    )
-
-    assert diagnostics
-    assert diagnostics[0]["detail"] == "structurally-invalid"
-
-
 def test_ci_validation_producer_boundary_ignores_expired_batch_manifest() -> (
     None
 ):
@@ -6600,59 +6494,6 @@ def test_ci_validation_producer_boundary_fails_closed_for_present_optional_ids(
 
     assert diagnostics
     assert diagnostics[0]["detail"] == expected_detail
-
-
-def test_ci_validation_aggregate_fails_closed_for_duplicate_plan_artifact(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Implicit legacy aggregation is closed before boundary checks."""
-    scratch = SCRATCH / "ci-validation-duplicate-plan-boundary"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        plan_ref = control.ci_validation_plan_artifact_ref(
-            run_id="25887422010",
-            run_attempt="1",
-        )
-        monkeypatch.setattr(
-            control,
-            "_github_actions_run_artifacts",
-            lambda **_kwargs: [
-                _ci_artifact_metadata(plan_ref, artifact_id=7001),
-                _ci_artifact_metadata(plan_ref, artifact_id=7002),
-            ],
-        )
-        manifest_path = scratch / "receipt-manifest.json"
-        aggregate_path = scratch / "aggregate.json"
-
-        result = control._cmd_aggregate_ci_evidence(
-            argparse.Namespace(
-                repository="hcoona/three",
-                workflow="CI Validation",
-                run_id="25887422010",
-                run_attempt="1",
-                plan=str(scratch / "validation-plan.json"),
-                changed_files_snapshot="",
-                fact_snapshot="",
-                assignments="",
-                observed_artifacts_dir="",
-                expected_request_artifact_id=None,
-                expected_plan_artifact_id="7001",
-                expected_changed_files_snapshot_artifact_id=None,
-                expected_fact_snapshot_artifact_id=None,
-                expected_execution_batch_manifest_artifact_id=None,
-                created_at="2026-05-14T21:09:21Z",
-                aggregate_evidence_manifest_out=str(manifest_path),
-                aggregate_summary_out=str(aggregate_path),
-                github_output=None,
-            )
-        )
-
-        assert result == 2
-        assert not aggregate_path.exists()
-        assert not manifest_path.exists()
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_github_actions_run_artifacts_dedupes_paginated_artifact_ids(
@@ -7747,267 +7588,6 @@ def _github_outputs(path: Path) -> dict[str, str]:
     )
 
 
-def test_ci_validation_control_plane_materializes_empty_plan() -> None:
-    """CI control helpers write request, assignments, and aggregate evidence."""
-    scratch = SCRATCH / "ci-validation-control"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        request_path = scratch / "ci-validation-request.json"
-        assignments_path = scratch / "selector-assignments.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        manifest_path = scratch / "receipt-manifest.json"
-        aggregate_path = scratch / "aggregate.json"
-        output_path = scratch / "outputs.txt"
-        request_args = argparse.Namespace(
-            mode="push",
-            repository="hcoona/three",
-            workflow="CI Validation",
-            run_id="25887422010",
-            run_attempt="1",
-            event_name="push",
-            event_number="",
-            actor="octocat",
-            validation_commit_sha="b" * 40,
-            validation_ref="refs/heads/main",
-            base_sha="a" * 40,
-            base_tip_sha="",
-            head_sha="b" * 40,
-            changed_files_json="[]",
-            range_status="available",
-            range_diagnostic_detail="missing",
-            created_at="2026-05-14T21:09:21Z",
-            out=str(request_path),
-            github_output=None,
-        )
-        assert control._cmd_write_ci_validation_request(request_args) == 0
-        request = json.loads(request_path.read_text(encoding="utf-8"))
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=request,
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        plan_path.write_text(
-            json.dumps(plan_snapshot.plan),
-            encoding="utf-8",
-        )
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-        materialize_args = argparse.Namespace(
-            plan=str(plan_path),
-            changed_files_snapshot=str(changed_files_path),
-            fact_snapshot=str(fact_snapshot_path),
-            workflow="CI Validation",
-            writer_job="validation-work-groups",
-            created_at="2026-05-14T21:09:21Z",
-            assignments_out=str(assignments_path),
-            github_output=str(output_path),
-        )
-        assert control._cmd_materialize_ci_work_groups(materialize_args) == 0
-        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
-        assert assignments["assignments"] == []
-        aggregate_args = argparse.Namespace(
-            repository="hcoona/three",
-            workflow="CI Validation",
-            run_id="25887422010",
-            run_attempt="1",
-            plan=str(plan_path),
-            changed_files_snapshot=str(changed_files_path),
-            fact_snapshot=str(fact_snapshot_path),
-            assignments=str(assignments_path),
-            created_at="2026-05-14T21:09:21Z",
-            aggregate_evidence_manifest_out=str(manifest_path),
-            aggregate_summary_out=str(aggregate_path),
-            github_output=str(output_path),
-        )
-        assert control._cmd_aggregate_ci_evidence(aggregate_args) == 2
-        assert not aggregate_path.exists()
-        assert not manifest_path.exists()
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_legacy_no_manifest_assignments_exclude_control_artifact() -> None:
-    """No-manifest assignments aggregation is legacy, not G5 closure."""
-    scratch = SCRATCH / "ci-validation-legacy-assignments-boundary"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=_ci_validation_push_request([]),
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        materialize_outputs_path = scratch / "materialize-outputs.txt"
-        manifest_path = scratch / "receipt-manifest.json"
-        aggregate_path = scratch / "aggregate.json"
-        observed_root = scratch / "observed-artifacts"
-        selector_assignments_name = artifact_physical_name(
-            control._ci_validation_selector_assignments_artifact_ref(
-                run_id="25887422010",
-                run_attempt="1",
-            )
-        )
-        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at="2026-05-14T21:09:21Z",
-                    assignments_out=str(assignments_path),
-                    github_output=str(materialize_outputs_path),
-                )
-            )
-            == 0
-        )
-        (observed_root / selector_assignments_name).mkdir(parents=True)
-
-        result = control._cmd_aggregate_ci_evidence(
-            argparse.Namespace(
-                repository="hcoona/three",
-                workflow="CI Validation",
-                run_id="25887422010",
-                run_attempt="1",
-                plan=str(plan_path),
-                changed_files_snapshot=str(changed_files_path),
-                fact_snapshot=str(fact_snapshot_path),
-                assignments=str(assignments_path),
-                observed_artifacts_dir=str(observed_root),
-                created_at="2026-05-14T21:09:21Z",
-                aggregate_evidence_manifest_out=str(manifest_path),
-                aggregate_summary_out=str(aggregate_path),
-                github_output=None,
-            )
-        )
-
-        assert result == 2
-        assert not aggregate_path.exists()
-        assert not manifest_path.exists()
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_validation_materializer_uses_workflow_matrix_writer_ids() -> None:
-    """Trusted writer IDs match the actual workflow matrix object shape."""
-    scratch = SCRATCH / "ci-validation-writer-ids"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        request = _ci_validation_push_request(
-            [
-                (
-                    "src/public/lib/three-workflow-release-planner/src/"
-                    "three_workflow_release_planner/ci_validation_planner.py"
-                )
-            ],
-        )
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=request,
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        output_path = scratch / "outputs.txt"
-        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-
-        assert (
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at="2026-05-14T21:09:21Z",
-                    assignments_out=str(assignments_path),
-                    github_output=str(output_path),
-                )
-            )
-            == 0
-        )
-
-        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
-        outputs = _github_outputs(output_path)
-        layers = json.loads(outputs["work_group_layers"])
-        assert layers
-        assert outputs["has_work_group_layer_0"] == "true"
-        matrix = {
-            item["work-group-id"]: item
-            for item in json.loads(outputs["work_group_matrix"])
-        }
-        assert assignments["assignments"]
-        for item in matrix.values():
-            assert isinstance(item["depends-on"], list)
-            assert isinstance(item["dependency-layer"], int)
-            assert item["runner-family"] in {"ubuntu", "windows"}
-            assert item["runner"] == item["runner-family"]
-            assert item["no-publish"] is True
-            if item["kind"] in {"ecosystem-gate", "descriptor-validation"}:
-                assert item["validation-commands"]
-            if item["kind"] in {
-                "lightweight-preflight",
-                "release-shaped-artifact",
-                "workflow-release-tooling",
-            }:
-                assert item["validation-commands"]
-        for assignment in assignments["assignments"]:
-            work_group_id = assignment["work-group-id"]
-            assert assignment["trusted-writer-id"] == ci_validation_writer_id(
-                workflow="CI Validation",
-                job=matrix[work_group_id]["writer-job"],
-                matrix={"work-group": matrix[work_group_id]},
-            )
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
 def test_ci_validation_command_runner_maps_exit_codes_to_outcome() -> None:
     """Mapped validation commands record no-publish command results."""
     scratch = SCRATCH / "ci-validation-command-runner"
@@ -8051,292 +7631,6 @@ def test_ci_validation_command_runner_maps_exit_codes_to_outcome() -> None:
         assert result["commands"][0]["argv"][0] == sys.executable
         assert result["commands"][0]["capability"] == "test"
         assert _github_outputs(output_path)["validation_outcome"] == "success"
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_validation_lightweight_policy_uses_frozen_scope() -> None:
-    """Lightweight validation consumes the frozen planner coverage target."""
-    scratch = SCRATCH / "ci-validation-lightweight-policy"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        plan_path = scratch / "validation-plan.json"
-        assignments_path = scratch / "selector-assignments.json"
-        work_group = {
-            "work-group-id": "wg-lightweight",
-            "kind": "lightweight-preflight",
-            "runner-family": "ubuntu",
-            "coverage-target": {
-                "type": "lightweight-policy",
-                "id": "known-non-impacting",
-            },
-        }
-        matrix_work_group = {**work_group, "no-publish": True}
-        plan = {
-            "work-groups": [work_group],
-            "evidence-expectations": [
-                {
-                    "work-group-id": "wg-lightweight",
-                    "detail-profile": "lightweight-profile",
-                }
-            ],
-            "detail-profiles": [
-                {
-                    "detail-profile-id": "lightweight-profile",
-                    "required-subchecks": [
-                        {"subcheck-id": "known-non-impacting-policy"}
-                    ],
-                }
-            ],
-        }
-        assignments = {
-            "assignments": [
-                {
-                    "assignment-id": "assign-wg-lightweight",
-                    "work-group-id": "wg-lightweight",
-                    "receipt-artifact-ref": (
-                        "ci-validation-receipt-wg-lightweight"
-                    ),
-                    "trusted-writer-id": "trusted-writer",
-                }
-            ]
-        }
-        plan_path.write_text(json.dumps(plan), encoding="utf-8")
-        assignments_path.write_text(json.dumps(assignments), encoding="utf-8")
-
-        assert (
-            control._cmd_validate_ci_validation_lightweight_policy(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    assignments=str(assignments_path),
-                    work_group_id="wg-lightweight",
-                    matrix_work_group_json=json.dumps(matrix_work_group),
-                )
-            )
-            == 0
-        )
-
-        stale_matrix = {
-            **matrix_work_group,
-            "coverage-target": {"type": "lightweight-policy", "id": "stale"},
-        }
-        assert (
-            control._cmd_validate_ci_validation_lightweight_policy(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    assignments=str(assignments_path),
-                    work_group_id="wg-lightweight",
-                    matrix_work_group_json=json.dumps(stale_matrix),
-                )
-            )
-            == 1
-        )
-        publishing_matrix = {**matrix_work_group, "no-publish": False}
-        assert (
-            control._cmd_validate_ci_validation_lightweight_policy(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    assignments=str(assignments_path),
-                    work_group_id="wg-lightweight",
-                    matrix_work_group_json=json.dumps(publishing_matrix),
-                )
-            )
-            == 1
-        )
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_validation_batch_lightweight_preflight_is_batch_native() -> None:  # noqa: PLR0915
-    """G5 batch lightweight validation does not require selector assignments."""
-    scratch = SCRATCH / "ci-validation-batch-lightweight-native"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        plan = cast("dict[str, object]", batch_contracts.plan())
-        profile_id = "profile-lightweight"
-        coverage_target = {
-            "type": "lightweight-policy",
-            "id": "known-non-impacting",
-        }
-        lightweight_group = {
-            "work-group-id": "wg-lightweight",
-            "kind": "lightweight-preflight",
-            "coverage-target": coverage_target,
-            "ecosystem": None,
-            "runner-family": "ubuntu",
-            "selector-variant": None,
-            "depends-on": [],
-            "expected-evidence": {
-                "category": "lightweight-preflight",
-                "planned-capabilities": None,
-                "detail-profile": profile_id,
-                "required": True,
-            },
-        }
-        work_groups = cast("list[dict[str, object]]", plan["work-groups"])
-        terminal_group = next(
-            group
-            for group in work_groups
-            if group["kind"] == "evidence-aggregation"
-        )
-        work_groups.insert(-1, lightweight_group)
-        terminal_group["depends-on"] = sorted(
-            [*cast("list[str]", terminal_group["depends-on"]), "wg-lightweight"]
-        )
-        cast("list[dict[str, object]]", plan["evidence-expectations"]).append(
-            {
-                "evidence-expectation-id": "evidence-lightweight",
-                "work-group-id": "wg-lightweight",
-                "coverage-target": coverage_target,
-                "category": "lightweight-preflight",
-                "planned-capabilities": None,
-                "detail-profile": profile_id,
-                "required": True,
-                "blocking-if-missing": True,
-            }
-        )
-        cast("list[dict[str, object]]", plan["validation-obligations"]).append(
-            {
-                "validation-obligation-id": "validation-lightweight",
-                "source-impact-ids": ["impact-example"],
-                "kind": "lightweight-preflight",
-                "coverage-target": coverage_target,
-                "required": True,
-                "blocking": True,
-                "work-group-id": "wg-lightweight",
-                "expected-evidence-id": "evidence-lightweight",
-            }
-        )
-        plan["detail-profiles"] = [
-            {
-                "detail-profile-id": profile_id,
-                "category": "lightweight-preflight",
-                "coverage-target": coverage_target,
-                "required-subchecks": [
-                    {
-                        "subcheck-id": "known-non-impacting-policy",
-                        "check-kind": "policy",
-                        "blocking": True,
-                        "description": (
-                            "Verify the lightweight non-impacting policy."
-                        ),
-                    }
-                ],
-            }
-        ]
-        work_groups.sort(key=lambda item: str(item["work-group-id"]))
-        cast("list[dict[str, object]]", plan["evidence-expectations"]).sort(
-            key=lambda item: str(item["evidence-expectation-id"])
-        )
-        cast("list[dict[str, object]]", plan["validation-obligations"]).sort(
-            key=lambda item: str(item["validation-obligation-id"])
-        )
-        plan["plan-digest"] = ci_validation_plan_digest(plan)
-        authorizing_context = batch_contracts.authorizing_context_kwargs()
-        materialization = (
-            batch_contracts.materialize_ci_validation_execution_batches(
-                plan=plan,
-                **authorizing_context,
-                created_at=batch_contracts.CREATED_AT,
-                execution_workflow="CI Validation",
-            )
-        )
-        manifest = cast("dict[str, object]", materialization.manifest)
-        matrix = ci_validation_execution_batch_matrix(
-            manifest,
-            plan=plan,
-            request=cast("dict[str, object]", authorizing_context["request"]),
-            changed_files_snapshot=cast(
-                "dict[str, object]",
-                authorizing_context["changed_files_snapshot"],
-            ),
-            fact_snapshot=cast(
-                "dict[str, object]", authorizing_context["fact_snapshot"]
-            ),
-            expected_run_id=batch_contracts.RUN_ID,
-            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
-        )
-        row = next(
-            item
-            for item in cast("list[dict[str, object]]", matrix["include"])
-            if any(
-                selector["work-group-id"] == "wg-lightweight"
-                for selector in cast(
-                    "list[dict[str, object]]",
-                    next(
-                        batch
-                        for batch in cast(
-                            "list[dict[str, object]]", manifest["batches"]
-                        )
-                        if batch["batch-id"]
-                        == cast("dict[str, object]", item["identity-matrix"])[
-                            "batch-id"
-                        ]
-                    )["ordered-selectors"],
-                )
-            )
-        )
-        command = control._ci_validation_commands(plan, lightweight_group)[0]
-        assert command["builtin"] == "lightweight-preflight"
-        assert command["argv"] == []
-        assert "selector-assignments.json" not in json.dumps(command)
-
-        plan_path = scratch / "validation-plan.json"
-        request_path = scratch / "ci-validation-request.json"
-        manifest_path = scratch / "execution-batch-manifest.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        result_dir = scratch / "validation-results"
-        output_path = scratch / "outputs.txt"
-        plan_path.write_text(json.dumps(plan), encoding="utf-8")
-        request_path.write_text(
-            json.dumps(authorizing_context["request"]),
-            encoding="utf-8",
-        )
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(authorizing_context["changed_files_snapshot"]),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(authorizing_context["fact_snapshot"]),
-            encoding="utf-8",
-        )
-
-        assert (
-            control._cmd_run_ci_validation_batch_commands(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    request=str(request_path),
-                    execution_batch_manifest=str(manifest_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    observed_artifacts_dir="",
-                    expected_run_id=batch_contracts.RUN_ID,
-                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
-                    dependency_bundle=[],
-                    observed_commit_sha=batch_contracts.TREE_SHA,
-                    matrix_row_json=json.dumps(row),
-                    repo_root=str(REPO_ROOT),
-                    result_out_dir=str(result_dir),
-                    github_output=str(output_path),
-                )
-            )
-            == 0
-        )
-
-        outputs = _github_outputs(output_path)
-        assert outputs["validation_outcome"] == "success"
-        result = json.loads(
-            next(result_dir.glob("validation-result-*.json")).read_text(
-                encoding="utf-8"
-            )
-        )
-        assert result["work-group-id"] == "wg-lightweight"
-        assert result["outcome"] == "success"
-        assert result["commands"][0]["builtin"] == "lightweight-preflight"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -8907,8 +8201,10 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_validation_release_shaped_no_publish_binds_by_ref_name() -> None:
-    """Release-shaped no-publish evidence does not bind by sorted count."""
+def test_ci_validation_release_shaped_no_publish_missing_mapping_blocks() -> (
+    None
+):
+    """Missing explicit mapping blocks recursive output discovery."""
     scratch = SCRATCH / "ci-validation-release-shaped-output-ref-binding"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -8932,10 +8228,8 @@ def test_ci_validation_release_shaped_no_publish_binds_by_ref_name() -> None:
             matrix=matrix,
         )
 
-        assert result["outcome"] == "success"
-        digests = _release_shaped_result_digests(result)
-        assert digests[artifact_refs[0]] == hashlib.sha256(a_bytes).hexdigest()
-        assert digests[artifact_refs[1]] == hashlib.sha256(b_bytes).hexdigest()
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -9145,14 +8439,18 @@ def test_ci_validation_release_shaped_no_publish_mapping_skips_enumeration(
             encoding="utf-8",
         )
 
-        def fail_enumeration(_repo_root: Path) -> list[Path]:
-            raise AssertionError
+        original_rglob = Path.rglob
 
-        monkeypatch.setattr(
-            control,
-            "_ci_validation_build_outputs",
-            fail_enumeration,
-        )
+        def fail_enumeration(
+            path: Path,
+            *args: object,
+            **kwargs: object,
+        ) -> object:
+            if path == build_root:
+                raise AssertionError
+            return original_rglob(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "rglob", fail_enumeration)
         result = _run_release_shaped_no_publish_validation(
             scratch=scratch,
             plan=plan,
@@ -9183,6 +8481,22 @@ def test_ci_validation_release_shaped_no_publish_binds_descriptor_id() -> None:
         build_root = scratch / ".three-ci-validation/work/validation-build"
         build_root.mkdir(parents=True)
         (build_root / "a.whl").write_bytes(b"contents for a")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": {
+                        artifact_refs[0]: (
+                            ".three-ci-validation/work/validation-build/a.whl"
+                        ),
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
         fact_snapshot = _release_shaped_no_publish_fact_snapshot(
             descriptor_identity="descriptor-sha256:" + "e" * 64,
         )
@@ -9284,6 +8598,22 @@ def test_ci_validation_release_shaped_no_publish_blocks_invalid_descriptor_fact(
         build_root = scratch / ".three-ci-validation/work/validation-build"
         build_root.mkdir(parents=True)
         (build_root / "a.whl").write_bytes(b"contents for a")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": {
+                        artifact_refs[0]: (
+                            ".three-ci-validation/work/validation-build/a.whl"
+                        ),
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
 
         result = _run_release_shaped_no_publish_validation(
             scratch=scratch,
@@ -9299,8 +8629,8 @@ def test_ci_validation_release_shaped_no_publish_blocks_invalid_descriptor_fact(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_validation_release_shaped_no_publish_rejects_unbound() -> None:
-    """Release-shaped no-publish fails closed without reliable binding."""
+def test_ci_validation_release_shaped_incomplete_mapping_blocks() -> None:
+    """Release-shaped no-publish fails closed on incomplete mapping."""
     scratch = SCRATCH / "ci-validation-release-shaped-output-unbound"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -9315,6 +8645,23 @@ def test_ci_validation_release_shaped_no_publish_rejects_unbound() -> None:
         build_root.mkdir(parents=True)
         (build_root / "first-output.bin").write_bytes(b"first")
         (build_root / "second-output.bin").write_bytes(b"second")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": {
+                        artifact_refs[0]: (
+                            ".three-ci-validation/work/validation-build/"
+                            "first-output.bin"
+                        ),
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
         result = _run_release_shaped_no_publish_validation(
             scratch=scratch,
             plan=plan,
@@ -9475,220 +8822,6 @@ def _release_shaped_result_digests(
     return digests
 
 
-def test_ci_validation_release_shaped_success_requires_valid_evidence() -> None:
-    """Release-shaped success requires matching artifact evidence."""
-    artifact_ref = "ci-validation/artifacts/python/example/wheel.whl"
-    plan: Mapping[str, object] = {
-        "validation-tree": {"commit-sha": "b" * 40},
-        "work-groups": [
-            {
-                "work-group-id": "wg-release",
-                "kind": "release-shaped-artifact",
-                "runner-family": "ubuntu",
-                "coverage-target": {"type": "subject", "id": "python.example"},
-            }
-        ],
-        "artifact-obligations": [
-            {
-                "artifact-obligation-id": "artifact-python-example-wheel",
-                "work-group-id": "wg-release",
-                "subject-id": "python.example",
-                "descriptor-path": "src/public/lib/example/three.release.yml",
-                "profile-coverage": ["wheel"],
-                "artifact": {
-                    "kind-family": "python",
-                    "concrete-kind": "wheel",
-                    "logical-artifact-role": "package",
-                    "variant-dimensions": {},
-                    "expected-artifact-refs": [artifact_ref],
-                },
-                "release-receipt": {
-                    "expected-family": "python",
-                    "logical-receipt-role": "build",
-                    "variant-dimensions": {},
-                },
-            }
-        ],
-        "evidence-expectations": [
-            {
-                "work-group-id": "wg-release",
-                "category": "release-shaped-artifact",
-                "planned-capabilities": None,
-            }
-        ],
-    }
-    result = control._ci_artifact_obligation_success_result(
-        cast(
-            "Mapping[str, object]",
-            cast("Sequence[object]", plan["artifact-obligations"])[0],
-        )
-    )
-    cast(
-        "dict[str, object]",
-        cast("dict[str, object]", result["artifact"])["observed"],
-    )["digests"] = [
-        {
-            "artifact-ref": artifact_ref,
-            "algorithm": "sha256",
-            "digest": "f" * 64,
-            "digest-available": True,
-            "diagnostics": [],
-        }
-    ]
-    validation_result: dict[str, object] = {
-        "work-group-id": "wg-release",
-        "kind": "release-shaped-artifact",
-        "runner-family": "ubuntu",
-        "coverage-target": {"type": "subject", "id": "python.example"},
-        "observed-commit-sha": "b" * 40,
-        "outcome": "success",
-        "commands": [
-            {
-                "builtin": "release-shaped-artifact",
-                "evidence-source": "no-publish-validation",
-                "outcome": "success",
-                "artifact-obligation-results": [result],
-            }
-        ],
-    }
-
-    assert (
-        control._ci_validation_outcome(
-            plan,
-            "wg-release",
-            dependency_blocked=False,
-            validation_result=validation_result,
-        )
-        == "blocking-failure"
-    )
-    reused_validation_result = deepcopy(validation_result)
-    reused_command = cast(
-        "dict[str, object]",
-        cast("list[object]", reused_validation_result["commands"])[0],
-    )
-    reused_command["evidence-source"] = "reused-validation-receipt"
-    reused_command["reused-receipt"] = {
-        "artifact-ref": (
-            "ci-validation/receipts/25887422010/1/wg-release/receipt.json"
-        ),
-        "receipt-id": "wg-release",
-        "receipt-content-digest": "a" * 64,
-        "observed-commit-sha": "b" * 40,
-    }
-    assert (
-        control._ci_validation_outcome(
-            plan,
-            "wg-release",
-            dependency_blocked=False,
-            validation_result=reused_validation_result,
-        )
-        == "blocking-failure"
-    )
-    stale_reused_result = deepcopy(reused_validation_result)
-    stale_reused_command = cast(
-        "dict[str, object]",
-        cast("list[object]", stale_reused_result["commands"])[0],
-    )
-    cast("dict[str, object]", stale_reused_command["reused-receipt"])[
-        "observed-commit-sha"
-    ] = "c" * 40
-    assert (
-        control._ci_validation_outcome(
-            plan,
-            "wg-release",
-            dependency_blocked=False,
-            validation_result=stale_reused_result,
-        )
-        == "blocking-failure"
-    )
-
-    missing_evidence = {
-        **validation_result,
-        "commands": [
-            {
-                "builtin": "release-shaped-artifact",
-                "evidence-source": "no-publish-validation",
-                "outcome": "success",
-            }
-        ],
-    }
-    assert (
-        control._ci_validation_outcome(
-            plan,
-            "wg-release",
-            dependency_blocked=False,
-            validation_result=missing_evidence,
-        )
-        == "blocking-failure"
-    )
-    unchecked_result = deepcopy(result)
-    cast("dict[str, object]", unchecked_result["release-receipt"])[
-        "schema-checked"
-    ] = False
-    invalid_evidence = {
-        **validation_result,
-        "commands": [
-            {
-                "builtin": "release-shaped-artifact",
-                "evidence-source": "no-publish-validation",
-                "outcome": "success",
-                "artifact-obligation-results": [unchecked_result],
-            }
-        ],
-    }
-    assert (
-        control._ci_validation_outcome(
-            plan,
-            "wg-release",
-            dependency_blocked=False,
-            validation_result=invalid_evidence,
-        )
-        == "blocking-failure"
-    )
-
-    for field, value in (
-        ("coverage-target", {"type": "subject", "id": "python.other"}),
-        ("observed-commit-sha", "c" * 40),
-    ):
-        mismatched_identity = {**validation_result, field: value}
-        assert (
-            control._ci_validation_outcome(
-                plan,
-                "wg-release",
-                dependency_blocked=False,
-                validation_result=mismatched_identity,
-            )
-            == "blocking-failure"
-        )
-
-    fabricated_result = control._ci_artifact_obligation_success_result(
-        cast(
-            "Mapping[str, object]",
-            cast("Sequence[object]", plan["artifact-obligations"])[0],
-        )
-    )
-    fabricated_evidence = {
-        **validation_result,
-        "commands": [
-            {
-                "builtin": "release-shaped-artifact",
-                "evidence-source": "no-publish-validation",
-                "outcome": "success",
-                "artifact-obligation-results": [fabricated_result],
-            }
-        ],
-    }
-    assert (
-        control._ci_validation_outcome(
-            plan,
-            "wg-release",
-            dependency_blocked=False,
-            validation_result=fabricated_evidence,
-        )
-        == "blocking-failure"
-    )
-
-
 @pytest.mark.parametrize(
     "extra_command",
     [
@@ -9735,720 +8868,6 @@ def test_ci_validation_release_shaped_source_helpers_reject_extra_commands(
     )
 
 
-@pytest.mark.skip(reason="legacy receipt write surface is not G5 public")
-def test_ci_validation_release_receipt_write_blocks_legacy_deps() -> None:
-    """Legacy receipts without trusted observations do not unblock writes."""
-    scratch = SCRATCH / "ci-validation-release-shaped-first-source"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=_ci_validation_push_request(
-                    ["src/public/lib/nbgv-python/pyproject.toml"],
-                ),
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        materialize_outputs_path = scratch / "materialize-outputs.txt"
-        validation_result_path = scratch / "validation-result.json"
-        receipt_path = scratch / "receipt.json"
-        observed_root = scratch / "observed-artifacts"
-        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at="2026-05-14T21:09:21Z",
-                    assignments_out=str(assignments_path),
-                    github_output=str(materialize_outputs_path),
-                )
-            )
-            == 0
-        )
-        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
-        matrix = {
-            item["work-group-id"]: item
-            for item in json.loads(
-                _github_outputs(materialize_outputs_path)["work_group_matrix"]
-            )
-        }
-        release_group = next(
-            group
-            for group in cast(
-                "Sequence[Mapping[str, object]]",
-                plan_snapshot.plan["work-groups"],
-            )
-            if group["kind"] == "release-shaped-artifact"
-        )
-        release_work_group_id = str(release_group["work-group-id"])
-        for dependency in cast("Sequence[str]", release_group["depends-on"]):
-            _stage_ci_observed_receipt(
-                scratch=scratch,
-                observed_root=observed_root,
-                plan=plan_snapshot.plan,
-                assignments=assignments,
-                matrix=matrix,
-                work_group_id=dependency,
-                outcome="success",
-                changed_files_snapshot=cast(
-                    "Mapping[str, object]",
-                    plan_snapshot.changed_files_snapshot,
-                ),
-                fact_snapshot=cast(
-                    "Mapping[str, object]",
-                    plan_snapshot.fact_snapshot,
-                ),
-            )
-
-        assert (
-            control._cmd_run_ci_validation_commands(
-                argparse.Namespace(
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    repo_root=str(REPO_ROOT),
-                    result_out=str(validation_result_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        validation_result = json.loads(
-            validation_result_path.read_text(encoding="utf-8")
-        )
-        command = validation_result["commands"][0]
-        assert validation_result["outcome"] == "success"
-        assert command["evidence-source"] == "no-publish-validation"
-        assert command["source-proof"]["kind"] == "no-publish-validation-result"
-
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=release_work_group_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[release_work_group_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    validation_result=str(validation_result_path),
-                    validation_outcome="success",
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(receipt_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assignment = control._ci_assignment_for_work_group(
-            assignments,
-            release_work_group_id,
-        )
-        _validate_ci_validation_receipt(
-            receipt,
-            plan=plan_snapshot.plan,
-            selector_assignments_manifest=assignments,
-            assignment=assignment,
-            changed_files_snapshot=plan_snapshot.changed_files_snapshot,
-            fact_snapshot=plan_snapshot.fact_snapshot,
-        )
-        assert receipt["outcome"] == "skipped"
-        assert receipt["diagnostics"][0]["detail"] == "dependency-blocked"
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-@pytest.mark.skip(reason="legacy receipt write surface is not G5 public")
-def test_ci_validation_release_receipt_write_accepts_observed_reuse() -> None:
-    """Release-shaped success is backed by an observed reusable receipt."""
-    scratch = SCRATCH / "ci-validation-release-shaped-observed-reuse"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        request = _ci_validation_push_request(
-            ["src/public/lib/nbgv-python/pyproject.toml"],
-        )
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=request,
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        materialize_outputs_path = scratch / "materialize-outputs.txt"
-        observed_root = scratch / "observed-artifacts"
-        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at="2026-05-14T21:09:21Z",
-                    assignments_out=str(assignments_path),
-                    github_output=str(materialize_outputs_path),
-                )
-            )
-            == 0
-        )
-        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
-        matrix = {
-            item["work-group-id"]: item
-            for item in json.loads(
-                _github_outputs(materialize_outputs_path)["work_group_matrix"]
-            )
-        }
-        groups = cast(
-            "Sequence[Mapping[str, object]]",
-            plan_snapshot.plan["work-groups"],
-        )
-        release_group = next(
-            group
-            for group in groups
-            if group["kind"] == "release-shaped-artifact"
-        )
-        release_work_group_id = str(release_group["work-group-id"])
-        for dependency in cast("Sequence[str]", release_group["depends-on"]):
-            _stage_ci_observed_receipt(
-                scratch=scratch,
-                observed_root=observed_root,
-                plan=plan_snapshot.plan,
-                assignments=assignments,
-                matrix=matrix,
-                work_group_id=dependency,
-                outcome="success",
-                changed_files_snapshot=cast(
-                    "Mapping[str, object]",
-                    plan_snapshot.changed_files_snapshot,
-                ),
-                fact_snapshot=cast(
-                    "Mapping[str, object]",
-                    plan_snapshot.fact_snapshot,
-                ),
-            )
-        _stage_ci_release_shaped_observed_receipt(
-            scratch=scratch,
-            observed_root=observed_root,
-            plan=plan_snapshot.plan,
-            assignments=assignments,
-            matrix=matrix,
-            work_group_id=release_work_group_id,
-            changed_files_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.changed_files_snapshot,
-            ),
-            fact_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.fact_snapshot,
-            ),
-        )
-        release_assignment = control._ci_assignment_for_work_group(
-            assignments,
-            release_work_group_id,
-        )
-        release_receipt_path = (
-            observed_root
-            / artifact_physical_name(
-                str(release_assignment["receipt-artifact-ref"])
-            )
-            / "receipt.json"
-        )
-        genuine_release_receipt = json.loads(
-            release_receipt_path.read_text(encoding="utf-8")
-        )
-        synthetic_release_receipt = deepcopy(genuine_release_receipt)
-        synthetic_detail = cast(
-            "dict[str, object]",
-            synthetic_release_receipt["evidence"]["category-result"]["detail"],
-        )
-        synthetic_detail.pop("evidence-source", None)
-        synthetic_detail.pop("source-proof", None)
-        release_receipt_path.write_text(
-            json.dumps(synthetic_release_receipt),
-            encoding="utf-8",
-        )
-        synthetic_result_path = scratch / "synthetic-validation-result.json"
-        assert (
-            control._cmd_run_ci_validation_commands(
-                argparse.Namespace(
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    repo_root=str(REPO_ROOT),
-                    result_out=str(synthetic_result_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        synthetic_result = json.loads(
-            synthetic_result_path.read_text(encoding="utf-8")
-        )
-        assert synthetic_result["outcome"] == "success"
-        assert (
-            synthetic_result["commands"][0]["evidence-source"]
-            == "no-publish-validation"
-        )
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-@pytest.mark.skip(reason="legacy receipt/selector aggregate is not G5 public")
-def test_ci_validation_aggregate_requires_release_shaped_source_proof() -> None:
-    """Final aggregation fails closed without observed release source proof."""
-    scratch = SCRATCH / "ci-validation-release-shaped-aggregate-source"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=_ci_validation_push_request(
-                    ["src/public/lib/nbgv-python/pyproject.toml"],
-                ),
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        materialize_outputs_path = scratch / "materialize-outputs.txt"
-        observed_root = scratch / "observed-artifacts"
-        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at="2026-05-14T21:09:21Z",
-                    assignments_out=str(assignments_path),
-                    github_output=str(materialize_outputs_path),
-                )
-            )
-            == 0
-        )
-        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
-        matrix = {
-            item["work-group-id"]: item
-            for item in json.loads(
-                _github_outputs(materialize_outputs_path)["work_group_matrix"]
-            )
-        }
-        release_group = next(
-            group
-            for group in cast(
-                "Sequence[Mapping[str, object]]",
-                plan_snapshot.plan["work-groups"],
-            )
-            if group["kind"] == "release-shaped-artifact"
-        )
-        release_work_group_id = str(release_group["work-group-id"])
-        for group in cast(
-            "Sequence[Mapping[str, object]]",
-            plan_snapshot.plan["work-groups"],
-        ):
-            work_group_id = str(group["work-group-id"])
-            if group["kind"] == "evidence-aggregation":
-                continue
-            if group["kind"] == "release-shaped-artifact":
-                _stage_ci_release_shaped_observed_receipt(
-                    scratch=scratch,
-                    observed_root=observed_root,
-                    plan=plan_snapshot.plan,
-                    assignments=assignments,
-                    matrix=matrix,
-                    work_group_id=work_group_id,
-                    changed_files_snapshot=cast(
-                        "Mapping[str, object]",
-                        plan_snapshot.changed_files_snapshot,
-                    ),
-                    fact_snapshot=cast(
-                        "Mapping[str, object]",
-                        plan_snapshot.fact_snapshot,
-                    ),
-                )
-                continue
-            _stage_ci_observed_receipt(
-                scratch=scratch,
-                observed_root=observed_root,
-                plan=plan_snapshot.plan,
-                assignments=assignments,
-                matrix=matrix,
-                work_group_id=work_group_id,
-                outcome="success",
-                changed_files_snapshot=cast(
-                    "Mapping[str, object]",
-                    plan_snapshot.changed_files_snapshot,
-                ),
-                fact_snapshot=cast(
-                    "Mapping[str, object]",
-                    plan_snapshot.fact_snapshot,
-                ),
-            )
-        release_assignment = control._ci_assignment_for_work_group(
-            assignments,
-            release_work_group_id,
-        )
-        release_dir = observed_root / artifact_physical_name(
-            str(release_assignment["receipt-artifact-ref"])
-        )
-        validation_result_path = release_dir / "validation-result.json"
-
-        def aggregate(verdict_name: str) -> Mapping[str, object]:
-            aggregate_path = scratch / f"{verdict_name}-aggregate.json"
-            manifest_path = scratch / f"{verdict_name}-manifest.json"
-            control._cmd_aggregate_ci_evidence(
-                argparse.Namespace(
-                    repository="hcoona/three",
-                    workflow="CI Validation",
-                    run_id="25887422010",
-                    run_attempt="1",
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    observed_artifacts_dir=str(observed_root),
-                    created_at="2026-05-14T21:09:25Z",
-                    aggregate_evidence_manifest_out=str(manifest_path),
-                    aggregate_summary_out=str(aggregate_path),
-                    github_output=None,
-                )
-            )
-            return json.loads(aggregate_path.read_text(encoding="utf-8"))
-
-        validation_result_path.unlink()
-        missing_source_proof = aggregate("missing-source-proof")
-        assert missing_source_proof["verdict"] == "failed"
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_validation_materializer_fails_closed_for_extra_layers() -> None:
-    """Static workflow materialization rejects unsupported dependency depth."""
-    scratch = SCRATCH / "ci-validation-too-many-layers"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        request = _ci_validation_push_request(
-            [
-                (
-                    "src/public/lib/three-workflow-release-planner/src/"
-                    "three_workflow_release_planner/ci_validation_planner.py"
-                )
-            ],
-        )
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=request,
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan = cast("dict[str, object]", deepcopy(plan_snapshot.plan))
-        work_groups = cast("list[dict[str, object]]", plan["work-groups"])
-        executable = [
-            group
-            for group in work_groups
-            if group["kind"] != "evidence-aggregation"
-        ][:4]
-        assert len(executable) == 4
-        for previous, current in pairwise(executable):
-            current["depends-on"] = [previous["work-group-id"]]
-        plan["plan-digest"] = ci_validation_plan_digest(plan)
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        plan_path.write_text(json.dumps(plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-
-        with pytest.raises(RuntimeError, match="supports 3"):
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at="2026-05-14T21:09:21Z",
-                    assignments_out=str(assignments_path),
-                    github_output=None,
-                )
-            )
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def _stage_ci_observed_receipt(  # noqa: PLR0913
-    *,
-    scratch: Path,
-    observed_root: Path,
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-    matrix: Mapping[str, Mapping[str, object]],
-    work_group_id: str,
-    outcome: _ReceiptOutcome,
-    changed_files_snapshot: Mapping[str, object],
-    fact_snapshot: Mapping[str, object],
-) -> None:
-    del scratch, matrix
-    assignment = control._ci_assignment_for_work_group(
-        assignments,
-        work_group_id,
-    )
-    diagnostics = control._ci_validation_diagnostics(
-        plan,
-        work_group_id,
-        outcome=outcome,
-    )
-    evidence = control._ci_validation_evidence(
-        plan,
-        work_group_id,
-        outcome=outcome,
-        diagnostics=diagnostics,
-        fact_snapshot=fact_snapshot,
-    )
-    receipt = _freeze_ci_validation_receipt(
-        plan=plan,
-        selector_assignments_manifest=assignments,
-        assignment=assignment,
-        receipt_id=str(assignment["assignment-id"]),
-        created_at="2026-05-14T21:09:22Z",
-        execution_observed_commit_sha="b" * 40,
-        outcome=outcome,
-        evidence=evidence,
-        diagnostics=diagnostics,
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-    )
-    receipt_dir = observed_root / artifact_physical_name(
-        str(assignment["receipt-artifact-ref"])
-    )
-    receipt_dir.mkdir(parents=True)
-    (receipt_dir / "receipt.json").write_text(
-        json.dumps(receipt),
-        encoding="utf-8",
-    )
-
-
-def _stage_ci_release_shaped_observed_receipt(  # noqa: PLR0913
-    *,
-    scratch: Path,
-    observed_root: Path,
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-    matrix: Mapping[str, Mapping[str, object]],
-    work_group_id: str,
-    changed_files_snapshot: Mapping[str, object],
-    fact_snapshot: Mapping[str, object],
-) -> None:
-    del scratch
-    assignment = control._ci_assignment_for_work_group(
-        assignments,
-        work_group_id,
-    )
-    obligation_results: list[Mapping[str, object]] = []
-    for obligation in control._ci_plan_records_for_work_group(
-        plan,
-        "artifact-obligations",
-        work_group_id,
-    ):
-        result = control._ci_artifact_obligation_success_result(obligation)
-        descriptor_path = str(obligation["descriptor-path"])
-        descriptor_fact = control._ci_descriptor_fact(
-            fact_snapshot,
-            descriptor_path,
-        )
-        cast("dict[str, object]", result["descriptor"])["identity"] = (
-            descriptor_fact.get("descriptor-identity")
-            if descriptor_fact is not None
-            else None
-        )
-        observed_artifact = cast(
-            "dict[str, object]",
-            cast("dict[str, object]", result["artifact"])["observed"],
-        )
-        observed_artifact["digests"] = [
-            {
-                "artifact-ref": artifact_ref,
-                "algorithm": "sha256",
-                "digest": "f" * 64,
-                "digest-available": True,
-                "diagnostics": [],
-            }
-            for artifact_ref in control._ci_artifact_expected_refs(obligation)
-        ]
-        obligation_results.append(result)
-    validation_result = {
-        "work-group-id": work_group_id,
-        "kind": matrix[work_group_id]["kind"],
-        "runner-family": matrix[work_group_id]["runner-family"],
-        "coverage-target": matrix[work_group_id]["coverage-target"],
-        "observed-commit-sha": "b" * 40,
-        "outcome": "success",
-        "commands": [
-            {
-                "builtin": "release-shaped-artifact",
-                "evidence-source": "no-publish-validation",
-                "source-proof": _release_shaped_no_publish_source_proof(
-                    work_group_id=work_group_id,
-                    matrix_work_group=matrix[work_group_id],
-                    obligation_results=obligation_results,
-                ),
-                "outcome": "success",
-                "artifact-obligation-results": obligation_results,
-            }
-        ],
-    }
-    diagnostics: list[Mapping[str, object]] = []
-    receipt = _freeze_ci_validation_receipt(
-        plan=plan,
-        selector_assignments_manifest=assignments,
-        assignment=assignment,
-        receipt_id=str(assignment["assignment-id"]),
-        created_at="2026-05-14T21:09:22Z",
-        execution_observed_commit_sha="b" * 40,
-        outcome="success",
-        evidence=control._ci_validation_evidence(
-            plan,
-            work_group_id,
-            outcome="success",
-            diagnostics=diagnostics,
-            validation_result=validation_result,
-            fact_snapshot=fact_snapshot,
-        ),
-        diagnostics=diagnostics,
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-    )
-    receipt_dir = observed_root / artifact_physical_name(
-        str(assignment["receipt-artifact-ref"])
-    )
-    receipt_dir.mkdir(parents=True)
-    (receipt_dir / "receipt.json").write_text(
-        json.dumps(receipt),
-        encoding="utf-8",
-    )
-    (receipt_dir / "validation-result.json").write_text(
-        json.dumps(validation_result),
-        encoding="utf-8",
-    )
-
-
-def _release_shaped_no_publish_source_proof(
-    *,
-    work_group_id: str,
-    matrix_work_group: Mapping[str, object],
-    obligation_results: Sequence[Mapping[str, object]],
-) -> Mapping[str, object]:
-    artifact_digests: list[Mapping[str, object]] = []
-    for result in obligation_results:
-        artifact = cast("Mapping[str, object]", result["artifact"])
-        observed = cast("Mapping[str, object]", artifact["observed"])
-        digest_entries = cast(
-            "Sequence[Mapping[str, object]]",
-            observed["digests"],
-        )
-        for digest in digest_entries:
-            artifact_digests.append(
-                {
-                    "artifact-ref": digest["artifact-ref"],
-                    "algorithm": digest["algorithm"],
-                    "digest": digest["digest"],
-                }
-            )
-    return {
-        "kind": "no-publish-validation-result",
-        "work-group-id": work_group_id,
-        "coverage-target": matrix_work_group["coverage-target"],
-        "observed-commit-sha": "b" * 40,
-        "artifact-digests": sorted(
-            artifact_digests,
-            key=lambda item: str(item["artifact-ref"]),
-        ),
-    }
-
-
 def _clear_ci_evidence_diagnostics(value: object) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -10459,714 +8878,6 @@ def _clear_ci_evidence_diagnostics(value: object) -> None:
     elif isinstance(value, list):
         for item in value:
             _clear_ci_evidence_diagnostics(item)
-
-
-def test_ci_validation_dependency_blocking_uses_declared_prerequisites() -> (  # noqa: PLR0915
-    None
-):
-    """Unrelated prior-layer receipts do not block independent dependents."""
-    scratch = SCRATCH / "ci-validation-prerequisite-specific-blocking"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        request = _ci_validation_push_request(
-            ["src/public/lib/nbgv-python/pyproject.toml"],
-        )
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=request,
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        output_path = scratch / "outputs.txt"
-        receipt_path = scratch / "dependent-receipt.json"
-        observed_root = scratch / "observed-artifacts"
-        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at="2026-05-14T21:09:21Z",
-                    assignments_out=str(assignments_path),
-                    github_output=str(output_path),
-                )
-            )
-            == 0
-        )
-        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
-        matrix = {
-            item["work-group-id"]: item
-            for item in json.loads(
-                _github_outputs(output_path)["work_group_matrix"]
-            )
-        }
-        groups = cast(
-            "Sequence[Mapping[str, object]]",
-            plan_snapshot.plan["work-groups"],
-        )
-        release_group = next(
-            group
-            for group in groups
-            if group["kind"] == "release-shaped-artifact"
-            and group["depends-on"]
-        )
-        dependent_id = str(release_group["work-group-id"])
-        groups_by_id = {str(group["work-group-id"]): group for group in groups}
-        non_release_group = next(
-            groups_by_id[dependency]
-            for dependency in cast("Sequence[str]", release_group["depends-on"])
-            if groups_by_id[dependency]["kind"] == "ecosystem-gate"
-        )
-        non_release_id = str(non_release_group["work-group-id"])
-        dependencies = {
-            str(item)
-            for item in cast("Sequence[object]", release_group["depends-on"])
-        }
-        blocking_failure_dependency = sorted(dependencies)[0]
-        unrelated_id = next(
-            work_group_id
-            for work_group_id, entry in matrix.items()
-            if work_group_id not in dependencies
-            and work_group_id != dependent_id
-        )
-        for dependency in dependencies:
-            _stage_ci_observed_receipt(
-                scratch=scratch,
-                observed_root=observed_root,
-                plan=plan_snapshot.plan,
-                assignments=assignments,
-                matrix=matrix,
-                work_group_id=dependency,
-                outcome=(
-                    "blocking-failure"
-                    if dependency == blocking_failure_dependency
-                    else "success"
-                ),
-                changed_files_snapshot=plan_snapshot.changed_files_snapshot,
-                fact_snapshot=cast(
-                    "Mapping[str, object]",
-                    plan_snapshot.fact_snapshot,
-                ),
-            )
-        _stage_ci_observed_receipt(
-            scratch=scratch,
-            observed_root=observed_root,
-            plan=plan_snapshot.plan,
-            assignments=assignments,
-            matrix=matrix,
-            work_group_id=unrelated_id,
-            outcome="skipped",
-            changed_files_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.changed_files_snapshot,
-            ),
-            fact_snapshot=cast(
-                "Mapping[str, object]",
-                plan_snapshot.fact_snapshot,
-            ),
-        )
-        blocking_failure_dependency_outputs = (
-            scratch / "blocking-failure-dependency-gate-outputs.txt"
-        )
-        assert (
-            control._cmd_check_ci_validation_dependencies(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=dependent_id,
-                    observed_artifacts_dir=str(observed_root),
-                    github_output=str(blocking_failure_dependency_outputs),
-                )
-            )
-            == 0
-        )
-        assert (
-            _github_outputs(blocking_failure_dependency_outputs)[
-                "dependency_blocked"
-            ]
-            == "true"
-        )
-        skipped_dependency_observed_root = (
-            scratch / "observed-artifacts-skipped-dependency"
-        )
-        skipped_dependency = sorted(dependencies)[-1]
-        for dependency in dependencies:
-            _stage_ci_observed_receipt(
-                scratch=scratch,
-                observed_root=skipped_dependency_observed_root,
-                plan=plan_snapshot.plan,
-                assignments=assignments,
-                matrix=matrix,
-                work_group_id=dependency,
-                outcome=(
-                    "skipped" if dependency == skipped_dependency else "success"
-                ),
-                changed_files_snapshot=plan_snapshot.changed_files_snapshot,
-                fact_snapshot=plan_snapshot.fact_snapshot,
-            )
-        skipped_dependency_outputs = (
-            scratch / "skipped-dependency-gate-outputs.txt"
-        )
-        assert (
-            control._cmd_check_ci_validation_dependencies(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=dependent_id,
-                    observed_artifacts_dir=str(
-                        skipped_dependency_observed_root
-                    ),
-                    github_output=str(skipped_dependency_outputs),
-                )
-            )
-            == 0
-        )
-        assert (
-            _github_outputs(skipped_dependency_outputs)["dependency_blocked"]
-            == "true"
-        )
-
-        dependent_outputs = scratch / "dependent-outputs.txt"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=dependent_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[dependent_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[dependent_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(dependent_outputs),
-                )
-            )
-            == 0
-        )
-        assert (
-            _github_outputs(dependent_outputs)["dependency_blocked"] == "true"
-        )
-        unblocked_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assert unblocked_receipt["outcome"] == "skipped"
-        unblocked_diagnostic = unblocked_receipt["diagnostics"][0]
-        assert unblocked_diagnostic["code"] == "validation-work-skipped"
-        assert unblocked_diagnostic["detail"] == "dependency-blocked"
-        forced_outputs = scratch / "forced-dependent-outputs.txt"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=dependent_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[dependent_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[dependent_id]["writer-job"],
-                    dependency_blocked="true",
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(forced_outputs),
-                )
-            )
-            == 0
-        )
-        assert _github_outputs(forced_outputs)["dependency_blocked"] == "true"
-        forced_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assert forced_receipt["outcome"] == "skipped"
-        assert forced_receipt["diagnostics"][0]["code"] == (
-            "validation-work-skipped"
-        )
-        return
-        non_release_outputs = scratch / "non-release-dependent-outputs.txt"
-        non_release_validation_result = scratch / "non-release-validation.json"
-        non_release_capabilities = cast(
-            "Sequence[str]",
-            cast(
-                "Mapping[str, object]",
-                non_release_group["expected-evidence"],
-            )["planned-capabilities"],
-        )
-        valid_non_release_result = {
-            "work-group-id": non_release_id,
-            "kind": non_release_group["kind"],
-            "runner-family": non_release_group["runner-family"],
-            "coverage-target": non_release_group["coverage-target"],
-            "observed-commit-sha": "b" * 40,
-            "outcome": "success",
-            "commands": [
-                {"capability": capability, "outcome": "success"}
-                for capability in non_release_capabilities
-            ],
-        }
-        non_release_validation_result.write_text(
-            json.dumps(valid_non_release_result),
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=non_release_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[non_release_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[non_release_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    validation_result=str(non_release_validation_result),
-                    validation_outcome="success",
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(non_release_outputs),
-                )
-            )
-            == 0
-        )
-        assert (
-            _github_outputs(non_release_outputs)["dependency_blocked"]
-            == "false"
-        )
-        non_release_receipt = json.loads(
-            receipt_path.read_text(encoding="utf-8")
-        )
-        assert non_release_receipt["outcome"] == "success"
-        assert non_release_receipt["diagnostics"] == []
-
-        for stale_field, stale_value in (
-            ("observed-commit-sha", "c" * 40),
-            ("coverage-target", {"type": "subject", "id": "python.stale"}),
-        ):
-            stale_validation_result = (
-                scratch / f"stale-{stale_field}-validation.json"
-            )
-            stale_result = {
-                **valid_non_release_result,
-                stale_field: stale_value,
-            }
-            stale_validation_result.write_text(
-                json.dumps(stale_result),
-                encoding="utf-8",
-            )
-            stale_outputs = scratch / f"stale-{stale_field}-outputs.txt"
-            assert (
-                control._cmd_write_ci_validation_receipt(
-                    argparse.Namespace(
-                        plan=str(plan_path),
-                        changed_files_snapshot=str(changed_files_path),
-                        fact_snapshot=str(fact_snapshot_path),
-                        assignments=str(assignments_path),
-                        work_group_id=non_release_id,
-                        matrix_work_group_json=json.dumps(
-                            matrix[non_release_id],
-                            separators=(",", ":"),
-                        ),
-                        workflow="CI Validation",
-                        job=matrix[non_release_id]["writer-job"],
-                        observed_artifacts_dir=str(observed_root),
-                        observed_commit_sha="b" * 40,
-                        validation_result=str(stale_validation_result),
-                        validation_outcome="success",
-                        created_at="2026-05-14T21:09:24Z",
-                        receipt_out=str(receipt_path),
-                        github_output=str(stale_outputs),
-                    )
-                )
-                == 0
-            )
-            stale_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-            assert stale_receipt["outcome"] == "blocking-failure"
-            assert stale_receipt["diagnostics"][0]["code"] == (
-                "validation-work-failed"
-            )
-
-        scalar_success_outputs = scratch / "scalar-success-outputs.txt"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=non_release_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[non_release_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[non_release_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    validation_outcome="success",
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(scalar_success_outputs),
-                )
-            )
-            == 0
-        )
-        scalar_success_receipt = json.loads(
-            receipt_path.read_text(encoding="utf-8")
-        )
-        assert scalar_success_receipt["outcome"] == "blocking-failure"
-        assert scalar_success_receipt["diagnostics"][0]["code"] == (
-            "validation-work-failed"
-        )
-
-        malformed_validation_result = scratch / "malformed-validation.json"
-        malformed_validation_result.write_text("{", encoding="utf-8")
-        malformed_outputs = scratch / "malformed-validation-outputs.txt"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=non_release_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[non_release_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[non_release_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    validation_result=str(malformed_validation_result),
-                    validation_outcome="success",
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(malformed_outputs),
-                )
-            )
-            == 0
-        )
-        malformed_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assert malformed_receipt["outcome"] == "blocking-failure"
-        assert malformed_receipt["diagnostics"][0]["code"] == (
-            "validation-work-failed"
-        )
-
-        invalid_validation_result = scratch / "invalid-validation.json"
-        invalid_validation_result.write_text(
-            json.dumps({"outcome": "success", "commands": []}),
-            encoding="utf-8",
-        )
-        invalid_outputs = scratch / "invalid-validation-outputs.txt"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=non_release_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[non_release_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[non_release_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    validation_result=str(invalid_validation_result),
-                    validation_outcome="success",
-                    created_at="2026-05-14T21:09:24Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(invalid_outputs),
-                )
-            )
-            == 0
-        )
-        invalid_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assert invalid_receipt["outcome"] == "blocking-failure"
-        assert invalid_receipt["diagnostics"][0]["code"] == (
-            "validation-work-failed"
-        )
-
-        staged_dependency_artifacts = [
-            observed_root
-            / artifact_physical_name(
-                str(
-                    control._ci_assignment_for_work_group(
-                        assignments,
-                        dependency,
-                    )["receipt-artifact-ref"]
-                )
-            )
-            for dependency in dependencies
-        ]
-        missing_prerequisite = next(
-            path for path in staged_dependency_artifacts if path.is_dir()
-        )
-        shutil.rmtree(missing_prerequisite)
-        dependency_gate_outputs = scratch / "dependency-gate-outputs.txt"
-        assert (
-            control._cmd_check_ci_validation_dependencies(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=dependent_id,
-                    observed_artifacts_dir=str(observed_root),
-                    github_output=str(dependency_gate_outputs),
-                )
-            )
-            == 0
-        )
-        assert (
-            _github_outputs(dependency_gate_outputs)["dependency_blocked"]
-            == "true"
-        )
-        blocked_outputs = scratch / "blocked-outputs.txt"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=dependent_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[dependent_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[dependent_id]["writer-job"],
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha="b" * 40,
-                    created_at="2026-05-14T21:09:25Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(blocked_outputs),
-                )
-            )
-            == 0
-        )
-        assert _github_outputs(blocked_outputs)["dependency_blocked"] == "true"
-        blocked_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        assert blocked_receipt["outcome"] == "skipped"
-        blocked_diagnostic = blocked_receipt["diagnostics"][0]
-        assert blocked_diagnostic["code"] == "validation-work-skipped"
-        assert blocked_diagnostic["detail"] == "dependency-blocked"
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_download_ci_validation_observed_artifacts_ignores_assignment_names(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Downloader-observed closure ignores legacy selector assignments."""
-    assignments_path = tmp_path / "selector-assignments.json"
-    observed_root = tmp_path / "observed-artifacts"
-    output_path = tmp_path / "outputs.txt"
-    receipt_ref = "ci-validation/receipts/123/1/work-group/receipt.json"
-    receipt_name = artifact_physical_name(receipt_ref)
-    assignments_path.write_text(
-        json.dumps(
-            {
-                "assignments": [
-                    {"receipt-artifact-ref": receipt_ref},
-                    {"receipt-artifact-ref": receipt_ref},
-                    {"receipt-artifact-ref": ""},
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    calls: list[tuple[str, int, str, Path]] = []
-
-    def fake_download_artifact(
-        repository: str,
-        run_id: int,
-        artifact_name_value: str,
-        destination: Path,
-    ) -> None:
-        destination.mkdir(parents=True)
-        calls.append((repository, run_id, artifact_name_value, destination))
-
-    monkeypatch.setattr(control, "_download_artifact", fake_download_artifact)
-    monkeypatch.setattr(
-        control,
-        "_github_actions_run_artifacts",
-        lambda **_: [{"id": 424242, "name": receipt_name}],
-    )
-
-    result = control._cmd_download_ci_validation_observed_artifacts(
-        argparse.Namespace(
-            repository="hcoona/three",
-            run_id="123",
-            run_attempt="1",
-            assignments=str(assignments_path),
-            execution_batch_manifest="",
-            observed_artifacts_dir=str(observed_root),
-            github_output=str(output_path),
-        )
-    )
-
-    outputs = _github_outputs(output_path)
-    assert result == 0
-    assert calls == []
-    assert (observed_root / receipt_name / "artifact-metadata.json").is_file()
-    assert outputs["downloaded_artifact_count"] == "0"
-    assert outputs["failed_artifact_count"] == "1"
-    assert json.loads(outputs["failed_artifact_names"]) == [receipt_name]
-    calls.clear()
-    missing_result = control._cmd_download_ci_validation_observed_artifacts(
-        argparse.Namespace(
-            repository="hcoona/three",
-            run_id="123",
-            run_attempt="1",
-            assignments=str(tmp_path / "missing-selector-assignments.json"),
-            execution_batch_manifest="",
-            observed_artifacts_dir=str(observed_root),
-            github_output=None,
-        )
-    )
-    assert missing_result == 0
-    assert calls == []
-
-
-def test_download_ci_validation_observed_artifacts_materializes_batch_metadata(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Downloaded batch bundles get API-backed artifact metadata."""
-    plan, manifest = _ci_batch_contract_plan_and_manifest()
-    row = _ci_batch_matrix_rows(plan, manifest)[0]
-    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
-    selector = cast("list[dict[str, object]]", batch["ordered-selectors"])[0]
-    bundle = _write_ci_batch_bundle(
-        tmp_path,
-        plan,
-        manifest,
-        row,
-        [
-            _ci_success_validation_result(
-                plan,
-                cast("str", selector["work-group-id"]),
-            )
-        ],
-    )
-    artifact_ref = cast("str", bundle["artifact-ref"])
-    artifact_name_value = artifact_physical_name(artifact_ref)
-    manifest_path = tmp_path / "execution-batch-manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    assignments_path = tmp_path / "selector-assignments.json"
-    assignments_path.write_text(
-        json.dumps({"assignments": [{"receipt-artifact-ref": artifact_ref}]}),
-        encoding="utf-8",
-    )
-    observed_root = tmp_path / "observed-artifacts"
-
-    name_downloads: list[str] = []
-    id_downloads: list[str] = []
-
-    def fake_download_artifact(
-        _repository: str,
-        _run_id: int,
-        artifact_name: str,
-        destination: Path,
-    ) -> None:
-        name_downloads.append(artifact_name)
-        destination.mkdir(parents=True)
-
-    def fake_download_artifact_by_id(
-        _repository: str,
-        artifact_api: Mapping[str, object],
-        artifact_name: str,
-        destination: Path,
-    ) -> None:
-        assert artifact_api["id"] == 424242
-        assert artifact_name == artifact_name_value
-        id_downloads.append(str(artifact_api["id"]))
-        destination.mkdir(parents=True)
-        (destination / "batch-evidence-bundle.json").write_text(
-            json.dumps(bundle),
-            encoding="utf-8",
-        )
-
-    monkeypatch.setattr(control, "_download_artifact", fake_download_artifact)
-    monkeypatch.setattr(
-        control,
-        "_download_artifact_by_id",
-        fake_download_artifact_by_id,
-    )
-    monkeypatch.setattr(
-        control,
-        "_github_actions_run_artifacts",
-        lambda **_: [{"id": 424242, "name": artifact_name_value}],
-    )
-
-    result = control._cmd_download_ci_validation_observed_artifacts(
-        argparse.Namespace(
-            repository="hcoona/three",
-            run_id=batch_contracts.RUN_ID,
-            assignments=str(assignments_path),
-            execution_batch_manifest=str(manifest_path),
-            observed_artifacts_dir=str(observed_root),
-            github_output=None,
-        )
-    )
-
-    metadata = json.loads(
-        (
-            observed_root / artifact_name_value / "artifact-metadata.json"
-        ).read_text(encoding="utf-8")
-    )
-    assert result == 0
-    assert name_downloads == []
-    assert id_downloads == ["424242"]
-    assert "producer-job-identity" not in metadata
-    assert metadata == {
-        "artifact-instance-id": "424242",
-        "artifact-ref": artifact_ref,
-        "physical-artifact-name": artifact_name_value,
-        "run-id": batch_contracts.RUN_ID,
-        "run-attempt": batch_contracts.RUN_ATTEMPT,
-        "producer-boundary": "execution-batch",
-    }
 
 
 def test_download_ci_validation_observed_artifacts_downloads_batch_metadata(
@@ -11443,11 +9154,8 @@ def test_download_ci_validation_closes_live_contract_namespace(
     batch = cast("list[dict[str, object]]", manifest["batches"])[0]
     artifact_ref = cast("str", batch["expected-batch-evidence-bundle-ref"])
     artifact_name_value = artifact_physical_name(artifact_ref)
-    selector_assignment_name = artifact_physical_name(
-        control._ci_validation_selector_assignments_artifact_ref(
-            run_id=batch_contracts.RUN_ID,
-            run_attempt=batch_contracts.RUN_ATTEMPT,
-        )
+    unexpected_control_name = (
+        "three-ci-validation-25887422010-1-unexpected-control"
     )
     planner_diagnostics_name = artifact_physical_name(
         control.ci_validation_planner_diagnostics_artifact_ref(
@@ -11495,7 +9203,7 @@ def test_download_ci_validation_closes_live_contract_namespace(
         "_github_actions_run_artifacts",
         lambda **_: [
             {"id": 424242, "name": artifact_name_value},
-            {"id": 424245, "name": selector_assignment_name},
+            {"id": 424245, "name": unexpected_control_name},
             {"id": 424246, "name": planner_diagnostics_name},
             {"id": 424243, "name": unexpected_name},
             {"id": 424244, "name": expired_unexpected_name, "expired": True},
@@ -11517,13 +9225,13 @@ def test_download_ci_validation_closes_live_contract_namespace(
     assert result == 0
     assert name_downloads == []
     assert id_downloads == ["424242"]
-    assert (observed_root / selector_assignment_name).is_dir()
+    assert (observed_root / unexpected_control_name).is_dir()
     assert (observed_root / planner_diagnostics_name).is_dir()
     assert (observed_root / unexpected_name).is_dir()
     assert not (observed_root / expired_unexpected_name).exists()
     assert outputs["failed_artifact_count"] == "3"
     assert set(json.loads(outputs["failed_artifact_names"])) == {
-        selector_assignment_name,
+        unexpected_control_name,
         planner_diagnostics_name,
         unexpected_name,
     }
@@ -11723,519 +9431,6 @@ def test_download_ci_validation_records_enumeration_failure(
     assert outputs["namespace_overflow"] == "false"
     assert observation["artifact-api-metadata-available"] is False
     assert observation["namespace-enumeration"] == "unavailable"
-
-
-def test_ci_validation_placeholder_receipts_feed_aggregation() -> None:  # noqa: PLR0915
-    """Observed placeholder receipts are manifested and fail the aggregate."""
-    scratch = SCRATCH / "ci-validation-placeholder-receipts"
-    if scratch.exists():
-        shutil.rmtree(scratch)
-    scratch.mkdir(parents=True)
-    try:
-        request = _ci_validation_push_request(
-            [
-                (
-                    "src/public/lib/three-workflow-release-planner/src/"
-                    "three_workflow_release_planner/ci_validation_planner.py"
-                )
-            ],
-        )
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=request,
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        materialize_outputs_path = scratch / "materialize-outputs.txt"
-        receipt_outputs_path = scratch / "receipt-outputs.txt"
-        receipt_path = scratch / "receipt.json"
-        manifest_path = scratch / "receipt-manifest.json"
-        aggregate_path = scratch / "aggregate.json"
-        aggregate_outputs_path = scratch / "aggregate-outputs.txt"
-        observed_root = scratch / "observed-artifacts"
-        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-
-        assert (
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at="2026-05-14T21:09:21Z",
-                    assignments_out=str(assignments_path),
-                    github_output=str(materialize_outputs_path),
-                )
-            )
-            == 0
-        )
-        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
-        assert len(assignments["assignments"]) >= 4
-        matrix = {
-            item["work-group-id"]: item
-            for item in json.loads(
-                _github_outputs(materialize_outputs_path)["work_group_matrix"]
-            )
-        }
-        placeholder_receipt_assignments = [
-            assignment
-            for assignment in assignments["assignments"]
-            if matrix[assignment["work-group-id"]]["kind"]
-            in {"lightweight-preflight", "workflow-release-tooling"}
-        ]
-        assert len(placeholder_receipt_assignments) >= 2
-        assignment = placeholder_receipt_assignments[0]
-        tampered_assignment = placeholder_receipt_assignments[1]
-        remaining_assignments = [
-            item for item in assignments["assignments"] if item != assignment
-        ]
-        malformed_assignment = remaining_assignments[0]
-        missing_receipt_assignment = remaining_assignments[1]
-        work_group_id = assignment["work-group-id"]
-        matrix_json = json.dumps(matrix[work_group_id], separators=(",", ":"))
-
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=work_group_id,
-                    matrix_work_group_json=matrix_json,
-                    workflow="CI Validation",
-                    job=matrix[work_group_id]["writer-job"],
-                    observed_commit_sha="b" * 40,
-                    created_at="2026-05-14T21:09:21Z",
-                    receipt_out=str(receipt_path),
-                    github_output=str(receipt_outputs_path),
-                )
-            )
-            == 0
-        )
-        receipt_dir = observed_root / artifact_physical_name(
-            assignment["receipt-artifact-ref"]
-        )
-        receipt_dir.mkdir(parents=True)
-        shutil.copyfile(receipt_path, receipt_dir / "receipt.json")
-        raw_receipt = json.dumps(
-            json.loads(receipt_path.read_text(encoding="utf-8")),
-            indent=4,
-        ).encode()
-        (receipt_dir / "receipt.json").write_bytes(raw_receipt)
-
-        malformed_receipt_dir = observed_root / artifact_physical_name(
-            malformed_assignment["receipt-artifact-ref"]
-        )
-        malformed_receipt_dir.mkdir(parents=True)
-        malformed_bytes = b"{ malformed receipt json"
-        (malformed_receipt_dir / "receipt.json").write_bytes(malformed_bytes)
-
-        tampered_work_group_id = tampered_assignment["work-group-id"]
-        tampered_receipt_path = scratch / "tampered-receipt.json"
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=tampered_work_group_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[tampered_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[tampered_work_group_id]["writer-job"],
-                    observed_commit_sha="b" * 40,
-                    created_at="2026-05-14T21:09:21Z",
-                    receipt_out=str(tampered_receipt_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        tampered_receipt_dir = observed_root / artifact_physical_name(
-            tampered_assignment["receipt-artifact-ref"]
-        )
-        tampered_receipt_dir.mkdir(parents=True)
-        shutil.copyfile(
-            tampered_receipt_path, tampered_receipt_dir / "receipt.json"
-        )
-
-        missing_receipt_dir = observed_root / artifact_physical_name(
-            missing_receipt_assignment["receipt-artifact-ref"]
-        )
-        missing_receipt_dir.mkdir(parents=True)
-
-        stale_writer_only_name = "three-ci-validation-25887422010-1-" + (
-            "e" * 64
-        )
-        stale_writer_only_dir = observed_root / stale_writer_only_name
-        stale_writer_only_dir.mkdir(parents=True)
-        (stale_writer_only_dir / "writer-observation.json").write_bytes(b"{")
-
-        unexpected_name = "three-ci-validation-25887422010-1-" + ("f" * 64)
-        unexpected_dir = observed_root / unexpected_name
-        unexpected_dir.mkdir(parents=True)
-        unexpected_bytes = b"{"
-        (unexpected_dir / "receipt.json").write_bytes(unexpected_bytes)
-        unassigned_ref = (
-            "ci-validation/receipts/25887422010/1/"
-            "unassigned-readable/receipt.json"
-        )
-        unassigned_name = artifact_physical_name(unassigned_ref)
-        unassigned_dir = observed_root / unassigned_name
-        unassigned_dir.mkdir(parents=True)
-        unassigned_receipt = json.loads(
-            receipt_path.read_text(encoding="utf-8")
-        )
-        unassigned_receipt.update(
-            {
-                "artifact-ref": unassigned_ref,
-                "work-group-id": "unassigned-readable",
-                "assignment-id": "unassigned-readable",
-                "receipt-id": "unassigned-readable-receipt",
-            }
-        )
-        unassigned_bytes = json.dumps(
-            unassigned_receipt,
-            sort_keys=True,
-        ).encode()
-        (unassigned_dir / "receipt.json").write_bytes(unassigned_bytes)
-        cross_attempt_ref = (
-            "ci-validation/receipts/25887422010/2/"
-            "unassigned-cross-attempt/receipt.json"
-        )
-        cross_attempt_name = artifact_physical_name(cross_attempt_ref)
-        cross_attempt_dir = observed_root / cross_attempt_name
-        cross_attempt_dir.mkdir(parents=True)
-        cross_attempt_receipt = dict(unassigned_receipt)
-        cross_attempt_receipt.update(
-            {
-                "artifact-ref": cross_attempt_ref,
-                "work-group-id": "unassigned-cross-attempt",
-                "assignment-id": "unassigned-cross-attempt",
-                "receipt-id": "unassigned-cross-attempt-receipt",
-            }
-        )
-        cross_attempt_bytes = json.dumps(
-            cross_attempt_receipt,
-            sort_keys=True,
-        ).encode()
-        (cross_attempt_dir / "receipt.json").write_bytes(cross_attempt_bytes)
-        bad_work_group_ref = (
-            "ci-validation/receipts/25887422010/1/BAD/receipt.json"
-        )
-        bad_work_group_name = artifact_physical_name(bad_work_group_ref)
-        bad_work_group_dir = observed_root / bad_work_group_name
-        bad_work_group_dir.mkdir(parents=True)
-        bad_work_group_receipt = dict(unassigned_receipt)
-        bad_work_group_receipt.update(
-            {
-                "artifact-ref": bad_work_group_ref,
-                "work-group-id": "BAD",
-                "assignment-id": "BAD",
-                "receipt-id": "bad-work-group-receipt",
-            }
-        )
-        bad_work_group_bytes = json.dumps(
-            bad_work_group_receipt,
-            sort_keys=True,
-        ).encode()
-        (bad_work_group_dir / "receipt.json").write_bytes(bad_work_group_bytes)
-
-        result = control._cmd_aggregate_ci_evidence(
-            argparse.Namespace(
-                repository="hcoona/three",
-                workflow="CI Validation",
-                run_id="25887422010",
-                run_attempt="1",
-                plan=str(plan_path),
-                changed_files_snapshot=str(changed_files_path),
-                fact_snapshot=str(fact_snapshot_path),
-                assignments=str(assignments_path),
-                observed_artifacts_dir=str(observed_root),
-                created_at="2026-05-14T21:09:23Z",
-                aggregate_evidence_manifest_out=str(manifest_path),
-                aggregate_summary_out=str(aggregate_path),
-                github_output=str(aggregate_outputs_path),
-            )
-        )
-
-        assert result == 2
-        assert not aggregate_path.exists()
-        assert not manifest_path.exists()
-    finally:
-        if scratch.exists():
-            shutil.rmtree(scratch)
-
-
-def test_ci_validation_release_shaped_placeholder_receipt_is_valid() -> None:
-    """Release-shaped placeholders are dependency-blocked skips."""
-    scratch = SCRATCH / "ci-validation-release-shaped-placeholder"
-    if scratch.exists():
-        shutil.rmtree(scratch)
-    scratch.mkdir(parents=True)
-    try:
-        request = _ci_validation_push_request(
-            [
-                (
-                    "src/public/lib/three-workflow-release-planner/src/"
-                    "three_workflow_release_planner/ci_validation_planner.py"
-                )
-            ],
-        )
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=request,
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        output_path = scratch / "outputs.txt"
-        receipt_path = scratch / "receipt.json"
-        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at="2026-05-14T21:09:21Z",
-                    assignments_out=str(assignments_path),
-                    github_output=str(output_path),
-                )
-            )
-            == 0
-        )
-        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
-        matrix = {
-            item["work-group-id"]: item
-            for item in json.loads(
-                _github_outputs(output_path)["work_group_matrix"]
-            )
-        }
-        release_assignment = next(
-            assignment
-            for assignment in assignments["assignments"]
-            if matrix[assignment["work-group-id"]]["kind"]
-            == "release-shaped-artifact"
-        )
-        release_work_group_id = release_assignment["work-group-id"]
-        work_groups = cast(
-            "Sequence[Mapping[str, object]]",
-            plan_snapshot.plan["work-groups"],
-        )
-        release_work_group = next(
-            group
-            for group in work_groups
-            if group["work-group-id"] == release_work_group_id
-        )
-        assert release_work_group["depends-on"] != []
-
-        assert (
-            control._cmd_write_ci_validation_receipt(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    work_group_id=release_work_group_id,
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    workflow="CI Validation",
-                    job=matrix[release_work_group_id]["writer-job"],
-                    observed_commit_sha="b" * 40,
-                    created_at="2026-05-14T21:09:22Z",
-                    receipt_out=str(receipt_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        _validate_ci_validation_receipt(
-            receipt,
-            plan=plan_snapshot.plan,
-            selector_assignments_manifest=assignments,
-            assignment=release_assignment,
-            changed_files_snapshot=plan_snapshot.changed_files_snapshot,
-            fact_snapshot=plan_snapshot.fact_snapshot,
-        )
-        assert receipt["outcome"] == "skipped"
-        assert receipt["diagnostics"][0]["code"] == "validation-work-skipped"
-        assert receipt["diagnostics"][0]["detail"] == "dependency-blocked"
-        result = receipt["evidence"]["category-result"]["detail"][
-            "artifact-obligation-results"
-        ][0]
-        assert result["outcome"] == "skipped"
-        assert result["descriptor"]["identity"] is not None
-    finally:
-        if scratch.exists():
-            shutil.rmtree(scratch)
-
-
-def test_ci_validation_aggregate_writes_invalid_plan_for_malformed_plan() -> (
-    None
-):
-    """Malformed plans do not re-enable implicit legacy aggregation."""
-    scratch = SCRATCH / "ci-validation-malformed-plan"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        plan_path = scratch / "validation-plan.json"
-        manifest_path = scratch / "receipt-manifest.json"
-        aggregate_path = scratch / "aggregate.json"
-        plan_path.write_text("{", encoding="utf-8")
-
-        result = control._cmd_aggregate_ci_evidence(
-            argparse.Namespace(
-                repository="hcoona/three",
-                workflow="CI Validation",
-                run_id="25887422010",
-                run_attempt="1",
-                plan=str(plan_path),
-                changed_files_snapshot="",
-                fact_snapshot="",
-                assignments="",
-                created_at="2026-05-14T21:09:21Z",
-                aggregate_evidence_manifest_out=str(manifest_path),
-                aggregate_summary_out=str(aggregate_path),
-                github_output=None,
-            )
-        )
-
-        assert result == 2
-        assert not aggregate_path.exists()
-        assert not manifest_path.exists()
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_validation_aggregate_writes_invalid_plan_for_missing_plan() -> None:
-    """Missing plans do not re-enable implicit legacy aggregation."""
-    scratch = SCRATCH / "ci-validation-missing-plan"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        manifest_path = scratch / "receipt-manifest.json"
-        aggregate_path = scratch / "aggregate.json"
-
-        result = control._cmd_aggregate_ci_evidence(
-            argparse.Namespace(
-                repository="hcoona/three",
-                workflow="CI Validation",
-                run_id="25887422010",
-                run_attempt="1",
-                plan=str(scratch / "missing-validation-plan.json"),
-                changed_files_snapshot="",
-                fact_snapshot="",
-                assignments="",
-                created_at="2026-05-14T21:09:21Z",
-                aggregate_evidence_manifest_out=str(manifest_path),
-                aggregate_summary_out=str(aggregate_path),
-                github_output=None,
-            )
-        )
-
-        assert result == 2
-        assert not aggregate_path.exists()
-        assert not manifest_path.exists()
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_validation_aggregate_writes_invalid_plan_for_bad_assignments() -> (
-    None
-):
-    """Invalid selector assignments do not re-enable legacy aggregation."""
-    scratch = SCRATCH / "ci-validation-invalid-assignments"
-    shutil.rmtree(scratch, ignore_errors=True)
-    scratch.mkdir(parents=True)
-    try:
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=_ci_validation_push_request([]),
-                repo_root=REPO_ROOT,
-                expected_run_id="25887422010",
-                expected_run_attempt="1",
-                created_at="2026-05-14T21:09:21Z",
-            )
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        manifest_path = scratch / "receipt-manifest.json"
-        aggregate_path = scratch / "aggregate.json"
-        plan_path.write_text(json.dumps(plan_snapshot.plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(plan_snapshot.changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(plan_snapshot.fact_snapshot),
-            encoding="utf-8",
-        )
-        assignments_path.write_text("{}", encoding="utf-8")
-
-        result = control._cmd_aggregate_ci_evidence(
-            argparse.Namespace(
-                repository="hcoona/three",
-                workflow="CI Validation",
-                run_id="25887422010",
-                run_attempt="1",
-                plan=str(plan_path),
-                changed_files_snapshot=str(changed_files_path),
-                fact_snapshot=str(fact_snapshot_path),
-                assignments=str(assignments_path),
-                created_at="2026-05-14T21:09:21Z",
-                aggregate_evidence_manifest_out=str(manifest_path),
-                aggregate_summary_out=str(aggregate_path),
-                github_output=None,
-            )
-        )
-
-        assert result == 2
-        assert not aggregate_path.exists()
-        assert not manifest_path.exists()
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_skip_only_tag_verification_is_read_only_without_environment() -> None:
@@ -15687,7 +12882,7 @@ def test_ci_batch_aggregation_cli_rejects_missing_required_inputs(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_batch_aggregation_cli_rejects_implicit_legacy_mode() -> None:
+def test_ci_batch_aggregation_cli_requires_explicit_batch_mode() -> None:
     """Require explicit G5 batch mode for aggregate-ci-evidence."""
     scratch = _ci_batch_bundle_scratch("batch-aggregation-cli-no-batch-mode")
     try:
@@ -16588,7 +13783,7 @@ def test_ci_live_namespace_allows_required_snapshots() -> None:
     assert unexpected == []
 
 
-def test_ci_batch_aggregation_allows_g5_manifest_not_legacy_aggregate() -> None:
+def test_ci_batch_aggregation_allows_current_g5_manifest_only() -> None:
     """G5 batch namespace closure allows only the G5 final manifest ref."""
     scratch = _ci_batch_bundle_scratch("batch-aggregation-final-artifacts")
     try:
@@ -16596,7 +13791,7 @@ def test_ci_batch_aggregation_allows_g5_manifest_not_legacy_aggregate() -> None:
         observed_root.mkdir()
         run_id = batch_contracts.RUN_ID
         run_attempt = batch_contracts.RUN_ATTEMPT
-        legacy_ref = (
+        obsolete_ref = (
             f"ci-validation/aggregate/{run_id}/{run_attempt}/"
             "ci-validation-aggregate.json"
         )
@@ -16621,9 +13816,9 @@ def test_ci_batch_aggregation_allows_g5_manifest_not_legacy_aggregate() -> None:
             run_attempt=run_attempt,
         )
         assert g5_ref in allowed_refs
-        assert legacy_ref not in allowed_refs
+        assert obsolete_ref not in allowed_refs
 
-        (observed_root / artifact_physical_name(legacy_ref)).mkdir()
+        (observed_root / artifact_physical_name(obsolete_ref)).mkdir()
         (observed_root / artifact_physical_name(g5_ref)).mkdir()
 
         unexpected = control._ci_aggregate_unexpected_artifacts(
@@ -16634,94 +13829,8 @@ def test_ci_batch_aggregation_allows_g5_manifest_not_legacy_aggregate() -> None:
         )
 
         assert [item["physical-artifact-name"] for item in unexpected] == [
-            artifact_physical_name(legacy_ref)
+            artifact_physical_name(obsolete_ref)
         ]
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_batch_aggregation_rejects_selector_assignments_artifact() -> None:
-    """G5 batch closure treats legacy selector assignments as unexpected."""
-    scratch = _ci_batch_bundle_scratch("batch-aggregation-selector-assignments")
-    try:
-        observed_root = scratch / "observed"
-        observed_root.mkdir()
-        plan, manifest = _ci_batch_contract_plan_and_manifest()
-        assignments_path = scratch / "legacy-selector-assignments.json"
-        assignments_path.write_text(
-            json.dumps(
-                {
-                    "assignments": [
-                        {
-                            "receipt-artifact-ref": (
-                                "ci-validation/receipts/"
-                                f"{batch_contracts.RUN_ID}/"
-                                f"{batch_contracts.RUN_ATTEMPT}/"
-                                "legacy-selector/receipt.json"
-                            )
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        batches = {
-            cast("str", batch["batch-id"]): batch
-            for batch in cast("list[dict[str, object]]", manifest["batches"])
-        }
-        for row in _ci_batch_matrix_rows(plan, manifest):
-            batch_id = cast(
-                "str",
-                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
-            )
-            selector = cast(
-                "list[dict[str, object]]",
-                batches[batch_id]["ordered-selectors"],
-            )[0]
-            bundle = _write_ci_batch_bundle(
-                scratch,
-                plan,
-                manifest,
-                row,
-                [
-                    _ci_success_validation_result(
-                        plan, cast("str", selector["work-group-id"])
-                    )
-                ],
-            )
-            _stage_ci_batch_bundle_artifact(observed_root, bundle)
-        selector_assignments_ref = (
-            control._ci_validation_selector_assignments_artifact_ref(
-                run_id=batch_contracts.RUN_ID,
-                run_attempt=batch_contracts.RUN_ATTEMPT,
-            )
-        )
-        selector_assignments_name = artifact_physical_name(
-            selector_assignments_ref
-        )
-        (observed_root / selector_assignments_name).mkdir()
-
-        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
-            scratch,
-            plan,
-            manifest,
-            observed_root,
-        )
-
-        unexpected = cast(
-            "list[dict[str, object]]",
-            aggregate_manifest["unexpected-contract-artifacts"],
-        )
-        assert result == 1
-        assert [item["physical-artifact-name"] for item in unexpected] == [
-            selector_assignments_name
-        ]
-        assert (
-            cast("dict[str, object]", summary["reason"])[
-                "namespace-closure-failure"
-            ]
-            is True
-        )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -16764,124 +13873,6 @@ def test_ci_batch_aggregation_hash_suffix_exemption_is_batch_only() -> None:
                 "artifact-instance-id": (
                     f"{artifact_physical_name(request_ref)}#1"
                 ),
-                "classification": "unexpected",
-                "diagnostics": unexpected[0]["diagnostics"],
-            }
-        ]
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_batch_aggregation_reports_prefixed_legacy_receipt() -> None:
-    """Legacy assignment receipt artifacts remain unexpected when suffixed."""
-    scratch = _ci_batch_bundle_scratch("batch-aggregation-legacy-receipt")
-    try:
-        observed_root = scratch / "observed"
-        observed_root.mkdir()
-        run_id = batch_contracts.RUN_ID
-        run_attempt = batch_contracts.RUN_ATTEMPT
-        receipt_ref = (
-            f"ci-validation/receipts/{run_id}/{run_attempt}/"
-            "legacy-selector/receipt.json"
-        )
-        observed_name = f"{artifact_physical_name(receipt_ref)}#legacy"
-        request_ref = control.ci_validation_request_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        )
-        (observed_root / observed_name).mkdir()
-
-        unexpected = control._ci_aggregate_unexpected_artifacts(
-            observed_root,
-            run_id=run_id,
-            run_attempt=run_attempt,
-            expected_refs={request_ref},
-        )
-
-        assert unexpected == [
-            {
-                "physical-artifact-name": artifact_physical_name(receipt_ref),
-                "observed-physical-artifact-name": observed_name,
-                "artifact-instance-id": observed_name,
-                "classification": "unexpected",
-                "diagnostics": unexpected[0]["diagnostics"],
-            }
-        ]
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_batch_aggregation_rejects_prefixed_receipt_manifest() -> None:
-    """G5 namespace closure rejects legacy receipt manifests."""
-    scratch = _ci_batch_bundle_scratch("batch-aggregation-receipt-manifest")
-    try:
-        observed_root = scratch / "observed"
-        observed_root.mkdir()
-        run_id = batch_contracts.RUN_ID
-        run_attempt = batch_contracts.RUN_ATTEMPT
-        receipt_manifest_ref = (
-            f"ci-validation/manifests/{run_id}/{run_attempt}/"
-            "receipt-manifest.json"
-        )
-        request_ref = control.ci_validation_request_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        )
-        observed_name = artifact_physical_name(receipt_manifest_ref)
-        (observed_root / observed_name).mkdir()
-
-        unexpected = control._ci_aggregate_unexpected_artifacts(
-            observed_root,
-            run_id=run_id,
-            run_attempt=run_attempt,
-            expected_refs={request_ref},
-        )
-
-        assert unexpected == [
-            {
-                "physical-artifact-name": observed_name,
-                "artifact-instance-id": observed_name,
-                "classification": "unexpected",
-                "diagnostics": unexpected[0]["diagnostics"],
-            }
-        ]
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_batch_aggregation_rejects_writer_observation_artifact() -> None:
-    """Legacy writer observation artifacts remain unexpected."""
-    scratch = _ci_batch_bundle_scratch("batch-aggregation-writer-observation")
-    try:
-        observed_root = scratch / "observed"
-        observed_root.mkdir()
-        run_id = batch_contracts.RUN_ID
-        run_attempt = batch_contracts.RUN_ATTEMPT
-        observation_ref = (
-            f"ci-validation/writer-observations/{run_id}/{run_attempt}/"
-            "legacy-writer.json"
-        )
-        observed_name = f"{artifact_physical_name(observation_ref)}#legacy"
-        request_ref = control.ci_validation_request_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        )
-        (observed_root / observed_name).mkdir()
-
-        unexpected = control._ci_aggregate_unexpected_artifacts(
-            observed_root,
-            run_id=run_id,
-            run_attempt=run_attempt,
-            expected_refs={request_ref},
-        )
-
-        assert unexpected == [
-            {
-                "physical-artifact-name": artifact_physical_name(
-                    observation_ref
-                ),
-                "observed-physical-artifact-name": observed_name,
-                "artifact-instance-id": observed_name,
                 "classification": "unexpected",
                 "diagnostics": unexpected[0]["diagnostics"],
             }
@@ -19659,6 +16650,29 @@ def test_run_ci_validation_batch_commands_skips_blocked_dependencies() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_validation_dependency_blocked_diagnostic_uses_batch_terms() -> None:
+    """Dependency-blocked diagnostics describe current gating evidence."""
+    plan = cast("dict[str, object]", batch_contracts.plan())
+    batch_contracts.add_dependent_work_group(plan)
+
+    diagnostic = control._ci_validation_diagnostics(
+        plan,
+        "wg-dependent-gate",
+        outcome="skipped",
+    )[0]
+
+    assert diagnostic["detail"] == "dependency-blocked"
+    assert "dependency result admitted for gating" in diagnostic["message"]
+    assert "same-batch results" in diagnostic["message"]
+    assert "admitted upstream batch evidence" in diagnostic["message"]
+    assert (
+        "admitted dependency result or admitted batch evidence"
+        not in diagnostic["message"]
+    )
+    assert "successful dependency result" not in diagnostic["message"]
+    assert "successful receipt" not in diagnostic["message"]
+
+
 def test_run_ci_validation_batch_commands_propagates_transitive_block() -> None:
     """C skips when downloaded B is skipped because upstream A is missing."""
     scratch = _ci_batch_bundle_scratch("batch-command-transitive-blocked")
@@ -20039,239 +17053,6 @@ def test_ci_batch_writer_rejects_stale_non_release_result_coverage_target() -> (
         assert selector_result["evidence"]["capability-results"]
         assert selector_result["diagnostics"][0]["code"] == (
             "validation-work-failed"
-        )
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def test_ci_batch_writer_requires_authoritative_reuse_context_for_release(  # noqa: PLR0915
-) -> None:
-    """Release-shaped evidence fails closed without byte-bound artifacts."""
-    scratch = _ci_batch_bundle_scratch("batch-release-reuse-context")
-    try:
-        request = _ci_validation_push_request(
-            ["src/public/lib/nbgv-python/pyproject.toml"],
-        )
-        plan_snapshot = plan_ci_validation_from_repo(
-            CiValidationPlannerInputs(
-                request=request,
-                repo_root=REPO_ROOT,
-                expected_run_id=batch_contracts.RUN_ID,
-                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
-                created_at=batch_contracts.CREATED_AT,
-            )
-        )
-        plan = cast("dict[str, object]", deepcopy(plan_snapshot.plan))
-        release_group = next(
-            group
-            for group in cast("list[dict[str, object]]", plan["work-groups"])
-            if group["kind"] == "release-shaped-artifact"
-        )
-        release_work_group_id = cast("str", release_group["work-group-id"])
-        release_group["depends-on"] = []
-        plan["plan-digest"] = ci_validation_plan_digest(plan)
-        changed_files_snapshot = cast(
-            "Mapping[str, object]",
-            plan_snapshot.changed_files_snapshot,
-        )
-        fact_snapshot = cast(
-            "Mapping[str, object]",
-            plan_snapshot.fact_snapshot,
-        )
-        plan_path = scratch / "validation-plan.json"
-        changed_files_path = scratch / "changed-files.json"
-        fact_snapshot_path = scratch / "fact-snapshot.json"
-        assignments_path = scratch / "selector-assignments.json"
-        materialize_outputs_path = scratch / "materialize-outputs.txt"
-        observed_root = scratch / "observed-artifacts"
-        validation_result_path = scratch / "release-validation-result.json"
-        plan_path.write_text(json.dumps(plan), encoding="utf-8")
-        changed_files_path.write_text(
-            json.dumps(changed_files_snapshot),
-            encoding="utf-8",
-        )
-        fact_snapshot_path.write_text(
-            json.dumps(fact_snapshot),
-            encoding="utf-8",
-        )
-        assert (
-            control._cmd_materialize_ci_work_groups(
-                argparse.Namespace(
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    workflow="CI Validation",
-                    writer_job="validation-work-groups",
-                    created_at=batch_contracts.CREATED_AT,
-                    assignments_out=str(assignments_path),
-                    github_output=str(materialize_outputs_path),
-                )
-            )
-            == 0
-        )
-        assignments = json.loads(assignments_path.read_text(encoding="utf-8"))
-        matrix = {
-            item["work-group-id"]: item
-            for item in json.loads(
-                _github_outputs(materialize_outputs_path)["work_group_matrix"]
-            )
-        }
-        _stage_ci_release_shaped_observed_receipt(
-            scratch=scratch,
-            observed_root=observed_root,
-            plan=plan,
-            assignments=assignments,
-            matrix=matrix,
-            work_group_id=release_work_group_id,
-            changed_files_snapshot=changed_files_snapshot,
-            fact_snapshot=fact_snapshot,
-        )
-        assert (
-            control._cmd_run_ci_validation_commands(
-                argparse.Namespace(
-                    matrix_work_group_json=json.dumps(
-                        matrix[release_work_group_id],
-                        separators=(",", ":"),
-                    ),
-                    plan=str(plan_path),
-                    changed_files_snapshot=str(changed_files_path),
-                    fact_snapshot=str(fact_snapshot_path),
-                    assignments=str(assignments_path),
-                    observed_artifacts_dir=str(observed_root),
-                    observed_commit_sha=batch_contracts.TREE_SHA,
-                    repo_root=str(REPO_ROOT),
-                    result_out=str(validation_result_path),
-                    github_output=None,
-                )
-            )
-            == 0
-        )
-        validation_result = json.loads(
-            validation_result_path.read_text(encoding="utf-8")
-        )
-        assert validation_result["outcome"] == "blocking-failure"
-        assert (
-            "artifact-shape-unconfirmed"
-            in validation_result["commands"][0]["error"]
-        )
-        assert (
-            control._ci_validation_outcome(
-                plan,
-                release_work_group_id,
-                dependency_blocked=False,
-                validation_result=validation_result,
-                observed_commit_sha=batch_contracts.TREE_SHA,
-                fact_snapshot=fact_snapshot,
-            )
-            == "blocking-failure"
-        )
-        assert (
-            control._ci_validation_outcome(
-                plan,
-                release_work_group_id,
-                dependency_blocked=False,
-                validation_result=validation_result,
-                assignments=assignments,
-                observed_artifacts_dir=str(observed_root),
-                observed_commit_sha=batch_contracts.TREE_SHA,
-                changed_files_snapshot=changed_files_snapshot,
-                fact_snapshot=fact_snapshot,
-            )
-            == "blocking-failure"
-        )
-        authorizing_context = {
-            "request": request,
-            "changed_files_snapshot": changed_files_snapshot,
-            "fact_snapshot": fact_snapshot,
-            "expected_run_id": batch_contracts.RUN_ID,
-            "expected_run_attempt": batch_contracts.RUN_ATTEMPT,
-        }
-        materialize_batches = (
-            batch_contracts.materialize_ci_validation_execution_batches
-        )
-        materialization = materialize_batches(
-            plan=plan,
-            request=request,
-            changed_files_snapshot=changed_files_snapshot,
-            fact_snapshot=fact_snapshot,
-            expected_run_id=batch_contracts.RUN_ID,
-            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
-            created_at=batch_contracts.CREATED_AT,
-            execution_workflow="CI Validation",
-        )
-        manifest = cast("dict[str, object]", materialization.manifest)
-        rows = cast(
-            "list[dict[str, object]]",
-            materialization.matrix["include"],
-        )
-        row = next(
-            item
-            for item in rows
-            if any(
-                selector["work-group-id"] == release_work_group_id
-                for selector in cast(
-                    "list[dict[str, object]]",
-                    next(
-                        batch
-                        for batch in cast(
-                            "list[dict[str, object]]",
-                            manifest["batches"],
-                        )
-                        if batch["batch-id"]
-                        == cast(
-                            "dict[str, object]",
-                            item["identity-matrix"],
-                        )["batch-id"]
-                    )["ordered-selectors"],
-                )
-            )
-        )
-        without_context_dir = scratch / "without-reuse-context"
-        without_context_dir.mkdir()
-        without_context_bundle = _write_ci_batch_bundle(
-            without_context_dir,
-            plan,
-            manifest,
-            row,
-            [validation_result],
-            authorizing_context=authorizing_context,
-        )
-        without_context_selector = next(
-            selector
-            for selector in cast(
-                "list[dict[str, object]]",
-                without_context_bundle["selector-results"],
-            )
-            if selector["work-group-id"] == release_work_group_id
-        )
-        assert without_context_selector["outcome"] == "blocking-failure"
-        assert without_context_selector["diagnostics"][0]["code"] == (
-            "artifact-shape-unconfirmed"
-        )
-
-        with_context_dir = scratch / "with-reuse-context"
-        with_context_dir.mkdir()
-        with_context_bundle = _write_ci_batch_bundle(
-            with_context_dir,
-            plan,
-            manifest,
-            row,
-            [validation_result],
-            assignments=assignments_path,
-            observed_artifacts_dir=observed_root,
-            authorizing_context=authorizing_context,
-        )
-        with_context_selector = next(
-            selector
-            for selector in cast(
-                "list[dict[str, object]]",
-                with_context_bundle["selector-results"],
-            )
-            if selector["work-group-id"] == release_work_group_id
-        )
-        assert with_context_selector["outcome"] == "blocking-failure"
-        assert with_context_selector["diagnostics"][0]["code"] == (
-            "artifact-shape-unconfirmed"
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)

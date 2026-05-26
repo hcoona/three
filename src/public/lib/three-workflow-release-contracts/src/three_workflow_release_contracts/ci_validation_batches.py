@@ -5892,9 +5892,10 @@ def _is_unresolved_dependency_result(
         source_batch_id, str
     ):
         return False
-    if _selector_batch_positions(execution_batch_manifest).get(
-        work_group_id
-    ) != source_batch_id:
+    if (
+        _selector_batch_positions(execution_batch_manifest).get(work_group_id)
+        != source_batch_id
+    ):
         return False
     if dependency.get("outcome") not in {"missing", "skipped"}:
         return False
@@ -6544,7 +6545,6 @@ def _validate_release_shaped_batch_detail(  # noqa: PLR0913
             {
                 "artifact-obligation-results",
                 "evidence-source",
-                "reused-receipt",
                 "source-proof",
             }
         ),
@@ -6568,7 +6568,7 @@ def _validate_release_shaped_batch_detail(  # noqa: PLR0913
         selector_result=selector_result,
     )
     if outcome != "success":
-        for key in ("evidence-source", "source-proof", "reused-receipt"):
+        for key in ("evidence-source", "source-proof"):
             if key in value:
                 issues.append(
                     ValidationIssue(
@@ -6586,13 +6586,6 @@ def _validate_release_shaped_batch_detail(  # noqa: PLR0913
             issues,
             selector_result=selector_result,
             observed_digests=observed_digests,
-        )
-    elif source == "reused-validation-receipt":
-        issues.append(
-            ValidationIssue(
-                f"{path}.evidence-source",
-                "is not public batch evidence",
-            )
         )
     else:
         issues.append(

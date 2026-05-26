@@ -25,7 +25,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import yaml
 
@@ -93,25 +93,11 @@ from three_workflow_release_contracts.artifact_names import (  # noqa: E402
     github_release_asset_binding_json,
     immutable_binding_json,
 )
-from three_workflow_release_contracts.ci_validation_aggregation import (  # noqa: E402
-    _ci_validation_observed_entry_id,
-    _ci_validation_receipt_manifest_artifact_ref,
-    _CiValidationObservedReceiptInput,
-)
 from three_workflow_release_contracts.ci_validation_assignments import (  # noqa: E402
-    _ci_validation_selector_assignments_artifact_ref,
-    _freeze_ci_validation_selector_assignments,
     ci_validation_writer_id,
 )
 from three_workflow_release_contracts.ci_validation_batches import (  # noqa: E402
     _freeze_ci_validation_aggregate_evidence_manifest,
-)
-from three_workflow_release_contracts.ci_validation_receipts import (  # noqa: E402
-    _ci_validation_receipt_content_digest,
-    _freeze_ci_validation_receipt,
-    _load_ci_validation_receipt_payload,
-    _ReceiptOutcome,
-    _validate_ci_validation_receipt,
 )
 
 if TYPE_CHECKING:
@@ -120,6 +106,7 @@ if TYPE_CHECKING:
     )
 
 Json = dict[str, Any]
+_CiValidationOutcome = Literal["success", "blocking-failure", "skipped"]
 
 
 class _TrustedDependencyBundle(dict[str, object]):
@@ -1812,69 +1799,6 @@ def _ci_control_artifact_kind(artifact_ref: str) -> str:
     )
 
 
-def _cmd_materialize_ci_work_groups(args: argparse.Namespace) -> int:
-    plan = _read_json(Path(args.plan))
-    changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
-    fact_snapshot = _read_optional_json(args.fact_snapshot)
-    layer_by_work_group = _ci_work_group_dependency_layers(plan)
-    matrix = [
-        _ci_work_group_matrix_entry(
-            plan,
-            group,
-            dependency_layer=layer_by_work_group[str(group["work-group-id"])],
-            writer_job=(
-                f"{args.writer_job}-layer-"
-                f"{layer_by_work_group[str(group['work-group-id'])]}"
-            ),
-        )
-        for group in _ci_executable_work_groups(plan)
-    ]
-    trusted_writer_ids = {
-        str(entry["work-group-id"]): ci_validation_writer_id(
-            workflow=args.workflow,
-            job=str(entry["writer-job"]),
-            matrix={"work-group": entry},
-        )
-        for entry in matrix
-    }
-    assignments = _freeze_ci_validation_selector_assignments(
-        plan=plan,
-        trusted_writer_ids=trusted_writer_ids,
-        created_at=args.created_at or _utc_now(),
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-    )
-    _write_json(Path(args.assignments_out), assignments)
-    work_group_ids = [str(entry["work-group-id"]) for entry in matrix]
-    layers = _ci_work_group_matrix_layers(matrix)
-    if len(layers) > _CI_WORK_GROUP_WORKFLOW_LAYER_CAPACITY:
-        msg = (
-            "CI validation plan requires "
-            f"{len(layers)} dependency layers, but workflow materialization "
-            f"supports {_CI_WORK_GROUP_WORKFLOW_LAYER_CAPACITY}"
-        )
-        raise RuntimeError(msg)
-    layer_outputs: dict[str, str] = {}
-    for index in range(_CI_WORK_GROUP_WORKFLOW_LAYER_CAPACITY):
-        layer = layers[index] if index < len(layers) else []
-        layer_outputs[f"has_work_group_layer_{index}"] = _bool_str(bool(layer))
-        layer_outputs[f"work_group_layer_{index}_matrix"] = json.dumps(
-            layer,
-            separators=(",", ":"),
-        )
-    _write_outputs(
-        args.github_output,
-        {
-            "has_work_groups": _bool_str(bool(matrix)),
-            "work_group_matrix": json.dumps(matrix, separators=(",", ":")),
-            "work_group_layers": json.dumps(layers, separators=(",", ":")),
-            "work_group_ids": json.dumps(work_group_ids, separators=(",", ":")),
-            **layer_outputs,
-        },
-    )
-    return 0
-
-
 def _cmd_materialize_ci_validation_execution_batches(
     args: argparse.Namespace,
 ) -> int:
@@ -2131,7 +2055,7 @@ def _cmd_run_ci_validation_commands(args: argparse.Namespace) -> int:
     if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
         commands = []
     command_results: list[Json] = []
-    outcome: _ReceiptOutcome = "success"
+    outcome: _CiValidationOutcome = "success"
     for index, command in enumerate(commands):
         result = _ci_run_validation_command(
             index=index,
@@ -2199,7 +2123,7 @@ def _cmd_run_ci_validation_batch_commands(args: argparse.Namespace) -> int:
     result_dir = Path(args.result_out_dir)
     result_dir.mkdir(parents=True, exist_ok=True)
     result_paths: list[str] = []
-    outcome: _ReceiptOutcome = "success"
+    outcome: _CiValidationOutcome = "success"
     dependency_bundle_paths = getattr(args, "dependency_bundle", [])
     if dependency_bundle_paths and request is None:
         msg = "--request is required when dependency bundles are supplied"
@@ -2339,46 +2263,6 @@ def _ci_work_group_by_id(
             return group
     msg = f"unknown CI validation work group {work_group_id!r}"
     raise RuntimeError(msg)
-
-
-def _cmd_check_ci_validation_dependencies(args: argparse.Namespace) -> int:
-    plan = _read_json(Path(args.plan))
-    assignments = _read_json(Path(args.assignments))
-    changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
-    fact_snapshot = _read_optional_json(args.fact_snapshot)
-    dependency_blocked = _ci_dependency_blocked(
-        plan=plan,
-        assignments=assignments,
-        work_group_id=args.work_group_id,
-        observed_artifacts_dir=getattr(args, "observed_artifacts_dir", ""),
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-    )
-    _write_outputs(
-        args.github_output,
-        {"dependency_blocked": _bool_str(dependency_blocked)},
-    )
-    return 0
-
-
-def _cmd_validate_ci_validation_lightweight_policy(
-    args: argparse.Namespace,
-) -> int:
-    try:
-        plan = _read_json(Path(args.plan))
-        assignments = _read_json(Path(args.assignments))
-        matrix_work_group = _read_json_value(args.matrix_work_group_json)
-        _require_mapping(matrix_work_group, "matrix work group")
-        _validate_ci_validation_lightweight_policy(
-            plan=plan,
-            assignments=assignments,
-            work_group_id=args.work_group_id,
-            matrix_work_group=cast("Mapping[str, object]", matrix_work_group),
-        )
-    except (KeyError, TypeError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-    return 0
 
 
 def _cmd_validate_ci_validation_descriptors(args: argparse.Namespace) -> int:
@@ -2963,10 +2847,12 @@ def _ci_authoritative_dependency_bundles(
     expected_refs = _ci_expected_batch_bundle_refs(execution_batch_manifest)
     pending: list[tuple[str, Mapping[str, object]]] = []
     for value in paths:
-        expected_artifact_ref = _ci_dependency_bundle_path_expected_artifact_ref(
-            value,
-            expected_refs=expected_refs,
-            observed_artifacts_dir=observed_artifacts_dir,
+        expected_artifact_ref = (
+            _ci_dependency_bundle_path_expected_artifact_ref(
+                value,
+                expected_refs=expected_refs,
+                observed_artifacts_dir=observed_artifacts_dir,
+            )
         )
         if expected_artifact_ref is None:
             continue
@@ -3390,7 +3276,7 @@ def _ci_run_validation_command(
     except OSError as exc:
         returncode = None
         error = str(exc)
-    command_outcome: _ReceiptOutcome = (
+    command_outcome: _CiValidationOutcome = (
         "success" if returncode == 0 else "blocking-failure"
     )
     result = {
@@ -3484,7 +3370,7 @@ def _ci_builtin_validation_command_outcome(
     observed_commit_sha: str,
     matrix_work_group: Mapping[str, object],
     repo_root: Path,
-) -> tuple[_ReceiptOutcome, str | None, Json]:
+) -> tuple[_CiValidationOutcome, str | None, Json]:
     if builtin == "release-shaped-artifact":
         return _ci_release_shaped_artifact_builtin_outcome(
             plan,
@@ -3549,7 +3435,7 @@ def _ci_lightweight_builtin_outcome(
     matrix_work_group: Mapping[str, object],
     target: Mapping[str, object],
     subcheck_ids: set[str],
-) -> tuple[_ReceiptOutcome, str | None]:
+) -> tuple[_CiValidationOutcome, str | None]:
     if matrix_work_group.get("kind") != "lightweight-preflight":
         return "blocking-failure", "work group is not lightweight preflight"
     if target != {"type": "lightweight-policy", "id": "known-non-impacting"}:
@@ -3560,86 +3446,6 @@ def _ci_lightweight_builtin_outcome(
             "lightweight detail profile lacks policy subcheck",
         )
     return "success", None
-
-
-def _validate_ci_validation_lightweight_policy(
-    *,
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-    work_group_id: str,
-    matrix_work_group: Mapping[str, object],
-) -> None:
-    group = _ci_work_group(plan, work_group_id)
-    if group.get("kind") != "lightweight-preflight":
-        msg = "work group is not lightweight preflight"
-        raise ValueError(msg)
-    _validate_lightweight_matrix_scope(
-        work_group_id=work_group_id,
-        group=group,
-        matrix_work_group=matrix_work_group,
-    )
-    _validate_lightweight_plan_policy(plan, work_group_id, group)
-    assignment = _ci_assignment_for_work_group(assignments, work_group_id)
-    _validate_lightweight_assignment_policy(assignment)
-    if _ci_work_group_dependency_layers(plan).get(work_group_id, -1) != 0:
-        msg = "lightweight preflight must run in the initial validation layer"
-        raise ValueError(msg)
-
-
-def _validate_lightweight_matrix_scope(
-    *,
-    work_group_id: str,
-    group: Mapping[str, object],
-    matrix_work_group: Mapping[str, object],
-) -> None:
-    if matrix_work_group.get("work-group-id") != work_group_id:
-        msg = "matrix work group id does not match scoped work group"
-        raise ValueError(msg)
-    if matrix_work_group.get("no-publish") is not True:
-        msg = "lightweight execution context must be no-publish"
-        raise ValueError(msg)
-    for field in ("kind", "runner-family", "coverage-target"):
-        if matrix_work_group.get(field) != group.get(field):
-            msg = f"matrix work group {field} does not match frozen plan"
-            raise ValueError(msg)
-
-
-def _validate_lightweight_plan_policy(
-    plan: Mapping[str, object],
-    work_group_id: str,
-    group: Mapping[str, object],
-) -> None:
-    target = group.get("coverage-target")
-    if target != {"type": "lightweight-policy", "id": "known-non-impacting"}:
-        msg = "unexpected lightweight coverage target"
-        raise ValueError(msg)
-    expectation = _ci_evidence_expectation(plan, work_group_id)
-    if expectation.get("expected-outcome", "success") != "success":
-        msg = "lightweight preflight must expect a successful policy receipt"
-        raise ValueError(msg)
-    profile = _ci_detail_profile(plan, str(expectation["detail-profile"]))
-    subcheck_ids = _ci_detail_profile_required_subcheck_ids(profile)
-    if "known-non-impacting-policy" not in subcheck_ids:
-        msg = "lightweight detail profile lacks policy subcheck"
-        raise ValueError(msg)
-
-
-def _validate_lightweight_assignment_policy(
-    assignment: Mapping[str, object],
-) -> None:
-    if assignment.get("expected-outcome", "success") != "success":
-        msg = "lightweight assignment must expect a successful receipt"
-        raise ValueError(msg)
-    if (
-        not isinstance(assignment.get("receipt-artifact-ref"), str)
-        or not (assignment["receipt-artifact-ref"])
-    ):
-        msg = "lightweight assignment is missing receipt-artifact-ref"
-        raise ValueError(msg)
-    trusted_writer = assignment.get("trusted-writer-id")
-    if not isinstance(trusted_writer, str) or not trusted_writer:
-        msg = "lightweight assignment is missing trusted writer identity"
-        raise ValueError(msg)
 
 
 def _ci_detail_profile_required_subcheck_ids(
@@ -3718,7 +3524,7 @@ def _ci_tooling_builtin_outcome(
     matrix_work_group: Mapping[str, object],
     target: Mapping[str, object],
     subcheck_ids: set[str],
-) -> tuple[_ReceiptOutcome, str | None]:
+) -> tuple[_CiValidationOutcome, str | None]:
     if matrix_work_group.get("kind") != "workflow-release-tooling":
         return "blocking-failure", "work group is not tooling validation"
     if target.get("type") != "tooling-surface":
@@ -3731,7 +3537,7 @@ def _ci_tooling_builtin_outcome(
     return "success", None
 
 
-def _ci_release_shaped_artifact_builtin_outcome(  # noqa: C901, PLR0911
+def _ci_release_shaped_artifact_builtin_outcome(  # noqa: PLR0911
     plan: Json | None,
     assignments: Json | None,
     changed_files_snapshot: Json | None,
@@ -3740,7 +3546,7 @@ def _ci_release_shaped_artifact_builtin_outcome(  # noqa: C901, PLR0911
     observed_commit_sha: str,
     matrix_work_group: Mapping[str, object],
     repo_root: Path,
-) -> tuple[_ReceiptOutcome, str | None, Json]:
+) -> tuple[_CiValidationOutcome, str | None, Json]:
     if not isinstance(plan, Mapping):
         return "blocking-failure", "frozen validation plan is required", {}
     work_group_id = matrix_work_group.get("work-group-id")
@@ -3794,52 +3600,12 @@ def _ci_release_shaped_artifact_builtin_outcome(  # noqa: C901, PLR0911
         )
         if no_publish is not None:
             return "success", None, no_publish
-        reuse = (
-            _ci_reused_release_shaped_artifact_evidence(
-                plan=plan,
-                assignments=assignments,
-                work_group_id=work_group_id,
-                observed_artifacts_dir=observed_artifacts_dir,
-                observed_commit_sha=observed_commit_sha,
-                changed_files_snapshot=changed_files_snapshot,
-                fact_snapshot=fact_snapshot,
-            )
-            if isinstance(assignments, Mapping) and observed_artifacts_dir
-            else None
-        )
-        if reuse is None:
-            if (
-                isinstance(assignments, Mapping)
-                and observed_artifacts_dir
-                and _ci_has_observed_release_shaped_receipt_candidate(
-                    plan=plan,
-                    assignments=assignments,
-                    work_group_id=work_group_id,
-                    observed_artifacts_dir=observed_artifacts_dir,
-                    changed_files_snapshot=changed_files_snapshot,
-                    fact_snapshot=fact_snapshot,
-                )
-            ):
-                return (
-                    "blocking-failure",
-                    "no admissible byte-bound no-publish release-shaped artifact evidence was found",
-                    {},
-                )
-            return (
-                "blocking-failure",
-                "artifact-shape-unconfirmed: byte-bound no-publish release-shaped artifact validation evidence is unavailable",
-                {},
-            )
     except (KeyError, TypeError, ValueError) as exc:
         return "blocking-failure", str(exc), {}
     return (
-        "success",
-        None,
-        {
-            "evidence-source": "reused-validation-receipt",
-            "reused-receipt": reuse["reused-receipt"],
-            "artifact-obligation-results": reuse["artifact-obligation-results"],
-        },
+        "blocking-failure",
+        "artifact-shape-unconfirmed: byte-bound no-publish release-shaped artifact validation evidence is unavailable",
+        {},
     )
 
 
@@ -3939,25 +3705,6 @@ def _ci_no_publish_release_shaped_artifact_evidence(
     }
 
 
-def _ci_validation_build_outputs(repo_root: Path) -> list[Path]:
-    roots = [
-        repo_root / ".three-ci-validation" / "work" / "validation-build",
-        repo_root / ".three-ci-validation" / "work" / "validation-build.gem",
-    ]
-    outputs: list[Path] = []
-    for root in roots:
-        if root.is_file():
-            outputs.append(root)
-        elif root.is_dir():
-            outputs.extend(
-                path
-                for path in root.rglob("*")
-                if path.is_file()
-                and path.name != "validation-build-artifacts.json"
-            )
-    return sorted(outputs, key=lambda path: path.as_posix())
-
-
 def _ci_validation_build_outputs_by_artifact_ref(
     *,
     repo_root: Path,
@@ -3969,29 +3716,7 @@ def _ci_validation_build_outputs_by_artifact_ref(
         repo_root=repo_root,
         expected_refs=expected_refs,
     )
-    if mapping_present:
-        return declared
-    build_outputs = _ci_validation_build_outputs(repo_root)
-    if not build_outputs or len(build_outputs) != len(expected_refs):
-        return None
-    remaining = list(build_outputs)
-    output_by_ref: dict[str, Path] = {}
-    for artifact_ref in sorted(expected_refs):
-        matches = [
-            output
-            for output in remaining
-            if _ci_validation_build_output_matches_artifact_ref(
-                output,
-                artifact_ref,
-                repo_root=repo_root,
-            )
-        ]
-        if len(matches) != 1:
-            return None
-        output = matches[0]
-        output_by_ref[artifact_ref] = output
-        remaining.remove(output)
-    return output_by_ref if not remaining else None
+    return declared if mapping_present else None
 
 
 def _ci_declared_validation_build_output_mapping(
@@ -4107,24 +3832,6 @@ def _ci_validation_build_output_mapping_items(
     return True, None
 
 
-def _ci_validation_build_output_matches_artifact_ref(
-    output: Path,
-    artifact_ref: str,
-    *,
-    repo_root: Path,
-) -> bool:
-    expected_names = {PurePosixPath(artifact_ref).name}
-    with suppress(ContractValidationError):
-        expected_names.add(artifact_physical_name(artifact_ref))
-    if output.name in expected_names:
-        return True
-    try:
-        relative = output.resolve().relative_to(repo_root.resolve()).as_posix()
-    except ValueError:
-        relative = output.as_posix()
-    return relative == artifact_ref or relative.endswith(f"/{artifact_ref}")
-
-
 def _ci_validation_build_digest_entry(
     *,
     artifact_ref: str,
@@ -4150,33 +3857,6 @@ def _ci_validation_build_digest_entry(
     }
 
 
-def _ci_has_observed_release_shaped_receipt_candidate(
-    *,
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-    work_group_id: str,
-    observed_artifacts_dir: str,
-    changed_files_snapshot: Mapping[str, object] | None,
-    fact_snapshot: Mapping[str, object] | None,
-) -> bool:
-    assignment = _ci_assignment_for_work_group(assignments, work_group_id)
-    expected_writer_id = assignment.get("trusted-writer-id")
-    return any(
-        _ci_observed_receipt_manifest_matches_trusted_writer(
-            observed.manifest_entry,
-            work_group_id=work_group_id,
-            expected_writer_id=expected_writer_id,
-        )
-        for observed in _ci_observed_receipt_inputs(
-            plan=plan,
-            assignments=assignments,
-            observed_artifacts_dir=observed_artifacts_dir,
-            changed_files_snapshot=changed_files_snapshot,
-            fact_snapshot=fact_snapshot,
-        )
-    )
-
-
 def _validate_release_shaped_matrix_scope(
     *,
     work_group_id: str,
@@ -4196,308 +3876,6 @@ def _validate_release_shaped_matrix_scope(
         if matrix_work_group.get(field) != group.get(field):
             msg = f"matrix work group {field} does not match frozen plan"
             raise ValueError(msg)
-
-
-def _ci_reused_release_shaped_artifact_evidence(
-    *,
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-    work_group_id: str,
-    observed_artifacts_dir: str,
-    observed_commit_sha: str,
-    changed_files_snapshot: Mapping[str, object] | None,
-    fact_snapshot: Mapping[str, object] | None,
-) -> Json | None:
-    """Return admissible release-shaped no-publish evidence from a prior receipt."""
-    assignment = _ci_assignment_for_work_group(assignments, work_group_id)
-    expected_writer_id = assignment.get("trusted-writer-id")
-    observed_receipts = _ci_observed_receipt_inputs(
-        plan=plan,
-        assignments=assignments,
-        observed_artifacts_dir=observed_artifacts_dir,
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-    )
-    for observed in observed_receipts:
-        if not _ci_observed_receipt_manifest_matches_trusted_writer(
-            observed.manifest_entry,
-            work_group_id=work_group_id,
-            expected_writer_id=expected_writer_id,
-        ):
-            continue
-        receipt = observed.receipt
-        if receipt is None:
-            continue
-        try:
-            _validate_ci_validation_receipt(
-                receipt,
-                plan=plan,
-                selector_assignments_manifest=assignments,
-                assignment=assignment,
-                changed_files_snapshot=changed_files_snapshot,
-                fact_snapshot=fact_snapshot,
-            )
-        except ContractValidationError:
-            continue
-        if not _ci_receipt_reusable_for_release_shape(
-            receipt,
-            plan,
-            assignments,
-            work_group_id,
-            observed_commit_sha,
-            observed_receipts=observed_receipts,
-            source_validation_result=observed.validation_result,
-            changed_files_snapshot=changed_files_snapshot,
-            fact_snapshot=fact_snapshot,
-        ):
-            continue
-        results = _ci_release_shaped_results_from_receipt(receipt)
-        if results is None:
-            continue
-        return {
-            "reused-receipt": {
-                "artifact-ref": observed.manifest_entry.get("artifact-ref"),
-                "receipt-id": receipt.get("receipt-id"),
-                "receipt-content-digest": observed.manifest_entry.get(
-                    "receipt-content-digest"
-                ),
-                "observed-commit-sha": observed_commit_sha,
-            },
-            "artifact-obligation-results": [dict(result) for result in results],
-        }
-    return None
-
-
-def _ci_receipt_reusable_for_release_shape(
-    receipt: Mapping[str, object],
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-    work_group_id: str,
-    observed_commit_sha: str,
-    *,
-    observed_receipts: Sequence[_CiValidationObservedReceiptInput],
-    changed_files_snapshot: Mapping[str, object] | None,
-    fact_snapshot: Mapping[str, object] | None,
-    source_validation_result: Mapping[str, object] | None = None,
-    visited_receipt_digests: set[str] | None = None,
-) -> bool:
-    validation_tree = receipt.get("validation-tree")
-    execution_tree = receipt.get("execution-tree")
-    results = _ci_release_shaped_results_from_receipt(receipt)
-    if not (
-        receipt.get("outcome") == "success"
-        and receipt.get("proof-admissibility") == "validation-only"
-        and receipt.get("work-group-id") == work_group_id
-        and isinstance(validation_tree, Mapping)
-        and validation_tree == plan.get("validation-tree")
-        and validation_tree.get("commit-sha") == observed_commit_sha
-        and isinstance(execution_tree, Mapping)
-        and execution_tree.get("observed-commit-sha") == observed_commit_sha
-        and execution_tree.get("verified") is True
-        and results is not None
-        and _ci_release_shaped_results_match_plan(
-            plan,
-            work_group_id,
-            results,
-            fact_snapshot=fact_snapshot,
-        )
-        and not _ci_release_shaped_results_contain_plan_fabrication(
-            plan, work_group_id, results
-        )
-    ):
-        return False
-    return _ci_release_shaped_receipt_source_is_admissible(
-        receipt=receipt,
-        plan=plan,
-        assignments=assignments,
-        work_group_id=work_group_id,
-        observed_commit_sha=observed_commit_sha,
-        observed_receipts=observed_receipts,
-        source_validation_result=source_validation_result,
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-        visited_receipt_digests=visited_receipt_digests or set(),
-    )
-
-
-def _ci_release_shaped_results_from_receipt(
-    receipt: Mapping[str, object],
-) -> list[Mapping[str, object]] | None:
-    evidence = receipt.get("evidence")
-    if not isinstance(evidence, Mapping):
-        return None
-    category_result = evidence.get("category-result")
-    if not isinstance(category_result, Mapping):
-        return None
-    detail = category_result.get("detail")
-    if not isinstance(detail, Mapping):
-        return None
-    results = detail.get("artifact-obligation-results")
-    if not isinstance(results, Sequence) or isinstance(results, str | bytes):
-        return None
-    return [item for item in results if isinstance(item, Mapping)]
-
-
-def _ci_release_shaped_detail_from_receipt(
-    receipt: Mapping[str, object],
-) -> Mapping[str, object] | None:
-    evidence = receipt.get("evidence")
-    if not isinstance(evidence, Mapping):
-        return None
-    category_result = evidence.get("category-result")
-    if not isinstance(category_result, Mapping):
-        return None
-    detail = category_result.get("detail")
-    return detail if isinstance(detail, Mapping) else None
-
-
-def _ci_release_shaped_receipt_source_is_admissible(  # noqa: PLR0911
-    *,
-    receipt: Mapping[str, object],
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-    work_group_id: str,
-    observed_commit_sha: str,
-    observed_receipts: Sequence[_CiValidationObservedReceiptInput],
-    source_validation_result: Mapping[str, object] | None,
-    changed_files_snapshot: Mapping[str, object] | None,
-    fact_snapshot: Mapping[str, object] | None,
-    visited_receipt_digests: set[str],
-) -> bool:
-    detail = _ci_release_shaped_detail_from_receipt(receipt)
-    if detail is None:
-        return False
-    evidence_source = detail.get("evidence-source")
-    if evidence_source == "no-publish-validation":
-        return _ci_no_publish_release_shaped_source_proof_is_admissible(
-            receipt,
-            detail,
-            source_validation_result=source_validation_result,
-        )
-    if evidence_source != "reused-validation-receipt":
-        return False
-    reused_receipt = detail.get("reused-receipt")
-    if not isinstance(reused_receipt, Mapping):
-        return False
-    assignment = _ci_assignment_for_work_group(assignments, work_group_id)
-    prior = _ci_observed_reused_receipt_input(
-        reused_receipt,
-        observed_receipts,
-        observed_commit_sha=observed_commit_sha,
-        work_group_id=work_group_id,
-        expected_writer_id=assignment.get("trusted-writer-id"),
-    )
-    if prior is None or prior.receipt is None:
-        return False
-    prior_digest = prior.manifest_entry.get("receipt-content-digest")
-    if (
-        not isinstance(prior_digest, str)
-        or prior_digest in visited_receipt_digests
-    ):
-        return False
-    prior_work_group_id = prior.receipt.get("work-group-id")
-    if prior_work_group_id != work_group_id:
-        return False
-    prior_detail = _ci_release_shaped_detail_from_receipt(prior.receipt)
-    if (
-        prior_detail is None
-        or not _ci_release_shaped_reused_results_match_source(
-            current_detail=detail,
-            source_detail=prior_detail,
-        )
-    ):
-        return False
-    try:
-        _validate_ci_validation_receipt(
-            prior.receipt,
-            plan=plan,
-            selector_assignments_manifest=assignments,
-            assignment=assignment,
-            changed_files_snapshot=changed_files_snapshot,
-            fact_snapshot=fact_snapshot,
-        )
-    except ContractValidationError:
-        return False
-    return _ci_receipt_reusable_for_release_shape(
-        prior.receipt,
-        plan,
-        assignments,
-        work_group_id,
-        observed_commit_sha,
-        observed_receipts=observed_receipts,
-        source_validation_result=prior.validation_result,
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-        visited_receipt_digests=visited_receipt_digests | {prior_digest},
-    )
-
-
-def _ci_observed_reused_receipt_input(
-    reused_receipt: Mapping[str, object],
-    observed_receipts: Sequence[_CiValidationObservedReceiptInput],
-    *,
-    observed_commit_sha: str,
-    work_group_id: str,
-    expected_writer_id: object,
-) -> _CiValidationObservedReceiptInput | None:
-    if reused_receipt.get("observed-commit-sha") != observed_commit_sha:
-        return None
-    artifact_ref = reused_receipt.get("artifact-ref")
-    receipt_id = reused_receipt.get("receipt-id")
-    content_digest = reused_receipt.get("receipt-content-digest")
-    if not all(
-        isinstance(item, str) and item
-        for item in (artifact_ref, receipt_id, content_digest)
-    ):
-        return None
-    for observed in observed_receipts:
-        if (
-            observed.manifest_entry.get("artifact-ref") == artifact_ref
-            and observed.manifest_entry.get("receipt-id") == receipt_id
-            and observed.manifest_entry.get("receipt-content-digest")
-            == content_digest
-            and _ci_observed_receipt_manifest_matches_trusted_writer(
-                observed.manifest_entry,
-                work_group_id=work_group_id,
-                expected_writer_id=expected_writer_id,
-            )
-        ):
-            return observed
-    return None
-
-
-def _ci_release_shaped_reused_results_match_source(
-    *,
-    current_detail: Mapping[str, object],
-    source_detail: Mapping[str, object],
-) -> bool:
-    current_results = current_detail.get("artifact-obligation-results")
-    source_results = source_detail.get("artifact-obligation-results")
-    return (
-        isinstance(current_results, Sequence)
-        and not isinstance(current_results, str | bytes)
-        and all(isinstance(item, Mapping) for item in current_results)
-        and isinstance(source_results, Sequence)
-        and not isinstance(source_results, str | bytes)
-        and all(isinstance(item, Mapping) for item in source_results)
-        and [dict(item) for item in current_results]
-        == [dict(item) for item in source_results]
-    )
-
-
-def _ci_observed_receipt_manifest_matches_trusted_writer(
-    manifest_entry: Mapping[str, object],
-    *,
-    work_group_id: str,
-    expected_writer_id: object,
-) -> bool:
-    return (
-        isinstance(expected_writer_id, str)
-        and bool(expected_writer_id)
-        and manifest_entry.get("writer-work-group-id") == work_group_id
-        and manifest_entry.get("trusted-writer-id") == expected_writer_id
-        and manifest_entry.get("observed-writer-id") == expected_writer_id
-    )
 
 
 def _ci_no_publish_release_shaped_source_proof_is_admissible(  # noqa: C901, PLR0911
@@ -4622,15 +4000,6 @@ def _ci_no_publish_source_command_from_validation_result(
     return command
 
 
-def _ci_release_shaped_digest_proof_entries(
-    receipt: Mapping[str, object],
-) -> list[Json]:
-    results = _ci_release_shaped_results_from_receipt(receipt)
-    if results is None:
-        return []
-    return _ci_release_shaped_digest_proof_entries_from_results(results)
-
-
 def _ci_release_shaped_digest_proof_entries_from_results(
     results: Sequence[Mapping[str, object]],
 ) -> list[Json]:
@@ -4666,88 +4035,6 @@ def _ci_release_shaped_digest_proof_entries_from_results(
                 }
             )
     return sorted(entries, key=lambda item: str(item["artifact-ref"]))
-
-
-def _cmd_write_ci_validation_receipt(args: argparse.Namespace) -> int:
-    plan = _read_json(Path(args.plan))
-    assignments = _read_json(Path(args.assignments))
-    changed_files_snapshot = _read_optional_json(args.changed_files_snapshot)
-    fact_snapshot = _read_optional_json(args.fact_snapshot)
-    assignment = _ci_assignment_for_work_group(assignments, args.work_group_id)
-    matrix_work_group = _read_json_value(args.matrix_work_group_json)
-    observed_writer_id = ci_validation_writer_id(
-        workflow=args.workflow,
-        job=args.job,
-        matrix={"work-group": matrix_work_group},
-    )
-    if observed_writer_id != assignment.get("trusted-writer-id"):
-        msg = (
-            "observed workflow matrix writer identity does not match assignment"
-        )
-        raise RuntimeError(msg)
-    try:
-        validation_result = _read_optional_json(
-            getattr(args, "validation_result", "")
-        )
-    except (OSError, json.JSONDecodeError, TypeError, ValueError):
-        validation_result = None
-    dependency_blocked = _ci_dependency_blocked(
-        plan=plan,
-        assignments=assignments,
-        work_group_id=args.work_group_id,
-        observed_artifacts_dir=getattr(args, "observed_artifacts_dir", ""),
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-    )
-    outcome = _ci_validation_outcome(
-        plan,
-        args.work_group_id,
-        dependency_blocked=dependency_blocked,
-        validation_result=validation_result,
-        assignments=assignments,
-        observed_artifacts_dir=getattr(args, "observed_artifacts_dir", ""),
-        observed_commit_sha=args.observed_commit_sha,
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-    )
-    diagnostics = _ci_validation_diagnostics(
-        plan,
-        args.work_group_id,
-        outcome=outcome,
-    )
-    receipt = _freeze_ci_validation_receipt(
-        plan=plan,
-        selector_assignments_manifest=assignments,
-        assignment=assignment,
-        receipt_id=str(assignment["assignment-id"]),
-        created_at=args.created_at or _utc_now(),
-        execution_observed_commit_sha=args.observed_commit_sha,
-        outcome=outcome,
-        evidence=_ci_validation_evidence(
-            plan,
-            args.work_group_id,
-            outcome=outcome,
-            diagnostics=diagnostics,
-            validation_result=validation_result,
-            fact_snapshot=fact_snapshot,
-        ),
-        diagnostics=diagnostics,
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-    )
-    _write_json(Path(args.receipt_out), receipt)
-    _write_outputs(
-        args.github_output,
-        {
-            "receipt_artifact_ref": str(assignment["receipt-artifact-ref"]),
-            "receipt_artifact_name": artifact_physical_name(
-                str(assignment["receipt-artifact-ref"])
-            ),
-            "observed_writer_id": observed_writer_id,
-            "dependency_blocked": _bool_str(dependency_blocked),
-        },
-    )
-    return 0
 
 
 def _cmd_download_ci_validation_observed_artifacts(
@@ -10507,39 +9794,6 @@ def _download_artifact_by_id(
         raise RuntimeError(msg) from exc
 
 
-def _ci_observed_artifact_download_names(
-    assignments: Mapping[str, object],
-) -> list[str]:
-    return [
-        artifact_physical_name(artifact_ref)
-        for artifact_ref in _ci_observed_artifact_download_refs(assignments)
-    ]
-
-
-def _ci_observed_artifact_download_refs(
-    assignments: Mapping[str, object] | None,
-) -> list[str]:
-    if assignments is None:
-        return []
-    items = assignments.get("assignments")
-    if not isinstance(items, Sequence) or isinstance(items, str | bytes):
-        return []
-    refs: list[str] = []
-    seen: set[str] = set()
-    for item in items:
-        if not isinstance(item, Mapping):
-            continue
-        artifact_ref = item.get("receipt-artifact-ref")
-        if not isinstance(artifact_ref, str) or not artifact_ref:
-            continue
-        name = artifact_physical_name(artifact_ref)
-        if name in seen:
-            continue
-        seen.add(name)
-        refs.append(artifact_ref)
-    return refs
-
-
 def _workflow_artifact_ids_by_name(repository: str, run_id: int) -> Json:
     artifacts: Json = {}
     page = 1
@@ -12883,6 +12137,12 @@ def _ci_dependency_blocked(
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
 ) -> bool:
+    _ = (
+        assignments,
+        observed_artifacts_dir,
+        changed_files_snapshot,
+        fact_snapshot,
+    )
     dependencies = [
         str(item)
         for item in cast(
@@ -12890,60 +12150,7 @@ def _ci_dependency_blocked(
             _ci_work_group(plan, work_group_id).get("depends-on", []),
         )
     ]
-    if not dependencies:
-        return False
-    observed_by_work_group = {
-        str(item.manifest_entry.get("writer-work-group-id")): item
-        for item in _ci_observed_receipt_inputs(
-            plan=plan,
-            assignments=assignments,
-            observed_artifacts_dir=observed_artifacts_dir,
-            changed_files_snapshot=changed_files_snapshot,
-            fact_snapshot=fact_snapshot,
-        )
-        if item.manifest_entry.get("writer-work-group-id") in dependencies
-    }
-    for dependency in dependencies:
-        assignment = _ci_assignment_for_work_group(assignments, dependency)
-        observed = observed_by_work_group.get(dependency)
-        if observed is None or observed.receipt is None:
-            return True
-        if observed.manifest_entry.get("observed-writer-id") != assignment.get(
-            "trusted-writer-id"
-        ):
-            return True
-        try:
-            _validate_ci_validation_receipt(
-                observed.receipt,
-                plan=plan,
-                selector_assignments_manifest=assignments,
-                assignment=assignment,
-                changed_files_snapshot=changed_files_snapshot,
-                fact_snapshot=fact_snapshot,
-            )
-        except ContractValidationError:
-            return True
-        if observed.receipt.get("outcome") == "skipped":
-            return True
-    return False
-
-
-def _ci_assignment_for_work_group(
-    assignments: Mapping[str, object],
-    work_group_id: str,
-) -> Mapping[str, object]:
-    items = assignments.get("assignments")
-    if not isinstance(items, Sequence) or isinstance(items, str | bytes):
-        msg = "selector assignments must contain an assignments array"
-        raise TypeError(msg)
-    for item in items:
-        if (
-            isinstance(item, Mapping)
-            and item.get("work-group-id") == work_group_id
-        ):
-            return item
-    msg = f"work group {work_group_id!r} is not assigned"
-    raise KeyError(msg)
+    return bool(dependencies)
 
 
 def _read_json_value(value: str) -> object:
@@ -13004,7 +12211,9 @@ def _ci_validation_diagnostic(
         detail=DiagnosticDetail.DEPENDENCY_BLOCKED.value,
         message=(
             "No-publish CI validation execution was skipped because a planned "
-            "prerequisite work group did not produce a successful receipt."
+            "prerequisite work group did not produce a dependency result "
+            "admitted for gating from same-batch results or admitted upstream "
+            "batch evidence."
         ),
         source_type="work-group",
         source_id=work_group_id,
@@ -13054,7 +12263,7 @@ def _ci_validation_outcome(
     observed_commit_sha: str = "",
     changed_files_snapshot: Mapping[str, object] | None = None,
     fact_snapshot: Mapping[str, object] | None = None,
-) -> _ReceiptOutcome:
+) -> _CiValidationOutcome:
     if dependency_blocked:
         return "skipped"
     if (
@@ -13229,33 +12438,7 @@ def _ci_release_shaped_result_has_admissible_source(
             source_detail,
             source_validation_result=validation_result,
         )
-    if not isinstance(assignments, Mapping) or not observed_artifacts_dir:
-        return False
-    reuse = _ci_reused_release_shaped_artifact_evidence(
-        plan=plan,
-        assignments=assignments,
-        work_group_id=work_group_id,
-        observed_artifacts_dir=observed_artifacts_dir,
-        observed_commit_sha=observed_commit_sha,
-        changed_files_snapshot=changed_files_snapshot,
-        fact_snapshot=fact_snapshot,
-    )
-    return reuse is not None and all(
-        _ci_release_shaped_command_matches_reused_evidence(command, reuse)
-        for command in command_mappings
-    )
-
-
-def _ci_release_shaped_command_matches_reused_evidence(
-    command: Mapping[str, object],
-    reuse: Mapping[str, object],
-) -> bool:
-    return (
-        command.get("evidence-source") == "reused-validation-receipt"
-        and command.get("reused-receipt") == reuse.get("reused-receipt")
-        and command.get("artifact-obligation-results")
-        == reuse.get("artifact-obligation-results")
-    )
+    return False
 
 
 def _ci_release_shaped_results_from_validation_result(
@@ -13575,7 +12758,6 @@ def _ci_validation_evidence(
             source_proof = (
                 _ci_release_shaped_source_proof_from_validation_result(
                     validation_result,
-                    include_reused=not batch_bundle,
                 )
             )
             if source_proof is not None:
@@ -13594,10 +12776,8 @@ def _ci_validation_evidence(
     }
 
 
-def _ci_release_shaped_source_proof_from_validation_result(  # noqa: PLR0911
+def _ci_release_shaped_source_proof_from_validation_result(
     validation_result: Mapping[str, object],
-    *,
-    include_reused: bool = True,
 ) -> Json | None:
     commands = validation_result.get("commands")
     if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
@@ -13615,16 +12795,6 @@ def _ci_release_shaped_source_proof_from_validation_result(  # noqa: PLR0911
     ):
         return None
     evidence_source = command.get("evidence-source")
-    if evidence_source == "reused-validation-receipt":
-        if not include_reused:
-            return None
-        reused_receipt = command.get("reused-receipt")
-        if not isinstance(reused_receipt, Mapping):
-            return None
-        return {
-            "evidence-source": "reused-validation-receipt",
-            "reused-receipt": dict(reused_receipt),
-        }
     if evidence_source != "no-publish-validation":
         return None
     source_proof = command.get("source-proof")
@@ -14012,269 +13182,6 @@ def _ci_descriptor_fact(
             ):
                 return descriptor
     return None
-
-
-def _ci_observed_receipt_inputs(
-    *,
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-    observed_artifacts_dir: str,
-    changed_files_snapshot: Mapping[str, object] | None,
-    fact_snapshot: Mapping[str, object] | None,
-) -> list[_CiValidationObservedReceiptInput]:
-    if not observed_artifacts_dir:
-        return []
-    root = Path(observed_artifacts_dir)
-    if not root.is_dir():
-        return []
-    items = assignments.get("assignments")
-    if not isinstance(items, Sequence) or isinstance(items, str | bytes):
-        return []
-    assignment_by_receipt_name = {
-        artifact_physical_name(str(item["receipt-artifact-ref"])): item
-        for item in items
-        if isinstance(item, Mapping)
-        and isinstance(item.get("receipt-artifact-ref"), str)
-    }
-    excluded_names = _ci_excluded_observed_artifact_names(plan, assignments)
-    observed: list[_CiValidationObservedReceiptInput] = []
-    for artifact_dir in sorted(root.iterdir(), key=lambda item: item.name):
-        if not artifact_dir.is_dir() or artifact_dir.name in excluded_names:
-            continue
-        assignment = assignment_by_receipt_name.get(artifact_dir.name)
-        if assignment is None and not (artifact_dir / "receipt.json").is_file():
-            continue
-        observed_input = _ci_observed_receipt_input(
-            plan=plan,
-            assignments=assignments,
-            assignment=assignment,
-            artifact_dir=artifact_dir,
-            changed_files_snapshot=changed_files_snapshot,
-            fact_snapshot=fact_snapshot,
-        )
-        observed.append(observed_input)
-    return observed
-
-
-def _ci_observed_receipt_input(
-    *,
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-    assignment: Mapping[str, object] | None,
-    artifact_dir: Path,
-    changed_files_snapshot: Mapping[str, object] | None,
-    fact_snapshot: Mapping[str, object] | None,
-) -> _CiValidationObservedReceiptInput:
-    if assignment is None:
-        return _ci_unassigned_observed_receipt_input(artifact_dir, plan=plan)
-    receipt_ref = str(assignment["receipt-artifact-ref"])
-    receipt_path = artifact_dir / "receipt.json"
-    receipt: Mapping[str, object] | None = None
-    raw_receipt: bytes | None = None
-    validation_result = _ci_observed_validation_result(artifact_dir)
-    try:
-        raw_receipt = receipt_path.read_bytes()
-        receipt = _load_ci_validation_receipt_payload(raw_receipt)
-    except (
-        ContractValidationError,
-        OSError,
-        TypeError,
-        ValueError,
-        json.JSONDecodeError,
-    ):
-        receipt = None
-    content_digest = (
-        _ci_validation_receipt_content_digest(raw_receipt)
-        if raw_receipt is not None
-        else None
-    )
-    artifact_instance_id = artifact_dir.name
-    entry = {
-        "observed-entry-id": _ci_validation_observed_entry_id(
-            run_id=str(cast("Mapping[str, object]", plan["run"])["run-id"]),
-            run_attempt=str(
-                cast("Mapping[str, object]", plan["run"])["run-attempt"]
-            ),
-            artifact_ref=receipt_ref,
-            artifact_instance_id=artifact_instance_id,
-        ),
-        "artifact-ref": receipt_ref,
-        "physical-artifact-name": artifact_physical_name(receipt_ref),
-        "artifact-instance-id": artifact_instance_id,
-        "assignment-id": assignment["assignment-id"],
-        "writer-work-group-id": assignment["work-group-id"],
-        "trusted-writer-id": assignment["trusted-writer-id"],
-        "observed-writer-id": None,
-        "receipt-id": receipt.get("receipt-id")
-        if receipt is not None
-        else None,
-        "receipt-content-digest": content_digest,
-    }
-    return _CiValidationObservedReceiptInput(
-        manifest_entry=entry,
-        receipt=receipt,
-        raw_receipt_bytes=raw_receipt,
-        validation_result=validation_result,
-    )
-
-
-def _ci_unassigned_observed_receipt_input(
-    artifact_dir: Path,
-    *,
-    plan: Mapping[str, object],
-) -> _CiValidationObservedReceiptInput:
-    raw_receipt: bytes | None
-    receipt: Mapping[str, object] | None
-    validation_result = _ci_observed_validation_result(artifact_dir)
-    try:
-        raw_receipt = (artifact_dir / "receipt.json").read_bytes()
-    except OSError:
-        raw_receipt = None
-        receipt = None
-    else:
-        try:
-            receipt = _load_ci_validation_receipt_payload(raw_receipt)
-        except (
-            ContractValidationError,
-            TypeError,
-            ValueError,
-            json.JSONDecodeError,
-        ):
-            receipt = None
-    artifact_ref = _ci_verified_unassigned_receipt_ref(
-        receipt,
-        physical_name=artifact_dir.name,
-        plan=plan,
-    )
-    return _CiValidationObservedReceiptInput(
-        manifest_entry=_ci_unassigned_receipt_manifest_entry(
-            artifact_dir,
-            plan=plan,
-            artifact_ref=artifact_ref,
-            receipt_id=receipt.get("receipt-id")
-            if receipt is not None and artifact_ref is not None
-            else None,
-            raw_receipt=raw_receipt,
-        ),
-        receipt=receipt,
-        raw_receipt_bytes=raw_receipt,
-        validation_result=validation_result,
-    )
-
-
-def _ci_observed_validation_result(
-    artifact_dir: Path,
-) -> Mapping[str, object] | None:
-    try:
-        candidate = _read_json(artifact_dir / "validation-result.json")
-    except (OSError, TypeError, ValueError, json.JSONDecodeError):
-        return None
-    return candidate if isinstance(candidate, Mapping) else None
-
-
-def _ci_unassigned_receipt_manifest_entry(
-    artifact_dir: Path,
-    *,
-    plan: Mapping[str, object],
-    artifact_ref: str | None,
-    receipt_id: object,
-    raw_receipt: bytes | None,
-) -> Mapping[str, object]:
-    run = cast("Mapping[str, object]", plan["run"])
-    physical_name = artifact_dir.name
-    return {
-        "observed-entry-id": _ci_validation_observed_entry_id(
-            run_id=str(run["run-id"]),
-            run_attempt=str(run["run-attempt"]),
-            artifact_ref=artifact_ref,
-            artifact_instance_id=physical_name,
-        ),
-        "artifact-ref": artifact_ref,
-        "physical-artifact-name": physical_name,
-        "artifact-instance-id": physical_name,
-        "assignment-id": None,
-        "writer-work-group-id": None,
-        "trusted-writer-id": None,
-        "observed-writer-id": None,
-        "receipt-id": receipt_id if isinstance(receipt_id, str) else None,
-        "receipt-content-digest": _ci_validation_receipt_content_digest(
-            raw_receipt
-        )
-        if raw_receipt is not None
-        else None,
-    }
-
-
-def _ci_verified_unassigned_receipt_ref(
-    receipt: Mapping[str, object] | None,
-    *,
-    physical_name: str,
-    plan: Mapping[str, object],
-) -> str | None:
-    if receipt is None:
-        return None
-    artifact_ref = receipt.get("artifact-ref")
-    if not isinstance(artifact_ref, str):
-        return None
-    run = cast("Mapping[str, object]", plan["run"])
-    match = re.fullmatch(
-        r"ci-validation/receipts/([^/]+)/([^/]+)/([^/]+)/receipt\.json",
-        artifact_ref,
-    )
-    if (
-        match is None
-        or match.group(1) != str(run["run-id"])
-        or match.group(2) != str(run["run-attempt"])
-        or _CI_LOCAL_ID_RE.fullmatch(match.group(3)) is None
-    ):
-        return None
-    try:
-        expected_physical_name = artifact_physical_name(artifact_ref)
-    except ContractValidationError:
-        return None
-    if expected_physical_name != physical_name:
-        return None
-    return artifact_ref
-
-
-def _ci_excluded_observed_artifact_names(
-    plan: Mapping[str, object],
-    assignments: Mapping[str, object],
-) -> set[str]:
-    run = cast("Mapping[str, object]", plan["run"])
-    run_id = str(run["run-id"])
-    run_attempt = str(run["run-attempt"])
-    refs = {
-        ci_validation_request_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        ),
-        ci_validation_plan_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        ),
-        ci_validation_planner_diagnostics_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        ),
-        ci_validation_changed_files_snapshot_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        ),
-        ci_validation_fact_snapshot_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        ),
-        _ci_validation_selector_assignments_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        ),
-        _ci_validation_receipt_manifest_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        ),
-    }
-    return {artifact_physical_name(ref) for ref in refs}
 
 
 def _parse_bool(value: str | bool) -> bool:
