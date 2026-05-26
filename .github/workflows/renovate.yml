@@ -4,6 +4,14 @@ on:
   schedule:
     - cron: '0 3 * * *'
   workflow_dispatch:
+    inputs:
+      log_level:
+        description: 'Renovate log level for this manual run.'
+        type: choice
+        default: info
+        options:
+          - info
+          - debug
   issues:
     types:
       - edited
@@ -116,6 +124,7 @@ jobs:
       - name: Run Renovate
         env:
           RENOVATE_CONFIG_FILE: .github/renovate/global.cjs
+          LOG_LEVEL: ${{ github.event.inputs.log_level || 'info' }}
           # The Renovate GitHub App may create dependency branches and PRs, but must not bypass branch protection.
           # Renovate automerge is controlled by renovate.json and remains subject to CI and branch protection.
           RENOVATE_TOKEN: ${{ steps.renovate-app-token.outputs.token }}
