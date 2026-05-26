@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
@@ -10,7 +11,13 @@ internal interface IQidianBrowserManager
         ResolvedAppSettings settings,
         AppStoragePaths paths,
         bool headless,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        bool isolatedAnonymous = false);
+}
+
+internal interface IQidianPlaywrightFactory
+{
+    Task<IPlaywright> CreateAsync();
 }
 
 internal interface IQidianBrowserSession : IAsyncDisposable
@@ -33,6 +40,8 @@ internal interface IQidianBrowserSession : IAsyncDisposable
         bool requireValidatedIdentity = false);
 
     Task PersistSessionStateAsync();
+
+    ValueTask DisposeBestEffortAsync();
 }
 
 internal enum LoginStateProbeMode
@@ -49,12 +58,24 @@ internal sealed class QidianBrowserManager(
         "--disable-blink-features=AutomationControlled",
         "--disable-features=AutomationControlled",
     ];
+    private static readonly TimeSpan StartupCleanupRetryWait = TimeSpan.FromSeconds(2);
+    private readonly IQidianPlaywrightFactory playwrightFactory =
+        new DefaultQidianPlaywrightFactory();
+
+    internal QidianBrowserManager(
+        ILogger<QidianBrowserManager> logger,
+        IQidianPlaywrightFactory playwrightFactory)
+        : this(logger)
+    {
+        this.playwrightFactory = playwrightFactory;
+    }
 
     public async Task<IQidianBrowserSession> OpenAsync(
         ResolvedAppSettings settings,
         AppStoragePaths paths,
         bool headless,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool isolatedAnonymous = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -64,77 +85,409 @@ internal sealed class QidianBrowserManager(
                 $"The specified browser executable does not exist: '{settings.BrowserPath}'.");
         }
 
-        ChromiumProfilePaths browserProfile = ChromiumProfilePathResolver.Resolve(
-            Path.Combine(paths.StateRoot, AppConstants.BrowserProfileDirectoryName),
-            settings.BrowserProfileDir);
-
-        Directory.CreateDirectory(browserProfile.UserDataDir);
-
-        List<Exception> failures = [];
-        foreach (BrowserLaunchPlan plan in BuildLaunchPlans(settings))
+        string? isolatedUserDataDir = null;
+        ChromiumProfilePaths browserProfile;
+        if (isolatedAnonymous)
         {
-            IPlaywright? playwright = null;
-            try
-            {
-                playwright = await Playwright.CreateAsync();
-                IBrowserContext context = await playwright.Chromium.LaunchPersistentContextAsync(
-                    browserProfile.UserDataDir,
-                    new BrowserTypeLaunchPersistentContextOptions
-                    {
-                        Headless = headless,
-                        Channel = plan.Channel,
-                        ExecutablePath = plan.ExecutablePath,
-                        Args = ChromiumProfilePathResolver.BuildLaunchArguments(
-                            LaunchArgs,
-                            browserProfile.ProfileDirectory),
-                        ViewportSize = new ViewportSize
-                        {
-                            Width = 1440,
-                            Height = 960,
-                        },
-                        Locale = "zh-CN",
-                    });
+            isolatedUserDataDir = Path.Combine(
+                paths.StateRoot,
+                "anonymous-browser-profile-" + Guid.NewGuid().ToString("N"));
+            browserProfile = new ChromiumProfilePaths(
+                Path.GetFullPath(isolatedUserDataDir),
+                ProfileDirectory: null,
+                IsOverride: false);
+        }
+        else
+        {
+            browserProfile = ChromiumProfilePathResolver.Resolve(
+                Path.Combine(paths.StateRoot, AppConstants.BrowserProfileDirectoryName),
+                settings.BrowserProfileDir);
+        }
 
-                IPage page = context.Pages.Count > 0
-                    ? context.Pages[0]
-                    : await context.NewPageAsync();
-                LogMessages.SelectedBrowserRuntime(logger, plan.DisplayName, null);
-                return new QidianBrowserSession(logger, playwright, context, page, plan);
-            }
-            catch (Exception exception)
+        int isolatedProfileTransferred = 0;
+        int isolatedProfileCleanupRequested = 0;
+
+        Task DeleteIsolatedProfileIfOwnedAsync()
+            => isolatedUserDataDir is not null
+                && Volatile.Read(ref isolatedProfileTransferred) == 0
+                    ? DeleteDirectoryBestEffortAsync(isolatedUserDataDir)
+                    : Task.CompletedTask;
+
+        Task DeleteIsolatedProfileIfCleanupRequestedAsync()
+            => Volatile.Read(ref isolatedProfileCleanupRequested) != 0
+                ? DeleteIsolatedProfileIfOwnedAsync()
+                : Task.CompletedTask;
+
+        async Task<bool> DisposePlaywrightAndCloseStartupContextThenDeleteIfRequestedAsync(
+            IBrowserContext? context,
+            IPlaywright? playwright)
+        {
+            bool cleanupSucceeded = await DisposePlaywrightAndCloseStartupContextBestEffortAsync(
+                context,
+                playwright).ConfigureAwait(false);
+            await DeleteIsolatedProfileIfCleanupRequestedAsync().ConfigureAwait(false);
+            return cleanupSucceeded;
+        }
+
+        try
+        {
+            AppPaths.CreateDirectoryRejectingReparseAncestors(browserProfile.UserDataDir);
+            AppPaths.CreateDirectoryRejectingReparseAncestors(browserProfile.EffectiveProfilePath);
+
+            List<Exception> failures = [];
+            BrowserLaunchPlan[] launchPlans = [.. BuildLaunchPlans(settings)];
+            for (int planIndex = 0; planIndex < launchPlans.Length; planIndex++)
             {
-                if (
-                    browserProfile.IsOverride
-                    && ChromiumProfilePathResolver.IsLikelyLockConflict(exception))
+                BrowserLaunchPlan plan = launchPlans[planIndex];
+                bool hasRemainingLaunchPlans = planIndex < launchPlans.Length - 1;
+                IPlaywright? playwright = null;
+                IBrowserContext? context = null;
+                int playwrightDisposed = 0;
+
+                void DisposeOwnedPlaywrightBestEffort()
                 {
-                    if (playwright is not null)
+                    if (Interlocked.Exchange(ref playwrightDisposed, 1) == 0)
                     {
-                        playwright.Dispose();
+                        DisposePlaywrightBestEffort(playwright);
                     }
-
-                    throw new OperationalException(
-                        "The configured browser profile is currently locked by another "
-                        + "Chromium browser process "
-                        + $"and cannot be opened: '{browserProfile.EffectiveProfilePath}'. "
-                        + "Close all Microsoft Edge/Google Chrome windows that are using this "
-                        + "profile and try again, "
-                        + "or remove the browserProfileDir override "
-                        + "to use the downloader's dedicated profile.",
-                        exception);
                 }
 
-                failures.Add(exception);
-                if (playwright is not null)
+                async Task DisposeOwnedPlaywrightAndDeleteIfRequestedAsync()
                 {
-                    playwright.Dispose();
+                    DisposeOwnedPlaywrightBestEffort();
+                    await DeleteIsolatedProfileIfCleanupRequestedAsync().ConfigureAwait(false);
+                }
+
+                try
+                {
+                    playwright = await AwaitStartupWithCancellationAsync(
+                        playwrightFactory.CreateAsync(),
+                        cancellationToken,
+                        abandonedPlaywright =>
+                        {
+                            abandonedPlaywright.Dispose();
+                            return Task.CompletedTask;
+                        });
+                    cancellationToken.ThrowIfCancellationRequested();
+                    context = await AwaitStartupWithCancellationAsync(
+                        playwright.Chromium.LaunchPersistentContextAsync(
+                            browserProfile.UserDataDir,
+                            new BrowserTypeLaunchPersistentContextOptions
+                            {
+                                Headless = headless,
+                                Channel = plan.Channel,
+                                ExecutablePath = plan.ExecutablePath,
+                                Args = ChromiumProfilePathResolver.BuildLaunchArguments(
+                                    LaunchArgs,
+                                    browserProfile.ProfileDirectory),
+                                ViewportSize = new ViewportSize
+                                {
+                                    Width = 1440,
+                                    Height = 960,
+                                },
+                                Locale = "zh-CN",
+                            }),
+                        cancellationToken,
+                        CloseStartupContextAbandonedBestEffortAsync,
+                        abandonedCompletionCleanupAsync:
+                            DisposeOwnedPlaywrightAndDeleteIfRequestedAsync);
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    IPage page = context.Pages.Count > 0
+                        ? context.Pages[0]
+                        : await AwaitStartupWithCancellationAsync(
+                            context.NewPageAsync(),
+                            cancellationToken,
+                            CloseStartupPageAbandonedBestEffortAsync);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    LogMessages.SelectedBrowserRuntime(logger, plan.DisplayName, null);
+                    QidianBrowserSession session = new(
+                        logger,
+                        playwright,
+                        context,
+                        page,
+                        plan,
+                        isolatedUserDataDir is null
+                            ? null
+                            : () => DeleteDirectoryBestEffortAsync(isolatedUserDataDir));
+                    Interlocked.Exchange(ref isolatedProfileTransferred, 1);
+                    return session;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    if (context is not null)
+                    {
+                        _ = DisposePlaywrightAndCloseStartupContextThenDeleteIfRequestedAsync(
+                            context,
+                            playwright);
+                    }
+                    else if (playwright is not null)
+                    {
+                        DisposeOwnedPlaywrightBestEffort();
+                    }
+
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        if (context is not null)
+                        {
+                            _ = DisposePlaywrightAndCloseStartupContextThenDeleteIfRequestedAsync(
+                                context,
+                                playwright);
+                        }
+                        else if (playwright is not null)
+                        {
+                            DisposeOwnedPlaywrightBestEffort();
+                        }
+
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
+
+                    if (
+                        browserProfile.IsOverride
+                        && ChromiumProfilePathResolver.IsLikelyLockConflict(exception))
+                    {
+                        if (context is not null)
+                        {
+                            _ = DisposePlaywrightAndCloseStartupContextThenDeleteIfRequestedAsync(
+                                context,
+                                playwright);
+                        }
+                        else if (playwright is not null)
+                        {
+                            DisposePlaywrightBestEffort(playwright);
+                        }
+
+                        throw new OperationalException(
+                            "The configured browser profile is currently locked by another "
+                            + "Chromium browser process "
+                            + $"and cannot be opened: '{browserProfile.EffectiveProfilePath}'. "
+                            + "Close all Microsoft Edge/Google Chrome windows that are using this "
+                            + "profile and try again, "
+                            + "or remove the browserProfileDir override "
+                            + "to use the downloader's dedicated profile.",
+                            exception);
+                    }
+
+                    failures.Add(exception);
+                    if (context is not null)
+                    {
+                        Task<bool> cleanupTask = DisposePlaywrightAndCloseStartupContextThenDeleteIfRequestedAsync(
+                            context,
+                            playwright);
+                        if (hasRemainingLaunchPlans
+                            && !await WaitForStartupCleanupBeforeRetryAsync(cleanupTask)
+                                .ConfigureAwait(false))
+                        {
+                            break;
+                        }
+                    }
+                    else if (playwright is not null)
+                    {
+                        DisposePlaywrightBestEffort(playwright);
+                    }
+
+                }
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new OperationalException(
+                "Unable to launch a supported browser. Install Microsoft Edge or Google Chrome, "
+                + "or install Playwright Chromium with the generated playwright installer script.",
+                failures.Count > 0 ? new AggregateException(failures) : null);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref isolatedProfileCleanupRequested, 1);
+            await DeleteIsolatedProfileIfOwnedAsync();
+        }
+    }
+
+    private static async Task<bool> WaitForStartupCleanupBeforeRetryAsync(Task<bool> cleanupTask)
+    {
+        try
+        {
+            return await cleanupTask
+                .WaitAsync(StartupCleanupRetryWait + TimeSpan.FromSeconds(1))
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<T> AwaitStartupWithCancellationAsync<T>(
+        Task<T> task,
+        CancellationToken cancellationToken,
+        Func<T, Task>? abandonedCleanupAsync = null,
+        Action? abandonedCleanupScheduled = null,
+        Func<Task>? abandonedCompletionCleanupAsync = null)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (task.IsCompleted)
+        {
+            if (!task.IsCompletedSuccessfully)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            return await task;
+        }
+
+        TaskCompletionSource cancellationCompletion = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using CancellationTokenRegistration registration = cancellationToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            cancellationCompletion);
+        if (await Task.WhenAny(task, cancellationCompletion.Task) != task)
+        {
+            abandonedCleanupScheduled?.Invoke();
+            _ = ObserveAndCleanupAbandonedStartupTaskAsync(
+                task,
+                abandonedCleanupAsync,
+                abandonedCompletionCleanupAsync);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        if (!task.IsCompletedSuccessfully)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        return await task;
+    }
+
+    private static async Task ObserveAndCleanupAbandonedStartupTaskAsync<T>(
+        Task<T> task,
+        Func<T, Task>? cleanupAsync,
+        Func<Task>? completionCleanupAsync)
+    {
+        try
+        {
+            T resource = await task.ConfigureAwait(false);
+            if (cleanupAsync is not null)
+            {
+                await cleanupAsync(resource).ConfigureAwait(false);
+            }
+        }
+        catch (Exception)
+        {
+        }
+        finally
+        {
+            if (completionCleanupAsync is not null)
+            {
+                try
+                {
+                    await completionCleanupAsync().ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
                 }
             }
         }
+    }
 
-        throw new OperationalException(
-            "Unable to launch a supported browser. Install Microsoft Edge or Google Chrome, "
-            + "or install Playwright Chromium with the generated playwright installer script.",
-            failures.Count > 0 ? new AggregateException(failures) : null);
+    private async Task CloseStartupContextAbandonedBestEffortAsync(IBrowserContext? context)
+        => await CloseStartupContextForCleanupAsync(context).ConfigureAwait(false);
+
+    private static void DisposePlaywrightBestEffort(IPlaywright? playwright)
+    {
+        if (playwright is null)
+        {
+            return;
+        }
+
+        try
+        {
+            playwright.Dispose();
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private static Task DeleteDirectoryBestEffortAsync(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task<bool> DisposePlaywrightAndCloseStartupContextBestEffortAsync(
+        IBrowserContext? context,
+        IPlaywright? playwright)
+    {
+        bool closeSucceeded = await CloseStartupContextForCleanupAsync(context)
+            .ConfigureAwait(false);
+        DisposePlaywrightBestEffort(playwright);
+        return closeSucceeded;
+    }
+
+    private async Task<bool> CloseStartupContextForCleanupAsync(IBrowserContext? context)
+    {
+        if (context is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            await context.CloseAsync()
+                .WaitAsync(StartupCleanupRetryWait)
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (TimeoutException exception)
+        {
+            LogMessages.IgnoreBrowserCloseFailure(logger, exception);
+            return false;
+        }
+        catch (Exception exception)
+        {
+            LogMessages.IgnoreBrowserCloseFailure(logger, exception);
+            return false;
+        }
+    }
+
+    private async Task CloseStartupPageAbandonedBestEffortAsync(IPage? page)
+    {
+        if (page is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await page.CloseAsync()
+                .WaitAsync(StartupCleanupRetryWait)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException exception)
+        {
+            LogMessages.IgnoreBrowserCloseFailure(logger, exception);
+        }
+        catch (Exception exception)
+        {
+            LogMessages.IgnoreBrowserCloseFailure(logger, exception);
+        }
     }
 
     private static IEnumerable<BrowserLaunchPlan> BuildLaunchPlans(ResolvedAppSettings settings)
@@ -167,20 +520,34 @@ internal sealed class QidianBrowserManager(
     }
 }
 
+internal sealed class DefaultQidianPlaywrightFactory : IQidianPlaywrightFactory
+{
+    public Task<IPlaywright> CreateAsync() => Playwright.CreateAsync();
+}
+
 internal sealed class QidianBrowserSession(
     ILogger logger,
     IPlaywright playwright,
     IBrowserContext context,
     IPage primaryPage,
-    BrowserLaunchPlan launchPlan) : IQidianBrowserSession
+    BrowserLaunchPlan launchPlan,
+    Func<Task>? afterDisposeAsync = null) : IQidianBrowserSession
 {
     internal const int LoginStateProbeAttempts = 11;
     internal const int LoginStateProbeDelayMilliseconds = 1000;
+    private static readonly AsyncLocal<Action?> BeforeCompletedTaskFaultCancellationCheckHook =
+        new();
     private bool disposed;
 
     public BrowserLaunchPlan LaunchPlan => launchPlan;
 
     public IPage PrimaryPage => primaryPage;
+
+    internal static Action? BeforeCompletedTaskFaultCancellationCheckForTests
+    {
+        get => BeforeCompletedTaskFaultCancellationCheckHook.Value;
+        set => BeforeCompletedTaskFaultCancellationCheckHook.Value = value;
+    }
 
     public async Task<LoginState> GetLoginStateAsync(
         string? url,
@@ -191,13 +558,15 @@ internal sealed class QidianBrowserSession(
         if (navigate && url is not null)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await primaryPage.GotoAsync(
-                url,
-                new PageGotoOptions
-                {
-                    WaitUntil = WaitUntilState.DOMContentLoaded,
-                    Timeout = 60_000,
-                });
+            await AwaitWithCancellationAsync(
+                primaryPage.GotoAsync(
+                    url,
+                    new PageGotoOptions
+                    {
+                        WaitUntil = WaitUntilState.DOMContentLoaded,
+                        Timeout = 60_000,
+                    }),
+                cancellationToken);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -220,7 +589,9 @@ internal sealed class QidianBrowserSession(
                 return latestState;
             }
 
-            await primaryPage.WaitForTimeoutAsync(LoginStateProbeDelayMilliseconds);
+            await AwaitWithCancellationAsync(
+                primaryPage.WaitForTimeoutAsync(LoginStateProbeDelayMilliseconds),
+                cancellationToken);
             latestState = await EvaluateLoginStateAsync(cancellationToken);
             if (latestState.IsValidated)
             {
@@ -236,14 +607,18 @@ internal sealed class QidianBrowserSession(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await primaryPage.GotoAsync(
-            $"{AppConstants.QidianBaseUrl}/book/{bookId}/catalog/",
-            new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.DOMContentLoaded,
-                Timeout = 60_000,
-            });
-        await primaryPage.WaitForTimeoutAsync(2000);
+        await AwaitWithCancellationAsync(
+            primaryPage.GotoAsync(
+                $"{AppConstants.QidianBaseUrl}/book/{bookId}/catalog/",
+                new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60_000,
+                }),
+            cancellationToken);
+        await AwaitWithCancellationAsync(
+            primaryPage.WaitForTimeoutAsync(2000),
+            cancellationToken);
 
         using JsonDocument document = await EvaluateJsonDocumentAsync(
             PageScripts.CatalogJson,
@@ -303,19 +678,23 @@ internal sealed class QidianBrowserSession(
         string url = string.IsNullOrWhiteSpace(chapter.Url)
             ? $"{AppConstants.QidianBaseUrl}/chapter/{bookId}/{chapter.ChapterId}/"
             : chapter.Url;
-        await primaryPage.GotoAsync(
-            url,
-            new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.DOMContentLoaded,
-                Timeout = 60_000,
-            });
+        await AwaitWithCancellationAsync(
+            primaryPage.GotoAsync(
+                url,
+                new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60_000,
+                }),
+            cancellationToken);
         try
         {
-            await primaryPage.WaitForSelectorAsync(
-                "span.content-text, main p, .read-content p, "
-                + ".chapter-content p, #j_chapterContent p",
-                new PageWaitForSelectorOptions { Timeout = 10_000 });
+            await AwaitWithCancellationAsync(
+                primaryPage.WaitForSelectorAsync(
+                    "span.content-text, main p, .read-content p, "
+                    + ".chapter-content p, #j_chapterContent p",
+                    new PageWaitForSelectorOptions { Timeout = 10_000 }),
+                cancellationToken);
         }
         catch (TimeoutException)
         {
@@ -345,13 +724,17 @@ internal sealed class QidianBrowserSession(
         CancellationToken cancellationToken,
         bool requireValidatedIdentity = false)
     {
-        await primaryPage.GotoAsync(
-            AppConstants.QidianBaseUrl,
-            new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.DOMContentLoaded,
-                Timeout = 60_000,
-            });
+        cancellationToken.ThrowIfCancellationRequested();
+        await AwaitWithCancellationAsync(
+            primaryPage.GotoAsync(
+                AppConstants.QidianBaseUrl,
+                new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60_000,
+                }),
+            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
         while (!primaryPage.IsClosed)
         {
@@ -364,26 +747,45 @@ internal sealed class QidianBrowserSession(
                     return state;
                 }
             }
-            catch (PlaywrightException) when (!primaryPage.IsClosed)
+            catch (PlaywrightException)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (primaryPage.IsClosed)
+                {
+                    break;
+                }
+
                 // The execution context can be destroyed when the user navigates
                 // (e.g., clicking sign-in). Wait for the new page to settle before
                 // retrying the login-state probe.
                 try
                 {
-                    await primaryPage.WaitForLoadStateAsync(
-                        LoadState.DOMContentLoaded,
-                        new PageWaitForLoadStateOptions { Timeout = 10_000 });
+                    await AwaitWithCancellationAsync(
+                        primaryPage.WaitForLoadStateAsync(
+                            LoadState.DOMContentLoaded,
+                            new PageWaitForLoadStateOptions { Timeout = 10_000 }),
+                        cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
                 catch (PlaywrightException)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     // Ignore timeout or further navigation; the outer loop will retry.
                 }
             }
 
-            await primaryPage.WaitForTimeoutAsync(1000);
+            if (primaryPage.IsClosed)
+            {
+                break;
+            }
+
+            await AwaitWithCancellationAsync(
+                primaryPage.WaitForTimeoutAsync(1000),
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         throw new OperationalException(
             requireValidatedIdentity
                 ? "The login browser window was closed before "
@@ -393,6 +795,63 @@ internal sealed class QidianBrowserSession(
     }
 
     public Task PersistSessionStateAsync() => DisposeCoreAsync(swallowBrowserCloseFailure: false);
+
+    public async ValueTask DisposeBestEffortAsync()
+    {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+        try
+        {
+            Task closeTask = context.CloseAsync();
+            Task completedTask = await Task.WhenAny(
+                closeTask,
+                Task.Delay(TimeSpan.FromSeconds(1))).ConfigureAwait(false);
+            if (completedTask == closeTask)
+            {
+                await closeTask.ConfigureAwait(false);
+            }
+            else
+            {
+                _ = closeTask.ContinueWith(
+                    static (task, state) =>
+                    {
+                        _ = task.Exception;
+                        LogMessages.IgnoreBrowserCloseFailure((ILogger)state!, task.Exception!);
+                    },
+                    logger,
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+            }
+        }
+        catch (Exception exception)
+        {
+            LogMessages.IgnoreBrowserCloseFailure(logger, exception);
+        }
+
+        try
+        {
+            playwright.Dispose();
+        }
+        catch (Exception)
+        {
+        }
+
+        if (afterDisposeAsync is not null)
+        {
+            try
+            {
+                await afterDisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+            }
+        }
+    }
 
     public async ValueTask DisposeAsync()
         => await DisposeCoreAsync(swallowBrowserCloseFailure: true);
@@ -423,7 +882,38 @@ internal sealed class QidianBrowserSession(
         }
         finally
         {
-            playwright.Dispose();
+            Exception? disposeFailure = null;
+            Exception? afterDisposeFailure = null;
+            try
+            {
+                playwright.Dispose();
+            }
+            catch (Exception exception)
+            {
+                disposeFailure = exception;
+            }
+
+            if (afterDisposeAsync is not null)
+            {
+                try
+                {
+                    await afterDisposeAsync();
+                }
+                catch (Exception exception)
+                {
+                    afterDisposeFailure = exception;
+                }
+            }
+
+            if (disposeFailure is not null)
+            {
+                ExceptionDispatchInfo.Capture(disposeFailure).Throw();
+            }
+
+            if (afterDisposeFailure is not null && closeFailure is null)
+            {
+                ExceptionDispatchInfo.Capture(afterDisposeFailure).Throw();
+            }
         }
 
         if (closeFailure is not null)
@@ -450,8 +940,69 @@ internal sealed class QidianBrowserSession(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        string json = await primaryPage.EvaluateAsync<string>(script);
+        string json = await AwaitWithCancellationAsync(
+            primaryPage.EvaluateAsync<string>(script),
+            cancellationToken);
         return JsonDocument.Parse(json);
+    }
+
+    private static async Task<T> AwaitWithCancellationAsync<T>(
+        Task<T> task,
+        CancellationToken cancellationToken)
+    {
+        await AwaitWithCancellationAsync((Task)task, cancellationToken);
+        return await task;
+    }
+
+    private static async Task AwaitWithCancellationAsync(
+        Task task,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (task.IsCompleted)
+        {
+            if (!task.IsCompletedSuccessfully)
+            {
+                BeforeCompletedTaskFaultCancellationCheckForTests?.Invoke();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            await AwaitBrowserTaskAsync(task, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            return;
+        }
+
+        TaskCompletionSource cancellationCompletion = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using CancellationTokenRegistration registration = cancellationToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            cancellationCompletion);
+        if (await Task.WhenAny(task, cancellationCompletion.Task) != task)
+        {
+            _ = task.ContinueWith(
+                static completedTask => _ = completedTask.Exception,
+                TaskContinuationOptions.OnlyOnFaulted
+                    | TaskContinuationOptions.ExecuteSynchronously);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await AwaitBrowserTaskAsync(task, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private static async Task AwaitBrowserTaskAsync(Task task, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await task;
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationalException(
+                "The browser operation was canceled before completion.",
+                exception);
+        }
     }
 
     private static string? ReadString(JsonElement element, string propertyName)

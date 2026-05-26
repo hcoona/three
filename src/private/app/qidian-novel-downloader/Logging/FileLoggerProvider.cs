@@ -4,17 +4,29 @@ using Microsoft.Extensions.Logging;
 
 namespace Hcoona.QidianNovelDownloader.Logging;
 
-internal sealed class FileLoggerProvider(TimeProvider timeProvider) : ILoggerProvider
+internal sealed class FileLoggerProvider : ILoggerProvider
 {
     private readonly ConcurrentDictionary<string, FileLogger> _loggers =
         new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
-    private readonly string _logDirectory = Path.Combine(
-        AppPaths.GetDefaultStateRoot(),
-        AppConstants.LogsDirectoryName);
+    private readonly TimeProvider _timeProvider;
+    private readonly string _logDirectory;
     private DateOnly? _currentLogDate;
     private string? _currentLogPath;
     private bool _isLogDirectoryReady;
+
+    public FileLoggerProvider(TimeProvider timeProvider)
+        : this(
+            timeProvider,
+            Path.Combine(AppPaths.GetDefaultStateRoot(), AppConstants.LogsDirectoryName))
+    {
+    }
+
+    internal FileLoggerProvider(TimeProvider timeProvider, string logDirectory)
+    {
+        _timeProvider = timeProvider;
+        _logDirectory = Path.GetFullPath(logDirectory);
+    }
 
     public ILogger CreateLogger(string categoryName)
         => _loggers.GetOrAdd(
@@ -33,8 +45,8 @@ internal sealed class FileLoggerProvider(TimeProvider timeProvider) : ILoggerPro
         string message,
         Exception? exception)
     {
-        DateTimeOffset localNow = timeProvider.GetLocalNow();
-        DateTimeOffset utcNow = timeProvider.GetUtcNow();
+        DateTimeOffset localNow = _timeProvider.GetLocalNow();
+        DateTimeOffset utcNow = _timeProvider.GetUtcNow();
         string line =
             $"[{utcNow:yyyy-MM-ddTHH:mm:ss.fffZ}] "
             + $"{logLevel,-11} {categoryName} [{eventId.Id}] {message}";
@@ -46,11 +58,20 @@ internal sealed class FileLoggerProvider(TimeProvider timeProvider) : ILoggerPro
 
         lock (_lock)
         {
-            EnsureLogFilePath(localNow);
-            File.AppendAllText(
-                _currentLogPath!,
-                $"{line}{Environment.NewLine}",
-                Encoding.UTF8);
+            try
+            {
+                EnsureLogFilePath(localNow);
+                AppPaths.EnsureNoReparsePointInExistingPath(_logDirectory);
+                AppPaths.EnsureNotReparsePathIfExists(_currentLogPath!);
+                File.AppendAllText(
+                    _currentLogPath!,
+                    $"{line}{Environment.NewLine}",
+                    Encoding.UTF8);
+                AppPaths.EnsureNotReparsePathIfExists(_currentLogPath!);
+            }
+            catch (Exception logException) when (IsLoggingFailure(logException))
+            {
+            }
         }
     }
 
@@ -58,7 +79,7 @@ internal sealed class FileLoggerProvider(TimeProvider timeProvider) : ILoggerPro
     {
         if (!_isLogDirectoryReady)
         {
-            Directory.CreateDirectory(_logDirectory);
+            AppPaths.CreateDirectoryRejectingReparseAncestors(_logDirectory);
             _isLogDirectoryReady = true;
         }
 
@@ -73,6 +94,11 @@ internal sealed class FileLoggerProvider(TimeProvider timeProvider) : ILoggerPro
             _logDirectory,
             $"qidian-novel-downloader-{localNow:yyyyMMdd}.log");
     }
+
+    private static bool IsLoggingFailure(Exception exception)
+        => exception is IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException;
 
     private sealed class FileLogger(string categoryName, FileLoggerProvider provider) : ILogger
     {

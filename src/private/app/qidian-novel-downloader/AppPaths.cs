@@ -12,6 +12,7 @@ internal static class AppConstants
     public const string LogsDirectoryName = "logs";
     public const string OutputDirectoryName = "output";
     public const string CatalogCacheFileName = "catalog.json";
+    public const string ClearGenerationFileName = ".clear-generation";
     public const string ChaptersDirectoryName = "chapters";
     public const string TruncatedChapterMarker = "……（本章内容未完，需订阅后阅读全文）";
     public const string FailedChapterPlaceholder = "……（本章下载失败，未能获取正文）";
@@ -43,10 +44,11 @@ internal sealed class AppStorageService : IAppStorageService
     public AppStoragePaths EnsureStorage(AppSettings settings)
     {
         AppStoragePaths paths = Resolve(settings);
-        Directory.CreateDirectory(paths.StateRoot);
-        Directory.CreateDirectory(paths.CacheRoot);
-        Directory.CreateDirectory(paths.LogsRoot);
-        Directory.CreateDirectory(paths.OutputRoot);
+        AppPaths.CreateDirectoryRejectingReparseAncestors(paths.StateRoot);
+        AppPaths.CreateDirectoryRejectingReparseAncestors(paths.CacheRoot);
+        AppPaths.CreateDirectoryRejectingReparseAncestors(paths.LogsRoot);
+        AppPaths.CreateDirectoryRejectingReparseAncestors(paths.BrowserProfileRoot);
+        AppPaths.CreateDirectoryRejectingReparseAncestors(paths.OutputRoot);
         return paths;
     }
 }
@@ -163,5 +165,50 @@ internal static class AppPaths
         string os = RuntimeInformation.OSDescription.Trim();
         string architecture = RuntimeInformation.ProcessArchitecture.ToString();
         return $"{os} | {architecture}";
+    }
+
+    internal static string CreateDirectoryRejectingReparseAncestors(string path)
+    {
+        string normalizedPath = Path.GetFullPath(path);
+        EnsureNoReparsePointInExistingPath(normalizedPath);
+        Directory.CreateDirectory(normalizedPath);
+        EnsureNoReparsePointInExistingPath(normalizedPath);
+        return normalizedPath;
+    }
+
+    internal static void EnsureNoReparsePointInExistingPath(string path)
+    {
+        string? root = Path.GetPathRoot(path);
+        string current = root is { Length: > 0 } ? root : string.Empty;
+        string relativePath = root is { Length: > 0 } ? path[root.Length..] : path;
+        foreach (string component in relativePath.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = current.Length == 0 ? component : Path.Combine(current, component);
+            if ((Directory.Exists(current) || File.Exists(current))
+                && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new IOException(
+                    $"Refusing to create directory through reparse point: '{current}'.");
+            }
+        }
+    }
+
+    internal static void EnsureNotReparsePathIfExists(string path)
+    {
+        try
+        {
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new IOException($"Refusing to use reparse point: '{path}'.");
+            }
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
     }
 }

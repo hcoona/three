@@ -48,4 +48,65 @@ public sealed class AppPathsTests
             }
         }
     }
+
+    [Fact]
+    public void EnsureStorageRejectsBrowserProfileRootUnderReparseAncestor()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string outsideRoot = Path.Combine(root, "outside");
+        string linkRoot = Path.Combine(root, "linked-profile-root");
+        try
+        {
+            Directory.CreateDirectory(outsideRoot);
+            if (!CanCreateDirectorySymbolicLink(root))
+            {
+                return;
+            }
+
+            Directory.CreateSymbolicLink(linkRoot, outsideRoot);
+            AppStorageService storageService = new();
+
+            Assert.Throws<IOException>(
+                () => storageService.EnsureStorage(
+                    new AppSettings
+                    {
+                        BrowserProfileDir = Path.Combine(linkRoot, "profile"),
+                        OutputDir = Path.Combine(root, "output"),
+                    }));
+
+            Assert.False(Directory.Exists(Path.Combine(outsideRoot, "profile")));
+        }
+        finally
+        {
+            if (Directory.Exists(linkRoot)
+                && (File.GetAttributes(linkRoot) & FileAttributes.ReparsePoint) != 0)
+            {
+                Directory.Delete(linkRoot);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    private static bool CanCreateDirectorySymbolicLink(string root)
+    {
+        string target = Path.Combine(root, "symlink-target");
+        string link = Path.Combine(root, "symlink-link");
+        Directory.CreateDirectory(target);
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+            Directory.Delete(link);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
 }

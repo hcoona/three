@@ -224,13 +224,15 @@ internal sealed record CatalogSnapshot
         BookMetadata Metadata,
         IReadOnlyList<VolumeDescriptor> Volumes,
         DateTimeOffset FetchedAtUtc,
-        CatalogCacheScope? CacheScope = null)
+        CatalogCacheScope? CacheScope = null,
+        bool IsKnownAnonymous = false)
     {
         this.BookId = BookId;
         this.Metadata = Metadata;
         this.Volumes = Volumes;
         this.FetchedAtUtc = FetchedAtUtc;
         this.CacheScope = CacheScope ?? CatalogCacheScope.Anonymous;
+        this.IsKnownAnonymous = IsKnownAnonymous;
     }
 
     public string BookId { get; init; }
@@ -242,6 +244,8 @@ internal sealed record CatalogSnapshot
     public DateTimeOffset FetchedAtUtc { get; init; }
 
     public CatalogCacheScope CacheScope { get; init; }
+
+    public bool IsKnownAnonymous { get; init; }
 }
 
 internal sealed record ChapterCacheEntry(
@@ -362,7 +366,8 @@ internal sealed record ChapterPlan(
     ChapterDescriptor Chapter,
     ChapterPlanStatus Status,
     ChapterCacheProbe? CachedProbe,
-    ChapterCacheEntry? CachedEntry);
+    ChapterCacheEntry? CachedEntry,
+    bool TreatVipFullContentAsPublic = false);
 
 internal sealed record RenderedChapter(
     string Title,
