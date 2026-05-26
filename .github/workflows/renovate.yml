@@ -117,6 +117,6 @@ jobs:
         env:
           RENOVATE_CONFIG_FILE: .github/renovate/global.cjs
           # The Renovate GitHub App may create dependency branches and PRs, but must not bypass branch protection.
-          # Renovate automerge is limited by renovate.json and remains subject to CI and branch protection.
+          # Renovate automerge is controlled by renovate.json and remains subject to CI and branch protection.
           RENOVATE_TOKEN: ${{ steps.renovate-app-token.outputs.token }}
         run: renovate
