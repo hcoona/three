@@ -9,7 +9,6 @@
     "group:monorepos"
   ],
   "timezone": "Etc/UTC",
-  "schedule": ["before 6am on monday", "before 6am on tuesday"],
   "labels": ["dependencies"],
   "configMigration": true,
   "dependencyDashboard": true,
@@ -33,12 +32,6 @@
     "labels": ["security"]
   },
   "packageRules": [
-    {
-      "description": "Require dashboard approval for major updates.",
-      "matchUpdateTypes": ["major"],
-      "dependencyDashboardApproval": true,
-      "automerge": false
-    },
     {
       "description": "Apps and labs may track fresher tested dependency lower bounds.",
       "matchFileNames": ["src/public/app/**", "src/private/app/**", "src/lab/**"],
@@ -396,9 +389,20 @@
     {
       "description": "Group language runtime mise updates.",
       "matchManagers": ["mise"],
-      "matchDepNames": ["go", "java", "node", "powershell", "python", "ruby"],
+      "matchDepNames": ["core:dotnet", "dotnet", "go", "java", "node", "powershell", "python", "ruby"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "mise language runtimes",
+      "automerge": false
+    },
+    {
+      "description": "Regenerate global.json after mise .NET SDK updates.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["core:dotnet", "dotnet"],
+      "postUpgradeTasks": {
+        "commands": ["mise run update-global-json"],
+        "fileFilters": ["global.json"],
+        "executionMode": "branch"
+      },
       "automerge": false
     },
     {
@@ -436,6 +440,12 @@
       "description": "Do not automerge GitHub Actions, Python, Ruby, NuGet, or mise updates by default.",
       "matchManagers": ["github-actions", "pep621", "bundler", "nuget", "mise"],
       "automerge": false
+    },
+    {
+      "description": "Automerge major updates after CI passes, overriding review-only defaults for major updates only.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": false,
+      "automerge": true
     }
   ]
 }

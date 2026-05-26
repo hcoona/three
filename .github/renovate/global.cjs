@@ -5,5 +5,6 @@ module.exports = {
   requireConfig: 'required',
   allowedCommands: [
     String.raw`^pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts\.ps1$`,
+    String.raw`^mise run update-global-json$`,
   ],
 };
