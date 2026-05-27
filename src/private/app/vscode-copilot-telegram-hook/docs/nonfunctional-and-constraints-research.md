@@ -77,7 +77,9 @@ These decisions were explicitly confirmed after the initial research pass and sh
 ### Product boundary and support matrix
 
 - Formal product support is limited to user-level installation.
-- Repository-local workspace hook configuration exists only for pre-release testing in this repository.
+- Repository-local workspace hook configuration is superseded and intentionally
+  absent; supported hook entry points are the managed VS Code hook file and the
+  Copilot CLI hook file.
 - Official support matrix: Windows and WSL Linux.
 - The earlier concern that hook locality had to be settled before design is not
   treated as an open product-level requirement gap; broader upstream execution
@@ -139,8 +141,13 @@ These decisions were explicitly confirmed after the initial research pass and sh
   introduced beyond the accepted credential-handling prerequisite.
 - Workspace overrides or disabled hook loading are accepted platform limitations.
 - User-level lifecycle support is required for interactive install, unattended install, repeated install, upgrade, uninstall, health diagnostics, test notifications, and configuration diagnostics.
-- The summary-recovery path should rely on the documented `Stop` hook blocking flow rather than on a separately installed custom-instruction artifact.
-- The `Stop`-mediated summary-recovery loop should stop blocking after three validation failures for the same turn.
+- The default summary path should avoid a separately installed
+  custom-instruction artifact and should use hook-emitted notification
+  assignments. Pending assigned summaries may defer without degraded fallback;
+  fallback applies only when no pending handoff can satisfy the `Stop`.
+- Stop-blocking summary recovery from H-008 is superseded for default behavior;
+  it may only be considered as future strict/debug scope and is not implemented
+  by the current redesign.
 
 ### Requirement and design boundary
 
@@ -164,7 +171,7 @@ imposed by the current platform, external APIs, or ecosystem behavior.
 | IC-006 | The `Stop` hook corresponds to the point where the agent session is attempting to stop, but the session may continue afterward.                                                                                                                                                                             | This lifecycle semantic shapes how turn completion can be interpreted.                                                                                                                                   | [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks).                              |
 | IC-007 | In the current observed VS Code environment for this project, `~/.claude/settings.json` becomes an effective user-level hook source only when `"chat.useClaudeHooks": true` is enabled; `chat.hookFilesLocations` leaving that path enabled or explicitly setting it to `true` is not sufficient by itself. | This is a measured platform condition that limits which user-level hook locations can be treated as reliable installation targets without extra compatibility settings.                                  | [`h-006-human-confirmation-2026-03-14-user-hook-location.md`](./h-006-human-confirmation-2026-03-14-user-hook-location.md). |
 | IC-008 | `chat.hookFilesLocations` only supports relative paths or paths that start with `~/`; absolute paths and `\` separators are not supported.                                                                                                                                                                  | Managed installation cannot rely on raw absolute filesystem paths when it registers a dedicated hook JSON file in VS Code settings.                                                                      | [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks).                              |
-| IC-009 | The `Stop` hook can return `hookSpecificOutput` with `decision: "block"` and `reason` to prevent stopping, and the input field `stop_hook_active` indicates when the agent is already continuing because of a previous stop hook.                                                                           | The documented platform already provides a bounded stop-and-regenerate control path for summary recovery, but the implementation must guard against indefinite continuation.                             | [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks).                              |
+| IC-009 | The `Stop` hook can return `hookSpecificOutput` with `decision: "block"` and `reason` to prevent stopping, and the input field `stop_hook_active` indicates when the agent is already continuing because of a previous stop hook.                                                                           | This is a platform capability only. The current default notification flow must not use it for missing or invalid summaries; any blocking recovery belongs to future strict/debug scope.                  | [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks).                              |
 
 ### Telegram Bot API constraints
 

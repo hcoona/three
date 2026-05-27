@@ -45,7 +45,7 @@ jobs:
       validation-build: ${{ steps.authorize.outputs.validation_build }}
       force: ${{ steps.authorize.outputs.force }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Install uv
@@ -85,7 +85,7 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
       - name: Upload authorization diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-planner-diagnostics-v1-${{ github.run_id }}-${{ github.run_attempt }}
           path: .three-workflow-release/entry/planner-diagnostics.json
@@ -129,7 +129,7 @@ jobs:
       matrix:
         publish-node-id: ${{ fromJson(needs.orchestrate.outputs.entry-publish-node-ids) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.authorize-entry.outputs.commit-sha }}
           fetch-depth: 0
@@ -138,11 +138,11 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.orchestrate.outputs.plan-artifact-name }}
           path: .three-workflow-release/plan
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.orchestrate.outputs.entry-publish-handoff-artifact-name }}
           path: .three-workflow-release/handoff
@@ -228,14 +228,14 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
       - name: Upload proof staging
         if: ${{ steps.proofs.outputs.has_proofs == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proof-staging-${{ steps.publish_name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/proofs
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.publish_name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/publish-result.json
@@ -257,7 +257,7 @@ jobs:
       matrix:
         proof: ${{ fromJson(needs.orchestrate.outputs.entry-proof-matrix) }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         id: download
         continue-on-error: true
         with:
@@ -273,7 +273,7 @@ jobs:
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ steps.staged.outputs.present == 'true' }}
         with:
           name: ${{ matrix.proof.name }}
@@ -295,7 +295,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -304,7 +304,7 @@ jobs:
         with:
           version: '0.10.9'
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: .three-workflow-release/artifacts
@@ -366,7 +366,7 @@ jobs:
             --tag-conclusion "$tag_conclusion" \
             --publish-conclusion "$publish_conclusion" \
             --out .three-workflow-release/release-report.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-report-v1-${{ github.run_id }}-${{ github.run_attempt }}
           path: .three-workflow-release/release-report.json

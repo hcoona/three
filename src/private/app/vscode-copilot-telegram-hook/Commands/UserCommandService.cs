@@ -1,3 +1,4 @@
+using System.Globalization;
 using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Hcoona.VsCodeCopilotTelegramHook.Notifications;
 using Microsoft.Extensions.Logging;
@@ -554,10 +555,11 @@ internal sealed class UserCommandService(
                 TranscriptPath = null,
             };
 
-            SummaryRecord summaryRecord = new()
+            NotificationSummary summaryRecord = new()
             {
                 SessionId = context.SessionId,
-                TurnId = context.TurnId,
+                NotificationTurnId = context.TurnId,
+                NotificationNonce = "test",
                 UpdatedAt = now,
                 Summary = string.IsNullOrWhiteSpace(options.Message)
                     ? "这是一条来自 VS Code Copilot Telegram Hook 的测试通知。"
@@ -947,5 +949,5 @@ internal sealed class UserCommandService(
         => timeProvider
             .GetUtcNow()
             .UtcDateTime
-            .ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'");
+            .ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 }

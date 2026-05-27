@@ -1,11 +1,25 @@
 <Project Sdk="Microsoft.Build.Traversal">
+  <ItemGroup>
+    <WindowsOnlyProjectReference Include="src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj">
+      <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    </WindowsOnlyProjectReference>
+  </ItemGroup>
+
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
     <ProjectReference Include="src\**\*.*proj" />
     <ProjectReference Include="tests\**\*.*proj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
-    <ProjectReference Include="src\**\*.*proj" Exclude="src\public\app\ImageOcclusionEditor\ImageOcclusionEditorWinUI3\ImageOcclusionEditorWinUI3.csproj" />
+    <ProjectReference Include="src\**\*.*proj" Exclude="@(WindowsOnlyProjectReference)" />
     <ProjectReference Include="tests\**\*.*proj" />
   </ItemGroup>
+
+  <Target Name="RestoreWindowsOnlyProjectsOnNonWindows" BeforeTargets="Restore" Condition="'$(OS)' != 'Windows_NT'">
+    <MSBuild
+      Projects="@(WindowsOnlyProjectReference)"
+      Targets="Restore"
+      Properties="EnableWindowsTargeting=true;RuntimeIdentifier=%(WindowsOnlyProjectReference.RuntimeIdentifier);RestoreForceEvaluate=$(RestoreForceEvaluate);RestoreLockedMode=$(RestoreLockedMode)"
+      BuildInParallel="true" />
+  </Target>
 </Project>

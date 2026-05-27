@@ -9,6 +9,9 @@
 
     <AssemblyName>qidian-novel-downloader</AssemblyName>
     <RootNamespace>Hcoona.QidianNovelDownloader</RootNamespace>
+
+    <!-- Microsoft.Playwright requires reflection-based System.Text.Json at runtime. -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
 
   <ItemGroup>

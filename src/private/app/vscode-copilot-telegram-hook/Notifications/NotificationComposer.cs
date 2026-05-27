@@ -9,7 +9,9 @@ internal static class NotificationComposer
     private const int ReservedHeadingAndSeparatorLength = 64;
     private const string TruncationMarker = "...";
 
-    public static IReadOnlyList<string> Compose(NotificationContext context, SummaryRecord? summary)
+    public static IReadOnlyList<string> Compose(
+        NotificationContext context,
+        NotificationSummary? summary)
     {
         string bodyText = BuildBodyText(summary);
         int desiredBodyLength = Math.Min(
@@ -108,7 +110,7 @@ internal static class NotificationComposer
         return string.Join("\n", lines);
     }
 
-    private static string BuildBodyText(SummaryRecord? summary)
+    private static string BuildBodyText(NotificationSummary? summary)
     {
         StringBuilder builder = new();
 

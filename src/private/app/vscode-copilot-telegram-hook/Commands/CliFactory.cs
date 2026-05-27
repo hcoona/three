@@ -35,6 +35,7 @@ internal static class CliFactory
         userPromptSubmitCommand.SetAction((ParseResult _, CancellationToken cancellationToken) =>
             hookCommandService.HandleUserPromptSubmitAsync(
                 Console.OpenStandardInput(),
+                Console.OpenStandardOutput(),
                 cancellationToken));
 
         Command stopCommand = new(

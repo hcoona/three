@@ -16,6 +16,7 @@ public sealed class AppPathsTests
             Path.Combine(
                 Path.GetFullPath(workspacePath),
                 ".copilot",
+                "notifications",
                 "sessions",
                 AppPaths.GetSessionDirectoryName(sessionId),
                 AppConstants.SessionLogFileName),

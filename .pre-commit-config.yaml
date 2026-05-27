@@ -145,6 +145,12 @@ repos:
     language: system
     pass_filenames: true
     files: \.env$|[^/]*\.env$|\.env\.[^/]*$|(?:.*/)*\.env$|(?:.*/)*[^/]*\.env$|(?:.*/)*\.env\.[^/]*$
+  - id: global-json
+    name: Global Json
+    entry: pwsh -NoLogo -NoProfile -File eng/pre-commit/Test-PklEvalSync.ps1 -Source global.pkl -Target global.json -Format json
+    language: system
+    pass_filenames: false
+    files: global\.pkl$|global\.json$|mise\.lock$
   - id: pre-commit-config
     name: Pre Commit Config
     entry: pwsh -NoLogo -NoProfile -File eng/pre-commit/Test-PklEvalSync.ps1 -Source .pre-commit-config.pkl -Target .pre-commit-config.yaml -Format yaml

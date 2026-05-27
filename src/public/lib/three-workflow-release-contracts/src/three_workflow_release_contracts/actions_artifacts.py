@@ -479,7 +479,7 @@ def actions_download_artifact_inputs(
     *,
     path: str | None = None,
 ) -> dict[str, str]:
-    """Prepare `actions/download-artifact@v4` inputs using artifact ID."""
+    """Prepare `actions/download-artifact@v8` inputs using artifact ID."""
     inputs = {"artifact-ids": str(admission.artifact.artifact_id)}
     if path is not None:
         inputs["path"] = path

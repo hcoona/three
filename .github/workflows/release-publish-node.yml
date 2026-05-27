@@ -54,7 +54,7 @@ jobs:
       proof-matrix: ${{ steps.proofs.outputs.proof_matrix }}
       proof-staging-artifact-name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.commit-sha }}
           fetch-depth: 0
@@ -64,7 +64,7 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.plan-artifact-name }}
           path: .three-workflow-release/plan
@@ -160,14 +160,14 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
       - name: Upload proof staging
         if: ${{ steps.proofs.outputs.has_proofs == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/proofs
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/publish-result.json
@@ -195,7 +195,7 @@ jobs:
       proof-matrix: ${{ steps.proofs.outputs.proof_matrix }}
       proof-staging-artifact-name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.commit-sha }}
           fetch-depth: 0
@@ -205,7 +205,7 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.plan-artifact-name }}
           path: .three-workflow-release/plan
@@ -301,14 +301,14 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
       - name: Upload proof staging
         if: ${{ steps.proofs.outputs.has_proofs == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/proofs
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/publish-result.json
@@ -336,7 +336,7 @@ jobs:
       proof-matrix: ${{ steps.proofs.outputs.proof_matrix }}
       proof-staging-artifact-name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.commit-sha }}
           fetch-depth: 0
@@ -346,7 +346,7 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.plan-artifact-name }}
           path: .three-workflow-release/plan
@@ -416,14 +416,14 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
       - name: Upload proof staging
         if: ${{ steps.proofs.outputs.has_proofs == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/proofs
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/publish-result.json
@@ -450,7 +450,7 @@ jobs:
       proof-matrix: ${{ steps.proofs.outputs.proof_matrix }}
       proof-staging-artifact-name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.commit-sha }}
           fetch-depth: 0
@@ -460,7 +460,7 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.plan-artifact-name }}
           path: .three-workflow-release/plan
@@ -530,14 +530,14 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
       - name: Upload proof staging
         if: ${{ steps.proofs.outputs.has_proofs == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/proofs
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/publish-result.json
@@ -565,7 +565,7 @@ jobs:
       proof-matrix: ${{ steps.proofs.outputs.proof_matrix }}
       proof-staging-artifact-name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.commit-sha }}
           fetch-depth: 0
@@ -574,7 +574,7 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.plan-artifact-name }}
           path: .three-workflow-release/plan
@@ -644,14 +644,14 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
       - name: Upload proof staging
         if: ${{ steps.proofs.outputs.has_proofs == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/proofs
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/publish-result.json
@@ -678,7 +678,7 @@ jobs:
       proof-matrix: ${{ steps.proofs.outputs.proof_matrix }}
       proof-staging-artifact-name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.commit-sha }}
           fetch-depth: 0
@@ -687,7 +687,7 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.plan-artifact-name }}
           path: .three-workflow-release/plan
@@ -757,14 +757,14 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
       - name: Upload proof staging
         if: ${{ steps.proofs.outputs.has_proofs == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proof-staging-${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/proofs
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.name.outputs.publish_result_artifact_name }}
           path: .three-workflow-release/publish-result.json
@@ -786,11 +786,11 @@ jobs:
       matrix:
         proof: ${{ fromJson(needs.publish-github-release-with-environment.outputs.proof-matrix || needs.publish-github-release-without-environment.outputs.proof-matrix) }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.publish-github-release-with-environment.outputs.proof-staging-artifact-name || needs.publish-github-release-without-environment.outputs.proof-staging-artifact-name }}
           path: .three-workflow-release/proofs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.proof.name }}
           path: .three-workflow-release/proofs/${{ matrix.proof.file }}
@@ -812,11 +812,11 @@ jobs:
       matrix:
         proof: ${{ fromJson(needs.publish-github-packages-with-environment.outputs.proof-matrix || needs.publish-github-packages-without-environment.outputs.proof-matrix) }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.publish-github-packages-with-environment.outputs.proof-staging-artifact-name || needs.publish-github-packages-without-environment.outputs.proof-staging-artifact-name }}
           path: .three-workflow-release/proofs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.proof.name }}
           path: .three-workflow-release/proofs/${{ matrix.proof.file }}
@@ -838,11 +838,11 @@ jobs:
       matrix:
         proof: ${{ fromJson(needs.publish-external-oidc-with-environment.outputs.proof-matrix || needs.publish-external-oidc-without-environment.outputs.proof-matrix) }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.publish-external-oidc-with-environment.outputs.proof-staging-artifact-name || needs.publish-external-oidc-without-environment.outputs.proof-staging-artifact-name }}
           path: .three-workflow-release/proofs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.proof.name }}
           path: .three-workflow-release/proofs/${{ matrix.proof.file }}

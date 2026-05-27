@@ -31,7 +31,7 @@ jobs:
       request-artifact-id: ${{ steps.upload-request.outputs.artifact-id }}
       mode: ${{ steps.mode.outputs.mode }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -282,7 +282,7 @@ jobs:
             --out .three-ci-validation/normalize/ci-validation-request.json
       - name: Upload planner-facing request
         id: upload-request
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.refs.outputs.request_artifact_name }}
           path: .three-ci-validation/normalize/ci-validation-request.json
@@ -302,7 +302,7 @@ jobs:
       changed-files-snapshot-artifact-id: ${{ steps.upload-changed-files.outputs.artifact-id }}
       fact-snapshot-artifact-id: ${{ steps.upload-fact-snapshot.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -330,7 +330,7 @@ jobs:
             --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --expected-artifact "{\"artifact-ref\":\"${REQUEST_REF}\",\"artifact-instance-id\":\"${REQUEST_ARTIFACT_ID}\",\"producer-boundary\":\"normalize-input\",\"producer-job\":\"normalize-input\"}"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
@@ -352,7 +352,7 @@ jobs:
             --diagnostics-out .three-ci-validation/plan/planner-diagnostics.json
       - name: Upload validation plan
         id: upload-plan
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.normalize-input.outputs.plan-artifact-name }}
           path: .three-ci-validation/plan/validation-plan.json
@@ -361,7 +361,7 @@ jobs:
           retention-days: 30
       - name: Upload planner diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.normalize-input.outputs.planner-diagnostics-artifact-name }}
           path: .three-ci-validation/plan/planner-diagnostics.json
@@ -370,7 +370,7 @@ jobs:
           retention-days: 30
       - name: Upload changed-files snapshot
         id: upload-changed-files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.normalize-input.outputs.changed-files-snapshot-artifact-name }}
           path: .three-ci-validation/plan/changed-files.json
@@ -379,7 +379,7 @@ jobs:
           retention-days: 30
       - name: Upload fact snapshot
         id: upload-fact-snapshot
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.normalize-input.outputs.fact-snapshot-artifact-name }}
           path: .three-ci-validation/plan/fact-snapshot.json
@@ -406,7 +406,7 @@ jobs:
       windows-execution-batch-matrix: ${{ steps.materialize.outputs.windows_execution_batch_matrix }}
       execution-batch-manifest-artifact-id: ${{ steps.upload-execution-batch-manifest.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -450,13 +450,13 @@ jobs:
             --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             "${expected_artifacts[@]}"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/request
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
@@ -464,14 +464,14 @@ jobs:
           path: .three-ci-validation/plan
       - name: Download changed-files snapshot
         if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download fact snapshot
         if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
           merge-multiple: true
@@ -494,7 +494,7 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
       - name: Upload execution-batch manifest
         id: upload-execution-batch-manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.normalize-input.outputs.execution-batch-manifest-artifact-name }}
           path: .three-ci-validation/materialize/execution-batch-manifest.json
@@ -514,7 +514,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -531,7 +531,7 @@ jobs:
         with:
           version: '0.10.9'
       - name: Install Node.js for JavaScript/TypeScript validation
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '24'
       - name: Enable pnpm for JavaScript/TypeScript validation
@@ -541,13 +541,13 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/request
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
@@ -555,21 +555,21 @@ jobs:
           path: .three-ci-validation/plan
       - name: Download execution-batch manifest
         if: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
         if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download fact snapshot
         if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
           merge-multiple: true
@@ -607,7 +607,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 00
         id: upload-slot-00
         if: ${{ steps.run-slot-00.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-00.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-00.outputs.batch_evidence_upload_path }}
@@ -657,7 +657,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 01
         id: upload-slot-01
         if: ${{ steps.run-slot-01.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-01.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-01.outputs.batch_evidence_upload_path }}
@@ -707,7 +707,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 02
         id: upload-slot-02
         if: ${{ steps.run-slot-02.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-02.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-02.outputs.batch_evidence_upload_path }}
@@ -757,7 +757,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 03
         id: upload-slot-03
         if: ${{ steps.run-slot-03.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-03.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-03.outputs.batch_evidence_upload_path }}
@@ -807,7 +807,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 04
         id: upload-slot-04
         if: ${{ steps.run-slot-04.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-04.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-04.outputs.batch_evidence_upload_path }}
@@ -857,7 +857,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 05
         id: upload-slot-05
         if: ${{ steps.run-slot-05.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-05.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-05.outputs.batch_evidence_upload_path }}
@@ -907,7 +907,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 06
         id: upload-slot-06
         if: ${{ steps.run-slot-06.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-06.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-06.outputs.batch_evidence_upload_path }}
@@ -957,7 +957,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 07
         id: upload-slot-07
         if: ${{ steps.run-slot-07.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-07.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-07.outputs.batch_evidence_upload_path }}
@@ -1007,7 +1007,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 08
         id: upload-slot-08
         if: ${{ steps.run-slot-08.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-08.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-08.outputs.batch_evidence_upload_path }}
@@ -1057,7 +1057,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 09
         id: upload-slot-09
         if: ${{ steps.run-slot-09.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-09.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-09.outputs.batch_evidence_upload_path }}
@@ -1107,7 +1107,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 10
         id: upload-slot-10
         if: ${{ steps.run-slot-10.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-10.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-10.outputs.batch_evidence_upload_path }}
@@ -1157,7 +1157,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 11
         id: upload-slot-11
         if: ${{ steps.run-slot-11.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-11.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-11.outputs.batch_evidence_upload_path }}
@@ -1207,7 +1207,7 @@ jobs:
       - name: Upload ubuntu batch evidence slot 12
         id: upload-slot-12
         if: ${{ steps.run-slot-12.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-12.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-12.outputs.batch_evidence_upload_path }}
@@ -1241,7 +1241,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -1257,13 +1257,13 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/request
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
         with:
           artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
@@ -1271,21 +1271,21 @@ jobs:
           path: .three-ci-validation/plan
       - name: Download execution-batch manifest
         if: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
         if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download fact snapshot
         if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
           merge-multiple: true
@@ -1323,7 +1323,7 @@ jobs:
       - name: Upload windows batch evidence slot 00
         id: upload-slot-00
         if: ${{ steps.run-slot-00.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-00.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-00.outputs.batch_evidence_upload_path }}
@@ -1373,7 +1373,7 @@ jobs:
       - name: Upload windows batch evidence slot 01
         id: upload-slot-01
         if: ${{ steps.run-slot-01.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-01.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-01.outputs.batch_evidence_upload_path }}
@@ -1423,7 +1423,7 @@ jobs:
       - name: Upload windows batch evidence slot 02
         id: upload-slot-02
         if: ${{ steps.run-slot-02.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-02.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-02.outputs.batch_evidence_upload_path }}
@@ -1473,7 +1473,7 @@ jobs:
       - name: Upload windows batch evidence slot 03
         id: upload-slot-03
         if: ${{ steps.run-slot-03.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-03.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-03.outputs.batch_evidence_upload_path }}
@@ -1523,7 +1523,7 @@ jobs:
       - name: Upload windows batch evidence slot 04
         id: upload-slot-04
         if: ${{ steps.run-slot-04.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-04.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-04.outputs.batch_evidence_upload_path }}
@@ -1573,7 +1573,7 @@ jobs:
       - name: Upload windows batch evidence slot 05
         id: upload-slot-05
         if: ${{ steps.run-slot-05.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-05.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-05.outputs.batch_evidence_upload_path }}
@@ -1623,7 +1623,7 @@ jobs:
       - name: Upload windows batch evidence slot 06
         id: upload-slot-06
         if: ${{ steps.run-slot-06.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-06.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-06.outputs.batch_evidence_upload_path }}
@@ -1673,7 +1673,7 @@ jobs:
       - name: Upload windows batch evidence slot 07
         id: upload-slot-07
         if: ${{ steps.run-slot-07.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-07.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-07.outputs.batch_evidence_upload_path }}
@@ -1723,7 +1723,7 @@ jobs:
       - name: Upload windows batch evidence slot 08
         id: upload-slot-08
         if: ${{ steps.run-slot-08.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-08.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-08.outputs.batch_evidence_upload_path }}
@@ -1773,7 +1773,7 @@ jobs:
       - name: Upload windows batch evidence slot 09
         id: upload-slot-09
         if: ${{ steps.run-slot-09.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-09.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-09.outputs.batch_evidence_upload_path }}
@@ -1823,7 +1823,7 @@ jobs:
       - name: Upload windows batch evidence slot 10
         id: upload-slot-10
         if: ${{ steps.run-slot-10.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-10.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-10.outputs.batch_evidence_upload_path }}
@@ -1873,7 +1873,7 @@ jobs:
       - name: Upload windows batch evidence slot 11
         id: upload-slot-11
         if: ${{ steps.run-slot-11.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-11.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-11.outputs.batch_evidence_upload_path }}
@@ -1923,7 +1923,7 @@ jobs:
       - name: Upload windows batch evidence slot 12
         id: upload-slot-12
         if: ${{ steps.run-slot-12.outputs.batch_selected == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run-slot-12.outputs.batch_evidence_bundle_artifact_name }}
           path: ${{ steps.run-slot-12.outputs.batch_evidence_upload_path }}
@@ -1959,7 +1959,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -1985,35 +1985,35 @@ jobs:
             .three-ci-validation/aggregate
       - name: Download CI validation request
         if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/request
       - name: Download validation plan
         if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download execution-batch manifest
         if: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/materialize
       - name: Download changed-files snapshot
         if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/plan
       - name: Download fact snapshot
         if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
           merge-multiple: true
@@ -2081,7 +2081,7 @@ jobs:
       - name: Upload aggregate evidence manifest
         if: always()
         id: upload-aggregate-evidence-manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.normalize-input.outputs.aggregate-evidence-manifest-artifact-name }}
           path: .three-ci-validation/aggregate/aggregate-evidence-manifest.json
@@ -2164,7 +2164,7 @@ jobs:
       - name: Upload aggregate summary
         if: always()
         id: upload-aggregate-summary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.normalize-input.outputs.aggregate-summary-artifact-name }}
           path: .three-ci-validation/aggregate/aggregate-summary.json
@@ -2173,14 +2173,14 @@ jobs:
           retention-days: 30
       - name: Download uploaded aggregate evidence manifest
         if: always() && steps.upload-aggregate-evidence-manifest.outputs.artifact-id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.upload-aggregate-evidence-manifest.outputs.artifact-id }}
           merge-multiple: true
           path: .three-ci-validation/final-uploaded/aggregate-evidence-manifest
       - name: Download uploaded aggregate summary
         if: always() && steps.upload-aggregate-summary.outputs.artifact-id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.upload-aggregate-summary.outputs.artifact-id }}
           merge-multiple: true

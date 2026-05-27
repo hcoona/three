@@ -4999,7 +4999,7 @@ def test_build_variant_restores_tools_and_uploads_failure_diagnostics() -> None:
 
     diagnostics_block = _step_block(workflow, "Upload build diagnostics")
     assert "        if: failure()\n" in diagnostics_block
-    assert "actions/upload-artifact@v4" in diagnostics_block
+    assert "actions/upload-artifact@v7" in diagnostics_block
     assert "build-diagnostics.json" in diagnostics_block
     assert "if-no-files-found: ignore" in diagnostics_block
 
@@ -5021,7 +5021,7 @@ def test_build_variant_sets_up_node_24_for_npm_smoke_builds() -> None:
     )
 
     assert setup_index < build_index
-    assert setup_step["uses"] == "actions/setup-node@v4"
+    assert setup_step["uses"] == "actions/setup-node@v6"
     assert setup_step["with"]["node-version"] == "24"
 
 
@@ -5146,7 +5146,7 @@ def test_ci_validation_workflow_downloads_only_explicit_artifacts() -> None:
 
     for job in workflow["jobs"].values():
         for step in job.get("steps", []):
-            if step.get("uses") != "actions/download-artifact@v4":
+            if step.get("uses") != "actions/download-artifact@v8":
                 continue
             download_steps.append(step)
             with_args = step["with"]
@@ -5264,7 +5264,7 @@ def test_ci_validation_artifact_id_downloads_merge_to_consumer_paths() -> None:
     execution_manifest_downloads = []
     for job in workflow["jobs"].values():
         for step in job.get("steps", []):
-            if step.get("uses") != "actions/download-artifact@v4":
+            if step.get("uses") != "actions/download-artifact@v8":
                 continue
             with_args = step.get("with", {})
             artifact_ids = with_args.get("artifact-ids")
@@ -5402,7 +5402,7 @@ def test_ci_validation_orchestrators_use_internal_dependency_state() -> None:
             "artifact-id state manifest" in str(step.get("name", ""))
             for step in steps
         )
-        assert upload_step["uses"] == "actions/upload-artifact@v4"
+        assert upload_step["uses"] == "actions/upload-artifact@v7"
         assert upload_step["with"]["name"] == (
             "${{ steps.run-slot-00.outputs."
             "batch_evidence_bundle_artifact_name }}"
@@ -6331,7 +6331,7 @@ def test_ci_validation_workflow_checks_canonical_changed_paths() -> None:
 def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
     """PR validation executes on the confirmed head boundary, not merge refs."""
     workflow = _workflow("ci-validate.yml")
-    checkout_count = workflow.count("uses: actions/checkout@v4")
+    checkout_count = workflow.count("uses: actions/checkout@v6")
 
     assert checkout_count > 0
     assert (
@@ -6351,7 +6351,7 @@ def test_ci_validation_execution_batches_use_full_checkout_for_nbgv() -> None:
             "steps"
         ]
         checkout_step = next(
-            step for step in steps if step.get("uses") == "actions/checkout@v4"
+            step for step in steps if step.get("uses") == "actions/checkout@v6"
         )
 
         assert checkout_step["with"]["fetch-depth"] == 0
@@ -10345,7 +10345,7 @@ def test_write_scoped_checkout_steps_do_not_persist_credentials() -> None:
             checkout_steps = [
                 step
                 for step in workflow["jobs"][job_id]["steps"]
-                if step.get("uses") == "actions/checkout@v4"
+                if step.get("uses") == "actions/checkout@v6"
             ]
             assert len(checkout_steps) == 1, (workflow_name, job_id)
             assert checkout_steps[0]["with"]["persist-credentials"] is False, (
@@ -10360,7 +10360,7 @@ def test_hidden_release_artifact_uploads_are_included() -> None:
         workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
         for job_id, job in workflow["jobs"].items():
             for step_index, step in enumerate(job.get("steps", ())):
-                if step.get("uses") != "actions/upload-artifact@v4":
+                if step.get("uses") != "actions/upload-artifact@v7":
                     continue
                 with_inputs = step.get("with", {})
                 path = str(with_inputs.get("path", ""))
@@ -10393,7 +10393,7 @@ def test_official_entry_publish_sets_up_npm_trusted_runtime() -> None:
     setup_index, setup_step = next(
         (index, step)
         for index, step in enumerate(steps)
-        if step.get("uses") == "actions/setup-node@v4"
+        if step.get("uses") == "actions/setup-node@v6"
     )
     guard_index, guard_step = next(
         (index, step)

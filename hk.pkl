@@ -297,6 +297,26 @@ local function getTestPklEvalSyncCommand(
   ).join(" ")
 
 local code_generation_guard = new Mapping<String, Step> {
+  ["global-json"] {
+    local file_list =
+      List(
+        "global.pkl",
+        "global.json",
+        "mise.lock",
+      )
+    profiles = List("small")
+    glob = file_list
+    stage = file_list
+    check =
+      getTestPklEvalSyncCommand(
+        "global.pkl",
+        "global.json",
+        "json",
+        List(),
+      )
+    fix = "pkl eval -f json global.pkl -o global.json"
+  }
+
   ["pre-commit-config"] {
     local file_list =
       List(

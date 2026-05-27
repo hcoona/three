@@ -206,22 +206,23 @@ practical.
 
 The harder part for this project is not merely correlating **hook invocation A** with **hook invocation B**.
 
-The harder part is ensuring that the current turn's summary file exists and is
-valid when the agent tries to stop.
+The harder part is deciding what to do when the current turn's summary file is
+missing or invalid when the agent tries to stop.
 
 ### Why this matters
 
-The summary still needs correlation data, but the documented `Stop` blocking
-path means the hook can validate the already-materialized file, tell the model
-what is missing or malformed, and ask for regeneration at the exact point where
-the model is trying to finish.
+The summary still needs correlation data. The documented `Stop` blocking path is
+a platform capability, but the current default design supersedes H-008's
+blocking direction: pending handoffs may defer notification while unresolved,
+and the `Stop` hook sends a non-blocking degraded fallback only when no pending
+handoff can satisfy the `Stop`.
 
 ### Practical implication
 
 Even though the hook runtime itself already has documented session information,
-the design still needs a summary file and validation rules. What changes is
-that the project no longer needs a separate always-on instruction layer to keep
-the summary file up to date throughout the whole conversation.
+the design still needs a summary handoff protocol and validation rules. What
+changes is that the project no longer needs a separate always-on instruction
+layer to keep the summary file up to date throughout the whole conversation.
 
 ## Project-Specific Implications
 
@@ -236,19 +237,21 @@ then the documented fields `sessionId` and `cwd` may already be enough.
 
 In that narrower design, a separate session initialization step is **not obviously required** by the official docs.
 
-### Conclusion 2: `Stop` blocking can replace the separate instruction dependency
+### Conclusion 2: non-blocking `Stop` fallback replaces default blocking recovery
 
 If the design requires:
 
 - the agent to write a summary file for the current turn, and
-- the `Stop` hook to refuse finishing until the file is valid,
+- the `Stop` hook to decide what to do when that file is missing or invalid,
 
-then the official `Stop` output contract already provides a documented control
-path for that design.
+then the official `Stop` output contract provides enough lifecycle context to
+validate the handoff and send a degraded fallback notification without blocking
+the agent.
 
-This means the project can move the summary-recovery loop into the `Stop` hook
-itself instead of relying on a separately installed instruction file to keep
-the summary synchronized throughout the whole conversation.
+This means the project can move summary handoff validation into the `Stop` hook
+itself instead of relying on a separately installed instruction file to keep the
+summary synchronized throughout the whole conversation. Blocking regeneration is
+not the current default behavior; it is only a possible future strict/debug mode.
 
 ### Conclusion 3: repository-defined correlation identifiers are optional
 
@@ -286,15 +289,18 @@ A design that writes or seeds correlation state at `SessionStart` is better unde
 
 ## Project Design Options After This Research
 
-Based on the surveyed documentation and the later design correction in H-008,
-this project has at least two plausible directions, but one is now clearly the
-preferred direction.
+Based on the surveyed documentation and the later supersession of H-008 default
+blocking, this project has at least two plausible directions. The current
+default direction is non-blocking degraded fallback.
 
-### Option A — Use `Stop` blocking as the primary summary-recovery loop
+### Option A — Superseded for default: use `Stop` blocking as summary recovery
 
 Use the documented `Stop` hook blocking output to validate the current turn's
 summary file, explain validation failures, and require regeneration before the
 agent is allowed to finish.
+
+This option is superseded for default behavior. It may only be revisited as a
+future strict/debug mode.
 
 #### Pros
 
@@ -307,9 +313,13 @@ agent is allowed to finish.
 - requires bounded retry logic to avoid indefinite continuation,
 - still needs a concrete summary-file schema and validator.
 
-### Option B — Use `SessionStart` to seed explicit correlation state
+### Option B — Current default: use assignments plus non-blocking Stop fallback
 
-Use `SessionStart` to create explicit shared correlation state and let the agent reuse that state later.
+Use hook-emitted notification assignments and explicit runtime state to
+correlate summaries. At `Stop`, validate the assigned summary if present; send a
+normal notification when valid. Pending assigned summaries may defer without a
+degraded fallback; send degraded fallback only when no pending handoff can
+satisfy the `Stop`.
 
 #### Pros
 
@@ -319,20 +329,23 @@ Use `SessionStart` to create explicit shared correlation state and let the agent
 #### Cons
 
 - more moving parts,
-- may look like implementation detail when written as a product requirement.
+- requires duplicate suppression and durable delivery coordination.
 
-This remains viable, but H-008 makes it the less preferred direction for the
-current product.
+This is the current default product direction.
 
 ## Bottom Line
 
 Based on the official docs surveyed here:
 
 1. **Yes**, VS Code hook input already includes enough documented information to identify the current session inside hook scripts.
-2. **Yes**, the official `Stop` output contract provides a documented way to block stopping, explain validation failures, and ask the model to continue.
-3. The remaining design problem is therefore not whether the platform can support summary recovery, but how to define a concrete summary-file validator and how to bound retries safely.
+2. **Yes**, the official `Stop` output contract provides a documented way to block stopping, but default notification behavior in this project must not use it for missing or invalid summaries.
+3. The remaining design problem is therefore how to define a concrete summary handoff validator, degraded fallback behavior, and durable duplicate suppression.
 4. Therefore, the current preferred project direction is:
 
 - maintain per-turn summary state in workspace runtime files;
 - validate that file at `Stop` time;
-- block stopping with a regeneration reason until validation passes or the bounded retry limit is reached.
+- send a normal notification when the summary is valid;
+- defer when a pending handoff may still satisfy the `Stop`, otherwise send a
+  non-blocking degraded fallback notification when the summary is missing or
+  invalid;
+- reserve `decision: "block"` only for future strict/debug recovery scope, not default behavior.

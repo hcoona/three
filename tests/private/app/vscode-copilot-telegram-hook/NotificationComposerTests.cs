@@ -22,7 +22,7 @@ public sealed class NotificationComposerTests
     public void ComposeSplitsOverlengthNotificationsIntoMultipleMessages()
     {
         NotificationContext context = CreateContext();
-        SummaryRecord summaryRecord = new()
+        NotificationSummary summaryRecord = new()
         {
             Summary = string.Join(
                 Environment.NewLine,
@@ -48,7 +48,7 @@ public sealed class NotificationComposerTests
         NotificationContext context = CreateContext(
             workspacePath: "/very-long/" + new string('w', 6000),
             transcriptPath: "/very-long/" + new string('t', 6000));
-        SummaryRecord summaryRecord = new()
+        NotificationSummary summaryRecord = new()
         {
             Summary = "Short summary that must remain visible.",
         };

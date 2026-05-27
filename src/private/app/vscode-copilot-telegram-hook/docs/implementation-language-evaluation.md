@@ -136,7 +136,7 @@ implementation language must support the following practical work well:
    secret-store tooling.
 5. Send HTTPS requests to Telegram with limited retry.
 6. Escape Telegram HTML correctly and split long notifications safely.
-7. Install and update user-level hook and instructions configuration while
+7. Install and update user-level hook and runtime configuration while
    preserving conflicting user configuration safely.
 8. Provide diagnostics and unattended lifecycle support.
 9. Operate cleanly across Windows and WSL Linux.

@@ -31,8 +31,8 @@
     "version:preview": "node ./scripts/nbgv-version.mjs preview"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "@typescript/native-preview": "^7.0.0-dev.20260411.1",
+    "@types/node": "^24.0.0",
+    "@typescript/native-preview": "^7.0.0-dev.20260523.1",
     "@wxt-dev/auto-icons": "^1.1.1",
     "nerdbank-gitversioning": "^3.7.91",
     "typescript": "^6.0.3",

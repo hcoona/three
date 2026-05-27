@@ -20,8 +20,9 @@ This document defines **functional requirements only** for the VS Code GitHub Co
 Non-functional requirements and implementation constraints are intentionally excluded from this document and are tracked separately in [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md).
 
 Unless explicitly stated otherwise, this document does not standardize any
-particular script structure, file layout, storage mechanism, internal field
-name, or external summary-file schema.
+particular script structure, storage mechanism, or internal field name. The
+per-turn `summary.json` handoff path and fields described below are part of the
+supported notification contract.
 
 ## Terms
 
@@ -31,8 +32,8 @@ name, or external summary-file schema.
 - **Correlation context**: the data used to associate summary generation and Telegram delivery with the correct Copilot session and workspace.
 - **Tracked result**: the completed turn result that the solution correlates across summary generation and Telegram delivery.
 - **Summary record**: summary content prepared for a tracked result before
-  notification delivery. Its internal representation is implementation-defined
-  and is not itself a stable product contract.
+  notification delivery. For the assigned per-turn handoff, this is the
+  `summary.json` file named by the Notification Assignment.
 
 ## Functional Scope
 
@@ -94,17 +95,31 @@ The summary handoff for a tracked result shall support, at minimum:
 
 The solution shall provide a way for Copilot to update the summary content before it finishes work for the current chat turn.
 
-### FR-009 Stop-mediated summary recovery
+### FR-009 Default non-blocking summary fallback
 
-When the current turn's summary record is missing or invalid at `Stop`, the solution shall be able to block stopping, explain the validation failure, and require Copilot to regenerate the summary record.
+When the current tracked result's summary record is missing or invalid at
+`Stop`, the default behavior shall not block stopping. If the missing or invalid
+record represents a pending handoff that may still satisfy the same `Stop`, the
+solution may defer notification without sending a fallback indefinitely while it
+remains unresolved. Otherwise, the solution shall send a degraded fallback
+notification that explicitly indicates the summary is missing or unusable.
+Strict/debug summary-recovery modes, if introduced later, are outside the
+default functional scope.
 
-### FR-010 Bounded stop blocking
+### FR-010 No default Stop blocking
 
-The stop-mediated summary-recovery loop shall stop blocking after at most three validation failures for the same tracked result.
+The default `Stop` hook behavior shall not return a blocking decision for
+missing or invalid summary content. Bounded blocking recovery is superseded for
+the default notification flow and remains out of scope unless a future
+strict/debug mode explicitly opts into it.
 
-### FR-011 Delivery independence from structured summary schema
+### FR-011 Assigned summary handoff contract
 
-Notification delivery shall not depend on the presence of a stable externally supported summary schema or a structured status field.
+Notification delivery shall validate the assigned per-turn `summary.json` path
+from the Notification Assignment. A completed delivery summary requires matching
+`session_id`, `notification_turn_id`, and `notification_nonce`, a valid
+UTC `updated_at` timestamp, and a non-empty human-readable `summary`. Pending and
+degraded handling shall follow the Stop fallback rules in FR-009 and FR-015.
 
 ### FR-012 Summary language preference
 
@@ -120,7 +135,10 @@ For this solution, the end-of-turn notification trigger shall correspond to the 
 
 ### FR-015 Missing-summary fallback
 
-If the current `Stop` event does not have usable summary content, the solution shall still send a notification and shall explicitly indicate that the summary is missing.
+If the current `Stop` event does not have usable summary content and no pending
+handoff can still satisfy that `Stop`, the solution shall still send a
+notification and shall explicitly indicate that the summary is missing. Pending
+handoffs may defer notification without fallback while unresolved.
 
 ### FR-016 Telegram delivery target
 
@@ -207,9 +225,21 @@ can coordinate without requiring in-memory state to survive across hook invocati
 
 ## Required Summary Semantics
 
-The summary handoff data shall allow Copilot to communicate, for the current tracked result, at minimum:
+The Notification Assignment shall provide Copilot an exact assigned per-turn
+`summary.json` path for the current tracked result. Copilot shall write only
+that assigned path. A completed summary handoff is valid only when it contains:
 
-- a concise human-readable description of what happened when such a description is available, with Chinese preferred on a best-effort basis, or
-- an explicit indication that the summary is missing.
+- `session_id` matching the assigned session,
+- `notification_turn_id` matching the assigned turn,
+- `notification_nonce` matching the assigned nonce,
+- `updated_at` as a valid UTC timestamp, and
+- a non-empty human-readable `summary`, with Chinese preferred on a best-effort
+  basis.
 
-Any additional structure, field names, changed-file lists, outcome labels, or next-step lists are implementation-defined rather than part of the product contract.
+A handoff whose assigned summary is missing, unreadable, invalid JSON, JSON
+`null`, or an exact pending summary for the same `Stop` is pending and may defer
+notification without degraded fallback while unresolved. Non-pending invalid or
+unusable handoffs may produce a degraded fallback only when no pending handoff
+can satisfy the `Stop`. Any additional changed-file lists, outcome labels, or
+next-step lists are implementation-defined rather than part of the product
+contract.
