@@ -29,6 +29,7 @@ from three_workflow_release_contracts import (
     ci_validation_batch_evidence_bundle_id,
     ci_validation_batch_evidence_bundle_payload_digest,
     ci_validation_batch_evidence_candidate_id,
+    ci_validation_batches,
     ci_validation_changed_files_hash,
     ci_validation_changed_files_snapshot_artifact_ref,
     ci_validation_execution_batch_manifest_artifact_ref,
@@ -67,6 +68,7 @@ from three_workflow_release_contracts.ci_validation_batches import (
     _validate_budget,
     _validate_ci_validation_aggregate_evidence_manifest,
     _validate_ci_validation_execution_batch_manifest,
+    _validate_supplied_summary_execution_manifest,
 )
 
 if TYPE_CHECKING:
@@ -5761,6 +5763,26 @@ def test_aggregate_summary_accepts_satisfied_admitted_dependency() -> None:
     )
 
 
+def test_aggregate_summary_manifest_validation_uses_fact_snapshot_context() -> (
+    None
+):
+    """Descriptor-backed plans keep descriptor context during summary freeze."""
+    plan, manifest = _release_plan_and_manifest()
+    context = _release_authorizing_context()
+    issues: list[Any] = []
+
+    assert _validate_supplied_summary_execution_manifest(
+        manifest,
+        plan,
+        _envelope(plan, CiValidationKind.PLAN),
+        request=context["request"],
+        changed_files_snapshot=context["changed_files_snapshot"],
+        fact_snapshot=context["fact_snapshot"],
+        issues=issues,
+    )
+    assert issues == []
+
+
 def test_aggregate_summary_accepts_non_topological_admitted_bundles() -> None:
     """Admitted bundles validate by dependency topology, not input order."""
     (
@@ -5782,6 +5804,103 @@ def test_aggregate_summary_accepts_non_topological_admitted_bundles() -> None:
         changed_files_snapshot=_changed_files_snapshot_document(),
         fact_snapshot=_fact_snapshot_document(),
     )
+
+
+def test_admitted_bundle_topology_passes_only_transitive_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Independent later bundles do not revalidate prior unrelated bundles."""
+    bundles = [
+        {"batch": {"batch-id": "base", "depends-on-batches": []}},
+        {
+            "batch": {
+                "batch-id": "dependent",
+                "depends-on-batches": ["base"],
+            },
+        },
+        {"batch": {"batch-id": "independent", "depends-on-batches": []}},
+    ]
+    dependency_ids_by_batch: dict[str, list[str]] = {}
+
+    def fake_validate(
+        bundle: Mapping[str, object],
+        **kwargs: object,
+    ) -> None:
+        batch = cast("Mapping[str, object]", bundle["batch"])
+        dependency_bundles = cast(
+            "Sequence[Mapping[str, object]]",
+            kwargs["dependency_evidence_bundles"],
+        )
+        dependency_ids_by_batch[str(batch["batch-id"])] = [
+            str(cast("Mapping[str, object]", dependency["batch"])["batch-id"])
+            for dependency in dependency_bundles
+        ]
+
+    monkeypatch.setattr(
+        ci_validation_batches,
+        "validate_ci_validation_batch_evidence_bundle",
+        fake_validate,
+    )
+    monkeypatch.setattr(
+        ci_validation_batches,
+        "_trusted_dependency_bundle_from_manifest",
+        lambda bundle, _manifest_rows: bundle,
+    )
+
+    issues: list[Any] = []
+    _validate_admitted_bundles_topologically(
+        bundles,
+        plan=None,
+        request=None,
+        execution_batch_manifest=None,
+        changed_files_snapshot=None,
+        fact_snapshot=None,
+        envelope=None,
+        issues=issues,
+    )
+
+    assert issues == []
+    assert dependency_ids_by_batch == {
+        "base": [],
+        "dependent": ["base"],
+        "independent": [],
+    }
+
+
+def test_admitted_bundle_topology_reports_dependency_cycles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No-progress topology validation reports cycles instead of crashing."""
+    bundles = [
+        {"batch": {"batch-id": "first", "depends-on-batches": ["second"]}},
+        {"batch": {"batch-id": "second", "depends-on-batches": ["first"]}},
+    ]
+
+    def fake_validate(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError
+
+    monkeypatch.setattr(
+        ci_validation_batches,
+        "validate_ci_validation_batch_evidence_bundle",
+        fake_validate,
+    )
+
+    issues: list[Any] = []
+    _validate_admitted_bundles_topologically(
+        bundles,
+        plan=None,
+        request=None,
+        execution_batch_manifest=None,
+        changed_files_snapshot=None,
+        fact_snapshot=None,
+        envelope=None,
+        issues=issues,
+    )
+
+    assert [issue.path for issue in issues] == [
+        "admitted_batch_evidence_bundles[0].batch.depends-on-batches",
+        "admitted_batch_evidence_bundles[1].batch.depends-on-batches",
+    ]
 
 
 def test_admitted_bundle_topology_errors_include_argument_path() -> None:

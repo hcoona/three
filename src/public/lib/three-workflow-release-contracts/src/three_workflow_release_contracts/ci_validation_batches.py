@@ -2471,7 +2471,10 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
             execution_batch_manifest,
             plan,
             envelope,
-            issues,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            issues=issues,
         )
     )
     authoritative_execution_batch_manifest = None
@@ -2737,10 +2740,14 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
         raise ContractValidationError(issues)
 
 
-def _validate_supplied_summary_execution_manifest(
+def _validate_supplied_summary_execution_manifest(  # noqa: PLR0913
     execution_batch_manifest: Mapping[str, object] | None,
     plan: Mapping[str, object] | None,
     envelope: CommonEnvelope | None,
+    *,
+    request: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> bool:
     if execution_batch_manifest is None:
@@ -2750,12 +2757,22 @@ def _validate_supplied_summary_execution_manifest(
         _validate_ci_validation_execution_batch_manifest(
             execution_batch_manifest,
             plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
             expected_envelope=envelope,
             expected_run_id=envelope.run_id if envelope is not None else None,
             expected_run_attempt=(
                 envelope.run_attempt if envelope is not None else None
             ),
-            authorizing=False,
+            authorizing=(
+                plan is not None
+                and _authorizing_context_supplied(
+                    request=request,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                )
+            ),
             _allow_planless_non_authorizing_batches=(
                 _allow_planless_execution_manifest_diagnostic(
                     plan,
@@ -11464,13 +11481,35 @@ def _validate_admitted_bundles_topologically(  # noqa: PLR0913
     envelope: CommonEnvelope | None,
     issues: list[ValidationIssue],
 ) -> None:
-    validated_dependency_bundles: list[Mapping[str, object]] = []
+    bundle_by_batch_id = {
+        batch_id: bundle
+        for bundle in bundles
+        if (batch_id := _batch_id_from_evidence_bundle(bundle)) is not None
+    }
+    validated_by_batch_id: dict[str, Mapping[str, object]] = {}
     pending = list(enumerate(bundles))
     last_errors: dict[int, ContractValidationError] = {}
     while pending:
         next_pending: list[tuple[int, Mapping[str, object]]] = []
         progressed = False
         for index, bundle in pending:
+            batch_id = _batch_id_from_evidence_bundle(bundle)
+            if batch_id is not None and not _bundle_dependencies_validated(
+                batch_id,
+                bundle_by_batch_id=bundle_by_batch_id,
+                validated_by_batch_id=validated_by_batch_id,
+            ):
+                next_pending.append((index, bundle))
+                continue
+            dependency_bundles = (
+                _validated_dependency_bundles_for_batch(
+                    batch_id,
+                    bundle_by_batch_id=bundle_by_batch_id,
+                    validated_by_batch_id=validated_by_batch_id,
+                )
+                if batch_id is not None
+                else ()
+            )
             try:
                 validate_ci_validation_batch_evidence_bundle(
                     bundle,
@@ -11485,24 +11524,34 @@ def _validate_admitted_bundles_topologically(  # noqa: PLR0913
                     expected_run_attempt=(
                         envelope.run_attempt if envelope is not None else None
                     ),
-                    dependency_evidence_bundles=validated_dependency_bundles,
+                    dependency_evidence_bundles=dependency_bundles,
                 )
             except ContractValidationError as error:
                 last_errors[index] = error
                 next_pending.append((index, bundle))
                 continue
-            validated_dependency_bundles.append(
-                _trusted_dependency_bundle_from_manifest(
-                    bundle,
-                    manifest_rows or {},
+            if batch_id is not None:
+                validated_by_batch_id[batch_id] = (
+                    _trusted_dependency_bundle_from_manifest(
+                        bundle,
+                        manifest_rows or {},
+                    )
                 )
-            )
             progressed = True
         if not next_pending:
             break
         if not progressed:
             for index, _bundle in next_pending:
                 path_prefix = f"admitted_batch_evidence_bundles[{index}]"
+                error = last_errors.get(index)
+                if error is None:
+                    issues.append(
+                        ValidationIssue(
+                            f"{path_prefix}.batch.depends-on-batches",
+                            "could not resolve dependency topology",
+                        )
+                    )
+                    continue
                 issues.extend(
                     ValidationIssue(
                         _prefixed_validation_issue_path(
@@ -11511,10 +11560,85 @@ def _validate_admitted_bundles_topologically(  # noqa: PLR0913
                         ),
                         issue.message,
                     )
-                    for issue in last_errors[index].issues
+                    for issue in error.issues
                 )
             break
         pending = next_pending
+
+
+def _batch_id_from_evidence_bundle(
+    bundle: Mapping[str, object],
+) -> str | None:
+    batch = bundle.get("batch")
+    if isinstance(batch, Mapping) and isinstance(batch.get("batch-id"), str):
+        return str(batch["batch-id"])
+    return None
+
+
+def _batch_dependency_ids_from_evidence_bundle(
+    bundle: Mapping[str, object],
+) -> tuple[str, ...]:
+    batch = bundle.get("batch")
+    if not isinstance(batch, Mapping):
+        return ()
+    return tuple(
+        str(item)
+        for item in _sequence(batch.get("depends-on-batches", []))
+        if isinstance(item, str)
+    )
+
+
+def _bundle_dependencies_validated(
+    batch_id: str,
+    *,
+    bundle_by_batch_id: Mapping[str, Mapping[str, object]],
+    validated_by_batch_id: Mapping[str, Mapping[str, object]],
+) -> bool:
+    for dependency_id in _batch_dependency_ids_from_evidence_bundle(
+        bundle_by_batch_id[batch_id]
+    ):
+        if dependency_id not in bundle_by_batch_id:
+            continue
+        if dependency_id not in validated_by_batch_id:
+            return False
+        if not _bundle_dependencies_validated(
+            dependency_id,
+            bundle_by_batch_id=bundle_by_batch_id,
+            validated_by_batch_id=validated_by_batch_id,
+        ):
+            return False
+    return True
+
+
+def _validated_dependency_bundles_for_batch(
+    batch_id: str,
+    *,
+    bundle_by_batch_id: Mapping[str, Mapping[str, object]],
+    validated_by_batch_id: Mapping[str, Mapping[str, object]],
+) -> tuple[Mapping[str, object], ...]:
+    dependency_bundles: list[Mapping[str, object]] = []
+    visited: set[str] = set()
+
+    def append_dependency(dependency_id: str) -> None:
+        if dependency_id in visited:
+            return
+        visited.add(dependency_id)
+        dependency = bundle_by_batch_id.get(dependency_id)
+        if dependency is None:
+            return
+        for transitive_dependency_id in (
+            _batch_dependency_ids_from_evidence_bundle(dependency)
+        ):
+            append_dependency(transitive_dependency_id)
+        validated = validated_by_batch_id.get(dependency_id)
+        if validated is not None:
+            dependency_bundles.append(validated)
+
+    for dependency_id in _batch_dependency_ids_from_evidence_bundle(
+        bundle_by_batch_id[batch_id]
+    ):
+        append_dependency(dependency_id)
+    return tuple(dependency_bundles)
 
 
 def _prefixed_validation_issue_path(prefix: str, path: str) -> str:
