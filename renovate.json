@@ -445,7 +445,7 @@
       "matchManagers": ["mise"],
       "matchDepNames": ["core:dotnet", "dotnet"],
       "postUpgradeTasks": {
-        "commands": ["mise run --skip-tools update-global-json"],
+        "commands": ["pkl eval -f json global.pkl -o global.json"],
         "fileFilters": ["global.json"],
         "executionMode": "branch"
       },

@@ -5,7 +5,7 @@ module.exports = {
   requireConfig: 'required',
   allowedCommands: [
     String.raw`^pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts\.ps1$`,
-    String.raw`^mise run --skip-tools update-global-json$`,
+    String.raw`^pkl eval -f json global\.pkl -o global\.json$`,
     String.raw`^mise install pnpm$`,
     String.raw`^mise run --skip-tools --force update-pnpm-lockfiles$`,
     String.raw`^mise install uv$`,
