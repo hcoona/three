@@ -673,3 +673,10 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 
 - Updated the CI affected-validation LLD to require downloader-produced internal batch admissions before aggregate can verify batch candidates.
 - Replaced stale cross-runner dependency text with same-family-only runner-family admission and cross-family fail-closed topology.
+
+## [2026-05-27] query | Rebaseline Release-Shaped CI Batch Compatibility
+
+- Updated the CI affected-validation LLD so release-shaped batch compatibility is
+  based on executable shape rather than exact artifact or receipt payload shape.
+- Clarified that exact artifact refs, descriptor identity, receipt logical role,
+  profile labels, and obligation IDs remain per-selector equality checks.

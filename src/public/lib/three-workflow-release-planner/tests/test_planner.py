@@ -3209,7 +3209,7 @@ def test_ci_validation_plans_artifact_obligations_keep_shape_granularity() -> (
 
 
 def test_ci_validation_plans_order_artifact_work_after_prerequisites() -> None:
-    """Release-shaped artifact work waits for descriptor and gate work."""
+    """Release-shaped artifact work waits for executable gate work."""
     from three_workflow_release_contracts import (  # noqa: PLC0415
         validate_ci_validation_plan,
     )
@@ -3246,7 +3246,78 @@ def test_ci_validation_plans_order_artifact_work_after_prerequisites() -> None:
         for dependency in cast("Sequence[str]", artifact_group["depends-on"])
     }
 
-    assert dependencies == {"descriptor-validation", "ecosystem-gate"}
+    assert dependencies == {"ecosystem-gate"}
+    assert any(
+        group["kind"] == "descriptor-validation" for group in work_groups
+    )
+
+
+def test_ci_validation_dotnet_batches_do_not_depend_on_ubuntu_descriptors() -> (
+    None
+):
+    """Descriptor evidence is aggregated, not a cross-runner prerequisite."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        materialize_ci_validation_execution_batches,
+        validate_ci_validation_execution_batch_manifest,
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    changed_files = [
+        "src/public/lib/hcoona-release-smoke-github-packages/"
+        "hcoona-release-smoke-github-packages.csproj"
+    ]
+    snapshot = plan_ci_validation_from_repo(_ci_inputs(changed_files))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["work-groups"],
+    )
+    descriptor_group_ids = {
+        str(group["work-group-id"])
+        for group in work_groups
+        if group["kind"] == "descriptor-validation"
+    }
+    dotnet_groups = [
+        group for group in work_groups if group.get("ecosystem") == "dotnet"
+    ]
+
+    assert descriptor_group_ids
+    assert dotnet_groups
+    assert not any(
+        descriptor_group_ids.intersection(
+            cast("Sequence[str]", group["depends-on"]),
+        )
+        for group in dotnet_groups
+    )
+
+    materialization = materialize_ci_validation_execution_batches(
+        plan=snapshot.plan,
+        request=_ci_request(changed_files),
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+        created_at="2026-05-14T21:09:21Z",
+        execution_workflow="CI Validation",
+        expected_run_id="25887422010",
+        expected_run_attempt="1",
+    )
+    manifest = cast("Mapping[str, object]", materialization.manifest)
+    validate_ci_validation_execution_batch_manifest(
+        manifest,
+        plan=snapshot.plan,
+        request=_ci_request(changed_files),
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+        expected_run_id="25887422010",
+        expected_run_attempt="1",
+    )
 
 
 def test_ci_validation_fact_snapshot_workflow_release_owns_catalog_facts() -> (

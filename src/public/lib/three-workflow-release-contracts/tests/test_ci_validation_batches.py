@@ -59,6 +59,7 @@ from three_workflow_release_contracts.ci_validation_batches import (
     _freeze_ci_validation_aggregate_evidence_manifest,
     _materializer_artifact_obligations_by_work_group,
     _materializer_batch_id,
+    _materializer_batch_specs,
     _materializer_budget,
     _materializer_compatibility_key,
     _materializer_compatibility_profile,
@@ -84,6 +85,7 @@ _PLANS_SPEC.loader.exec_module(_PLANS_MODULE)
 
 EXPECTED_FINAL_ARTIFACTS = 2
 EXPECTED_MAX_EXECUTION_BATCHES = 13
+EXPECTED_RELEASE_EXECUTION_SPLIT_BATCHES = 2
 OLD_PER_BATCH_WINDOWS_FLOOR = 4
 CREATED_AT = cast("str", _PLANS_MODULE.CREATED_AT)
 RUN_ATTEMPT = cast("str", _PLANS_MODULE.RUN_ATTEMPT)
@@ -322,14 +324,13 @@ def _release_authorizing_context() -> dict[str, dict[str, object]]:
 
 def _release_batch_bundle() -> dict[str, object]:
     plan, manifest = _release_plan_and_manifest()
-    release_batch_id = (
-        "batch-exec-release-shaped-artifact-python-python-"
-        "df23f2fde0d5ae8ab139cd992b23c54a36206c8cb114bed0e08ed8247c5d1beb"
-    )
     batch = next(
         batch
         for batch in cast("list[dict[str, object]]", manifest["batches"])
-        if batch["batch-id"] == release_batch_id
+        if cast("dict[str, object]", batch["compatibility-profile"])[
+            "release-shaped-profile"
+        ]
+        is not None
     )
     selector = cast("list[dict[str, object]]", batch["ordered-selectors"])[0]
     obligation = cast("list[dict[str, object]]", plan["artifact-obligations"])[
@@ -3822,6 +3823,50 @@ def test_broad_global_materializer_allows_physical_windows_orchestrator() -> (
     assert budget["actual-windows-jobs"] < OLD_PER_BATCH_WINDOWS_FLOOR
 
 
+def test_broad_global_materializer_fits_execution_batch_budget() -> None:
+    """Full-scope materialization covers each work group within budget."""
+    plan = _global_full_scope_plan()
+
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        **_global_full_scope_context_kwargs(),
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+    )
+    manifest = cast("dict[str, object]", materialization.manifest)
+    batches = cast("list[dict[str, object]]", manifest["batches"])
+    selectors = [
+        selector
+        for batch in batches
+        for selector in cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )
+    ]
+    selected_work_group_ids = {
+        cast("str", group["work-group-id"])
+        for group in cast("list[dict[str, object]]", plan["work-groups"])
+        if group["kind"] != "evidence-aggregation"
+    }
+    selector_work_group_ids = [
+        cast("str", selector["work-group-id"]) for selector in selectors
+    ]
+    budget = cast("Mapping[str, object]", manifest["budget"])
+
+    assert len(batches) <= EXPECTED_MAX_EXECUTION_BATCHES
+    assert len(selector_work_group_ids) == len(set(selector_work_group_ids))
+    assert set(selector_work_group_ids) == selected_work_group_ids
+    assert budget["actual-execution-batches"] == len(batches)
+    assert budget["actual-execution-batches"] <= budget["max-execution-batches"]
+    assert budget["pre-final-validation-artifacts"] == (
+        budget["expected-input-non-bundle-validation-artifacts"] + len(batches)
+    )
+    assert budget["actual-validation-artifacts"] == (
+        budget["pre-final-validation-artifacts"]
+        + budget["expected-final-validation-artifacts"]
+    )
+
+
 def test_materializer_supports_ruby_batch_compatibility() -> None:
     """Ruby work groups materialize into registered compatibility profiles."""
     snapshot = _PLANS_MODULE.__dict__["_plan_snapshot"]()
@@ -3945,8 +3990,11 @@ def test_materializer_requires_explicit_current_run_inputs() -> None:
         )
 
 
-def test_materializer_splits_release_batches_by_receipt_shape_only() -> None:
-    """Receipt-only release obligation changes affect profile digests."""
+def _release_materialization_with_alt_obligation(
+    *,
+    extra_ecosystem: str = "python",
+    extra_runner_family: str = "ubuntu",
+) -> dict[str, object]:
     provider = _PLANS_MODULE.__dict__["_descriptor_fact_provider"]()
     catalog = cast("dict[str, object]", provider["target-catalog"])
     entries = cast("list[dict[str, object]]", catalog["entries"])
@@ -3974,6 +4022,8 @@ def test_materializer_splits_release_batches_by_receipt_shape_only() -> None:
 
     receipt_work_group = _PLANS_MODULE.__dict__["_artifact_work_group"]()
     receipt_work_group["work-group-id"] = "wg-artifact-alt-receipt"
+    receipt_work_group["ecosystem"] = extra_ecosystem
+    receipt_work_group["runner-family"] = extra_runner_family
     receipt_work_group["coverage-target"] = {
         "type": "artifact-obligation",
         "id": "artifact-example-alt-receipt",
@@ -4033,45 +4083,149 @@ def test_materializer_splits_release_batches_by_receipt_shape_only() -> None:
         ],
         fact_snapshot_providers=[provider],
     )
-    materialization = materialize_ci_validation_execution_batches(
-        plan=cast("dict[str, object]", snapshot.plan),
-        request=_request_document(),
-        changed_files_snapshot=snapshot.changed_files_snapshot,
-        fact_snapshot=snapshot.fact_snapshot,
-        created_at=CREATED_AT,
-        execution_workflow="CI Validation",
-        expected_run_id=RUN_ID,
-        expected_run_attempt=RUN_ATTEMPT,
+    return cast(
+        "dict[str, object]",
+        materialize_ci_validation_execution_batches(
+            plan=cast("dict[str, object]", snapshot.plan),
+            request=_request_document(),
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=snapshot.fact_snapshot,
+            created_at=CREATED_AT,
+            execution_workflow="CI Validation",
+            expected_run_id=RUN_ID,
+            expected_run_attempt=RUN_ATTEMPT,
+        ).manifest,
     )
+
+
+def test_materializer_coalesces_release_batches_by_execution_shape() -> None:
+    """Artifact and receipt payload differences stay on selectors."""
+    manifest = _release_materialization_with_alt_obligation()
 
     release_batches = [
         batch
         for batch in cast(
             "list[dict[str, object]]",
-            materialization.manifest["batches"],
+            manifest["batches"],
         )
         if cast("dict[str, object]", batch["compatibility-profile"])[
             "release-shaped-profile"
         ]
         is not None
     ]
-    expected_release_batch_count = 2
-    assert len(release_batches) == expected_release_batch_count
-    assert (
-        len({batch["batch-id"] for batch in release_batches})
-        == expected_release_batch_count
+    assert len(release_batches) == 1
+    selectors = cast(
+        "list[dict[str, object]]",
+        release_batches[0]["ordered-selectors"],
     )
-    assert (
-        len(
-            {
-                cast("dict[str, object]", batch["compatibility-profile"])[
-                    "release-shaped-profile-digest"
-                ]
-                for batch in release_batches
-            }
+    assert {selector["work-group-id"] for selector in selectors} == {
+        "wg-artifact",
+        "wg-artifact-alt-receipt",
+    }
+
+
+@pytest.mark.parametrize(
+    ("extra_ecosystem", "extra_runner_family", "expected_values"),
+    [
+        ("ruby", "ubuntu", {"python", "ruby"}),
+        ("python", "windows", {"ubuntu", "windows"}),
+    ],
+)
+def test_materializer_keeps_release_execution_dimensions_split(
+    extra_ecosystem: str,
+    extra_runner_family: str,
+    expected_values: set[str],
+) -> None:
+    """Release-shaped batches still split by ecosystem and runner family."""
+    base_obligation = _PLANS_MODULE.__dict__["_artifact_obligation"]()
+    receipt_obligation = deepcopy(base_obligation)
+    receipt_obligation["artifact-obligation-id"] = (
+        "artifact-example-alt-receipt"
+    )
+    receipt_obligation["work-group-id"] = "wg-artifact-alt-receipt"
+    base_group = _PLANS_MODULE.__dict__["_artifact_work_group"]()
+    receipt_group = _PLANS_MODULE.__dict__["_artifact_work_group"]()
+    receipt_group["work-group-id"] = "wg-artifact-alt-receipt"
+    receipt_group["ecosystem"] = extra_ecosystem
+    receipt_group["runner-family"] = extra_runner_family
+    receipt_group["coverage-target"] = {
+        "type": "artifact-obligation",
+        "id": "artifact-example-alt-receipt",
+    }
+    groups = {
+        "wg-artifact": base_group,
+        "wg-artifact-alt-receipt": receipt_group,
+    }
+
+    specs = _materializer_batch_specs(
+        {
+            "artifact-obligations": [
+                base_obligation,
+                receipt_obligation,
+            ]
+        },
+        groups,
+        ["wg-artifact", "wg-artifact-alt-receipt"],
+    )
+
+    assert len(specs) == EXPECTED_RELEASE_EXECUTION_SPLIT_BATCHES
+    if extra_ecosystem != "python":
+        values = {
+            cast("dict[str, object]", spec["compatibility-profile"])[
+                "ecosystem"
+            ]
+            for spec in specs
+        }
+    else:
+        values = {
+            cast("dict[str, object]", spec["key-payload"])["runner-family"]
+            for spec in specs
+        }
+    assert values == expected_values
+
+
+def test_materializer_keeps_release_artifact_execution_shape_split() -> None:
+    """Release-shaped batches split by artifact execution requirements."""
+    base_obligation = _PLANS_MODULE.__dict__["_artifact_obligation"]()
+    zip_obligation = deepcopy(base_obligation)
+    zip_obligation["artifact-obligation-id"] = "artifact-example-zip"
+    zip_obligation["work-group-id"] = "wg-artifact-zip"
+    cast("dict[str, object]", zip_obligation["artifact"])[
+        "concrete-kind"
+    ] = "zip"
+    base_group = _PLANS_MODULE.__dict__["_artifact_work_group"]()
+    zip_group = _PLANS_MODULE.__dict__["_artifact_work_group"]()
+    zip_group["work-group-id"] = "wg-artifact-zip"
+    zip_group["coverage-target"] = {
+        "type": "artifact-obligation",
+        "id": "artifact-example-zip",
+    }
+    groups = {
+        "wg-artifact": base_group,
+        "wg-artifact-zip": zip_group,
+    }
+
+    specs = _materializer_batch_specs(
+        {"artifact-obligations": [base_obligation, zip_obligation]},
+        groups,
+        ["wg-artifact", "wg-artifact-zip"],
+    )
+    concrete_kinds = set()
+    for spec in specs:
+        execution_shape = cast(
+            "Mapping[str, object]",
+            cast("Mapping[str, object]", spec["key-payload"])[
+                "release-shaped-execution-shape"
+            ],
         )
-        == expected_release_batch_count
-    )
+        artifact_shape = cast(
+            "Mapping[str, object]",
+            execution_shape["artifact"],
+        )
+        concrete_kinds.add(artifact_shape["concrete-kind"])
+
+    assert len(specs) == EXPECTED_RELEASE_EXECUTION_SPLIT_BATCHES
+    assert concrete_kinds == {"wheel", "zip"}
 
 
 def test_execution_batch_manifest_rejects_selector_loss() -> None:

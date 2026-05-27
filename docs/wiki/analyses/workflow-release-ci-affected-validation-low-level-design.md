@@ -1907,14 +1907,17 @@ Selector rules:
     profile differs from the manifest.
     Any batch containing a `release-shaped-artifact` selector must set a non-null,
     stable, path-safe `release-shaped-profile` and `release-shaped-profile-digest`
-    derived from the frozen artifact and release-receipt obligations assigned to
-    that batch. Its digest preimage and equality checks include the frozen
+    derived from the frozen release-shaped execution requirements assigned to that
+    batch. Its digest preimage and equality checks include the frozen
     release-shaped platform, workflow-release executor/toolchain, no-publish
-    posture, and artifact-family requirements, in addition to the obligation
-    identifiers and shape data. Every release-shaped selector in the batch must
-    share that exact proven profile. If the materializer cannot prove shared
-    release-shaped compatibility, it must split the selectors into safe batches or
-    fail post-plan materialization without authorizing executable validation.
+    posture, artifact-family requirements, and the coalesced selector identities.
+    Exact artifact refs, release-receipt logical roles, descriptor identities, and
+    obligation identifiers are not batch-compatibility split dimensions by
+    themselves; they remain selector-owned plan/result equality checks. Every
+    release-shaped selector in the batch must share the same executable
+    compatibility shape. If the materializer cannot prove shared release-shaped
+    compatibility, it must split the selectors into safe batches or fail post-plan
+    materialization without authorizing executable validation.
     Batches with no release-shaped selectors must set both release-shaped profile
     fields to `null`. The compatibility profile does not define release-shaped
     command lines; those details remain owned by release-shaped execution while
@@ -2250,12 +2253,15 @@ release-environment side effects.
 
 Every batch containing a release-shaped selector must carry a non-null, stable,
 path-safe `compatibility-profile.release-shaped-profile` derived from the frozen
-artifact and logical release-shaped receipt obligations assigned to the batch.
-Release-shaped selectors may share one execution batch only when their frozen
-profile, runner family, platform, ecosystem, setup, execution profile,
-workflow-release executor/toolchain requirements, no-publish posture, and artifact
-family are compatible. Those dimensions are not advisory: they are bound into the
-manifest by the `setup-profile`, `execution-profile`, and
+release-shaped execution requirements assigned to the batch. Release-shaped
+selectors may share one execution batch only when their runner family, platform,
+ecosystem, setup, execution profile, workflow-release executor/toolchain
+requirements, no-publish posture, artifact family, concrete artifact kind,
+artifact role, and variant dimensions are compatible. Exact artifact refs,
+release-receipt logical roles, descriptor identities, profile labels, and
+obligation identifiers are selector/result equality data rather than independent
+batch split dimensions. Those execution dimensions are not advisory: they are
+bound into the manifest by the `setup-profile`, `execution-profile`, and
 `release-shaped-profile` digest preimages and equality checks before selectors
 may coalesce. If compatibility cannot be proven, `materialize-execution-batches`
 must split the selectors into separate safe batches or fail post-plan
@@ -2319,13 +2325,15 @@ Rules:
   build executor/tooling path in validation-only/no-publish mode for build and
   test behavior, instead of a simplified CI-only artifact path.
 - Every release-shaped batch has a non-null, stable, path-safe
-  `release-shaped-profile` derived from the frozen artifact and logical
-  release-shaped receipt obligations in that batch. Its digest preimage and
-  equality checks include the frozen platform, workflow-release executor/toolchain,
-  no-publish posture, and artifact-family requirements. Selectors may share a
-  batch only when that profile and their runner, platform, ecosystem, setup,
-  execution, toolchain, no-publish, and artifact-family requirements are
-  compatible.
+  `release-shaped-profile` derived from the frozen release-shaped execution
+  requirements in that batch. Its digest preimage and equality checks include the
+  frozen platform, workflow-release executor/toolchain, no-publish posture,
+  artifact-family, concrete-kind, role, and variant requirements. Selectors may
+  share a batch only when that profile and their runner, platform, ecosystem,
+  setup, execution, toolchain, no-publish, and artifact execution requirements
+  are compatible; exact artifact refs, receipt logical roles, descriptor
+  identities, profile labels, and obligation identifiers remain per-selector
+  equality checks.
 
 A `release-shaped-artifact` per-selector batch evidence row uses
 `category-result.detail` with this minimum shape:
