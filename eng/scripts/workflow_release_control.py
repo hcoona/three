@@ -7780,12 +7780,21 @@ def _ci_aggregate_batch_slots(
     expected_refs = _ci_expected_batch_bundle_refs(execution_batch_manifest)
     bundle_slots: list[Json] = []
     admitted_bundles: list[Mapping[str, object]] = []
+    admitted_bundles_by_batch_id: dict[str, Mapping[str, object]] = {}
+    batches_by_id = {
+        str(batch["batch-id"]): batch
+        for batch in _ci_execution_batches(execution_batch_manifest)
+    }
     for batch in _ci_execution_batches_in_dependency_order(
         execution_batch_manifest,
     ):
         batch_id = str(batch["batch-id"])
         artifact_ref = str(batch["expected-batch-evidence-bundle-ref"])
-        dependency_bundles = list(admitted_bundles)
+        dependency_bundles = _ci_admitted_dependency_bundles_for_batch(
+            batch_id,
+            batches_by_id=batches_by_id,
+            admitted_bundles_by_batch_id=admitted_bundles_by_batch_id,
+        )
         candidates = _ci_aggregate_bundle_candidates(
             root,
             batch_id=batch_id,
@@ -7886,6 +7895,7 @@ def _ci_aggregate_batch_slots(
                     admitted_candidate_id=admitted_candidate_id,
                 )
             )
+            admitted_bundles_by_batch_id[batch_id] = admitted_bundles[-1]
         elif len(valid_candidates) == 1:
             slot_admissibility = "inadmissible"
             slot_diagnostics.append(
@@ -7952,6 +7962,23 @@ def _ci_aggregate_batch_slots(
     )
     bundle_slots.sort(key=lambda item: str(item["batch-id"]))
     return bundle_slots, admitted_bundles, unexpected
+
+
+def _ci_admitted_dependency_bundles_for_batch(
+    batch_id: str,
+    *,
+    batches_by_id: Mapping[str, Mapping[str, object]],
+    admitted_bundles_by_batch_id: Mapping[str, Mapping[str, object]],
+) -> list[Mapping[str, object]]:
+    dependency_batch_ids = _ci_execution_batch_transitive_dependencies(
+        batch_id,
+        batches_by_id,
+    )
+    return [
+        admitted_bundles_by_batch_id[dependency_batch_id]
+        for dependency_batch_id in dependency_batch_ids
+        if dependency_batch_id in admitted_bundles_by_batch_id
+    ]
 
 
 def _ci_execution_batches_in_dependency_order(

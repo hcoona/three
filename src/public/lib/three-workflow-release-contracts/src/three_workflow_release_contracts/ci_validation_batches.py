@@ -1945,6 +1945,12 @@ def _validate_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
         envelope,
         issues,
     )
+    request_input_proven = _input_artifact_authorizes_supplied_document(
+        manifest,
+        "request",
+        envelope,
+        request_context_digest,
+    )
     changed_files_snapshot_context_hash = (
         _validated_changed_files_snapshot_hash_or_none(
             changed_files_snapshot,
@@ -1960,6 +1966,26 @@ def _validate_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
             changed_files_snapshot_context_hash,
         )
     )
+    fact_snapshot_input_proven = (
+        _aggregate_context_input_proven_or_not_required(
+            manifest,
+            "fact-snapshot",
+            envelope,
+            fact_snapshot,
+            _fact_snapshot_context_id_for_authority(fact_snapshot),
+        )
+    )
+    supplied_execution_context_proven = (
+        request_input_proven
+        and _aggregate_context_input_proven_or_not_required(
+            manifest,
+            "changed-files-snapshot",
+            envelope,
+            changed_files_snapshot,
+            changed_files_snapshot_context_hash,
+        )
+        and fact_snapshot_input_proven
+    )
     if plan is None and _aggregate_manifest_has_no_authoritative_plan(manifest):
         _validate_null_plan_identity(manifest, "$", issues)
     execution_batch_manifest_proven = False
@@ -1970,7 +1996,14 @@ def _validate_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
                 execution_batch_manifest,
                 plan,
                 envelope,
-                issues,
+                request=request if supplied_execution_context_proven else None,
+                changed_files_snapshot=changed_files_snapshot
+                if supplied_execution_context_proven
+                else None,
+                fact_snapshot=fact_snapshot
+                if supplied_execution_context_proven
+                else None,
+                issues=issues,
             )
         )
     expected_fact_snapshot_plan_id = _expected_context_plan_id(
@@ -2093,11 +2126,15 @@ def _validate_ci_validation_aggregate_evidence_manifest(  # noqa: PLR0913
         raise ContractValidationError(issues)
 
 
-def _validate_supplied_aggregate_execution_batch_manifest(
+def _validate_supplied_aggregate_execution_batch_manifest(  # noqa: PLR0913
     manifest: Mapping[str, object],
     execution_batch_manifest: Mapping[str, object],
     plan: Mapping[str, object] | None,
     envelope: CommonEnvelope | None,
+    *,
+    request: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> bool:
     execution_manifest_issue_count = len(issues)
@@ -2105,6 +2142,9 @@ def _validate_supplied_aggregate_execution_batch_manifest(
         _validate_ci_validation_execution_batch_manifest(
             execution_batch_manifest,
             plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
             expected_envelope=envelope,
             expected_run_id=envelope.run_id if envelope is not None else None,
             expected_run_attempt=(
@@ -9552,6 +9592,34 @@ def _aggregate_input_admissibility(
     if not isinstance(artifact, Mapping):
         return None
     return artifact.get("admissibility")
+
+
+def _fact_snapshot_context_id_for_authority(
+    fact_snapshot: Mapping[str, object] | None,
+) -> str | None:
+    if fact_snapshot is None:
+        return None
+    snapshot_id = fact_snapshot.get("fact-snapshot-id")
+    return snapshot_id if isinstance(snapshot_id, str) else None
+
+
+def _aggregate_context_input_proven_or_not_required(
+    manifest: Mapping[str, object],
+    input_name: str,
+    envelope: CommonEnvelope | None,
+    supplied_document: Mapping[str, object] | None,
+    expected_digest: str | None,
+) -> bool:
+    if supplied_document is None:
+        return _aggregate_input_admissibility(manifest, input_name) == (
+            "not-required"
+        )
+    return _input_artifact_authorizes_supplied_document(
+        manifest,
+        input_name,
+        envelope,
+        expected_digest,
+    )
 
 
 def _input_artifact_authorizes_supplied_document(  # noqa: PLR0911

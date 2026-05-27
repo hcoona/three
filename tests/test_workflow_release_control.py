@@ -30,6 +30,7 @@ from three_workflow_release_contracts import (
     artifact_physical_name,
     canonical_json_bytes,
     ci_validation_aggregate_evidence_manifest_payload_digest,
+    ci_validation_batch_evidence_bundle_artifact_ref,
     ci_validation_batch_evidence_bundle_payload_digest,
     ci_validation_batch_evidence_candidate_id,
     ci_validation_execution_batch_manifest_payload_digest,
@@ -5034,7 +5035,6 @@ def test_build_variant_sets_up_node_24_for_npm_smoke_builds() -> None:
 
 def test_workflow_helper_invocations_use_uv_workspace_python() -> None:
     """Release workflows invoke helper with workspace packages available."""
-    workflows = REPO_ROOT / ".github/workflows"
     plain_helper = "\n          python eng/scripts/workflow_release_control.py"
     uv_helper = "uv run python eng/scripts/workflow_release_control.py"
 
@@ -7992,7 +7992,6 @@ def test_ci_aggregate_control_boundary_excludes_current_final_refs(
 
 def test_release_workflow_uv_setup_precedes_uv_run() -> None:
     """Every release job installs pinned uv before invoking uv commands."""
-    workflows = REPO_ROOT / ".github/workflows"
     setup_action = (
         "uses: astral-sh/setup-uv@"
         "08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0"
@@ -8030,7 +8029,7 @@ def test_entry_workflows_pass_dispatch_pinned_sha() -> None:
 
 
 def test_release_entry_workflows_are_manual_dispatch_only() -> None:
-    """Release entries are intentionally manual/planner-driven, not tag-push driven."""
+    """Release entries are manual/planner-driven, not tag-push driven."""
     for workflow_name in ("official.yml", "buddy.yml"):
         workflow = yaml.safe_load(_workflow(workflow_name))
 
@@ -15250,6 +15249,102 @@ def test_ci_batch_aggregation_admits_dependent_bundles_topologically() -> None:
             )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_passes_only_transitive_dependency_bundles(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Candidate validation receives only the batch dependency closure."""
+    observed_root = tmp_path / "observed"
+    observed_root.mkdir()
+    batch_refs = {
+        batch_id: ci_validation_batch_evidence_bundle_artifact_ref(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            batch_id=batch_id,
+        )
+        for batch_id in ("batch-a", "batch-b", "batch-c")
+    }
+    manifest = {
+        "batches": [
+            {
+                "batch-id": "batch-a",
+                "depends-on-batches": [],
+                "expected-batch-evidence-bundle-ref": batch_refs["batch-a"],
+            },
+            {
+                "batch-id": "batch-b",
+                "depends-on-batches": [],
+                "expected-batch-evidence-bundle-ref": batch_refs["batch-b"],
+            },
+            {
+                "batch-id": "batch-c",
+                "depends-on-batches": ["batch-a"],
+                "expected-batch-evidence-bundle-ref": batch_refs["batch-c"],
+            },
+        ]
+    }
+    observed_dependencies_by_batch: dict[str, list[str]] = {}
+
+    def fake_bundle_candidates(
+        _root: Path | None,
+        *,
+        batch_id: str,
+        artifact_ref: str,
+        dependency_evidence_bundles: Sequence[Mapping[str, object]],
+        **_kwargs: object,
+    ) -> list[dict[str, object]]:
+        observed_dependencies_by_batch[batch_id] = [
+            cast(
+                "str",
+                cast("Mapping[str, object]", bundle["batch"])["batch-id"],
+            )
+            for bundle in dependency_evidence_bundles
+        ]
+        return [
+            {
+                "bundle": {
+                    "artifact-ref": artifact_ref,
+                    "batch": {"batch-id": batch_id},
+                },
+                "candidate": {
+                    "admissibility": "valid",
+                    "artifact-instance-id": f"{batch_id}-artifact",
+                    "candidate-id": f"{batch_id}-candidate",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(
+        control,
+        "_ci_aggregate_bundle_candidates",
+        fake_bundle_candidates,
+    )
+
+    _slots, admitted_bundles, unexpected = control._ci_aggregate_batch_slots(
+        plan={},
+        request={},
+        execution_batch_manifest=manifest,
+        changed_files_snapshot=None,
+        fact_snapshot=None,
+        input_artifacts={},
+        observed_artifacts_dir=str(observed_root),
+        run_id=batch_contracts.RUN_ID,
+        run_attempt=batch_contracts.RUN_ATTEMPT,
+    )
+
+    assert unexpected == []
+    assert [bundle["batch"]["batch-id"] for bundle in admitted_bundles] == [
+        "batch-a",
+        "batch-b",
+        "batch-c",
+    ]
+    assert observed_dependencies_by_batch == {
+        "batch-a": [],
+        "batch-b": [],
+        "batch-c": ["batch-a"],
+    }
 
 
 def test_ci_batch_aggregation_fails_closed_for_missing_upstream() -> None:
