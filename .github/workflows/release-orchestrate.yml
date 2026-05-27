@@ -149,7 +149,7 @@ permissions:
 env:
   PYTHON_VERSION: '3.14'
   NODE_VERSION: '24'
-  PNPM_VERSION: '10'
+  PNPM_VERSION: '10.33.4'
   RUBY_VERSION: '3.3'
   # SYNC[tool-versions]: keep in step with EXPECTED_*_VERSION in lint-version-consistency job env below.
   # Updating only one side will either cause the lint gate to fail (if env is updated but
@@ -199,7 +199,7 @@ jobs:
     env:
       EXPECTED_PYTHON_VERSION: '3.14'
       EXPECTED_NODE_VERSION: '24'
-      EXPECTED_PNPM_VERSION: '10'
+      EXPECTED_PNPM_VERSION: '10.33.4'
       EXPECTED_RUBY_VERSION: '3.3'
       # SYNC[add-new-language] — add EXPECTED_<LANG>_VERSION: '<version>' here for each new language tool
       # SYNC[tool-versions]: keep in step with the workflow-level env: block above.
@@ -1079,7 +1079,7 @@ jobs:
       # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION, env.NODE_VERSION, env.PNPM_VERSION
       python_version: '3.14'
       node_version: '24'
-      pnpm_version: '10'
+      pnpm_version: '10.33.4'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
       # Defensive: pack_mode uses == true rather than a bare boolean test to prevent
       # string-coercion bugs (e.g., string 'false' being truthy) if this input's type
@@ -1796,7 +1796,7 @@ jobs:
       version: ${{ needs.resolve.outputs.version }}
       # Hardcoded: uses: with: does not support env context; keep in sync with env.NODE_VERSION, env.PNPM_VERSION
       node_version: '24'
-      pnpm_version: '10'
+      pnpm_version: '10.33.4'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
   attest-wxt-enabled:
