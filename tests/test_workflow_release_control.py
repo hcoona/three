@@ -5337,11 +5337,13 @@ def test_ci_validation_aggregate_request_plan_downloads_are_guarded() -> None:
     assert "if" not in aggregate_step
     assert aggregate_step["env"]["REQUEST_ARTIFACT_ID"] == request_output
     assert aggregate_step["env"]["PLAN_ARTIFACT_ID"] == plan_output
-    assert "rm -rf .three-ci-validation/observed-artifacts" in (
-        download_observed_step["run"]
+    assert (
+        "rm -rf .three-ci-validation/observed-artifacts"
+        in (download_observed_step["run"])
     )
-    assert "download-ci-validation-observed-artifacts" in (
-        download_observed_step["run"]
+    assert (
+        "download-ci-validation-observed-artifacts"
+        in (download_observed_step["run"])
     )
     assert (
         "--observed-artifacts-dir .three-ci-validation/observed-artifacts"
@@ -11787,7 +11789,7 @@ def test_ci_batch_summary_recomputes_manifest_with_evidence_timestamp() -> None:
         assert aggregate_manifest["created-at"] == aggregate_started_at
         budgets = cast("dict[str, object]", summary["budgets"])
         assert budgets["aggregate-duration-seconds"] == 99
-        assert summary["reason"]["aggregate-duration-exceeded"] is False
+        assert "aggregate-duration-exceeded" not in summary["reason"]
         assert summary["reason"]["final-evidence-failure"] is False
         assert all(
             failure["kind"] != "final-evidence-failure"
@@ -11888,11 +11890,8 @@ def test_ci_batch_summary_ignores_invalid_started_at_for_envelopes() -> None:
         assert aggregate_manifest["created-at"] == batch_contracts.CREATED_AT
         assert summary["created-at"] == completed_at
         assert budgets["aggregate-duration-seconds"] == 121
-        assert (
-            cast("dict[str, object]", summary["reason"])[
-                "aggregate-duration-exceeded"
-            ]
-            is True
+        assert "aggregate-duration-exceeded" not in cast(
+            "dict[str, object]", summary["reason"]
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -15287,8 +15286,8 @@ def test_ci_batch_aggregation_fails_closed_for_missing_upstream() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_batch_aggregation_fails_closed_for_duration_overrun() -> None:
-    """Aggregate duration budget overruns force final evidence failure."""
+def test_ci_batch_aggregation_preserves_nonblocking_duration_overrun() -> None:
+    """Aggregate duration overruns stay telemetry when evidence is valid."""
     scratch = _ci_batch_bundle_scratch("batch-aggregation-duration-overrun")
     try:
         observed_root = scratch / "observed"
@@ -15321,17 +15320,15 @@ def test_ci_batch_aggregation_fails_closed_for_duration_overrun() -> None:
             started_at="2026-05-14T21:00:00Z",
         )
 
-        assert result == 1
+        assert result == 0
         reason = cast("dict[str, object]", summary["reason"])
         assert reason["fail-closed"] is False
-        assert reason["aggregate-duration-exceeded"] is True
+        assert "aggregate-duration-exceeded" not in reason
         assert reason["final-evidence-failure"] is False
-        assert summary["verdict"] == "failed"
+        assert summary["verdict"] == "passed"
         failures = cast("list[dict[str, object]]", summary["failures"])
-        assert any(
+        assert not any(
             failure["kind"] == "aggregate-duration-exceeded"
-            and cast("dict[str, object]", failure["diagnostic"])["detail"]
-            == "aggregate-duration-exceeded"
             for failure in failures
         )
         assert not any(
@@ -15343,7 +15340,7 @@ def test_ci_batch_aggregation_fails_closed_for_duration_overrun() -> None:
 
 
 def test_ci_batch_aggregation_ceilings_fractional_duration_overrun() -> None:
-    """Sub-second aggregate overruns still exceed the hard max duration."""
+    """Sub-second aggregate overruns are retained as telemetry."""
     scratch = _ci_batch_bundle_scratch(
         "batch-aggregation-fractional-duration-overrun"
     )
@@ -15380,13 +15377,10 @@ def test_ci_batch_aggregation_ceilings_fractional_duration_overrun() -> None:
         )
 
         budgets = cast("dict[str, object]", summary["budgets"])
-        assert result == 1
+        assert result == 0
         assert budgets["aggregate-duration-seconds"] == 121
-        assert (
-            cast("dict[str, object]", summary["reason"])[
-                "aggregate-duration-exceeded"
-            ]
-            is True
+        assert "aggregate-duration-exceeded" not in cast(
+            "dict[str, object]", summary["reason"]
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -15421,10 +15415,10 @@ def test_ci_aggregate_duration_rejects_non_contract_timestamps(
         "2026-05-14T21:10:22Z",
     ],
 )
-def test_ci_batch_aggregation_fails_closed_for_invalid_duration(
+def test_ci_batch_aggregation_preserves_invalid_duration_telemetry(
     started_at: str,
 ) -> None:
-    """Malformed or non-monotonic aggregate timestamps cannot bypass budgets."""
+    """Malformed or non-monotonic aggregate timestamps remain telemetry."""
     scratch = _ci_batch_bundle_scratch("batch-aggregation-invalid-duration")
     try:
         observed_root = scratch / "observed"
@@ -15460,12 +15454,13 @@ def test_ci_batch_aggregation_fails_closed_for_invalid_duration(
 
         budgets = cast("dict[str, object]", summary["budgets"])
         failures = cast("list[dict[str, object]]", summary["failures"])
-        assert result == 1
+        assert result == 0
         assert budgets["aggregate-duration-seconds"] == 121
         reason = cast("dict[str, object]", summary["reason"])
         assert reason["fail-closed"] is False
-        assert reason["aggregate-duration-exceeded"] is True
+        assert "aggregate-duration-exceeded" not in reason
         assert reason["final-evidence-failure"] is False
+        assert summary["verdict"] == "passed"
         assert not any(
             failure["kind"] == "final-evidence-failure" for failure in failures
         )

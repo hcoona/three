@@ -2076,10 +2076,11 @@ Selector rules:
     `actual-validation-artifacts` equal the declared total and remain within the
     20-artifact cap.
     The `aggregate-evidence` boundary must measure its actual aggregate duration
-    in seconds and fail the final required check if the actual duration exceeds
-    `aggregate-max-duration-seconds`. That actual duration is execution-produced
-    final evidence, not pre-execution manifest data; the section 14 aggregate
-    summary schema must record it with the final evidence.
+    in seconds and record it as execution-produced final evidence, not
+    pre-execution manifest data. Observed aggregate duration is telemetry for
+    the performance target; exceeding `aggregate-max-duration-seconds` does not
+    set a reason, emit diagnostics or failure kinds, or fail the final required
+    check.
 
 - Category-specific validation commands may produce provisional result material
   inside an execution batch, but they must not have authority to write
@@ -3168,14 +3169,12 @@ checks that adding those final artifacts keeps the complete validation artifact
 count at or below 20.
 
 Aggregation measures its own duration in seconds. The target remains 1 to 2
-minutes, and `aggregate-max-duration-seconds` must be no greater than 120 seconds.
-If observed aggregate duration exceeds the manifest maximum, the aggregate summary
-records `reason.aggregate-duration-exceeded: true`, emits a
-first-class `aggregate-duration-exceeded` diagnostic with `diagnostic-detail:
-aggregate-duration-exceeded`, and fails the final required check even when all
-validation rows otherwise pass. This is not a `final-evidence-failure`;
-`final-evidence-failure` is reserved for aggregate evidence manifest authority
-diagnostics.
+minutes, and `aggregate-max-duration-seconds` must be no greater than 120
+seconds. Observed aggregate duration is recorded telemetry for the performance
+target only. It is not a correctness contract: exceeding the manifest maximum
+does not set a reason, emit diagnostics or failure kinds, influence verdict
+derivation, or fail the final required check. `final-evidence-failure` remains
+reserved for aggregate evidence manifest authority diagnostics.
 
 The aggregate summary uses:
 
@@ -3226,7 +3225,6 @@ reason:
     blocking-validation-failure: boolean
     inadmissible-batch-evidence: boolean
     namespace-closure-failure: boolean
-    aggregate-duration-exceeded: boolean
     required-input-artifact-failure: boolean
     aggregate-summary-without-manifest: boolean
     final-producer-unverified: boolean
@@ -3294,9 +3292,9 @@ expectation. Every evidence expectation is verdict-relevant: `missing`, `skipped
 and `failed` results must have corresponding `failures` entries. `failure-kind` is
 one of `invalid-plan`, `required-evidence-missing`, `required-evidence-skipped`,
 `blocking-validation-failure`, `inadmissible-batch-evidence`,
-`namespace-closure-failure`, `aggregate-duration-exceeded`,
-`required-input-artifact-failure`, `aggregate-summary-without-manifest`,
-`final-producer-unverified`, `final-evidence-failure`, or `fail-closed`.
+`namespace-closure-failure`, `required-input-artifact-failure`,
+`aggregate-summary-without-manifest`, `final-producer-unverified`,
+`final-evidence-failure`, or `fail-closed`.
 
 For structurally valid plans, `plan-digest`, `mode`, `validation-tree`,
 `affected-range`, `request`, and `scheduled-full` are copied from the frozen plan
@@ -3361,7 +3359,6 @@ identity, or validation success.
 | `required-evidence-skipped`           | aggregation                                 | failed verdict                                                                                |
 | `inadmissible-batch-evidence`         | aggregation                                 | failed verdict                                                                                |
 | `namespace-closure-failure`           | aggregation                                 | failed verdict or no authoritative final aggregate                                            |
-| `aggregate-duration-exceeded`         | aggregation                                 | failed verdict                                                                                |
 | `required-input-artifact-failure`     | aggregation                                 | invalid-plan/no-bundle aggregate or failed verdict                                            |
 | `aggregate-summary-without-manifest`  | aggregation                                 | failed verdict when summary cannot use manifest authority                                     |
 | `final-producer-unverified`           | aggregation                                 | failed verdict when final aggregate evidence manifest producer cannot be verified             |
@@ -3489,10 +3486,12 @@ failures only. They must not be emitted as aggregate-summary JSON `reason`
 keys, failure kinds, or public diagnostic details, and must not create duplicate
 generic fail-closed rows.
 
-`aggregate-duration-exceeded`, `required-input-artifact-failure`,
-`aggregate-summary-without-manifest`, and `final-producer-unverified` each use
-their matching diagnostic detail. They are first-class aggregate summary
-failure kinds/reason keys and must not be collapsed into `final-evidence-failure`.
+`required-input-artifact-failure`, `aggregate-summary-without-manifest`, and
+`final-producer-unverified` each use their matching diagnostic detail. They are
+first-class aggregate summary failure kinds/reason keys and must not be
+collapsed into `final-evidence-failure`. Aggregate duration observations are
+telemetry only and must not be emitted as aggregate summary reason keys, failure
+kinds, or public diagnostic details.
 
 `final-evidence-failure` details are limited to aggregate evidence manifest
 authority diagnostics:
@@ -3591,7 +3590,7 @@ Implementation acceptance must include at least these evidence scenarios:
 | Broad, global, or scheduled-full executable materialization with non-empty batches                                                                                                                                                 | Execution-batch manifest and aggregate evidence show bounded topology: runner-family orchestrator jobs remain bounded, each execution batch maps to exactly one budget-counted batch evidence bundle, lower topology-count bounds are waived for fail-closed, no-executable, all lightweight-only manifests including executable lightweight selectors/checks, and zero-work manifests, and maximum caps still apply wherever the corresponding topology count is present                                                                                                                                                       |
 | Validation artifact budget at normal finalization                                                                                                                                                                                  | The run has at most 20 prefixed validation artifacts total, including input non-bundle artifacts, one batch evidence bundle per executable batch, the aggregate evidence manifest, and the aggregate summary; acceptance does not require or allow one artifact per selector/work group and treats overflow as bounded namespace failure                                                                                                                                                                                                                                                                                                                                                                |
 | Full, broad, or global validation performance evidence                                                                                                                                                                             | Aggregate summary and workflow evidence expose observed CI duration and historical estimates for the full/broad/global 12-minute target; the target is an optimization and observability expectation, not a hard correctness ceiling, and no per-batch duration cap is inferred from this acceptance goal                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Aggregate duration budget evidence                                                                                                                                                                                                 | Execution-batch manifest declares aggregate target/max duration in seconds with max no greater than 120, aggregate summary records observed aggregate duration, and the final required check fails with `aggregate-duration-exceeded` when observed aggregation exceeds the declared max                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Aggregate duration budget evidence                                                                                                                                                                                                 | Execution-batch manifest declares aggregate target/max duration in seconds with max no greater than 120, and aggregate summary records observed aggregate duration as telemetry only; aggregate duration is observable performance evidence, not a correctness contract, and observed overruns do not set reasons, emit diagnostics or failure kinds, or fail the final required check                                                                                                                                                                                                                                                                                                                       |
 | Known non-impacting change with no executable checks                                                                                                                                                                               | Lightweight-only plan passes without heavy work, remains inspectable, has no executable validation work groups, uses a verified empty execution-batch manifest, has no batch evidence bundles, and has terminal aggregate evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Known non-impacting change with executable lightweight checks                                                                                                                                                                      | Verified execution-batch manifest assigns the lightweight selectors, and lightweight work appears as per-selector success evidence/result rows in the assigned batch evidence bundle for pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Known non-impacting lightweight-only plan attempts subject, ecosystem, or descriptor-scoped lightweight work                                                                                                                       | The plan is structurally invalid; lightweight-only executable checks must use `lightweight-policy` or workflow-release `tooling-surface` coverage targets rather than implying selected validation subjects                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |

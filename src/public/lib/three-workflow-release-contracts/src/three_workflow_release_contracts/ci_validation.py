@@ -77,7 +77,6 @@ class DiagnosticFamily(StrEnum):
     BLOCKING_VALIDATION_FAILURE = "blocking-validation-failure"
     INADMISSIBLE_BATCH_EVIDENCE = "inadmissible-batch-evidence"
     NAMESPACE_CLOSURE_FAILURE = "namespace-closure-failure"
-    AGGREGATE_DURATION_EXCEEDED = "aggregate-duration-exceeded"
     REQUIRED_INPUT_ARTIFACT_FAILURE = "required-input-artifact-failure"
     AGGREGATE_SUMMARY_WITHOUT_MANIFEST = "aggregate-summary-without-manifest"
     FINAL_PRODUCER_UNVERIFIED = "final-producer-unverified"
@@ -178,7 +177,6 @@ class DiagnosticDetail(StrEnum):
     )
     BLOCKING_VALIDATION_FAILURE = "blocking-validation-failure"
     NAMESPACE_ENUMERATION_UNAVAILABLE = "namespace-enumeration-unavailable"
-    AGGREGATE_DURATION_EXCEEDED = "aggregate-duration-exceeded"
     REQUIRED_INPUT_ARTIFACT_FAILURE = "required-input-artifact-failure"
     AGGREGATE_EVIDENCE_MANIFEST_MISSING = "aggregate-evidence-manifest-missing"
     AGGREGATE_EVIDENCE_MANIFEST_DUPLICATE = (
@@ -354,9 +352,6 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
             DiagnosticDetail.UNEXPECTED_CONTRACT_ARTIFACT.value,
             DiagnosticDetail.NAMESPACE_OVERFLOW.value,
         },
-    ),
-    DiagnosticFamily.AGGREGATE_DURATION_EXCEEDED.value: frozenset(
-        {DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value},
     ),
     DiagnosticFamily.REQUIRED_INPUT_ARTIFACT_FAILURE.value: frozenset(
         {DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value},

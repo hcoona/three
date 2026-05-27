@@ -1789,7 +1789,6 @@ def _aggregate_summary(
             "blocking-validation-failure": False,
             "inadmissible-batch-evidence": False,
             "namespace-closure-failure": False,
-            "aggregate-duration-exceeded": False,
             "final-evidence-failure": False,
         },
         budgets={
@@ -1997,7 +1996,6 @@ def _freeze_invalid_planning_input_summary(
             "blocking-validation-failure": False,
             "inadmissible-batch-evidence": False,
             "namespace-closure-failure": False,
-            "aggregate-duration-exceeded": False,
             "final-evidence-failure": True,
         },
         budgets={
@@ -2531,28 +2529,10 @@ def _mark_summary_required_input_failure(summary: dict[str, object]) -> None:
     _sort_summary_failures(summary)
 
 
-def _mark_summary_duration_failure(summary: dict[str, object]) -> None:
-    summary["verdict"] = "failed"
+def _mark_summary_duration_overrun(summary: dict[str, object]) -> None:
     cast("dict[str, object]", summary["budgets"])[
         "aggregate-duration-seconds"
     ] = 121
-    reason = cast("dict[str, object]", summary["reason"])
-    reason["aggregate-duration-exceeded"] = True
-    reason["final-evidence-failure"] = False
-    cast("list[dict[str, object]]", summary["failures"]).extend(
-        [
-            {
-                "kind": "aggregate-duration-exceeded",
-                "batch-id": None,
-                "work-group-id": None,
-                "evidence-expectation-id": None,
-                "bundle-id": None,
-                "diagnostic": _diagnostic("aggregate-duration-exceeded"),
-                "message": "Aggregate duration exceeded the maximum budget.",
-            },
-        ]
-    )
-    _sort_summary_failures(summary)
 
 
 def _mark_summary_invalid_plan(summary: dict[str, object]) -> None:
@@ -3249,7 +3229,6 @@ def _aggregate_summary_for_bundles(
             "blocking-validation-failure": False,
             "inadmissible-batch-evidence": False,
             "namespace-closure-failure": False,
-            "aggregate-duration-exceeded": False,
             "final-evidence-failure": False,
         },
         budgets={
@@ -3442,7 +3421,6 @@ def test_diagnostic_source_rejects_extra_keys() -> None:
 @pytest.mark.parametrize(
     "detail",
     [
-        "aggregate-duration-exceeded",
         "aggregate-summary-without-manifest",
         "required-input-artifact-failure",
         "final-producer-unverified",
@@ -10121,7 +10099,7 @@ def test_aggregate_summary_failure_json_unsafe_fails_closed() -> None:
     bundle = _bundle(plan, manifest)
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
-    _mark_summary_duration_failure(summary)
+    _mark_summary_required_input_failure(summary)
     failure = cast("list[dict[str, object]]", summary["failures"])[0]
     cast("dict[str, object]", failure["diagnostic"])["message"] = float("nan")
 
@@ -10283,7 +10261,7 @@ def test_aggregate_summary_freezer_emits_canonical_failure_order() -> None:
     bundle = _bundle(plan, manifest)
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
-    _mark_summary_duration_failure(summary)
+    _mark_summary_required_input_failure(summary)
     failures = list(
         reversed(cast("list[dict[str, object]]", summary["failures"]))
     )
@@ -10587,7 +10565,7 @@ def _multi_cause_fail_closed_fixture() -> tuple[
     )["observed-prefixed-artifact-count-lower-bound"] = 7
     _refresh_summary_manifest_digest(summary, aggregate_manifest)
     _mark_summary_required_input_failure(summary)
-    _mark_summary_duration_failure(summary)
+    _mark_summary_duration_overrun(summary)
     _mark_summary_namespace_failure(summary)
     return plan, manifest, bundle, aggregate_manifest, summary
 
@@ -10886,7 +10864,6 @@ def test_aggregate_summary_freezer_binds_plan_projection(
             "blocking-validation-failure": False,
             "inadmissible-batch-evidence": False,
             "namespace-closure-failure": False,
-            "aggregate-duration-exceeded": False,
             "final-evidence-failure": False,
         },
         budgets={
@@ -11792,14 +11769,14 @@ def test_aggregate_summary_rejects_budget_cap_overflow(
         )
 
 
-def test_aggregate_summary_allows_observed_duration_exceeded_failure() -> None:
-    """Observed duration overflow fails final verdict, not schema validation."""
+def test_aggregate_summary_allows_observed_duration_overrun_telemetry() -> None:
+    """Observed duration overflow stays non-blocking telemetry."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
-    _mark_summary_duration_failure(summary)
+    _mark_summary_duration_overrun(summary)
 
     validate_ci_validation_aggregate_summary(
         summary,
@@ -11810,6 +11787,10 @@ def test_aggregate_summary_allows_observed_duration_exceeded_failure() -> None:
         request=_request_document(),
         changed_files_snapshot=_changed_files_snapshot_document(),
         fact_snapshot=_fact_snapshot_document(),
+    )
+    assert summary["verdict"] == "passed"
+    assert "aggregate-duration-exceeded" not in cast(
+        "dict[str, object]", summary["reason"]
     )
 
 
@@ -12181,10 +12162,10 @@ def test_aggregate_summary_accepts_all_final_evidence_failure_causes() -> None:
     )
     _make_summary_batch_evidence_missing(summary, aggregate_manifest)
     _mark_summary_required_input_failure(summary)
-    _mark_summary_duration_failure(summary)
+    _mark_summary_duration_overrun(summary)
 
     failures = cast("list[dict[str, object]]", summary["failures"])
-    assert any(
+    assert not any(
         failure["kind"] == "aggregate-duration-exceeded" for failure in failures
     )
 
@@ -12214,12 +12195,12 @@ def test_aggregate_summary_rejects_partial_specific_failure_causes() -> None:
     )
     _make_summary_batch_evidence_missing(summary, aggregate_manifest)
     _mark_summary_required_input_failure(summary)
-    _mark_summary_duration_failure(summary)
+    _mark_summary_duration_overrun(summary)
     failures = cast("list[dict[str, object]]", summary["failures"])
     failures[:] = [
         failure
         for failure in failures
-        if failure["kind"] != "aggregate-duration-exceeded"
+        if failure["kind"] != "required-input-artifact-failure"
     ]
 
     with pytest.raises(ContractValidationError):
@@ -12234,20 +12215,26 @@ def test_aggregate_summary_rejects_partial_specific_failure_causes() -> None:
         )
 
 
-def test_aggregate_summary_rejects_missing_duration_failure_cause() -> None:
-    """Duration overflow requires an aggregate-duration failure row."""
+def test_aggregate_summary_rejects_duration_overrun_failure_row() -> None:
+    """Duration overflow must not add correctness failure rows."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
-    _mark_summary_duration_failure(summary)
+    _mark_summary_duration_overrun(summary)
     failures = cast("list[dict[str, object]]", summary["failures"])
-    failures[:] = [
-        failure
-        for failure in failures
-        if failure["kind"] != "aggregate-duration-exceeded"
-    ]
+    failures.append(
+        {
+            "kind": "aggregate-duration-exceeded",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": _diagnostic("aggregate-duration-exceeded"),
+            "message": "Aggregate duration exceeded the maximum budget.",
+        }
+    )
 
     with pytest.raises(ContractValidationError) as error:
         validate_ci_validation_aggregate_summary(
@@ -12261,13 +12248,14 @@ def test_aggregate_summary_rejects_missing_duration_failure_cause() -> None:
             fact_snapshot=_fact_snapshot_document(),
         )
     assert any(
-        "aggregate-duration-exceeded" in issue.message
+        issue.path == "$.failures[0].kind"
+        and issue.message == "is not registered"
         for issue in error.value.issues
     )
 
 
-def test_aggregate_summary_rejects_forged_passed_duration_overflow() -> None:
-    """Duration overflow must derive aggregate-duration-exceeded failure."""
+def test_aggregate_summary_accepts_passed_duration_overflow() -> None:
+    """Duration overflow is telemetry and does not change the verdict."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
@@ -12277,8 +12265,16 @@ def test_aggregate_summary_rejects_forged_passed_duration_overflow() -> None:
         "aggregate-duration-seconds"
     ] = 121
 
-    with pytest.raises(ContractValidationError):
-        validate_ci_validation_aggregate_summary(summary, plan=plan)
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        admitted_batch_evidence_bundles=[bundle],
+        execution_batch_manifest=manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
 
 
 def test_aggregate_summary_rejects_plan_without_aggregate_manifest() -> None:
@@ -12526,7 +12522,6 @@ def test_aggregate_summary_freezer_replaces_invalid_plan_failures() -> None:
         "blocking-validation-failure": False,
         "inadmissible-batch-evidence": False,
         "namespace-closure-failure": False,
-        "aggregate-duration-exceeded": False,
         "final-evidence-failure": False,
     }
     summary = freeze_ci_validation_aggregate_summary(
@@ -16187,8 +16182,8 @@ def test_aggregate_summary_rejects_stale_missing_manifest_detail() -> None:
         )
 
 
-def test_aggregate_summary_rejects_mismatched_duration_failure_detail() -> None:
-    """Duration overflow final evidence failures must cite duration overflow."""
+def test_aggregate_summary_rejects_duration_overrun_reason() -> None:
+    """Duration overflow must not be reported as a correctness reason."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
@@ -16199,35 +16194,7 @@ def test_aggregate_summary_rejects_mismatched_duration_failure_detail() -> None:
     ] = 121
     reason = cast("dict[str, object]", summary["reason"])
     reason["aggregate-duration-exceeded"] = True
-    reason["final-evidence-failure"] = True
     summary["verdict"] = "failed"
-    cast("list[dict[str, object]]", summary["failures"]).extend(
-        [
-            {
-                "kind": "aggregate-duration-exceeded",
-                "batch-id": None,
-                "work-group-id": None,
-                "evidence-expectation-id": None,
-                "bundle-id": None,
-                "diagnostic": _diagnostic("aggregate-duration-exceeded"),
-                "message": "Aggregate duration exceeded the maximum budget.",
-            },
-            {
-                "kind": "final-evidence-failure",
-                "batch-id": None,
-                "work-group-id": None,
-                "evidence-expectation-id": None,
-                "bundle-id": None,
-                "diagnostic": _diagnostic(
-                    "final-evidence-failure",
-                    detail="required-input-artifact-failure",
-                    severity="fail-closed",
-                    verdict_effect="fail-closed",
-                ),
-                "message": "Aggregate duration exceeded the maximum budget.",
-            },
-        ]
-    )
 
     with pytest.raises(ContractValidationError):
         validate_ci_validation_aggregate_summary(

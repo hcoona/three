@@ -151,9 +151,6 @@ _G1_DETAILS_BY_DIAGNOSTIC_CODE = {
             DiagnosticDetail.NAMESPACE_OVERFLOW.value,
         }
     ),
-    DiagnosticFamily.AGGREGATE_DURATION_EXCEEDED.value: frozenset(
-        {DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value}
-    ),
     DiagnosticFamily.REQUIRED_INPUT_ARTIFACT_FAILURE.value: frozenset(
         {DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value}
     ),
@@ -444,7 +441,6 @@ AggregateSummaryFailureKind = Literal[
     "blocking-validation-failure",
     "inadmissible-batch-evidence",
     "namespace-closure-failure",
-    "aggregate-duration-exceeded",
     "required-input-artifact-failure",
     "aggregate-summary-without-manifest",
     "final-producer-unverified",
@@ -461,7 +457,6 @@ _SUMMARY_REASON_KEYS = frozenset(
         "blocking-validation-failure",
         "inadmissible-batch-evidence",
         "namespace-closure-failure",
-        "aggregate-duration-exceeded",
         "required-input-artifact-failure",
         "aggregate-summary-without-manifest",
         "final-producer-unverified",
@@ -12187,6 +12182,7 @@ def _validate_summary_derived_status(  # noqa: PLR0913
     satisfied = sum(1 for outcome in outcomes if outcome == "satisfied")
     final_evidence_failure = aggregate_manifest_authority_failure
     invalid_plan_input_failure = bool(invalid_plan_input_failure_details)
+    del aggregate_duration_exceeded
     expected_reason = {
         "invalid-plan": invalid_plan_input_failure,
         "fail-closed": namespace_failure and not invalid_plan_input_failure,
@@ -12199,8 +12195,6 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         "inadmissible-batch-evidence": inadmissible_batch
         and not invalid_plan_input_failure,
         "namespace-closure-failure": namespace_failure
-        and not invalid_plan_input_failure,
-        "aggregate-duration-exceeded": aggregate_duration_exceeded
         and not invalid_plan_input_failure,
         "required-input-artifact-failure": required_input_failure
         and not invalid_plan_input_failure,
@@ -12231,7 +12225,6 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         evidence_rows,
         {
             "namespace-closure-failure": namespace_failure,
-            "aggregate-duration-exceeded": aggregate_duration_exceeded,
             "required-input-artifact-failure": required_input_failure,
             "aggregate-summary-without-manifest": (
                 aggregate_summary_without_manifest
@@ -12251,7 +12244,7 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         summary,
         _final_evidence_failure_causes(
             required_input_failure=required_input_failure,
-            aggregate_duration_exceeded=aggregate_duration_exceeded,
+            aggregate_duration_exceeded=False,
             aggregate_manifest_producer_unverified=(
                 aggregate_manifest_producer_unverified
             ),
@@ -12272,7 +12265,7 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         _fail_closed_failure_causes(
             namespace_failure_details=namespace_failure_details,
             required_input_failure=required_input_failure,
-            aggregate_duration_exceeded=aggregate_duration_exceeded,
+            aggregate_duration_exceeded=False,
             aggregate_manifest_producer_unverified=(
                 aggregate_manifest_producer_unverified
             ),
@@ -12299,7 +12292,6 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         or inadmissible_batch
         or namespace_failure
         or required_input_failure
-        or aggregate_duration_exceeded
         or aggregate_manifest_producer_unverified
         or aggregate_summary_without_manifest
         or aggregate_manifest_authority_failure

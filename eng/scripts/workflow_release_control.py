@@ -6687,7 +6687,6 @@ def _ci_batch_aggregation_payloads(
         pre_final_validation_artifacts=pre_final_count,
         aggregate_duration_seconds=aggregate_duration_seconds,
     )
-    aggregate_duration_exceeded = _ci_aggregate_duration_exceeded(budgets)
     aggregate_manifest_producer_verified = (
         _ci_aggregate_manifest_producer_verified(args)
     )
@@ -6801,7 +6800,6 @@ def _ci_batch_aggregation_payloads(
         namespace_overflow=summary_namespace_overflow,
         unexpected_artifacts=summary_unexpected,
         required_input_failure=summary_required_input_failure,
-        aggregate_duration_exceeded=aggregate_duration_exceeded,
         aggregate_manifest_producer_verified=(
             manifest_binding_producer_verified
         ),
@@ -6824,7 +6822,6 @@ def _ci_batch_aggregation_payloads(
         namespace_overflow=summary_namespace_overflow,
         unexpected_artifacts=summary_unexpected,
         required_input_failure=summary_required_input_failure,
-        aggregate_duration_exceeded=aggregate_duration_exceeded,
         aggregate_manifest_producer_verified=(
             manifest_binding_producer_verified
         ),
@@ -7100,7 +7097,6 @@ def _ci_missing_plan_batch_payloads(
             completed_at,
         ),
     )
-    aggregate_duration_exceeded = _ci_aggregate_duration_exceeded(budgets)
     manifest_binding_producer_verified = (
         aggregate_manifest_producer_verified
         or aggregate_manifest_digest is None
@@ -7124,7 +7120,6 @@ def _ci_missing_plan_batch_payloads(
         namespace_overflow=summary_namespace_overflow,
         unexpected_artifacts=summary_unexpected,
         required_input_failure=False,
-        aggregate_duration_exceeded=aggregate_duration_exceeded,
         aggregate_manifest_producer_verified=(
             manifest_binding_producer_verified
         ),
@@ -7143,7 +7138,6 @@ def _ci_missing_plan_batch_payloads(
         "blocking-validation-failure": False,
         "inadmissible-batch-evidence": False,
         "namespace-closure-failure": False,
-        "aggregate-duration-exceeded": aggregate_duration_exceeded,
         "required-input-artifact-failure": False,
         "aggregate-summary-without-manifest": aggregate_summary_without_manifest,
         "final-producer-unverified": not manifest_binding_producer_verified,
@@ -7477,7 +7471,6 @@ def _ci_missing_execution_batch_manifest_payloads(
             completed_at,
         ),
     )
-    aggregate_duration_exceeded = _ci_aggregate_duration_exceeded(budgets)
     manifest_binding_producer_verified = (
         aggregate_manifest_producer_verified
         or aggregate_manifest_digest is None
@@ -7504,7 +7497,6 @@ def _ci_missing_execution_batch_manifest_payloads(
         namespace_overflow=summary_namespace_overflow,
         unexpected_artifacts=summary_unexpected,
         required_input_failure=summary_required_input_failure,
-        aggregate_duration_exceeded=aggregate_duration_exceeded,
         aggregate_manifest_producer_verified=(
             manifest_binding_producer_verified
         ),
@@ -7527,7 +7519,6 @@ def _ci_missing_execution_batch_manifest_payloads(
         namespace_overflow=summary_namespace_overflow,
         unexpected_artifacts=summary_unexpected,
         required_input_failure=summary_required_input_failure,
-        aggregate_duration_exceeded=aggregate_duration_exceeded,
         aggregate_manifest_producer_verified=(
             manifest_binding_producer_verified
         ),
@@ -8258,7 +8249,9 @@ def _ci_aggregate_downloader_batch_admissions(  # noqa: C901, PLR0911
         or observation.get("run-attempt") != expected_run_attempt
     ):
         return {"admissions": {}, "status": "mismatched"}
-    raw_admissions = observation.get(_CI_DOWNLOADER_ADMITTED_BATCH_ARTIFACTS_KEY)
+    raw_admissions = observation.get(
+        _CI_DOWNLOADER_ADMITTED_BATCH_ARTIFACTS_KEY
+    )
     if not isinstance(raw_admissions, Sequence) or isinstance(
         raw_admissions,
         str | bytes,
@@ -9090,7 +9083,6 @@ def _ci_aggregate_summary_failures(  # noqa: C901, PLR0912
     namespace_overflow: Mapping[str, object],
     unexpected_artifacts: Sequence[Mapping[str, object]],
     required_input_failure: bool,
-    aggregate_duration_exceeded: bool,
     aggregate_manifest_producer_verified: bool,
     aggregate_manifest_authority_diagnostics: Sequence[
         Mapping[str, object]
@@ -9181,25 +9173,6 @@ def _ci_aggregate_summary_failures(  # noqa: C901, PLR0912
                 diagnostic=diagnostic,
                 message="Required batch evidence was not admissible.",
                 batch_id=row.get("batch-id"),
-            )
-        )
-    if aggregate_duration_exceeded:
-        duration_diagnostic = _ci_aggregate_diagnostic(
-            "aggregate-duration-exceeded",
-            code=DiagnosticFamily.AGGREGATE_DURATION_EXCEEDED.value,
-            detail=DiagnosticDetail.AGGREGATE_DURATION_EXCEEDED.value,
-            message="Aggregate evidence duration exceeded the maximum budget.",
-            source_id=None,
-            severity=DiagnosticSeverity.FAIL_CLOSED.value,
-            verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
-        )
-        failures.append(
-            _ci_aggregate_failure(
-                kind="aggregate-duration-exceeded",
-                diagnostic=duration_diagnostic,
-                message=(
-                    "Aggregate evidence duration exceeded the maximum budget."
-                ),
             )
         )
     if required_input_failure:
@@ -9343,7 +9316,6 @@ def _ci_aggregate_summary_reason(
     namespace_overflow: Mapping[str, object],
     unexpected_artifacts: Sequence[Mapping[str, object]],
     required_input_failure: bool,
-    aggregate_duration_exceeded: bool,
     aggregate_manifest_producer_verified: bool,
     aggregate_manifest_authority_failure: bool = False,
     aggregate_summary_without_manifest: bool = False,
@@ -9365,7 +9337,6 @@ def _ci_aggregate_summary_reason(
             row.get("admissibility") != "valid" for row in summary_bundle_rows
         ),
         "namespace-closure-failure": namespace_failure,
-        "aggregate-duration-exceeded": aggregate_duration_exceeded,
         "required-input-artifact-failure": required_input_failure,
         "aggregate-summary-without-manifest": aggregate_summary_without_manifest,
         "final-producer-unverified": not aggregate_manifest_producer_verified,
@@ -9452,16 +9423,6 @@ def _ci_aggregate_duration_seconds(started_at: str, completed_at: str) -> int:
     ):
         return _CI_INVALID_AGGREGATE_DURATION_SECONDS
     return math.ceil(duration_seconds) if duration_seconds > 0 else 0
-
-
-def _ci_aggregate_duration_exceeded(budgets: Mapping[str, object]) -> bool:
-    duration = budgets.get("aggregate-duration-seconds")
-    maximum = budgets.get("aggregate-max-duration-seconds")
-    return (
-        isinstance(duration, int)
-        and isinstance(maximum, int)
-        and (duration > maximum)
-    )
 
 
 def _ci_summary_affected_range(plan: Mapping[str, object]) -> dict[str, object]:

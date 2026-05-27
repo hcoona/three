@@ -556,11 +556,11 @@
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_allows_observed_duration_exceeded_failure"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_allows_observed_duration_overrun_telemetry"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_forged_passed_duration_overflow"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_passed_duration_overflow"
           }
         ],
         "no-publication-boundary": [
@@ -3782,7 +3782,7 @@
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_forged_passed_duration_overflow"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_unknown_or_extra_failure_kind"
           }
         ],
         "execution-evidence": [
@@ -3794,7 +3794,7 @@
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_forged_passed_duration_overflow"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_unknown_or_extra_failure_kind"
           }
         ],
         "no-publication-boundary": [
