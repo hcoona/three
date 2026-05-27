@@ -1,11 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    ":dependencyDashboard",
-    ":semanticCommits",
-    ":semanticCommitTypeAll(chore)"
-  ],
+  "extends": ["config:recommended", ":dependencyDashboard", ":semanticCommits", ":semanticCommitTypeAll(chore)"],
   "ignorePresets": ["group:monorepos", "group:recommended"],
   "timezone": "Etc/UTC",
   "labels": ["dependencies"],
