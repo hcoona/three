@@ -142,7 +142,7 @@ jobs:
 
           node -e @'
           const { execFileSync } = require('node:child_process');
-          execFileSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Get-Command mise,pkl,pwsh,pnpm,uv,ruby,bundle'], { stdio: 'inherit' });
+          execFileSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Get-Command mise,pkl,pwsh,pnpm,uv,ruby,bundle -ErrorAction Stop | Out-Null'], { stdio: 'inherit' });
           '@
 
           renovate
