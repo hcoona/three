@@ -10,7 +10,7 @@ no-authoritative-plan behavior.
 
 ## Experiment Entry
 
-The experiment reused the existing default-branch `release-buddy.yml` dispatch
+The experiment reused the existing default-branch `buddy.yml` dispatch
 entry and ran the branch workflow from `dev/shuaizhang/design-workflows`. No
 main-branch mock workflow was added.
 
@@ -36,7 +36,7 @@ observe job-rerun identity behavior.
 ## Commands Used
 
 ```bash
-gh workflow run release-buddy.yml \
+gh workflow run buddy.yml \
   --repo hcoona/three \
   --ref dev/shuaizhang/design-workflows \
   -f requested-project-ids='hcoona-release-smoke-wxt' \
@@ -70,7 +70,7 @@ The run API returned these run-level identity fields:
 | `run_attempt`          | `2` after rerun                                                                                    |
 | `event`                | `workflow_dispatch`                                                                                |
 | `workflow_id`          | `269749708`                                                                                        |
-| `path`                 | `.github/workflows/release-buddy.yml`                                                              |
+| `path`                 | `.github/workflows/buddy.yml`                                                              |
 | `head_branch`          | `dev/shuaizhang/design-workflows`                                                                  |
 | `head_sha`             | `7842f979aaffb9d993e7d0e45664aa1aac8853e3`                                                         |
 | `actor`                | `hcoona`                                                                                           |

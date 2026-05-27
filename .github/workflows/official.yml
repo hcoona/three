@@ -26,7 +26,7 @@ on:
         default: false
 
 concurrency:
-  group: three-release:release-official.yml
+  group: three-release:official
   cancel-in-progress: false
 
 permissions:

@@ -49,7 +49,7 @@ verification record for the rebaseline that addressed that risk.
   design proves another supported topology.
 - npmjs is entry-workflow-bound for first delivery because npm validates the
   calling workflow for `workflow_call` publishes, and the current design keeps
-  the trusted-publisher filename bound to `release-official.yml`.
+  the trusted-publisher filename bound to `official.yml`.
 - RubyGems.org can use a reusable-workflow-bound topology where registry support
   is explicitly configured.
 - GitHub Release and GitHub Packages remain GitHub-token publishing paths rather

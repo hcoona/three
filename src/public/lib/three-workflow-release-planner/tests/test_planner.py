@@ -2942,7 +2942,7 @@ def test_ci_validation_plans_repository_infrastructure_paths() -> None:
     changed_files = sorted([
         ".config/dotnet-tools.json",
         ".github/hooks/telegram-notify.json",
-        ".github/workflows/ci-validate.yml",
+        ".github/workflows/ci.yml",
         ".gitignore",
         ".pre-commit-config.yaml",
         "Directory.Build.targets",
@@ -2972,7 +2972,7 @@ def test_ci_validation_derives_validation_only_capabilities() -> None:
     )
 
     snapshot = plan_ci_validation_from_repo(
-        _ci_inputs([".github/workflows/ci-validate.yml"]),
+        _ci_inputs([".github/workflows/ci.yml"]),
     )
 
     validate_ci_validation_plan(

@@ -102,7 +102,7 @@ The CI validation entry point should be one checked-in workflow file:
 
 | File                                | Trigger shape                      | Stable responsibility                                                                                                                                              |
 | ----------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `.github/workflows/ci-validate.yml` | `pull_request`, `push`, `schedule` | Normalize CI event input, run planning, materialize execution batches, run the batch DAG, aggregate validation-only evidence, and publish inspectable diagnostics. |
+| `.github/workflows/ci.yml`          | `pull_request`, `push`, `schedule` | Normalize CI event input, run planning, materialize execution batches, run the batch DAG, aggregate validation-only evidence, and publish inspectable diagnostics. |
 
 The workflow filename is a repository contract because branch protection and
 operator documentation may refer to CI check names. Unlike release publication

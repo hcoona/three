@@ -38,10 +38,10 @@ contracts, and executor limits on top of `three.release.plan/v1alpha1`.
   direct caller workflow identity. First-delivery npmjs is not routed through the
   nested reusable chain because npm documents caller-workflow validation for
   `workflow_call`; it is entry-hosted so the configured workflow filename remains
-  `release-official.yml`.
+  `official.yml`.
 - Reusable-workflow-bound OIDC publish paths such as RubyGems.org keep registry
   validation tied to the reusable publish workflow identity. In the current
-  nested chain, the `release-official.yml` caller job invokes
+  nested chain, the `official.yml` caller job invokes
   `release-orchestrate.yml`, whose publish caller job invokes
   `release-publish-node.yml`; because reusable workflows cannot elevate
   permissions, every active caller job in that chain that must pass OIDC
@@ -109,7 +109,7 @@ continuation inside the same `buddy` or `official` run, required only when the
 frozen publish topology is `external-oidc-entry-workflow` and the job that
 requests the OIDC token must be hosted by the top-level entry workflow file. For
 a valid active `pypi/pypi` or `npm/npmjs` `official` publish node, the live
-publish job must therefore be hosted by `.github/workflows/release-official.yml`,
+publish job must therefore be hosted by `.github/workflows/official.yml`,
 not by the reusable `release-orchestrate.yml` workflow and not by the reusable
 `publish-node` unit. Caller-workflow-bound selectors are different: they may
 run inside reusable publish workflow jobs while the registry validates the
@@ -411,12 +411,12 @@ the registry validates, not for a transitive top-level workflow unless that
 workflow directly calls the token-minting reusable publish job. Because npmjs
 documents caller-workflow validation for `workflow_call` publishes, first
 delivery routes npmjs through the entry-hosted path instead of the current
-`release-official.yml` -> `release-orchestrate.yml` ->
+`official.yml` -> `release-orchestrate.yml` ->
 `release-publish-node.yml` nested reusable chain.
 
 When a reusable-workflow-bound selector is implemented through `workflow_call`,
 RubyGems.org-style trusted publishing validates the reusable publish workflow
-identity. In the current official nested chain, the `release-official.yml`
+identity. In the current official nested chain, the `official.yml`
 caller job invokes `release-orchestrate.yml`, whose publish caller job invokes
 `release-publish-node.yml`. Because reusable workflows cannot elevate
 permissions above their caller jobs, every active caller job in that chain that
@@ -543,7 +543,7 @@ entry workflow downloads the same frozen plan artifact and referenced
 shape, and uploads the same `publish-result.json` receipt as a reusable-hosted
 unit. The only intentional difference is physical workflow identity for OIDC
 token minting. For first-delivery PyPI, the `official` entry workflow hosts this
-unit so PyPI sees the configured `.github/workflows/release-official.yml`
+unit so PyPI sees the configured `.github/workflows/official.yml`
 publisher identity while the executor still consumes the frozen `pypi/pypi`
 publish node, planner-frozen filenames, and receipt-proved build files.
 

@@ -267,7 +267,14 @@ def _write_npm_tarball(path: Path, entries: dict[str, bytes]) -> None:
 
 def _release_workflow_paths() -> list[Path]:
     """Return release workflow paths in deterministic order."""
-    return sorted((REPO_ROOT / ".github/workflows").glob("release-*.yml"))
+    workflows = REPO_ROOT / ".github/workflows"
+    paths = set(workflows.glob("release-*.yml"))
+    paths.update(
+        path
+        for name in ("official.yml", "buddy.yml")
+        if (path := workflows / name).exists()
+    )
+    return sorted(paths)
 
 
 def _acceptance_matrix() -> dict[str, object]:
@@ -866,7 +873,7 @@ def _step_block(workflow: str, step_name: str) -> str:
 
 def _ci_range_derivation_python() -> str:
     """Return the embedded CI affected-range derivation Python program."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
     steps = workflow["jobs"]["normalize-input"]["steps"]
     run = next(
         step["run"]
@@ -1048,7 +1055,7 @@ def test_ci_acceptance_matrix_preserves_no_publish_boundaries() -> None:
             reference["value"]
             for reference in boundary_refs
             if reference["type"] == "workflow"
-        } == {".github/workflows/ci-validate.yml"}
+        } == {".github/workflows/ci.yml"}
         assert required_boundary_tests <= {
             reference["value"]
             for reference in boundary_refs
@@ -5031,7 +5038,7 @@ def test_workflow_helper_invocations_use_uv_workspace_python() -> None:
     plain_helper = "\n          python eng/scripts/workflow_release_control.py"
     uv_helper = "uv run python eng/scripts/workflow_release_control.py"
 
-    for workflow_path in workflows.glob("release-*.yml"):
+    for workflow_path in _release_workflow_paths():
         workflow = workflow_path.read_text(encoding="utf-8")
         assert plain_helper not in workflow
         for line in workflow.splitlines():
@@ -5041,7 +5048,7 @@ def test_workflow_helper_invocations_use_uv_workspace_python() -> None:
 
 def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     """CI validation workflow preserves planned control-plane boundaries."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
     jobs = workflow["jobs"]
 
     assert workflow["name"] == "CI Validation"
@@ -5109,7 +5116,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
 
 def test_ci_validation_workflow_uses_current_batch_evidence_commands() -> None:
     """CI workflow must not invoke retired receipt or writer-observation."""
-    workflow_text = _workflow("ci-validate.yml")
+    workflow_text = _workflow("ci.yml")
     forbidden_commands = {
         "materialize-ci-work-groups",
         "check-ci-validation-dependencies",
@@ -5141,7 +5148,7 @@ def test_ci_validation_workflow_uses_current_batch_evidence_commands() -> None:
 
 def test_ci_validation_workflow_downloads_only_explicit_artifacts() -> None:
     """Workflow downloads use explicit artifact IDs/API, not broad patterns."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
     download_steps = []
 
     for job in workflow["jobs"].values():
@@ -5157,14 +5164,14 @@ def test_ci_validation_workflow_downloads_only_explicit_artifacts() -> None:
             assert "name" not in with_args
 
     assert download_steps
-    workflow_text = _workflow("ci-validate.yml")
+    workflow_text = _workflow("ci.yml")
     assert "pattern: three-ci-validation-*" not in workflow_text
     assert "name: three-ci-validation-*" not in workflow_text
 
 
 def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
     """Final aggregate artifacts are redownloaded and boundary-verified."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
     aggregate = workflow["jobs"]["aggregate-evidence"]
     steps = aggregate["steps"]
 
@@ -5249,7 +5256,7 @@ def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
 
 def test_ci_validation_artifact_id_downloads_merge_to_consumer_paths() -> None:
     """Artifact-id downloads preserve flat paths consumed by scripts."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
     optional_snapshot_outputs = {
         "${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}",
         "${{ needs.plan.outputs.fact-snapshot-artifact-id }}",
@@ -5292,7 +5299,7 @@ def test_ci_validation_artifact_id_downloads_merge_to_consumer_paths() -> None:
 
 def test_ci_validation_aggregate_request_plan_downloads_are_guarded() -> None:
     """Aggregate required downloads avoid download-all when absent."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
     steps = workflow["jobs"]["aggregate-evidence"]["steps"]
     request_output = "${{ needs.normalize-input.outputs.request-artifact-id }}"
     plan_output = "${{ needs.plan.outputs.plan-artifact-id }}"
@@ -5359,7 +5366,7 @@ def test_ci_validation_aggregate_request_plan_downloads_are_guarded() -> None:
 
 def test_ci_validation_orchestrators_use_internal_dependency_state() -> None:
     """Runner-family orchestrators use local state only."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
     github_token_expression = "${{ github." + "token }}"
 
     for family in ("ubuntu", "windows"):
@@ -6035,7 +6042,7 @@ def test_ci_validation_batch_observation_cli_is_not_public() -> None:
 
 def test_ci_validation_retries_uv_setup_failures() -> None:
     """Matrix rows retry setup-uv after transient action failures."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
     setup_action = "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b"
     setup_count = 0
 
@@ -6063,7 +6070,7 @@ def test_ci_validation_retries_uv_setup_failures() -> None:
 
 def test_ci_validation_workflow_derives_normal_event_ranges() -> None:
     """Normal PR/push CI requests pass confirmed affected ranges."""
-    workflow = _workflow("ci-validate.yml")
+    workflow = _workflow("ci.yml")
     normalize = _step_block(workflow, "Write planner-facing request")
 
     assert 'validation_commit_sha="$(git rev-parse HEAD)"' in normalize
@@ -6314,7 +6321,7 @@ def test_ci_validation_workflow_marks_bad_changed_paths_inconsistent(
 def test_ci_validation_workflow_checks_canonical_changed_paths() -> None:
     """Embedded range derivation matches request changed-file path rules."""
     normalize = _step_block(
-        _workflow("ci-validate.yml"),
+        _workflow("ci.yml"),
         "Write planner-facing request",
     )
 
@@ -6330,7 +6337,7 @@ def test_ci_validation_workflow_checks_canonical_changed_paths() -> None:
 
 def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
     """PR validation executes on the confirmed head boundary, not merge refs."""
-    workflow = _workflow("ci-validate.yml")
+    workflow = _workflow("ci.yml")
     checkout_count = workflow.count("uses: actions/checkout@v6")
 
     assert checkout_count > 0
@@ -6344,7 +6351,7 @@ def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
 
 def test_ci_validation_execution_batches_use_full_checkout_for_nbgv() -> None:
     """Execution batches need full history for NBGV version height."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
 
     for family in ("ubuntu", "windows"):
         steps = workflow["jobs"][f"execution-batch-{family}-orchestrator"][
@@ -6359,7 +6366,7 @@ def test_ci_validation_execution_batches_use_full_checkout_for_nbgv() -> None:
 
 def test_ci_validation_batch_evidence_observes_checked_out_head() -> None:
     """Batch evidence binds to the checked-out tree, not merge refs."""
-    workflow = yaml.safe_load(_workflow("ci-validate.yml"))
+    workflow = yaml.safe_load(_workflow("ci.yml"))
 
     for family in ("ubuntu", "windows"):
         steps = workflow["jobs"][f"execution-batch-{family}-orchestrator"][
@@ -7945,7 +7952,7 @@ def test_release_workflow_uv_setup_precedes_uv_run() -> None:
         "08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0"
     )
 
-    for workflow_path in workflows.glob("release-*.yml"):
+    for workflow_path in _release_workflow_paths():
         workflow = workflow_path.read_text(encoding="utf-8")
         job_starts = [
             index
@@ -7967,7 +7974,7 @@ def test_release_workflow_uv_setup_precedes_uv_run() -> None:
 
 def test_entry_workflows_pass_dispatch_pinned_sha() -> None:
     """Manual entry helpers receive github.sha for immutable run pinning."""
-    for workflow_name in ("release-official.yml", "release-buddy.yml"):
+    for workflow_name in ("official.yml", "buddy.yml"):
         workflow = _workflow(workflow_name)
         normalize_block = _step_block(
             workflow, "Authorize and pin dispatch ref"
@@ -7976,9 +7983,18 @@ def test_entry_workflows_pass_dispatch_pinned_sha() -> None:
         assert '--pinned-sha "$RELEASE_PINNED_SHA" \\' in normalize_block
 
 
+def test_release_entry_workflows_are_manual_dispatch_only() -> None:
+    """Release entries are intentionally manual/planner-driven, not tag-push driven."""
+    for workflow_name in ("official.yml", "buddy.yml"):
+        workflow = yaml.safe_load(_workflow(workflow_name))
+
+        assert set(workflow[True]) == {"workflow_dispatch"}
+        assert "push" not in workflow[True]
+
+
 def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
     """Pre-authorization shell scripts must not interpolate expressions."""
-    for workflow_name in ("release-official.yml", "release-buddy.yml"):
+    for workflow_name in ("official.yml", "buddy.yml"):
         workflow = _workflow(workflow_name)
         normalize_block = _step_block(
             workflow, "Authorize and pin dispatch ref"
@@ -8002,7 +8018,7 @@ def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
             "RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}",
         ):
             assert env_line in normalize_block
-        if workflow_name == "release-buddy.yml":
+        if workflow_name == "buddy.yml":
             assert "RELEASE_FORCE: ${{ inputs.force }}" in normalize_block
             assert '--force "$RELEASE_FORCE" \\' in run_script
             assert (
@@ -8030,8 +8046,8 @@ def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
 
 def test_official_canary_override_is_visible_and_environment_gated() -> None:
     """Official canary override is explicit and does not bypass release env."""
-    workflow = yaml.safe_load(_workflow("release-official.yml"))
-    raw = _workflow("release-official.yml")
+    workflow = yaml.safe_load(_workflow("official.yml"))
+    raw = _workflow("official.yml")
     report_block = _step_block(raw, "Render report")
 
     dispatch = workflow[True]["workflow_dispatch"]["inputs"]
@@ -10375,7 +10391,7 @@ def test_hidden_release_artifact_uploads_are_included() -> None:
 
 def test_buddy_entry_external_oidc_publish_permissions_are_minimal() -> None:
     """Entry-hosted OIDC publish should not grant unrelated writes."""
-    for workflow_name in ("release-official.yml", "release-buddy.yml"):
+    for workflow_name in ("official.yml", "buddy.yml"):
         workflow = yaml.safe_load(_workflow(workflow_name))
 
         assert workflow["jobs"]["publish-entry"]["permissions"] == {
@@ -10387,7 +10403,7 @@ def test_buddy_entry_external_oidc_publish_permissions_are_minimal() -> None:
 
 def test_official_entry_publish_sets_up_npm_trusted_runtime() -> None:
     """Official entry-hosted npm publish must not rely on runner defaults."""
-    workflow = yaml.safe_load(_workflow("release-official.yml"))
+    workflow = yaml.safe_load(_workflow("official.yml"))
     steps = workflow["jobs"]["publish-entry"]["steps"]
 
     setup_index, setup_step = next(
@@ -10417,7 +10433,7 @@ def test_official_entry_publish_sets_up_npm_trusted_runtime() -> None:
 
 def test_entry_publish_sets_up_nuget_trusted_publishing() -> None:
     """Entry-hosted NuGet.org publish must use NuGet trusted publishing."""
-    for workflow_name in ("release-official.yml", "release-buddy.yml"):
+    for workflow_name in ("official.yml", "buddy.yml"):
         workflow = yaml.safe_load(_workflow(workflow_name))
         steps = workflow["jobs"]["publish-entry"]["steps"]
 
@@ -10451,7 +10467,7 @@ def test_entry_publish_sets_up_nuget_trusted_publishing() -> None:
 
 def test_entry_publish_gate_ignores_reusable_publish_result() -> None:
     """Entry-hosted publish can proceed after reusable publish fails."""
-    for workflow_name in ("release-official.yml", "release-buddy.yml"):
+    for workflow_name in ("official.yml", "buddy.yml"):
         workflow = yaml.safe_load(_workflow(workflow_name))
         gate = workflow["jobs"]["publish-entry"]["if"]
 
@@ -10560,7 +10576,7 @@ def test_orchestrator_exposes_internal_stage_conclusions() -> None:
 
 def test_entry_reports_use_orchestrator_stage_conclusion_outputs() -> None:
     """Final reports must not collapse all internal stages to call result."""
-    for workflow_name in ("release-official.yml", "release-buddy.yml"):
+    for workflow_name in ("official.yml", "buddy.yml"):
         workflow = _workflow(workflow_name)
         render_block = _step_block(workflow, "Render report")
 
@@ -10585,7 +10601,7 @@ def test_entry_reports_use_orchestrator_stage_conclusion_outputs() -> None:
 
 def test_entry_reports_combine_reusable_and_entry_publish_conclusions() -> None:
     """Final reports aggregate reusable-hosted and entry-hosted publishes."""
-    for workflow_name in ("release-official.yml", "release-buddy.yml"):
+    for workflow_name in ("official.yml", "buddy.yml"):
         workflow = _workflow(workflow_name)
         render_block = _step_block(workflow, "Render report")
 
@@ -10619,7 +10635,7 @@ def test_entry_reports_combine_reusable_and_entry_publish_conclusions() -> None:
 
 def test_entry_workflows_stage_and_upload_deterministic_proofs() -> None:
     """Entry-hosted publish mirrors reusable proof staging and final uploads."""
-    for workflow_name in ("release-official.yml", "release-buddy.yml"):
+    for workflow_name in ("official.yml", "buddy.yml"):
         workflow = _workflow(workflow_name)
         assert "name: Generate proof artifacts" in workflow
         assert "workflow_release_control.py generate-proofs" in workflow
@@ -18471,7 +18487,9 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     )
 
     assert "workflow-release-control-tests" in hk_config
-    assert ".github/workflows/ci-validate.yml" in hk_config
+    assert ".github/workflows/ci.yml" in hk_config
+    assert ".github/workflows/buddy.yml" in hk_config
+    assert ".github/workflows/official.yml" in hk_config
     assert ".github/workflows/release-*.yml" in hk_config
     assert "eng/release/**" in hk_config
     assert "eng/scripts/workflow_release_control.py" in hk_config
@@ -18490,11 +18508,11 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     )
     assert "actionlint" in hk_config
     assert "id: workflow-release-control-tests" in pre_commit_config
-    assert r"\.github/workflows/ci-validate\.yml$" in pre_commit_config
+    assert r"\.github/workflows/ci\.yml$" in pre_commit_config
 
 
 def test_ci_validate_workflow_passes_actionlint_gate() -> None:
-    """The focused workflow gate runs actionlint against ci-validate.yml."""
+    """The focused workflow gate runs actionlint against ci.yml."""
     if shutil.which("actionlint") is None:
         pytest.skip("actionlint is not installed")
 
@@ -18502,7 +18520,7 @@ def test_ci_validate_workflow_passes_actionlint_gate() -> None:
         [
             sys.executable,
             "eng/scripts/hk_actionlint.py",
-            ".github/workflows/ci-validate.yml",
+            ".github/workflows/ci.yml",
         ],
         cwd=REPO_ROOT,
         check=False,

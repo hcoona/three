@@ -243,7 +243,9 @@ local python_linters = new Mapping<String, Step> {
 local workflow_release_validation = new Mapping<String, Step> {
   local workflow_release_files =
     List(
-      ".github/workflows/ci-validate.yml",
+      ".github/workflows/ci.yml",
+      ".github/workflows/buddy.yml",
+      ".github/workflows/official.yml",
       ".github/workflows/release-*.yml",
       "eng/release/**",
       "eng/scripts/workflow_release_control.py",

@@ -5136,7 +5136,7 @@
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": ".github/workflows/release-buddy.yml"
+            "value": ".github/workflows/buddy.yml"
           },
           {
             "type": "path",
@@ -5240,7 +5240,7 @@
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": ".github/workflows/release-official.yml"
+            "value": ".github/workflows/official.yml"
           },
           {
             "type": "path",
@@ -5344,7 +5344,7 @@
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": ".github/workflows/release-official.yml"
+            "value": ".github/workflows/official.yml"
           },
           {
             "type": "path",
@@ -5451,7 +5451,7 @@
   "live-gates": {
     "release-workflow-manual-live-run": {
       "owner": "release operator",
-      "evidence": "GitHub Actions run record for release-buddy.yml or release-official.yml"
+      "evidence": "GitHub Actions run record for buddy.yml or official.yml"
     },
     "official-github-packages-live-publication": {
       "owner": "GitHub Packages registry",
@@ -5459,7 +5459,7 @@
     },
     "buddy-github-packages-live-publication": {
       "owner": "GitHub Packages registry",
-      "evidence": "fresh post-commit registry package/version observations from release-buddy.yml for NuGet, npm, RubyGems, and dedicated GitHub Packages smoke identities; prior official or old-design GitHub Packages evidence is not sufficient"
+      "evidence": "fresh post-commit registry package/version observations from buddy.yml for NuGet, npm, RubyGems, and dedicated GitHub Packages smoke identities; prior official or old-design GitHub Packages evidence is not sufficient"
     },
     "release-environment-required-review": {
       "owner": "GitHub environment release",
@@ -5471,11 +5471,11 @@
     },
     "pypi-trusted-publisher": {
       "owner": "PyPI project settings",
-      "evidence": "trusted publisher bound to hcoona/three release-official.yml release environment"
+      "evidence": "trusted publisher bound to hcoona/three official.yml release environment"
     },
     "npmjs-trusted-publisher": {
       "owner": "npm package trusted publisher settings",
-      "evidence": "trusted publisher bound to hcoona/three release-official.yml release environment"
+      "evidence": "trusted publisher bound to hcoona/three official.yml release environment"
     },
     "rubygems-trusted-publisher": {
       "owner": "RubyGems.org trusted publisher settings",
@@ -5487,7 +5487,7 @@
     },
     "workflow-concurrency-group": {
       "owner": "GitHub Actions workflow syntax",
-      "evidence": "entry workflow concurrency group three-release:<workflow file> with cancel-in-progress false"
+      "evidence": "entry workflow concurrency group three-release:buddy or three-release:official with cancel-in-progress false"
     },
     "github-actions-manual-cancellation": {
       "owner": "GitHub Actions run state",

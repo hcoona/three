@@ -61,6 +61,6 @@
     "run-attempt": 1,
     "run-id": 123,
     "validation-build": false,
-    "workflow": "release-buddy.yml"
+    "workflow": "buddy.yml"
   }
 }

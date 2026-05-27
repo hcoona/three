@@ -11,7 +11,7 @@ artifact instance replay from the Group 1 and Group 2 experiments.
 
 ## Experiment Entry
 
-The experiment reused the existing default-branch `release-buddy.yml` dispatch
+The experiment reused the existing default-branch `buddy.yml` dispatch
 entry and ran the branch workflow from `dev/shuaizhang/design-workflows`. No
 main-branch mock workflow was added.
 
@@ -38,7 +38,7 @@ conclusions, and diagnostic/report artifacts.
 ## Commands Used
 
 ```bash
-gh workflow run release-buddy.yml \
+gh workflow run buddy.yml \
   --repo hcoona/three \
   --ref dev/shuaizhang/design-workflows \
   -f requested-project-ids='__no-authoritative-plan-probe__' \

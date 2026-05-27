@@ -25,7 +25,7 @@
     "run-attempt": 1,
     "run-id": 123,
     "validation-only": false,
-    "workflow": "release-buddy.yml"
+    "workflow": "buddy.yml"
   },
   "variant-id": "variant/v1"
 }

@@ -25,8 +25,9 @@ fi
 # NOTE: If publish_node_gpr or publish_ruby_gpr is true, the caller workflow
 # MUST grant packages: write to the orchestrate job (workflow_call does not inherit
 # permissions automatically). A missing permission causes a silent API failure at
-# runtime, not a policy error. Both official.yml and buddy.yml are expected to
-# include packages: write. Verify any new caller workflow does the same.
+# runtime, not a policy error. Both official.yml and buddy.yml
+# are expected to include packages: write. Verify any new caller workflow does
+# the same.
 if [[ "${PUBLISH_NODE_GPR}" == "true" || "${PUBLISH_RUBY_GPR}" == "true" ]]; then
   echo "ℹ️ GPR publishing is enabled (publish_node_gpr=${PUBLISH_NODE_GPR}, publish_ruby_gpr=${PUBLISH_RUBY_GPR}). Ensure the caller workflow grants \`packages: write\`." >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
 fi

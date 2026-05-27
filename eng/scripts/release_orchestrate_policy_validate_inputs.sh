@@ -58,7 +58,7 @@ is_channel_allowlisted() {
     # 'release-x_official' ≠ 'release-x-official' — they are distinct environment names and
     # do not collide with the escape-slug environments.
     if [[ "${entry}" == "x-official" || "${entry}" == "x-buddy" ]]; then
-      echo "Channel '${entry}' is reserved (hyphen form only — underscore variants 'x_official'/'x_buddy' are distinct names and are not blocked). These hyphenated forms are reserved as internal sanitisation escape slugs; they prevent environment-name collisions with the release-official/release-buddy gates. Choose a different channel name." >&2
+      echo "Channel '${entry}' is reserved (hyphen form only — underscore variants 'x_official'/'x_buddy' are distinct names and are not blocked). These hyphenated forms are reserved as internal sanitisation escape slugs; they prevent environment-name collisions with the official/buddy gates. Choose a different channel name." >&2
       exit 1
     fi
     # Validate channel name charset: only lowercase letters, digits, hyphens, and underscores;
@@ -162,8 +162,8 @@ fi
 
 # Explicitly reject 'x-official' and 'x-buddy' as CHANNEL inputs. These values are
 # reserved as sanitization escape slugs: the hub context job remaps near-miss inputs
-# (e.g. 'official-' → 'x-official') to prevent them from impersonating 'release-official'
-# or 'release-buddy'. Accepting them as direct channel inputs would route to
+# (e.g. 'official-' → 'x-official') to prevent them from impersonating 'official'
+# or 'buddy'. Accepting them as direct channel inputs would route to
 # 'release-x-official'/'release-x-buddy' and undermine the escape-slug convention.
 if [[ "${CHANNEL}" == "x-official" || "${CHANNEL}" == "x-buddy" ]]; then
   echo "Channel '${CHANNEL}' is reserved as an internal remapping slug and cannot be used as a direct channel input. These names are used by the release system to prevent environment name collisions. Choose a different channel name. See .github/workflows/REFACTOR_PLAN.md \"Breaking changes in Step 2\" for migration guidance." >&2

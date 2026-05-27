@@ -11,7 +11,7 @@ or no-authoritative-plan behavior.
 
 ## Experiment Entry
 
-The experiment reused the existing default-branch `release-buddy.yml` dispatch
+The experiment reused the existing default-branch `buddy.yml` dispatch
 stub and ran the real branch workflow from
 `dev/shuaizhang/design-workflows`. No main-branch mock workflow was added.
 
@@ -34,7 +34,7 @@ metadata handoffs. A failed-jobs rerun then created run attempt 2.
 ## Commands Used
 
 ```bash
-gh workflow run release-buddy.yml \
+gh workflow run buddy.yml \
   --ref dev/shuaizhang/design-workflows \
   -f requested-project-ids='__artifact-enumeration-probe__' \
   -f dry-run=true \
