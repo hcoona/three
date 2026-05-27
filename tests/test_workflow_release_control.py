@@ -5052,8 +5052,12 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     jobs = workflow["jobs"]
 
     assert workflow["name"] == "CI Validation"
-    assert "workflow_dispatch" not in workflow[True]
-    assert set(workflow[True]) == {"pull_request", "push", "schedule"}
+    assert set(workflow[True]) == {
+        "pull_request",
+        "push",
+        "schedule",
+        "workflow_dispatch",
+    }
     assert (
         jobs["normalize-input"]["outputs"]["planner-diagnostics-artifact-name"]
         == "${{ steps.refs.outputs.planner_diagnostics_artifact_name }}"
@@ -6454,6 +6458,48 @@ def test_write_ci_validation_request_accepts_available_pr_and_push_ranges() -> (
             assert affected["changed-files"] == sorted(case["changed_files"])
             assert affected["diagnostic"] is None
             assert affected["diagnostic-detail"] is None
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_write_ci_validation_request_accepts_manual_scheduled_full() -> None:
+    """Manual full validation dispatches use scheduled-full contracts."""
+    scratch = SCRATCH / "ci-validation-manual-scheduled-full"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    out = scratch / "request.json"
+    try:
+        assert (
+            control._cmd_write_ci_validation_request(
+                argparse.Namespace(
+                    mode="scheduled_full",
+                    repository="hcoona/three",
+                    workflow="CI Validation",
+                    run_id="25887422010",
+                    run_attempt="1",
+                    event_name="workflow_dispatch",
+                    event_number="",
+                    actor="octocat",
+                    validation_commit_sha="b" * 40,
+                    validation_ref="refs/heads/dev/shuaizhang/design-workflows",
+                    base_sha="",
+                    base_tip_sha="",
+                    head_sha="",
+                    changed_files_json="",
+                    range_status=None,
+                    range_diagnostic_detail="missing",
+                    created_at="2026-05-14T21:09:21Z",
+                    out=str(out),
+                    github_output=None,
+                ),
+            )
+            == 0
+        )
+        request = json.loads(out.read_text(encoding="utf-8"))
+        assert request["mode"] == "scheduled_full"
+        assert request["event"]["name"] == "workflow_dispatch"
+        assert request["scheduled-full"] == {"enabled": True}
+        assert "affected-range" not in request
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

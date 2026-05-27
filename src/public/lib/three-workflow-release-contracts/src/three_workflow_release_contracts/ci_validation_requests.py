@@ -38,10 +38,10 @@ JobConclusion = Literal[
 ]
 
 _REQUEST_MODES = frozenset({"pull_request", "push", "scheduled_full"})
-_EVENT_NAME_BY_MODE = {
-    "pull_request": "pull_request",
-    "push": "push",
-    "scheduled_full": "schedule",
+_EVENT_NAMES_BY_MODE = {
+    "pull_request": frozenset({"pull_request"}),
+    "push": frozenset({"push"}),
+    "scheduled_full": frozenset({"schedule", "workflow_dispatch"}),
 }
 _AFFECTED_SOURCES = frozenset({"pull_request", "push"})
 _AFFECTED_STATUSES = frozenset({"available", "unavailable"})
@@ -558,16 +558,17 @@ def _validate_event(
                 "$.event.run-attempt", "must match run.run-attempt"
             ),
         )
-    expected_event_name = _EVENT_NAME_BY_MODE.get(mode or "")
+    expected_event_names = _EVENT_NAMES_BY_MODE.get(mode or "")
     if (
         event_name is not None
-        and expected_event_name is not None
-        and event_name != expected_event_name
+        and expected_event_names is not None
+        and event_name not in expected_event_names
     ):
+        expected = ", ".join(sorted(expected_event_names))
         issues.append(
             ValidationIssue(
                 "$.event.name",
-                f"must be {expected_event_name} for mode {mode}",
+                f"must be one of {expected} for mode {mode}",
             ),
         )
     _reject_extra(

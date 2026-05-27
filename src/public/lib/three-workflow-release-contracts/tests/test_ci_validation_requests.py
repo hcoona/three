@@ -285,12 +285,15 @@ def test_request_normalization_uses_expected_artifact_ref_context() -> None:
     )
 
 
-def test_scheduled_full_request_has_no_affected_range() -> None:
+@pytest.mark.parametrize("event_name", ["schedule", "workflow_dispatch"])
+def test_scheduled_full_request_has_no_affected_range(
+    event_name: str,
+) -> None:
     """Validate the scheduled-full no-affected-range shape."""
     document = _request()
     document["mode"] = "scheduled_full"
     document["event"] = {
-        "name": "schedule",
+        "name": event_name,
         "number": None,
         "actor": "github-actions[bot]",
         "run-id": RUN_ID,
@@ -313,9 +316,12 @@ def test_scheduled_full_request_has_no_affected_range() -> None:
     ("mode", "event_name"),
     [
         ("scheduled_full", "pull_request"),
+        ("scheduled_full", "push"),
         ("push", "schedule"),
         ("push", "pull_request"),
+        ("push", "workflow_dispatch"),
         ("pull_request", "push"),
+        ("pull_request", "workflow_dispatch"),
     ],
 )
 def test_request_mode_must_match_event_name(
