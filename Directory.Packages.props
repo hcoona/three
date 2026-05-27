@@ -51,6 +51,6 @@
   </ItemGroup>
 
   <ItemGroup Label="Tools">
-    <PackageVersion Include="Tools.InnoSetup" Version="6.4.3" />
+    <PackageVersion Include="Tools.InnoSetup" Version="6.7.1" />
   </ItemGroup>
 </Project>
