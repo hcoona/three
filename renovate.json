@@ -329,7 +329,7 @@
       "automerge": true
     },
     {
-      "description": "Group public Ruby runtime compatibility updates.",
+      "description": "Keep public Ruby runtime compatibility ranges from chasing latest lower bounds.",
       "matchManagers": ["bundler"],
       "matchFileNames": [
         "src/public/lib/asciidoctor-latexmath/Gemfile",
