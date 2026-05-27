@@ -123,10 +123,26 @@ jobs:
           permission-workflows: write
 
       - name: Run Renovate
+        shell: pwsh
         env:
           RENOVATE_CONFIG_FILE: .github/renovate/global.cjs
           LOG_LEVEL: ${{ github.event.inputs.log_level || 'info' }}
           # The Renovate GitHub App may create dependency branches and PRs, but must not bypass branch protection.
           # Renovate automerge is controlled by renovate.json and remains subject to CI and branch protection.
           RENOVATE_TOKEN: ${{ steps.renovate-app-token.outputs.token }}
-        run: renovate
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $miseRoot = Join-Path $env:LOCALAPPDATA 'mise'
+          $env:Path = @(
+            (Join-Path $miseRoot 'shims')
+            (Join-Path $miseRoot 'bin')
+            $env:Path
+          ) -join [System.IO.Path]::PathSeparator
+
+          node -e @'
+          const { execFileSync } = require('node:child_process');
+          execFileSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Get-Command mise,pkl,pwsh,pnpm,uv,ruby,bundle'], { stdio: 'inherit' });
+          '@
+
+          renovate
