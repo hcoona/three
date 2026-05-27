@@ -406,6 +406,7 @@
       "matchManagers": ["nuget"],
       "matchFileNames": ["src/public/lib/Directory.Packages.props"],
       "matchPackageNames": ["System.Memory"],
+      "rangeStrategy": "bump",
       "groupName": "MSBuild and Repository Build Tooling"
     },
     {
