@@ -17,8 +17,8 @@
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
 using System;
+using System.Reflection;
 using System.Text;
-using Microsoft.VisualStudio.TestTools.UnitTesting.Logging;
 
 namespace Microsoft.Extensions.Logging.MSTest
 {
@@ -39,6 +39,8 @@ namespace Microsoft.Extensions.Logging.MSTest
 
         private static readonly string NewLineWithMessagePadding =
             Environment.NewLine + MessagePadding;
+
+        private static readonly MethodInfo LogMessageMethod = GetLogMessageMethod();
 
         [ThreadStatic]
 #if !NETSTANDARD2_0 && !NET462
@@ -163,11 +165,11 @@ namespace Microsoft.Extensions.Logging.MSTest
                 // Queue log message
                 if (hasLevel)
                 {
-                    Logger.LogMessage(logLevelString + logBuilder.ToString().TrimEnd());
+                    WriteLogMessage(logLevelString + logBuilder.ToString().TrimEnd());
                 }
                 else
                 {
-                    Logger.LogMessage(logBuilder.ToString().TrimEnd());
+                    WriteLogMessage(logBuilder.ToString().TrimEnd());
                 }
             }
 
@@ -178,6 +180,37 @@ namespace Microsoft.Extensions.Logging.MSTest
             }
 
             MsTestLogger.logBuilder = logBuilder;
+        }
+
+        private static void WriteLogMessage(string message)
+        {
+            LogMessageMethod.Invoke(null, new object[] { message, Array.Empty<object>() });
+        }
+
+        private static MethodInfo GetLogMessageMethod()
+        {
+            var loggerType =
+                Type.GetType("Microsoft.VisualStudio.TestTools.UnitTesting.Logging.Logger, MSTest.TestFramework")
+                ?? Type.GetType("Microsoft.VisualStudio.TestTools.UnitTesting.Logging.Logger, Microsoft.VisualStudio.TestPlatform.TestFramework");
+
+            if (loggerType == null)
+            {
+                throw new InvalidOperationException("MSTest logging type could not be loaded.");
+            }
+
+            var method = loggerType.GetMethod(
+                "LogMessage",
+                BindingFlags.Public | BindingFlags.Static,
+                null,
+                new[] { typeof(string), typeof(object[]) },
+                null);
+
+            if (method == null)
+            {
+                throw new InvalidOperationException("MSTest Logger.LogMessage method could not be loaded.");
+            }
+
+            return method;
         }
 
         /// <summary>

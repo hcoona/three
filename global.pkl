@@ -48,6 +48,10 @@ sdk = new Dynamic {
   ["rollForward"] = "disable"
 }
 
+test = new Dynamic {
+  ["runner"] = "Microsoft.Testing.Platform"
+}
+
 `msbuild-sdks` = new Dynamic {
   ["DotNet.ReproducibleBuilds.Isolated"] = "2.0.2"
   ["Microsoft.Build.Artifacts"] = "6.1.63"
