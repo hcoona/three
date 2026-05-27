@@ -561,6 +561,18 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_accepts_passed_duration_overflow"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_preserves_nonblocking_duration_overrun"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_preserves_invalid_duration_telemetry"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_ceilings_fractional_duration_overrun"
           }
         ],
         "no-publication-boundary": [
@@ -2427,6 +2439,10 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_rejects_bad_downloader_admission"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_cli_requires_observed_artifacts_dir"
           }
         ],
         "no-publication-boundary": [
@@ -3789,12 +3805,32 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation.py::test_diagnostic_vocabularies_are_closed_and_exported"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_rejects_malformed_diagnostics"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_rejects_missing_required_diagnostic_fields"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_unknown_or_extra_failure_kind"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_malformed_failure_diagnostics"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_missing_required_failure_diagnostic_fields"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_failure_diagnostic_code_mismatch"
           }
         ],
         "no-publication-boundary": [
