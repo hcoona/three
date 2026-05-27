@@ -59,7 +59,7 @@ from three_workflow_release_contracts.contracts import (
 _LOCAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-_RUNNER_FAMILIES = frozenset({"windows", "ubuntu"})
+_RUNNER_FAMILIES = frozenset({"windows", "ubuntu", "macos"})
 _ECOSYSTEMS = frozenset(
     {"dotnet", "python", "javascript", "typescript", "ruby"}
 )

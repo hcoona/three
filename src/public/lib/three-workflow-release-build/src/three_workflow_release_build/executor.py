@@ -1031,8 +1031,6 @@ def _ruby_build(context: _BuildContext, frozen_version: str) -> dict[str, Path]:
         context.manifest.name,
         "--output",
         package.as_posix(),
-        "-C",
-        context.project_root.as_posix(),
     ]
     _run_checked(command, context.project_root, context.runner)
     produced = {context.artifacts[0].artifact_id: package}

@@ -4152,6 +4152,7 @@ def test_materializer_coalesces_release_batches_by_execution_shape() -> None:
     [
         ("ruby", "ubuntu", {"python", "ruby"}),
         ("python", "windows", {"ubuntu", "windows"}),
+        ("python", "macos", {"ubuntu", "macos"}),
     ],
 )
 def test_materializer_keeps_release_execution_dimensions_split(

@@ -1982,7 +1982,7 @@ def _ci_execution_batch_runner_family_outputs(
         execution_batch_matrix,
     )
     outputs: dict[str, str] = {}
-    for runner_family in ("ubuntu", "windows"):
+    for runner_family in ("ubuntu", "windows", "macos"):
         rows = rows_by_family.get(runner_family, [])
         output_prefix = runner_family.replace("-", "_")
         outputs[f"has_{output_prefix}_execution_batches"] = _bool_str(
@@ -4876,6 +4876,7 @@ def _ci_matching_release_plan_artifact_id(
     expected = obligation.get("artifact")
     if not isinstance(expected, Mapping):
         return None
+    expected_handles = _ci_artifact_expected_descriptor_handles(expected)
     matches: list[str] = []
     for artifact_id in sorted(candidate_ids):
         artifact = artifacts.get(artifact_id)
@@ -4886,8 +4887,25 @@ def _ci_matching_release_plan_artifact_id(
             and artifact.get("kind-family") == expected.get("kind-family")
             and artifact.get("concrete-kind") == expected.get("concrete-kind")
         ):
+            descriptor_handle = artifact.get("descriptor-handle")
+            if expected_handles and descriptor_handle not in expected_handles:
+                continue
             matches.append(artifact_id)
     return matches[0] if len(matches) == 1 else None
+
+
+def _ci_artifact_expected_descriptor_handles(
+    artifact: Mapping[str, object],
+) -> set[str]:
+    handles: set[str] = set()
+    for artifact_ref in _ci_artifact_expected_refs({"artifact": artifact}):
+        path = PurePosixPath(artifact_ref)
+        if path.suffix != ".artifact":
+            continue
+        stem = path.stem
+        if stem:
+            handles.add(stem)
+    return handles
 
 
 def _ci_execute_no_publish_release_shaped_build(
@@ -5431,7 +5449,10 @@ def _cmd_download_ci_validation_observed_artifacts(
                 admitted_batch_artifacts.append(
                     _ci_downloader_batch_admission_record(
                         artifact_name_value=artifact_name_value,
-                        artifact_api=artifact_api,
+                        artifact_api=cast(
+                            "Mapping[str, object]",
+                            artifact_api,
+                        ),
                         artifact_ref=expected_artifact_ref,
                         execution_batch_manifest=execution_batch_manifest,
                         run_id=str(args.run_id),

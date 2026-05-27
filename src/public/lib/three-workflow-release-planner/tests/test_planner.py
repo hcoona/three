@@ -3320,6 +3320,58 @@ def test_ci_validation_dotnet_batches_do_not_depend_on_ubuntu_descriptors() -> (
     )
 
 
+def test_ci_validation_dotnet_release_artifacts_use_platform_runners() -> None:
+    """NativeAOT release artifacts use a runner matching their OS dimension."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    changed_files = [
+        "src/public/app/PhiFailureDetector.Console/three.release.yml",
+    ]
+    snapshot = plan_ci_validation_from_repo(_ci_inputs(changed_files))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    work_groups = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["work-groups"],
+    )
+    work_groups_by_id = {
+        str(group["work-group-id"]): group for group in work_groups
+    }
+    obligations = cast(
+        "Sequence[Mapping[str, object]]",
+        snapshot.plan["artifact-obligations"],
+    )
+    runner_by_os: dict[str, str] = {}
+    for obligation in obligations:
+        if obligation["subject-id"] != (
+            "dotnet.src-public-app-phifailuredetector-console"
+        ):
+            continue
+        artifact = cast("Mapping[str, object]", obligation["artifact"])
+        dimensions = cast(
+            "Mapping[str, object]",
+            artifact["variant-dimensions"],
+        )
+        runner_by_os[str(dimensions["os"])] = str(
+            work_groups_by_id[str(obligation["work-group-id"])][
+                "runner-family"
+            ]
+        )
+
+    assert runner_by_os["windows"] == "windows"
+    assert runner_by_os["linux"] == "ubuntu"
+    assert runner_by_os["macos"] == "macos"
+
+
 def test_ci_validation_fact_snapshot_workflow_release_owns_catalog_facts() -> (
     None
 ):

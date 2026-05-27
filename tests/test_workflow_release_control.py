@@ -5072,6 +5072,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "materialize-execution-batches",
         "execution-batch-ubuntu-orchestrator",
         "execution-batch-windows-orchestrator",
+        "execution-batch-macos-orchestrator",
         "aggregate-evidence",
     }
     assert not any(job.startswith("execution-batch-layer-") for job in jobs)
@@ -5083,6 +5084,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     assert set(jobs["aggregate-evidence"]["needs"]) >= {
         "execution-batch-ubuntu-orchestrator",
         "execution-batch-windows-orchestrator",
+        "execution-batch-macos-orchestrator",
     }
     assert set(jobs["execution-batch-ubuntu-orchestrator"]["needs"]) == {
         "normalize-input",
@@ -5094,12 +5096,21 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "plan",
         "materialize-execution-batches",
     }
+    assert set(jobs["execution-batch-macos-orchestrator"]["needs"]) == {
+        "normalize-input",
+        "plan",
+        "materialize-execution-batches",
+    }
     assert (
         "ubuntu-execution-batch-matrix"
         in jobs["materialize-execution-batches"]["outputs"]
     )
     assert (
         "windows-execution-batch-matrix"
+        in jobs["materialize-execution-batches"]["outputs"]
+    )
+    assert (
+        "macos-execution-batch-matrix"
         in jobs["materialize-execution-batches"]["outputs"]
     )
     assert (
@@ -5186,6 +5197,7 @@ def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
         "materialize-execution-batches",
         "execution-batch-ubuntu-orchestrator",
         "execution-batch-windows-orchestrator",
+        "execution-batch-macos-orchestrator",
     ]
 
     step_by_name = {step.get("name"): step for step in steps}
@@ -5316,8 +5328,8 @@ def test_ci_validation_artifact_id_downloads_merge_to_consumer_paths() -> None:
                 )
 
     assert artifact_id_downloads
-    assert len(optional_snapshot_downloads) == 8
-    assert len(execution_manifest_downloads) == 3
+    assert len(optional_snapshot_downloads) == 10
+    assert len(execution_manifest_downloads) == 4
 
 
 def test_ci_validation_aggregate_request_plan_downloads_are_guarded() -> None:
@@ -5392,7 +5404,7 @@ def test_ci_validation_orchestrators_use_internal_dependency_state() -> None:
     workflow = yaml.safe_load(_workflow("ci.yml"))
     github_token_expression = "${{ github." + "token }}"
 
-    for family in ("ubuntu", "windows"):
+    for family in ("ubuntu", "windows", "macos"):
         steps = workflow["jobs"][f"execution-batch-{family}-orchestrator"][
             "steps"
         ]
@@ -6088,7 +6100,7 @@ def test_ci_validation_retries_uv_setup_failures() -> None:
             assert retry_step["uses"] == setup_action
             assert retry_step["with"]["version"] == "0.10.9"
 
-    assert setup_count == 6
+    assert setup_count == 7
 
 
 def test_ci_validation_workflow_derives_normal_event_ranges() -> None:
@@ -6376,7 +6388,7 @@ def test_ci_validation_execution_batches_use_full_checkout_for_nbgv() -> None:
     """Execution batches need full history for NBGV version height."""
     workflow = yaml.safe_load(_workflow("ci.yml"))
 
-    for family in ("ubuntu", "windows"):
+    for family in ("ubuntu", "windows", "macos"):
         steps = workflow["jobs"][f"execution-batch-{family}-orchestrator"][
             "steps"
         ]
@@ -6391,7 +6403,7 @@ def test_ci_validation_batch_evidence_observes_checked_out_head() -> None:
     """Batch evidence binds to the checked-out tree, not merge refs."""
     workflow = yaml.safe_load(_workflow("ci.yml"))
 
-    for family in ("ubuntu", "windows"):
+    for family in ("ubuntu", "windows", "macos"):
         steps = workflow["jobs"][f"execution-batch-{family}-orchestrator"][
             "steps"
         ]
@@ -9116,6 +9128,93 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_materialization_matches_descriptor_handle() -> (
+    None
+):
+    """Dual same-kind artifacts bind by descriptor handle from expected refs."""
+    obligations = [
+        {
+            "artifact": {
+                "kind-family": "package",
+                "concrete-kind": "npm-package",
+                "logical-artifact-role": "primary-package",
+                "variant-dimensions": {},
+                "expected-artifact-refs": [
+                    "ci-validation/artifacts/example/buddy/npm-package-github.artifact"
+                ],
+            }
+        }
+    ]
+    variant = {
+        "artifact-ids": [
+            "artifact/npm",
+            "artifact/github",
+        ]
+    }
+    artifacts = {
+        "artifact/npm": {
+            "role": "primary-package",
+            "kind-family": "package",
+            "concrete-kind": "npm-package",
+            "descriptor-handle": "npm-package",
+        },
+        "artifact/github": {
+            "role": "primary-package",
+            "kind-family": "package",
+            "concrete-kind": "npm-package",
+            "descriptor-handle": "npm-package-github",
+        },
+    }
+
+    refs = control._ci_release_plan_artifact_refs_for_obligations(
+        variant=variant,
+        artifacts=artifacts,
+        obligations=obligations,
+    )
+
+    assert refs == {
+        "artifact/github": [
+            "ci-validation/artifacts/example/buddy/npm-package-github.artifact"
+        ]
+    }
+
+
+def test_ci_validation_materialization_blocks_ambiguous_legacy_match() -> (
+    None
+):
+    """Legacy refs without handles remain fail-closed if ambiguous."""
+    obligations = [
+        {
+            "artifact": {
+                "kind-family": "package",
+                "concrete-kind": "npm-package",
+                "logical-artifact-role": "primary-package",
+                "variant-dimensions": {},
+                "expected-artifact-refs": [
+                    "ci-validation/artifacts/example/buddy/npm-package"
+                ],
+            }
+        }
+    ]
+    variant = {"artifact-ids": ["artifact/a", "artifact/b"]}
+    artifacts = {
+        artifact_id: {
+            "role": "primary-package",
+            "kind-family": "package",
+            "concrete-kind": "npm-package",
+        }
+        for artifact_id in ("artifact/a", "artifact/b")
+    }
+
+    refs = control._ci_release_plan_artifact_refs_for_obligations(
+        variant=variant,
+        artifacts=artifacts,
+        obligations=obligations,
+    )
+
+    assert refs == {}
 
 
 def test_ci_validation_release_shaped_no_publish_malformed_mapping_blocks() -> (

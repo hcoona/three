@@ -412,6 +412,8 @@ jobs:
       ubuntu-execution-batch-matrix: ${{ steps.materialize.outputs.ubuntu_execution_batch_matrix }}
       has-windows-execution-batches: ${{ steps.materialize.outputs.has_windows_execution_batches }}
       windows-execution-batch-matrix: ${{ steps.materialize.outputs.windows_execution_batch_matrix }}
+      has-macos-execution-batches: ${{ steps.materialize.outputs.has_macos_execution_batches }}
+      macos-execution-batch-matrix: ${{ steps.materialize.outputs.macos_execution_batch_matrix }}
       execution-batch-manifest-artifact-id: ${{ steps.upload-execution-batch-manifest.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v6
@@ -1967,6 +1969,729 @@ jobs:
             --observed-artifacts-dir .three-ci-validation/observed-artifacts \
             --state-dir .three-ci-validation/orchestrator/windows/state
 
+  execution-batch-macos-orchestrator:
+    name: execution-batch-macos-orchestrator
+    needs:
+      - normalize-input
+      - plan
+      - materialize-execution-batches
+    if: always() && needs.materialize-execution-batches.outputs.has-macos-execution-batches == 'true'
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install uv
+        id: setup-uv
+        continue-on-error: true
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - name: Retry uv installation
+        if: ${{ steps.setup-uv.outcome == 'failure' }}
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+      - name: Install .NET for NBGV-backed release planning
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Restore .NET local tools for NBGV-backed release planning
+        shell: bash
+        run: dotnet tool restore
+      - uses: actions/download-artifact@v8
+        if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
+        with:
+          artifact-ids: ${{ needs.normalize-input.outputs.request-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/request
+      - uses: actions/download-artifact@v8
+        if: ${{ needs.plan.outputs.plan-artifact-id != '' }}
+        with:
+          artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/plan
+      - name: Download execution-batch manifest
+        if: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id != '' }}
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.materialize-execution-batches.outputs.execution-batch-manifest-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/materialize
+      - name: Download changed-files snapshot
+        if: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id != '' }}
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.plan.outputs.changed-files-snapshot-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/plan
+      - name: Download fact snapshot
+        if: ${{ needs.plan.outputs.fact-snapshot-artifact-id != '' }}
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.plan.outputs.fact-snapshot-artifact-id }}
+          merge-multiple: true
+          path: .three-ci-validation/plan
+      - name: Prepare runner-family orchestrator directories
+        shell: bash
+        run: |
+          mkdir -p .three-ci-validation/observed-artifacts .three-ci-validation/orchestrator/macos/state .three-ci-validation/orchestrator/macos/work
+      - name: Run macos orchestrator slot 00
+        id: run-slot-00
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 0 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 00
+        id: upload-slot-00
+        if: ${{ steps.run-slot-00.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-00.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-00.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 00
+        if: ${{ steps.upload-slot-00.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-00.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-00.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-00.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 0 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 01
+        id: run-slot-01
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 1 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 01
+        id: upload-slot-01
+        if: ${{ steps.run-slot-01.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-01.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-01.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 01
+        if: ${{ steps.upload-slot-01.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-01.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-01.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-01.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 1 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 02
+        id: run-slot-02
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 2 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 02
+        id: upload-slot-02
+        if: ${{ steps.run-slot-02.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-02.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-02.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 02
+        if: ${{ steps.upload-slot-02.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-02.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-02.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-02.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 2 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 03
+        id: run-slot-03
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 3 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 03
+        id: upload-slot-03
+        if: ${{ steps.run-slot-03.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-03.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-03.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 03
+        if: ${{ steps.upload-slot-03.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-03.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-03.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-03.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 3 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 04
+        id: run-slot-04
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 4 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 04
+        id: upload-slot-04
+        if: ${{ steps.run-slot-04.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-04.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-04.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 04
+        if: ${{ steps.upload-slot-04.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-04.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-04.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-04.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 4 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 05
+        id: run-slot-05
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 5 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 05
+        id: upload-slot-05
+        if: ${{ steps.run-slot-05.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-05.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-05.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 05
+        if: ${{ steps.upload-slot-05.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-05.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-05.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-05.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 5 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 06
+        id: run-slot-06
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 6 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 06
+        id: upload-slot-06
+        if: ${{ steps.run-slot-06.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-06.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-06.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 06
+        if: ${{ steps.upload-slot-06.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-06.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-06.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-06.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 6 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 07
+        id: run-slot-07
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 7 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 07
+        id: upload-slot-07
+        if: ${{ steps.run-slot-07.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-07.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-07.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 07
+        if: ${{ steps.upload-slot-07.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-07.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-07.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-07.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 7 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 08
+        id: run-slot-08
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 8 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 08
+        id: upload-slot-08
+        if: ${{ steps.run-slot-08.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-08.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-08.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 08
+        if: ${{ steps.upload-slot-08.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-08.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-08.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-08.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 8 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 09
+        id: run-slot-09
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 9 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 09
+        id: upload-slot-09
+        if: ${{ steps.run-slot-09.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-09.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-09.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 09
+        if: ${{ steps.upload-slot-09.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-09.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-09.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-09.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 9 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 10
+        id: run-slot-10
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 10 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 10
+        id: upload-slot-10
+        if: ${{ steps.run-slot-10.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-10.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-10.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 10
+        if: ${{ steps.upload-slot-10.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-10.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-10.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-10.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 10 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 11
+        id: run-slot-11
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 11 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 11
+        id: upload-slot-11
+        if: ${{ steps.run-slot-11.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-11.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-11.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 11
+        if: ${{ steps.upload-slot-11.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-11.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-11.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-11.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 11 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+      - name: Run macos orchestrator slot 12
+        id: run-slot-12
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          observed_commit_sha="$(git rev-parse HEAD)"
+          uv run python eng/scripts/workflow_release_control.py run-ci-validation-runner-family-orchestrator-step \
+            --plan .three-ci-validation/plan/validation-plan.json \
+            --request .three-ci-validation/request/ci-validation-request.json \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+            --runner-family macos \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI Validation" \
+            --job "execution-batch-macos-orchestrator" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state \
+            --work-dir .three-ci-validation/orchestrator/macos/work \
+            --slot-index 12 \
+            --observed-commit-sha "$observed_commit_sha" \
+            --repo-root . \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload macos batch evidence slot 12
+        id: upload-slot-12
+        if: ${{ steps.run-slot-12.outputs.batch_selected == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run-slot-12.outputs.batch_evidence_bundle_artifact_name }}
+          path: ${{ steps.run-slot-12.outputs.batch_evidence_upload_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record macos batch evidence upload slot 12
+        if: ${{ steps.upload-slot-12.outputs.artifact-id != '' }}
+        shell: bash
+        run: |
+          uv run python eng/scripts/workflow_release_control.py record-ci-validation-runner-family-orchestrator-upload \
+            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+            --batch-id "${{ steps.run-slot-12.outputs.batch_id }}" \
+            --artifact-id "${{ steps.upload-slot-12.outputs.artifact-id }}" \
+            --artifact-name "${{ steps.run-slot-12.outputs.batch_evidence_bundle_artifact_name }}" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --orchestrator-slot-index 12 \
+            --observed-artifacts-dir .three-ci-validation/observed-artifacts \
+            --state-dir .three-ci-validation/orchestrator/macos/state
+
   aggregate-evidence:
     name: aggregate-evidence
     needs:
@@ -1975,6 +2700,7 @@ jobs:
       - materialize-execution-batches
       - execution-batch-ubuntu-orchestrator
       - execution-batch-windows-orchestrator
+      - execution-batch-macos-orchestrator
     if: always()
     runs-on: ubuntu-latest
     permissions:

@@ -2322,9 +2322,10 @@ def _add_artifact_records(
                 "kind": "release-shaped-artifact",
                 "coverage-target": target,
                 "ecosystem": subject["ecosystem"],
-                "runner-family": _RUNNER_BY_ECOSYSTEM[
-                    str(subject["ecosystem"])
-                ],
+                "runner-family": _release_shaped_runner_family(
+                    str(subject["ecosystem"]),
+                    artifact,
+                ),
                 "selector-variant": None,
                 "depends-on": [],
                 "expected-evidence": {
@@ -2377,6 +2378,31 @@ def _add_artifact_records(
                 "expected-evidence-id": evidence_id,
             },
         )
+
+
+def _release_shaped_runner_family(
+    ecosystem: str,
+    artifact: Mapping[str, object],
+) -> str:
+    """Return the runner family that can materialize one release artifact."""
+    if ecosystem == "dotnet":
+        dimensions = artifact.get("variant-dimensions", {})
+        if isinstance(dimensions, Mapping):
+            os_dimension = dimensions.get("os")
+            rid = dimensions.get("rid")
+            if os_dimension == "windows" or (
+                isinstance(rid, str) and rid.startswith("win-")
+            ):
+                return "windows"
+            if os_dimension == "linux" or (
+                isinstance(rid, str) and rid.startswith("linux-")
+            ):
+                return "ubuntu"
+            if os_dimension == "macos" or (
+                isinstance(rid, str) and rid.startswith("osx-")
+            ):
+                return "macos"
+    return _RUNNER_BY_ECOSYSTEM[ecosystem]
 
 
 def _add_tooling_records(

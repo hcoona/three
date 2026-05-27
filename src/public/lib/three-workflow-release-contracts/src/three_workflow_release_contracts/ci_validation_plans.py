@@ -35,12 +35,12 @@ from three_workflow_release_contracts.contracts import (
 
 CiValidationPlanVerdictIntent = Literal["executable", "fail-closed"]
 CiValidationSnapshotStatus = Literal["available", "unavailable"]
-RunnerFamily = Literal["windows", "ubuntu"]
+RunnerFamily = Literal["windows", "ubuntu", "macos"]
 
 PLANNED_CAPABILITY_ORDER = ("build", "test", "lint", "format", "type-check")
 _PLAN_VERDICT_INTENTS = frozenset({"executable", "fail-closed"})
 _SNAPSHOT_STATUSES = frozenset({"available", "unavailable"})
-_RUNNER_FAMILIES = frozenset({"windows", "ubuntu"})
+_RUNNER_FAMILIES = frozenset({"windows", "ubuntu", "macos"})
 _PLAN_MODES = frozenset({"pull_request", "push", "scheduled_full"})
 _AFFECTED_STATUSES = frozenset({"available", "unavailable"})
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -1145,12 +1145,32 @@ def _validate_executable_runner(
         ecosystem not in _ECOSYSTEMS
     ):
         issues.append(ValidationIssue("ecosystem", "is required"))
-    if ecosystem == "dotnet" and runner_family != "windows":
-        issues.append(ValidationIssue("runner-family", "must be windows"))
+    if ecosystem == "dotnet":
+        _validate_dotnet_runner_family(kind, runner_family, issues)
     if ecosystem in {"python", "javascript", "typescript", "ruby"} and (
         runner_family != "ubuntu"
     ):
         issues.append(ValidationIssue("runner-family", "must be ubuntu"))
+
+
+def _validate_dotnet_runner_family(
+    kind: object,
+    runner_family: object,
+    issues: list[ValidationIssue],
+) -> None:
+    if kind != "release-shaped-artifact" and runner_family != "windows":
+        issues.append(ValidationIssue("runner-family", "must be windows"))
+    if kind == "release-shaped-artifact" and runner_family not in {
+        "windows",
+        "ubuntu",
+        "macos",
+    }:
+        issues.append(
+            ValidationIssue(
+                "runner-family",
+                "must be windows, ubuntu, or macos",
+            )
+        )
 
 
 def _validate_tooling_group_ecosystem(
@@ -2008,7 +2028,12 @@ def _validate_artifact_fact_backing(
         )
     group = groups_by_id.get(str(obligation.get("work-group-id")))
     if subject is not None and group is not None:
-        _validate_artifact_group_subject_match(group, subject, issues)
+        _validate_artifact_group_subject_match(
+            group,
+            subject,
+            obligation,
+            issues,
+        )
     _validate_artifact_catalog_backing(obligation, indexes, issues)
 
 
@@ -2047,6 +2072,7 @@ def _validate_artifact_subject_eligibility(
 def _validate_artifact_group_subject_match(
     group: Mapping[str, object],
     subject: Mapping[str, object],
+    obligation: Mapping[str, object],
     issues: list[ValidationIssue],
 ) -> None:
     ecosystem = subject.get("ecosystem")
@@ -2054,11 +2080,34 @@ def _validate_artifact_group_subject_match(
         issues.append(
             ValidationIssue("artifact-obligation.ecosystem", "mismatch")
         )
-    expected_runner = "windows" if ecosystem == "dotnet" else "ubuntu"
+    expected_runner = _expected_artifact_runner_family(ecosystem, obligation)
     if group.get("runner-family") != expected_runner:
         issues.append(
             ValidationIssue("artifact-obligation.runner-family", "mismatch")
         )
+
+
+def _expected_artifact_runner_family(
+    ecosystem: object,
+    obligation: Mapping[str, object],
+) -> str:
+    if ecosystem == "dotnet":
+        artifact = obligation.get("artifact")
+        if isinstance(artifact, Mapping):
+            dimensions = artifact.get("variant-dimensions")
+            if isinstance(dimensions, Mapping):
+                os_dimension = dimensions.get("os")
+                rid = dimensions.get("rid")
+                if os_dimension == "linux" or (
+                    isinstance(rid, str) and rid.startswith("linux-")
+                ):
+                    return "ubuntu"
+                if os_dimension == "macos" or (
+                    isinstance(rid, str) and rid.startswith("osx-")
+                ):
+                    return "macos"
+        return "windows"
+    return "ubuntu"
 
 
 def _validate_artifact_obligation_schema(

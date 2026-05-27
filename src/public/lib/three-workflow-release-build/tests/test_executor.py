@@ -3845,13 +3845,13 @@ def test_ruby_executor_builds_requested_gemspec() -> None:
                 "artifact/gem": ("primary-package", "package", "rubygem"),
             },
         )
-        calls: list[tuple[str, ...]] = []
+        calls: list[tuple[tuple[str, ...], Path]] = []
 
         def runner(
             args: Sequence[str],
-            _cwd: Path,
+            cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            calls.append(tuple(args))
+            calls.append((tuple(args), cwd))
             if args[1] == "specification":
                 return subprocess.CompletedProcess(
                     args,
@@ -3873,7 +3873,10 @@ def test_ruby_executor_builds_requested_gemspec() -> None:
         )
 
         validate_contract(result)
-        assert calls[0][1:3] == ("build", "example.gemspec")
+        build_args, build_cwd = calls[0]
+        assert build_args[1:3] == ("build", "example.gemspec")
+        assert "-C" not in build_args
+        assert build_cwd == scratch / "example"
         assert set(_result_artifacts(result)) == {"artifact/gem"}
     finally:
         _remove_tree_scratch(scratch)

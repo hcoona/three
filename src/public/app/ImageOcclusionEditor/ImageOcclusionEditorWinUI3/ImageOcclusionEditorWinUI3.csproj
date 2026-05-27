@@ -16,6 +16,7 @@
     <Nullable>enable</Nullable>
 
     <PublishAot>true</PublishAot>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104</WarningsNotAsErrors>
     <ControlFlowGuard>Guard</ControlFlowGuard>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
