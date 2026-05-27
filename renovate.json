@@ -11,7 +11,7 @@
   "timezone": "Etc/UTC",
   "labels": ["dependencies"],
   "commitMessageLowerCase": "never",
-  "commitMessageTopic": "Dependency {{depName}}",
+  "commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}Dependency {{depName}}{{/if}}",
   "configMigration": true,
   "dependencyDashboard": true,
   "automerge": true,
