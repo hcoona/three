@@ -89,9 +89,12 @@
       },
       "RocksDB": {
         "type": "Direct",
-        "requested": "[9.10.0.55496, )",
-        "resolved": "9.10.0.55496",
-        "contentHash": "wHGZfcTvpIMsbDWkWEeEPfGi/E9/6TT2Klf+rAUJ1rNDxLEAmlEz1dPTCNimIptWWvIoN3VZfxSB57BomDDTKQ=="
+        "requested": "[10.10.1.649, )",
+        "resolved": "10.10.1.649",
+        "contentHash": "2zZnjtrhKjZFv/YhhGhGbZRW9Ddl2dXbJ1HKxulx9U+E41nxIsHA9vG2BOEUm6e3519V++Kz8ORHoioEyHenzg==",
+        "dependencies": {
+          "ZstdSharp.Port": "0.8.7"
+        }
       },
       "Serilog.Extensions.Logging": {
         "type": "Direct",
@@ -493,6 +496,11 @@
         "resolved": "8.0.0",
         "contentHash": "7mu9v0QDv66ar3DpGSZHg9NuNcxDaaAcnMULuZlaTpP9+hwXhrxNGsF5GmLkSHxFdb5bBc1TzeujsRgTrPWi+Q=="
       },
+      "ZstdSharp.Port": {
+        "type": "Transitive",
+        "resolved": "0.8.7",
+        "contentHash": "+4VpxvzEKaHpfTjsLRMhQHx6brqGBkIA+fjUM3wUW8ZoWpPFAeKrO2Nf4uZDeBjjzNDNxSRvLQH4b3S9Ku4JJQ=="
+      },
       "Microsoft.Extensions.Logging": {
         "type": "CentralTransitive",
         "requested": "[9.0.16, )",
@@ -508,9 +516,12 @@
     "net10.0/win-x64": {
       "RocksDB": {
         "type": "Direct",
-        "requested": "[9.10.0.55496, )",
-        "resolved": "9.10.0.55496",
-        "contentHash": "wHGZfcTvpIMsbDWkWEeEPfGi/E9/6TT2Klf+rAUJ1rNDxLEAmlEz1dPTCNimIptWWvIoN3VZfxSB57BomDDTKQ=="
+        "requested": "[10.10.1.649, )",
+        "resolved": "10.10.1.649",
+        "contentHash": "2zZnjtrhKjZFv/YhhGhGbZRW9Ddl2dXbJ1HKxulx9U+E41nxIsHA9vG2BOEUm6e3519V++Kz8ORHoioEyHenzg==",
+        "dependencies": {
+          "ZstdSharp.Port": "0.8.7"
+        }
       }
     }
   }
