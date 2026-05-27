@@ -93,7 +93,8 @@ using (var reader = XmlReader.Create(
 }
 
 var centralPackageVersionsRoot = centralPackageVersionsFile.Root
-    ?? throw new InvalidOperationException("Directory.Packages.props is missing a document element.");
+    ?? throw new InvalidOperationException(
+        "Directory.Packages.props is missing a document element.");
 
 var packageVersions = centralPackageVersionsRoot
     .ElementsNoNamespace("ItemGroup")
