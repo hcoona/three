@@ -255,7 +255,8 @@ internal sealed record ChapterCacheEntry(
     int? CatalogWordCount,
     CatalogChapterAccessState CatalogAccessState = CatalogChapterAccessState.Unknown,
     string? VisibleToUserName = null,
-    VipFullContentCacheProvenance? VipFullContentProvenance = null)
+    VipFullContentCacheProvenance? VipFullContentProvenance = null,
+    bool? CatalogIsVip = null)
 {
     [JsonPropertyOrder(-1)]
     public int ParagraphCount => Paragraphs.Count;
@@ -268,7 +269,8 @@ internal sealed record ChapterCacheProbe(
     int? CatalogWordCount,
     CatalogChapterAccessState CatalogAccessState = CatalogChapterAccessState.Unknown,
     string? VisibleToUserName = null,
-    VipFullContentCacheProvenance? VipFullContentProvenance = null);
+    VipFullContentCacheProvenance? VipFullContentProvenance = null,
+    bool? CatalogIsVip = null);
 
 internal enum VipFullContentCacheProvenance
 {

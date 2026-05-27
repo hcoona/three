@@ -313,6 +313,8 @@ internal sealed class AppCommandService(
                         CatalogCacheScope.Anonymous,
                         cancellationToken);
                     bool isFreshAnonymousCatalog = anonymousCatalog is not null;
+                    LoginState? knownValidatedLoginState = GetValidatedLoginState(
+                        currentLoginState);
 
                     CatalogSnapshot? catalog = anonymousCatalog;
                     List<ChapterPlan>? plans = null;
@@ -321,7 +323,7 @@ internal sealed class AppCommandService(
                         plans = await BuildChapterPlansAsync(
                             catalog!,
                             paths.CacheRoot,
-                            validatedLoginState: null,
+                            knownValidatedLoginState,
                             cancellationToken);
                         if (!plans.Any(plan => plan.Chapter.IsVip)
                             && !RequiresCurrentSessionCatalogEvaluation(
@@ -337,8 +339,6 @@ internal sealed class AppCommandService(
                         }
                     }
 
-                    LoginState? knownValidatedLoginState = GetValidatedLoginState(
-                        currentLoginState);
                     if (knownValidatedLoginState is not null)
                     {
                         (
@@ -650,7 +650,8 @@ internal sealed class AppCommandService(
                                 GetVipFullContentCacheProvenance(
                                     plan.Chapter,
                                     chapterResult,
-                                    vipFullContentAttributionLoginState));
+                                    vipFullContentAttributionLoginState),
+                                plan.Chapter.IsVip);
                             await CacheStore.SaveChapterAsync(
                                 paths.CacheRoot,
                                 catalog.Metadata.BookId,
@@ -1147,8 +1148,10 @@ internal sealed class AppCommandService(
             else if (CanReuseCachedChapter(
                 chapter,
                 cachedProbe.IsPreview,
+                cachedProbe.CatalogAccessState,
                 cachedProbe.VisibleToUserName,
                 cachedProbe.VipFullContentProvenance,
+                cachedProbe.CatalogIsVip,
                 validatedLoginState))
             {
                 cachedEntry = await CacheStore.GetChapterAsync(
@@ -1288,13 +1291,35 @@ internal sealed class AppCommandService(
     private static bool CanReuseCachedChapter(
         ChapterDescriptor chapter,
         bool isPreview,
+        CatalogChapterAccessState cachedCatalogAccessState,
         string? visibleToUserName,
         VipFullContentCacheProvenance? vipFullContentProvenance,
+        bool? cachedCatalogIsVip,
         LoginState? validatedLoginState)
     {
         if (!chapter.IsVip)
         {
-            return !isPreview;
+            if (isPreview)
+            {
+                return false;
+            }
+
+            if (!IsUserSensitiveFullContentCache(
+                isPreview,
+                cachedCatalogAccessState,
+                visibleToUserName,
+                vipFullContentProvenance,
+                cachedCatalogIsVip))
+            {
+                return true;
+            }
+
+            return validatedLoginState is
+                {
+                    IsValidated: true,
+                    UserName: { Length: > 0 } freeCatalogUserName,
+                }
+                && IsSameNormalizedUser(visibleToUserName, freeCatalogUserName);
         }
 
         if (validatedLoginState is not { IsValidated: true, UserName: { Length: > 0 } userName })
@@ -1350,8 +1375,10 @@ internal sealed class AppCommandService(
         return CanReuseCachedChapter(
             plan.Chapter,
             cachedProbe?.IsPreview ?? plan.CachedEntry.IsPreview,
+            cachedProbe?.CatalogAccessState ?? plan.CachedEntry.CatalogAccessState,
             cachedProbe?.VisibleToUserName ?? plan.CachedEntry.VisibleToUserName,
             cachedProbe?.VipFullContentProvenance ?? plan.CachedEntry.VipFullContentProvenance,
+            cachedProbe?.CatalogIsVip ?? plan.CachedEntry.CatalogIsVip,
             GetValidatedLoginState(currentLoginState));
     }
 
@@ -1385,7 +1412,7 @@ internal sealed class AppCommandService(
 
     private static bool IsAuthenticatedSensitiveCachedPlan(ChapterPlan plan)
     {
-        if (plan is not { Status: ChapterPlanStatus.Cached, Chapter.IsVip: true })
+        if (plan is not { Status: ChapterPlanStatus.Cached })
         {
             return false;
         }
@@ -1393,11 +1420,66 @@ internal sealed class AppCommandService(
         bool isPreview = plan.CachedProbe?.IsPreview
             ?? plan.CachedEntry?.IsPreview
             ?? false;
+        CatalogChapterAccessState cachedCatalogAccessState =
+            plan.CachedProbe?.CatalogAccessState
+            ?? plan.CachedEntry?.CatalogAccessState
+            ?? CatalogChapterAccessState.Unknown;
+        bool? cachedCatalogIsVip =
+            plan.CachedProbe?.CatalogIsVip
+            ?? plan.CachedEntry?.CatalogIsVip;
         VipFullContentCacheProvenance? provenance =
             plan.CachedProbe?.VipFullContentProvenance
             ?? plan.CachedEntry?.VipFullContentProvenance;
-        return isPreview || provenance != VipFullContentCacheProvenance.Public;
+        string? visibleToUserName =
+            plan.CachedProbe?.VisibleToUserName
+            ?? plan.CachedEntry?.VisibleToUserName;
+        return (plan.Chapter.IsVip && isPreview)
+            || IsUserSensitiveFullContentCache(
+                isPreview,
+                cachedCatalogAccessState,
+                visibleToUserName,
+                provenance,
+                cachedCatalogIsVip)
+            || (plan.Chapter.IsVip
+                && !isPreview
+                && provenance != VipFullContentCacheProvenance.Public);
     }
+
+    private static bool IsUserSensitiveFullContentCache(
+        bool isPreview,
+        CatalogChapterAccessState cachedCatalogAccessState,
+        string? visibleToUserName,
+        VipFullContentCacheProvenance? vipFullContentProvenance,
+        bool? cachedCatalogIsVip)
+    {
+        if (isPreview || vipFullContentProvenance == VipFullContentCacheProvenance.Public)
+        {
+            return false;
+        }
+
+        return cachedCatalogIsVip switch
+        {
+            // Saved after CatalogIsVip was introduced: true is VIP-origin full content,
+            // false is known free-origin content only when the rest of the metadata is
+            // internally consistent with anonymous-safe public catalog content.
+            true => true,
+            false => !IsAnonymousSafeFreeOriginFullContentCache(
+                cachedCatalogAccessState,
+                visibleToUserName,
+                vipFullContentProvenance),
+            // Legacy entries have unknown origin and must fail closed unless another
+            // caller-visible trust signal (public provenance or same validated user) applies.
+            null => true,
+        };
+    }
+
+    private static bool IsAnonymousSafeFreeOriginFullContentCache(
+        CatalogChapterAccessState cachedCatalogAccessState,
+        string? visibleToUserName,
+        VipFullContentCacheProvenance? vipFullContentProvenance)
+        => cachedCatalogAccessState == CatalogChapterAccessState.Accessible
+            && LoginState.NormalizeUserName(visibleToUserName) is not { Length: > 0 }
+            && vipFullContentProvenance is null;
 
     private static bool IsSameNormalizedUser(string? left, string right)
         => string.Equals(
@@ -1409,16 +1491,22 @@ internal sealed class AppCommandService(
         ChapterDescriptor chapter,
         ChapterCacheProbe cachedProbe,
         LoginState? validatedLoginState)
-        => chapter.IsVip
-            && cachedProbe is
+        => cachedProbe is
             {
                 IsPreview: false,
             }
+            && (chapter.IsVip
+                || cachedProbe.CatalogAccessState == CatalogChapterAccessState.PurchaseRequired
+                || cachedProbe.CatalogIsVip == true
+                || cachedProbe.VipFullContentProvenance is not null
+                || LoginState.NormalizeUserName(cachedProbe.VisibleToUserName) is { Length: > 0 })
             && CanReuseCachedChapter(
                 chapter,
                 cachedProbe.IsPreview,
+                cachedProbe.CatalogAccessState,
                 cachedProbe.VisibleToUserName,
                 cachedProbe.VipFullContentProvenance,
+                cachedProbe.CatalogIsVip,
                 validatedLoginState);
 
     private static string? GetVisibleToUserName(

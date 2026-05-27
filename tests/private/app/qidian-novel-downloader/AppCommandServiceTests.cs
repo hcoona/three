@@ -276,6 +276,128 @@ public sealed class AppCommandServiceTests
     }
 
     [Fact]
+    public async Task
+        DownloadAsyncReusesPublicVipFullCacheAfterFreshAnonymousCatalogMarksChapterFree()
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalog("100", ("Free Volume", false, [("c1", "Chapter One", false, 100)])),
+            CancellationToken.None);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            new ChapterCacheEntry(
+                "c1",
+                ["cached public full content"],
+                IsPreview: false,
+                100,
+                CatalogChapterAccessState.PurchaseRequired,
+                VipFullContentProvenance: VipFullContentCacheProvenance.Public),
+            CancellationToken.None);
+        FakeBrowserManager browserManager = new();
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100"],
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Empty(browserManager.OpenCalls);
+        Assert.Empty(browserManager.Events);
+        string outputPath = AppPaths.BuildDefaultOutputPath(
+            workspace.Paths.OutputRoot,
+            "100",
+            "Book 100",
+            "Author");
+        string markdown = await File.ReadAllTextAsync(outputPath);
+        Assert.Contains("cached public full content", markdown);
+        Assert.Contains("Reusing Chapter One", result.StdOut);
+        Assert.DoesNotContain("Fetching Chapter One", result.StdOut);
+        Assert.Contains("Summary: books completed=1", result.StdOut);
+    }
+
+    [Fact]
+    public async Task
+        DownloadAsyncReusesSameUserVipFullCacheForLaterFreshAnonymousFreeCatalog()
+    {
+        using TestWorkspace workspace = new();
+        await CacheStore.SaveCatalogAsync(
+            workspace.Paths.CacheRoot,
+            CreateCatalog("200", ("Free Volume", false, [("c2", "Free Two", false, 200)])),
+            CancellationToken.None);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "200",
+            new ChapterCacheEntry(
+                "c2",
+                ["cached user full content"],
+                IsPreview: false,
+                200,
+                CatalogChapterAccessState.PurchaseRequired,
+                VisibleToUserName: "tester",
+                VipFullContentProvenance: VipFullContentCacheProvenance.ValidatedUser),
+            CancellationToken.None);
+        FakeBrowserSession headlessSession = new(
+            loginStates:
+            [
+                new LoginState(true, "tester"),
+            ],
+            catalogs:
+            [
+                CreateCatalog("100", ("VIP Volume", true, [("c1", "VIP One", true, 100)])),
+            ],
+            chapterFetchResults:
+            [
+                new ChapterFetchResult(["fetched vip content"], IsPreview: false),
+            ]);
+        FakeBrowserManager browserManager = new(headlessSession);
+        AppCommandService service = CreateService(workspace, browserManager);
+
+        ConsoleCaptureResult result = await WithConsoleCaptureAsync(
+            () => service.DownloadAsync(
+                new DownloadCommandOptions
+                {
+                    BookReferences = ["100", "200"],
+                },
+                CancellationToken.None));
+
+        Assert.Equal(ExitCodes.Success, result.ReturnValue);
+        Assert.Equal([true], browserManager.OpenCalls);
+        Assert.Equal([LoginStateProbeMode.CurrentStateOnly], headlessSession.LoginStateProbeModes);
+        Assert.Equal(
+            [
+                "open:headless",
+                "fetch-catalog:headless:100",
+                "login-state:headless",
+                "fetch-chapter:headless:100:c1",
+            ],
+            browserManager.Events);
+        string vipOutputPath = AppPaths.BuildDefaultOutputPath(
+            workspace.Paths.OutputRoot,
+            "100",
+            "Book 100",
+            "Author");
+        string freeOutputPath = AppPaths.BuildDefaultOutputPath(
+            workspace.Paths.OutputRoot,
+            "200",
+            "Book 200",
+            "Author");
+        string vipMarkdown = await File.ReadAllTextAsync(vipOutputPath);
+        string freeMarkdown = await File.ReadAllTextAsync(freeOutputPath);
+        Assert.Contains("fetched vip content", vipMarkdown);
+        Assert.Contains("cached user full content", freeMarkdown);
+        Assert.Contains("Fetching VIP One", result.StdOut);
+        Assert.Contains("Reusing Free Two", result.StdOut);
+        Assert.DoesNotContain("Fetching Free Two", result.StdOut);
+        Assert.Contains("Summary: books completed=2", result.StdOut);
+    }
+
+    [Fact]
     public async Task DownloadAsyncDryRunUsesFreshAnonymousVipCatalogWithoutSessionProbe()
     {
         using TestWorkspace workspace = new();
@@ -2458,7 +2580,8 @@ public sealed class AppCommandServiceTests
                 ["cached content"],
                 IsPreview: false,
                 100,
-                CatalogChapterAccessState.Accessible),
+                CatalogChapterAccessState.Accessible,
+                CatalogIsVip: false),
             CancellationToken.None);
         string outputPath = AppPaths.BuildDefaultOutputPath(
             workspace.Paths.OutputRoot,
@@ -2502,7 +2625,8 @@ public sealed class AppCommandServiceTests
                 ["cached content"],
                 IsPreview: false,
                 100,
-                CatalogChapterAccessState.Accessible),
+                CatalogChapterAccessState.Accessible,
+                CatalogIsVip: false),
             CancellationToken.None);
         string outputPath = AppPaths.BuildDefaultOutputPath(
             workspace.Paths.OutputRoot,
@@ -2557,7 +2681,8 @@ public sealed class AppCommandServiceTests
                 ["cached content"],
                 IsPreview: false,
                 100,
-                CatalogChapterAccessState.Accessible),
+                CatalogChapterAccessState.Accessible,
+                CatalogIsVip: false),
             CancellationToken.None);
         string outsideRoot = Path.Combine(workspace.Root, "outside-output");
         Directory.CreateDirectory(outsideRoot);
@@ -4652,7 +4777,8 @@ public sealed class AppCommandServiceTests
             ["cached"],
             IsPreview: false,
             wordCount,
-            CatalogChapterAccessState.Accessible);
+            CatalogChapterAccessState.Accessible,
+            CatalogIsVip: false);
         await CacheStore.SaveChapterAsync(
             workspace.Paths.CacheRoot,
             "100",
@@ -4798,6 +4924,293 @@ public sealed class AppCommandServiceTests
 
         Assert.Single(plans);
         Assert.Equal(ChapterPlanStatus.FetchRequired, plans[0].Status);
+    }
+
+    [Fact]
+    public async Task
+        BuildChapterPlansAsyncDoesNotReuseUnknownFormerVipFullCacheWhenCatalogMarksChapterFree()
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached"],
+            IsPreview: false,
+            100,
+            CatalogChapterAccessState.PurchaseRequired);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalog("100", ("Volume", false, [("c1", "Chapter", false, 100)])),
+            workspace.Paths.CacheRoot,
+            validatedLoginState: null,
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.Changed, plans[0].Status);
+        Assert.Null(plans[0].CachedEntry);
+    }
+
+    [Theory]
+    [InlineData(CatalogChapterAccessState.Unknown)]
+    [InlineData(CatalogChapterAccessState.PurchaseRequired)]
+    public async Task
+        BuildChapterPlansAsyncDoesNotReuseKnownFreeOriginFullCacheWithNonAccessibleCachedAccessState(
+            object catalogAccessState)
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached suspicious content"],
+            IsPreview: false,
+            100,
+            (CatalogChapterAccessState)catalogAccessState,
+            CatalogIsVip: false);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "Free Volume",
+                    false,
+                    [
+                        (
+                            "c1",
+                            "Free Chapter",
+                            false,
+                            100,
+                            CatalogChapterAccessState.Accessible),
+                    ])),
+            workspace.Paths.CacheRoot,
+            validatedLoginState: null,
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.Changed, plans[0].Status);
+        Assert.Null(plans[0].CachedEntry);
+    }
+
+    [Fact]
+    public async Task
+        BuildChapterPlansAsyncDoesNotReuseKnownFreeOriginFullCacheWithUserBoundMetadataWithoutValidatedSession()
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached suspicious content"],
+            IsPreview: false,
+            100,
+            CatalogChapterAccessState.Accessible,
+            VisibleToUserName: "alice",
+            VipFullContentProvenance: VipFullContentCacheProvenance.ValidatedUser,
+            CatalogIsVip: false);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "Free Volume",
+                    false,
+                    [
+                        (
+                            "c1",
+                            "Free Chapter",
+                            false,
+                            100,
+                            CatalogChapterAccessState.Accessible),
+                    ])),
+            workspace.Paths.CacheRoot,
+            validatedLoginState: null,
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.FetchRequired, plans[0].Status);
+        Assert.Null(plans[0].CachedEntry);
+    }
+
+    [Fact]
+    public async Task
+        BuildChapterPlansAsyncReusesKnownFreeOriginFullCacheWithUserBoundMetadataForSameValidatedSession()
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached same-user content"],
+            IsPreview: false,
+            100,
+            CatalogChapterAccessState.Accessible,
+            VisibleToUserName: "alice",
+            VipFullContentProvenance: VipFullContentCacheProvenance.ValidatedUser,
+            CatalogIsVip: false);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "Free Volume",
+                    false,
+                    [
+                        (
+                            "c1",
+                            "Free Chapter",
+                            false,
+                            100,
+                            CatalogChapterAccessState.Accessible),
+                    ])),
+            workspace.Paths.CacheRoot,
+            new LoginState(true, "alice"),
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.Cached, plans[0].Status);
+        Assert.NotNull(plans[0].CachedEntry);
+    }
+
+    [Fact]
+    public async Task
+        BuildChapterPlansAsyncDoesNotReuseLegacyAccessibleFullCacheWhenCatalogMarksChapterFree()
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached legacy content"],
+            IsPreview: false,
+            100,
+            CatalogChapterAccessState.Accessible);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalogWithAccessStates(
+                "100",
+                (
+                    "Free Volume",
+                    false,
+                    [
+                        (
+                            "c1",
+                            "Free Chapter",
+                            false,
+                            100,
+                            CatalogChapterAccessState.Accessible),
+                    ])),
+            workspace.Paths.CacheRoot,
+            validatedLoginState: null,
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.FetchRequired, plans[0].Status);
+        Assert.Null(plans[0].CachedEntry);
+    }
+
+    [Fact]
+    public async Task
+        BuildChapterPlansAsyncDoesNotReuseUnknownAccessibleFormerVipFullCacheWhenCatalogMarksChapterFree()
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached"],
+            IsPreview: false,
+            100,
+            CatalogChapterAccessState.Accessible,
+            CatalogIsVip: true);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalog("100", ("Volume", false, [("c1", "Chapter", false, 100)])),
+            workspace.Paths.CacheRoot,
+            validatedLoginState: null,
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.FetchRequired, plans[0].Status);
+        Assert.Null(plans[0].CachedEntry);
+    }
+
+    [Fact]
+    public async Task
+        BuildChapterPlansAsyncDoesNotReuseValidatedUserVipFullCacheWhenCatalogMarksChapterFreeWithoutValidatedSession()
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached"],
+            IsPreview: false,
+            100,
+            CatalogChapterAccessState.Accessible,
+            VisibleToUserName: "alice",
+            VipFullContentProvenance: VipFullContentCacheProvenance.ValidatedUser);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalog("100", ("Volume", false, [("c1", "Chapter", false, 100)])),
+            workspace.Paths.CacheRoot,
+            validatedLoginState: null,
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.FetchRequired, plans[0].Status);
+        Assert.Null(plans[0].CachedEntry);
+    }
+
+    [Fact]
+    public async Task
+        BuildChapterPlansAsyncReusesValidatedUserVipFullCacheWhenCatalogMarksChapterFreeForSameValidatedSession()
+    {
+        using TestWorkspace workspace = new();
+        ChapterCacheEntry cachedEntry = new(
+            "c1",
+            ["cached"],
+            IsPreview: false,
+            100,
+            CatalogChapterAccessState.Accessible,
+            VisibleToUserName: "alice",
+            VipFullContentProvenance: VipFullContentCacheProvenance.ValidatedUser);
+        await CacheStore.SaveChapterAsync(
+            workspace.Paths.CacheRoot,
+            "100",
+            cachedEntry,
+            CancellationToken.None);
+
+        List<ChapterPlan> plans = await AppCommandService.BuildChapterPlansAsync(
+            CreateCatalog("100", ("Volume", false, [("c1", "Chapter", false, 100)])),
+            workspace.Paths.CacheRoot,
+            new LoginState(true, "alice"),
+            CancellationToken.None);
+
+        Assert.Single(plans);
+        Assert.Equal(ChapterPlanStatus.Cached, plans[0].Status);
+        Assert.NotNull(plans[0].CachedEntry);
     }
 
     [Fact]
@@ -5002,7 +5415,8 @@ public sealed class AppCommandServiceTests
                 ["cached"],
                 IsPreview: false,
                 100,
-                CatalogChapterAccessState.Accessible),
+                CatalogChapterAccessState.Accessible,
+                CatalogIsVip: false),
             CancellationToken.None);
         string changedCachePath = AppPaths.GetChapterCachePath(
             workspace.Paths.CacheRoot,
