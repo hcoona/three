@@ -243,19 +243,11 @@
       }
     },
     {
-      "description": "Public Python library runtime minimums should not chase latest lower bounds.",
+      "description": "Public Python library runtime minimums should not chase latest lower bounds; lock-file maintenance refreshes resolved versions.",
       "matchManagers": ["pep621"],
       "matchFileNames": ["src/public/lib/**/pyproject.toml"],
       "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
-      "rangeStrategy": "update-lockfile"
-    },
-    {
-      "description": "Group public Python library runtime compatibility updates.",
-      "matchManagers": ["pep621"],
-      "matchFileNames": ["src/public/lib/**/pyproject.toml"],
-      "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
-      "groupName": "Public Python Library Runtime Compatibility",
-      "automerge": true
+      "enabled": false
     },
     {
       "description": "Group publishable Python build backend minimum updates separately.",
