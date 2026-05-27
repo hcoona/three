@@ -402,10 +402,10 @@
       "automerge": true
     },
     {
-      "description": "Update public System.Memory lower bounds with SourceLink when restore requires it.",
+      "description": "Update public transitive lower bounds with SourceLink when restore requires it.",
       "matchManagers": ["nuget"],
       "matchFileNames": ["src/public/lib/Directory.Packages.props"],
-      "matchPackageNames": ["System.Memory"],
+      "matchPackageNames": ["System.Memory", "System.Runtime.CompilerServices.Unsafe"],
       "rangeStrategy": "bump",
       "groupName": "MSBuild and Repository Build Tooling"
     },
