@@ -457,7 +457,7 @@
       "matchDepNames": ["pnpm"],
       "groupName": "Mise pnpm",
       "postUpgradeTasks": {
-        "commands": ["mise install pnpm && mise run --skip-tools --force update-pnpm-lockfiles"],
+        "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
         "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
         "executionMode": "branch"
       },
@@ -469,7 +469,7 @@
       "matchDepNames": ["uv"],
       "groupName": "Mise uv",
       "postUpgradeTasks": {
-        "commands": ["mise install uv && mise run --skip-tools --force update-uv-lock"],
+        "commands": ["mise install uv", "mise run --skip-tools --force update-uv-lock"],
         "fileFilters": ["uv.lock"],
         "executionMode": "branch"
       },
