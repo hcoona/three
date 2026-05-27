@@ -43,6 +43,12 @@
       "rangeStrategy": "replace"
     },
     {
+      "description": "Keep pnpm on v10 while Node 20 remains in the support matrix.",
+      "matchManagers": ["github-actions", "mise"],
+      "matchDepNames": ["pnpm"],
+      "allowedVersions": "<11"
+    },
+    {
       "description": "JavaScript development dependencies may update lower bounds normally.",
       "matchManagers": ["npm"],
       "matchDepTypes": ["devDependencies"],
@@ -237,19 +243,11 @@
       }
     },
     {
-      "description": "Public Python library runtime minimums should not chase latest lower bounds.",
+      "description": "Public Python library runtime minimums should not chase latest lower bounds; lock-file maintenance refreshes resolved versions.",
       "matchManagers": ["pep621"],
       "matchFileNames": ["src/public/lib/**/pyproject.toml"],
       "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
-      "rangeStrategy": "update-lockfile"
-    },
-    {
-      "description": "Group public Python library runtime compatibility updates.",
-      "matchManagers": ["pep621"],
-      "matchFileNames": ["src/public/lib/**/pyproject.toml"],
-      "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
-      "groupName": "Public Python Library Runtime Compatibility",
-      "automerge": true
+      "enabled": false
     },
     {
       "description": "Group publishable Python build backend minimum updates separately.",
@@ -362,7 +360,7 @@
     {
       "description": "Group Microsoft.Extensions updates.",
       "matchManagers": ["nuget"],
-      "matchPackageNames": ["/^Microsoft\\.Extensions\\./"],
+      "matchPackageNames": ["/^Microsoft\\.Extensions\\./", "Serilog.Extensions.Logging"],
       "groupName": "Microsoft.Extensions Packages"
     },
     {
@@ -467,7 +465,7 @@
       "groupName": "Mise pnpm",
       "postUpgradeTasks": {
         "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
-        "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
+        "fileFilters": ["mise.lock", "**/mise.lock", "**/.mise.lock", "pnpm-lock.yaml", "**/pnpm-lock.yaml"],
         "executionMode": "branch"
       },
       "automerge": true
@@ -510,6 +508,23 @@
       "description": "Automerge all Renovate dependency PRs through GitHub after required checks pass.",
       "matchManagers": ["bundler", "github-actions", "mise", "npm", "nuget", "pep621"],
       "automerge": true
+    },
+    {
+      "description": "Require manual approval for .NET test platform major updates until the MTP 2 runner migration is ready.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": [
+        "/^Microsoft\\.Testing\\./",
+        "/^MSTest\\./",
+        "coverlet.collector",
+        "Microsoft.NET.Test.Sdk",
+        "xunit",
+        "xunit.abstractions",
+        "xunit.runner.visualstudio",
+        "xunit.v3"
+      ],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "automerge": false
     }
   ]
 }
