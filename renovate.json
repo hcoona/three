@@ -399,6 +399,12 @@
       "groupName": "MSBuild and Repository Build Tooling"
     },
     {
+      "description": "Update SourceLink with the direct package version it requires for restore.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["Microsoft.SourceLink.GitHub", "System.IO.Hashing"],
+      "groupName": "MSBuild and Repository Build Tooling"
+    },
+    {
       "description": "Update Nerdbank.GitVersioning packages and tools together.",
       "matchManagers": ["nuget", "npm"],
       "matchPackageNames": ["Nerdbank.GitVersioning", "nbgv", "nerdbank-gitversioning"],
