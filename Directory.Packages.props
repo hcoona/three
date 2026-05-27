@@ -17,9 +17,9 @@
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="9.0.16" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.60.0" />
-    <PackageVersion Include="Microsoft.SemanticKernel" Version="1.74.0" />
-    <PackageVersion Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" Version="1.74.0" />
-    <PackageVersion Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.74.0" />
+    <PackageVersion Include="Microsoft.SemanticKernel" Version="1.76.0" />
+    <PackageVersion Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" Version="1.76.0" />
+    <PackageVersion Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.76.0" />
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="17.14.2" />
     <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="1.9.1" />
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
