@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ["3.2", "3.3", "3.4"]
+        ruby: ["4.0"]
 
     steps:
       - name: Checkout repository
@@ -35,7 +35,7 @@ jobs:
             ghostscript
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@675dd7ba1b06c8786a1480d89c384f5620a42647 # v1
+        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true

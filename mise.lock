@@ -451,41 +451,41 @@ checksum = "sha256:124510b94b6baa3380d051fdf4650eaa80a302c876d611e9dba0b2e18d874
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip"
 
 [[tools.ruby]]
-version = "3.3.10"
+version = "4.0.5"
 backend = "core:ruby"
 
 [tools.ruby."platforms.linux-arm64"]
-checksum = "sha256:0265cb5f0626dd6ef20ef7043ed8dfb9daa38984793b26cadc8170653cc082e8"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.arm64_linux.tar.gz"
+checksum = "sha256:fa8d337b2e97149f17d609cec5e6e5907f032390ad24bc3095f66157ce2eddf1"
+url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.arm64_linux.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.linux-arm64-musl"]
-checksum = "sha256:0265cb5f0626dd6ef20ef7043ed8dfb9daa38984793b26cadc8170653cc082e8"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.arm64_linux.tar.gz"
+checksum = "sha256:fa8d337b2e97149f17d609cec5e6e5907f032390ad24bc3095f66157ce2eddf1"
+url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.arm64_linux.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.linux-x64"]
-checksum = "sha256:864b2f58f33d88f2d3c8130b2d50f3289796c1a2a0e0cc945253abd2d329796e"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.x86_64_linux.tar.gz"
+checksum = "sha256:831f0e8bdc423156065d7965116f8d5c5fac943aff9128342094e2d745bd2051"
+url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.x86_64_linux.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.linux-x64-musl"]
-checksum = "sha256:864b2f58f33d88f2d3c8130b2d50f3289796c1a2a0e0cc945253abd2d329796e"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.x86_64_linux.tar.gz"
+checksum = "sha256:831f0e8bdc423156065d7965116f8d5c5fac943aff9128342094e2d745bd2051"
+url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.x86_64_linux.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.macos-arm64"]
-checksum = "sha256:bdbfeceee5981e29a64c0d515a29755fad723ef17c259317af7976aedca22098"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.macos.tar.gz"
+checksum = "sha256:cc07d78e61eef4a0d04fce62bce56b6822b261dbed30bad306f6bc7f9ca7085d"
+url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.macos.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.macos-x64"]
-checksum = "sha256:b555baa467a306cfc8e6c6ed24d0d27b27e9a1bed1d91d95509859eac6b0e928"
-url = "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.10.tar.gz"
+checksum = "sha256:7d6149079a63f8ae1d326c9fa65c6019ba2dc3155eae7b39159817911c88958e"
+url = "https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.5.tar.gz"
 
 [tools.ruby."platforms.windows-x64"]
-checksum = "sha256:80203102617b216dc0bcdcc8c21cc3889aa3fde7f15860e2e22ee5487480f694"
-url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.3.10-1/rubyinstaller-3.3.10-1-x64.7z"
+checksum = "sha256:74e31613fc71e6e23431dfc4d8b6ec2818a4dc1fd16e0983b074144c16719c8b"
+url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-4.0.5-1/rubyinstaller-4.0.5-1-x64.7z"
 
 [[tools.taplo]]
 version = "0.10.0"

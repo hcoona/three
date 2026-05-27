@@ -1,6 +1,7 @@
 name: CI Validation
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -62,7 +63,7 @@ jobs:
           mode=push
           if [ "$EVENT_NAME" = "pull_request" ]; then
             mode=pull_request
-          elif [ "$EVENT_NAME" = "schedule" ]; then
+          elif [ "$EVENT_NAME" = "schedule" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             mode=scheduled_full
           fi
           echo "mode=${mode}" >> "$GITHUB_OUTPUT"
@@ -540,7 +541,7 @@ jobs:
       - name: Install Ruby for RubyGems validation
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3'
+          ruby-version: '4.0'
       - uses: actions/download-artifact@v8
         if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
         with:

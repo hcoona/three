@@ -16,7 +16,7 @@
   "prConcurrentLimit": 8,
   "branchConcurrentLimit": 8,
   "prHourlyLimit": 2,
-  "rebaseWhen": "conflicted",
+  "rebaseWhen": "behind-base-branch",
   "enabledManagers": ["bundler", "github-actions", "mise", "npm", "nuget", "pep621"],
   "ignorePaths": ["**/node_modules/**", "**/bower_components/**", "**/vendor/**"],
   "lockFileMaintenance": {
@@ -387,6 +387,29 @@
       "groupName": ".NET Test Stack"
     },
     {
+      "description": "Group public NuGet library dependency minimum updates.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "groupName": "Public NuGet Library Minimum Dependency Versions",
+      "automerge": true
+    },
+    {
+      "description": "Group root NuGet versions used as public library minimums.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["Directory.Packages.props"],
+      "matchPackageNames": ["System.Net.Http", "System.Text.Json"],
+      "groupName": "Public NuGet Library Minimum Dependency Versions",
+      "automerge": true
+    },
+    {
+      "description": "Update public transitive lower bounds with SourceLink when restore requires it.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "matchPackageNames": ["System.Memory", "System.Runtime.CompilerServices.Unsafe"],
+      "rangeStrategy": "bump",
+      "groupName": "MSBuild and Repository Build Tooling"
+    },
+    {
       "description": "Group MSBuild and repository build tooling.",
       "matchManagers": ["nuget"],
       "matchPackageNames": [
@@ -394,7 +417,8 @@
         "DotNet.ReproducibleBuilds",
         "DotNet.ReproducibleBuilds.Isolated",
         "Microsoft.SourceLink.GitHub",
-        "Nerdbank.GitVersioning"
+        "Nerdbank.GitVersioning",
+        "System.IO.Hashing"
       ],
       "groupName": "MSBuild and Repository Build Tooling"
     },
@@ -410,21 +434,6 @@
       "matchManagers": ["nuget"],
       "matchPackageNames": ["Microsoft.Web.WebView2", "Microsoft.Windows.SDK.BuildTools", "Microsoft.WindowsAppSDK"],
       "groupName": "Windows UI Platform Packages"
-    },
-    {
-      "description": "Group public NuGet library dependency minimum updates.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
-      "groupName": "Public NuGet Library Minimum Dependency Versions",
-      "automerge": true
-    },
-    {
-      "description": "Group root NuGet versions used as public library minimums.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["Directory.Packages.props"],
-      "matchPackageNames": ["System.Net.Http", "System.Text.Json"],
-      "groupName": "Public NuGet Library Minimum Dependency Versions",
-      "automerge": true
     },
     {
       "description": "Group Pkl generator mise updates separately.",
