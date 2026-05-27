@@ -109,6 +109,18 @@ function Save-VerifiedDotNetInstallScript {
     }
 }
 
+function Get-DotNetInstallArchitecture {
+    switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
+        ([System.Runtime.InteropServices.Architecture]::X64) { return "x64" }
+        ([System.Runtime.InteropServices.Architecture]::X86) { return "x86" }
+        ([System.Runtime.InteropServices.Architecture]::Arm) { return "arm" }
+        ([System.Runtime.InteropServices.Architecture]::Arm64) { return "arm64" }
+        default {
+            throw "Unsupported OS architecture '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' for dotnet-install.ps1."
+        }
+    }
+}
+
 function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
     param(
         [Parameter(Mandatory = $true)]
@@ -146,7 +158,8 @@ function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
             -Uri $dotNetInstallScriptUri `
             -ExpectedSha256 $dotNetInstallScriptSha256 `
             -Path $dotNetInstallScript
-        & $dotNetInstallScript -Version $ExpectedSdkVersion -InstallDir $dotNetInstallDir -NoPath
+        $dotNetInstallArchitecture = Get-DotNetInstallArchitecture
+        & $dotNetInstallScript -Version $ExpectedSdkVersion -InstallDir $dotNetInstallDir -Architecture $dotNetInstallArchitecture -NoPath
     }
 
     $miseLockContentAfterInstall = Get-Content -Path $MiseLockPath -Raw
