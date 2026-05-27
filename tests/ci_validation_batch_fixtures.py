@@ -314,13 +314,14 @@ def freeze_ci_validation_execution_batch_manifest(
 
 
 def budget(batch_count: int, *, input_count: int = 5) -> dict[str, object]:
+    physical_job_count = int(batch_count > 0)
     return {
-        "min-total-jobs": batch_count,
+        "min-total-jobs": physical_job_count,
         "max-total-jobs": 18,
         "min-windows-jobs": 0,
         "max-windows-jobs": 8,
         "non-batch-control-plane-job-count": 0,
-        "actual-total-jobs": batch_count,
+        "actual-total-jobs": physical_job_count,
         "actual-windows-jobs": 0,
         "max-validation-artifacts": 20,
         "actual-validation-artifacts": input_count + batch_count + 2,

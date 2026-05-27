@@ -2081,6 +2081,54 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_validation_artifact_id_downloads_merge_to_consumer_paths"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_execution_batch_runner_family_outputs_accept_deeper_dag"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_runner_family_orchestrator_readiness_avoids_layer_barrier"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_runner_family_orchestrator_selects_later_ready_batch"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_matrix_row_includes_identity_matrix"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_materializer_rejects_cross_family_batch_dependencies"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_manifest_validation_rejects_cross_family_batch_dependencies"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_runner_family_orchestrator_fails_closed_when_waiting"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_upload_record_writes_local_artifact_id_state"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_live_artifact_rejects_conflicting_observed_attempts"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_live_artifact_rejects_conflicting_observed_run_ids"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_dependency_artifact_metadata_requires_matching_admission_source"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_rejects_direct_writer_with_slot_index"
           }
         ],
         "aggregate-or-verdict": [
@@ -2115,6 +2163,10 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_materialization_missing_fails_closed"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_trusted_dependency_bundle_rejects_mismatched_admission_source"
           }
         ],
         "no-publication-boundary": [
@@ -2169,6 +2221,10 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_download_ci_validation_observed_artifacts_downloads_batch_metadata"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_download_ci_validation_observed_artifacts_rejects_attempt_mismatch"
           },
           {
             "type": "test",
@@ -2285,6 +2341,18 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_allows_current_g5_manifest_only"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_verify_ci_validation_artifact_boundaries_fails_on_bounded_overflow"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_download_ci_validation_records_namespace_overflow_bounded"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_uses_downloader_namespace_overflow"
           }
         ],
         "no-publication-boundary": [
@@ -2351,6 +2419,14 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_fails_closed_for_bad_downloader_observation"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_fails_without_downloader_admission"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_rejects_bad_downloader_admission"
           }
         ],
         "no-publication-boundary": [
@@ -2982,11 +3058,27 @@
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_matrix_downloads_exact_dependency_bundles"
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_orchestrators_use_internal_dependency_state"
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_execution_batch_layer_outputs_bind_dependency_artifact_paths"
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_cli_writes_bundle_and_outputs"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_materializer_rejects_cross_family_batch_dependencies"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_manifest_validation_rejects_cross_family_batch_dependencies"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_runner_family_outputs_bind_dependency_paths"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_download_ci_validation_observed_artifacts_downloads_batch_metadata"
           }
         ],
         "aggregate-or-verdict": [
@@ -3217,6 +3309,22 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_download_ci_validation_observed_artifacts_downloads_batch_metadata"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_rejects_orchestrator_writer_without_slot_index"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_direct_writer_does_not_require_slot_index"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_rejects_forged_observed_writer_identity"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_freeze_rejects_forged_observed_writer_identity"
           }
         ],
         "aggregate-or-verdict": [

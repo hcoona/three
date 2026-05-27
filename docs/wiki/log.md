@@ -614,3 +614,62 @@ Updated the CI affected-validation LLD to clarify that matrix execution-batch jo
 - Updated the CI affected-validation LLD to state that public CI batch evidence
   has no reused-receipt authority and release-shaped public source proof is
   admitted only through `evidence-source: no-publish-validation` output.
+
+## [2026-05-26] query | Record runner-family CI topology
+
+- Updated the CI affected-validation low-level design to replace fixed
+  execution-batch layers with bounded runner-family orchestrators.
+- Clarified exact artifact handling for same-family and cross-runner
+  dependencies without adding receipt or writer-observation authority.
+
+## [2026-05-26] query | Tighten CI runner-family orchestrator contract
+
+- Updated the CI affected-validation LLD for runner-family orchestrator slots,
+  truthful bundle writer identity, budget-counted batch evidence bundles,
+  cross-runner dependency waiting, and cache-spoof fail-closed behavior.
+
+## [2026-05-26] query | Correct CI physical budget semantics
+
+- Updated the CI affected-validation LLD to count physical runner-family
+  orchestrator jobs separately from logical execution batches.
+- Clarified runner-family orchestrator slot dependency admission and live
+  artifact-ID downloads for cross-runner batch bundles.
+
+## [2026-05-26] query | Clarify CI writer identity checks
+
+- Updated the CI affected-validation LLD to distinguish legacy logical batch
+  writer fields from physical runner-family orchestrator job and slot evidence.
+- Recorded that observed writer identity is recomputed from observed workflow,
+  job, and matrix, with orchestrator writers using an empty physical matrix.
+
+## [2026-05-26] query | Tighten CI orchestrator slot schema
+
+- Clarified that orchestrator writer evidence requires a non-empty
+  `observed-orchestrator-slot-index`, while `null` is valid only for
+  legacy/direct job-context writers.
+
+## [2026-05-26] query | Finalized CI artifact run-attempt admission
+
+- Updated the CI affected-validation LLD for design C: orchestrator artifact-ID state plus attempt-scoped names are the trusted degraded-platform proof when GitHub omits per-artifact `run_attempt`.
+- Clarified that a present mismatched artifact attempt fails closed, while an absent attempt may pass only with artifact ID/name/run, namespace, metadata, and payload binding; malicious current control-plane behavior remains out of artifact-admission scope.
+
+## [2026-05-26] query | Clarify CI validation admission trust boundary
+
+- Clarified that CI artifact admission trusts checked-in workflow/control-plane
+  code as reviewed code.
+- Recorded that orchestrator artifact-ID state manifests are validation-grade
+  evidence, not release immutable proof.
+
+## [2026-05-26] query | R8 CI artifact-id state manifest fixes
+
+Updated the CI affected-validation LLD to describe published runner-family artifact-id state manifests as CI-internal trust anchors and reframed the 12-minute performance goal as an observable target rather than a hard correctness ceiling.
+
+## [2026-05-26] query | R9 CI runner-family simplification
+
+- Updated the CI affected-validation LLD to make Windows and Ubuntu orchestrators independent and to forbid cross-family validation batch dependencies.
+- Removed the previous peer-family artifact-ID state manifest handoff from the documented dependency-admission model; aggregate remains a workflow-needs fan-in.
+
+## [2026-05-27] query | Tighten CI aggregate downloader admission
+
+- Updated the CI affected-validation LLD to require downloader-produced internal batch admissions before aggregate can verify batch candidates.
+- Replaced stale cross-runner dependency text with same-family-only runner-family admission and cross-family fail-closed topology.

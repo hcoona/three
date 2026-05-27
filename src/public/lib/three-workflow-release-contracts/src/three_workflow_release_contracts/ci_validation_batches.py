@@ -78,13 +78,16 @@ _BUNDLE_ADMISSIBILITIES = frozenset(
 )
 _AGGREGATE_MAX_DURATION_SECONDS = 120
 _PROOF_ADMISSIBILITY = "validation-only"
+_CROSS_FAMILY_BATCH_DEPENDENCY_MESSAGE = (
+    "current runner-family validation topology does not support cross-family "
+    "batch dependencies; coalesce work into one family or add a future "
+    "explicit cross-family mode"
+)
 _EXPECTED_FINAL_VALIDATION_ARTIFACTS = 2
 _MAX_VALIDATION_ARTIFACTS = 20
 _MAX_PREFINAL_VALIDATION_ARTIFACTS = (
     _MAX_VALIDATION_ARTIFACTS - _EXPECTED_FINAL_VALIDATION_ARTIFACTS
 )
-_BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS = 12
-_BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS = 4
 _MAX_TOTAL_JOBS = 18
 _MAX_WINDOWS_JOBS = 8
 _MAX_EXECUTION_BATCHES = 13
@@ -243,9 +246,12 @@ _BUNDLE_WRITER_KEYS = frozenset(
         "identity-source",
         "expected-boundary",
         "expected-job-identity",
+        "observed-writer-identity",
         "observed-workflow",
         "observed-job",
         "observed-matrix",
+        "logical-batch-identity",
+        "observed-orchestrator-slot-index",
     },
 )
 _EXECUTION_TREE_KEYS = frozenset(
@@ -915,10 +921,6 @@ def materialize_ci_validation_execution_batches(  # noqa: PLR0913
         expected_input_non_bundle_validation_artifacts=(
             _expected_input_non_bundle_validation_artifacts(plan)
         ),
-        non_batch_control_plane_job_count=non_batch_control_plane_job_count,
-        batch_specs=batch_specs,
-        groups=groups,
-        plan=plan,
     )
     if len(batch_specs) > max_batches:
         raise ContractValidationError(
@@ -3647,7 +3649,7 @@ def _materializer_batches(  # noqa: PLR0913
         for spec in batch_specs
         for work_group_id in cast("Sequence[str]", spec["work-group-ids"])
     }
-    return [
+    batches = [
         _materializer_batch(
             envelope=envelope,
             workflow=workflow,
@@ -3659,6 +3661,40 @@ def _materializer_batches(  # noqa: PLR0913
         )
         for spec in batch_specs
     ]
+    _reject_cross_family_batch_dependencies(batches)
+    return batches
+
+
+def _reject_cross_family_batch_dependencies(
+    batches: Sequence[Mapping[str, object]],
+) -> None:
+    family_by_batch_id = {
+        str(batch["batch-id"]): str(batch["runner-family"])
+        for batch in batches
+        if isinstance(batch.get("batch-id"), str)
+        and isinstance(batch.get("runner-family"), str)
+    }
+    for batch in batches:
+        batch_id = batch.get("batch-id")
+        runner_family = batch.get("runner-family")
+        if not isinstance(batch_id, str) or not isinstance(runner_family, str):
+            continue
+        for dependency_id in _sequence(batch.get("depends-on-batches", [])):
+            if not isinstance(dependency_id, str):
+                continue
+            dependency_family = family_by_batch_id.get(dependency_id)
+            if (
+                dependency_family is not None
+                and dependency_family != runner_family
+            ):
+                raise ContractValidationError(
+                    [
+                        ValidationIssue(
+                            "$.batches.depends-on-batches",
+                            _CROSS_FAMILY_BATCH_DEPENDENCY_MESSAGE,
+                        )
+                    ]
+                )
 
 
 def _materializer_batch(  # noqa: PLR0913
@@ -3762,44 +3798,18 @@ def _materializer_budget(  # noqa: PLR0913
     batch_count = len(batches)
     final_count = _EXPECTED_FINAL_VALIDATION_ARTIFACTS
     pre_final = expected_input_non_bundle_validation_artifacts + batch_count
-    actual_total_jobs = non_batch_control_plane_job_count + batch_count
+    active_runner_family_orchestrators = (
+        _active_runner_family_orchestrator_count(batches)
+    )
+    actual_total_jobs = (
+        non_batch_control_plane_job_count + active_runner_family_orchestrators
+    )
     actual_windows_jobs = _derived_windows_jobs(
         batches,
         _work_groups_by_id(plan),
     )
-    fixed_lower_bounds_apply = _fixed_lower_bounds_apply(plan, batch_count)
-    min_total_jobs = (
-        _BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS
-        if fixed_lower_bounds_apply
-        else actual_total_jobs
-        if batch_count
-        else 0
-    )
-    min_windows_jobs = (
-        _BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS
-        if fixed_lower_bounds_apply
-        else actual_windows_jobs
-        if batch_count
-        else 0
-    )
-    lower_bound_issues: list[ValidationIssue] = []
-    if fixed_lower_bounds_apply:
-        if actual_total_jobs < _BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS:
-            lower_bound_issues.append(
-                ValidationIssue(
-                    "budget.actual-total-jobs",
-                    "must meet broad/full/global min total jobs",
-                )
-            )
-        if actual_windows_jobs < _BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS:
-            lower_bound_issues.append(
-                ValidationIssue(
-                    "budget.actual-windows-jobs",
-                    "must meet broad/full/global min windows jobs",
-                )
-            )
-    if lower_bound_issues:
-        raise ContractValidationError(lower_bound_issues)
+    min_total_jobs = actual_total_jobs if batch_count else 0
+    min_windows_jobs = actual_windows_jobs if batch_count else 0
     return {
         "min-total-jobs": min_total_jobs,
         "max-total-jobs": _MAX_TOTAL_JOBS,
@@ -3825,98 +3835,12 @@ def _materializer_budget(  # noqa: PLR0913
     }
 
 
-def _fixed_lower_bounds_apply(
-    plan: Mapping[str, object] | None,
-    batch_count: int,
-) -> bool:
-    if plan is None or batch_count == 0:
-        return False
-    if plan.get("verdict-intent") != "executable":
-        return False
-    classification = plan.get("classification")
-    if not isinstance(classification, Mapping):
-        return False
-    if classification.get("lightweight-only") is True:
-        return False
-    return _plan_has_broad_full_global_scope(plan, classification)
-
-
-def _plan_has_broad_full_global_scope(
-    plan: Mapping[str, object],
-    classification: Mapping[str, object],
-) -> bool:
-    scheduled_full = plan.get("scheduled-full")
-    scheduled_full_enabled = (
-        isinstance(scheduled_full, Mapping)
-        and scheduled_full.get("enabled") is True
-    )
-    return (
-        plan.get("mode") == "scheduled_full"
-        or scheduled_full_enabled
-        or bool(_sequence(classification.get("broad-expansions", [])))
-        or any(
-            _impact_requires_broad_full_global_scope(impact)
-            for impact in _sequence(classification.get("impacts", []))
-        )
-        or any(
-            _provenance_requires_broad_full_global_scope(provenance)
-            for provenance in _sequence(
-                classification.get("subject-selection-provenance", [])
-            )
-        )
-    )
-
-
-def _impact_requires_broad_full_global_scope(impact: object) -> bool:
-    if not isinstance(impact, Mapping):
-        return False
-    coverage_target = impact.get("coverage-target")
-    requires = impact.get("requires")
-    return (
-        impact.get("category") == "global"
-        or (
-            isinstance(coverage_target, Mapping)
-            and coverage_target.get("type") == "global"
-        )
-        or (
-            isinstance(requires, Mapping)
-            and requires.get("broad-expansion") is True
-        )
-    )
-
-
-def _provenance_requires_broad_full_global_scope(provenance: object) -> bool:
-    if not isinstance(provenance, Mapping):
-        return False
-    return (
-        provenance.get("selection-kind")
-        in {"broad-expansion", "scheduled-full"}
-        or provenance.get("scheduled-full-source") is True
-        or provenance.get("broad-expansion-id") is not None
-    )
-
-
 def _materializer_max_execution_batches(
     *,
     expected_input_non_bundle_validation_artifacts: int,
-    non_batch_control_plane_job_count: int,
-    batch_specs: Sequence[Mapping[str, object]],
-    groups: Mapping[str, Mapping[str, object]],
-    plan: Mapping[str, object],
 ) -> int:
-    planned_windows_batches = _materializer_planned_windows_batches(
-        batch_specs,
-        groups,
-    )
-    planned_non_windows_batches = len(batch_specs) - planned_windows_batches
     bound = _max_execution_batch_bound(
         input_count=expected_input_non_bundle_validation_artifacts,
-        max_total=_MAX_TOTAL_JOBS,
-        control_plane=non_batch_control_plane_job_count,
-        non_windows_batches=planned_non_windows_batches,
-        windows_batches=planned_windows_batches,
-        max_windows=_MAX_WINDOWS_JOBS,
-        control_plane_windows=_control_plane_windows_jobs(plan),
     )
     if bound is None:
         return _MAX_EXECUTION_BATCHES
@@ -3936,12 +3860,12 @@ def _expected_input_non_bundle_validation_artifacts(
     return count
 
 
-def _validate_budget(  # noqa: C901,PLR0912,PLR0913,PLR0915
+def _validate_budget(  # noqa: C901,PLR0912,PLR0915
     value: object,
     batch_count: int,
     batches: Sequence[Mapping[str, object]],
     plan_work_groups: Mapping[str, Mapping[str, object]],
-    plan: Mapping[str, object] | None,
+    _plan: Mapping[str, object] | None,
     issues: list[ValidationIssue],
 ) -> None:
     budget = _validate_object(value, _BUDGET_KEYS, "$.budget", issues)
@@ -4016,18 +3940,6 @@ def _validate_budget(  # noqa: C901,PLR0912,PLR0913,PLR0915
     max_batches = budget.get("max-execution-batches")
     max_execution_batch_bound = _max_execution_batch_bound(
         input_count=input_count,
-        max_total=max_total,
-        control_plane=control_plane,
-        non_windows_batches=sum(
-            1 for batch in batches if batch.get("runner-family") != "windows"
-        ),
-        windows_batches=sum(
-            1 for batch in batches if batch.get("runner-family") == "windows"
-        ),
-        max_windows=max_windows,
-        control_plane_windows=_control_plane_windows_from_groups(
-            plan_work_groups
-        ),
     )
     if (
         isinstance(max_batches, int)
@@ -4141,19 +4053,47 @@ def _validate_budget(  # noqa: C901,PLR0912,PLR0913,PLR0915
                 "must equal Windows batch and control-plane jobs",
             ),
         )
-    if (
-        isinstance(actual_total, int)
-        and isinstance(control_plane, int)
-        and actual_total != batch_count + control_plane
+    expected_physical_jobs = (
+        control_plane + _active_runner_family_orchestrator_count(batches)
+        if isinstance(control_plane, int)
+        else None
+    )
+    if isinstance(actual_total, int) and (
+        expected_physical_jobs is not None
+        and actual_total != expected_physical_jobs
     ):
         issues.append(
             ValidationIssue(
                 "$.budget.actual-total-jobs",
-                "must equal batch jobs plus control-plane jobs",
+                "must equal control-plane jobs plus active runner-family "
+                "orchestrator jobs",
+            ),
+        )
+    if (
+        batch_count > 0
+        and isinstance(min_total, int)
+        and isinstance(actual_total, int)
+        and min_total != actual_total
+    ):
+        issues.append(
+            ValidationIssue(
+                "$.budget.min-total-jobs",
+                "must equal physical total job count",
+            ),
+        )
+    if (
+        batch_count > 0
+        and isinstance(min_windows, int)
+        and isinstance(actual_windows, int)
+        and min_windows != actual_windows
+    ):
+        issues.append(
+            ValidationIssue(
+                "$.budget.min-windows-jobs",
+                "must equal physical Windows job count",
             ),
         )
     lower_bounds_apply = batch_count > 0
-    fixed_lower_bounds_apply = _fixed_lower_bounds_apply(plan, batch_count)
     if batch_count == 0:
         if isinstance(min_total, int) and min_total != 0:
             issues.append(
@@ -4167,45 +4107,6 @@ def _validate_budget(  # noqa: C901,PLR0912,PLR0913,PLR0915
                 ValidationIssue(
                     "$.budget.min-windows-jobs",
                     "must be zero for empty batch manifests",
-                )
-            )
-    if fixed_lower_bounds_apply:
-        if isinstance(min_total, int) and (
-            min_total < _BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS
-        ):
-            issues.append(
-                ValidationIssue(
-                    "$.budget.min-total-jobs",
-                    "must be at least 12 for broad/full/global "
-                    "materializations",
-                )
-            )
-        if isinstance(min_windows, int) and (
-            min_windows < _BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS
-        ):
-            issues.append(
-                ValidationIssue(
-                    "$.budget.min-windows-jobs",
-                    "must be at least 4 for broad/full/global materializations",
-                )
-            )
-        if isinstance(actual_total, int) and (
-            actual_total < _BROAD_FULL_GLOBAL_MIN_TOTAL_JOBS
-        ):
-            issues.append(
-                ValidationIssue(
-                    "$.budget.actual-total-jobs",
-                    "must be at least 12 for broad/full/global "
-                    "materializations",
-                )
-            )
-        if isinstance(actual_windows, int) and (
-            actual_windows < _BROAD_FULL_GLOBAL_MIN_WINDOWS_JOBS
-        ):
-            issues.append(
-                ValidationIssue(
-                    "$.budget.actual-windows-jobs",
-                    "must be at least 4 for broad/full/global materializations",
                 )
             )
     if (
@@ -4325,55 +4226,11 @@ def _validate_batches(  # noqa: C901,PLR0912,PLR0913
     return batches
 
 
-def _max_execution_batch_bound(  # noqa: PLR0913
-    *,
-    input_count: object,
-    max_total: object,
-    control_plane: object,
-    non_windows_batches: object | None = None,
-    windows_batches: object | None = None,
-    max_windows: object | None = None,
-    control_plane_windows: object | None = None,
-) -> int | None:
+def _max_execution_batch_bound(*, input_count: object) -> int | None:
     bounds = [_MAX_EXECUTION_BATCHES]
     if isinstance(input_count, int):
         bounds.append(_MAX_PREFINAL_VALIDATION_ARTIFACTS - input_count)
-    if isinstance(max_total, int) and isinstance(control_plane, int):
-        bounds.append(max_total - control_plane)
-    if (
-        isinstance(non_windows_batches, int)
-        and isinstance(windows_batches, int)
-        and windows_batches > 0
-        and isinstance(max_windows, int)
-        and isinstance(control_plane_windows, int)
-    ):
-        bounds.append(non_windows_batches + max_windows - control_plane_windows)
     return min(bounds)
-
-
-def _materializer_planned_windows_batches(
-    batch_specs: Sequence[Mapping[str, object]],
-    groups: Mapping[str, Mapping[str, object]],
-) -> int:
-    count = 0
-    for spec in batch_specs:
-        work_group_ids = cast("Sequence[str]", spec["work-group-ids"])
-        if (
-            work_group_ids
-            and groups[work_group_ids[0]].get("runner-family") == "windows"
-        ):
-            count += 1
-    return count
-
-
-def _control_plane_windows_jobs(plan: Mapping[str, object]) -> int:
-    return sum(
-        1
-        for group in _sequence(plan.get("work-groups", []))
-        if isinstance(group, Mapping)
-        and group.get("kind") == "evidence-aggregation"
-        and group.get("runner-family") == "windows"
-    )
 
 
 def _control_plane_windows_from_groups(
@@ -4391,11 +4248,23 @@ def _derived_windows_jobs(
     batches: Sequence[Mapping[str, object]],
     plan_work_groups: Mapping[str, Mapping[str, object]],
 ) -> int:
-    batch_windows = sum(
-        1 for batch in batches if batch.get("runner-family") == "windows"
+    batch_windows = int(
+        any(batch.get("runner-family") == "windows" for batch in batches)
     )
     control_plane_windows = _control_plane_windows_from_groups(plan_work_groups)
     return batch_windows + control_plane_windows
+
+
+def _active_runner_family_orchestrator_count(
+    batches: Sequence[Mapping[str, object]],
+) -> int:
+    return len(
+        {
+            runner_family
+            for batch in batches
+            if isinstance((runner_family := batch.get("runner-family")), str)
+        }
+    )
 
 
 def _validate_batch(  # noqa: PLR0913
@@ -4612,10 +4481,6 @@ def _expected_plan_bound_materialization(  # noqa: C901,PLR0911
     try:
         max_batches = _materializer_max_execution_batches(
             expected_input_non_bundle_validation_artifacts=expected_input_count,
-            non_batch_control_plane_job_count=control_plane,
-            batch_specs=batch_specs,
-            groups=groups,
-            plan=plan,
         )
         expected_batches = _materializer_batches(
             envelope=envelope,
@@ -4897,6 +4762,12 @@ def _validate_batch_dag(
     plan_work_groups: Mapping[str, Mapping[str, object]],
     issues: list[ValidationIssue],
 ) -> None:
+    family_by_id = {
+        str(batch["batch-id"]): str(batch["runner-family"])
+        for batch in batches
+        if isinstance(batch.get("batch-id"), str)
+        and isinstance(batch.get("runner-family"), str)
+    }
     deps_by_id = {
         str(batch["batch-id"]): [
             str(item)
@@ -4924,6 +4795,19 @@ def _validate_batch_dag(
         issues.append(
             ValidationIssue("$.batches.depends-on-batches", "must be acyclic")
         )
+    for batch_id, dependency_ids in deps_by_id.items():
+        family = family_by_id.get(batch_id)
+        if family is None:
+            continue
+        for dependency_id in dependency_ids:
+            dependency_family = family_by_id.get(dependency_id)
+            if dependency_family is not None and dependency_family != family:
+                issues.append(
+                    ValidationIssue(
+                        "$.batches.depends-on-batches",
+                        _CROSS_FAMILY_BATCH_DEPENDENCY_MESSAGE,
+                    )
+                )
     if plan_work_groups:
         _validate_batch_dag_matches_plan_dependencies(
             batches, deps_by_id, plan_work_groups, issues
@@ -5454,11 +5338,16 @@ def _validate_writer(
 ) -> None:
     if not isinstance(value, Mapping):
         return
-    if value.get("identity-source") != "github-actions-job-context":
+    identity_source = value.get("identity-source")
+    if identity_source not in {
+        "github-actions-job-context",
+        "github-actions-orchestrator-job-context",
+    }:
         issues.append(
             ValidationIssue(
                 f"{path}.identity-source",
-                "must be github-actions-job-context",
+                "must be github-actions-job-context or "
+                "github-actions-orchestrator-job-context",
             ),
         )
     if value.get("expected-boundary") != "execution-batch":
@@ -5468,16 +5357,104 @@ def _validate_writer(
                 "must be execution-batch",
             ),
         )
-    for key in ("expected-job-identity", "observed-workflow", "observed-job"):
+    for key in (
+        "expected-job-identity",
+        "observed-workflow",
+        "observed-job",
+    ):
         _validate_non_empty_string(value.get(key), f"{path}.{key}", issues)
+    if "observed-writer-identity" in value:
+        _validate_non_empty_string(
+            value.get("observed-writer-identity"),
+            f"{path}.observed-writer-identity",
+            issues,
+        )
     observed_matrix = value.get("observed-matrix")
     if observed_matrix is not None and not isinstance(observed_matrix, Mapping):
         issues.append(
             ValidationIssue(f"{path}.observed-matrix", "must be object or null")
         )
+    _validate_observed_writer_identity(value, path, issues)
+    logical_identity = value.get("logical-batch-identity")
+    if logical_identity is not None and not isinstance(
+        logical_identity, Mapping
+    ):
+        issues.append(
+            ValidationIssue(
+                f"{path}.logical-batch-identity",
+                "must be object or null",
+            )
+        )
+    _validate_orchestrator_slot(value, path, issues, identity_source)
 
 
-def _validate_bundle_writer_matches_batch(
+def _validate_orchestrator_slot(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+    identity_source: object,
+) -> None:
+    slot = value.get("observed-orchestrator-slot-index")
+    if identity_source == "github-actions-orchestrator-job-context" and (
+        not isinstance(slot, str) or slot == ""
+    ):
+        issues.append(
+            ValidationIssue(
+                f"{path}.observed-orchestrator-slot-index",
+                "must be a non-empty string for orchestrator job context",
+            )
+        )
+    elif identity_source == "github-actions-job-context" and slot is not None:
+        issues.append(
+            ValidationIssue(
+                f"{path}.observed-orchestrator-slot-index",
+                "must be absent or null for direct job context",
+            )
+        )
+    elif slot is not None and (not isinstance(slot, str) or slot == ""):
+        issues.append(
+            ValidationIssue(
+                f"{path}.observed-orchestrator-slot-index",
+                "must be a non-empty string",
+            )
+        )
+
+
+def _validate_observed_writer_identity(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    observed_identity = value.get("observed-writer-identity")
+    observed_workflow = value.get("observed-workflow")
+    observed_job = value.get("observed-job")
+    observed_matrix = value.get("observed-matrix")
+    if not (
+        isinstance(observed_identity, str)
+        and isinstance(observed_workflow, str)
+        and isinstance(observed_job, str)
+        and isinstance(observed_matrix, Mapping)
+    ):
+        return
+    try:
+        expected_identity = ci_validation_writer_id(
+            workflow=observed_workflow,
+            job=observed_job,
+            matrix=observed_matrix,
+        )
+    except ContractValidationError as error:
+        issues.extend(error.issues)
+        return
+    if observed_identity != expected_identity:
+        issues.append(
+            ValidationIssue(
+                f"{path}.observed-writer-identity",
+                "must match observed workflow/job/matrix identity",
+            )
+        )
+
+
+def _validate_bundle_writer_matches_batch(  # noqa: C901, PLR0912
     writer: object,
     batch: Mapping[str, object] | None,
     manifest: Mapping[str, object] | None,
@@ -5490,7 +5467,6 @@ def _validate_bundle_writer_matches_batch(
         return
     for key in (
         "expected-job-identity",
-        "identity-source",
         "expected-boundary",
     ):
         if (
@@ -5504,6 +5480,17 @@ def _validate_bundle_writer_matches_batch(
                     "must match manifest batch writer",
                 )
             )
+    if (
+        writer.get("identity-source") != batch_writer.get("identity-source")
+        and writer.get("identity-source")
+        != "github-actions-orchestrator-job-context"
+    ):
+        issues.append(
+            ValidationIssue(
+                "$.writer.identity-source",
+                "must match manifest batch writer or orchestrator context",
+            )
+        )
     if manifest is None or not _batch_has_matrix_identity(batch):
         return
     run = manifest.get("run")
@@ -5519,6 +5506,34 @@ def _validate_bundle_writer_matches_batch(
                     "must match execution-batch manifest workflow",
                 )
             )
+    expected_matrix = _execution_batch_matrix_identity(batch)
+    identity_source = writer.get("identity-source")
+    if identity_source == "github-actions-orchestrator-job-context":
+        expected_job = (
+            f"execution-batch-{expected_matrix['runner-family']}-orchestrator"
+        )
+        if writer.get("observed-job") != expected_job:
+            issues.append(
+                ValidationIssue(
+                    "$.writer.observed-job",
+                    "must match runner-family orchestrator job",
+                )
+            )
+        if writer.get("observed-matrix") != {}:
+            issues.append(
+                ValidationIssue(
+                    "$.writer.observed-matrix",
+                    "must match physical orchestrator job matrix",
+                )
+            )
+        if writer.get("logical-batch-identity") != expected_matrix:
+            issues.append(
+                ValidationIssue(
+                    "$.writer.logical-batch-identity",
+                    "must match execution-batch matrix identity",
+                )
+            )
+        return
     expected_job = manifest.get("execution-job")
     if (
         isinstance(expected_job, str)
@@ -5530,7 +5545,6 @@ def _validate_bundle_writer_matches_batch(
                 "must match execution-batch manifest execution job",
             )
         )
-    expected_matrix = _execution_batch_matrix_identity(batch)
     if writer.get("observed-matrix") != expected_matrix:
         issues.append(
             ValidationIssue(
@@ -10242,7 +10256,7 @@ def _validate_final_artifacts(  # noqa: C901,PLR0912,PLR0913
         )
 
 
-def _validate_summary_budgets(  # noqa: C901,PLR0912
+def _validate_summary_budgets(  # noqa: C901
     value: object,
     issues: list[ValidationIssue],
 ) -> None:
@@ -10277,20 +10291,8 @@ def _validate_summary_budgets(  # noqa: C901,PLR0912
                     f"must be at most {maximum_value}",
                 )
             )
-    actual_batches = budgets.get("actual-execution-batches")
     actual_total = budgets.get("actual-total-jobs")
     actual_windows = budgets.get("actual-windows-jobs")
-    if (
-        isinstance(actual_batches, int)
-        and isinstance(actual_total, int)
-        and actual_batches > actual_total
-    ):
-        issues.append(
-            ValidationIssue(
-                "$.budgets.actual-total-jobs",
-                "must cover execution batches",
-            )
-        )
     if (
         isinstance(actual_windows, int)
         and isinstance(actual_total, int)
@@ -10844,8 +10846,17 @@ def _validate_summary_actual_jobs_match_execution_manifest(
             )
         )
     control_plane = manifest_budget.get("non-batch-control-plane-job-count")
-    if isinstance(control_plane, int) and budgets.get("actual-total-jobs") != (
-        expected_batches + control_plane
+    expected_physical_jobs = (
+        control_plane
+        + _active_runner_family_orchestrator_count(
+            [batch for batch in batches if isinstance(batch, Mapping)]
+        )
+        if isinstance(control_plane, int)
+        else None
+    )
+    if (
+        expected_physical_jobs is not None
+        and budgets.get("actual-total-jobs") != expected_physical_jobs
     ):
         issues.append(
             ValidationIssue(

@@ -83,8 +83,8 @@ assert isinstance(_PLANS_MODULE, ModuleType)
 _PLANS_SPEC.loader.exec_module(_PLANS_MODULE)
 
 EXPECTED_FINAL_ARTIFACTS = 2
-EXPECTED_BROAD_GLOBAL_MIN_TOTAL_JOBS = 12
-EXPECTED_BROAD_GLOBAL_MIN_WINDOWS_JOBS = 4
+EXPECTED_MAX_EXECUTION_BATCHES = 13
+OLD_PER_BATCH_WINDOWS_FLOOR = 4
 CREATED_AT = cast("str", _PLANS_MODULE.CREATED_AT)
 RUN_ATTEMPT = cast("str", _PLANS_MODULE.RUN_ATTEMPT)
 RUN_ID = cast("str", _PLANS_MODULE.RUN_ID)
@@ -716,13 +716,14 @@ def _batch(plan: dict[str, object]) -> dict[str, object]:
 
 
 def _budget(batch_count: int, *, input_count: int = 5) -> dict[str, object]:
+    physical_job_count = int(batch_count > 0)
     return {
-        "min-total-jobs": batch_count,
+        "min-total-jobs": physical_job_count,
         "max-total-jobs": 18,
         "min-windows-jobs": 0,
         "max-windows-jobs": 8,
         "non-batch-control-plane-job-count": 0,
-        "actual-total-jobs": batch_count,
+        "actual-total-jobs": physical_job_count,
         "actual-windows-jobs": 0,
         "max-validation-artifacts": 20,
         "actual-validation-artifacts": input_count + batch_count + 2,
@@ -909,6 +910,61 @@ def test_materializer_splits_compatible_ancestor_descendant_batches() -> None:
         {"wg-python-gate", "wg-transitive-gate"}.issubset(work_group_ids)
         for work_group_ids in batch_selector_ids
     )
+
+
+def test_materializer_rejects_cross_family_batch_dependencies() -> None:
+    """Runner-family validation topology forbids batch cross-family edges."""
+    plan = _plan()
+    _add_dependent_work_group(plan)
+    dependent_group = next(
+        group
+        for group in cast("list[dict[str, object]]", plan["work-groups"])
+        if group["work-group-id"] == "wg-dependent-gate"
+    )
+    dependent_group["runner-family"] = "windows"
+    dependent_group["ecosystem"] = "dotnet"
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+
+    with pytest.raises(
+        ContractValidationError,
+        match="does not support cross-family batch dependencies",
+    ):
+        materialize_ci_validation_execution_batches(
+            plan=plan,
+            **_authorizing_context_kwargs(),
+            created_at=CREATED_AT,
+            execution_workflow="CI Validation",
+        )
+
+
+def test_manifest_validation_rejects_cross_family_batch_dependencies() -> None:
+    """Hand-written manifests cannot reintroduce cross-family batch edges."""
+    plan = _plan()
+    _add_dependent_work_group(plan)
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        **_authorizing_context_kwargs(),
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+    )
+    manifest = cast("dict[str, object]", deepcopy(materialization.manifest))
+    batches = cast("list[dict[str, object]]", manifest["batches"])
+    dependent = next(batch for batch in batches if batch["depends-on-batches"])
+    dependency_id = cast("list[str]", dependent["depends-on-batches"])[0]
+    upstream = next(
+        batch for batch in batches if batch["batch-id"] == dependency_id
+    )
+    upstream["runner-family"] = "windows"
+
+    with pytest.raises(
+        ContractValidationError,
+        match="does not support cross-family batch dependencies",
+    ):
+        validate_ci_validation_execution_batch_manifest(
+            manifest,
+            plan=plan,
+            **_authorizing_context_kwargs(),
+        )
 
 
 def _add_extra_work_group(
@@ -1275,6 +1331,182 @@ def _writer_for_batch(
         "observed-job": manifest["execution-job"],
         "observed-matrix": _execution_batch_matrix_identity(batch),
     }
+
+
+def _writer_with_observed_identity(
+    manifest: dict[str, object],
+    batch_id: str,
+    *,
+    writer_context: str = "direct",
+) -> dict[str, object]:
+    writer = _writer_for_batch(manifest, batch_id)
+    observed_matrix = cast("dict[str, object]", writer["observed-matrix"])
+    if writer_context == "orchestrator":
+        batch = next(
+            item
+            for item in cast("list[dict[str, object]]", manifest["batches"])
+            if item["batch-id"] == batch_id
+        )
+        observed_matrix = {}
+        writer["identity-source"] = "github-actions-orchestrator-job-context"
+        writer["observed-job"] = (
+            f"execution-batch-{batch['runner-family']}-orchestrator"
+        )
+        writer["observed-matrix"] = observed_matrix
+        writer["logical-batch-identity"] = _execution_batch_matrix_identity(
+            batch,
+        )
+        writer["observed-orchestrator-slot-index"] = "0"
+    writer["observed-writer-identity"] = ci_validation_writer_id(
+        workflow=cast("str", writer["observed-workflow"]),
+        job=cast("str", writer["observed-job"]),
+        matrix=observed_matrix,
+    )
+    return writer
+
+
+@pytest.mark.parametrize("writer_context", ["direct", "orchestrator"])
+def test_batch_bundle_rejects_forged_observed_writer_identity(
+    writer_context: str,
+) -> None:
+    """Observed writer identity is recomputed from observed job context."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    bundle = _bundle(plan, manifest)
+    writer = _writer_with_observed_identity(
+        manifest,
+        cast("str", batch["batch-id"]),
+        writer_context=writer_context,
+    )
+    writer["observed-writer-identity"] = ci_validation_writer_id(
+        workflow="Forged CI",
+        job="forged-job",
+        matrix={},
+    )
+    bundle["writer"] = writer
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        issue.path == "$.writer.observed-writer-identity"
+        for issue in error.value.issues
+    )
+
+
+def test_batch_bundle_rejects_orchestrator_writer_without_slot_index() -> None:
+    """Physical orchestrator writer context must include its slot identity."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    bundle = _bundle(plan, manifest)
+    writer = _writer_with_observed_identity(
+        manifest,
+        cast("str", batch["batch-id"]),
+        writer_context="orchestrator",
+    )
+    del writer["observed-orchestrator-slot-index"]
+    bundle["writer"] = writer
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        issue.path == "$.writer.observed-orchestrator-slot-index"
+        for issue in error.value.issues
+    )
+
+
+def test_batch_bundle_direct_writer_does_not_require_slot_index() -> None:
+    """Direct execution batch writer context has no orchestrator slot."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    writer = cast("dict[str, object]", bundle["writer"])
+    writer.pop("observed-orchestrator-slot-index", None)
+
+    validate_ci_validation_batch_evidence_bundle(
+        bundle,
+        plan=plan,
+        execution_batch_manifest=manifest,
+        **_authorizing_context_kwargs(),
+    )
+
+
+def test_batch_bundle_rejects_direct_writer_with_slot_index() -> None:
+    """Direct execution batch writer must not claim an orchestrator slot."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    writer = cast("dict[str, object]", bundle["writer"])
+    writer["observed-orchestrator-slot-index"] = "0"
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        issue.path == "$.writer.observed-orchestrator-slot-index"
+        for issue in error.value.issues
+    )
+
+
+@pytest.mark.parametrize("writer_context", ["direct", "orchestrator"])
+def test_batch_bundle_freeze_rejects_forged_observed_writer_identity(
+    writer_context: str,
+) -> None:
+    """Freeze path applies the same observed writer identity check."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    writer = _writer_with_observed_identity(
+        manifest,
+        cast("str", batch["batch-id"]),
+        writer_context=writer_context,
+    )
+    writer["observed-writer-identity"] = ci_validation_writer_id(
+        workflow="Forged CI",
+        job="forged-job",
+        matrix={},
+    )
+
+    with pytest.raises(ContractValidationError) as error:
+        freeze_ci_validation_batch_evidence_bundle(
+            plan=plan,
+            execution_batch_manifest=manifest,
+            batch_id=cast("str", batch["batch-id"]),
+            selector_results=[_selector_result(plan, manifest)],
+            writer=writer,
+            execution_tree={
+                "observed-commit-sha": TREE_SHA,
+                "source": "execution-batch-boundary",
+                "verified": True,
+            },
+            started_at=CREATED_AT,
+            completed_at=CREATED_AT,
+            created_at=CREATED_AT,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        issue.path == "$.writer.observed-writer-identity"
+        for issue in error.value.issues
+    )
 
 
 def _input_artifact(
@@ -3026,7 +3258,7 @@ def _aggregate_summary_for_bundles(
             "expected-actual-validation-artifacts": 7 + len(bundles),
             "max-validation-artifacts": 20,
             "actual-execution-batches": len(bundles),
-            "actual-total-jobs": len(bundles),
+            "actual-total-jobs": int(bool(bundles)),
             "actual-windows-jobs": 0,
             "aggregate-duration-seconds": 10,
             "aggregate-target-duration-seconds": 60,
@@ -3555,17 +3787,24 @@ def test_materializer_counts_non_batch_control_plane_jobs() -> None:
 
     manifest = cast("dict[str, object]", materialization.manifest)
     budget = cast("dict[str, object]", manifest["budget"])
-    batch_count = len(cast("list[dict[str, object]]", manifest["batches"]))
+    batches = cast("list[dict[str, object]]", manifest["batches"])
+    active_runner_families = {
+        batch["runner-family"]
+        for batch in batches
+        if isinstance(batch.get("runner-family"), str)
+    }
     assert budget["non-batch-control-plane-job-count"] == control_plane_count
-    assert budget["actual-total-jobs"] == batch_count + control_plane_count
+    assert budget["actual-total-jobs"] == (
+        control_plane_count + len(active_runner_families)
+    )
     assert (
         _int_mapping_value(budget, "max-execution-batches")
-        <= 18 - control_plane_count
+        <= EXPECTED_MAX_EXECUTION_BATCHES
     )
 
 
-def test_broad_global_materializer_declares_fixed_lower_bounds() -> None:
-    """Broad/global executable manifests declare the fixed topology floors."""
+def test_broad_global_materializer_counts_physical_orchestrator_jobs() -> None:
+    """Broad/global executable manifests count physical orchestrator jobs."""
     plan = _global_full_scope_plan()
     batches: list[dict[str, object]] = [
         {"runner-family": "windows"} for _ in range(4)
@@ -3581,35 +3820,28 @@ def test_broad_global_materializer_declares_fixed_lower_bounds() -> None:
         aggregate_max_duration_seconds=120,
     )
 
-    assert budget["min-total-jobs"] == EXPECTED_BROAD_GLOBAL_MIN_TOTAL_JOBS
-    assert budget["min-windows-jobs"] == EXPECTED_BROAD_GLOBAL_MIN_WINDOWS_JOBS
-    assert (
-        _int_mapping_value(budget, "actual-total-jobs")
-        >= EXPECTED_BROAD_GLOBAL_MIN_TOTAL_JOBS
-    )
-    assert (
-        _int_mapping_value(budget, "actual-windows-jobs")
-        >= EXPECTED_BROAD_GLOBAL_MIN_WINDOWS_JOBS
-    )
+    expected_physical_jobs = len({"ubuntu", "windows"})
+    assert budget["min-total-jobs"] == expected_physical_jobs
+    assert budget["actual-total-jobs"] == expected_physical_jobs
+    assert budget["min-windows-jobs"] == 1
+    assert budget["actual-windows-jobs"] == 1
 
 
-def test_broad_global_materializer_rejects_unmet_windows_floor() -> None:
-    """Broad/global executable manifests fail closed below fixed job floors."""
+def test_broad_global_materializer_allows_physical_windows_orchestrator() -> (
+    None
+):
+    """Broad/global manifests do not require per-batch Windows jobs."""
     plan = _global_full_scope_plan()
 
-    with pytest.raises(ContractValidationError) as exc_info:
-        materialize_ci_validation_execution_batches(
-            plan=plan,
-            **_global_full_scope_context_kwargs(),
-            created_at=CREATED_AT,
-            execution_workflow="CI Validation",
-        )
-
-    assert any(
-        issue.path == "budget.actual-windows-jobs"
-        and "min windows jobs" in issue.message
-        for issue in exc_info.value.issues
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        **_global_full_scope_context_kwargs(),
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
     )
+    budget = cast("Mapping[str, object]", materialization.manifest["budget"])
+
+    assert budget["actual-windows-jobs"] < OLD_PER_BATCH_WINDOWS_FLOOR
 
 
 def test_materializer_supports_ruby_batch_compatibility() -> None:
@@ -11081,11 +11313,11 @@ def test_execution_batch_manifest_rejects_budget_caps(
         ("actual-windows-jobs", 3),
     ],
 )
-def test_execution_batch_manifest_rejects_broad_global_lower_budget(
+def test_execution_batch_manifest_rejects_broad_global_physical_budget_mismatch(
     key: str,
     value: int,
 ) -> None:
-    """Broad/global executable manifests cannot relax fixed lower bounds."""
+    """Broad/global executable manifests validate physical topology counts."""
     plan = _global_full_scope_plan()
     batches: list[dict[str, object]] = [
         {"runner-family": "windows"} for _ in range(4)
@@ -11191,23 +11423,25 @@ def test_execution_batch_manifest_rejects_underreported_control_windows() -> (
         )
 
 
-def test_execution_batch_manifest_rejects_max_batches_above_dynamic_bound() -> (
-    None
-):
-    """Control-plane jobs reduce the dynamic max execution batch allowance."""
+def test_manifest_allows_batches_independent_of_job_headroom() -> None:
+    """Physical job headroom does not cap logical execution batches."""
     plan = _plan()
     budget = _budget(1)
     budget["non-batch-control-plane-job-count"] = 10
+    budget["min-total-jobs"] = 11
     budget["actual-total-jobs"] = 11
     budget["max-execution-batches"] = 13
+    issues: list[Any] = []
 
-    with pytest.raises(ContractValidationError):
-        freeze_ci_validation_execution_batch_manifest(
-            plan=plan,
-            batches=[_batch(plan)],
-            budget=budget,
-            created_at=CREATED_AT,
-        )
+    _validate_budget(
+        budget,
+        1,
+        [_batch(plan)],
+        {},
+        plan,
+        issues,
+    )
+    assert not issues
 
 
 def test_execution_batch_manifest_rejects_forged_artifact_headroom_budget() -> (
