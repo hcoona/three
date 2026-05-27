@@ -31,7 +31,7 @@
     <PackageVersion Include="Serilog.Extensions.Logging" Version="9.0.2" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Svg" Version="3.4.7" />
-    <PackageVersion Include="Svg.Skia" Version="3.0.4" />
+    <PackageVersion Include="Svg.Skia" Version="3.7.0" />
     <PackageVersion Include="System.IO.Compression.ZipFile" Version="4.3.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.8" />
     <PackageVersion Include="System.IO.Hashing" Version="9.0.16" />
