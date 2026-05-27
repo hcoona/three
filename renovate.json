@@ -473,7 +473,7 @@
       "groupName": "Mise pnpm",
       "postUpgradeTasks": {
         "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
-        "fileFilters": ["mise.lock", "pnpm-lock.yaml", "**/pnpm-lock.yaml"],
+        "fileFilters": ["mise.lock", "**/mise.lock", "**/.mise.lock", "pnpm-lock.yaml", "**/pnpm-lock.yaml"],
         "executionMode": "branch"
       },
       "automerge": true
