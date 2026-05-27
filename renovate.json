@@ -16,7 +16,7 @@
   "prConcurrentLimit": 8,
   "branchConcurrentLimit": 8,
   "prHourlyLimit": 2,
-  "rebaseWhen": "conflicted",
+  "rebaseWhen": "behind-base-branch",
   "enabledManagers": ["bundler", "github-actions", "mise", "npm", "nuget", "pep621"],
   "ignorePaths": ["**/node_modules/**", "**/bower_components/**", "**/vendor/**"],
   "lockFileMaintenance": {
