@@ -36,6 +36,8 @@ for _WORKSPACE_SRC in (
     _REPO_ROOT / "src/public/lib/three-workflow-release-planner/src",
     _REPO_ROOT / "src/public/lib/three-workflow-release-proof/src",
     _REPO_ROOT / "src/public/lib/three-workflow-release-authoring/src",
+    _REPO_ROOT / "src/public/lib/three-workflow-release-build/src",
+    _REPO_ROOT / "src/public/lib/three-workflow-release-metadata/src",
 ):
     if _WORKSPACE_SRC.is_dir():
         sys.path.insert(0, str(_WORKSPACE_SRC))
@@ -43,8 +45,13 @@ for _WORKSPACE_SRC in (
 from three_workflow_release_authoring import (  # noqa: E402
     CATALOG_PATH,
     AuthoringValidationError,
+    validate_authoring,
     validate_project_descriptor_document,
     validate_target_catalog_document,
+)
+from three_workflow_release_build import (  # noqa: E402
+    BuildExecutorError,
+    execute_build,
 )
 from three_workflow_release_contracts import (  # noqa: E402
     API_VERSIONS_BY_KIND,
@@ -99,6 +106,13 @@ from three_workflow_release_contracts.ci_validation_assignments import (  # noqa
 )
 from three_workflow_release_contracts.ci_validation_batches import (  # noqa: E402
     _freeze_ci_validation_aggregate_evidence_manifest,
+)
+from three_workflow_release_metadata import (  # noqa: E402
+    collect_dotnet_metadata,
+)
+from three_workflow_release_planner import (  # noqa: E402
+    PlannerInputs,
+    plan_release,
 )
 
 if TYPE_CHECKING:
@@ -4460,12 +4474,25 @@ def _ci_no_publish_release_shaped_artifact_evidence(
         for obligation in obligations
         for ref in _ci_artifact_expected_refs(obligation)
     ]
-    output_by_ref = _ci_validation_build_outputs_by_artifact_ref(
+    mapping_present, output_by_ref = _ci_declared_validation_build_output_mapping(
         repo_root=repo_root,
         expected_refs=expected_refs,
     )
-    if output_by_ref is None:
-        return None
+    if output_by_ref is None or not set(expected_refs).issubset(output_by_ref):
+        if mapping_present and output_by_ref is None:
+            return None
+        _ci_materialize_no_publish_release_shaped_artifacts(
+            plan=plan,
+            obligations=obligations,
+            observed_commit_sha=observed_commit_sha,
+            repo_root=repo_root,
+        )
+        output_by_ref = _ci_validation_build_outputs_by_artifact_ref(
+            repo_root=repo_root,
+            expected_refs=expected_refs,
+        )
+        if output_by_ref is None:
+            return None
     digest_entries: list[Json] = []
     results: list[Json] = []
     for obligation in obligations:
@@ -4552,7 +4579,389 @@ def _ci_validation_build_outputs_by_artifact_ref(
         repo_root=repo_root,
         expected_refs=expected_refs,
     )
-    return declared if mapping_present else None
+    if not mapping_present or declared is None:
+        return None
+    return declared if set(expected_refs).issubset(declared) else None
+
+
+def _ci_materialize_no_publish_release_shaped_artifacts(
+    *,
+    plan: Mapping[str, object],
+    obligations: Sequence[Mapping[str, object]],
+    observed_commit_sha: str,
+    repo_root: Path,
+) -> None:
+    build = _ci_no_publish_release_shaped_build_request(
+        plan=plan,
+        obligations=obligations,
+        observed_commit_sha=observed_commit_sha,
+        repo_root=repo_root,
+    )
+    if build is None:
+        return
+    request, artifact_refs_by_build_id = build
+    request_digest = hashlib.sha256(
+        json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()[:24]
+    bundle_dir = (
+        repo_root
+        / ".three-ci-validation"
+        / "work"
+        / "validation-build"
+        / "release-shaped"
+        / request_digest
+    )
+    result = _ci_execute_no_publish_release_shaped_build(
+        request=request,
+        repo_root=repo_root,
+        bundle_dir=bundle_dir,
+    )
+    _ci_record_validation_build_result_artifacts(
+        repo_root=repo_root,
+        bundle_dir=bundle_dir,
+        result=result,
+        artifact_refs_by_build_id=artifact_refs_by_build_id,
+    )
+
+
+def _ci_no_publish_release_shaped_build_request(  # noqa: PLR0911
+    *,
+    plan: Mapping[str, object],
+    obligations: Sequence[Mapping[str, object]],
+    observed_commit_sha: str,
+    repo_root: Path,
+) -> tuple[Json, dict[str, list[str]]] | None:
+    if not obligations:
+        return None
+    profile = _ci_single_release_profile(obligations)
+    descriptor_path = str(obligations[0].get("descriptor-path") or "")
+    if not profile or not descriptor_path:
+        return None
+    if any(str(item.get("descriptor-path") or "") != descriptor_path for item in obligations):
+        return None
+    descriptor_file = repo_root / descriptor_path
+    if not descriptor_file.is_file():
+        return None
+    project_id = _ci_release_descriptor_project_id(repo_root, descriptor_path)
+    if not project_id:
+        return None
+    release_plan = _ci_validation_release_plan(
+        repo_root=repo_root,
+        observed_commit_sha=observed_commit_sha,
+        profile=profile,
+        project_id=project_id,
+    )
+    variant, artifact_refs_by_build_id = _ci_release_plan_variant_for_obligations(
+        release_plan=release_plan,
+        project_id=project_id,
+        obligations=_ci_variant_release_shaped_obligations(
+            plan=plan,
+            descriptor_path=descriptor_path,
+            profile=profile,
+            seed_obligations=obligations,
+        ),
+    )
+    if variant is None or not artifact_refs_by_build_id:
+        return None
+    envelope = _mapping(release_plan["envelope"], "envelope")
+    request = {
+        "api-version": "three.release.build-request/v1alpha1",
+        "kind": "build-request",
+        "plan-id": envelope["plan-id"],
+        "profile": envelope["profile"],
+        "commit-sha": envelope["commit-sha"],
+        "project": _mapping(envelope["projects"], "envelope.projects")[
+            project_id
+        ],
+        "variant": variant,
+        "artifacts": _build_request_artifacts(release_plan, variant),
+    }
+    validate_contract(request)
+    return request, artifact_refs_by_build_id
+
+
+def _ci_single_release_profile(
+    obligations: Sequence[Mapping[str, object]],
+) -> str | None:
+    profiles = {
+        str(profile)
+        for obligation in obligations
+        for profile in cast(
+            "Sequence[object]",
+            obligation.get("profile-coverage", []),
+        )
+        if isinstance(profile, str) and profile
+    }
+    return next(iter(profiles)) if len(profiles) == 1 else None
+
+
+def _ci_release_descriptor_project_id(
+    repo_root: Path,
+    descriptor_path: str,
+) -> str | None:
+    descriptor = _read_yaml(repo_root / descriptor_path)
+    if not isinstance(descriptor, Mapping):
+        return None
+    project = descriptor.get("project")
+    if not isinstance(project, Mapping):
+        return None
+    project_id = project.get("id")
+    return project_id if isinstance(project_id, str) and project_id else None
+
+
+def _ci_validation_release_plan(
+    *,
+    repo_root: Path,
+    observed_commit_sha: str,
+    profile: str,
+    project_id: str,
+) -> Json:
+    cache_dir = (
+        repo_root / ".three-ci-validation" / "work" / "release-shaped-plans"
+    )
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = hashlib.sha256(
+        json.dumps(
+            {
+                "commit-sha": observed_commit_sha,
+                "profile": profile,
+                "project-id": project_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()[:24]
+    cache_path = cache_dir / f"{cache_key}.json"
+    if cache_path.is_file():
+        cached = _read_json(cache_path)
+        validate_contract(cached)
+        return cached
+    try:
+        snapshot = validate_authoring(repo_root)
+        project = snapshot.projects[project_id]
+        request = {
+            "api-version": "three.release.planner-request/v1alpha1",
+            "kind": "planner-request",
+            "commit-sha": observed_commit_sha,
+            "profile": profile,
+            "request-flags": {"force": False},
+            "requested-project-ids": [project_id],
+        }
+        dotnet_metadata = None
+        if project.ecosystem == "dotnet":
+            metadata_input = snapshot.dotnet_metadata_input(observed_commit_sha)
+            dotnet_metadata = collect_dotnet_metadata(metadata_input, repo_root)
+        result = plan_release(
+            snapshot,
+            PlannerInputs(
+                request=request,
+                repo_root=repo_root,
+                dry_run=True,
+                validation_build=True,
+                dotnet_metadata=dotnet_metadata,
+            ),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        msg = f"release-shaped validation build planning failed: {exc}"
+        raise ValueError(msg) from exc
+    validate_contract(result.plan)
+    _write_json(cache_path, result.plan)
+    return result.plan
+
+
+def _ci_variant_release_shaped_obligations(
+    *,
+    plan: Mapping[str, object],
+    descriptor_path: str,
+    profile: str,
+    seed_obligations: Sequence[Mapping[str, object]],
+) -> list[Mapping[str, object]]:
+    dimensions = _ci_obligation_variant_dimensions(seed_obligations[0])
+    if dimensions is None:
+        return list(seed_obligations)
+    grouped: list[Mapping[str, object]] = []
+    artifact_obligations = plan.get("artifact-obligations", [])
+    if not isinstance(artifact_obligations, Sequence) or isinstance(
+        artifact_obligations, str | bytes
+    ):
+        return list(seed_obligations)
+    for obligation in artifact_obligations:
+        if not isinstance(obligation, Mapping):
+            continue
+        if str(obligation.get("descriptor-path") or "") != descriptor_path:
+            continue
+        profiles = obligation.get("profile-coverage", [])
+        if not isinstance(profiles, Sequence) or isinstance(profiles, str | bytes):
+            continue
+        if profile not in profiles:
+            continue
+        if _ci_obligation_variant_dimensions(obligation) == dimensions:
+            grouped.append(obligation)
+    return grouped or list(seed_obligations)
+
+
+def _ci_obligation_variant_dimensions(
+    obligation: Mapping[str, object],
+) -> dict[str, object] | None:
+    artifact = obligation.get("artifact")
+    if not isinstance(artifact, Mapping):
+        return None
+    dimensions = artifact.get("variant-dimensions", {})
+    return dict(dimensions) if isinstance(dimensions, Mapping) else None
+
+
+def _ci_release_plan_variant_for_obligations(
+    *,
+    release_plan: Mapping[str, object],
+    project_id: str,
+    obligations: Sequence[Mapping[str, object]],
+) -> tuple[Json | None, dict[str, list[str]]]:
+    if not obligations:
+        return None, {}
+    expected_dimensions = _ci_obligation_variant_dimensions(obligations[0]) or {}
+    graph = _mapping(release_plan["graph"], "graph")
+    variants = _mapping(graph["variants"], "graph.variants")
+    artifacts = _mapping(graph["artifacts"], "graph.artifacts")
+    for variant in variants.values():
+        candidate = dict(_mapping(variant, "graph.variants[]"))
+        if candidate.get("project-id") != project_id:
+            continue
+        if dict(_mapping(candidate.get("dimensions", {}), "variant.dimensions")) != expected_dimensions:
+            continue
+        artifact_refs = _ci_release_plan_artifact_refs_for_obligations(
+            variant=candidate,
+            artifacts=artifacts,
+            obligations=obligations,
+        )
+        if artifact_refs:
+            return candidate, artifact_refs
+    return None, {}
+
+
+def _ci_release_plan_artifact_refs_for_obligations(
+    *,
+    variant: Mapping[str, object],
+    artifacts: Mapping[str, object],
+    obligations: Sequence[Mapping[str, object]],
+) -> dict[str, list[str]]:
+    available_ids = [
+        str(item)
+        for item in cast("Sequence[object]", variant.get("artifact-ids", []))
+        if isinstance(item, str)
+    ]
+    unused = set(available_ids)
+    refs_by_build_id: dict[str, list[str]] = {}
+    for obligation in obligations:
+        artifact_id = _ci_matching_release_plan_artifact_id(
+            obligation=obligation,
+            artifacts=artifacts,
+            candidate_ids=unused,
+        )
+        if artifact_id is None:
+            return {}
+        refs = _ci_artifact_expected_refs(obligation)
+        if not refs:
+            return {}
+        refs_by_build_id.setdefault(artifact_id, []).extend(refs)
+        unused.remove(artifact_id)
+    return refs_by_build_id
+
+
+def _ci_matching_release_plan_artifact_id(
+    *,
+    obligation: Mapping[str, object],
+    artifacts: Mapping[str, object],
+    candidate_ids: set[str],
+) -> str | None:
+    expected = obligation.get("artifact")
+    if not isinstance(expected, Mapping):
+        return None
+    matches: list[str] = []
+    for artifact_id in sorted(candidate_ids):
+        artifact = artifacts.get(artifact_id)
+        if not isinstance(artifact, Mapping):
+            continue
+        if (
+            artifact.get("role") == expected.get("logical-artifact-role")
+            and artifact.get("kind-family") == expected.get("kind-family")
+            and artifact.get("concrete-kind") == expected.get("concrete-kind")
+        ):
+            matches.append(artifact_id)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _ci_execute_no_publish_release_shaped_build(
+    *,
+    request: Mapping[str, object],
+    repo_root: Path,
+    bundle_dir: Path,
+) -> Json:
+    try:
+        return execute_build(request, repo_root, bundle_dir)
+    except BuildExecutorError as exc:
+        msg = f"release-shaped validation build failed: {exc}"
+        raise ValueError(msg) from exc
+
+
+def _ci_record_validation_build_result_artifacts(
+    *,
+    repo_root: Path,
+    bundle_dir: Path,
+    result: Mapping[str, object],
+    artifact_refs_by_build_id: Mapping[str, Sequence[str]],
+) -> None:
+    artifacts = result.get("artifacts")
+    if not isinstance(artifacts, Mapping):
+        msg = "release-shaped validation build result has no artifacts"
+        raise TypeError(msg)
+    additions: dict[str, str] = {}
+    for artifact_id, refs in artifact_refs_by_build_id.items():
+        receipt = artifacts.get(artifact_id)
+        if not isinstance(receipt, Mapping):
+            msg = f"release-shaped validation build omitted {artifact_id!r}"
+            raise TypeError(msg)
+        relative_path = receipt.get("bundle-relative-path")
+        if not isinstance(relative_path, str) or not relative_path:
+            msg = f"release-shaped validation build receipt for {artifact_id!r} has no bundle path"
+            raise ValueError(msg)
+        output = (bundle_dir / relative_path).resolve()
+        if not output.is_file() or not _ci_validation_build_output_is_allowed(
+            repo_root=repo_root,
+            output=output,
+        ):
+            msg = f"release-shaped validation build output is not allowed for {artifact_id!r}"
+            raise ValueError(msg)
+        output_path = output.relative_to(repo_root.resolve()).as_posix()
+        for artifact_ref in refs:
+            additions[str(artifact_ref)] = output_path
+    _ci_update_validation_build_output_mapping(repo_root, additions)
+
+
+def _ci_update_validation_build_output_mapping(
+    repo_root: Path,
+    additions: Mapping[str, str],
+) -> None:
+    if not additions:
+        return
+    mapping_path = (
+        repo_root
+        / ".three-ci-validation"
+        / "work"
+        / "validation-build-artifacts.json"
+    )
+    mapping_path.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict[str, str] = {}
+    mapping_present, items = _ci_validation_build_output_mapping_items(mapping_path)
+    if mapping_present and items is not None:
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            artifact_ref = item.get("artifact-ref")
+            path_value = item.get("path")
+            if isinstance(artifact_ref, str) and isinstance(path_value, str):
+                existing[artifact_ref] = path_value
+    existing.update(additions)
+    _write_json(mapping_path, {"artifacts": dict(sorted(existing.items()))})
 
 
 def _ci_declared_validation_build_output_mapping(
@@ -4576,6 +4985,12 @@ def _ci_declared_validation_build_output_mapping(
     expected_set = set(expected_refs)
     output_by_ref: dict[str, Path] = {}
     for item in declared_items:
+        if (
+            isinstance(item, Mapping)
+            and isinstance(item.get("artifact-ref"), str)
+            and item.get("artifact-ref") not in expected_set
+        ):
+            continue
         parsed_item = _ci_declared_validation_build_output_mapping_item(
             repo_root=repo_root,
             expected_refs=expected_set,
@@ -4586,7 +5001,7 @@ def _ci_declared_validation_build_output_mapping(
             return True, None
         artifact_ref, output = parsed_item
         output_by_ref[artifact_ref] = output
-    return True, output_by_ref if set(output_by_ref) == expected_set else None
+    return True, output_by_ref
 
 
 def _ci_declared_validation_build_output_mapping_item(
@@ -13026,7 +13441,15 @@ def _ci_python_validation_commands(
         commands.append(
             _ci_command(
                 "python type check",
-                ["uv", "run", "pyrefly", "check"],
+                [
+                    "uv",
+                    "run",
+                    "pyrefly",
+                    "check",
+                    root,
+                    "--summary=none",
+                    "--output-format=min-text",
+                ],
                 capability="type-check",
             )
         )

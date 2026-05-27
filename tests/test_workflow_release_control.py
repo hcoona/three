@@ -8649,12 +8649,10 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
         "run",
         "pyrefly",
         "check",
+        "src/private/app/html-sm-processor",
+        "--summary=none",
+        "--output-format=min-text",
     ] in [command["argv"] for command in python_commands]
-    assert all(
-        command["argv"][-1] != "src/private/app/html-sm-processor"
-        for command in python_commands
-        if command["capability"] == "type-check"
-    )
     assert any(
         command["capability"] == "build"
         and command["argv"] == ["dotnet", "tool", "restore"]
@@ -9006,8 +9004,10 @@ def test_ci_validation_release_shaped_no_publish_uses_mapping() -> None:
         build_root.mkdir(parents=True)
         b_bytes = b"mapped contents for b"
         a_bytes = b"mapped contents for a"
+        c_bytes = b"mapped contents for unrelated c"
         (build_root / "first-output.bin").write_bytes(b_bytes)
         (build_root / "second-output.bin").write_bytes(a_bytes)
+        (build_root / "third-output.bin").write_bytes(c_bytes)
         mapping_path = (
             scratch
             / ".three-ci-validation/work/validation-build-artifacts.json"
@@ -9024,6 +9024,10 @@ def test_ci_validation_release_shaped_no_publish_uses_mapping() -> None:
                             ".three-ci-validation/work/validation-build/"
                             "first-output.bin"
                         ),
+                        "ci-validation/artifacts/python/example/c.whl": (
+                            ".three-ci-validation/work/validation-build/"
+                            "third-output.bin"
+                        ),
                     }
                 },
             ),
@@ -9039,6 +9043,71 @@ def test_ci_validation_release_shaped_no_publish_uses_mapping() -> None:
         digests = _release_shaped_result_digests(result)
         assert digests[artifact_refs[0]] == hashlib.sha256(a_bytes).hexdigest()
         assert digests[artifact_refs[1]] == hashlib.sha256(b_bytes).hexdigest()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_materializes_missing_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing mapping may come from a real no-publish build result."""
+    scratch = SCRATCH / "ci-validation-release-shaped-materialized-mapping"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        output_bytes = b"materialized wheel"
+
+        def fake_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            return {"kind": "build-request"}, {"artifact/wheel": artifact_refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            output = bundle_dir / "dist/a.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(output_bytes)
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": "dist/a.whl",
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "success"
+        digests = _release_shaped_result_digests(result)
+        assert (
+            digests[artifact_refs[0]]
+            == hashlib.sha256(output_bytes).hexdigest()
+        )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
