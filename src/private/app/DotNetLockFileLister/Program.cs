@@ -92,8 +92,10 @@ using (var reader = XmlReader.Create(
         await XDocument.LoadAsync(reader, LoadOptions.SetLineInfo, CancellationToken.None);
 }
 
-var packageVersions = centralPackageVersionsFile
-    .Root
+var centralPackageVersionsRoot = centralPackageVersionsFile.Root
+    ?? throw new InvalidOperationException("Directory.Packages.props is missing a document element.");
+
+var packageVersions = centralPackageVersionsRoot
     .ElementsNoNamespace("ItemGroup")
     .SelectMany(itemGroup => itemGroup.ElementsNoNamespace("PackageVersion"))
     .ToDictionary(

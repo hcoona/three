@@ -4,7 +4,7 @@
 [tools]
 hk = "latest"
 node = "24"
-pnpm = "latest"
+pnpm = "10.33.4"
 pkl = "latest"
 typos = "latest"
 go = "latest"
