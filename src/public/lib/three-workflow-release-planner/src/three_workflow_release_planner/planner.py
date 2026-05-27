@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -1115,6 +1116,7 @@ class _PlanBuilder:
                 cwd=self.inputs.repo_root,
                 check=False,
                 capture_output=True,
+                env={**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"},
                 text=True,
             )
         except OSError as exc:

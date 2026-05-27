@@ -13444,6 +13444,12 @@ def _ci_python_validation_commands(
                 [
                     "uv",
                     "run",
+                    "--project",
+                    root,
+                    "--python",
+                    "3.13",
+                    "--with",
+                    "pyrefly",
                     "pyrefly",
                     "check",
                     root,

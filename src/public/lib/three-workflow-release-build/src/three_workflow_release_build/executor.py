@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import stat
@@ -1607,6 +1608,8 @@ def _materialize_pinned_worktree(
                 "error": str(exc),
             },
         ) from exc
+    prior_skip_smudge = os.environ.get("GIT_LFS_SKIP_SMUDGE")
+    os.environ["GIT_LFS_SKIP_SMUDGE"] = "1"
     try:
         _run_checked(
             [
@@ -1626,6 +1629,11 @@ def _materialize_pinned_worktree(
         if worktree_path.exists():
             _try_remove_tree(worktree_path)
         raise
+    finally:
+        if prior_skip_smudge is None:
+            os.environ.pop("GIT_LFS_SKIP_SMUDGE", None)
+        else:
+            os.environ["GIT_LFS_SKIP_SMUDGE"] = prior_skip_smudge
     return worktree_path.resolve()
 
 

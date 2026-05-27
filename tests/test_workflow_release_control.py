@@ -8647,6 +8647,12 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
     assert [
         "uv",
         "run",
+        "--project",
+        "src/private/app/html-sm-processor",
+        "--python",
+        "3.13",
+        "--with",
+        "pyrefly",
         "pyrefly",
         "check",
         "src/private/app/html-sm-processor",

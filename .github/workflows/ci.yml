@@ -319,6 +319,13 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Install .NET for NBGV-backed release planning
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Restore .NET local tools for NBGV-backed release planning
+        shell: bash
+        run: dotnet tool restore
       - name: Verify request producer boundary
         env:
           GH_TOKEN: ${{ github.token }}
@@ -531,6 +538,13 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Install .NET for NBGV-backed release planning
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Restore .NET local tools for NBGV-backed release planning
+        shell: bash
+        run: dotnet tool restore
       - name: Install Node.js for JavaScript/TypeScript validation
         uses: actions/setup-node@v6
         with:
@@ -1258,6 +1272,13 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
+      - name: Install .NET for NBGV-backed release planning
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Restore .NET local tools for NBGV-backed release planning
+        shell: bash
+        run: dotnet tool restore
       - uses: actions/download-artifact@v8
         if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
         with:

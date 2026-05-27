@@ -3823,7 +3823,10 @@ def test_broad_global_materializer_allows_physical_windows_orchestrator() -> (
     )
     budget = cast("Mapping[str, object]", materialization.manifest["budget"])
 
-    assert budget["actual-windows-jobs"] < OLD_PER_BATCH_WINDOWS_FLOOR
+    assert (
+        cast("int", budget["actual-windows-jobs"])
+        < OLD_PER_BATCH_WINDOWS_FLOOR
+    )
 
 
 def test_broad_global_materializer_fits_execution_batch_budget() -> None:
@@ -3855,18 +3858,35 @@ def test_broad_global_materializer_fits_execution_batch_budget() -> None:
         cast("str", selector["work-group-id"]) for selector in selectors
     ]
     budget = cast("Mapping[str, object]", manifest["budget"])
+    actual_execution_batches = cast("int", budget["actual-execution-batches"])
+    max_execution_batches = cast("int", budget["max-execution-batches"])
+    pre_final_validation_artifacts = cast(
+        "int",
+        budget["pre-final-validation-artifacts"],
+    )
+    expected_input_non_bundle_validation_artifacts = cast(
+        "int",
+        budget["expected-input-non-bundle-validation-artifacts"],
+    )
+    actual_validation_artifacts = cast(
+        "int",
+        budget["actual-validation-artifacts"],
+    )
+    expected_final_validation_artifacts = cast(
+        "int",
+        budget["expected-final-validation-artifacts"],
+    )
 
     assert len(batches) <= EXPECTED_MAX_EXECUTION_BATCHES
     assert len(selector_work_group_ids) == len(set(selector_work_group_ids))
     assert set(selector_work_group_ids) == selected_work_group_ids
-    assert budget["actual-execution-batches"] == len(batches)
-    assert budget["actual-execution-batches"] <= budget["max-execution-batches"]
-    assert budget["pre-final-validation-artifacts"] == (
-        budget["expected-input-non-bundle-validation-artifacts"] + len(batches)
+    assert actual_execution_batches == len(batches)
+    assert actual_execution_batches <= max_execution_batches
+    assert pre_final_validation_artifacts == (
+        expected_input_non_bundle_validation_artifacts + len(batches)
     )
-    assert budget["actual-validation-artifacts"] == (
-        budget["pre-final-validation-artifacts"]
-        + budget["expected-final-validation-artifacts"]
+    assert actual_validation_artifacts == (
+        pre_final_validation_artifacts + expected_final_validation_artifacts
     )
 
 

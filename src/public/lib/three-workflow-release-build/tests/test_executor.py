@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import stat
 import subprocess
 import sys
@@ -673,6 +674,56 @@ def test_execution_runner_os_error_becomes_build_failed() -> None:
         assert error.value.code == "BUILD_FAILED"
         assert error.value.phase == "execution"
         assert error.value.details["cwd"]
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_build_worktree_materialization_skips_lfs_smudge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pinned build worktrees must not download unrelated LFS payloads."""
+    scratch = REPO_ROOT / ".build-executor-lfs-smudge-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="python",
+            artifacts={
+                "artifact/wheel": ("primary-package", "package", "wheel"),
+            },
+        )
+        monkeypatch.delenv("GIT_LFS_SKIP_SMUDGE", raising=False)
+        observed_skip_values: list[str | None] = []
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            if args[1:3] == ["rev-parse", "HEAD"]:
+                return subprocess.CompletedProcess(args, 0, f"{SHA}\n", "")
+            if args[1:3] == ["rev-parse", "--git-common-dir"]:
+                return subprocess.CompletedProcess(
+                    args, 0, str(scratch / "git-common"), ""
+                )
+            if args[1:3] == ["worktree", "add"]:
+                observed_skip_values.append(
+                    os.environ.get("GIT_LFS_SKIP_SMUDGE")
+                )
+                return subprocess.CompletedProcess(
+                    args, 1, "", "checkout failed"
+                )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with pytest.raises(BuildExecutorError):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+            )
+
+        assert observed_skip_values == ["1"]
+        assert os.environ.get("GIT_LFS_SKIP_SMUDGE") is None
     finally:
         _remove_tree_scratch(scratch)
 

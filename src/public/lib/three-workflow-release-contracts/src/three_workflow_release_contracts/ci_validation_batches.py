@@ -3378,11 +3378,15 @@ def _materializer_batch_specs(
             None,
         )
         if spec is None:
-            spec = {
-                "key": key,
-                "key-payload": key_payload,
-                "work-group-ids": [],
-            }
+            work_group_ids: list[str] = []
+            spec = cast(
+                "dict[str, object]",
+                {
+                    "key": key,
+                    "key-payload": key_payload,
+                    "work-group-ids": work_group_ids,
+                },
+            )
             specs.append(spec)
         cast("list[str]", spec["work-group-ids"]).append(work_group_id)
     for spec in specs:
