@@ -3436,8 +3436,8 @@ def _materializer_compatibility_key(
         "release-shaped": group.get("kind") == "release-shaped-artifact",
     }
     if group.get("kind") == "release-shaped-artifact":
-        key["release-shaped-execution-shape"] = (
-            _materializer_release_execution_shape(
+        key["release-shaped-executor-profile"] = (
+            _materializer_release_executor_profile(
                 group,
                 artifact_obligations=artifact_obligations,
             )
@@ -3523,34 +3523,16 @@ def _validate_non_empty_mapping(
         issues.append(ValidationIssue(path, "must be a non-empty object"))
 
 
-def _materializer_release_execution_shape(
+def _materializer_release_executor_profile(
     group: Mapping[str, object],
     *,
     artifact_obligations: Mapping[str, Mapping[str, object]],
 ) -> dict[str, object]:
     obligation = artifact_obligations.get(str(group.get("work-group-id")))
-    artifact = _mapping(obligation.get("artifact", {})) if obligation else {}
-    release_receipt = (
-        _mapping(obligation.get("release-receipt", {})) if obligation else {}
-    )
     return {
         "api-version": (
-            "three.ci.validation.release-execution-shape/v1alpha1"
+            "three.ci.validation.release-executor-profile/v1alpha1"
         ),
-        "artifact": {
-            "kind-family": artifact.get("kind-family"),
-            "concrete-kind": artifact.get("concrete-kind"),
-            "logical-artifact-role": artifact.get("logical-artifact-role"),
-            "variant-dimensions": dict(
-                _mapping(artifact.get("variant-dimensions", {}))
-            ),
-        },
-        "release-receipt": {
-            "expected-family": release_receipt.get("expected-family"),
-            "variant-dimensions": dict(
-                _mapping(release_receipt.get("variant-dimensions", {}))
-            ),
-        },
         "credential-posture": obligation.get("credential-posture")
         if obligation
         else None,
@@ -3592,8 +3574,8 @@ def _materializer_compatibility_profile(
             ),
             "runner-family": runner_family,
             "ecosystem": ecosystem,
-            "execution-shape": key_payload.get(
-                "release-shaped-execution-shape"
+            "executor-profile": key_payload.get(
+                "release-shaped-executor-profile"
             ),
             "work-groups": [
                 {

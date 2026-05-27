@@ -677,6 +677,8 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 ## [2026-05-27] query | Rebaseline Release-Shaped CI Batch Compatibility
 
 - Updated the CI affected-validation LLD so release-shaped batch compatibility is
-  based on executable shape rather than exact artifact or receipt payload shape.
+  based on the current validation-only executor profile rather than exact artifact
+  or receipt payload shape.
 - Clarified that exact artifact refs, descriptor identity, receipt logical role,
-  profile labels, and obligation IDs remain per-selector equality checks.
+  profile labels, artifact shapes, and obligation IDs remain per-selector equality
+  checks.

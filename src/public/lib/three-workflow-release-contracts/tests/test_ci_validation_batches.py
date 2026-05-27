@@ -85,6 +85,7 @@ _PLANS_SPEC.loader.exec_module(_PLANS_MODULE)
 
 EXPECTED_FINAL_ARTIFACTS = 2
 EXPECTED_MAX_EXECUTION_BATCHES = 13
+EXPECTED_COALESCED_RELEASE_EXECUTOR_BATCHES = 1
 EXPECTED_RELEASE_EXECUTION_SPLIT_BATCHES = 2
 OLD_PER_BATCH_WINDOWS_FLOOR = 4
 CREATED_AT = cast("str", _PLANS_MODULE.CREATED_AT)
@@ -4184,8 +4185,8 @@ def test_materializer_keeps_release_execution_dimensions_split(
     assert values == expected_values
 
 
-def test_materializer_keeps_release_artifact_execution_shape_split() -> None:
-    """Release-shaped batches split by artifact execution requirements."""
+def test_materializer_keeps_release_artifact_shapes_on_selectors() -> None:
+    """Artifact shape differences do not split one release executor profile."""
     base_obligation = _PLANS_MODULE.__dict__["_artifact_obligation"]()
     zip_obligation = deepcopy(base_obligation)
     zip_obligation["artifact-obligation-id"] = "artifact-example-zip"
@@ -4210,22 +4211,10 @@ def test_materializer_keeps_release_artifact_execution_shape_split() -> None:
         groups,
         ["wg-artifact", "wg-artifact-zip"],
     )
-    concrete_kinds = set()
-    for spec in specs:
-        execution_shape = cast(
-            "Mapping[str, object]",
-            cast("Mapping[str, object]", spec["key-payload"])[
-                "release-shaped-execution-shape"
-            ],
-        )
-        artifact_shape = cast(
-            "Mapping[str, object]",
-            execution_shape["artifact"],
-        )
-        concrete_kinds.add(artifact_shape["concrete-kind"])
+    selectors = cast("list[str]", specs[0]["work-group-ids"])
 
-    assert len(specs) == EXPECTED_RELEASE_EXECUTION_SPLIT_BATCHES
-    assert concrete_kinds == {"wheel", "zip"}
+    assert len(specs) == EXPECTED_COALESCED_RELEASE_EXECUTOR_BATCHES
+    assert set(selectors) == {"wg-artifact", "wg-artifact-zip"}
 
 
 def test_execution_batch_manifest_rejects_selector_loss() -> None:
