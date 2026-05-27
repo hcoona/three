@@ -387,6 +387,28 @@
       "groupName": ".NET Test Stack"
     },
     {
+      "description": "Group public NuGet library dependency minimum updates.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "groupName": "Public NuGet Library Minimum Dependency Versions",
+      "automerge": true
+    },
+    {
+      "description": "Group root NuGet versions used as public library minimums.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["Directory.Packages.props"],
+      "matchPackageNames": ["System.Net.Http", "System.Text.Json"],
+      "groupName": "Public NuGet Library Minimum Dependency Versions",
+      "automerge": true
+    },
+    {
+      "description": "Update public System.Memory lower bounds with SourceLink when restore requires it.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "matchPackageNames": ["System.Memory"],
+      "groupName": "MSBuild and Repository Build Tooling"
+    },
+    {
       "description": "Group MSBuild and repository build tooling.",
       "matchManagers": ["nuget"],
       "matchPackageNames": [
@@ -411,21 +433,6 @@
       "matchManagers": ["nuget"],
       "matchPackageNames": ["Microsoft.Web.WebView2", "Microsoft.Windows.SDK.BuildTools", "Microsoft.WindowsAppSDK"],
       "groupName": "Windows UI Platform Packages"
-    },
-    {
-      "description": "Group public NuGet library dependency minimum updates.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
-      "groupName": "Public NuGet Library Minimum Dependency Versions",
-      "automerge": true
-    },
-    {
-      "description": "Group root NuGet versions used as public library minimums.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["Directory.Packages.props"],
-      "matchPackageNames": ["System.Net.Http", "System.Text.Json"],
-      "groupName": "Public NuGet Library Minimum Dependency Versions",
-      "automerge": true
     },
     {
       "description": "Group Pkl generator mise updates separately.",
