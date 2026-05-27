@@ -394,14 +394,9 @@
         "DotNet.ReproducibleBuilds",
         "DotNet.ReproducibleBuilds.Isolated",
         "Microsoft.SourceLink.GitHub",
-        "Nerdbank.GitVersioning"
+        "Nerdbank.GitVersioning",
+        "System.IO.Hashing"
       ],
-      "groupName": "MSBuild and Repository Build Tooling"
-    },
-    {
-      "description": "Update SourceLink with the direct package version it requires for restore.",
-      "matchManagers": ["nuget"],
-      "matchPackageNames": ["Microsoft.SourceLink.GitHub", "System.IO.Hashing"],
       "groupName": "MSBuild and Repository Build Tooling"
     },
     {
