@@ -28,7 +28,7 @@
     <PackageVersion Include="Nito.Guids" Version="1.1.1" />
     <PackageVersion Include="NuGet.ProjectModel" Version="6.14.3" />
     <PackageVersion Include="RocksDB" Version="10.10.1.649" />
-    <PackageVersion Include="Serilog.Extensions.Logging" Version="9.0.2" />
+    <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Svg" Version="3.4.7" />
     <PackageVersion Include="Svg.Skia" Version="5.0.0" />
