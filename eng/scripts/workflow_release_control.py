@@ -326,6 +326,11 @@ def _add_verify_ci_validation_artifact_boundaries(
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--run-attempt", required=True)
+    parser.add_argument("--request", default="")
+    parser.add_argument("--plan", default="")
+    parser.add_argument("--changed-files-snapshot", default="")
+    parser.add_argument("--fact-snapshot", default="")
+    parser.add_argument("--execution-batch-manifest", default="")
     parser.add_argument(
         "--expected-artifact",
         action="append",
@@ -1107,6 +1112,17 @@ def _cmd_verify_ci_validation_artifact_boundaries(
                 expected,
                 run_id=str(args.run_id),
                 run_attempt=str(args.run_attempt),
+                request=_read_optional_json(getattr(args, "request", "")),
+                plan=_read_optional_json(getattr(args, "plan", "")),
+                changed_files_snapshot=_read_optional_json(
+                    getattr(args, "changed_files_snapshot", "")
+                ),
+                fact_snapshot=_read_optional_json(
+                    getattr(args, "fact_snapshot", "")
+                ),
+                execution_batch_manifest=_read_optional_json(
+                    getattr(args, "execution_batch_manifest", "")
+                ),
             )
     except (
         ContractValidationError,
@@ -1320,6 +1336,11 @@ def _ci_verify_expected_final_artifact_uploaded_bytes(
     *,
     run_id: str,
     run_attempt: str,
+    request: Mapping[str, object] | None = None,
+    plan: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    execution_batch_manifest: Mapping[str, object] | None = None,
 ) -> list[Mapping[str, object]]:
     diagnostics: list[Mapping[str, object]] = []
     uploaded: dict[str, Mapping[str, object]] = {}
@@ -1342,6 +1363,11 @@ def _ci_verify_expected_final_artifact_uploaded_bytes(
             if kind == "aggregate-evidence-manifest":
                 validate_ci_validation_aggregate_evidence_manifest(
                     document,
+                    plan=plan,
+                    request=request,
+                    changed_files_snapshot=changed_files_snapshot,
+                    fact_snapshot=fact_snapshot,
+                    execution_batch_manifest=execution_batch_manifest,
                     expected_run_id=run_id,
                     expected_run_attempt=run_attempt,
                 )

@@ -2217,6 +2217,11 @@ jobs:
            --workflow "CI Validation" \
            --run-id "$GITHUB_RUN_ID" \
            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+           --request .three-ci-validation/request/ci-validation-request.json \
+           --plan .three-ci-validation/plan/validation-plan.json \
+           --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
+           --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
+           --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
            --max-prefixed-validation-artifacts 20 \
            --expected-prefixed-validation-artifacts "$expected_prefixed_validation_artifacts" \
            "${expected_artifacts[@]}"

@@ -29,6 +29,7 @@ from three_workflow_release_contracts import (
     artifact_name,
     artifact_physical_name,
     canonical_json_bytes,
+    canonical_json_digest,
     ci_validation_aggregate_evidence_manifest_payload_digest,
     ci_validation_batch_evidence_bundle_artifact_ref,
     ci_validation_batch_evidence_bundle_payload_digest,
@@ -5256,6 +5257,24 @@ def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
         '\\"content-digest\\":\\"${aggregate_manifest_digest}\\"' in final_run
     )
     assert '\\"content-digest\\":\\"${aggregate_summary_digest}\\"' in final_run
+    assert (
+        "--request .three-ci-validation/request/ci-validation-request.json"
+        in final_run
+    )
+    assert "--plan .three-ci-validation/plan/validation-plan.json" in final_run
+    assert (
+        "--changed-files-snapshot .three-ci-validation/plan/changed-files.json"
+        in final_run
+    )
+    assert (
+        "--fact-snapshot .three-ci-validation/plan/fact-snapshot.json"
+        in final_run
+    )
+    assert (
+        "--execution-batch-manifest "
+        ".three-ci-validation/materialize/execution-batch-manifest.json"
+        in final_run
+    )
 
 
 def test_ci_validation_artifact_id_downloads_merge_to_consumer_paths() -> None:
@@ -7806,6 +7825,70 @@ def test_final_uploaded_byte_gate_recomputes_manifest_digest(
         assert diagnostics
         assert diagnostics[0]["code"] == "workflow-gate-failure"
         assert diagnostics[0]["detail"] == "final-namespace-closure-mismatch"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_final_uploaded_byte_gate_validates_manifest_with_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Final manifest byte validation uses supplied authority documents."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    aggregate_manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    scratch = SCRATCH / "final-uploaded-context"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        manifest_path = scratch / "aggregate-evidence-manifest.json"
+        manifest = {"artifact-ref": aggregate_manifest_ref, "value": "uploaded"}
+        manifest_path.write_bytes(canonical_json_bytes(manifest))
+        expected_manifest = _ci_expected_artifact(
+            aggregate_manifest_ref,
+            artifact_id=9901,
+            boundary="aggregate-evidence",
+            job="aggregate-evidence",
+        )
+        expected_manifest["downloaded-path"] = str(manifest_path)
+        expected_manifest["content-digest"] = canonical_json_digest(manifest)
+        request = {"kind": "request"}
+        plan = {"kind": "plan"}
+        changed_files_snapshot = {"kind": "changed-files"}
+        fact_snapshot = {"kind": "facts"}
+        execution_batch_manifest = {"kind": "execution-batches"}
+        captured: dict[str, object] = {}
+
+        def fake_validate(_document: object, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        monkeypatch.setattr(
+            control,
+            "validate_ci_validation_aggregate_evidence_manifest",
+            fake_validate,
+        )
+
+        diagnostics = control._ci_verify_expected_final_artifact_uploaded_bytes(
+            [expected_manifest],
+            run_id=run_id,
+            run_attempt=run_attempt,
+            request=request,
+            plan=plan,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            execution_batch_manifest=execution_batch_manifest,
+        )
+
+        assert diagnostics == []
+        assert captured["request"] is request
+        assert captured["plan"] is plan
+        assert captured["changed_files_snapshot"] is changed_files_snapshot
+        assert captured["fact_snapshot"] is fact_snapshot
+        assert captured["execution_batch_manifest"] is execution_batch_manifest
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
