@@ -10261,6 +10261,13 @@ def test_aggregate_summary_freezer_emits_canonical_failure_order() -> None:
     bundle = _bundle(plan, manifest)
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _set_input_absent(
+        aggregate_manifest,
+        "execution-batch-manifest",
+        required=True,
+        admissibility="missing",
+    )
+    _make_summary_batch_evidence_missing(summary, aggregate_manifest)
     _mark_summary_required_input_failure(summary)
     failures = list(
         reversed(cast("list[dict[str, object]]", summary["failures"]))
@@ -10293,7 +10300,6 @@ def test_aggregate_summary_freezer_emits_canonical_failure_order() -> None:
         work_groups=cast("dict[str, object]", summary["work-groups"]),
         plan=plan,
         aggregate_evidence_manifest_document=aggregate_manifest,
-        admitted_batch_evidence_bundles=[bundle],
         execution_batch_manifest=manifest,
         request_document=_request_document(),
         changed_files_snapshot=_changed_files_snapshot_document(),
