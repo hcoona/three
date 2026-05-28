@@ -24,6 +24,22 @@
 #define MyAppURL "https://github.com/hcoona/ImageOcclusionEditor"
 #define MyAppExeName "ImageOcclusionEditor.exe"
 #define MyAppDescription "Application for creating image occlusion cards"
+#define PublishDirWithBackslash AddBackslash(PublishDir)
+#if DirExists(ProjectDir) == 0
+#expr Error("ProjectDir does not exist: " + ProjectDir)
+#endif
+#if DirExists(PublishDir) == 0
+#expr Error("PublishDir does not exist: " + PublishDir)
+#endif
+#if FileExists(PublishDirWithBackslash + MyAppExeName) == 0
+#expr Error("Published executable does not exist: " + PublishDirWithBackslash + MyAppExeName)
+#endif
+#if FileExists(ProjectDirWithBackslash + "imageocclusioneditor.ico") == 0
+#expr Error("Inno icon input does not exist: " + ProjectDirWithBackslash + "imageocclusioneditor.ico")
+#endif
+#if FileExists(ProjectDirWithBackslash + "LICENSE.GPL3.txt") == 0
+#expr Error("Inno license input does not exist: " + ProjectDirWithBackslash + "LICENSE.GPL3.txt")
+#endif
 
 [Setup]
 AppId={{C8D4F4E5-1234-4567-8901-123456789ABC}
@@ -34,7 +50,6 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-SourceDir={#ProjectDir}
 DefaultDirName={autopf64}\ImageOcclusionEditor
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
@@ -59,18 +74,18 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; x64 version files only
-Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PublishDirWithBackslash}*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Icon file
-Source: "imageocclusioneditor.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}imageocclusioneditor.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; Documentation
-Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "LICENSE.GPL3.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "LICENSE.MIT.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "THIRD-PARTY-NOTICES.TXT"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}LICENSE.GPL3.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}LICENSE.MIT.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}THIRD-PARTY-NOTICES.TXT"; DestDir: "{app}"; Flags: ignoreversion
 ; Templates (optional)
-Source: "Resources\Template_IIOT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "Resources\Template_IIOTT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ProjectDirWithBackslash}Resources\Template_IIOT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ProjectDirWithBackslash}Resources\Template_IIOTT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\imageocclusioneditor.ico"
