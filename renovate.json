@@ -148,6 +148,14 @@
       "postUpdateOptions": ["pnpmDedupe"]
     },
     {
+      "description": "Group Biome updates across JavaScript workspaces.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@biomejs/biome"],
+      "groupName": "Biome",
+      "postUpdateOptions": ["pnpmDedupe"],
+      "automerge": true
+    },
+    {
       "description": "Group Commitlint packages.",
       "matchManagers": ["npm"],
       "matchPackageNames": ["/^@commitlint\\//"],
@@ -459,15 +467,21 @@
       "automerge": true
     },
     {
-      "description": "Group pnpm mise updates and refresh pnpm lockfiles.",
+      "description": "Refresh pnpm lockfiles after mise pnpm updates.",
       "matchManagers": ["mise"],
       "matchDepNames": ["pnpm"],
-      "groupName": "Mise pnpm",
       "postUpgradeTasks": {
         "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
         "fileFilters": ["mise.lock", "**/mise.lock", "**/.mise.lock", "pnpm-lock.yaml", "**/pnpm-lock.yaml"],
         "executionMode": "branch"
       },
+      "automerge": true
+    },
+    {
+      "description": "Group pnpm tool version updates across workflows and mise.",
+      "matchManagers": ["github-actions", "mise"],
+      "matchDepNames": ["pnpm"],
+      "groupName": "pnpm",
       "automerge": true
     },
     {
