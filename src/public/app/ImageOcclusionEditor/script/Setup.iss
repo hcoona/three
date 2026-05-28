@@ -1,4 +1,6 @@
 #define MyAppName "Image Occlusion Editor"
+#define ScriptDir SourcePath
+#define ProjectDir ExtractFileDir(ScriptDir)
 ; PublishDir can be injected from the build script or csproj via /DPublishDir="..."
 #ifndef PublishDir
 #define PublishDir "..\ImageOcclusionEditorWinUI3\bin\x64\Release\net9.0-windows10.0.22000.0\win-x64\publish"
@@ -23,10 +25,10 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf64}\ImageOcclusionEditor
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-LicenseFile=..\LICENSE.GPL3.txt
+LicenseFile={#ProjectDir}\LICENSE.GPL3.txt
 OutputDir=Release
 OutputBaseFilename=ImageOcclusionEditorWinUI3_Setup
-SetupIconFile=..\imageocclusioneditor.ico
+SetupIconFile={#ProjectDir}\imageocclusioneditor.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -47,16 +49,16 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; x64 version files only
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Icon file
-Source: "..\imageocclusioneditor.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\imageocclusioneditor.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; Documentation
-Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\LICENSE.GPL3.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\LICENSE.MIT.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\THIRD-PARTY-NOTICES.TXT"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\LICENSE.GPL3.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\LICENSE.MIT.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\THIRD-PARTY-NOTICES.TXT"; DestDir: "{app}"; Flags: ignoreversion
 ; Templates (optional)
-Source: "..\Resources\Template_IIOT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\Resources\Template_IIOTT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ProjectDir}\Resources\Template_IIOT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ProjectDir}\Resources\Template_IIOTT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\imageocclusioneditor.ico"
