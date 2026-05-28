@@ -518,7 +518,6 @@ jobs:
       - normalize-input
       - plan
       - materialize-execution-batches
-      - execution-batch-windows-orchestrator
     if: always() && needs.materialize-execution-batches.outputs.has-ubuntu-execution-batches == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1976,7 +1975,6 @@ jobs:
       - normalize-input
       - plan
       - materialize-execution-batches
-      - execution-batch-windows-orchestrator
     if: always() && needs.materialize-execution-batches.outputs.has-macos-execution-batches == 'true'
     runs-on: macos-latest
     permissions:

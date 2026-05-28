@@ -5090,7 +5090,6 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "normalize-input",
         "plan",
         "materialize-execution-batches",
-        "execution-batch-windows-orchestrator",
     }
     assert set(jobs["execution-batch-windows-orchestrator"]["needs"]) == {
         "normalize-input",
@@ -5101,7 +5100,6 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "normalize-input",
         "plan",
         "materialize-execution-batches",
-        "execution-batch-windows-orchestrator",
     }
     assert (
         "ubuntu-execution-batch-matrix"
