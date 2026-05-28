@@ -82,12 +82,6 @@ function Write-Status {
     }
 }
 
-function ConvertTo-InnoStringLiteral {
-    param([Parameter(Mandatory)][string]$Value)
-
-    return '"' + $Value.Replace('"', '""') + '"'
-}
-
 # Load shared helpers and resolve repo paths
 . (Join-Path $PSScriptRoot 'Helpers.ps1')
 $ScriptDir = $PSScriptRoot
@@ -176,15 +170,23 @@ foreach ($requiredInnoInput in $requiredInnoInputs) {
 }
 
 # Invoke ISCC. /O specifies output folder. Always pass PublishDir to align with actual publish output.
-# Do not embed quotes; ensure no trailing backslash for Inno preprocessor path defines.
 $outArg = '/O' + $InstallerOutputPath
 if ($PublishOutputPath.EndsWith('\')) { $PublishOutputPath = $PublishOutputPath.TrimEnd('\') }
 if ($ProjectDir.EndsWith('\')) { $ProjectDir = $ProjectDir.TrimEnd('\') }
-$definePublishDir = '/DPublishDir=' + (ConvertTo-InnoStringLiteral $PublishOutputPath)
-$defineProjectDir = '/DProjectDir=' + (ConvertTo-InnoStringLiteral $ProjectDir)
-$defineAppVersion = '/DMyAppVersion=' + (ConvertTo-InnoStringLiteral $AppVersion)
-$isccArguments = @($outArg, $definePublishDir, $defineProjectDir, $defineAppVersion, $SetupIss)
-& $ISCC @isccArguments
+$previousPublishDir = $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR
+$previousProjectDir = $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR
+$previousAppVersion = $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION
+try {
+    $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR = $PublishOutputPath
+    $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR = $ProjectDir
+    $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION = $AppVersion
+    & $ISCC $outArg $SetupIss
+}
+finally {
+    $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR = $previousPublishDir
+    $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR = $previousProjectDir
+    $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION = $previousAppVersion
+}
 
 # Try to discover the output installer file (by convention from .csproj)
 $expectedInstaller = Join-Path $InstallerOutputPath 'ImageOcclusionEditorWinUI3_Setup.exe'

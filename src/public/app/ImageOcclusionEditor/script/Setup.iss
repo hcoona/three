@@ -1,13 +1,23 @@
 #define MyAppName "Image Occlusion Editor"
 #define ScriptDir SourcePath
 #ifndef ProjectDir
+#define ProjectDir GetEnv("IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR")
+#endif
+#if ProjectDir == ""
+#undef ProjectDir
 #define ProjectDir AddBackslash(ScriptDir) + ".."
 #endif
 #define ProjectDirWithBackslash AddBackslash(ProjectDir)
 #ifndef MyAppVersion
+#define MyAppVersion GetEnv("IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION")
+#endif
+#if MyAppVersion == ""
 #error MyAppVersion must be supplied by Build-InnoInstaller.ps1
 #endif
 #ifndef PublishDir
+#define PublishDir GetEnv("IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR")
+#endif
+#if PublishDir == ""
 #error PublishDir must be supplied by Build-InnoInstaller.ps1
 #endif
 #define MyAppPublisher "Shuai Zhang"
