@@ -111,6 +111,15 @@ if (-not $PublishOutputRoot) {
 }
 $PublishOutputPath = Get-PublishOutputPath -PublishOutputRoot $PublishOutputRoot -Configuration $Configuration -TargetFramework $TargetFramework -RuntimeIdentifier $RuntimeIdentifier
 
+# Validate that publish artifacts exist (produced by Publish-ImageOcclusionEditor.ps1)
+$exePath = Join-Path $PublishOutputPath ("{0}.exe" -f $AssemblyName)
+if (-not (Test-Path -LiteralPath $exePath)) {
+    Write-Status 'Expected published artifacts not found.' 'Error'
+    Write-Status "Missing: $exePath" 'Error'
+    throw 'Please run script/Publish-ImageOcclusionEditor.ps1 first to produce publish output.'
+}
+$PublishOutputPath = (Resolve-Path -LiteralPath $PublishOutputPath).Path
+
 if (-not $InstallerOutputPath) {
     # Default installer output to repo root 'out' directory
     $InstallerOutputPath = Join-Path $RepoRoot 'out'
@@ -127,14 +136,6 @@ Write-Status "Installer Output: $InstallerOutputPath" 'Info'
 ## Use shared helper to locate ISCC
 $ISCC = Get-ISCCPath -Hint $InnoSetupCompiler
 Write-Status "Using ISCC: $ISCC" 'Info'
-
-# Validate that publish artifacts exist (produced by Publish-ImageOcclusionEditor.ps1)
-$exePath = Join-Path $PublishOutputPath ("{0}.exe" -f $AssemblyName)
-if (-not (Test-Path -LiteralPath $exePath)) {
-    Write-Status 'Expected published artifacts not found.' 'Error'
-    Write-Status "Missing: $exePath" 'Error'
-    throw 'Please run script/Publish-ImageOcclusionEditor.ps1 first to produce publish output.'
-}
 
 # Build installer
 Write-Status 'Building installer with Inno Setup...' 'Info'
