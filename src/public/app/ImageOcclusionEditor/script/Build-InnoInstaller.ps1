@@ -119,6 +119,7 @@ if (-not (Test-Path -LiteralPath $exePath)) {
     throw 'Please run script/Publish-ImageOcclusionEditor.ps1 first to produce publish output.'
 }
 $PublishOutputPath = (Resolve-Path -LiteralPath $PublishOutputPath).Path
+$ProjectDir = (Resolve-Path -LiteralPath $RepoRoot).Path
 
 if (-not $InstallerOutputPath) {
     # Default installer output to repo root 'out' directory
@@ -142,12 +143,28 @@ Write-Status 'Building installer with Inno Setup...' 'Info'
 # Ensure output directory exists
 if (-not (Test-Path -LiteralPath $InstallerOutputPath)) { New-Item -ItemType Directory -Force -Path $InstallerOutputPath | Out-Null }
 
+$requiredInnoInputs = @(
+    (Join-Path $ProjectDir 'imageocclusioneditor.ico'),
+    (Join-Path $ProjectDir 'README.md'),
+    (Join-Path $ProjectDir 'LICENSE'),
+    (Join-Path $ProjectDir 'LICENSE.GPL3.txt'),
+    (Join-Path $ProjectDir 'LICENSE.MIT.txt'),
+    (Join-Path $ProjectDir 'THIRD-PARTY-NOTICES.TXT')
+)
+foreach ($requiredInnoInput in $requiredInnoInputs) {
+    if (-not (Test-Path -LiteralPath $requiredInnoInput -PathType Leaf)) {
+        throw "Required Inno Setup input not found: $requiredInnoInput"
+    }
+}
+
 # Invoke ISCC. /O specifies output folder. Always pass PublishDir to align with actual publish output.
-# Do not embed quotes; ensure no trailing backslash for PublishDir.
+# Do not embed quotes; ensure no trailing backslash for Inno preprocessor path defines.
 $outArg = '/O' + $InstallerOutputPath
 if ($PublishOutputPath.EndsWith('\')) { $PublishOutputPath = $PublishOutputPath.TrimEnd('\') }
+if ($ProjectDir.EndsWith('\')) { $ProjectDir = $ProjectDir.TrimEnd('\') }
 $definePublishDir = '/DPublishDir=' + $PublishOutputPath
-& $ISCC $SetupIss $outArg $definePublishDir
+$defineProjectDir = '/DProjectDir=' + $ProjectDir
+& $ISCC $SetupIss $outArg $definePublishDir $defineProjectDir
 
 # Try to discover the output installer file (by convention from .csproj)
 $expectedInstaller = Join-Path $InstallerOutputPath 'ImageOcclusionEditorWinUI3_Setup.exe'
