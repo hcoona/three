@@ -82,6 +82,12 @@ function Write-Status {
     }
 }
 
+function ConvertTo-InnoStringLiteral {
+    param([Parameter(Mandatory)][string]$Value)
+
+    return '"' + $Value.Replace('"', '""') + '"'
+}
+
 # Load shared helpers and resolve repo paths
 . (Join-Path $PSScriptRoot 'Helpers.ps1')
 $ScriptDir = $PSScriptRoot
@@ -174,10 +180,11 @@ foreach ($requiredInnoInput in $requiredInnoInputs) {
 $outArg = '/O' + $InstallerOutputPath
 if ($PublishOutputPath.EndsWith('\')) { $PublishOutputPath = $PublishOutputPath.TrimEnd('\') }
 if ($ProjectDir.EndsWith('\')) { $ProjectDir = $ProjectDir.TrimEnd('\') }
-$definePublishDir = '/DPublishDir=' + $PublishOutputPath
-$defineProjectDir = '/DProjectDir=' + $ProjectDir
-$defineAppVersion = '/DMyAppVersion=' + $AppVersion
-& $ISCC $SetupIss $outArg $definePublishDir $defineProjectDir $defineAppVersion
+$definePublishDir = '/DPublishDir=' + (ConvertTo-InnoStringLiteral $PublishOutputPath)
+$defineProjectDir = '/DProjectDir=' + (ConvertTo-InnoStringLiteral $ProjectDir)
+$defineAppVersion = '/DMyAppVersion=' + (ConvertTo-InnoStringLiteral $AppVersion)
+$isccArguments = @($outArg, $definePublishDir, $defineProjectDir, $defineAppVersion, $SetupIss)
+& $ISCC @isccArguments
 
 # Try to discover the output installer file (by convention from .csproj)
 $expectedInstaller = Join-Path $InstallerOutputPath 'ImageOcclusionEditorWinUI3_Setup.exe'
