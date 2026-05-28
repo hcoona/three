@@ -1,6 +1,6 @@
 #define MyAppName "Image Occlusion Editor"
 #define ScriptDir SourcePath
-#define ProjectDir ExtractFileDir(ScriptDir)
+#define ProjectDir AddBackslash(ScriptDir) + ".."
 ; PublishDir can be injected from the build script or csproj via /DPublishDir="..."
 #ifndef PublishDir
 #define PublishDir "..\ImageOcclusionEditorWinUI3\bin\x64\Release\net9.0-windows10.0.22000.0\win-x64\publish"
