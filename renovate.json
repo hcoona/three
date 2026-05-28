@@ -24,7 +24,7 @@
     "schedule": ["before 6am on tuesday"],
     "automerge": true,
     "commitMessageAction": "Refresh",
-    "commitMessageTopic": "Dependency Lock Files"
+    "commitMessageTopic": "{{#if groupName}}{{groupName}} Lock Files{{else}}Dependency Lock Files{{/if}}"
   },
   "vulnerabilityAlerts": {
     "enabled": true,
