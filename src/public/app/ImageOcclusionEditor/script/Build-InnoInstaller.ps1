@@ -93,6 +93,31 @@ function ConvertTo-InnoStringLiteral {
     return '"' + ($Value -replace '"', '""') + '"'
 }
 
+function Get-InnoTempBase {
+    $candidatePaths = @(
+        $env:RUNNER_TEMP,
+        $env:TEMP,
+        [System.IO.Path]::GetTempPath()
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    $resolvedCandidates = @(
+        foreach ($candidatePath in $candidatePaths) {
+            try {
+                (Resolve-Path -LiteralPath $candidatePath -ErrorAction Stop).Path
+            }
+            catch {
+                $null
+            }
+        }
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+
+    if ($resolvedCandidates.Count -eq 0) {
+        return $InstallerOutputPath
+    }
+
+    return $resolvedCandidates | Sort-Object { $_.Length } | Select-Object -First 1
+}
+
 # Load shared helpers and resolve repo paths
 . (Join-Path $PSScriptRoot 'Helpers.ps1')
 $ScriptDir = $PSScriptRoot
@@ -181,15 +206,14 @@ foreach ($requiredInnoInput in $requiredInnoInputs) {
 }
 
 # Stage Inno inputs outside the validation worktree so ISCC consumes short, deterministic paths.
-$InnoWorkRoot = Join-Path $InstallerOutputPath 'inno-input'
-if (Test-Path -LiteralPath $InnoWorkRoot) {
-    Remove-Item -LiteralPath $InnoWorkRoot -Recurse -Force
-}
+$InnoTempBase = Get-InnoTempBase
+$InnoWorkRoot = Join-Path $InnoTempBase ("image-occlusion-inno-{0}" -f [guid]::NewGuid().ToString('N'))
 $StagedPublishDir = Join-Path $InnoWorkRoot 'publish'
 $StagedProjectDir = Join-Path $InnoWorkRoot 'project'
-New-Item -ItemType Directory -Force -Path $StagedPublishDir, $StagedProjectDir | Out-Null
+$ShortInstallerOutputPath = Join-Path $InnoWorkRoot 'out'
+New-Item -ItemType Directory -Force -Path $StagedPublishDir, $StagedProjectDir, $ShortInstallerOutputPath | Out-Null
 
-$publishItems = Get-ChildItem -LiteralPath $PublishOutputPath -Force
+$publishItems = @(Get-ChildItem -LiteralPath $PublishOutputPath -Force)
 if ($publishItems.Count -eq 0) {
     throw "Publish output is empty: $PublishOutputPath"
 }
@@ -222,6 +246,7 @@ foreach ($relativePath in $projectAssetRelativePaths) {
 
 $InnoPublishDir = (Resolve-Path -LiteralPath $StagedPublishDir).Path
 $InnoProjectDir = (Resolve-Path -LiteralPath $StagedProjectDir).Path
+$ShortInstallerOutputPath = (Resolve-Path -LiteralPath $ShortInstallerOutputPath).Path
 $stagedExePath = Join-Path $InnoPublishDir ("{0}.exe" -f $AssemblyName)
 if (-not (Test-Path -LiteralPath $stagedExePath -PathType Leaf)) {
     throw "Staged published executable not found: $stagedExePath"
@@ -234,6 +259,8 @@ foreach ($requiredInnoInput in $requiredInnoInputs) {
     }
 }
 
+$StagedSetupIss = Join-Path $InnoWorkRoot 'Setup.iss'
+Copy-Item -LiteralPath $SetupIss -Destination $StagedSetupIss -Force
 $GeneratedSetupIss = Join-Path $InnoWorkRoot 'Setup.generated.iss'
 $generatedSetupContent = @(
     '#define ProjectDir ' + (ConvertTo-InnoStringLiteral $InnoProjectDir),
@@ -242,16 +269,17 @@ $generatedSetupContent = @(
     '#pragma message("ProjectDir=" + ProjectDir)',
     '#pragma message("PublishDir=" + PublishDir)',
     '#pragma message("MyAppVersion=" + MyAppVersion)',
-    '#include ' + (ConvertTo-InnoStringLiteral $SetupIss)
+    '#include ' + (ConvertTo-InnoStringLiteral $StagedSetupIss)
 )
 Set-Content -LiteralPath $GeneratedSetupIss -Value $generatedSetupContent -Encoding UTF8
 
 Write-Status "Inno Staged Publish: $InnoPublishDir" 'Info'
 Write-Status "Inno Staged Project: $InnoProjectDir" 'Info'
+Write-Status "Inno Short Output: $ShortInstallerOutputPath" 'Info'
 Write-Status "Generated Inno Script: $GeneratedSetupIss" 'Info'
 
 # Invoke ISCC. /O specifies output folder; the generated wrapper supplies Inno defines.
-$outArg = '/O' + $InstallerOutputPath
+$outArg = '/O' + $ShortInstallerOutputPath
 if ($InnoPublishDir.EndsWith('\')) { $InnoPublishDir = $InnoPublishDir.TrimEnd('\') }
 if ($InnoProjectDir.EndsWith('\')) { $InnoProjectDir = $InnoProjectDir.TrimEnd('\') }
 $previousPublishDir = $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR
@@ -271,23 +299,43 @@ try {
         Write-Information "[ISCC] $isccOutputLine" -InformationAction Continue
     }
     if ($isccExitCode -ne 0) {
-        $publishFileCount = (Get-ChildItem -LiteralPath $InnoPublishDir -Recurse -File -Force).Count
-        $longestPublishPaths = Get-ChildItem -LiteralPath $InnoPublishDir -Recurse -File -Force |
+        $originalPublishFiles = @(Get-ChildItem -LiteralPath $PublishOutputPath -Recurse -File -Force)
+        $stagedPublishFiles = @(Get-ChildItem -LiteralPath $InnoPublishDir -Recurse -File -Force)
+        $longestOriginalPublishPaths = $originalPublishFiles |
             Sort-Object { $_.FullName.Length } -Descending |
-            Select-Object -First 10 -ExpandProperty FullName
+            Select-Object -First 10 |
+            ForEach-Object { "{0} ({1})" -f $_.FullName, $_.FullName.Length }
+        $longestStagedPublishPaths = $stagedPublishFiles |
+            Sort-Object { $_.FullName.Length } -Descending |
+            Select-Object -First 10 |
+            ForEach-Object { "{0} ({1})" -f $_.FullName, $_.FullName.Length }
+        $isccOutputText = if ($isccOutputLines.Count -gt 0) {
+            $isccOutputLines -join [Environment]::NewLine
+        }
+        else {
+            '<no ISCC output captured>'
+        }
         $diagnostics = @(
             "ISCC failed with exit code $isccExitCode.",
+            'ISCC output:',
+            $isccOutputText,
+            'Diagnostics:',
             "ISCC: $ISCC",
             "Arguments: $($isccArgs -join ' ')",
             "Working Directory: $((Get-Location).Path)",
+            "Temp Work Root: $InnoWorkRoot",
             "ProjectDir: $InnoProjectDir",
             "PublishDir: $InnoPublishDir",
             "InstallerOutputPath: $InstallerOutputPath",
-            "Publish file count: $publishFileCount",
-            "Longest publish paths:",
-            $longestPublishPaths,
-            "ISCC output:",
-            $isccOutputLines
+            "ShortInstallerOutputPath: $ShortInstallerOutputPath",
+            "Original publish file count: $($originalPublishFiles.Count)",
+            "Staged publish file count: $($stagedPublishFiles.Count)",
+            "Generated setup path length: $($GeneratedSetupIss.Length)",
+            "Short output path length: $($ShortInstallerOutputPath.Length)",
+            'Longest original publish paths:',
+            ($longestOriginalPublishPaths -join [Environment]::NewLine),
+            'Longest staged publish paths:',
+            ($longestStagedPublishPaths -join [Environment]::NewLine)
         )
         throw ($diagnostics -join [Environment]::NewLine)
     }
@@ -297,6 +345,18 @@ finally {
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR = $previousPublishDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR = $previousProjectDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION = $previousAppVersion
+}
+
+# Copy the short-path compiler output back to the release-build executor contract directory.
+$builtInstallers = @(Get-ChildItem -LiteralPath $ShortInstallerOutputPath -Filter '*.exe' -File -ErrorAction SilentlyContinue)
+if ($builtInstallers.Count -eq 0) {
+    throw "ISCC finished but no installer .exe was found in the short output folder: $ShortInstallerOutputPath"
+}
+foreach ($builtInstaller in $builtInstallers) {
+    Copy-Item -LiteralPath $builtInstaller.FullName -Destination (Join-Path $InstallerOutputPath $builtInstaller.Name) -Force
+}
+if (-not $env:IMAGE_OCCLUSION_EDITOR_KEEP_INNO_TEMP) {
+    Remove-Item -LiteralPath $InnoWorkRoot -Recurse -Force
 }
 
 # Try to discover the output installer file (by convention from .csproj)
