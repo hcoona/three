@@ -4,13 +4,12 @@
 #define ProjectDir AddBackslash(ScriptDir) + ".."
 #endif
 #define ProjectDirWithBackslash AddBackslash(ProjectDir)
-; PublishDir can be injected from the build script or csproj via /DPublishDir="..."
-#ifndef PublishDir
-#define PublishDir "..\ImageOcclusionEditorWinUI3\bin\x64\Release\net9.0-windows10.0.22000.0\win-x64\publish"
+#ifndef MyAppVersion
+#error MyAppVersion must be supplied by Build-InnoInstaller.ps1
 #endif
-; Use PublishDir directly; caller must pass a clean path without trailing backslash
-#define MyAppExePath PublishDir + "\ImageOcclusionEditor.exe"
-#define MyAppVersion GetVersionNumbersString(MyAppExePath)
+#ifndef PublishDir
+#error PublishDir must be supplied by Build-InnoInstaller.ps1
+#endif
 #define MyAppPublisher "Shuai Zhang"
 #define MyAppURL "https://github.com/hcoona/ImageOcclusionEditor"
 #define MyAppExeName "ImageOcclusionEditor.exe"
@@ -25,6 +24,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
+SourceDir={#ProjectDir}
 DefaultDirName={autopf64}\ImageOcclusionEditor
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
@@ -51,16 +51,16 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; x64 version files only
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Icon file
-Source: "{#ProjectDirWithBackslash}imageocclusioneditor.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "imageocclusioneditor.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; Documentation
-Source: "{#ProjectDirWithBackslash}README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ProjectDirWithBackslash}LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ProjectDirWithBackslash}LICENSE.GPL3.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ProjectDirWithBackslash}LICENSE.MIT.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ProjectDirWithBackslash}THIRD-PARTY-NOTICES.TXT"; DestDir: "{app}"; Flags: ignoreversion
+Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "LICENSE.GPL3.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "LICENSE.MIT.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "THIRD-PARTY-NOTICES.TXT"; DestDir: "{app}"; Flags: ignoreversion
 ; Templates (optional)
-Source: "{#ProjectDirWithBackslash}Resources\Template_IIOT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#ProjectDirWithBackslash}Resources\Template_IIOTT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "Resources\Template_IIOT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "Resources\Template_IIOTT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\imageocclusioneditor.ico"

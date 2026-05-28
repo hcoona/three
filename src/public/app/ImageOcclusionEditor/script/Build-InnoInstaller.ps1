@@ -118,8 +118,19 @@ if (-not (Test-Path -LiteralPath $exePath)) {
     Write-Status "Missing: $exePath" 'Error'
     throw 'Please run script/Publish-ImageOcclusionEditor.ps1 first to produce publish output.'
 }
+$exePath = (Resolve-Path -LiteralPath $exePath).Path
 $PublishOutputPath = (Resolve-Path -LiteralPath $PublishOutputPath).Path
 $ProjectDir = (Resolve-Path -LiteralPath $RepoRoot).Path
+
+$versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath)
+$AppVersion = $versionInfo.FileVersion
+if ([string]::IsNullOrWhiteSpace($AppVersion)) {
+    throw "Published executable FileVersion is empty: $exePath"
+}
+$AppVersion = $AppVersion.Trim()
+if ($AppVersion -notmatch '^\d+(\.\d+){1,3}$') {
+    throw "Published executable FileVersion is not a dotted numeric version: $AppVersion"
+}
 
 if (-not $InstallerOutputPath) {
     # Default installer output to repo root 'out' directory
@@ -131,6 +142,7 @@ Write-Status "Configuration: $Configuration | RID: $RuntimeIdentifier" 'Info'
 Write-Status "TFM: $TargetFramework | App Name: $AssemblyName" 'Info'
 Write-Status "Publish Output: $PublishOutputPath" 'Info'
 Write-Status "Installer Output: $InstallerOutputPath" 'Info'
+Write-Status "Published exe FileVersion: $AppVersion" 'Info'
 
 # Clean options removed; always ensure installer output directory exists later
 
@@ -164,7 +176,8 @@ if ($PublishOutputPath.EndsWith('\')) { $PublishOutputPath = $PublishOutputPath.
 if ($ProjectDir.EndsWith('\')) { $ProjectDir = $ProjectDir.TrimEnd('\') }
 $definePublishDir = '/DPublishDir=' + $PublishOutputPath
 $defineProjectDir = '/DProjectDir=' + $ProjectDir
-& $ISCC $SetupIss $outArg $definePublishDir $defineProjectDir
+$defineAppVersion = '/DMyAppVersion=' + $AppVersion
+& $ISCC $SetupIss $outArg $definePublishDir $defineProjectDir $defineAppVersion
 
 # Try to discover the output installer file (by convention from .csproj)
 $expectedInstaller = Join-Path $InstallerOutputPath 'ImageOcclusionEditorWinUI3_Setup.exe'
