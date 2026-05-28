@@ -916,8 +916,8 @@ def test_materializer_splits_compatible_ancestor_descendant_batches() -> None:
     )
 
 
-def test_materializer_rejects_cross_family_batch_dependencies() -> None:
-    """Runner-family validation topology forbids batch cross-family edges."""
+def test_materializer_allows_cross_family_batch_dependencies() -> None:
+    """Batch manifests may preserve DAG edges across runner families."""
     plan = _plan()
     _add_dependent_work_group(plan)
     dependent_group = next(
@@ -929,22 +929,46 @@ def test_materializer_rejects_cross_family_batch_dependencies() -> None:
     dependent_group["ecosystem"] = "dotnet"
     plan["plan-digest"] = ci_validation_plan_digest(plan)
 
-    with pytest.raises(
-        ContractValidationError,
-        match="does not support cross-family batch dependencies",
-    ):
-        materialize_ci_validation_execution_batches(
-            plan=plan,
-            **_authorizing_context_kwargs(),
-            created_at=CREATED_AT,
-            execution_workflow="CI Validation",
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        **_authorizing_context_kwargs(),
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+    )
+    batches = cast(
+        "list[dict[str, object]]", materialization.manifest["batches"]
+    )
+    dependent_batch = next(
+        batch
+        for batch in batches
+        if any(
+            selector["work-group-id"] == "wg-dependent-gate"
+            for selector in cast(
+                "list[dict[str, object]]", batch["ordered-selectors"]
+            )
         )
+    )
+    dependency_id = cast("list[str]", dependent_batch["depends-on-batches"])[0]
+    upstream_batch = next(
+        batch for batch in batches if batch["batch-id"] == dependency_id
+    )
+
+    assert dependent_batch["runner-family"] == "windows"
+    assert upstream_batch["runner-family"] != dependent_batch["runner-family"]
 
 
-def test_manifest_validation_rejects_cross_family_batch_dependencies() -> None:
-    """Hand-written manifests cannot reintroduce cross-family batch edges."""
+def test_manifest_validation_allows_cross_family_batch_dependencies() -> None:
+    """Manifest validation preserves cross-family batch DAG semantics."""
     plan = _plan()
     _add_dependent_work_group(plan)
+    dependent_group = next(
+        group
+        for group in cast("list[dict[str, object]]", plan["work-groups"])
+        if group["work-group-id"] == "wg-dependent-gate"
+    )
+    dependent_group["runner-family"] = "windows"
+    dependent_group["ecosystem"] = "dotnet"
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
     materialization = materialize_ci_validation_execution_batches(
         plan=plan,
         **_authorizing_context_kwargs(),
@@ -952,23 +976,12 @@ def test_manifest_validation_rejects_cross_family_batch_dependencies() -> None:
         execution_workflow="CI Validation",
     )
     manifest = cast("dict[str, object]", deepcopy(materialization.manifest))
-    batches = cast("list[dict[str, object]]", manifest["batches"])
-    dependent = next(batch for batch in batches if batch["depends-on-batches"])
-    dependency_id = cast("list[str]", dependent["depends-on-batches"])[0]
-    upstream = next(
-        batch for batch in batches if batch["batch-id"] == dependency_id
-    )
-    upstream["runner-family"] = "windows"
 
-    with pytest.raises(
-        ContractValidationError,
-        match="does not support cross-family batch dependencies",
-    ):
-        validate_ci_validation_execution_batch_manifest(
-            manifest,
-            plan=plan,
-            **_authorizing_context_kwargs(),
-        )
+    validate_ci_validation_execution_batch_manifest(
+        manifest,
+        plan=plan,
+        **_authorizing_context_kwargs(),
+    )
 
 
 def _add_extra_work_group(
@@ -3824,8 +3837,7 @@ def test_broad_global_materializer_allows_physical_windows_orchestrator() -> (
     budget = cast("Mapping[str, object]", materialization.manifest["budget"])
 
     assert (
-        cast("int", budget["actual-windows-jobs"])
-        < OLD_PER_BATCH_WINDOWS_FLOOR
+        cast("int", budget["actual-windows-jobs"]) < OLD_PER_BATCH_WINDOWS_FLOOR
     )
 
 
@@ -3888,6 +3900,47 @@ def test_broad_global_materializer_fits_execution_batch_budget() -> None:
     assert actual_validation_artifacts == (
         pre_final_validation_artifacts + expected_final_validation_artifacts
     )
+
+
+def test_broad_global_materializer_coalesces_repository_validation() -> None:
+    """Repository-wide descriptor and tooling checks share one generic batch."""
+    plan = _global_full_scope_plan()
+
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        **_global_full_scope_context_kwargs(),
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+    )
+    groups = {
+        cast("str", group["work-group-id"]): group
+        for group in cast("Sequence[dict[str, object]]", plan["work-groups"])
+    }
+    repository_batches = [
+        batch
+        for batch in cast(
+            "Sequence[dict[str, object]]",
+            materialization.manifest["batches"],
+        )
+        if cast("Mapping[str, object]", batch["compatibility-profile"])[
+            "execution-profile"
+        ]
+        == "exec-repository-validation-generic"
+    ]
+
+    assert len(repository_batches) == 1
+    repository_batch = repository_batches[0]
+    selector_kinds = {
+        groups[cast("str", selector["work-group-id"])]["kind"]
+        for selector in cast(
+            "Sequence[dict[str, object]]",
+            repository_batch["ordered-selectors"],
+        )
+    }
+    assert selector_kinds == {
+        "descriptor-validation",
+        "workflow-release-tooling",
+    }
 
 
 def test_materializer_supports_ruby_batch_compatibility() -> None:
@@ -4214,9 +4267,9 @@ def test_materializer_keeps_release_artifact_shapes_on_selectors() -> None:
     zip_obligation = deepcopy(base_obligation)
     zip_obligation["artifact-obligation-id"] = "artifact-example-zip"
     zip_obligation["work-group-id"] = "wg-artifact-zip"
-    cast("dict[str, object]", zip_obligation["artifact"])[
-        "concrete-kind"
-    ] = "zip"
+    cast("dict[str, object]", zip_obligation["artifact"])["concrete-kind"] = (
+        "zip"
+    )
     base_group = _PLANS_MODULE.__dict__["_artifact_work_group"]()
     zip_group = _PLANS_MODULE.__dict__["_artifact_work_group"]()
     zip_group["work-group-id"] = "wg-artifact-zip"

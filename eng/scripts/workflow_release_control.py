@@ -196,11 +196,6 @@ _CI_CONTROL_ARTIFACT_PRODUCERS = {
 _CI_DOWNLOADER_OBSERVATION_FILE = "downloader-observation.json"
 _CI_DOWNLOADER_ADMITTED_BATCH_ARTIFACTS_KEY = "admitted-batch-artifacts"
 _CI_ORCHESTRATOR_STATE_ADMISSION_SOURCE = "orchestrator-artifact-id-state"
-_CROSS_FAMILY_BATCH_DEPENDENCY_MESSAGE = (
-    "current runner-family validation topology does not support cross-family "
-    "batch dependencies; coalesce work into one family or add a future "
-    "explicit cross-family mode"
-)
 
 
 def main() -> int:
@@ -2566,7 +2561,6 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
     args: argparse.Namespace,
 ) -> int:
     execution_batch_manifest = _read_json(Path(args.execution_batch_manifest))
-    _reject_cross_family_batch_dependencies(execution_batch_manifest)
     state_dir = Path(args.state_dir)
     observed_root = Path(args.observed_artifacts_dir)
     work_dir = Path(args.work_dir) / f"slot-{int(args.slot_index):02d}"
@@ -2868,7 +2862,19 @@ def _ci_orchestrator_dependencies_ready(
                     str(admission["physical-artifact-name"])
                 ] = admission
             continue
-        raise RuntimeError(_CROSS_FAMILY_BATCH_DEPENDENCY_MESSAGE)
+        admission = _ci_orchestrator_cross_family_dependency_admission(
+            dependency,
+            repository=repository,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            observed_root=observed_root,
+        )
+        if admission is None:
+            return False
+        if dependency_admissions is not None:
+            dependency_admissions[str(admission["physical-artifact-name"])] = (
+                admission
+            )
     return True
 
 
@@ -2901,6 +2907,52 @@ def _ci_orchestrator_same_family_dependency_admission(
         run_id=run_id,
         run_attempt=run_attempt,
         observed_root=observed_root,
+    )
+
+
+def _ci_orchestrator_cross_family_dependency_admission(
+    dependency: Mapping[str, object],
+    *,
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+    observed_root: Path,
+) -> Json | None:
+    if not repository:
+        return None
+    artifact_ref = str(dependency["expected-batch-evidence-bundle-ref"])
+    artifact_name_value = artifact_physical_name(artifact_ref)
+    try:
+        artifact_api_by_name = _ci_observed_artifact_api_multimap(
+            repository=repository,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            prefixed_artifact_cap=_CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP,
+        )
+    except (RuntimeError, TypeError, ValueError):
+        return None
+    matches = [
+        artifact_api
+        for artifact_api in artifact_api_by_name.get(artifact_name_value, [])
+        if _ci_live_artifact_matches_expected(
+            artifact_api,
+            artifact_id=str(artifact_api.get("id", "")),
+            artifact_name_value=artifact_name_value,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            require_run_attempt=True,
+        )
+    ]
+    if len(matches) != 1:
+        return None
+    return _ci_orchestrator_download_admitted_dependency(
+        dependency,
+        repository=repository,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        observed_root=observed_root,
+        artifact_api=matches[0],
+        source="orchestrator-live-cross-family",
     )
 
 
@@ -3209,33 +3261,6 @@ def _ci_execution_batches(
         msg = "execution-batch manifest batches must be an array"
         raise TypeError(msg)
     return [batch for batch in batches if isinstance(batch, Mapping)]
-
-
-def _reject_cross_family_batch_dependencies(
-    execution_batch_manifest: Mapping[str, object],
-) -> None:
-    batches = _ci_execution_batches(execution_batch_manifest)
-    family_by_id = {
-        str(batch["batch-id"]): str(batch["runner-family"])
-        for batch in batches
-        if isinstance(batch.get("batch-id"), str)
-        and isinstance(batch.get("runner-family"), str)
-    }
-    for batch in batches:
-        batch_id = batch.get("batch-id")
-        runner_family = batch.get("runner-family")
-        if not isinstance(batch_id, str) or not isinstance(runner_family, str):
-            continue
-        for dependency_id in cast(
-            "Sequence[object]",
-            batch.get("depends-on-batches", []),
-        ):
-            dependency_family = family_by_id.get(str(dependency_id))
-            if (
-                dependency_family is not None
-                and dependency_family != runner_family
-            ):
-                raise RuntimeError(_CROSS_FAMILY_BATCH_DEPENDENCY_MESSAGE)
 
 
 def _ci_execution_batch_matrix_identity(
@@ -4474,9 +4499,11 @@ def _ci_no_publish_release_shaped_artifact_evidence(
         for obligation in obligations
         for ref in _ci_artifact_expected_refs(obligation)
     ]
-    mapping_present, output_by_ref = _ci_declared_validation_build_output_mapping(
-        repo_root=repo_root,
-        expected_refs=expected_refs,
+    mapping_present, output_by_ref = (
+        _ci_declared_validation_build_output_mapping(
+            repo_root=repo_root,
+            expected_refs=expected_refs,
+        )
     )
     if output_by_ref is None or not set(expected_refs).issubset(output_by_ref):
         if mapping_present and output_by_ref is None:
@@ -4637,7 +4664,10 @@ def _ci_no_publish_release_shaped_build_request(  # noqa: PLR0911
     descriptor_path = str(obligations[0].get("descriptor-path") or "")
     if not profile or not descriptor_path:
         return None
-    if any(str(item.get("descriptor-path") or "") != descriptor_path for item in obligations):
+    if any(
+        str(item.get("descriptor-path") or "") != descriptor_path
+        for item in obligations
+    ):
         return None
     descriptor_file = repo_root / descriptor_path
     if not descriptor_file.is_file():
@@ -4651,15 +4681,17 @@ def _ci_no_publish_release_shaped_build_request(  # noqa: PLR0911
         profile=profile,
         project_id=project_id,
     )
-    variant, artifact_refs_by_build_id = _ci_release_plan_variant_for_obligations(
-        release_plan=release_plan,
-        project_id=project_id,
-        obligations=_ci_variant_release_shaped_obligations(
-            plan=plan,
-            descriptor_path=descriptor_path,
-            profile=profile,
-            seed_obligations=obligations,
-        ),
+    variant, artifact_refs_by_build_id = (
+        _ci_release_plan_variant_for_obligations(
+            release_plan=release_plan,
+            project_id=project_id,
+            obligations=_ci_variant_release_shaped_obligations(
+                plan=plan,
+                descriptor_path=descriptor_path,
+                profile=profile,
+                seed_obligations=obligations,
+            ),
+        )
     )
     if variant is None or not artifact_refs_by_build_id:
         return None
@@ -4791,7 +4823,9 @@ def _ci_variant_release_shaped_obligations(
         if str(obligation.get("descriptor-path") or "") != descriptor_path:
             continue
         profiles = obligation.get("profile-coverage", [])
-        if not isinstance(profiles, Sequence) or isinstance(profiles, str | bytes):
+        if not isinstance(profiles, Sequence) or isinstance(
+            profiles, str | bytes
+        ):
             continue
         if profile not in profiles:
             continue
@@ -4818,7 +4852,9 @@ def _ci_release_plan_variant_for_obligations(
 ) -> tuple[Json | None, dict[str, list[str]]]:
     if not obligations:
         return None, {}
-    expected_dimensions = _ci_obligation_variant_dimensions(obligations[0]) or {}
+    expected_dimensions = (
+        _ci_obligation_variant_dimensions(obligations[0]) or {}
+    )
     graph = _mapping(release_plan["graph"], "graph")
     variants = _mapping(graph["variants"], "graph.variants")
     artifacts = _mapping(graph["artifacts"], "graph.artifacts")
@@ -4826,7 +4862,12 @@ def _ci_release_plan_variant_for_obligations(
         candidate = dict(_mapping(variant, "graph.variants[]"))
         if candidate.get("project-id") != project_id:
             continue
-        if dict(_mapping(candidate.get("dimensions", {}), "variant.dimensions")) != expected_dimensions:
+        if (
+            dict(
+                _mapping(candidate.get("dimensions", {}), "variant.dimensions")
+            )
+            != expected_dimensions
+        ):
             continue
         artifact_refs = _ci_release_plan_artifact_refs_for_obligations(
             variant=candidate,
@@ -4969,7 +5010,9 @@ def _ci_update_validation_build_output_mapping(
     )
     mapping_path.parent.mkdir(parents=True, exist_ok=True)
     existing: dict[str, str] = {}
-    mapping_present, items = _ci_validation_build_output_mapping_items(mapping_path)
+    mapping_present, items = _ci_validation_build_output_mapping_items(
+        mapping_path
+    )
     if mapping_present and items is not None:
         for item in items:
             if not isinstance(item, Mapping):

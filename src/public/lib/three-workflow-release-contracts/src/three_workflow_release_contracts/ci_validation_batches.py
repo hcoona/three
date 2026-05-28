@@ -78,10 +78,8 @@ _BUNDLE_ADMISSIBILITIES = frozenset(
 )
 _AGGREGATE_MAX_DURATION_SECONDS = 120
 _PROOF_ADMISSIBILITY = "validation-only"
-_CROSS_FAMILY_BATCH_DEPENDENCY_MESSAGE = (
-    "current runner-family validation topology does not support cross-family "
-    "batch dependencies; coalesce work into one family or add a future "
-    "explicit cross-family mode"
+_REPOSITORY_VALIDATION_BATCH_KINDS = frozenset(
+    {"descriptor-validation", "workflow-release-tooling"},
 )
 _EXPECTED_FINAL_VALIDATION_ARTIFACTS = 2
 _MAX_VALIDATION_ARTIFACTS = 20
@@ -3489,11 +3487,12 @@ def _materializer_compatibility_key(
     *,
     artifact_obligations: Mapping[str, Mapping[str, object]],
 ) -> dict[str, object]:
+    kind = _materializer_compatibility_kind(group)
     key: dict[str, object] = {
         "api-version": "three.ci.validation.batch-compatibility/v1alpha1",
         "runner-family": group.get("runner-family"),
         "ecosystem": group.get("ecosystem"),
-        "kind": group.get("kind"),
+        "kind": kind,
         "release-shaped": group.get("kind") == "release-shaped-artifact",
     }
     if group.get("kind") == "release-shaped-artifact":
@@ -3504,6 +3503,17 @@ def _materializer_compatibility_key(
             )
         )
     return key
+
+
+def _materializer_compatibility_kind(group: Mapping[str, object]) -> object:
+    kind = group.get("kind")
+    if (
+        kind in _REPOSITORY_VALIDATION_BATCH_KINDS
+        and group.get("runner-family") == "ubuntu"
+        and group.get("ecosystem") is None
+    ):
+        return "repository-validation"
+    return kind
 
 
 def _materializer_artifact_obligations_by_work_group(
@@ -3705,7 +3715,7 @@ def _materializer_batches(  # noqa: PLR0913
         for spec in batch_specs
         for work_group_id in cast("Sequence[str]", spec["work-group-ids"])
     }
-    batches = [
+    return [
         _materializer_batch(
             envelope=envelope,
             workflow=workflow,
@@ -3717,40 +3727,6 @@ def _materializer_batches(  # noqa: PLR0913
         )
         for spec in batch_specs
     ]
-    _reject_cross_family_batch_dependencies(batches)
-    return batches
-
-
-def _reject_cross_family_batch_dependencies(
-    batches: Sequence[Mapping[str, object]],
-) -> None:
-    family_by_batch_id = {
-        str(batch["batch-id"]): str(batch["runner-family"])
-        for batch in batches
-        if isinstance(batch.get("batch-id"), str)
-        and isinstance(batch.get("runner-family"), str)
-    }
-    for batch in batches:
-        batch_id = batch.get("batch-id")
-        runner_family = batch.get("runner-family")
-        if not isinstance(batch_id, str) or not isinstance(runner_family, str):
-            continue
-        for dependency_id in _sequence(batch.get("depends-on-batches", [])):
-            if not isinstance(dependency_id, str):
-                continue
-            dependency_family = family_by_batch_id.get(dependency_id)
-            if (
-                dependency_family is not None
-                and dependency_family != runner_family
-            ):
-                raise ContractValidationError(
-                    [
-                        ValidationIssue(
-                            "$.batches.depends-on-batches",
-                            _CROSS_FAMILY_BATCH_DEPENDENCY_MESSAGE,
-                        )
-                    ]
-                )
 
 
 def _materializer_batch(  # noqa: PLR0913
@@ -4818,12 +4794,6 @@ def _validate_batch_dag(
     plan_work_groups: Mapping[str, Mapping[str, object]],
     issues: list[ValidationIssue],
 ) -> None:
-    family_by_id = {
-        str(batch["batch-id"]): str(batch["runner-family"])
-        for batch in batches
-        if isinstance(batch.get("batch-id"), str)
-        and isinstance(batch.get("runner-family"), str)
-    }
     deps_by_id = {
         str(batch["batch-id"]): [
             str(item)
@@ -4851,19 +4821,6 @@ def _validate_batch_dag(
         issues.append(
             ValidationIssue("$.batches.depends-on-batches", "must be acyclic")
         )
-    for batch_id, dependency_ids in deps_by_id.items():
-        family = family_by_id.get(batch_id)
-        if family is None:
-            continue
-        for dependency_id in dependency_ids:
-            dependency_family = family_by_id.get(dependency_id)
-            if dependency_family is not None and dependency_family != family:
-                issues.append(
-                    ValidationIssue(
-                        "$.batches.depends-on-batches",
-                        _CROSS_FAMILY_BATCH_DEPENDENCY_MESSAGE,
-                    )
-                )
     if plan_work_groups:
         _validate_batch_dag_matches_plan_dependencies(
             batches, deps_by_id, plan_work_groups, issues
@@ -11630,9 +11587,9 @@ def _validated_dependency_bundles_for_batch(
         dependency = bundle_by_batch_id.get(dependency_id)
         if dependency is None:
             return
-        for transitive_dependency_id in (
-            _batch_dependency_ids_from_evidence_bundle(dependency)
-        ):
+        for (
+            transitive_dependency_id
+        ) in _batch_dependency_ids_from_evidence_bundle(dependency):
             append_dependency(transitive_dependency_id)
         validated = validated_by_batch_id.get(dependency_id)
         if validated is not None:

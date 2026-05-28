@@ -5090,6 +5090,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "normalize-input",
         "plan",
         "materialize-execution-batches",
+        "execution-batch-windows-orchestrator",
     }
     assert set(jobs["execution-batch-windows-orchestrator"]["needs"]) == {
         "normalize-input",
@@ -5100,6 +5101,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "normalize-input",
         "plan",
         "materialize-execution-batches",
+        "execution-batch-windows-orchestrator",
     }
     assert (
         "ubuntu-execution-batch-matrix"
@@ -5815,6 +5817,97 @@ def test_ci_runner_family_orchestrator_verifies_same_family_upload_live_id(
     )
 
 
+def test_ci_runner_family_orchestrator_downloads_cross_family_live_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cross-family dependencies are admitted from live artifacts."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "upstream",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/upstream/batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "dependent",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["upstream"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/dependent/batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-cross-family-live-state"
+    observed_root = SCRATCH / "orchestrator-cross-family-live-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    upstream_ref = cast("str", batches[0]["expected-batch-evidence-bundle-ref"])
+    upstream_name = artifact_physical_name(upstream_ref)
+    downloads: list[str] = []
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        return {
+            upstream_name: [
+                {
+                    "id": "9100",
+                    "name": upstream_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1, "run_attempt": 1},
+                }
+            ]
+        }
+
+    def fake_download(
+        _repository: str,
+        artifact_api: Mapping[str, object],
+        artifact_name_value: str,
+        destination: Path,
+    ) -> None:
+        downloads.append(str(artifact_api["id"]))
+        assert artifact_name_value == upstream_name
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "batch-evidence-bundle.json").write_text(
+            '{"source":"cross-family-live"}',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(control, "_download_artifact_by_id", fake_download)
+    admissions: dict[str, dict[str, object]] = {}
+
+    assert control._ci_orchestrator_dependencies_ready(
+        batches[1],
+        batches_by_id={batch["batch-id"]: batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+    )
+
+    assert downloads == ["9100"]
+    assert json.loads(
+        (
+            observed_root / upstream_name / "batch-evidence-bundle.json"
+        ).read_text(
+            encoding="utf-8",
+        )
+    ) == {"source": "cross-family-live"}
+    assert admissions[upstream_name]["artifact-instance-id"] == "9100"
+    assert admissions[upstream_name]["admission-source"] == (
+        "orchestrator-live-cross-family"
+    )
+
+
 def test_ci_runner_family_orchestrator_rejects_same_family_state_without_source():  # noqa: E501
     """Same-family recorded upload state must be artifact-id-state admitted."""
     dependency = {
@@ -5994,8 +6087,8 @@ def test_ci_live_artifact_rejects_conflicting_observed_run_ids() -> None:
     )
 
 
-def test_ci_runner_family_orchestrator_fails_closed_when_waiting() -> None:
-    """Cross-family batch dependencies fail closed before any peer wait."""
+def test_orchestrator_waits_for_missing_cross_family_artifact() -> None:
+    """Cross-family batch dependencies wait until peer artifacts are visible."""
     plan, manifest = _ci_batch_contract_plan_and_manifest()
     batch = cast("list[dict[str, object]]", manifest["batches"])[0]
     batch["depends-on-batches"] = ["missing-cross-runner"]
@@ -6029,10 +6122,7 @@ def test_ci_runner_family_orchestrator_fails_closed_when_waiting() -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(
-        RuntimeError,
-        match="does not support cross-family batch dependencies",
-    ):
+    with pytest.raises(RuntimeError, match="could not select"):
         control._cmd_run_ci_validation_runner_family_orchestrator_step(
             argparse.Namespace(
                 plan=str(plan_path),
@@ -9130,9 +9220,7 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_validation_materialization_matches_descriptor_handle() -> (
-    None
-):
+def test_ci_validation_materialization_matches_descriptor_handle() -> None:
     """Dual same-kind artifacts bind by descriptor handle from expected refs."""
     obligations = [
         {
@@ -9181,9 +9269,7 @@ def test_ci_validation_materialization_matches_descriptor_handle() -> (
     }
 
 
-def test_ci_validation_materialization_blocks_ambiguous_legacy_match() -> (
-    None
-):
+def test_ci_validation_materialization_blocks_ambiguous_legacy_match() -> None:
     """Legacy refs without handles remain fail-closed if ambiguous."""
     obligations = [
         {

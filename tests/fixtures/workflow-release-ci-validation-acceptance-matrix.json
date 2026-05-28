@@ -2112,15 +2112,15 @@
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_materializer_rejects_cross_family_batch_dependencies"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_materializer_allows_cross_family_batch_dependencies"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_manifest_validation_rejects_cross_family_batch_dependencies"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_manifest_validation_allows_cross_family_batch_dependencies"
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_runner_family_orchestrator_fails_closed_when_waiting"
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_waits_for_missing_cross_family_artifact"
           },
           {
             "type": "test",
@@ -3082,11 +3082,11 @@
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_materializer_rejects_cross_family_batch_dependencies"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_materializer_allows_cross_family_batch_dependencies"
           },
           {
             "type": "test",
-            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_manifest_validation_rejects_cross_family_batch_dependencies"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_manifest_validation_allows_cross_family_batch_dependencies"
           },
           {
             "type": "test",
