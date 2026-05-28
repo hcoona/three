@@ -24,7 +24,7 @@ It assumes the app has already been published by `script/Publish-ImageOcclusionE
 
     out/ImageOcclusionEditor/<Configuration>/<TargetFramework>/<RuntimeIdentifier>/
 
-It then stages the Inno Setup inputs and runs the Inno Setup compiler (ISCC) on a generated wrapper for
+It then stages the Inno Setup inputs and runs the Inno Setup compiler (ISCC) on a short-path copy of
 `script/Setup.iss`, passing the detected publish directory.
 It follows PowerShell best practices and treats non-zero exit codes from native commands as terminating errors.
 
@@ -81,16 +81,6 @@ function Write-Status {
         'Error' { Write-Error       "[x] $Message" }
         'Success' { Write-Information "[OK] $Message" -InformationAction Continue }
     }
-}
-
-function ConvertTo-InnoStringLiteral {
-    param(
-        [Parameter(Mandatory)]
-        [AllowEmptyString()]
-        [string]$Value
-    )
-
-    return '"' + ($Value -replace '"', '""') + '"'
 }
 
 function Get-InnoTempBase {
@@ -261,24 +251,13 @@ foreach ($requiredInnoInput in $requiredInnoInputs) {
 
 $StagedSetupIss = Join-Path $InnoWorkRoot 'Setup.iss'
 Copy-Item -LiteralPath $SetupIss -Destination $StagedSetupIss -Force
-$GeneratedSetupIss = Join-Path $InnoWorkRoot 'Setup.generated.iss'
-$generatedSetupContent = @(
-    '#define ProjectDir ' + (ConvertTo-InnoStringLiteral $InnoProjectDir),
-    '#define PublishDir ' + (ConvertTo-InnoStringLiteral $InnoPublishDir),
-    '#define MyAppVersion ' + (ConvertTo-InnoStringLiteral $AppVersion),
-    '#pragma message("ProjectDir=" + ProjectDir)',
-    '#pragma message("PublishDir=" + PublishDir)',
-    '#pragma message("MyAppVersion=" + MyAppVersion)',
-    '#include ' + (ConvertTo-InnoStringLiteral $StagedSetupIss)
-)
-Set-Content -LiteralPath $GeneratedSetupIss -Value $generatedSetupContent -Encoding UTF8
 
 Write-Status "Inno Staged Publish: $InnoPublishDir" 'Info'
 Write-Status "Inno Staged Project: $InnoProjectDir" 'Info'
 Write-Status "Inno Short Output: $ShortInstallerOutputPath" 'Info'
-Write-Status "Generated Inno Script: $GeneratedSetupIss" 'Info'
+Write-Status "Staged Inno Script: $StagedSetupIss" 'Info'
 
-# Invoke ISCC. /O specifies output folder; the generated wrapper supplies Inno defines.
+# Invoke ISCC. /O specifies output folder; environment variables supply short Inno input paths.
 $outArg = '/O' + $ShortInstallerOutputPath
 if ($InnoPublishDir.EndsWith('\')) { $InnoPublishDir = $InnoPublishDir.TrimEnd('\') }
 if ($InnoProjectDir.EndsWith('\')) { $InnoProjectDir = $InnoProjectDir.TrimEnd('\') }
@@ -290,7 +269,7 @@ try {
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR = $InnoPublishDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR = $InnoProjectDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION = $AppVersion
-    $isccArgs = @($GeneratedSetupIss, $outArg)
+    $isccArgs = @($StagedSetupIss, $outArg)
     $PSNativeCommandUseErrorActionPreference = $false
     $isccOutput = & $ISCC @isccArgs 2>&1
     $isccExitCode = $LASTEXITCODE
@@ -330,7 +309,7 @@ try {
             "ShortInstallerOutputPath: $ShortInstallerOutputPath",
             "Original publish file count: $($originalPublishFiles.Count)",
             "Staged publish file count: $($stagedPublishFiles.Count)",
-            "Generated setup path length: $($GeneratedSetupIss.Length)",
+            "Staged setup path length: $($StagedSetupIss.Length)",
             "Short output path length: $($ShortInstallerOutputPath.Length)",
             'Longest original publish paths:',
             ($longestOriginalPublishPaths -join [Environment]::NewLine),
