@@ -5856,7 +5856,7 @@ def test_ci_runner_family_orchestrator_downloads_cross_family_live_artifact(
                     "id": "9100",
                     "name": upstream_name,
                     "expired": False,
-                    "workflow_run": {"id": 1, "run_attempt": 1},
+                    "workflow_run": {"id": 1},
                 }
             ]
         }

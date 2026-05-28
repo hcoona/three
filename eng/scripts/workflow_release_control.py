@@ -2940,7 +2940,6 @@ def _ci_orchestrator_cross_family_dependency_admission(
             artifact_name_value=artifact_name_value,
             run_id=run_id,
             run_attempt=run_attempt,
-            require_run_attempt=True,
         )
     ]
     if len(matches) != 1:
