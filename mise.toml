@@ -101,7 +101,11 @@ outputs = ["global.json"]
 
 [tasks.update-pnpm-lockfiles]
 description = "Refresh tracked pnpm lockfiles"
-run = 'pnpm install --lockfile-only --no-frozen-lockfile && pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --lockfile-only --no-frozen-lockfile'
+run = '''
+pnpm install --lockfile-only --no-frozen-lockfile
+pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --lockfile-only --no-frozen-lockfile
+pnpm exec -- prettier --write -- pnpm-lock.yaml src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/pnpm-lock.yaml
+'''
 
 [tasks.update-uv-lock]
 description = "Refresh root uv lockfile"
