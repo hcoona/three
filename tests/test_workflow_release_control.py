@@ -10843,7 +10843,7 @@ def test_entry_publish_sets_up_nuget_trusted_publishing() -> None:
         login_index, login_step = next(
             (index, step)
             for index, step in enumerate(steps)
-            if step.get("name") == "NuGet.org trusted publishing login"
+            if step.get("id") == "nuget_login"
         )
         publish_index, publish_step = next(
             (index, step)
@@ -10857,6 +10857,7 @@ def test_entry_publish_sets_up_nuget_trusted_publishing() -> None:
         assert login_step["if"] == (
             "${{ steps.nuget_trusted_publishing.outputs.required == 'true' }}"
         )
+        assert login_step["name"] == "NuGet.org trusted publishing login"
         assert (
             login_step["uses"]
             == "NuGet/login@8d196754b4036150537f80ac539e15c2f1028841"
