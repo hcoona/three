@@ -14125,6 +14125,43 @@ def test_ci_batch_aggregation_fails_closed_for_missing_bundle() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_batch_aggregation_fails_closed_for_fail_closed_plan() -> None:
+    """Fail-closed plans cannot pass only because they produce no batches."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-fail-closed-plan")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan = batch_contracts.fail_closed_plan()
+        manifest = batch_contracts.manifest(plan)
+
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            fact_snapshot_text_override="null",
+            expected_fact_snapshot_artifact_id=None,
+        )
+
+        reason = cast("dict[str, object]", summary["reason"])
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        assert result == 1
+        assert manifest["batches"] == []
+        assert aggregate_manifest["batch-bundles"] == []
+        assert summary["verdict"] == "failed"
+        assert reason["fail-closed"] is True
+        assert {
+            (
+                cast("dict[str, object]", failure["diagnostic"])["code"],
+                cast("dict[str, object]", failure["diagnostic"])["detail"],
+            )
+            for failure in failures
+            if failure["kind"] == "fail-closed"
+        } == {("unknown-change", "incomplete")}
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 @pytest.mark.parametrize(
     "missing_input",
     ["plan", "request"],

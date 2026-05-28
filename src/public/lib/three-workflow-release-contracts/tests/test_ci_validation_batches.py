@@ -242,6 +242,68 @@ def _authorizing_context_kwargs() -> _AuthorizingContextKwargs:
     }
 
 
+def _fail_closed_plan_context() -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
+    classification = deepcopy(_PLANS_MODULE.__dict__["_classification"]())
+    impact = cast(
+        "dict[str, object]",
+        cast("list[dict[str, object]]", classification["impacts"])[0],
+    )
+    impact["category"] = "unknown"
+    impact["source-rule"] = "python-workspace-path-fail-closed"
+    impact["rationale"] = (
+        "Changed path requires fail-closed planning because supporting facts "
+        "were incomplete."
+    )
+    impact["coverage-target"] = {"type": "none", "id": None}
+    cast("dict[str, object]", impact["requires"])["diagnostic"] = (
+        "unknown-change"
+    )
+    classification["subject-selection-provenance"] = []
+    snapshot = _PLANS_MODULE.__dict__["freeze_ci_validation_plan"](
+        request=_PLANS_MODULE.__dict__["_normalized_request"](),
+        plan_id=cast("str", _PLANS_MODULE.__dict__["PLAN_ID"]),
+        created_at=CREATED_AT,
+        observed_commit_sha=TREE_SHA,
+        verdict_intent="fail-closed",
+        classification=classification,
+        diagnostics=[
+            _diagnostic(
+                "fail-closed/unknown-change",
+                code="unknown-change",
+                detail="incomplete",
+                message="Changed files could not be classified.",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+            )
+        ],
+        fact_snapshot_providers=None,
+    )
+    plan = cast("dict[str, object]", snapshot.plan)
+    changed_files_snapshot = cast(
+        "dict[str, object]",
+        deepcopy(snapshot.changed_files_snapshot),
+    )
+    materialization = materialize_ci_validation_execution_batches(
+        plan=plan,
+        request=_request_document(),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=None,
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
+        created_at=CREATED_AT,
+        execution_workflow="CI Validation",
+    )
+    return (
+        plan,
+        changed_files_snapshot,
+        cast("dict[str, object]", materialization.manifest),
+    )
+
+
 def _int_mapping_value(mapping: Mapping[str, object], key: str) -> int:
     value = mapping[key]
     assert isinstance(value, int)
@@ -1866,6 +1928,218 @@ def _aggregate_summary(
         request_document=_request_document(),
         changed_files_snapshot=_changed_files_snapshot_document(),
         fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+def _fail_closed_aggregate_manifest(
+    plan: dict[str, object],
+    manifest: dict[str, object],
+    changed_files_snapshot: dict[str, object],
+) -> dict[str, object]:
+    input_artifacts = {
+        "request": _input_artifact(
+            ci_validation_request_artifact_ref(
+                run_id=RUN_ID,
+                run_attempt=RUN_ATTEMPT,
+            ),
+            required=True,
+            admissibility="valid",
+        ),
+        "validation-plan": _input_artifact(
+            ci_validation_plan_artifact_ref(
+                run_id=RUN_ID,
+                run_attempt=RUN_ATTEMPT,
+            ),
+            required=True,
+            admissibility="valid",
+        ),
+        "changed-files-snapshot": _input_artifact(
+            ci_validation_changed_files_snapshot_artifact_ref(
+                run_id=RUN_ID,
+                run_attempt=RUN_ATTEMPT,
+            ),
+            required=True,
+            admissibility="valid",
+        ),
+        "fact-snapshot": _input_artifact(
+            None,
+            required=False,
+            admissibility="not-required",
+        ),
+        "execution-batch-manifest": _input_artifact(
+            ci_validation_execution_batch_manifest_artifact_ref(
+                run_id=RUN_ID,
+                run_attempt=RUN_ATTEMPT,
+            ),
+            required=True,
+            admissibility="valid",
+        ),
+    }
+    cast("dict[str, object]", input_artifacts["request"])[
+        "content-digest"
+    ] = cast("dict[str, object]", plan["request"])["request-digest"]
+    cast("dict[str, object]", input_artifacts["validation-plan"])[
+        "content-digest"
+    ] = plan["plan-digest"]
+    cast("dict[str, object]", input_artifacts["changed-files-snapshot"])[
+        "content-digest"
+    ] = cast("dict[str, object]", plan["affected-range"])[
+        "changed-files-hash"
+    ]
+    cast("dict[str, object]", input_artifacts["execution-batch-manifest"])[
+        "content-digest"
+    ] = ci_validation_execution_batch_manifest_payload_digest(manifest)
+    budget = cast("dict[str, object]", manifest["budget"])
+    return freeze_ci_validation_aggregate_evidence_manifest(
+        created_at=CREATED_AT,
+        repository_owner="hcoona",
+        repository_name="three",
+        workflow="CI Validation",
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        input_artifacts=input_artifacts,
+        batch_bundles=[],
+        unexpected_contract_artifacts=[],
+        namespace_overflow={
+            "detected": False,
+            "observed-prefixed-artifact-count-lower-bound": (
+                budget["pre-final-validation-artifacts"]
+            ),
+            "max-prefixed-validation-artifacts": 18,
+            "diagnostics": [],
+        },
+        pre_final_validation_artifacts=cast(
+            "int",
+            budget["pre-final-validation-artifacts"],
+        ),
+        namespace_closed_at=CREATED_AT,
+        plan=plan,
+        execution_batch_manifest=manifest,
+        request=_request_document(),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=None,
+    )
+
+
+def _fail_closed_aggregate_summary(
+    plan: dict[str, object],
+    manifest: dict[str, object],
+    aggregate_manifest: dict[str, object],
+    changed_files_snapshot: dict[str, object],
+) -> dict[str, object]:
+    manifest_ref = cast("str", aggregate_manifest["artifact-ref"])
+    manifest_digest = ci_validation_aggregate_evidence_manifest_payload_digest(
+        aggregate_manifest,
+    )
+    budget = cast("dict[str, object]", manifest["budget"])
+    failure_diagnostic = _diagnostic(
+        "fail-closed/unknown-change",
+        code="unknown-change",
+        detail="incomplete",
+        message="Changed files could not be classified.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    return freeze_ci_validation_aggregate_summary(
+        created_at=CREATED_AT,
+        repository_owner="hcoona",
+        repository_name="three",
+        workflow="CI Validation",
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        aggregate_evidence_manifest={
+            "artifact-ref": manifest_ref,
+            "artifact-instance-id": "3001",
+            "content-digest": manifest_digest,
+        },
+        final_artifacts={
+            "aggregate-evidence-manifest": {
+                "artifact-ref": manifest_ref,
+                "artifact-instance-id": "3001",
+                "content-digest": manifest_digest,
+                "producer-verified": True,
+                "authority-diagnostics": [],
+            },
+            "aggregate-summary": {
+                "artifact-ref": ci_validation_aggregate_summary_artifact_ref(
+                    run_id=RUN_ID,
+                    run_attempt=RUN_ATTEMPT,
+                ),
+            },
+        },
+        validation_tree=cast("dict[str, object]", plan["validation-tree"]),
+        affected_range=_summary_affected_range(plan),
+        request={
+            "artifact-ref": ci_validation_request_artifact_ref(
+                run_id=RUN_ID,
+                run_attempt=RUN_ATTEMPT,
+            ),
+            "request-digest": cast("dict[str, object]", plan["request"])[
+                "request-digest"
+            ],
+        },
+        scheduled_full=cast("dict[str, object]", plan["scheduled-full"]),
+        verdict="failed",
+        reason={
+            "invalid-plan": False,
+            "fail-closed": True,
+            "required-evidence-missing": False,
+            "required-evidence-skipped": False,
+            "blocking-validation-failure": False,
+            "inadmissible-batch-evidence": False,
+            "namespace-closure-failure": False,
+            "required-input-artifact-failure": False,
+            "aggregate-summary-without-manifest": False,
+            "final-producer-unverified": False,
+            "final-evidence-failure": False,
+        },
+        budgets={
+            "pre-final-validation-artifacts": budget[
+                "pre-final-validation-artifacts"
+            ],
+            "expected-final-validation-artifacts": budget[
+                "expected-final-validation-artifacts"
+            ],
+            "expected-actual-validation-artifacts": budget[
+                "actual-validation-artifacts"
+            ],
+            "max-validation-artifacts": budget["max-validation-artifacts"],
+            "actual-execution-batches": 0,
+            "actual-total-jobs": 0,
+            "actual-windows-jobs": 0,
+            "aggregate-duration-seconds": 10,
+            "aggregate-target-duration-seconds": 60,
+            "aggregate-max-duration-seconds": 120,
+        },
+        diagnostics=[failure_diagnostic],
+        batch_bundles=[],
+        evidence_results=[],
+        failures=[
+            {
+                "kind": "fail-closed",
+                "diagnostic": failure_diagnostic,
+                "message": "Changed files could not be classified.",
+                "evidence-expectation-id": None,
+                "work-group-id": None,
+                "batch-id": None,
+                "bundle-id": None,
+            }
+        ],
+        work_groups={
+            "executable-required": 0,
+            "required-succeeded": 0,
+            "required-failed": 0,
+            "required-skipped": 0,
+            "required-missing": 0,
+            "terminal-aggregation": "present",
+        },
+        plan=plan,
+        aggregate_evidence_manifest_document=aggregate_manifest,
+        admitted_batch_evidence_bundles=[],
+        execution_batch_manifest=manifest,
+        request_document=_request_document(),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=None,
     )
 
 
@@ -10741,6 +11015,103 @@ def test_aggregate_summary_accepts_canonical_fail_closed_diagnostic() -> None:
         changed_files_snapshot=_changed_files_snapshot_document(),
         fact_snapshot=_fact_snapshot_document(),
     )
+
+
+def test_aggregate_summary_fails_closed_for_fail_closed_plan() -> None:
+    """Planner fail-closed diagnostics force a failed aggregate summary."""
+    plan, changed_files_snapshot, manifest = _fail_closed_plan_context()
+    aggregate_manifest = _fail_closed_aggregate_manifest(
+        plan,
+        manifest,
+        changed_files_snapshot,
+    )
+    summary = _fail_closed_aggregate_summary(
+        plan,
+        manifest,
+        aggregate_manifest,
+        changed_files_snapshot,
+    )
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        admitted_batch_evidence_bundles=[],
+        execution_batch_manifest=manifest,
+        request=_request_document(),
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=None,
+    )
+
+
+def test_aggregate_summary_rejects_passed_fail_closed_plan() -> None:
+    """Fail-closed plans cannot be summarized as passing no-op plans."""
+    plan, changed_files_snapshot, manifest = _fail_closed_plan_context()
+    aggregate_manifest = _fail_closed_aggregate_manifest(
+        plan,
+        manifest,
+        changed_files_snapshot,
+    )
+    summary = _fail_closed_aggregate_summary(
+        plan,
+        manifest,
+        aggregate_manifest,
+        changed_files_snapshot,
+    )
+    summary["verdict"] = "passed"
+    cast("dict[str, object]", summary["reason"])["fail-closed"] = False
+    summary["failures"] = []
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=None,
+        )
+
+    issue_paths = {issue.path for issue in exc_info.value.issues}
+    assert "$.verdict" in issue_paths
+    assert "$.reason.fail-closed" in issue_paths
+    assert "$.failures" in issue_paths
+
+
+def test_aggregate_summary_rejects_wrong_fail_closed_plan_cause() -> None:
+    """Fail-closed failures must exactly cover planner diagnostic causes."""
+    plan, changed_files_snapshot, manifest = _fail_closed_plan_context()
+    aggregate_manifest = _fail_closed_aggregate_manifest(
+        plan,
+        manifest,
+        changed_files_snapshot,
+    )
+    summary = _fail_closed_aggregate_summary(
+        plan,
+        manifest,
+        aggregate_manifest,
+        changed_files_snapshot,
+    )
+    failure = cast("list[dict[str, object]]", summary["failures"])[0]
+    cast("dict[str, object]", failure["diagnostic"])[
+        "detail"
+    ] = "inconsistent"
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=None,
+        )
+
+    assert any(issue.path == "$.failures" for issue in exc_info.value.issues)
 
 
 def test_aggregate_summary_rejects_unbound_supplied_plan_projection() -> None:

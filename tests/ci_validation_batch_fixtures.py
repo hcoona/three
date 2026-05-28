@@ -135,6 +135,26 @@ def _classification() -> dict[str, object]:
     }
 
 
+def _fail_closed_classification() -> dict[str, object]:
+    classification = deepcopy(_classification())
+    impact = cast(
+        "dict[str, object]",
+        cast("list[dict[str, object]]", classification["impacts"])[0],
+    )
+    impact["category"] = "unknown"
+    impact["source-rule"] = "python-workspace-path-fail-closed"
+    impact["rationale"] = (
+        "Changed path requires fail-closed planning because supporting facts "
+        "were incomplete."
+    )
+    impact["coverage-target"] = {"type": "none", "id": None}
+    cast("dict[str, object]", impact["requires"])["diagnostic"] = (
+        "unknown-change"
+    )
+    classification["subject-selection-provenance"] = []
+    return classification
+
+
 def _subject() -> dict[str, object]:
     return {
         "subject-id": "python.src-public-lib-example",
@@ -246,6 +266,30 @@ def plan() -> dict[str, object]:
     return cast("dict[str, object]", snapshot.plan)
 
 
+def fail_closed_plan() -> dict[str, object]:
+    snapshot = freeze_ci_validation_plan(
+        request=_normalized_request(),
+        plan_id=PLAN_ID,
+        created_at=CREATED_AT,
+        observed_commit_sha=TREE_SHA,
+        verdict_intent="fail-closed",
+        classification=_fail_closed_classification(),
+        diagnostics=[
+            {
+                "diagnostic-id": "fail-closed/unknown-change",
+                "code": "unknown-change",
+                "detail": "incomplete",
+                "message": "Changed files could not be classified.",
+                "source": {"type": "aggregation", "id": None},
+                "severity": "fail-closed",
+                "verdict-effect": "fail-closed",
+            }
+        ],
+        fact_snapshot_providers=None,
+    )
+    return cast("dict[str, object]", snapshot.plan)
+
+
 def request_document() -> dict[str, object]:
     return _request()
 
@@ -297,9 +341,19 @@ def authorizing_context_kwargs() -> _AuthorizingContextKwargs:
 
 
 def manifest(plan: dict[str, object]) -> dict[str, object]:
+    fact_snapshot = (
+        None
+        if cast("dict[str, object]", plan["fact-snapshot"])["status"]
+        == "unavailable"
+        else fact_snapshot_document()
+    )
     materialization = materialize_ci_validation_execution_batches(
         plan=plan,
-        **authorizing_context_kwargs(),
+        request=request_document(),
+        changed_files_snapshot=changed_files_snapshot_document(),
+        fact_snapshot=fact_snapshot,
+        expected_run_id=RUN_ID,
+        expected_run_attempt=RUN_ATTEMPT,
         created_at=CREATED_AT,
         execution_workflow="CI Validation",
     )

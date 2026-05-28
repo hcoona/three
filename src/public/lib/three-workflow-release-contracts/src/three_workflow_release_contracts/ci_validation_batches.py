@@ -2640,6 +2640,7 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
         summary_evidence_rows,
         inadmissible_batch=_summary_has_inadmissible_batch(summary),
         namespace_failure_details=namespace_failure_details,
+        plan_fail_closed_failure_causes=_plan_fail_closed_failure_causes(plan),
         required_input_failure=required_input_failure,
         aggregate_duration_exceeded=_summary_duration_exceeded(summary),
         aggregate_manifest_producer_unverified=(
@@ -12315,6 +12316,7 @@ def _validate_summary_derived_status(  # noqa: PLR0913
     *,
     inadmissible_batch: bool,
     namespace_failure_details: set[str],
+    plan_fail_closed_failure_causes: set[_FailClosedCause],
     required_input_failure: bool,
     aggregate_duration_exceeded: bool,
     aggregate_manifest_producer_unverified: bool,
@@ -12325,6 +12327,7 @@ def _validate_summary_derived_status(  # noqa: PLR0913
     issues: list[ValidationIssue],
 ) -> None:
     namespace_failure = bool(namespace_failure_details)
+    plan_fail_closed_failure = bool(plan_fail_closed_failure_causes)
     aggregate_manifest_authority_failure = bool(
         aggregate_manifest_authority_failure_details
     )
@@ -12338,7 +12341,8 @@ def _validate_summary_derived_status(  # noqa: PLR0913
     del aggregate_duration_exceeded
     expected_reason = {
         "invalid-plan": invalid_plan_input_failure,
-        "fail-closed": namespace_failure and not invalid_plan_input_failure,
+        "fail-closed": (namespace_failure or plan_fail_closed_failure)
+        and not invalid_plan_input_failure,
         "required-evidence-missing": missing > 0
         and not invalid_plan_input_failure,
         "required-evidence-skipped": skipped > 0
@@ -12378,6 +12382,7 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         evidence_rows,
         {
             "namespace-closure-failure": namespace_failure,
+            "fail-closed": plan_fail_closed_failure,
             "required-input-artifact-failure": required_input_failure,
             "aggregate-summary-without-manifest": (
                 aggregate_summary_without_manifest
@@ -12417,6 +12422,7 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         summary,
         _fail_closed_failure_causes(
             namespace_failure_details=namespace_failure_details,
+            plan_fail_closed_failure_causes=plan_fail_closed_failure_causes,
             required_input_failure=required_input_failure,
             aggregate_duration_exceeded=False,
             aggregate_manifest_producer_unverified=(
@@ -12444,6 +12450,7 @@ def _validate_summary_derived_status(  # noqa: PLR0913
         or failed > 0
         or inadmissible_batch
         or namespace_failure
+        or plan_fail_closed_failure
         or required_input_failure
         or aggregate_manifest_producer_unverified
         or aggregate_summary_without_manifest
@@ -12491,16 +12498,43 @@ def _final_evidence_failure_causes(
 type _FailClosedCause = tuple[str, str]
 
 
+def _plan_fail_closed_failure_causes(
+    plan: Mapping[str, object] | None,
+) -> set[_FailClosedCause]:
+    if plan is None:
+        return set()
+    diagnostics = plan.get("diagnostics")
+    if not isinstance(diagnostics, Sequence) or isinstance(
+        diagnostics, str | bytes
+    ):
+        return set()
+    causes: set[_FailClosedCause] = set()
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, Mapping):
+            continue
+        if (
+            diagnostic.get("verdict-effect") != "fail-closed"
+            and diagnostic.get("severity") != "fail-closed"
+        ):
+            continue
+        code = diagnostic.get("code")
+        detail = diagnostic.get("detail")
+        if isinstance(code, str) and isinstance(detail, str):
+            causes.add((code, detail))
+    return causes
+
+
 def _fail_closed_failure_causes(  # noqa: PLR0913
     *,
     namespace_failure_details: set[str],
+    plan_fail_closed_failure_causes: set[_FailClosedCause],
     required_input_failure: bool,
     aggregate_duration_exceeded: bool,
     aggregate_manifest_producer_unverified: bool,
     aggregate_summary_without_manifest: bool,
     aggregate_manifest_authority_failure_details: set[str],
 ) -> set[_FailClosedCause]:
-    causes: set[_FailClosedCause] = set()
+    causes = set(plan_fail_closed_failure_causes)
     del namespace_failure_details
     del required_input_failure
     del aggregate_duration_exceeded

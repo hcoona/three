@@ -7303,6 +7303,7 @@ def _ci_batch_aggregation_payloads(
         unexpected if aggregate_manifest_document is not None else []
     )
     failures = _ci_aggregate_summary_failures(
+        plan=plan,
         summary_bundle_rows=summary_bundle_rows,
         evidence_results=evidence_results,
         namespace_overflow=summary_namespace_overflow,
@@ -7325,6 +7326,7 @@ def _ci_batch_aggregation_payloads(
         key=lambda item: str(item.get("diagnostic-id")),
     )
     reason = _ci_aggregate_summary_reason(
+        plan=plan,
         summary_bundle_rows=summary_bundle_rows,
         evidence_results=evidence_results,
         namespace_overflow=summary_namespace_overflow,
@@ -8000,6 +8002,7 @@ def _ci_missing_execution_batch_manifest_payloads(
         unexpected if aggregate_manifest_document is not None else []
     )
     failures = _ci_aggregate_summary_failures(
+        plan=plan,
         summary_bundle_rows=[],
         evidence_results=evidence_results,
         namespace_overflow=summary_namespace_overflow,
@@ -8022,6 +8025,7 @@ def _ci_missing_execution_batch_manifest_payloads(
         key=lambda item: str(item.get("diagnostic-id")),
     )
     reason = _ci_aggregate_summary_reason(
+        plan=plan,
         summary_bundle_rows=[],
         evidence_results=evidence_results,
         namespace_overflow=summary_namespace_overflow,
@@ -9614,6 +9618,7 @@ def _ci_aggregate_summary_bundle_rows(
 
 def _ci_aggregate_summary_failures(  # noqa: C901, PLR0912
     *,
+    plan: Mapping[str, object] | None = None,
     summary_bundle_rows: Sequence[Mapping[str, object]],
     evidence_results: Sequence[Mapping[str, object]],
     namespace_overflow: Mapping[str, object],
@@ -9626,6 +9631,17 @@ def _ci_aggregate_summary_failures(  # noqa: C901, PLR0912
     aggregate_summary_without_manifest: bool = False,
 ) -> list[Json]:
     failures: list[Json] = []
+    for diagnostic in _ci_plan_fail_closed_diagnostics(plan):
+        failures.append(
+            _ci_aggregate_failure(
+                kind="fail-closed",
+                diagnostic=diagnostic,
+                message=str(
+                    diagnostic.get("message")
+                    or "Validation planning failed closed.",
+                ),
+            )
+        )
     for row in evidence_results:
         outcome = row.get("outcome")
         if outcome == "missing":
@@ -9847,6 +9863,7 @@ def _ci_summary_bundle_inadmissibility_detail(
 
 def _ci_aggregate_summary_reason(
     *,
+    plan: Mapping[str, object] | None = None,
     summary_bundle_rows: Sequence[Mapping[str, object]],
     evidence_results: Sequence[Mapping[str, object]],
     namespace_overflow: Mapping[str, object],
@@ -9862,10 +9879,11 @@ def _ci_aggregate_summary_reason(
         or namespace_overflow.get("detected") is True
         or _ci_aggregate_namespace_enumeration_failed(namespace_overflow)
     )
+    plan_fail_closed = bool(_ci_plan_fail_closed_diagnostics(plan))
     final_evidence_failure = aggregate_manifest_authority_failure
     return {
         "invalid-plan": False,
-        "fail-closed": namespace_failure,
+        "fail-closed": namespace_failure or plan_fail_closed,
         "required-evidence-missing": "missing" in outcomes,
         "required-evidence-skipped": "skipped" in outcomes,
         "blocking-validation-failure": "failed" in outcomes,
@@ -9878,6 +9896,53 @@ def _ci_aggregate_summary_reason(
         "final-producer-unverified": not aggregate_manifest_producer_verified,
         "final-evidence-failure": final_evidence_failure,
     }
+
+
+def _ci_plan_fail_closed_diagnostics(
+    plan: Mapping[str, object] | None,
+) -> list[Json]:
+    if plan is None:
+        return []
+    diagnostics = plan.get("diagnostics")
+    if not isinstance(diagnostics, Sequence) or isinstance(
+        diagnostics,
+        str | bytes,
+    ):
+        return []
+    failure_diagnostics: dict[tuple[str, str], Json] = {}
+    for raw_diagnostic in diagnostics:
+        if not isinstance(raw_diagnostic, Mapping):
+            continue
+        if (
+            raw_diagnostic.get("verdict-effect")
+            != DiagnosticVerdictEffect.FAIL_CLOSED.value
+            and raw_diagnostic.get("severity")
+            != DiagnosticSeverity.FAIL_CLOSED.value
+        ):
+            continue
+        code = raw_diagnostic.get("code")
+        detail = raw_diagnostic.get("detail")
+        if not isinstance(code, str) or not isinstance(detail, str):
+            continue
+        key = (code, detail)
+        if key in failure_diagnostics:
+            continue
+        failure_diagnostics[key] = _ci_aggregate_diagnostic(
+            f"fail-closed/{code}/{detail}",
+            code=code,
+            detail=detail,
+            message=str(
+                raw_diagnostic.get("message")
+                or "Validation planning failed closed.",
+            ),
+            source_id=None,
+            severity=DiagnosticSeverity.FAIL_CLOSED.value,
+            verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+        )
+    return sorted(
+        failure_diagnostics.values(),
+        key=lambda diagnostic: str(diagnostic.get("diagnostic-id")),
+    )
 
 
 def _ci_aggregate_namespace_enumeration_failed(
