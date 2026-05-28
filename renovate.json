@@ -24,7 +24,7 @@
     "schedule": ["before 6am on tuesday"],
     "automerge": true,
     "commitMessageAction": "Refresh",
-    "commitMessageTopic": "{{#if groupName}}{{groupName}} Lock Files{{else}}Dependency Lock Files{{/if}}"
+    "commitMessageTopic": "Dependency Lock Files"
   },
   "vulnerabilityAlerts": {
     "enabled": true,
@@ -398,6 +398,13 @@
       "matchFileNames": ["src/public/lib/Directory.Packages.props"],
       "groupName": "Public NuGet Library Minimum Dependency Versions",
       "automerge": true
+    },
+    {
+      "description": "Title public NuGet library lock-file maintenance distinctly.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "commitMessageTopic": "Public NuGet Library Minimum Dependency Versions Lock Files"
     },
     {
       "description": "Group root NuGet versions used as public library minimums.",
