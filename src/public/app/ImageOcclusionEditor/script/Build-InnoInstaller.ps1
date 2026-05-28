@@ -24,7 +24,8 @@ It assumes the app has already been published by `script/Publish-ImageOcclusionE
 
     out/ImageOcclusionEditor/<Configuration>/<TargetFramework>/<RuntimeIdentifier>/
 
-It then runs the Inno Setup compiler (ISCC) on `script/Setup.iss`, passing the detected publish directory.
+It then stages the Inno Setup inputs and runs the Inno Setup compiler (ISCC) on a generated wrapper for
+`script/Setup.iss`, passing the detected publish directory.
 It follows PowerShell best practices and treats non-zero exit codes from native commands as terminating errors.
 
 .PARAMETER Configuration
@@ -80,6 +81,16 @@ function Write-Status {
         'Error' { Write-Error       "[x] $Message" }
         'Success' { Write-Information "[OK] $Message" -InformationAction Continue }
     }
+}
+
+function ConvertTo-InnoStringLiteral {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    return '"' + ($Value -replace '"', '""') + '"'
 }
 
 # Load shared helpers and resolve repo paths
@@ -169,20 +180,120 @@ foreach ($requiredInnoInput in $requiredInnoInputs) {
     }
 }
 
-# Invoke ISCC. /O specifies output folder. Always pass PublishDir to align with actual publish output.
+# Stage Inno inputs outside the validation worktree so ISCC consumes short, deterministic paths.
+$InnoWorkRoot = Join-Path $InstallerOutputPath 'inno-input'
+if (Test-Path -LiteralPath $InnoWorkRoot) {
+    Remove-Item -LiteralPath $InnoWorkRoot -Recurse -Force
+}
+$StagedPublishDir = Join-Path $InnoWorkRoot 'publish'
+$StagedProjectDir = Join-Path $InnoWorkRoot 'project'
+New-Item -ItemType Directory -Force -Path $StagedPublishDir, $StagedProjectDir | Out-Null
+
+$publishItems = Get-ChildItem -LiteralPath $PublishOutputPath -Force
+if ($publishItems.Count -eq 0) {
+    throw "Publish output is empty: $PublishOutputPath"
+}
+foreach ($publishItem in $publishItems) {
+    Copy-Item -LiteralPath $publishItem.FullName -Destination $StagedPublishDir -Recurse -Force
+}
+
+$projectAssetRelativePaths = @(
+    'imageocclusioneditor.ico',
+    'README.md',
+    'LICENSE',
+    'LICENSE.GPL3.txt',
+    'LICENSE.MIT.txt',
+    'THIRD-PARTY-NOTICES.TXT',
+    'Resources/Template_IIOT.txt',
+    'Resources/Template_IIOTT.txt'
+)
+foreach ($relativePath in $projectAssetRelativePaths) {
+    $sourcePath = Join-Path $ProjectDir $relativePath
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+        continue
+    }
+    $destinationPath = Join-Path $StagedProjectDir $relativePath
+    $destinationDirectory = Split-Path -Parent $destinationPath
+    if (-not (Test-Path -LiteralPath $destinationDirectory)) {
+        New-Item -ItemType Directory -Force -Path $destinationDirectory | Out-Null
+    }
+    Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+}
+
+$InnoPublishDir = (Resolve-Path -LiteralPath $StagedPublishDir).Path
+$InnoProjectDir = (Resolve-Path -LiteralPath $StagedProjectDir).Path
+$stagedExePath = Join-Path $InnoPublishDir ("{0}.exe" -f $AssemblyName)
+if (-not (Test-Path -LiteralPath $stagedExePath -PathType Leaf)) {
+    throw "Staged published executable not found: $stagedExePath"
+}
+foreach ($requiredInnoInput in $requiredInnoInputs) {
+    $relativeInputPath = [System.IO.Path]::GetRelativePath($ProjectDir, $requiredInnoInput)
+    $stagedInputPath = Join-Path $InnoProjectDir $relativeInputPath
+    if (-not (Test-Path -LiteralPath $stagedInputPath -PathType Leaf)) {
+        throw "Staged Inno Setup input not found: $stagedInputPath"
+    }
+}
+
+$GeneratedSetupIss = Join-Path $InnoWorkRoot 'Setup.generated.iss'
+$generatedSetupContent = @(
+    '#define ProjectDir ' + (ConvertTo-InnoStringLiteral $InnoProjectDir),
+    '#define PublishDir ' + (ConvertTo-InnoStringLiteral $InnoPublishDir),
+    '#define MyAppVersion ' + (ConvertTo-InnoStringLiteral $AppVersion),
+    '#pragma message("ProjectDir=" + ProjectDir)',
+    '#pragma message("PublishDir=" + PublishDir)',
+    '#pragma message("MyAppVersion=" + MyAppVersion)',
+    '#include ' + (ConvertTo-InnoStringLiteral $SetupIss)
+)
+Set-Content -LiteralPath $GeneratedSetupIss -Value $generatedSetupContent -Encoding UTF8
+
+Write-Status "Inno Staged Publish: $InnoPublishDir" 'Info'
+Write-Status "Inno Staged Project: $InnoProjectDir" 'Info'
+Write-Status "Generated Inno Script: $GeneratedSetupIss" 'Info'
+
+# Invoke ISCC. /O specifies output folder; the generated wrapper supplies Inno defines.
 $outArg = '/O' + $InstallerOutputPath
-if ($PublishOutputPath.EndsWith('\')) { $PublishOutputPath = $PublishOutputPath.TrimEnd('\') }
-if ($ProjectDir.EndsWith('\')) { $ProjectDir = $ProjectDir.TrimEnd('\') }
+if ($InnoPublishDir.EndsWith('\')) { $InnoPublishDir = $InnoPublishDir.TrimEnd('\') }
+if ($InnoProjectDir.EndsWith('\')) { $InnoProjectDir = $InnoProjectDir.TrimEnd('\') }
 $previousPublishDir = $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR
 $previousProjectDir = $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR
 $previousAppVersion = $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION
+$previousNativeCommandPreference = $PSNativeCommandUseErrorActionPreference
 try {
-    $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR = $PublishOutputPath
-    $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR = $ProjectDir
+    $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR = $InnoPublishDir
+    $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR = $InnoProjectDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION = $AppVersion
-    & $ISCC $outArg $SetupIss
+    $isccArgs = @($GeneratedSetupIss, $outArg)
+    $PSNativeCommandUseErrorActionPreference = $false
+    $isccOutput = & $ISCC @isccArgs 2>&1
+    $isccExitCode = $LASTEXITCODE
+    $isccOutputLines = @($isccOutput | ForEach-Object { $_.ToString() })
+    foreach ($isccOutputLine in $isccOutputLines) {
+        Write-Information "[ISCC] $isccOutputLine" -InformationAction Continue
+    }
+    if ($isccExitCode -ne 0) {
+        $publishFileCount = (Get-ChildItem -LiteralPath $InnoPublishDir -Recurse -File -Force).Count
+        $longestPublishPaths = Get-ChildItem -LiteralPath $InnoPublishDir -Recurse -File -Force |
+            Sort-Object { $_.FullName.Length } -Descending |
+            Select-Object -First 10 -ExpandProperty FullName
+        $diagnostics = @(
+            "ISCC failed with exit code $isccExitCode.",
+            "ISCC: $ISCC",
+            "Arguments: $($isccArgs -join ' ')",
+            "Working Directory: $((Get-Location).Path)",
+            "ProjectDir: $InnoProjectDir",
+            "PublishDir: $InnoPublishDir",
+            "InstallerOutputPath: $InstallerOutputPath",
+            "Publish file count: $publishFileCount",
+            "Longest publish paths:",
+            $longestPublishPaths,
+            "ISCC output:",
+            $isccOutputLines
+        )
+        throw ($diagnostics -join [Environment]::NewLine)
+    }
 }
 finally {
+    $PSNativeCommandUseErrorActionPreference = $previousNativeCommandPreference
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR = $previousPublishDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR = $previousProjectDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION = $previousAppVersion

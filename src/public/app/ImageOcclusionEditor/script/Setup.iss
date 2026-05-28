@@ -25,21 +25,6 @@
 #define MyAppExeName "ImageOcclusionEditor.exe"
 #define MyAppDescription "Application for creating image occlusion cards"
 #define PublishDirWithBackslash AddBackslash(PublishDir)
-#if DirExists(ProjectDir) == 0
-#expr Error("ProjectDir does not exist: " + ProjectDir)
-#endif
-#if DirExists(PublishDir) == 0
-#expr Error("PublishDir does not exist: " + PublishDir)
-#endif
-#if FileExists(PublishDirWithBackslash + MyAppExeName) == 0
-#expr Error("Published executable does not exist: " + PublishDirWithBackslash + MyAppExeName)
-#endif
-#if FileExists(ProjectDirWithBackslash + "imageocclusioneditor.ico") == 0
-#expr Error("Inno icon input does not exist: " + ProjectDirWithBackslash + "imageocclusioneditor.ico")
-#endif
-#if FileExists(ProjectDirWithBackslash + "LICENSE.GPL3.txt") == 0
-#expr Error("Inno license input does not exist: " + ProjectDirWithBackslash + "LICENSE.GPL3.txt")
-#endif
 
 [Setup]
 AppId={{C8D4F4E5-1234-4567-8901-123456789ABC}
