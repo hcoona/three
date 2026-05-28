@@ -5904,7 +5904,19 @@ def test_ci_runner_family_orchestrator_downloads_cross_family_live_artifact(
     ) == {"source": "cross-family-live"}
     assert admissions[upstream_name]["artifact-instance-id"] == "9100"
     assert admissions[upstream_name]["admission-source"] == (
-        "orchestrator-live-cross-family"
+        control._CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE
+    )
+
+
+def test_ci_dependency_admission_trusts_cross_family_source() -> None:
+    """Cross-family orchestrator admissions are internal trusted transfers."""
+    control._ci_verify_dependency_admission_source(
+        "batch-evidence-bundle.json",
+        {
+            "admission-source": (
+                control._CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE
+            ),
+        },
     )
 
 

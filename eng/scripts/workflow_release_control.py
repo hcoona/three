@@ -196,6 +196,9 @@ _CI_CONTROL_ARTIFACT_PRODUCERS = {
 _CI_DOWNLOADER_OBSERVATION_FILE = "downloader-observation.json"
 _CI_DOWNLOADER_ADMITTED_BATCH_ARTIFACTS_KEY = "admitted-batch-artifacts"
 _CI_ORCHESTRATOR_STATE_ADMISSION_SOURCE = "orchestrator-artifact-id-state"
+_CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE = (
+    "orchestrator-live-cross-family"
+)
 
 
 def main() -> int:
@@ -2951,7 +2954,7 @@ def _ci_orchestrator_cross_family_dependency_admission(
         run_attempt=run_attempt,
         observed_root=observed_root,
         artifact_api=matches[0],
-        source="orchestrator-live-cross-family",
+        source=_CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE,
     )
 
 
@@ -3773,6 +3776,7 @@ def _ci_verify_dependency_admission_source(
     if admission_source in {
         "github-actions-live-api",
         _CI_ORCHESTRATOR_STATE_ADMISSION_SOURCE,
+        _CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE,
     }:
         return
     msg = (
@@ -8986,6 +8990,7 @@ def _ci_aggregate_bundle_internal_metadata_authority(
     if metadata.get("admission-source") not in {
         "github-actions-live-api",
         _CI_ORCHESTRATOR_STATE_ADMISSION_SOURCE,
+        _CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE,
     }:
         diagnostics.append(
             _ci_aggregate_bundle_metadata_diagnostic(
